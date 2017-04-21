@@ -1,0 +1,8 @@
+# This file is informational only. The statements in CMakeLists.txt (or whatever else build system)
+# should rely on the information found here. If possible, it can retrieve it automatically.
+PUBLIC HEADERS
+srt.h
+udt.h
+logging_api.h
+PROTECTED HEADERS
+srt4udt.h
