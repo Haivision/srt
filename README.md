@@ -11,7 +11,7 @@ For Linux:
 Install cmake and openssl-devel (or similar name) package. For pthreads
 there should be -lpthreads linker flag added.
 
-## Ubunut 14
+## Ubuntu 14
 ```
 sudo apt-get update
 sudo apt-get upgrade
