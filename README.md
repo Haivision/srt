@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="http://srtalliance.org/">
+    <img alt="Node.js" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="600"/>
+  </a>
+</p>
+
 REQUIREMENTS:
 ============
 
@@ -93,6 +99,6 @@ The stransmit is a test application that forwards data between two URLs, here is
 First run this to send with SRT:
 ./stransmit file://$(pwd)/BigBuckBunny.ts srt://localhost:1234/?mode=server
 
-The run this to receive with SRT, this forwarsd to the ffplay command line from
+The run this to receive with SRT, this forwards to the ffplay command line from
 ffmpeg:
 ./stransmit  srt://localhost:1234/?mode=client file://con | ffplay -
