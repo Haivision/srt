@@ -84,3 +84,15 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 (They are in the toplevel directory, there are actually no meaningful subdirs here)
 (NOTE: the win32 is part of the project name. It will become 32 or 64 depending on selection)
 
+
+Using the stransmit app
+=======================
+
+The stransmit is a test application that forwards data between two URLs, here is an example:
+
+First run this to send with SRT:
+./stransmit file://$(pwd)/BigBuckBunny.ts srt://localhost:1234/?mode=server
+
+The run this to receive with SRT, this forwarsd to the ffplay command line from
+ffmpeg:
+./stransmit  srt://localhost:1234/?mode=client file://con | ffplay -
