@@ -35,7 +35,11 @@ extern "C" {
 // MacOS X has a monotonic clock, but it's not POSIX.
 #if defined(__MACH__)
 
+#include <AvailabilityMacros.h>
 #include <time.h>
+#include <errno.h>
+#include <pthread.h>
+#include <string.h>
 
 // NOTE: clock_gettime() and clock_res() were added in OSX-10.12, IOS-10.0,
 //    TVOS-10.0, and WATCHOS-3.0. But XCode8 makes this very difficult to
@@ -85,7 +89,7 @@ static inline int OSXCall_clock_gettime(clockid_t clock_id, struct timespec * ts
 {
 #if defined(__SRT_OSX_CLOCK_GETTIME_AVAILABILITY) \
    && (__SRT_OSX_CLOCK_GETTIME_AVAILABILITY == 1)
-   if (clock_gettime != NULL)
+   if (&clock_gettime != NULL)
    {
       return clock_gettime(clock_id, ts);
    }
@@ -98,7 +102,7 @@ static inline int OSXCall_clock_getres(clockid_t clock_id, struct timespec * ts)
 {
 #if defined(__SRT_OSX_CLOCK_GETTIME_AVAILABILITY) \
    && (__SRT_OSX_CLOCK_GETTIME_AVAILABILITY == 1)
-   if (clock_getres != NULL)
+   if (&clock_getres != NULL)
    {
       return clock_getres(clock_id, ts);
    }
@@ -126,7 +130,7 @@ static inline int pthread_condattr_setclock(
 
 static inline size_t SysStrnlen(const char * s, size_t maxlen)
 {
-    const char* pos = memchr(s, 0, maxlen);
+    const char* pos = (const char*) memchr(s, 0, maxlen);
     return pos ? pos - s : maxlen;
 }
 
