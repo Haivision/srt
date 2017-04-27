@@ -391,7 +391,11 @@ endif()
 
 if ( ENABLE_CXX11 )
 
-	add_executable(stransmit ${CMAKE_SOURCE_DIR}/apps/stransmit.cpp ${CMAKE_SOURCE_DIR}/apps/uriparser.cpp)
+	add_executable(stransmit
+		${CMAKE_SOURCE_DIR}/apps/stransmit.cpp
+		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
+		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
+	)
 
 	# Test programs
 	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)

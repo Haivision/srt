@@ -33,8 +33,8 @@
 
 #include <srt.h>
 
-#include "appcommon.hpp"
-#include "uriparser.hpp"
+#include "../common/appcommon.hpp"
+#include "../common/uriparser.hpp"
 
 
 using namespace std;
