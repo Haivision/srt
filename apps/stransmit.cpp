@@ -63,8 +63,9 @@
 #include <chrono>
 #include <thread>
 
-#include "appcommon.hpp"  // CreateAddrInet
-#include "uriparser.hpp"  // UriParser
+#include "../common/appcommon.hpp"  // CreateAddrInet
+#include "../common/uriparser.hpp"  // UriParser
+#include "../common/socketoptions.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
@@ -523,9 +524,6 @@ int main( int argc, char** argv )
 
 // Class utilities
 
-set<string> true_names = { "1", "yes", "on", "true" };
-set<string> false_names = { "0", "no", "off", "false" };
-
 string udt_status_names [] = {
 "INIT" , "OPENED", "LISTENING", "CONNECTING", "CONNECTED", "BROKEN", "CLOSING", "CLOSED", "NONEXIST"
 };
@@ -578,154 +576,8 @@ template <> struct File<Target> { typedef FileTarget type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
-struct OptionValue
-{
-    string s;
-    union {
-        int i;
-        int64_t l;
-        bool b;
-    };
-
-    const void* value = nullptr;
-    size_t size = 0;
-};
-
-struct SocketOption
-{
-    enum Type { STRING = 0, INT, INT64, BOOL };
-    enum Binding { PRE = 0, POST };
-    enum Domain { SYSTEM, SRT };
-
-    string name;
-    int protocol;
-    int symbol;
-    Type type;
-    Binding binding;
-
-    template <Domain D>
-    bool apply(int socket, string value) const;
-
-    template <Domain D, Type T>
-    bool applyt(int socket, string value) const;
-
-    template <Domain D>
-    static int setso(int socket, int protocol, int symbol, const void* data, size_t size);
-
-    template<Type T>
-    static void extract(string value, OptionValue& val);
-};
-
-template<>
-int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
-{
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, size);
-}
-
-template<>
-int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
-{
-    return ::setsockopt(socket, proto, sym, (const char *)data, size);
-}
-
-template<>
-inline void SocketOption::extract<SocketOption::STRING>(string value, OptionValue& o)
-{
-    o.s = value;
-    o.value = o.s.data();
-    o.size = o.s.size();
-}
-
-template<>
-inline void SocketOption::extract<SocketOption::INT>(string value, OptionValue& o)
-{
-    try
-    {
-        o.i = stoi(value, 0, 0);
-        o.value = &o.i;
-        o.size = sizeof o.i;
-        return;
-    }
-    catch (...) // stoi throws
-    {
-        return; // do not change o
-    }
-}
-
-template<>
-inline void SocketOption::extract<SocketOption::INT64>(string value, OptionValue& o)
-{
-    try
-    {
-        long long vall = stoll(value);
-        o.l = vall; // int64_t resolves to either 'long long', or 'long' being 64-bit integer
-        o.value = &o.l;
-        o.size = sizeof o.l;
-        return ;
-    }
-    catch (...) // stoll throws
-    {
-        return ;
-    }
-}
-
-template<>
-inline void SocketOption::extract<SocketOption::BOOL>(string value, OptionValue& o)
-{
-    bool val;
-    if ( false_names.count(value) )
-        val = false;
-    else if ( true_names.count(value) )
-        val = true;
-    else
-        return;
-
-    o.b = val;
-    o.value = &o.b;
-    o.size = sizeof o.b;
-}
-
-template <SocketOption::Domain D, SocketOption::Type T>
-inline bool SocketOption::applyt(int socket, string value) const
-{
-    OptionValue o; // common meet point
-    extract<T>(value, o);
-    int result = setso<D>(socket, protocol, symbol, o.value, o.size);
-    return result != -1;
-}
 
 
-template<SocketOption::Domain D>
-inline bool SocketOption::apply(int socket, string value) const
-{
-    switch ( type )
-    {
-    case STRING: return applyt<D, STRING>(socket, value); break;
-    case INT: return applyt<D, INT>(socket, value); break;
-    case INT64: return applyt<D, INT64>(socket, value); break;
-    case BOOL: return applyt<D, BOOL>(socket, value); break;
-    }
-    return false;
-}
-
-SocketOption srt_options [] {
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT, SocketOption::PRE },
-    { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::INT, SocketOption::PRE },
-    { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::STRING, SocketOption::PRE },
-
-    { "mss", 0, SRTO_MSS, SocketOption::INT, SocketOption::PRE },
-    { "fc", 0, SRTO_FC, SocketOption::INT, SocketOption::PRE },
-    { "sndbuf", 0, SRTO_SNDBUF, SocketOption::INT, SocketOption::PRE },
-    { "rcvbuf", 0, SRTO_RCVBUF, SocketOption::INT, SocketOption::PRE },
-    { "ipttl", 0, SRTO_IPTTL, SocketOption::INT, SocketOption::PRE },
-    { "iptos", 0, SRTO_IPTOS, SocketOption::INT, SocketOption::PRE },
-    { "inputbw", 0, SRTO_INPUTBW, SocketOption::INT64, SocketOption::POST },
-    { "oheadbw", 0, SRTO_OHEADBW, SocketOption::INT, SocketOption::POST },
-    { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::INT, SocketOption::PRE },
-    { "tsbpdmaxlag", 0, SRTO_TSBPDMAXLAG, SocketOption::INT, SocketOption::PRE },
-    { "nakreport", 0, SRTO_NAKREPORT, SocketOption::BOOL, SocketOption::PRE },
-    { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::INT, SocketOption::PRE }
-};
 
 class SrtCommon
 {
@@ -850,6 +702,8 @@ protected:
                 return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
         }
 
+        SrtConfigurePost(sock, m_options);
+
         for (auto o: srt_options)
         {
             if ( o.binding == SocketOption::POST && m_options.count(o.name) )
@@ -888,18 +742,6 @@ protected:
                 return result;
         }
 
-        if ( m_options.count("passphrase") )
-        {
-            if ( transmit_verbose )
-                cout << "NOTE: using passphrase and 16-bit key\n";
-
-            // Insert default
-            if ( m_options.count("pbkeylen") == 0 )
-            {
-                m_options["pbkeylen"] = m_output_direction ? "16" : "0";
-            }
-        }
-
         // Let's pretend async mode is set this way.
         // This is for asynchronous connect.
         yes = m_blocking_mode;
@@ -912,25 +754,21 @@ protected:
         //if ( result == -1 )
         //    return result;
 
-        if ( transmit_verbose )
-        {
-            cout << "PRE: blocking mode set: " << yes << " timeout " << m_timeout << endl;
-        }
+        //if ( transmit_verbose )
+        //{
+        //    cout << "PRE: blocking mode set: " << yes << " timeout " << m_timeout << endl;
+        //}
 
-        for (auto o: srt_options)
+        // host is only checked for emptiness and depending on that the connection mode is selected.
+        // Here we are not exactly interested with that information.
+        vector<string> failures;
+        SocketOption::Mode conmode = SrtConfigurePre(sock, "",  m_options, &failures);
+
+        if ( transmit_verbose && conmode == SocketOption::FAILURE )
         {
-            if ( o.binding == SocketOption::PRE && m_options.count(o.name) )
-            {
-                string value = m_options.at(o.name);
-                bool ok = o.apply<SocketOption::SRT>(sock, value);
-                if ( transmit_verbose )
-                {
-                    if ( !ok )
-                        cout << "WARNING: failed to set '" << o.name << "' (pre, " << (m_output_direction? "target":"source") << ") to " << value << endl;
-                    else
-                        cout << "NOTE: SRT/pre::" << o.name << "=" << value << endl;
-                }
-            }
+            cout << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            cout << endl;
         }
 
         return 0;
