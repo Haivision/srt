@@ -799,8 +799,10 @@ protected:
         stat = srt_connect(m_sock, psa, sizeof sa);
         if ( stat == SRT_ERROR )
         {
+            srt_close(m_sock);
             Error(UDT::getlasterror(), "UDT::connect");
         }
+
         if ( !m_blocking_mode )
         {
             if ( transmit_verbose )
@@ -884,7 +886,11 @@ protected:
         }
         stat = srt_bind(m_bindsock, psa, sizeof sa);
         if ( stat == SRT_ERROR )
+        {
+            srt_close(m_bindsock);
             Error(UDT::getlasterror(), "srt_bind");
+        }
+
         if ( transmit_verbose )
         {
             cout << " listen... ";
@@ -892,7 +898,10 @@ protected:
         }
         stat = srt_listen(m_bindsock, 1);
         if ( stat == SRT_ERROR )
+        {
+            srt_close(m_bindsock);
             Error(UDT::getlasterror(), "srt_listen");
+        }
 
         sockaddr_in scl;
         int sclen = sizeof scl;
@@ -921,7 +930,10 @@ protected:
 
         m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
         if ( m_sock == SRT_INVALID_SOCK )
+        {
+            srt_close(m_bindsock);
             Error(UDT::getlasterror(), "srt_accept");
+        }
 
         if ( transmit_verbose )
             cout << " connected.\n";
@@ -961,7 +973,10 @@ protected:
         }
         stat = srt_bind(m_sock, plsa, sizeof localsa);
         if ( stat == SRT_ERROR )
+        {
+            srt_close(m_sock);
             Error(UDT::getlasterror(), "srt_bind");
+        }
 
         sockaddr_in sa = CreateAddrInet(host, port);
         sockaddr* psa = (sockaddr*)&sa;
@@ -972,7 +987,11 @@ protected:
         }
         stat = srt_connect(m_sock, psa, sizeof sa);
         if ( stat == SRT_ERROR )
+        {
+            srt_close(m_sock);
             Error(UDT::getlasterror(), "srt_connect");
+        }
+
         if ( transmit_verbose )
             cout << " connected.\n";
 
