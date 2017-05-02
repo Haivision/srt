@@ -158,8 +158,10 @@ SocketOption srt_options [] {
     { "iptos", 0, SRTO_IPTOS, SocketOption::INT, SocketOption::PRE },
     { "inputbw", 0, SRTO_INPUTBW, SocketOption::INT64, SocketOption::POST },
     { "oheadbw", 0, SRTO_OHEADBW, SocketOption::INT, SocketOption::POST },
+    { "latency", 0, SRTO_LATENCY, SocketOption::INT, SocketOption::PRE },
     { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::INT, SocketOption::PRE },
     { "tsbpdmaxlag", 0, SRTO_TSBPDMAXLAG, SocketOption::INT, SocketOption::PRE },
+    { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::BOOL, SocketOption::PRE },
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::BOOL, SocketOption::PRE },
     { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::INT, SocketOption::PRE }
 };

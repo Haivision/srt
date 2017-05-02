@@ -88,11 +88,62 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 Using the stransmit app
 =======================
 
-The stransmit is a test application that forwards data between two URLs, here is an example:
+The `stransmit` application is used both for testing and as an API example, but it's
+still a perfect flipper application for a live stream. The general usage is:
 
-First run this to send with SRT:
-./stransmit file://$(pwd)/BigBuckBunny.ts srt://localhost:1234/?mode=server
+    ./stransmit SOURCE_URI TARGET_URI
 
-The run this to receive with SRT, this forwarsd to the ffplay command line from
-ffmpeg:
-./stransmit  srt://localhost:1234/?mode=client file://con | ffplay -
+where all `*_URI` arguments specify the medium: SRT, UDP or FILE.
+
+The most typical use would be to transmit a live stream originally from UDP, so let's
+pretend you have a UDP stream sent to the local host port 5000, then you transmit it
+to a remote site host `remote.example.com` port 9000 so that it flips it again to its
+local port 5000:
+
+On the sending side you do:
+
+    ./stransmit udp://:5000 srt://remote.example.com:9000
+
+(note that for SRT when you specify the HOST part, it defaults to CALLER mode)
+
+On the receiving side you do:
+
+    ./stransmit srt://:9000 udp://:5000
+
+(Note that for SRT if you skip the HOST part, it will default to LISTENER mode,
+whereas in case of UDP the lacking HOST simply defaults to 0.0.0.0).
+
+You can also enforce appropriate network device for listening by giving its IP
+address, e.g.: `srt://:9000?adapter=192.168.2.3`.
+
+Note that SRT is a protocol predicted to transmit the live video stream. So if you try
+to use just the "stream file" as a source, it won't work as expected. You'd have to first
+make a live stream with the source in a file somehow and redirect it to a local UDP port,
+and then use `stransmit` to flip it to SRT.
+
+If you want to make such a stream, you can try to use the `ffmpeg` command line or
+use `vlc` player to stream a file to UDP, there is also a very useful set ot TS tools
+that you can also use to make a live stream from a file: https://github.com/kynesim/tstools
+
+When receiving a stream, you can perfectly redirect it to a file, if you want, or you
+can make `stransmit` send it to a pipeline so that you can then connect it to some
+other command line tool that will do something with the stream. For that occasion there
+is a kind-of nonstandard specification for *file* scheme: `file://con`, which means
+_stdin_, when specified as source URI and _stdout_ when target URI. For example, you can
+play it directly with `ffplay`:
+
+    ./stransmit srt://:9000 file://con | ffplay -
+
+There are two important parameters that you need to be specified in the SRT parameters
+in the URI:
+
+* **latency**: the actual delay used for data delivery on the receiving side (default: 125)
+* **passphrase**: The password phrase uses for encryption and decryption
+
+Note that `latency` is important when you have a network that may do often packet
+drops in UDP. If the latency is too short towards RTT, then the packet may still be
+dropped also in SRT due to inability to keep up with the live stream pace. By increasing
+latency you give it more time for possible packet retransmission in case of a packet
+loss and the time required to re-request and retransmit the packet will be
+short enough so that the packet can still be delivered on time as required for
+the live transmission. 
