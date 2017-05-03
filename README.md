@@ -32,6 +32,16 @@ sudo yum install tcl pkgconfig openssl-devel cmake gcc gcc-c++ make automake
 ./configure
 make
 ```
+## CentOS 6
+```
+sudo yum update
+sudo yum install tcl pkgconfig openssl-devel cmake gcc gcc-c++ make automake
+sudo yum install centos-release-scl-rh devtoolset-3-gcc devtoolset-3-gcc-c++
+scl enable devtoolset-3 bash
+./configure --use-static-libstdc++ --with-compiler-prefix=/opt/rh/devtoolset-3/root/usr/bin/
+make
+```
+
 
 For Mac (Darwin, iOS):
 =====================
