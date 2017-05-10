@@ -27,7 +27,7 @@ int main( int argc, char** argv )
     int ss, st;
     struct sockaddr_in sa;
     int yes = 1;
-    const char message [] = "This message should be sent to the other side";
+    struct sockaddr_storage their_addr;
 
     printf("srt startup\n");
     srt_startup();
@@ -40,7 +40,7 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    printf("srt remote address\n");
+    printf("srt bind address\n");
     sa.sin_port = htons(atoi(argv[2]));
     if ( inet_pton(AF_INET, argv[1], &sa.sin_addr) != 1)
     {
@@ -50,27 +50,36 @@ int main( int argc, char** argv )
     printf("srt setsockflag\n");
     srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
 
-    printf("srt connect\n");
-    st = srt_connect(ss, (struct sockaddr*)&sa, sizeof sa);
+    printf("srt bind\n");
+    st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
     if ( st == SRT_ERROR )
     {
-        fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
+        fprintf(stderr, "srt_bind: %s\n", srt_getlasterror_str());
         return 1;
     }
 
-    for (int i = 0; i < 10; i++)
+    printf("srt listen\n");
+    st = srt_listen(ss, 1);
+    if ( st == SRT_ERROR )
     {
-        printf("srt sendmsg2\n");
-        st = srt_sendmsg2(ss, message, sizeof message, NULL);
-        if ( st == SRT_ERROR )
-        {
-            fprintf(stderr, "srt_sendmsg: %s\n", srt_getlasterror_str());
-            return 1;
-        }
-
-        sleep(1);
+        fprintf(stderr, "srt_listen: %s\n", srt_getlasterror_str());
+        return 1;
     }
 
+    printf("srt accept\n");
+    int addr_size = sizeof their_addr;
+    int their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
+
+    printf("srt recvmsg\n");
+    char msg[1024];
+    st = srt_recvmsg(their_fd, msg, 1024);
+    if (st == SRT_ERROR )
+    {
+        fprintf(stderr, "srt_recvmsg: %s\n", srt_getlasterror_str());
+        return 1;
+    }
+
+    printf("Got msg of len %d: %s\n", st, msg);
 
     printf("srt close\n");
     st = srt_close(ss);
