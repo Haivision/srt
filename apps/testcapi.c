@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include <srtcore/srt.h>
 
@@ -58,7 +59,7 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 1000; i++)
     {
         printf("srt sendmsg2\n");
         st = srt_sendmsg2(ss, message, sizeof message, NULL);
@@ -68,7 +69,7 @@ int main( int argc, char** argv )
             return 1;
         }
 
-        sleep(1);
+        usleep(1000);
     }
 
 

@@ -48,7 +48,8 @@ int main( int argc, char** argv )
     }
 
     printf("srt setsockflag\n");
-    srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
+    srt_setsockflag(ss, SRTO_TWOWAYDATA, &yes, sizeof yes);
+    srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes);
 
     printf("srt bind\n");
     st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
