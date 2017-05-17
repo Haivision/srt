@@ -88,62 +88,72 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 Using the stransmit app
 =======================
 
-The `stransmit` application is used both for testing and as an API example, but it's
-still a perfect flipper application for a live stream. The general usage is:
+The `stransmit` application is primarily intended to be used for testing and as
+an API example, but it's also a perfectly good flipper application for a live
+stream. The general usage is:
 
     ./stransmit SOURCE_URI TARGET_URI
 
-where all `*_URI` arguments specify the medium: SRT, UDP or FILE.
+    where all `*_URI` arguments specify the medium: SRT, UDP or FILE.
 
-The most typical use would be to transmit a live stream originally from UDP, so let's
-pretend you have a UDP stream sent to the local host port 5000, then you transmit it
-to a remote site host `remote.example.com` port 9000 so that it flips it again to its
-local port 5000:
+The most typical use would be to transmit a live stream originally from UDP.
+For example, let's say you want to receive a UDP stream on the local host port
+5000, then transmit it to a remote site host (`remote.example.com` on port
+9000), where it flips again to local port 5000.
 
-On the sending side you do:
+To do this, on the sending side execute the following:
 
     ./stransmit udp://:5000 srt://remote.example.com:9000
 
-(note that for SRT when you specify the HOST part, it defaults to CALLER mode)
+    NOTE: When you specify a host in SRT (e.g. `remote.example.com`),
+    `stransmit` defaults to SRT CALLER mode.
 
-On the receiving side you do:
+On the receiving side execute the following:
 
     ./stransmit srt://:9000 udp://:5000
 
-(Note that for SRT if you skip the HOST part, it will default to LISTENER mode,
-whereas in case of UDP the lacking HOST simply defaults to 0.0.0.0).
+    NOTE: If you do not specify a host in case of SRT, `stransmit` defaults
+    to LISTENER mode and binds to 0.0.0.0. You can also specify a network
+    device for listening by giving its IP address in `adapter` parameter, e.g.:
+    `srt://:9000?adapter=192.168.2.3`, or by specifying this IP as host,
+    with enforcing the listener mode: `srt://192.168.2.3:9000?mode=listener`.
+    In case of UDP, the empty host is interpreted as 0.0.0.0.
 
-You can also enforce appropriate network device for listening by giving its IP
-address, e.g.: `srt://:9000?adapter=192.168.2.3`.
+For the moment, `stransmit` is designed for the re-transmission of live video
+streams only. If you try to use a stream file as a source, it won't work as
+expected. You first have to make a live stream with the source in a file,
+redirect it to a local UDP port, and then use `stransmit` to flip it to SRT.
 
-Note that SRT is a protocol predicted to transmit the live video stream. So if you try
-to use just the "stream file" as a source, it won't work as expected. You'd have to first
-make a live stream with the source in a file somehow and redirect it to a local UDP port,
-and then use `stransmit` to flip it to SRT.
+To accomplish this, you can use the `ffmpeg` command line or `vlc` player to
+stream a file to UDP. A very useful set of TS tools for creating a live stream
+from a file is available here: https://github.com/kynesim/tstools
 
-If you want to make such a stream, you can try to use the `ffmpeg` command line or
-use `vlc` player to stream a file to UDP, there is also a very useful set ot TS tools
-that you can also use to make a live stream from a file: https://github.com/kynesim/tstools
-
-When receiving a stream, you can perfectly redirect it to a file, if you want, or you
-can make `stransmit` send it to a pipeline so that you can then connect it to some
-other command line tool that will do something with the stream. For that occasion there
-is a kind-of nonstandard specification for *file* scheme: `file://con`, which means
-_stdin_, when specified as source URI and _stdout_ when target URI. For example, you can
-play it directly with `ffplay`:
+When receiving a stream, you can make `stransmit` send it to a file or
+redirect it to a pipeline so that you can then connect it to some other command
+line tool that will do something with the stream. To help accomplish this,
+`stransmit` recognizes a custom specification for *file* scheme: `file://con`,
+which means _stdin_ when specified as source URI and _stdout_ when specified as
+target URI. For example, you can play a stream immediately upon receiving it by
+using `ffplay`:
 
     ./stransmit srt://:9000 file://con | ffplay -
 
-There are two important parameters that you need to be specified in the SRT parameters
-in the URI:
+There are two important parameters that you might want to specify in the SRT URI:
 
-* **latency**: the actual delay used for data delivery on the receiving side (default: 125)
-* **passphrase**: The password phrase uses for encryption and decryption
+* **latency**: the actual delay used for data delivery on the receiving side
+               (default is 125 ms)
+* **passphrase**: The password/phrase used for encryption and decryption
 
-Note that `latency` is important when you have a network that may do often packet
-drops in UDP. If the latency is too short towards RTT, then the packet may still be
-dropped also in SRT due to inability to keep up with the live stream pace. By increasing
-latency you give it more time for possible packet retransmission in case of a packet
-loss and the time required to re-request and retransmit the packet will be
-short enough so that the packet can still be delivered on time as required for
-the live transmission. 
+Note that `latency` is important on noisy or constrained networks where UDP
+packet drops often occur, and round-trip times (RTT) may be long. This is
+a time difference between the time when the packet was sent (plus RTT) and
+the "time to play", when it should be delivered to the application. A lost
+packet must be re-requested and retransmited before the "time to play" comes,
+otherwise SRT will also drop this packet in order not to compromise the live
+stream pace. By increasing the latency, you give the SRT session more time for
+retransmission in case of a packet loss. On the other hand, remember that the
+bigger the latency, the bigger the delay.
+
+For more information, please refer to the SRT Deployment Guide  available on the
+Haivision Download Center (login required):
+http://www.haivision.com/system/files/download-center/srt_deploymentguide_1.0_issue02_final_24aug2016.pdf
