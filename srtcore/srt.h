@@ -77,7 +77,8 @@ typedef enum SRT_SOCKOPT {
 	SRTO_RCVDATA,         // size of data available for recv
 	SRTO_SENDER = 21,     // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
 	SRTO_TSBPDMODE = 22,  // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
-	SRTO_TSBPDDELAY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
+	SRTO_TSBPDDELAY = 23, // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
+	SRTO_LATENCY = 23,    // ALIAS: SRTO_TSBPDDELAY
 	SRTO_INPUTBW = 24,    // Estimated input stream rate.
 	SRTO_OHEADBW,         // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
 	SRTO_PASSPHRASE = 26, // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
@@ -91,12 +92,12 @@ typedef enum SRT_SOCKOPT {
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
 	SRTO_CONNTIMEO = 36,   // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
-    SRTO_TWOWAYDATA = 37,
-    SRTO_SNDPBKEYLEN = 38,
-    SRTO_RCVPBKEYLEN,
-    SRTO_SNDPEERKMSTATE,
-    SRTO_RCVKMSTATE,
-    SRTO_LOSSMAXTTL,
+	SRTO_TWOWAYDATA = 37,
+	SRTO_SNDPBKEYLEN = 38,
+	SRTO_RCVPBKEYLEN,
+	SRTO_SNDPEERKMSTATE,
+	SRTO_RCVKMSTATE,
+	SRTO_LOSSMAXTTL,
 } SRT_SOCKOPT;
 
 // UDT error code
