@@ -120,3 +120,12 @@ First run this to send with SRT:
 The run this to receive with SRT, this forwards to the ffplay command line from
 ffmpeg:
 ./stransmit  srt://localhost:1234/?mode=client file://con | ffplay -
+
+## Using the stransmit app
+```
+to build haisrt dynamic library add --ENABLE_DYNAMIC:BOOL=1 option to configure like
+./configure --ENABLE_DYNAMIC:BOOL=1
+then make and add path to srt repository to your INCLUDES. then just add 
+#include <srtcore/srt.h>
+to include C api header and start development
+```
