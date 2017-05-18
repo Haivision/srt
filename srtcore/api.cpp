@@ -2341,7 +2341,7 @@ CUDT* CUDT::getUDTHandle(UDTSOCKET u)
    {
       return s_UDTUnited.lookup(u);
    }
-   catch (std::exception& ee)
+   catch (...)
    {
       return NULL;
    }
