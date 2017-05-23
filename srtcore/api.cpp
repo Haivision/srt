@@ -2341,8 +2341,15 @@ CUDT* CUDT::getUDTHandle(UDTSOCKET u)
    {
       return s_UDTUnited.lookup(u);
    }
-   catch (...)
+   catch (CUDTException e)
    {
+      s_UDTUnited.setError(new CUDTException(e));
+      return NULL;
+   }
+   catch (std::exception& ee)
+   {
+LOGC(mglog.Fatal) << "getUDTHandle: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what();
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return NULL;
    }
 }
@@ -2363,6 +2370,11 @@ UDTSTATUS CUDT::getsockstate(UDTSOCKET u)
    try
    {
       return s_UDTUnited.getStatus(u);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return UDT_NONEXIST;
    }
    catch (std::exception& ee)
    {
