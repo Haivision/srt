@@ -179,6 +179,5 @@ stream pace. By increasing the latency, you give the SRT session more time for
 retransmission in case of a packet loss. On the other hand, remember that the
 bigger the latency, the bigger the delay.
 
-For more information, please refer to the SRT Deployment Guide  available on the
-Haivision Download Center (login required):
-http://www.haivision.com/system/files/download-center/srt_deploymentguide_1.0_issue02_final_24aug2016.pdf
+For more information, please refer to the SRT Deployment Guide:
+http://www3.haivision.com/srt-alliance-guide
