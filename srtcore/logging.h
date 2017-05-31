@@ -448,7 +448,7 @@ inline std::string FormatTime(uint64_t time)
     struct tm tm = *localtime(&tt);
 
     char tmp_buf[512];
-    strftime(tmp_buf, 512, "%T.", &tm);
+    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
     std::string out = tmp_buf;
     sprintf(tmp_buf, "%06ld", usec);
     out += tmp_buf;
