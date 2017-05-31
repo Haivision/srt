@@ -25,7 +25,11 @@ written by
 #ifndef INC__NETINET_ANY_H
 #define INC__NETINET_ANY_H
 
+#ifdef WIN32
+#include "winsock2.h"
+#else
 #include <netinet/in.h>
+#endif
 #include <cstring>
 
 // This is a smart structure that this moron who has designed BSD sockets

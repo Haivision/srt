@@ -34,11 +34,11 @@ extern "C" {
 int srt_startup() { return UDT::startup(); }
 int srt_cleanup() { return UDT::cleanup(); }
 UDTSOCKET srt_socket(int af, int type, int protocol) { return UDT::socket(af, type, protocol); }
-int srt_bind(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::bind(u, name, namelen); }
+int srt_bind(UDTSOCKET u, const SOCKADDR * name, int namelen) { return UDT::bind(u, name, namelen); }
 int srt_bind_peerof(UDTSOCKET u, UDPSOCKET udpsock) { return UDT::bind2(u, udpsock); }
 int srt_listen(UDTSOCKET u, int backlog) { return UDT::listen(u, backlog); }
-UDTSOCKET srt_accept(UDTSOCKET u, struct sockaddr * addr, int * addrlen) { return UDT::accept(u, addr, addrlen); }
-int srt_connect(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::connect(u, name, namelen); }
+UDTSOCKET srt_accept(UDTSOCKET u, SOCKADDR * addr, int * addrlen) { return UDT::accept(u, addr, addrlen); }
+int srt_connect(UDTSOCKET u, const SOCKADDR * name, int namelen) { return UDT::connect(u, name, namelen); }
 
 int srt_close(UDTSOCKET u)
 {
@@ -55,8 +55,8 @@ int srt_close(UDTSOCKET u)
     return UDT::close(u);
 }
 
-int srt_getpeername(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getpeername(u, name, namelen); }
-int srt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getsockname(u, name, namelen); }
+int srt_getpeername(UDTSOCKET u, SOCKADDR * name, int * namelen) { return UDT::getpeername(u, name, namelen); }
+int srt_getsockname(UDTSOCKET u, SOCKADDR * name, int * namelen) { return UDT::getsockname(u, name, namelen); }
 int srt_getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return UDT::getsockopt(u, level, UDT::SOCKOPT(optname), optval, optlen); }
 int srt_setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)

@@ -67,7 +67,13 @@ modified by
 #include <map>
 #include <vector>
 #include <string>
+#ifdef WIN32
+#include <Winsock2.h>
+#include <ws2ipdef.h>
+#include <WS2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
 #include "udt.h"
 #include "packet.h"
 #include "queue.h"
@@ -273,9 +279,9 @@ inline std::string SockaddrToString(const sockaddr* sadr)
 
     void* addr =
         sadr->sa_family == AF_INET ?
-            (void*)&((sockaddr_in*)sadr)->sin_addr
+		(void*)&((SOCKADDR_IN*)sadr)->sin_addr
         : sadr->sa_family == AF_INET6 ?
-            (void*)&((sockaddr_in6*)sadr)->sin6_addr
+		(void*)&((struct sockaddr_in6*)sadr)->sin6_addr
         : 0;
     if ( !addr )
         return "unknown";
@@ -286,7 +292,7 @@ inline std::string SockaddrToString(const sockaddr* sadr)
     char* p = buf + strlen(buf);
     if ( p - buf > 1000 )
         return buf;
-    sprintf(p, ":%d", ntohs(((sockaddr_in*)sadr)->sin_port)); // TRICK: sin_port and sin6_port have the same offset and size
+	sprintf(p, ":%d", ntohs(((SOCKADDR_IN*)sadr)->sin_port)); // TRICK: sin_port and sin6_port have the same offset and size
 
     return buf;
 }

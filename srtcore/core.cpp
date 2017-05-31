@@ -70,15 +70,16 @@ modified by
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
 #endif
 #include <cmath>
 #include <sstream>
 #include "queue.h"
 #include "core.h"
 #include "logging.h"
+
+#ifdef min
+#undef min
+#endif
 
 #ifdef SRT_ENABLE_SRTCC_EMB
 #include "csrtcc.h"
@@ -4797,7 +4798,7 @@ void CUDT::unlose(const CPacket& packet)
        case CRcvFreshLoss::STRIPPED:
            goto breakbreak; // Found and the modification is applied. We're done here.
 
-       case CRcvFreshLoss::DELETE:
+       case CRcvFreshLoss::E_DELETE:
            // No more elements. Kill it.
            m_FreshLoss.erase(m_FreshLoss.begin() + i);
            // Every loss is unique. We're done here.
@@ -4893,7 +4894,7 @@ void CUDT::unlose(int32_t from, int32_t to)
         CRcvFreshLoss::Emod result = m_FreshLoss[i].revoke(from, to);
         switch ( result )
         {
-        case CRcvFreshLoss::DELETE:
+        case CRcvFreshLoss::E_DELETE:
             delete_index = i+1; // PAST THE END
             continue; // There may be further ranges that are included in this one, so check on.
 

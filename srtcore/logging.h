@@ -31,7 +31,9 @@ written by
 #include <set>
 #include <sstream>
 #include <cstdarg>
+#ifndef WIN32
 #include <sys/time.h>
+#endif
 #include <pthread.h>
 #if HAVE_CXX11
 #include <mutex>
@@ -40,6 +42,14 @@ written by
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
+
+#ifdef WIN32
+#include <win/wintime.h>
+#include <sys/timeb.h>
+
+int gettimeofday(struct timeval* tp, struct timezone* tz);
+
+#endif
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))

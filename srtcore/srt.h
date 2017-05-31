@@ -167,14 +167,14 @@ SRT_API extern int srt_cleanup(void);
 
 // socket operations
 SRT_API extern SRTSOCKET srt_socket(int af, int type, int protocol);
-SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API extern int srt_bind(SRTSOCKET u, const SOCKADDR* name, int namelen);
 SRT_API extern int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API extern int srt_listen(SRTSOCKET u, int backlog);
-SRT_API extern SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
-SRT_API extern int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API extern SRTSOCKET srt_accept(SRTSOCKET u, SOCKADDR* addr, int* addrlen);
+SRT_API extern int srt_connect(SRTSOCKET u, const SOCKADDR* name, int namelen);
 SRT_API extern int srt_close(SRTSOCKET u);
-SRT_API extern int srt_getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
-SRT_API extern int srt_getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API extern int srt_getpeername(SRTSOCKET u, SOCKADDR* name, int* namelen);
+SRT_API extern int srt_getsockname(SRTSOCKET u, SOCKADDR* name, int* namelen);
 SRT_API extern int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);
 SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API extern int srt_getsockflag(UDTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);

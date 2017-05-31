@@ -203,7 +203,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
       throw CUDTException();
 #else
-#warning "Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform."
+#pragma warning ("Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform.")
 #endif
 
    p->second.m_sLocals.insert(s);

@@ -1472,9 +1472,19 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     time(&now);
     char buf[1024];
     struct tm local;
-    localtime_r(&now, &local);
+#ifdef WIN32
+	local = *localtime(&now);
+#else
+	localtime_r(&now, &local);
+#endif
     size_t pos = strftime(buf, 1024, "[%c ", &local);
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
+
+#ifdef WIN32
+	_snprintf
+#else
+    snprintf
+#endif
+		(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
 
     cerr << buf << endl;
 }
