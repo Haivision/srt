@@ -7,6 +7,10 @@
 #include <vector>
 #include "../srtcore/srt.h" // Devel path
 
+#ifdef WIN32
+#include "winsock2.h"
+#endif
+
 struct OptionValue
 {
     std::string s;

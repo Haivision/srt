@@ -75,9 +75,6 @@ modified by
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
 #endif
 
 #include <iostream>
@@ -432,12 +429,14 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
    // As a response for this situation, fake that you received no package. This will be
    // then a "fake drop", which will result in reXmission. This isn't even much of a fake
    // because the packet is partially lost and this loss is irrecoverable.
+#ifndef WIN32
    if ( mh.msg_flags != 0 )
    {
        LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
            << " msg_flags=0x" << hex << mh.msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
        goto Return_error;
    }
+#endif
 
    packet.setLength(res - CPacket::HDR_SIZE);
 

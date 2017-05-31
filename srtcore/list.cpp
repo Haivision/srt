@@ -724,7 +724,7 @@ CRcvFreshLoss::Emod CRcvFreshLoss::revoke(int32_t sequence)
     {
         if ( diffend == 0 ) // exactly at begin and end
         {
-            return DELETE;
+            return E_DELETE;
         }
 
         // only exactly at begin. Shrink the range
@@ -754,7 +754,7 @@ CRcvFreshLoss::Emod CRcvFreshLoss::revoke(int32_t lo, int32_t hi)
     // If the sequence range is older than the range to be revoked,
     // delete it anyway.
     if ( CSeqNo::seqcmp(lo, seq[1]) > 0 )
-        return DELETE;
+        return E_DELETE;
 
     // LOHI:  <lo, hi>
     // ITEM:             <lo, hi>  <-- NOTFOUND
@@ -780,5 +780,5 @@ CRcvFreshLoss::Emod CRcvFreshLoss::revoke(int32_t lo, int32_t hi)
     // This is not possible that the sequences OLDER THAN THIS are not required to be
     // revoken together with this one.
 
-    return DELETE;
+    return E_DELETE;
 }

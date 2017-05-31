@@ -79,51 +79,6 @@ void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
     }
 }
 
-
-/*
-int gettimeofday(struct timeval *tv, struct timezone *tz)
-{
-    FILETIME ft;
-    unsigned __int64 tmpres = 0;
-    static int tzflag;
-    long timezone = 0;
-    int daylight = 0;
-
-    if (NULL != tv)
-    {
-        GetSystemTimeAsFileTime(&ft);
- 
-        tmpres |= ft.dwHighDateTime;
-        tmpres <<= 32;
-        tmpres |= ft.dwLowDateTime;
- 
-        // converting file time to unix epoch
-        tmpres -= DELTA_EPOCH_IN_MICROSECS; 
-        tmpres /= 10;  //convert into microseconds
-        tv->tv_sec  = (long)(tmpres / 1000000UL);
-        tv->tv_usec = (long)(tmpres % 1000000UL);
-    }
- 
-    if (NULL != tz)
-    {
-        if (!tzflag)
-        {
-            _tzset();
-            tzflag++;
-        }
-
-        _get_timezone(&timezone);
-        _get_daylight(&daylight);
-
-        tz->tz_minuteswest = timezone / 60;
-        tz->tz_dsttime     = daylight;
-    }
- 
-    return 0;
-}
-*/
-
-
 int gettimeofday(struct timeval* tp, struct timezone* tz)
 {
     static LARGE_INTEGER tickFrequency, epochOffset;

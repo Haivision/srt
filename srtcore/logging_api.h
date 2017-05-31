@@ -34,7 +34,12 @@ written by
 #endif
 
 #include <pthread.h>
+
+#ifdef WIN32
+#include "windows/win_syslog.h"
+#else
 #include <sys/syslog.h>
+#endif
 
 // Syslog is included so that it provides log level names.
 // Haivision log standard requires the same names plus extra one:

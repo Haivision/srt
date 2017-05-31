@@ -245,7 +245,7 @@ struct CRcvFreshLoss
         NONE, //< the given sequence was not found in this range
         STRIPPED, //< it was equal to first or last, already taken care of
         SPLIT, //< found in the middle, you have to split this range into two
-        DELETE //< This was a range of one element exactly equal to sequence. Simply delete it.
+        E_DELETE //< This was a range of one element exactly equal to sequence. Simply delete it.
     };
 
     Emod revoke(int32_t sequence);

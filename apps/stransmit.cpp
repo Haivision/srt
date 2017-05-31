@@ -367,6 +367,14 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 int main( int argc, char** argv )
 {
+#ifdef WIN32
+	WSADATA data;
+	if (int err = WSAStartup(MAKEWORD(2, 2), &data)) {
+		std::cerr << "Failed to startup WSA: " << WSAGetLastError() << std::endl;
+		return 1;
+	}
+#endif
+
     vector<string> args;
     copy(argv+1, argv+argc, back_inserter(args));
 
@@ -1258,7 +1266,12 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = socket(AF_INET, SOCK_DGRAM, 0);
+		m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (m_sock == INVALID_SOCKET) {
+			perror("create socket");
+			throw std::runtime_error("Failed to create socket: " + std::to_string(WSAGetLastError()));
+		}
+
         sadr = CreateAddrInet(host, port);
 
         if ( attr.count("multicast") )
@@ -1346,9 +1359,13 @@ public:
     {
         bytevector data(chunk);
         sockaddr_in sa;
-        socklen_t si;
+        socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if ( stat == -1 || stat == 0 )
+		if (stat == SOCKET_ERROR) {
+			std::cerr << "Failed to read from socket: " << WSAGetLastError() << std::endl;
+			return bytevector();
+		}
+		if ( stat == 0 )
         {
             eof = true;
             return bytevector();
@@ -1378,7 +1395,7 @@ public:
         int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
         {
-            perror("UdpTarget: write");
+			std::cerr << "UdpTarget: write failed: " << WSAGetLastError() << std::endl;
             throw runtime_error("Error during write");
         }
     }
@@ -1472,9 +1489,19 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     time(&now);
     char buf[1024];
     struct tm local;
-    localtime_r(&now, &local);
+#ifdef WIN32
+	local = *localtime(&now);
+#else
+	localtime_r(&now, &local);
+#endif
     size_t pos = strftime(buf, 1024, "[%c ", &local);
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
+
+#ifdef WIN32
+	_snprintf
+#else
+    snprintf
+#endif
+		(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
 
     cerr << buf << endl;
 }
