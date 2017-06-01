@@ -41,9 +41,6 @@ written by
 #ifdef WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
 #endif
 
 #include <cstring>

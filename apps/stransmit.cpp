@@ -48,6 +48,11 @@
 //
 // See 'srt_options' global variable for a list of all options.
 
+// MSVS likes to complain about lots of standard C functions being unsafe.
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
 #include <cctype>
 #include <iostream>
 #include <string>
@@ -541,7 +546,7 @@ public:
     {
         bytevector data(chunk);
         ifile.read(data.data(), chunk);
-        size_t nread = ifile.gcount();
+        size_t nread = size_t(ifile.gcount());
         if ( nread < data.size() )
             data.resize(nread);
         return data;
@@ -1203,7 +1208,7 @@ public:
     {
         bytevector data(chunk);
 		bool st = cin.read(data.data(), chunk).good();
-        chunk = cin.gcount();
+        chunk = size_t(cin.gcount());
         if ( chunk == 0 && !st )
             return bytevector();
 
@@ -1258,7 +1263,12 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (m_sock == -1)
+        {
+            perror("UdpCommon:socket");
+            throw std::runtime_error("UdpCommon: failed to create a socket");
+        }
         sadr = CreateAddrInet(host, port);
 
         if ( attr.count("multicast") )
@@ -1346,7 +1356,7 @@ public:
     {
         bytevector data(chunk);
         sockaddr_in sa;
-        socklen_t si;
+        socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
         if ( stat == -1 || stat == 0 )
         {
@@ -1471,9 +1481,16 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     time_t now;
     time(&now);
     char buf[1024];
-    struct tm local;
-    localtime_r(&now, &local);
+	struct tm local = LocalTime(now);
     size_t pos = strftime(buf, 1024, "[%c ", &local);
+
+#ifdef _MSC_VER
+	// That's something weird that happens on Microsoft Visual Studio 2013
+	// Trying to keep portability, while every version of MSVS is a different plaform.
+    // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
+    // is available on backward compatibility and it doesn't work exactly the same way.
+#define snprintf _snprintf
+#endif
     snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
 
     cerr << buf << endl;

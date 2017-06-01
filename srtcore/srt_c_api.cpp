@@ -22,6 +22,7 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include <iterator>
 #if __APPLE__
    #include "TargetConditionals.h"
 #endif
@@ -69,7 +70,7 @@ int srt_setsockflag(UDTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen
 
 int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return UDT::send(u, buf, len, flags); }
 int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return UDT::recv(u, buf, len, flags); }
-int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return UDT::sendmsg(u, buf, len, ttl, inorder); }
+int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return UDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
 int srt_recvmsg(UDTSOCKET u, char * buf, int len) { return UDT::recvmsg(u, buf, len); }
 
 int srt_sendmsg2(UDTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
@@ -116,8 +117,8 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_perfmon(UDTSOCKET u, SRT_TRACEINFO * perf, int clear) { return UDT::perfmon(u, perf, clear); }
-int srt_bstats(UDTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return UDT::bstats(u, perf, clear); }
+int srt_perfmon(UDTSOCKET u, SRT_TRACEINFO * perf, int clear) { return UDT::perfmon(u, perf, 0!=  clear); }
+int srt_bstats(UDTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return UDT::bstats(u, perf, 0!=  clear); }
 
 SRT_SOCKSTATUS srt_getsockstate(UDTSOCKET u) { return SRT_SOCKSTATUS((int)UDT::getsockstate(u)); }
 

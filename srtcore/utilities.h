@@ -407,10 +407,10 @@ public:
 
 struct CIPAddress
 {
-   static bool ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver = AF_INET);
-   static void ntop(const sockaddr* addr, uint32_t ip[4], int ver = AF_INET);
-   static void pton(sockaddr* addr, const uint32_t ip[4], int ver = AF_INET);
-   static std::string show(const sockaddr* adr);
+   static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
+   static void ntop(const struct sockaddr* addr, uint32_t ip[4], int ver = AF_INET);
+   static void pton(struct sockaddr* addr, const uint32_t ip[4], int ver = AF_INET);
+   static std::string show(const struct sockaddr* adr);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

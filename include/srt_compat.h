@@ -172,6 +172,22 @@ inline std::string SysStrError(int errnum)
     return SysStrError(errnum, buf, 1024);
 }
 
+inline struct tm LocalTime(time_t tt)
+{
+	struct tm tm = {};
+#ifdef WIN32
+	errno_t rr = localtime_s(&tm, &tt);
+	if (rr)
+		return tm;
+#else
+	tm = *localtime_r(&tt, &tm);
+#endif
+
+    return tm;
+}
+
+
+
 #endif
 
 #endif // HAISRT_COMPAT_H__

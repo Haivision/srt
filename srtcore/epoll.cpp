@@ -203,7 +203,16 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
       throw CUDTException();
 #else
+
+#ifdef _MSC_VER
+// Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
+// Use #pragma message with the same text.
+// All other compilers should be ok :)
+#pragma message("WARNING: Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform.")
+#else
 #warning "Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform."
+#endif
+
 #endif
 
    p->second.m_sLocals.insert(s);

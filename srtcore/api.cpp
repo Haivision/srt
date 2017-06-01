@@ -63,18 +63,10 @@ modified by
 #include <exception>
 #include <stdexcept>
 #include <typeinfo>
+#include <iterator>
 
-#ifdef WIN32
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
-   #include <win/wintime.h>
-#else
-   #include <unistd.h>
-#endif
 #include <cstring>
+#include "platform_sys.h"
 #include "api.h"
 #include "core.h"
 #include "logging.h"

@@ -75,9 +75,6 @@ modified by
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
 #endif
 
 #include <iostream>
@@ -385,13 +382,29 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
       #endif
 
       int res = ::recvmsg(m_iSocket, &mh, 0);
+	  int msg_flags = mh.msg_flags;
    #else
+	// XXX This procedure uses the WSARecvFrom function that just reads
+	// into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
+	// uses the equivalent of msghdr - WSAMSG, which has different field
+	// names and also uses the equivalet of iovec - WSABUF, which has different
+	// field names and layout. It is important that this code be translated
+	// to the "proper" solution, however this requires that CPacket::m_PacketVector
+	// also uses the "platform independent" (or, better, platform-suitable) type
+	// which can be appropriate for the appropriate system function, not just iovec.
+	//
+	// For the time being, the msg_flags variable is defined in both cases
+	// so that it can be checked independently, however it won't have any other
+	// value one Windows than 0, unless this procedure below is rewritten
+	// to use WSARecvMsg().
+	
       DWORD size = CPacket::HDR_SIZE + packet.getLength();
       DWORD flag = 0;
       int addrsize = m_iSockAddrSize;
 
       int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
       res = (0 == res) ? size : -1;
+	  int msg_flags = 0;
    #endif
 
 
@@ -432,10 +445,11 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
    // As a response for this situation, fake that you received no package. This will be
    // then a "fake drop", which will result in reXmission. This isn't even much of a fake
    // because the packet is partially lost and this loss is irrecoverable.
-   if ( mh.msg_flags != 0 )
+
+   if ( msg_flags != 0 )
    {
        LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
-           << " msg_flags=0x" << hex << mh.msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
+           << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
        goto Return_error;
    }
 

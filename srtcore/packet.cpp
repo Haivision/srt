@@ -368,7 +368,7 @@ PacketBoundary CPacket::getMsgBoundary() const
 
 bool CPacket::getMsgOrderFlag() const
 {
-    return MSGNO_PACKET_INORDER::unwrap(m_nHeader[PH_MSGNO]);
+    return 0!=  MSGNO_PACKET_INORDER::unwrap(m_nHeader[PH_MSGNO]);
 }
 
 int32_t CPacket::getMsgSeq(bool has_rexmit) const
@@ -386,7 +386,7 @@ int32_t CPacket::getMsgSeq(bool has_rexmit) const
 bool CPacket::getRexmitFlag() const
 {
     // return false; //
-    return MSGNO_REXMIT::unwrap(m_nHeader[PH_MSGNO]);
+    return 0 !=  MSGNO_REXMIT::unwrap(m_nHeader[PH_MSGNO]);
 }
 
 EncryptionKeySpec CPacket::getMsgCryptoFlags() const
