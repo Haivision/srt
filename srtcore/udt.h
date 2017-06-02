@@ -103,7 +103,6 @@ modified by
 // This is a "protected header"; should include all required
 // system headers, as required on particular platform.
 #include "platform_sys.h"
-#endif
 
 #ifdef __cplusplus
 #include <fstream>

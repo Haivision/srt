@@ -1481,12 +1481,12 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     time_t now;
     time(&now);
     char buf[1024];
-	struct tm local = LocalTime(now);
+    struct tm local = LocalTime(now);
     size_t pos = strftime(buf, 1024, "[%c ", &local);
 
 #ifdef _MSC_VER
-	// That's something weird that happens on Microsoft Visual Studio 2013
-	// Trying to keep portability, while every version of MSVS is a different plaform.
+    // That's something weird that happens on Microsoft Visual Studio 2013
+    // Trying to keep portability, while every version of MSVS is a different plaform.
     // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
     // is available on backward compatibility and it doesn't work exactly the same way.
 #define snprintf _snprintf

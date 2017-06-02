@@ -229,8 +229,8 @@ public:
    bool isControl() const
    {
        // read bit 0
-	   // This "0!=" is a "special Microsoft aware conversion to bool"
-	   // which gets rid of a warning.
+       // This "0!=" is a "special Microsoft aware conversion to bool"
+       // which gets rid of a warning.
        return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[PH_SEQNO]);
    }
 

@@ -108,12 +108,17 @@ void CSRTCC::sendSrtMsg(int cmd, int32_t *srtdata_in, int srtlen_in)
 		}
 		else
 #endif
+        /*
+           XXX Do some version renegotiation if needed;
+           The "unknown version" may be used for something else,
+           currently not predicted to happen.
 		if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_UNK)
 		{
 			// Some fallback...
 			srtdata[SRT_HS_VERSION] = 0; // Rejection
 		}
 		else
+        */
 		{
             /* Current version (1.x.x) SRT handshake */
             srtdata[SRT_HS_VERSION] = m_SrtVersion;  /* Required version */
@@ -146,29 +151,31 @@ void CSRTCC::sendSrtMsg(int cmd, int32_t *srtdata_in, int srtlen_in)
 
 
 #ifdef SRT_VERSION_MAJ2
-		if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_MAJ1)
-		{
-			//>>duB: fix that to not set m_SrtVersion under normal operations (version downgrade)
-			//>>only set to test version handshake
-			//m_SrtVersion = SRT_VERSION_1XX; //highest compatible version 1
-			// move 1.x.x handshake code here when default becomes 2.x.x
-			//break; //>>fall through until 2.x.x implemented
-	    }
-		else
+        if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_MAJ1)
+        {
+            //>>duB: fix that to not set m_SrtVersion under normal operations (version downgrade)
+            //>>only set to test version handshake
+            //m_SrtVersion = SRT_VERSION_1XX; //highest compatible version 1
+            // move 1.x.x handshake code here when default becomes 2.x.x
+            //break; //>>fall through until 2.x.x implemented
+        }
+        else
 #endif
-		if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_UNK)
-		{
-			// Some fallback...
-			srtdata[SRT_HS_VERSION] = 0; // Rejection
-		}
-		else
-		{
+        /*
+        if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_UNK)
+        {
+            // Some fallback...
+            srtdata[SRT_HS_VERSION] = 0; // Rejection
+        }
+        else
+        */
+        {
             /* Current version (1.x.x) SRT handshake */
             srtdata[SRT_HS_VERSION] = m_SrtVersion; /* Required version */
             if (0 != m_RcvPeerStartTime)
             {
                 /* 
-                * We got and transposed peer start time (HandShake request timestamp),
+                 * We got and transposed peer start time (HandShake request timestamp),
                 * we can support Timestamp-based Packet Delivery
                 */
                 srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;

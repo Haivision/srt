@@ -361,121 +361,119 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
 int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 {
-   #ifndef WIN32
-      msghdr mh;   
-      mh.msg_name = addr;
-      mh.msg_namelen = m_iSockAddrSize;
-      mh.msg_iov = packet.m_PacketVector;
-      mh.msg_iovlen = 2;
-      mh.msg_control = NULL;
-      mh.msg_controllen = 0;
-      mh.msg_flags = 0;
+#ifndef WIN32
+    msghdr mh;   
+    mh.msg_name = addr;
+    mh.msg_namelen = m_iSockAddrSize;
+    mh.msg_iov = packet.m_PacketVector;
+    mh.msg_iovlen = 2;
+    mh.msg_control = NULL;
+    mh.msg_controllen = 0;
+    mh.msg_flags = 0;
 
-      #ifdef UNIX
-         fd_set set;
-         timeval tv;
-         FD_ZERO(&set);
-         FD_SET(m_iSocket, &set);
-         tv.tv_sec = 0;
-         tv.tv_usec = 10000;
-         ::select(m_iSocket+1, &set, NULL, &set, &tv);
-      #endif
-
-      int res = ::recvmsg(m_iSocket, &mh, 0);
-	  int msg_flags = mh.msg_flags;
-   #else
-	// XXX This procedure uses the WSARecvFrom function that just reads
-	// into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
-	// uses the equivalent of msghdr - WSAMSG, which has different field
-	// names and also uses the equivalet of iovec - WSABUF, which has different
-	// field names and layout. It is important that this code be translated
-	// to the "proper" solution, however this requires that CPacket::m_PacketVector
-	// also uses the "platform independent" (or, better, platform-suitable) type
-	// which can be appropriate for the appropriate system function, not just iovec.
-	//
-	// For the time being, the msg_flags variable is defined in both cases
-	// so that it can be checked independently, however it won't have any other
-	// value one Windows than 0, unless this procedure below is rewritten
-	// to use WSARecvMsg().
-	
-      DWORD size = CPacket::HDR_SIZE + packet.getLength();
-      DWORD flag = 0;
-      int addrsize = m_iSockAddrSize;
-
-      int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-      res = (0 == res) ? size : -1;
-	  int msg_flags = 0;
-   #endif
-
-
-   
-   // These logs are theoretically errors, but this isn't anything problematic
-   // for the application, and in certain conditions they can be spit out very
-   // often and therefore influence the processing time.
-   if ( res == -1 )
-   {
-#if ENABLE_LOGGING
-       int err = NET_ERROR;
-       if ( err != EAGAIN ) // For EAGAIN, this isn't an error, just a useless call.
-       {
-           LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
-       }
+#ifdef UNIX
+    fd_set set;
+    timeval tv;
+    FD_ZERO(&set);
+    FD_SET(m_iSocket, &set);
+    tv.tv_sec = 0;
+    tv.tv_usec = 10000;
+    ::select(m_iSocket+1, &set, NULL, &set, &tv);
 #endif
-       goto Return_error;
-   }
 
-   // Sanity check for a case when it didn't fill in even the header
-   if ( size_t(res) < CPacket::HDR_SIZE )
-   {
-       LOGC(mglog.Debug) << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes";
-       goto Return_error;
-   }
+    int res = ::recvmsg(m_iSocket, &mh, 0);
+    int msg_flags = mh.msg_flags;
+#else
+    // XXX This procedure uses the WSARecvFrom function that just reads
+    // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
+    // uses the equivalent of msghdr - WSAMSG, which has different field
+    // names and also uses the equivalet of iovec - WSABUF, which has different
+    // field names and layout. It is important that this code be translated
+    // to the "proper" solution, however this requires that CPacket::m_PacketVector
+    // also uses the "platform independent" (or, better, platform-suitable) type
+    // which can be appropriate for the appropriate system function, not just iovec.
+    //
+    // For the time being, the msg_flags variable is defined in both cases
+    // so that it can be checked independently, however it won't have any other
+    // value one Windows than 0, unless this procedure below is rewritten
+    // to use WSARecvMsg().
 
-   // Fix for an issue found at Tenecent.
-   // By some not well known reason, Linux kernel happens to copy only 20 bytes of
-   // UDP payload and set the MSG_TRUNC flag, whereas pcap shows that full UDP
-   // packet arrived at the network device, and the free space in a buffer is
-   // always the same and >1332 bytes. Nice of it to set this flag, though.
-   //
-   // In normal conditions, no flags should be set. This shouldn't use any
-   // other flags, but OTOH this situation also theoretically shouldn't happen
-   // and it does. As a safe precaution, simply treat any flag set on the
-   // messate as "some problem".
-   //
-   // As a response for this situation, fake that you received no package. This will be
-   // then a "fake drop", which will result in reXmission. This isn't even much of a fake
-   // because the packet is partially lost and this loss is irrecoverable.
+    DWORD size = CPacket::HDR_SIZE + packet.getLength();
+    DWORD flag = 0;
+    int addrsize = m_iSockAddrSize;
 
-   if ( msg_flags != 0 )
-   {
-       LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
-           << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
-       goto Return_error;
-   }
+    int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
+    res = (0 == res) ? size : -1;
+    int msg_flags = 0;
+#endif
 
-   packet.setLength(res - CPacket::HDR_SIZE);
+    // These logs are theoretically errors, but this isn't anything problematic
+    // for the application, and in certain conditions they can be spit out very
+    // often and therefore influence the processing time.
+    if ( res == -1 )
+    {
+#if ENABLE_LOGGING
+        int err = NET_ERROR;
+        if ( err != EAGAIN ) // For EAGAIN, this isn't an error, just a useless call.
+        {
+            LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
+        }
+#endif
+        goto Return_error;
+    }
 
-   // convert back into local host order
-   //for (int i = 0; i < 4; ++ i)
-   //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
-   {
-       uint32_t* p = packet.m_nHeader;
-       for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)
-       {
-           *p = ntohl(*p);
-           ++ p;
-       }
-   }
+    // Sanity check for a case when it didn't fill in even the header
+    if ( size_t(res) < CPacket::HDR_SIZE )
+    {
+        LOGC(mglog.Debug) << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes";
+        goto Return_error;
+    }
 
-   if (packet.isControl())
-   {
-      for (size_t j = 0, n = packet.getLength() / sizeof (uint32_t); j < n; ++ j)
-         *((uint32_t *)packet.m_pcData + j) = ntohl(*((uint32_t *)packet.m_pcData + j));
-   }
+    // Fix for an issue found at Tenecent.
+    // By some not well known reason, Linux kernel happens to copy only 20 bytes of
+    // UDP payload and set the MSG_TRUNC flag, whereas pcap shows that full UDP
+    // packet arrived at the network device, and the free space in a buffer is
+    // always the same and >1332 bytes. Nice of it to set this flag, though.
+    //
+    // In normal conditions, no flags should be set. This shouldn't use any
+    // other flags, but OTOH this situation also theoretically shouldn't happen
+    // and it does. As a safe precaution, simply treat any flag set on the
+    // messate as "some problem".
+    //
+    // As a response for this situation, fake that you received no package. This will be
+    // then a "fake drop", which will result in reXmission. This isn't even much of a fake
+    // because the packet is partially lost and this loss is irrecoverable.
 
-   return packet.getLength();
+    if ( msg_flags != 0 )
+    {
+        LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
+            << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
+        goto Return_error;
+    }
+
+    packet.setLength(res - CPacket::HDR_SIZE);
+
+    // convert back into local host order
+    //for (int i = 0; i < 4; ++ i)
+    //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
+    {
+        uint32_t* p = packet.m_nHeader;
+        for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)
+        {
+            *p = ntohl(*p);
+            ++ p;
+        }
+    }
+
+    if (packet.isControl())
+    {
+        for (size_t j = 0, n = packet.getLength() / sizeof (uint32_t); j < n; ++ j)
+            *((uint32_t *)packet.m_pcData + j) = ntohl(*((uint32_t *)packet.m_pcData + j));
+    }
+
+    return packet.getLength();
 
 Return_error:
-   packet.setLength(-1);
-   return -1;
+    packet.setLength(-1);
+    return -1;
 }

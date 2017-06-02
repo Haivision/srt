@@ -451,9 +451,9 @@ inline std::string FormatTime(uint64_t time)
 #else
     strftime(tmp_buf, 512, "%T.", &tm);
 #endif
-	ostringstream out;
-	out << tmp_buf << setfill('0') << setw(6) << usec;
-	return out.str();
+    ostringstream out;
+    out << tmp_buf << setfill('0') << setw(6) << usec;
+    return out.str();
 }
 
 inline void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
