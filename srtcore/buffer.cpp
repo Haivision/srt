@@ -324,7 +324,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
          pktlen = m_iMSS;
 
       ifs.read(s->m_pcData, pktlen);
-      if ((pktlen = ifs.gcount()) <= 0)
+      if ((pktlen = int(ifs.gcount())) <= 0)
          break;
 
       // currently file transfer is only available in streaming mode, message is always in order, ttl = infinite
@@ -545,9 +545,9 @@ int CSndBuffer::getCurrBufSize(int &bytes, int &timespan)
    * Therefore, always add 1 ms if not empty.
    */
 #ifdef SRT_ENABLE_CBRTIMESTAMP
-   timespan = 0 < m_iCount ? ((m_LastOriginTime - m_pFirstBlock->m_SourceTime) / 1000) + 1 : 0;
+   timespan = 0 < m_iCount ? int((m_LastOriginTime - m_pFirstBlock->m_SourceTime) / 1000) + 1 : 0;
 #else
-   timespan = 0 < m_iCount ? ((m_LastOriginTime - m_pFirstBlock->m_OriginTime) / 1000) + 1 : 0;
+   timespan = 0 < m_iCount ? int((m_LastOriginTime - m_pFirstBlock->m_OriginTime) / 1000) + 1 : 0;
 #endif
 
    return m_iCount;

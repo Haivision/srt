@@ -241,6 +241,11 @@ struct CRcvFreshLoss
 
     CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
 
+// Don't WTF when looking at this. The Windows system headers define
+// a publicly visible preprocessor macro with that name. REALLY!
+#ifdef DELETE
+#undef DELETE
+#endif
     enum Emod {
         NONE, //< the given sequence was not found in this range
         STRIPPED, //< it was equal to first or last, already taken care of

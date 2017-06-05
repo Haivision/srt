@@ -6,3 +6,5 @@ udt.h
 logging_api.h
 PROTECTED HEADERS
 srt4udt.h
+platform_sys.h
+

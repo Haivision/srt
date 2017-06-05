@@ -67,7 +67,7 @@ modified by
 #include <map>
 #include <vector>
 #include <string>
-#include <arpa/inet.h>
+#include "netinet_any.h"
 #include "udt.h"
 #include "packet.h"
 #include "queue.h"
@@ -269,26 +269,30 @@ private:
 // Debug support
 inline std::string SockaddrToString(const sockaddr* sadr)
 {
-    char buf[1024];
-
-    void* addr =
+	void* addr =
         sadr->sa_family == AF_INET ?
             (void*)&((sockaddr_in*)sadr)->sin_addr
         : sadr->sa_family == AF_INET6 ?
             (void*)&((sockaddr_in6*)sadr)->sin6_addr
         : 0;
+	// (cast to (void*) is required because otherwise the 2-3 arguments
+	// of ?: operator would have different types, which isn't allowed in C++.
     if ( !addr )
-        return "unknown";
+        return "unknown:0";
 
-    if ( !inet_ntop(sadr->sa_family, addr, buf, 1024) )
-        strcpy(buf, "unknown");
+	std::ostringstream output;
+	char hostbuf[1024];
+	if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024))
+	{
+		output << hostbuf;
+	}
+	else
+	{
+		output << "unknown";
+	}
 
-    char* p = buf + strlen(buf);
-    if ( p - buf > 1000 )
-        return buf;
-    sprintf(p, ":%d", ntohs(((sockaddr_in*)sadr)->sin_port)); // TRICK: sin_port and sin6_port have the same offset and size
-
-    return buf;
+	output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
+	return output.str();
 }
 
 

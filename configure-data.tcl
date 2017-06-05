@@ -159,6 +159,12 @@ proc postprocess {} {
 		}
 	}
 
+	set cygwin_posix 0
+	if { "--cygwin-use-posix" in $all_options } {
+		# Will enforce OpenSSL autodetection
+		set cygwin_posix 1
+	}
+
 	if { $toolchain_changed } {
 		# Check characteristics of the compiler - in particular, whether the target is different
 		# than the current target.
@@ -220,7 +226,7 @@ proc postprocess {} {
 		}
 	}
 
-	if { $::HAVE_LINUX } {
+	if { $::HAVE_LINUX || $cygwin_posix } {
 		# Extract Openssl from pkg-config
 		if { !$have_openssl } {
 			set openssl_libs [pkg-config --libs-only-l --libs-only-other openssl]

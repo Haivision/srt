@@ -31,7 +31,12 @@ written by
 #include <set>
 #include <sstream>
 #include <cstdarg>
+#ifdef WIN32
+#include "win/wintime.h"
+#include <sys/timeb.h>
+#else
 #include <sys/time.h>
+#endif
 #include <pthread.h>
 #if HAVE_CXX11
 #include <mutex>
@@ -40,6 +45,7 @@ written by
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
+#include "srt_compat.h"
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))
@@ -431,18 +437,23 @@ inline bool LogDispatcher::CheckEnabled()
 
 inline std::string FormatTime(uint64_t time)
 {
+    using namespace std;
+
     time_t sec = time/1000000;
     time_t usec = time%1000000;
 
     time_t tt = sec;
-    struct tm tm = *localtime(&tt);
+    struct tm tm = LocalTime(tt);
 
     char tmp_buf[512];
+#ifdef WIN32
+    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+#else
     strftime(tmp_buf, 512, "%T.", &tm);
-    std::string out = tmp_buf;
-    sprintf(tmp_buf, "%06ld", usec);
-    out += tmp_buf;
-    return out;
+#endif
+    ostringstream out;
+    out << tmp_buf << setfill('0') << setw(6) << usec;
+    return out.str();
 }
 
 inline void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
@@ -456,7 +467,7 @@ inline void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         timeval tv;
         gettimeofday(&tv, 0);
         time_t t = tv.tv_sec;
-        struct tm tm = *localtime(&t);
+        struct tm tm = LocalTime(t);
         strftime(tmp_buf, 512, "%T.", &tm);
 
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;

@@ -25,6 +25,8 @@ written by
 #ifndef CSRTCC_H
 #define CSRTCC_H
 
+#define _CRT_SECURE_NO_WARNINGS
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -61,6 +63,10 @@ inline int SrtVersion(int major, int minor, int patch)
 inline int32_t SrtParseVersion(const char* v)
 {
     int major, minor, patch;
+    // On Windows/MSC, ignore C4996 warning here.
+    // This warning states that sscanf is unsafe because the %s and %c conversions
+    // don't specify the size of the buffer. Just because of this fact, sscanf is
+    // considered unsafe - even though I don't use %s or %c here at all.
     int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
 
     if ( result != 3 )
@@ -79,10 +85,9 @@ inline std::string SrtVersionString(int version)
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
-
-    char buf[20];
-    sprintf(buf, "%d.%d.%d", major, minor, patch);
-    return buf;
+    std::ostringstream buf;
+    buf << major << "." << minor << "." << patch;
+    return buf.str();
 }
 
 enum SrtOptions

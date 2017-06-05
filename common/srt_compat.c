@@ -33,6 +33,11 @@ written by
 #include <features.h>
 #endif
 
+#if defined(_WIN32) || defined(WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #if defined(__MACH__)
 
 #include <assert.h>
@@ -146,16 +151,28 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
    buf[0] = '\0';
 
 #if defined(_WIN32) || defined(WIN32)
-   LPVOID lpMsgBuf;
+   const char* lpMsgBuf;
+
+   // Note: Intentionally the "fixed char size" types are used despite using
+   // character size dependent FormatMessage (instead of FormatMessageA) so that
+   // your compilation fails when you use wide characters.
+   // The problem is that when TCHAR != char, then the buffer written this way
+   // would have to be converted to ASCII, not just copied by strncpy.
    FormatMessage(0
             | FORMAT_MESSAGE_ALLOCATE_BUFFER
             | FORMAT_MESSAGE_FROM_SYSTEM
             | FORMAT_MESSAGE_IGNORE_INSERTS,
-         NULL,
-         errnum,
+         NULL, // no lpSource
+         errnum, // dwMessageId (as controlled by FORMAT_MESSAGE_FROM_SYSTEM)
          MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-         (LPTSTR)&lpMsgBuf, 0, NULL);
-   char * result = strncpy(buf, (const char *)lpMsgBuf, buflen);
+	   // This below parameter normally should contain a pointer to an allocated buffer,
+	   // and this way it's LPTSTR. But when FORMAT_MESSAGE_ALLOCATE_BUFFER, then it is
+	   // expected to be a the value of LPTSTR* type, converted to LPTSTR, that designates
+	   // a pointer to a variable of type LPTSTR, to which the newly allocated buffer is
+	   // assigned. This buffer should be freed afterwards using LocalFree().
+         (LPSTR)&lpMsgBuf, 
+	   0, NULL);
+   char * result = strncpy(buf, lpMsgBuf, buflen-1);
    LocalFree(lpMsgBuf);
    return result;
 #elif (!defined(__GNU_LIBRARY__) && !defined(__GLIBC__) )  \

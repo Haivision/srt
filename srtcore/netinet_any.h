@@ -25,8 +25,8 @@ written by
 #ifndef INC__NETINET_ANY_H
 #define INC__NETINET_ANY_H
 
-#include <netinet/in.h>
 #include <cstring>
+#include "platform_sys.h"
 
 // This is a smart structure that this moron who has designed BSD sockets
 // should have defined in the first place.

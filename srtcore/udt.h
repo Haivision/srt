@@ -100,22 +100,9 @@ modified by
 #endif
 #endif
 
-#ifndef WIN32
-   #include <sys/types.h>
-   #include <sys/socket.h>
-   #include <netinet/in.h>
-#else
-   #ifdef __MINGW__
-      #include <inttypes.h>
-      #include <stdint.h>
-      #include <winsock2.h>
-      #include <ws2tcpip.h>
-   #endif
-   #include <windows.h>
-   #if defined(_MSC_VER)
-      #pragma warning(disable:4251)
-   #endif
-#endif
+// This is a "protected header"; should include all required
+// system headers, as required on particular platform.
+#include "platform_sys.h"
 
 #ifdef __cplusplus
 #include <fstream>

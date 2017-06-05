@@ -219,12 +219,17 @@ if(WIN32)
 	if (NOT DEFINED WITH_PTHREAD_LDFLAGS OR NOT DEFINED WITH_PTHREAD_INCLUDEDIR)
 		message(FATAL_ERROR "On Windows, PTHREAD library is 3rd party. WITH_PTHREAD_* variables must be specified.")
 	endif()
+
+    set (LDFLAGS_srt_STATIC ${WITH_PTHREAD_LDFLAGS})
 elseif(DARWIN)
     message( "DARWIN detected")
     add_definitions(-DOSX=1) 
 elseif(LINUX)
     add_definitions(-DLINUX=1)
     message( "LINUX detected" )
+elseif(CYGWIN)
+	add_definitions(-DCYGWIN=1)
+	message("CYGWIN (posix mode) detected")
 else()
     message(FATAL_ERROR "Unsupported system")
 endif()
@@ -272,7 +277,7 @@ set (HEADERS_haisrt
     ${SRT_SRC_SRTCORE_DIR}/udt.h
     ${SRT_SRC_SRTCORE_DIR}/srt4udt.h
 	${SRT_SRC_SRTCORE_DIR}/logging_api.h
-
+	${SRT_SRC_SRTCORE_DIR}/platform_sys.h
 )
 
 set (HEADERS_haicrypt
@@ -330,7 +335,9 @@ endif()
 
 if ( WIN32 )
     target_compile_definitions(${NAME_haisrt} PRIVATE -DUDT_EXPORTS)
-    link_libraries(Ws2_32.lib)
+	if (NOT CYGWIN)
+    	link_libraries(Ws2_32.lib)
+	endif()
     add_definitions(-DPTW32_STATIC_LIB)
 endif()
 

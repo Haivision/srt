@@ -70,15 +70,20 @@ modified by
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #ifdef LEGACY_WIN32
-      #include <wspiapi.h>
-   #endif
 #endif
 #include <cmath>
 #include <sstream>
 #include "queue.h"
 #include "core.h"
 #include "logging.h"
+
+// Again, just in case when some "smart guy" provided such a global macro
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 
 #ifdef SRT_ENABLE_SRTCC_EMB
 #include "csrtcc.h"
@@ -351,7 +356,7 @@ static bool bool_int_value(const void* optval, int optlen)
 
     if ( optlen == sizeof(int) )
     {
-        return *(int*)optval;
+        return 0!=  *(int*)optval; // 0!= is a windows warning-killer int-to-bool conversion
     }
     return false;
 }
@@ -3681,7 +3686,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pSndQueue->m_pSndUList->update(this, false);
 
       size_t acksize = ctrlpkt.getLength(); // TEMPORARY VALUE FOR CHECKING
-      bool wrongsize = acksize % ACKD_FIELD_SIZE;
+      bool wrongsize = 0 != (acksize % ACKD_FIELD_SIZE);
       acksize = acksize / ACKD_FIELD_SIZE;  // ACTUAL VALUE
 
       if ( wrongsize )
@@ -4679,7 +4684,7 @@ int CUDT::processData(CUnit* unit)
    {
       unlose(packet); // was BELATED or RETRANSMITTED packet.
 #if SRT_BELATED_LOSSREPORT
-      was_orderly_sent = pktrexmitflag;
+      was_orderly_sent = 0!=  pktrexmitflag;
 #endif
    }
 

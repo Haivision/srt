@@ -25,7 +25,7 @@
 #include <packet.h>
 #include <csrtcc.h>
 
-int main( int argc __attribute__((unused)), char** argv  __attribute__((unused)))
+int main()
 {
     using namespace std;
 

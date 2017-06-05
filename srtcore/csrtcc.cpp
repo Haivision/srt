@@ -97,17 +97,29 @@ void CSRTCC::sendSrtMsg(int cmd, int32_t *srtdata_in, int srtlen_in)
     case SRT_CMD_HSREQ:
         memset(srtdata, 0, sizeof(srtdata));
 
-        switch(SRT_VERSION_MAJ(m_PeerSrtVersion)) {
-#ifdef SRT_VERSION_MAJ2  /* Whenever versions >= 2.0.0 implemented */
-        case SRT_VERSION_MAJ1:   /* Still supported older versions */
-            //>>duB: fix that to not set m_SrtVersion under normal operations (version downgrade)
-            //>>only set to test version handshake
-            //m_SrtVersion = SRT_VERSION_1XX; //highest compatible version 1
-            // move 1.x.x handshake code here when default becomes 2.x.x
-            //break; //>>fall through until 2.x.x implemented
+#ifdef SRT_VERSION_MAJ2
+		if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_MAJ1)
+		{
+			//>>duB: fix that to not set m_SrtVersion under normal operations (version downgrade)
+			//>>only set to test version handshake
+			//m_SrtVersion = SRT_VERSION_1XX; //highest compatible version 1
+			// move 1.x.x handshake code here when default becomes 2.x.x
+			//break; //>>fall through until 2.x.x implemented
+		}
+		else
 #endif
-        case SRT_VERSION_UNK:           /* Unknown peer version: first attempt */
-        default:
+        /*
+           XXX Do some version renegotiation if needed;
+           The "unknown version" may be used for something else,
+           currently not predicted to happen.
+		if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_UNK)
+		{
+			// Some fallback...
+			srtdata[SRT_HS_VERSION] = 0; // Rejection
+		}
+		else
+        */
+		{
             /* Current version (1.x.x) SRT handshake */
             srtdata[SRT_HS_VERSION] = m_SrtVersion;  /* Required version */
             if (m_bSndTsbPdMode)
@@ -131,29 +143,39 @@ void CSRTCC::sendSrtMsg(int cmd, int32_t *srtdata_in, int srtlen_in)
                 srtdata[SRT_HS_VERSION],
                 srtdata[SRT_HS_FLAGS],
                 SRT_HS_EXTRAS_LO::unwrap(srtdata[SRT_HS_EXTRAS]));
-            break;
         }
         break;
 
     case SRT_CMD_HSRSP:
         memset(srtdata, 0, sizeof(srtdata));
 
-        switch(SRT_VERSION_MAJ(m_PeerSrtVersion)) {
-#ifdef SRT_VERSION_MAJ2   /* Whenever versions >= 2.0.0 implemented */
-        case SRT_VERSION_MAJ1:   /* Still supported older versions */
+
+#ifdef SRT_VERSION_MAJ2
+        if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_MAJ1)
+        {
             //>>duB: fix that to not set m_SrtVersion under normal operations (version downgrade)
             //>>only set to test version handshake
-            //m_SrtVersion = SRT_VERSION_1XX; //highest 1.x.x compatible version
+            //m_SrtVersion = SRT_VERSION_1XX; //highest compatible version 1
             // move 1.x.x handshake code here when default becomes 2.x.x
             //break; //>>fall through until 2.x.x implemented
-#endif /* SRT_VERSION_MAJ2 */
-        default:
+        }
+        else
+#endif
+        /*
+        if (SRT_VERSION_MAJ(m_PeerSrtVersion) == SRT_VERSION_UNK)
+        {
+            // Some fallback...
+            srtdata[SRT_HS_VERSION] = 0; // Rejection
+        }
+        else
+        */
+        {
             /* Current version (1.x.x) SRT handshake */
             srtdata[SRT_HS_VERSION] = m_SrtVersion; /* Required version */
             if (0 != m_RcvPeerStartTime)
             {
                 /* 
-                * We got and transposed peer start time (HandShake request timestamp),
+                 * We got and transposed peer start time (HandShake request timestamp),
                 * we can support Timestamp-based Packet Delivery
                 */
                 srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
@@ -195,11 +217,10 @@ void CSRTCC::sendSrtMsg(int cmd, int32_t *srtdata_in, int srtlen_in)
                 // version specification in the build configuration.
                 LOGC(mglog.Debug).form("HS RP1: I DO NOT UNDERSTAND REXMIT flag" );
             }
-            srtlen = 3;
+            srtlen = SRT_HS__SIZE;
 
             LOGC(mglog.Note).form( "sndSrtMsg: cmd=%d(HSRSP) len=%d vers=0x%x opts=0x%x delay=%d\n", 
                 cmd, (int)(srtlen * sizeof(int32_t)), srtdata[SRT_HS_VERSION], srtdata[SRT_HS_FLAGS], srtdata[SRT_HS_EXTRAS]);
-            break;
         }
         break;
 
