@@ -32,12 +32,8 @@ set (SOURCES_haisrt
 	queue.cpp
 	srt_c_api.cpp
 	window.cpp
+	../common/srt_compat.c
 )
-
-# Have haisrt have it's own compat implementations if it's a dll
-if (BUILD_SHARED AND WIN32)
-	list (APPEND SOURCES_haisrt ../common/srt_compat.c)
-endif()
 
 set (HEADERS_haisrt 
 	api.h
@@ -79,7 +75,10 @@ if ( LINUX )
 endif()
 
 
-target_compile_definitions(${NAME_haisrt} PRIVATE -DUDT_EXPORTS PUBLIC -DUDT_DYNAMIC)
+target_compile_definitions(${NAME_haisrt} PRIVATE -DUDT_EXPORTS )
+if (BUILD_SHARED)
+	target_compile_definitions(${NAME_haisrt} PUBLIC -DUDT_DYNAMIC) 
+endif()
 
 if ( WIN32 )
 	if (NOT CYGWIN)

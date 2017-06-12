@@ -170,7 +170,7 @@ if ( ENABLE_CXX11 )
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}")
-	target_link_libraries(stransmit ${NAME_haisrt})
+	target_link_libraries(stransmit ${NAME_haisrt} ${NAME_haicrypt})
 	install(TARGETS stransmit RUNTIME DESTINATION bin)
 	install(PROGRAMS scripts/sfplay DESTINATION bin)
 
