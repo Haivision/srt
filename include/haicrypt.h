@@ -36,6 +36,20 @@ written by
 extern "C" {
 #endif
 
+// setup exports
+#if defined WIN32 && !defined __MINGW__
+#ifdef HAICRYPT_DYNAMIC
+#ifdef HAICRYPT_EXPORTS
+#define HAICRYPT_API __declspec(dllexport)
+#else
+#define HAICRYPT_API __declspec(dllimport)
+#endif
+#else
+#define HAICRYPT_API
+#endif
+#else
+#define HAICRYPT_API
+#endif
 /* 
  * Define (in Makefile) the HaiCrypt ciphers compiled in
  */
@@ -44,10 +58,10 @@ extern "C" {
 
 typedef void *HaiCrypt_Cipher;
 
-HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
-HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
-HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
-HaiCrypt_Cipher HaiCryptCipher_OpenSSL_AES(void);   /* OpenSSL AES direct interface */
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_AES(void);   /* OpenSSL AES direct interface */
 
 
 #define HAICRYPT_CIPHER_BLK_SZ      16  /* AES Block Size */
@@ -103,20 +117,20 @@ typedef struct {
 
 typedef void *HaiCrypt_Handle;
 
-int  HaiCrypt_SetLogLevel(int level, int logfa);
+HAICRYPT_API int  HaiCrypt_SetLogLevel(int level, int logfa);
 
-int  HaiCrypt_Create(HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
-int  HaiCrypt_Close(HaiCrypt_Handle hhc);
-int  HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_p);
-int  HaiCrypt_Tx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
+HAICRYPT_API int  HaiCrypt_Create(HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
+HAICRYPT_API int  HaiCrypt_Close(HaiCrypt_Handle hhc);
+HAICRYPT_API int  HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_p);
+HAICRYPT_API int  HaiCrypt_Tx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
         void *out_p[], size_t out_len_p[], int maxout);
-int  HaiCrypt_Rx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
+HAICRYPT_API int  HaiCrypt_Rx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
         void *out_p[], size_t out_len_p[], int maxout);
 
-int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
-int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
-int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
-int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
+HAICRYPT_API int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
+HAICRYPT_API int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
+HAICRYPT_API int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
+HAICRYPT_API int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 
 #ifdef __cplusplus
 }
