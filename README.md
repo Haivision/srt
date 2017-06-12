@@ -62,24 +62,13 @@ use any newer version compiled from sources, if you prefer.
 
 ## For Windows:
 
-1. Install cmake for Windows. The CMake GUI will help you configure the project.
-Note that some variables must be provided explicitly. These are the default
-recommended values (required until some solution for running the `configure`
-script in Windows can be found):
-
-		WITH_OPENSSL_INCLUDEDIR=C:/OpenSSL-Win64/include
-		WITH_OPENSSL_LIBDIR=C:/OpenSSL-win64/lib/VC/static
-		WITH_OPENSSL_LIBRARIES=libeay32MT.lib ssleay32MT.lib
-		WITH_PTHREAD_INCLUDEDIR=C:/pthread-win32/include
-		WITH_PTHREAD_LDFLAGS=C:/pthread-win32/lib/pthread_lib.lib
-
-
-2. Please download and install OpenSSL for Windows.
+1. Please download and install OpenSSL for Windows.
 
 The 64-bit devel package can be downloaded from here:
 
      http://slproweb.com/download/Win64OpenSSL-1_0_2a.exe
 
+	 
 (Note that the last letter or version number may be changed and older versions
 no longer available. If this isn't found, check here:
 http://slproweb.com/products/Win32OpenSSL.html
@@ -94,12 +83,10 @@ from: https://github.com/openssl/openssl
 The instruction for Windows:
 http://developer.covenanteyes.com/building-openssl-for-visual-studio/
 
-
-
-3. Compile and install Pthreads for Windows from this submodule:
+2. Compile and install Pthreads for Windows from this submodule:
 
      submodules/pthread-win32
-
+	 
 Please follow the steps:
 
 a. Using Visual Studio 2013, please open this file:
@@ -121,6 +108,20 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 
 (They are in the toplevel directory, there are actually no meaningful subdirs here)
 (NOTE: the win32 is part of the project name. It will become 32 or 64 depending on selection)
+
+
+3. Install cmake for Windows. The CMake GUI will help you configure the project.
+
+It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them: 
+```
+OPENSSL_ROOT_DIR=<path to OpenSSL instalation>
+OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
+OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
+
+PTHREAD_INCLUDE_DIR=<path to where pthread.h lies>
+PTHREAD_LIBRARY=<path to pthread.lib>
+```
+ 
 
 4. For the sake of cmake generation: When you want to have a 64-bit version,
 remember that cmake by some reason adds /machine:X86 to the linker options.
