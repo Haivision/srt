@@ -45,7 +45,7 @@ struct sockaddr_any
     {
         memset(this, 0, sizeof *this);
         sa.sa_family = domain;
-        len = size();
+        len = static_cast<socklen_t>(size());
     }
 
     size_t size() const
