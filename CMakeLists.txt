@@ -20,8 +20,14 @@ cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
 
 project(SRT VERSION "1.2.0")
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set (ENABLE_DEBUG ON)
+else()
+	set (ENABLE_DEBUG OFF)
+endif()
+
 # option defaults
-if (ENV{SRT_LOGGING_ENABLED} OR CMAKE_BUILD_TYPE MATCHES "Debug")
+if (ENV{SRT_LOGGING_ENABLED})
 	set(SRT_ENABLE_LOGGING_DEFAULT ON)
 else()
 	set(SRT_ENABLE_LOGGING_DEFAULT OFF)
@@ -34,6 +40,11 @@ option(SRT_BUILD_PROFILE "Should the build contain profile information. Ignored 
 option(SRT_ENABLE_LOGGING "Should logging be enabled" ${SRT_ENABLE_LOGGING_DEFAULT})
 option(BUILD_SHARED "Should haisrt and haicrypt be built as a shared library" ON)
 option(ENABLE_SUFLIP "Shuld suflip be built" OFF)
+
+# Always turn logging on if the build type is debug
+if (ENABLE_DEBUG)
+	set(SRT_ENABLE_LOGGING ON)
+endif()
 
 set(NAME_haisrt "haisrt" CACHE STRING "The name for the haisrt library")
 set(NAME_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library")
