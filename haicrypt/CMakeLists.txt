@@ -68,8 +68,8 @@ target_compile_definitions(${NAME_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
 
 target_include_directories(${NAME_haicrypt} PRIVATE  ${OPENSSL_INCLUDE_DIR} PUBLIC ${SRT_SRC_HAICRYPT_DIR} ${SRT_INCLUDE_DIR})
 
-set (LDFLAGS_haicrypt_STATIC ${WITH_OPENSSL_LDFLAGS})
-target_link_libraries(${NAME_haicrypt} PUBLIC ${OPENSSL_LIBRARIES})
+
+target_link_libraries(${NAME_haicrypt} PRIVATE ${OPENSSL_LIBRARIES})
 if (WIN32)
 	target_link_libraries(${NAME_haicrypt} PRIVATE ws2_32.lib)
 endif()

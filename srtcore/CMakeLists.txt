@@ -35,6 +35,12 @@ set (SOURCES_haisrt
 	../common/srt_compat.c
 )
 
+set(PUBLIC_HEADERS_haisrt
+	srt.h
+	udt.h
+	logging_api.h
+)
+
 set (HEADERS_haisrt 
 	api.h
 	buffer.h
@@ -47,23 +53,20 @@ set (HEADERS_haisrt
 	epoll.h
 	list.h
 	logging.h
-	logging_api.h
 	md5.h
 	netinet_any.h
 	packet.h
 	platform_sys.h
 	queue.h
-	srt.h
 	srt4udt.h
 	threadname.h
-	udt.h
 	utilities.h
 	window.h
 )
 
 
 # HaiSRT: SRT library (UDT API only)
-add_library(${NAME_haisrt} ${srt_libspec} ${SOURCES_haisrt} ${HEADERS_haisrt})
+add_library(${NAME_haisrt} ${srt_libspec} ${SOURCES_haisrt} ${HEADERS_haisrt} ${PUBLIC_HEADERS_haisrt})
 
 
 target_link_libraries (${NAME_haisrt} PUBLIC ${PTHREAD_LIBRARY} ${NAME_haicrypt})
@@ -87,6 +90,6 @@ if ( WIN32 )
 endif()
 
 install(TARGETS ${NAME_haisrt} DESTINATION lib)
-install(FILES ${HEADERS_haisrt} DESTINATION include/srt)
+install(FILES ${PUBLIC_HEADERS_haisrt} DESTINATION include/srt)
 
 
