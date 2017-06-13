@@ -35,7 +35,7 @@ set (SOURCES_haicrypt
 if (WIN32)
 	message(STATUS "Compiling win_time.cpp because on windows...")
 	
-    list(APPEND SOURCES_haicrypt windows/win_time.cpp)
+    list(APPEND SOURCES_haicrypt ../common/win_time.cpp)
 endif()
 
 

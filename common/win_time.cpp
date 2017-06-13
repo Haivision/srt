@@ -26,8 +26,6 @@ written by
 #include <win/wintime.h>
 #include <sys/timeb.h>
 
-#include "haicrypt.h"
-
 #if 0
 // Temporarily blocked. Needs to be fixed.
 // Currently unused, but may be useful in future.
@@ -81,7 +79,7 @@ void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
     }
 }
 
-HAICRYPT_API int gettimeofday(struct timeval* tp, struct timezone* tz)
+int gettimeofday(struct timeval* tp, struct timezone* tz)
 {
     static LARGE_INTEGER tickFrequency, epochOffset;
 
