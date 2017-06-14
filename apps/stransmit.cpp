@@ -372,6 +372,7 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 int main( int argc, char** argv )
 {
+    srt_startup();
     vector<string> args;
     copy(argv+1, argv+argc, back_inserter(args));
 
@@ -523,7 +524,7 @@ int main( int argc, char** argv )
 
         return 1;
     }
-
+    srt_cleanup();
     return 0;
 }
 
