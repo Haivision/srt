@@ -17,6 +17,9 @@
  */
 
 
+#ifndef INC__APPCOMMON_H
+#define INC__APPCOMMON_H
+ 
 #if WIN32
 
 // Keep this below commented out.
@@ -122,3 +125,5 @@ inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
 
     return sa;
 }
+
+#endif // INC__APPCOMMON_H
