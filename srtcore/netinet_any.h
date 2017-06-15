@@ -45,15 +45,15 @@ struct sockaddr_any
     {
         memset(this, 0, sizeof *this);
         sa.sa_family = domain;
-        len = static_cast<socklen_t>(size());
+        len = size();
     }
 
-    size_t size() const
+    socklen_t size() const
     {
         switch (sa.sa_family)
         {
-        case AF_INET: return sizeof sin;
-        case AF_INET6: return sizeof sin6;
+        case AF_INET: return static_cast<socklen_t>(sizeof sin);
+        case AF_INET6: return static_cast<socklen_t>(sizeof sin6);
 
         default: return 0; // fallback, impossible
         }
