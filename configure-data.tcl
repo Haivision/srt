@@ -208,49 +208,21 @@ proc postprocess {} {
 	if { $::HAVE_WINDOWS } {
 
 		if { !$have_openssl } {
-			lappend ::cmakeopt "-DWITH_OPENSSL_INCLUDEDIR=$::DRIVE_C/OpenSSL-Win64/include"
-			lappend ::cmakeopt "-DWITH_OPENSSL_LIBDIR=$::DRIVE_C/OpenSSL-Win64/lib/VC/static"
-			lappend ::cmakeopt "-DWITH_OPENSSL_LIBRARIES=libeay32MT.lib ssleay32MT.lib"
-    		puts "Adding OpenSSL in $::DRIVE_C/OpenSSL-win64"
+    		puts "Letting cmake detect OpenSSL installation"
 		} else {
 			puts "HAVE_OPENSSL: [lsearch -inline $::optkeys --with-openssl*]"
 		}
 
 
 		if { !$have_pthread } {
-			lappend ::cmakeopt "-DWITH_PTHREAD_INCLUDEDIR=$::DRIVE_C/pthread-win32/include"
-			lappend ::cmakeopt "-DWITH_PTHREAD_LDFLAGS=$::DRIVE_C/pthread-win32/lib/pthread_lib.lib"
-			puts "Adding pthreads in $::DRIVE_C/pthread-win32"
+			puts "Letting cmake detect PThread installation"
 		} else {
 			puts "HAVE_PTHREADS: [lsearch -inline $::optkeys --with-pthread*]"
 		}
 	}
 
 	if { $::HAVE_LINUX || $cygwin_posix } {
-		# Extract Openssl from pkg-config
-		if { !$have_openssl } {
-			set openssl_libs [pkg-config --libs-only-l --libs-only-other openssl]
-			set openssl_libdir [pkg-config --libs-only-L openssl]
-			set openssl_inc [pkg-config --cflags-only-I openssl]
-			set openssl_prefix [pkg-config --variable=prefix openssl]
-
-			if { $openssl_inc == "" } {
-				# This should be so. And if so, add only these two flags:
-				lappend ::cmakeopt "-DWITH_OPENSSL=$openssl_prefix"
-			} else {
-				lappend ::cmakeopt "-DWITH_OPENSSL_INCLUDEDIR=[flagval $openssl_inc]"
-			}
-
-			if { $openssl_libdir != "" } {
-				lappend ::cmakeopt "-DWITH_OPENSSL_LIBDIR=[flagval $openssl_libdir]"
-			}
-
-			lappend ::cmakeopt "-DWITH_OPENSSL_LDFLAGS=$openssl_libs"
-		}
-
-		if { !$have_pthread } {
-			lappend ::cmakeopt "-DWITH_PTHREAD_LDFLAGS=-lpthread"
-		}
+		# Let cmake find openssl and pthread
 	}
 
 	if { $::HAVE_DARWIN } {
@@ -264,8 +236,8 @@ proc postprocess {} {
 				error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
 			}
 
-			lappend ::cmakeopt "-DWITH_OPENSSL_INCLUDEDIR=/usr/local/opt/openssl/include"
-			lappend ::cmakeopt "-DWITH_OPENSSL_LDFLAGS=/usr/local/opt/openssl/lib/libcrypto.a"
+			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
+			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
 		}
 	}
 
