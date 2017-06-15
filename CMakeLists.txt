@@ -38,7 +38,7 @@ option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the
 option(ENABLE_CXX11 "Should the c++11 parts (stransmit) be enabled" ON)
 option(SRT_BUILD_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
 option(SRT_ENABLE_LOGGING "Should logging be enabled" ${SRT_ENABLE_LOGGING_DEFAULT})
-option(BUILD_SHARED "Should haisrt and haicrypt be built as a shared library" ON)
+option(ENABLE_SHARED "Should haisrt and haicrypt be built as a shared library" ON)
 option(ENABLE_SUFLIP "Shuld suflip be built" OFF)
 
 # Always turn logging on if the build type is debug
@@ -92,7 +92,7 @@ if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (stransmit)")
 endif()
 
-if ( BUILD_SHARED )
+if ( ENABLE_SHARED )
     set (srt_libspec SHARED)
 else()
     set (srt_libspec STATIC)

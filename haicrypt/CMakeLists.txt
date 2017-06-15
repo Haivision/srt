@@ -16,21 +16,7 @@
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 # 
 
-set (SOURCES_haicrypt
-    hcrypt.c
-	hcrypt.h
-	hcrypt_ctx_rx.c
-	hcrypt_ctx_tx.c
-	hcrypt_rx.c
-	hcrypt_sa.c
-	hcrypt_tx.c
-	hcrypt_ut.c
-	hcrypt_xpt_srt.c
-	hcrypt_xpt_sta.c
-	hc_openssl_aes.c
-	hc_openssl_evp_cbc.c
-	hc_openssl_evp_ctr.c
-)
+file(READ Sources.txt SOURCES_haicrypt)
 
 if (WIN32)
 	message(STATUS "Compiling win_time.cpp because on windows...")
@@ -60,7 +46,7 @@ if (HAVE_COMPILER_GNU_COMPAT)
 	target_compile_options (${NAME_haicrypt} PUBLIC -Wall -Wextra)
 endif()
 
-if (BUILD_SHARED)
+if (ENABLE_SHARED)
 	target_compile_definitions(${NAME_haicrypt} PUBLIC -DHAICRYPT_DYNAMIC)
 endif()
 target_compile_definitions(${NAME_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
