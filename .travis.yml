@@ -1,0 +1,30 @@
+language: cpp
+dist: trusty
+
+addons:
+    apt:
+        packages:
+        - tclsh
+        - pkg-config
+        - cmake
+        - libssl-dev
+        - build-essential
+
+matrix:
+    include:
+        - env: BUILD_TYPE=Debug
+        - env: BUILD_TYPE=Release
+        - os: osx
+          osx_image: xcode7.3
+          env: BUILD_TYPE=Debug
+          install: brew install openssl
+        - os: osx
+          osx_image: xcode7.3
+          install: brew install openssl
+          env: BUILD_TYPE=Release
+
+
+script:
+    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DWITH_OPENSSL=/usr -DWITH_OPENSSL_LDFLAGS='-lssl -lcrypto' -DWITH_PTHREAD_LDFLAGS=-lpthread; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DWITH_OPENSSL_INCLUDE_DIR='/usr/local/opt/openssl/include' -DWITH_OPENSSL_LIBRARIES='libcrypto.dylib libssl.dylib' -DWITH_OPENSSL=/usr/local/opt/openssl -DWITH_PTHREAD_LDFLAGS='-lpthread'; fi
+    - make
