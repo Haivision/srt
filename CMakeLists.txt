@@ -199,7 +199,7 @@ else()
 endif()
 
 
-set (SRT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set (SRT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/common)
 
 set (SRT_SRC_HAICRYPT_DIR ${CMAKE_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_SOURCE_DIR}/srtcore)
@@ -271,19 +271,25 @@ if ( ${SRT_BUILD_PROFILE} )
 endif()
 
 
+#GetMafHeaders(srtcore HEADERS_haisrt_declared)
 
 set (HEADERS_haisrt 
+# These files are now TO BE extracted from HEADERS.maf file
     ${SRT_SRC_SRTCORE_DIR}/srt.h
     ${SRT_SRC_SRTCORE_DIR}/udt.h
     ${SRT_SRC_SRTCORE_DIR}/srt4udt.h
-	${SRT_SRC_SRTCORE_DIR}/logging_api.h
-	${SRT_SRC_SRTCORE_DIR}/platform_sys.h
+    ${SRT_SRC_SRTCORE_DIR}/logging_api.h
+    ${SRT_SRC_SRTCORE_DIR}/platform_sys.h
+    #${HEADERS_haisrt_declared}
 )
 
+#GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
+
 set (HEADERS_haicrypt
-    ${SRT_INCLUDE_DIR}/haicrypt.h
-    ${SRT_INCLUDE_DIR}/hcrypt_ctx.h
-    ${SRT_INCLUDE_DIR}/hcrypt_msg.h
+    ${CMAKE_SOURCE_DIR}/haicrypt/haicrypt.h
+    ${CMAKE_SOURCE_DIR}/haicrypt/hcrypt_ctx.h
+    ${CMAKE_SOURCE_DIR}/haicrypt/hcrypt_msg.h
+    #${HEADERS_haicrypt_declared}
 )
 
 set (ALL_LIBS "")

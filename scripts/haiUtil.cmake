@@ -47,3 +47,15 @@ MACRO(set_if varname)
    ENDIF(${ARGN})
 ENDMACRO(set_if)
 
+MACRO(GetMafHeaders directory outvar)
+	EXECUTE_PROCESS(
+		COMMAND ${CMAKE_MODULE_PATH}/mafread.tcl
+			${CMAKE_SOURCE_DIR}/${directory}/HEADERS.maf
+			"PUBLIC HEADERS"
+			"PROTECTED HEADERS"
+		OUTPUT_STRIP_TRAILING_WHITESPACE
+		OUTPUT_VARIABLE ${outvar}
+	)
+	SEPARATE_ARGUMENTS(${outvar})
+	adddirname(${CMAKE_SOURCE_DIR}/${directory} "${${outvar}}" ${outvar})
+ENDMACRO(GetMafHeaders)
