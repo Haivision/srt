@@ -16,7 +16,9 @@
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 # 
 
-file(READ Sources.txt SOURCES_haicrypt)
+file(READ Sources.txt SOURCES_haicrypt_str)
+string(REPLACE "\n" ";" SOURCES_haicrypt ${SOURCES_haicrypt_str})
+
 
 if (WIN32)
 	message(STATUS "Compiling win_time.cpp because on windows...")

@@ -16,7 +16,8 @@
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 # 
 
-file (READ Sources.txt SOURCES_haisrt)
+file (READ Sources.txt SOURCES_haisrt_srt)
+string(REPLACE "\n" ";" SOURCES_haisrt ${SOURCES_haisrt_srt})
 
 set(PUBLIC_HEADERS_haisrt
 	srt.h
