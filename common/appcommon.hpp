@@ -37,12 +37,24 @@
 #else
 extern "C" inline int sleep(int seconds) { Sleep(seconds * 1000); return 0; }
 #endif
+
+inline bool SysInitializeNetwork()
+{
+    WORD wVersionRequested = MAKEWORD(2, 2);
+    WSADATA wsaData;
+    return WSAStartup(wVersionRequested, &wsaData) == 0;
+}
+
 #else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+
+// Nothing needs to be done on POSIX; this is a Windows problem.
+inline bool SysInitializeNetwork() {return true;}
+
 #endif
 
 #include <string>

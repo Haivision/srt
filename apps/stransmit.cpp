@@ -372,6 +372,9 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 int main( int argc, char** argv )
 {
+    if ( !SysInitializeNetwork() )
+        throw std::runtime_error("Can't initialize network!");
+
     vector<string> args;
     copy(argv+1, argv+argc, back_inserter(args));
 
