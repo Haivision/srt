@@ -19,10 +19,15 @@
 file (READ Sources.txt SOURCES_haisrt_srt)
 string(REPLACE "\n" ";" SOURCES_haisrt ${SOURCES_haisrt_srt})
 
+
+#GetMafHeaders(srtcore HEADERS_haisrt_declared)
+
 set(PUBLIC_HEADERS_haisrt
 	srt.h
 	udt.h
 	logging_api.h
+    #${HEADERS_haisrt_declared}
+
 )
 
 # HaiSRT: SRT library (UDT API only)

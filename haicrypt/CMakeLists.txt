@@ -26,11 +26,16 @@ if (WIN32)
     list(APPEND SOURCES_haicrypt ../common/win_time.cpp)
 endif()
 
+    #${HEADERS_haisrt_declared}
+
+#GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
 
 set (HEADERS_haicrypt
-    ${SRT_INCLUDE_DIR}/haicrypt.h
-    ${SRT_INCLUDE_DIR}/hcrypt_ctx.h
-    ${SRT_INCLUDE_DIR}/hcrypt_msg.h
+	# These files are now TO BE extracted from HEADERS.maf file
+    haicrypt.h
+    hcrypt_ctx.h
+    hcrypt_msg.h
+    #${HEADERS_haicrypt_declared}
 )
 
 

@@ -131,13 +131,6 @@ add_definitions(
    -DSRT_VERSION="${SRT_VERSION}"
 )
 
-#GetMafHeaders(srtcore HEADERS_haisrt_declared)
-# These files are now TO BE extracted from HEADERS.maf file
-    #${HEADERS_haisrt_declared}
-#GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
-
-    #${HEADERS_haicrypt_declared}
-
 # find pthread
 find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 if (PTHREAD_INCLUDE_DIR)
