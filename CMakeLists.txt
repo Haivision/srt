@@ -27,7 +27,7 @@ endif()
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
-include(FindPkgConfig)
+#include(FindPkgConfig)
 
 
 set (SRT_VERSION "1.2.0")
