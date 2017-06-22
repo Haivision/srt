@@ -372,8 +372,20 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 int main( int argc, char** argv )
 {
+    // This is mainly required on Windows to initialize the network system,
+    // for a case when the instance would use UDP. SRT does it on its own, independently.
     if ( !SysInitializeNetwork() )
         throw std::runtime_error("Can't initialize network!");
+
+    // Symmetrically, this does a cleanup; put into a local destructor to ensure that
+    // it's called regardless of how this function returns.
+    struct NetworkCleanup
+    {
+        ~NetworkCleanup()
+        {
+            SysCleanupNetwork();
+        }
+    } cleanupobj;
 
     vector<string> args;
     copy(argv+1, argv+argc, back_inserter(args));
@@ -526,7 +538,6 @@ int main( int argc, char** argv )
 
         return 1;
     }
-
     return 0;
 }
 

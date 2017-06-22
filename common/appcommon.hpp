@@ -45,6 +45,11 @@ inline bool SysInitializeNetwork()
     return WSAStartup(wVersionRequested, &wsaData) == 0;
 }
 
+inline void SysCleanupNetwork()
+{
+    WSACleanup();
+}
+
 #else
 #include <netdb.h>
 #include <sys/socket.h>
@@ -54,6 +59,7 @@ inline bool SysInitializeNetwork()
 
 // Nothing needs to be done on POSIX; this is a Windows problem.
 inline bool SysInitializeNetwork() {return true;}
+inline void SysCleanupNetwork() {}
 
 #endif
 
