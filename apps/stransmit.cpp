@@ -372,6 +372,18 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 int main( int argc, char** argv )
 {
+   #ifdef WIN32
+      WORD wVersionRequested;
+      WSADATA wsaData;
+      wVersionRequested = MAKEWORD(2, 2);
+
+      if (0 != WSAStartup(wVersionRequested, &wsaData))
+      {
+          cerr << "Failed to init socket library\n";
+          return 1;
+      }
+   #endif
+
     vector<string> args;
     copy(argv+1, argv+argc, back_inserter(args));
 
@@ -523,7 +535,9 @@ int main( int argc, char** argv )
 
         return 1;
     }
-
+   #ifdef WIN32
+      WSACleanup();
+   #endif
     return 0;
 }
 
