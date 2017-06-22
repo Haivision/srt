@@ -17,7 +17,7 @@ build_script:
   - ps: mkdir C:/pthread-win32
   - ps: mkdir C:/pthread-win32/include
   - ps: mkdir C:/pthread-win32/lib
-  - ps: cp C:/pthread-src/pthread.h C:/pthread-win32/include
+  - ps: cp C:/pthread-src/*.h C:/pthread-win32/include
   - ps: cp C:/pthread-src/bin/x64_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-win32/lib
   # build SRT
   - ps: if ( $VS_VERSION -eq "2013" ) { $CMAKE_GENERATOR = "Visual Studio 12 2013 Win64" } else { $CMAKE_GENERATOR = "Visual Studio 14 2015 Win64" }
