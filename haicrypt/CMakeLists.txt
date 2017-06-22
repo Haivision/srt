@@ -26,8 +26,6 @@ if (WIN32)
     list(APPEND SOURCES_haicrypt ../common/win_time.cpp)
 endif()
 
-    #${HEADERS_haisrt_declared}
-
 #GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
 
 set (HEADERS_haicrypt
