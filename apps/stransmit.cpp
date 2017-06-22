@@ -127,7 +127,8 @@ map<string, int> srt_level_names
 
 
 
-void PrintSrtStats(int sid, const CPerfMon& mon)
+template <class PerfMonType>
+void PrintSrtStats(int sid, const PerfMonType& mon)
 {
     cout << "======= SRT STATS: sid=" << sid << endl;
     cout << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv << endl;
@@ -1101,7 +1102,7 @@ public:
             data.resize(chunk);
 
         CBytePerfMon perf;
-        srt_bstats(m_sock, &perf, true);
+        srt_bstats(m_sock, &perf, false);
         if ( bw_report && int(counter % bw_report) == bw_report - 1 )
         {
             cout << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
@@ -1109,10 +1110,11 @@ public:
 
         if ( stats_report_freq && counter % stats_report_freq == stats_report_freq - 1)
         {
-            CPerfMon pmon;
-            memset(&pmon, 0, sizeof pmon);
-            UDT::perfmon(m_sock, &pmon, false);
-            PrintSrtStats(m_sock, pmon);
+            //CPerfMon pmon;
+            //memset(&pmon, 0, sizeof pmon);
+            //UDT::perfmon(m_sock, &pmon, false);
+            //PrintSrtStats(m_sock, pmon);
+            PrintSrtStats(m_sock, perf);
         }
 
         ++counter;

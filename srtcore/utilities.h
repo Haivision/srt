@@ -579,7 +579,7 @@ public:
             // In clear mode, you should add this value to the time base when update()
             // returns true. The drift value will be since now measured with the
             // overdrift assumed to be added to the base.
-            if (abs(m_qDrift) > MAX_DRIFT)
+            if (std::abs(m_qDrift) > MAX_DRIFT)
             {
                 m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
                 m_qDrift -= m_qOverdrift;
