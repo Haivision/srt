@@ -2773,6 +2773,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->pktSndLoss = m_iTraceSndLoss;
    perf->pktRcvLoss = m_iTraceRcvLoss;
    perf->pktRetrans = m_iTraceRetrans;
+   perf->pktRcvRetrans = m_iTraceRcvRetrans;
    perf->pktSentACK = m_iSentACK;
    perf->pktRecvACK = m_iRecvACK;
    perf->pktSentNAK = m_iSentNAK;
@@ -2856,6 +2857,9 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->pktSentNAK = m_iSentNAK;
    perf->pktRecvNAK = m_iRecvNAK;
    perf->usSndDuration = m_llSndDuration;
+   perf->pktReorderDistance = m_iTraceReorderDistance;
+   perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
+   perf->pktRcvBelated = m_iTraceRcvBelated;
    //>new
    /* perf byte counters include all headers (SRT+UDP+IP) */
    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
