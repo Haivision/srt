@@ -14,8 +14,8 @@ platform:
 build_script:
   # build pthread
   - git clone https://github.com/GerHobbelt/pthread-win32.git C:/pthread-src
-  - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { msbuild C:/pthread-src/pthread.2013.sln /p:Configuration=$Env:CONFIGURATION /p:Platform:x64 }"
-  - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { msbuild C:/pthread-src/pthread.2015.sln /p:Configuration=$Env:CONFIGURATION /p:Platform:x64 }"
+  - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { msbuild C:/pthread-src/pthread.2013.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64 }"
+  - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { msbuild C:/pthread-src/pthread.2015.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64 }"
   - ps: mkdir C:/pthread-win32
   - ps: mkdir C:/pthread-win32/include
   - ps: mkdir C:/pthread-win32/lib
