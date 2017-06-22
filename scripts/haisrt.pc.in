@@ -5,7 +5,7 @@ includedir=${prefix}/include
 
 Name: haisrt
 Description: SRT library set
-Version: @HAISRT_VERSION@
+Version: @SRT_VERSION@
 Libs: -L${libdir} -l@NAME_haisrt@ -l@NAME_haicrypt@ @IFNEEDED_HAISRTBASE@ @IFNEEDED_HAISRT_LDFLAGS@
 Cflags: -I${includedir}
 

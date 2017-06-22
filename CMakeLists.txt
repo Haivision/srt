@@ -99,7 +99,7 @@ else()
 endif()
 
 
-set (SRT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set (SRT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/common)
 
 set (SRT_SRC_HAICRYPT_DIR ${CMAKE_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_SOURCE_DIR}/srtcore)
@@ -116,8 +116,8 @@ elseif(LINUX)
     add_definitions(-DLINUX=1)
     message( "LINUX detected" )
 elseif(CYGWIN)
-	add_definitions(-DCYGWIN=1)
-	message("CYGWIN (posix mode) detected")
+    add_definitions(-DCYGWIN=1)
+    message("CYGWIN (posix mode) detected")
 else()
     message(FATAL_ERROR "Unsupported system")
 endif()
@@ -131,6 +131,12 @@ add_definitions(
    -DSRT_VERSION="${SRT_VERSION}"
 )
 
+#GetMafHeaders(srtcore HEADERS_haisrt_declared)
+# These files are now TO BE extracted from HEADERS.maf file
+    #${HEADERS_haisrt_declared}
+#GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
+
+    #${HEADERS_haicrypt_declared}
 
 # find pthread
 find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
