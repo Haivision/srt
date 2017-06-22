@@ -23,5 +23,5 @@ build_script:
   - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { cp C:/pthread-src/bin/x64_MSVC2013.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-win32/lib }"
   - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { cp C:/pthread-src/bin/x64_MSVC2015.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-win32/lib }"
   # build SRT
-  - cmake . -DWITH_OPENSSL_INCLUDEDIR=C:/OpenSSL-Win64/include -DWITH_OPENSSL_LIBDIR=C:/OpenSSL-win64/lib/VC/static -DWITH_OPENSSL_LIBRARIES='libeay32MT.lib ssleay32MT.lib' -DWITH_PTHREAD_INCLUDEDIR=C:/pthread-win32/include -DWITH_PTHREAD_LDFLAGS=C:/pthread-win32/lib/pthread_lib.lib
+  - cmake . -DWITH_OPENSSL_INCLUDEDIR=C:/OpenSSL-Win64/include -DWITH_OPENSSL_LIBDIR=C:/OpenSSL-win64/lib/VC/static -DWITH_OPENSSL_LIBRARIES="libeay32MT.lib ssleay32MT.lib" -DWITH_PTHREAD_INCLUDEDIR=C:/pthread-win32/include -DWITH_PTHREAD_LDFLAGS=C:/pthread-win32/lib/pthread_lib.lib
   - msbuild Project.sln
