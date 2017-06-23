@@ -49,6 +49,8 @@ written by
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))
+#else
+#define PRINTF_LIKE
 #endif
 
 // Usage: LOGC(mglog.Debug) << param1 << param2 << param3;
