@@ -4592,16 +4592,15 @@ int CUDT::processData(CUnit* unit)
       m_ullTraceRcvBytesLoss += lossbytes;
       m_ullRcvBytesLossTotal += lossbytes;
 #endif /* SRT_ENABLE_BSTATS */
-
-#ifdef SRT_ENABLE_TSBPD
-      if (m_bTsbPdRcv)
-      {
-            pthread_mutex_lock(&m_RecvLock);
-            pthread_cond_signal(&m_RcvTsbPdCond);
-            pthread_mutex_unlock(&m_RecvLock);
-      }
-#endif /* SRT_ENABLE_TSBPD */
    }
+#ifdef SRT_ENABLE_TSBPD
+   if (m_bTsbPdRcv)
+   {
+      pthread_mutex_lock(&m_RecvLock);
+      pthread_cond_signal(&m_RcvTsbPdCond);
+      pthread_mutex_unlock(&m_RecvLock);
+   }
+#endif /* SRT_ENABLE_TSBPD */
 
 #ifdef SRT_BELATED_LOSSREPORT
    // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
