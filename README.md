@@ -4,6 +4,8 @@
   </a>
 </p>
 
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/ruujele1yfsfsyer/branch/master?svg=true)](https://ci.appveyor.com/project/Haivision/srt)
+
 # Introduction
 
 Secure Reliable Transport (SRT) is a proprietary transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.

@@ -1,20 +1,20 @@
-# 
+#
 # SRT - Secure, Reliable, Transport
 # Copyright (c) 2017 Haivision Systems Inc.
-# 
+#
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
 # License as published by the Free Software Foundation; either
 # version 2.1 of the License, or (at your option) any later version.
-# 
+#
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Lesser General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
-# 
+#
 cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
 
 
@@ -53,7 +53,7 @@ if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
 	add_definitions(-DWIN32=1 -DCYGWIN=1)
-	message("HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
+	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
@@ -63,8 +63,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
-include(FindPkgConfig)
-
 
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -110,14 +108,14 @@ set (SRT_SRC_TOOLS_DIR ${CMAKE_SOURCE_DIR}/tools)
 if(WIN32)
     add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB)
 elseif(DARWIN)
-    message( "DARWIN detected")
-    add_definitions(-DOSX=1) 
+    message(STATUS "DARWIN detected")
+    add_definitions(-DOSX=1)
 elseif(LINUX)
     add_definitions(-DLINUX=1)
-    message( "LINUX detected" )
+    message(STATUS "LINUX detected" )
 elseif(CYGWIN)
     add_definitions(-DCYGWIN=1)
-    message("CYGWIN (posix mode) detected")
+	message(STATUS "CYGWIN (posix mode) detected")
 else()
     message(FATAL_ERROR "Unsupported system")
 endif()
@@ -164,10 +162,10 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
 # Applications
 
 if ( HAVE_COMPILER_GNU_COMPAT )
-	message("C++ VERSION: Setting C++11 compat flag for gnu compiler")
+	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
 	set (CFLAGS_CXX_STANDARD "-std=c++11")
 else()
-	message("C++ VERSION: leaving default, not a GNU compiler, assuming C++11 or newer is default.")
+	message(STATUS "C++ VERSION: leaving default, not a GNU compiler, assuming C++11 or newer is default.")
 	set (CFLAGS_CXX_STANDARD "")
 endif()
 
@@ -192,7 +190,7 @@ if ( ENABLE_CXX11 )
 endif()
 
 if ( ENABLE_SUFLIP )
-	set (SOURCES_suflip 
+	set (SOURCES_suflip
 		${CMAKE_SOURCE_DIR}/apps/suflip.cpp ${CMAKE_SOURCE_DIR}/apps/uriparser.cpp
 	)
 

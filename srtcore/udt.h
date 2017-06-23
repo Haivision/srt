@@ -355,6 +355,7 @@ struct CBytePerfMon
    int pktSndLoss;                      // number of lost packets (sender side)
    int pktRcvLoss;                      // number of lost packets (receiver side)
    int pktRetrans;                      // number of retransmitted packets
+   int pktRcvRetrans;                   // number of retransmitted packets received
    int pktSentACK;                      // number of sent ACK packets
    int pktRecvACK;                      // number of received ACK packets
    int pktSentNAK;                      // number of sent NAK packets
@@ -362,6 +363,9 @@ struct CBytePerfMon
    double mbpsSendRate;                 // sending rate in Mb/s
    double mbpsRecvRate;                 // receiving rate in Mb/s
    int64_t usSndDuration;		// busy sending time (i.e., idle time exclusive)
+   int pktReorderDistance;              // size of order discrepancy in received sequences
+   double pktRcvAvgBelatedTime;             // average time of packet delay for belated packets (packets with sequence past the ACK)
+   int64_t pktRcvBelated;              // number of received AND IGNORED packets due to having come too late
    //>new
    int pktSndDrop;                      // number of too-late-to-send dropped packets
    int pktRcvDrop;                      // number of too-late-to play missing packets
