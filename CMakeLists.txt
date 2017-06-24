@@ -18,6 +18,7 @@
 cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
 
 
+
 project(SRT VERSION "1.2.0")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -155,8 +156,11 @@ if (NOT DEFINED INSTALLDIR)
 	set (INSTALLDIR ${CMAKE_INSTALL_PREFIX})
 	get_filename_component(INSTALLDIR ${INSTALLDIR} ABSOLUTE)
 endif()
+# haisrt.pc left temporarily for backward compatibility. To be removed in future!
 configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
+configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
 
 
 # Applications
