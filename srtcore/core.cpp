@@ -4554,53 +4554,56 @@ int CUDT::processData(CUnit* unit)
    // Loss detection.
    if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
    {
-       CGuard lg(m_RcvLossLock);
-       int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-       int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
-      // If loss found, insert them to the receiver loss list
-      m_pRcvLossList->insert(seqlo, seqhi);
+      {
+         CGuard lg(m_RcvLossLock);
+         int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+         int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
+         // If loss found, insert them to the receiver loss list
+         m_pRcvLossList->insert(seqlo, seqhi);
 
 #if SRT_BELATED_LOSSREPORT
-      if ( initial_loss_ttl )
-      {
-          // pack loss list for (possibly belated) NAK
-          // The LOSSREPORT will be sent in a while.
-          m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-          LOGC(mglog.Debug).form("added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-      }
-      else
+         if ( initial_loss_ttl )
+         {
+             // pack loss list for (possibly belated) NAK
+             // The LOSSREPORT will be sent in a while.
+             m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
+             LOGC(mglog.Debug).form("added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
+         }
+         else
 #endif
-      {
-          // old code; run immediately when tolerance = 0
-          // or this feature isn't used because of the peer
-          int32_t seq[2] = { seqlo, seqhi };
-          if ( seqlo == seqhi )
-              sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
-          else
-          {
-              seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
-              sendCtrl(UMSG_LOSSREPORT, NULL, seq, 2);
-          }
-          LOGC(mglog.Debug).form("lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
+         {
+             // old code; run immediately when tolerance = 0
+             // or this feature isn't used because of the peer
+             int32_t seq[2] = { seqlo, seqhi };
+             if ( seqlo == seqhi )
+                 sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
+             else
+             {
+                 seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
+                 sendCtrl(UMSG_LOSSREPORT, NULL, seq, 2);
+             }
+             LOGC(mglog.Debug).form("lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
+         }
+
+         int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
+         m_iTraceRcvLoss += loss;
+         m_iRcvLossTotal += loss;
+#ifdef SRT_ENABLE_BSTATS
+         uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+         m_ullTraceRcvBytesLoss += lossbytes;
+         m_ullRcvBytesLossTotal += lossbytes;
+#endif /* SRT_ENABLE_BSTATS */
       }
 
-      int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
-      m_iTraceRcvLoss += loss;
-      m_iRcvLossTotal += loss;
-#ifdef SRT_ENABLE_BSTATS
-      uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-      m_ullTraceRcvBytesLoss += lossbytes;
-      m_ullRcvBytesLossTotal += lossbytes;
-#endif /* SRT_ENABLE_BSTATS */
-   }
 #ifdef SRT_ENABLE_TSBPD
-   if (m_bTsbPdRcv)
-   {
-      pthread_mutex_lock(&m_RecvLock);
-      pthread_cond_signal(&m_RcvTsbPdCond);
-      pthread_mutex_unlock(&m_RecvLock);
-   }
+      if (m_bTsbPdRcv)
+      {
+            pthread_mutex_lock(&m_RecvLock);
+            pthread_cond_signal(&m_RcvTsbPdCond);
+            pthread_mutex_unlock(&m_RecvLock);
+      }
 #endif /* SRT_ENABLE_TSBPD */
+   }
 
 #ifdef SRT_BELATED_LOSSREPORT
    // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
