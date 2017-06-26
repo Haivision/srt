@@ -4598,9 +4598,9 @@ int CUDT::processData(CUnit* unit)
 #ifdef SRT_ENABLE_TSBPD
       if (m_bTsbPdRcv)
       {
-            pthread_mutex_lock(&m_RecvLock);
-            pthread_cond_signal(&m_RcvTsbPdCond);
-            pthread_mutex_unlock(&m_RecvLock);
+         pthread_mutex_lock(&m_RecvLock);
+         pthread_cond_signal(&m_RcvTsbPdCond);
+         pthread_mutex_unlock(&m_RecvLock);
       }
 #endif /* SRT_ENABLE_TSBPD */
    }
