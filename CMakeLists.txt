@@ -28,6 +28,7 @@ endif()
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 
+
 set (SRT_VERSION "1.2.0")
 
 set (NAME_haisrt haisrt)
@@ -387,8 +388,11 @@ if ( LINUX )
 	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
 endif()
 
+# haisrt.pc left temporarily for backward compatibility. To be removed in future!
 configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
+configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
 
 # Applications
 
