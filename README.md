@@ -4,7 +4,7 @@
   </a>
 </p>
 
-[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/ruujele1yfsfsyer/branch/master?svg=true)](https://ci.appveyor.com/project/Haivision/srt) [![Build Status](https://travis-ci.org/haivision/srt.svg?branch=master)](https://travis-ci.org/haivision/srt)
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/ruujele1yfsfsyer/branch/master?svg=true)](https://ci.appveyor.com/project/Haivision/srt) [![Build Status](https://travis-ci.org/Haivision/srt.svg?branch=master)](https://travis-ci.org/Haivision/srt)
 
 # Introduction
 
