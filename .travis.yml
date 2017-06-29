@@ -25,6 +25,6 @@ matrix:
 
 
 script:
-    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DWITH_OPENSSL=/usr -DWITH_OPENSSL_LDFLAGS='-lssl -lcrypto' -DWITH_PTHREAD_LDFLAGS=-lpthread; fi
-    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DWITH_OPENSSL_INCLUDE_DIR='/usr/local/opt/openssl/include' -DWITH_OPENSSL_LIBRARIES='libcrypto.dylib libssl.dylib' -DWITH_OPENSSL=/usr/local/opt/openssl -DWITH_PTHREAD_LDFLAGS='-lpthread'; fi
+    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl; fi
     - make

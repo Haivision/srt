@@ -74,7 +74,7 @@ message (STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
-foreach (gnid Intel Clang GNU)
+foreach (gnid Intel Clang GNU AppleClang)
 	if (${CMAKE_CXX_COMPILER_ID} STREQUAL ${gnid})
 		set(HAVE_COMPILER_GNU_COMPAT 1)
 		break()
