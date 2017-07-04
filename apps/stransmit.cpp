@@ -747,10 +747,10 @@ protected:
     {
         int result = 0;
 
-        int yes = 1;
-        if ( m_tsbpdmode )
+        int no = 0;
+        if ( !m_tsbpdmode )
         {
-            result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes);
+            result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
             if ( result == -1 )
                 return result;
         }
@@ -764,8 +764,8 @@ protected:
 
         // Let's pretend async mode is set this way.
         // This is for asynchronous connect.
-        yes = m_blocking_mode;
-        result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
+        int maybe = m_blocking_mode;
+        result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &maybe, sizeof maybe);
         if ( result == -1 )
             return result;
 

@@ -203,8 +203,8 @@ CUDT::CUDT()
    m_bDataSender = false;       //Sender only if true: does not recv data
    m_bTwoWayData = false;
 #ifdef SRT_ENABLE_TSBPD
-   m_bTsbPdMode = false;        //Enable TsbPd on sender
-   m_iTsbPdDelay = 20;          //Receiver TsbPd delay (mSec)
+   m_bTsbPdMode = true;        //Enable TsbPd on sender
+   m_iTsbPdDelay = 120;          //Receiver TsbPd delay (mSec)
 #ifdef SRT_ENABLE_TLPKTDROP
    m_bTLPktDrop = true;         //Too-late Packet Drop
 #endif /* SRT_ENABLE_TLPKTDROP */

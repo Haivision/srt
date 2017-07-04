@@ -701,12 +701,12 @@ CSRTCC::CSRTCC()
     m_SrtVersion    = SRT_DEF_VERSION;
     m_bDataSender   = false;
     m_bSndTsbPdMode = false;
-    m_TsbPdDelay    = 20;  //msec
+    m_TsbPdDelay    = 120;  //msec
 
     m_dCWndSize     = 1000;
 
     //Data
-    m_bRcvTsbPdMode = false;
+    m_bRcvTsbPdMode = true;
 #ifdef SRT_ENABLE_TLPKTDROP
     m_bRcvTLPktDrop     = false;   //Settings
     m_bSndPeerTLPktDrop = false;   //Data
