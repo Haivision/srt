@@ -51,7 +51,7 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
         {
             // Host is given, so check also "adapter"
             if ( options.count("adapter") )
-                mode=SocketOption::RENDEZVOUS;
+                mode = SocketOption::RENDEZVOUS;
             else
                 mode = SocketOption::CALLER;
         }
