@@ -1,0 +1,47 @@
+COMPONENT
+	srt
+PUBLIC_HEADERS
+	srt.h
+	udt.h
+	logging_api.h
+PROTECTED_HEADERS
+	srt4udt.h
+	platform_sys.h
+PRIVATE_HEADERS
+	api.h
+	buffer.h
+	cache.h
+	ccc.h
+	channel.h
+	common.h
+	core.h
+	csrtcc.h
+	epoll.h
+	list.h
+	logging.h
+	md5.h
+	netinet_any.h
+	packet.h
+	platform_sys.h
+	queue.h
+	srt4udt.h
+	threadname.h
+	utilities.h
+	window.h
+SOURCES
+	api.cpp
+	buffer.cpp
+	cache.cpp
+	ccc.cpp
+	channel.cpp
+	common.cpp
+	core.cpp
+	csrtcc.cpp
+	epoll.cpp
+	list.cpp
+	md5.cpp
+	packet.cpp
+	queue.cpp
+	srt_c_api.cpp
+	window.cpp
+	../common/srt_compat.c

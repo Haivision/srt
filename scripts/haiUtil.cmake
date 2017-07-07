@@ -18,7 +18,6 @@
 
 
 # Useful for combinging paths
-
 function(adddirname prefix lst out_lst)
         set(output)
         foreach(item ${lst})
@@ -47,15 +46,41 @@ MACRO(set_if varname)
    ENDIF(${ARGN})
 ENDMACRO(set_if)
 
-MACRO(GetMafHeaders directory outvar)
-	EXECUTE_PROCESS(
-		COMMAND ${CMAKE_MODULE_PATH}/mafread.tcl
-			${CMAKE_SOURCE_DIR}/${directory}/HEADERS.maf
-			"PUBLIC HEADERS"
-			"PROTECTED HEADERS"
-		OUTPUT_STRIP_TRAILING_WHITESPACE
-		OUTPUT_VARIABLE ${outvar}
-	)
-	SEPARATE_ARGUMENTS(${outvar})
-	adddirname(${CMAKE_SOURCE_DIR}/${directory} "${${outvar}}" ${outvar})
-ENDMACRO(GetMafHeaders)
+
+include (CMakeParseArguments)
+
+macro(define_component_sources)
+	
+	set(oneValueOptions COMPONENT)
+	set(multiValueOptions PUBLIC_HEADERS PROTECTED_HEADERS PRIVATE_HEADERS SOURCES)
+	
+	cmake_parse_arguments(val "" "${oneValueOptions}" "${multiValueOptions}" "${ARGN}")
+	
+	set(${val_COMPONENT}_PUBLIC_HEADERS "${val_PUBLIC_HEADERS}")
+	set(${val_COMPONENT}_PROTECTED_HEADERS "${val_PROTECTED_HEADERS}")
+	set(${val_COMPONENT}_PRIVATE_HEADERS "${val_PRIVATE_HEADERS}")
+	set(${val_COMPONENT}_SOURCES "${val_SOURCES}")
+	
+endmacro(define_component_sources)
+
+macro(extract_sources)
+	
+	set(oneValueOptions COMPONENT MANIFEST PUBLIC_HEADERS PROTECTED_HEADERS PRIVATE_HEADERS SOURCES)
+	cmake_parse_arguments(args "" "${oneValueOptions}" "" "${ARGN}")
+	
+	# read the maifest file
+	file(READ ${args_MANIFEST} MANIFEST_CONTENTS)
+	string(REPLACE " " ";" MANIFEST_CONTENTS ${MANIFEST_CONTENTS})
+	string(REPLACE "\t" "" MANIFEST_CONTENTS ${MANIFEST_CONTENTS})
+	string(REPLACE "\n" ";" MANIFEST_CONTENTS ${MANIFEST_CONTENTS})
+	
+	define_component_sources(${MANIFEST_CONTENTS})
+	
+	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PUBLIC_HEADERS}")
+	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PROTECTED_HEADERS}")
+	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PRIVATE_HEADERS}")
+	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_SOURCES}")
+	
+	message(STATUS "S: ${args_PUBLIC_HEADERS}")
+	
+endmacro(extract_sources)

@@ -16,22 +16,18 @@
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 # 
 
-file (READ Sources.txt SOURCES_haisrt_srt)
-string(REPLACE "\n" ";" SOURCES_haisrt ${SOURCES_haisrt_srt})
-
-
-#GetMafHeaders(srtcore HEADERS_haisrt_declared)
-
-set(PUBLIC_HEADERS_haisrt
-	srt.h
-	udt.h
-	logging_api.h
-    #${HEADERS_haisrt_declared}
-
+extract_sources(
+	MANIFEST Manifest.txt
+	COMPONENT srt
+	PUBLIC_HEADERS PUBLIC_HEADERS_srt
+	PROTECTED_HEADERS PROTECTED_HEADERS_srt
+	PRIVATE_HEADERS PRIVATE_HEADERS_srt
+	SOURCES SOURCES_srt
 )
 
+
 # HaiSRT: SRT library (UDT API only)
-add_library(${NAME_haisrt} ${srt_libspec} ${SOURCES_haisrt} ${PUBLIC_HEADERS_haisrt})
+add_library(${NAME_haisrt} ${srt_libspec} ${PUBLIC_HEADERS_srt} ${PROTECTED_HEADERS_srt} ${PRIVATE_HEADERS_srt} ${SOURCES_srt})
 
 
 target_link_libraries (${NAME_haisrt} PUBLIC ${PTHREAD_LIBRARY} ${NAME_haicrypt})
@@ -55,6 +51,6 @@ if ( WIN32 )
 endif()
 
 install(TARGETS ${NAME_haisrt} DESTINATION lib)
-install(FILES ${PUBLIC_HEADERS_haisrt} DESTINATION include/srt)
+install(FILES ${PUBLIC_HEADERS_srt} ${PROTECTED_HEADERS_srt} DESTINATION include/srt)
 
 
