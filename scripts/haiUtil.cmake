@@ -77,10 +77,8 @@ macro(extract_sources)
 	define_component_sources(${MANIFEST_CONTENTS})
 	
 	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PUBLIC_HEADERS}")
-	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PROTECTED_HEADERS}")
-	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_PRIVATE_HEADERS}")
-	set(${args_PUBLIC_HEADERS} "${${args_COMPONENT}_SOURCES}")
-	
-	message(STATUS "S: ${args_PUBLIC_HEADERS}")
+	set(${args_PROTECTED_HEADERS} "${${args_COMPONENT}_PROTECTED_HEADERS}")
+	set(${args_PRIVATE_HEADERS} "${${args_COMPONENT}_PRIVATE_HEADERS}")
+	set(${args_SOURCES} "${${args_COMPONENT}_SOURCES}")
 	
 endmacro(extract_sources)
