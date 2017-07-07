@@ -50,7 +50,11 @@ if ( WIN32 )
 	endif()
 endif()
 
-install(TARGETS ${NAME_haisrt} DESTINATION lib)
-install(FILES ${PUBLIC_HEADERS_srt} ${PROTECTED_HEADERS_srt} DESTINATION include/srt)
+install(TARGETS ${NAME_haisrt} 
+	RUNTIME DESTINATION bin
+	LIBRARY DESTINATION lib
+	ARCHIVE DESTINATION lib
+)
 
+install(FILES ${PUBLIC_HEADERS_srt} ${PROTECTED_HEADERS_srt} DESTINATION include/srt)
 

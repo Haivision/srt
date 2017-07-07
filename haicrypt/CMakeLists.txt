@@ -59,7 +59,10 @@ if (WIN32)
 	target_link_libraries(${NAME_haicrypt} PRIVATE ws2_32.lib)
 endif()
 
-install(TARGETS ${NAME_haicrypt} DESTINATION lib)
+install(TARGETS ${NAME_haicrypt} 
+	RUNTIME DESTINATION bin
+	LIBRARY DESTINATION lib
+	ARCHIVE DESTINATION lib
+)
+
 install(FILES ${HEADERS_haicrypt} ${PROTECTED_HEADERS_haicrypt} DESTINATION include/haicrypt)
-
-
