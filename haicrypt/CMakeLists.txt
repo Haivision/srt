@@ -16,28 +16,22 @@
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 # 
 
-file(READ Sources.txt SOURCES_haicrypt_str)
-string(REPLACE "\n" ";" SOURCES_haicrypt ${SOURCES_haicrypt_str})
-
-
 if (WIN32)
 	message(STATUS "Compiling win_time.cpp because on windows...")
 	
     list(APPEND SOURCES_haicrypt ../common/win_time.cpp)
 endif()
 
-#GetMafHeaders(haicrypt HEADERS_haicrypt_declared)
-
-set (HEADERS_haicrypt
-	# These files are now TO BE extracted from HEADERS.maf file
-    haicrypt.h
-    hcrypt_ctx.h
-    hcrypt_msg.h
-    #${HEADERS_haicrypt_declared}
+extract_sources(
+	MANIFEST Manifest.txt
+	COMPONENT haicrypt
+	PUBLIC_HEADERS PUBLIC_HEADERS_haicrypt
+	PROTECTED_HEADERS PROTECTED_HEADERS_haicrypt
+	PRIVATE_HEADERS PRIVATE_HEADERS_haicrypt
+	SOURCES SOURCES_haicrypt
 )
 
-
-add_library(${NAME_haicrypt} ${srt_libspec} ${SOURCES_haicrypt} ${HEADERS_haicrypt})
+add_library(${NAME_haicrypt} ${srt_libspec} ${PUBLIC_HEADERS_haicrypt} ${PROTECTED_HEADERS_haicrypt} ${PRIVATE_HEADERS_haicrypt} ${SOURCES_haicrypt})
 
 
 if (${SRT_BUILD_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
@@ -70,6 +64,5 @@ install(TARGETS ${NAME_haicrypt}
 	LIBRARY DESTINATION lib
 	ARCHIVE DESTINATION lib
 )
-install(FILES ${HEADERS_haicrypt} DESTINATION include/haicrypt)
 
-
+install(FILES ${HEADERS_haicrypt} ${PROTECTED_HEADERS_haicrypt} DESTINATION include/haicrypt)
