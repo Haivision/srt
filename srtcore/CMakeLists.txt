@@ -33,6 +33,9 @@ set(PUBLIC_HEADERS_haisrt
 # HaiSRT: SRT library (UDT API only)
 add_library(${NAME_haisrt} ${srt_libspec} ${SOURCES_haisrt} ${PUBLIC_HEADERS_haisrt})
 
+if ( WIN32 )
+	add_definitions(-DHAVE_STRUCT_TIMESPEC)
+endif()
 
 target_link_libraries (${NAME_haisrt} PUBLIC ${PTHREAD_LIBRARY} ${NAME_haicrypt})
 target_include_directories(${NAME_haisrt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
