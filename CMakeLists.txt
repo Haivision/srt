@@ -210,7 +210,11 @@ if (NOT haicrypt_libspec STREQUAL VIRTUAL)
 	endif()
 	target_compile_definitions(${TARGET_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
 
-	install(TARGETS ${TARGET_haicrypt} DESTINATION lib)
+	install(TARGETS ${TARGET_haicrypt}
+		RUNTIME DESTINATION bin
+		ARCHIVE DESTINATION lib
+		LIBRARY DESTINATION lib
+	)
 	install(FILES ${HEADERS_haicrypt} DESTINATION include/srt)
 	if (WIN32)
 		install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
@@ -299,7 +303,11 @@ if ( WIN32 )
 	endif()
 endif()
 
-install(TARGETS ${TARGET_srt} DESTINATION lib)
+install(TARGETS ${TARGET_srt}
+		RUNTIME DESTINATION bin
+		ARCHIVE DESTINATION lib
+		LIBRARY DESTINATION lib
+)
 install(FILES ${HEADERS_srt} DESTINATION include/srt)
 if (WIN32 AND TARGET_haicrypt STREQUAL TARGET_srt)
 	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
