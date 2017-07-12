@@ -33,6 +33,7 @@ set(PUBLIC_HEADERS_haisrt
 # HaiSRT: SRT library (UDT API only)
 add_library(${NAME_haisrt} ${srt_libspec} ${SOURCES_haisrt} ${PUBLIC_HEADERS_haisrt})
 
+# to avoid redefinition of 'timespec' structure causing compilation errors when MSVC is used
 if ( WIN32 )
 	add_definitions(-DHAVE_STRUCT_TIMESPEC)
 endif()
