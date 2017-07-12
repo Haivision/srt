@@ -23,12 +23,12 @@ set extracted ""
 set insection 0
 
 while { [gets $fd line] >= 0 } {
-	set line [string trim $line]
-	if { $line == "" } {
+	set oline [string trim $line]
+	if { $oline == "" } {
 		continue
 	}
 
-	if { [string index $line 0] == "#" } {
+	if { [string index $oline 0] == "#" } {
 		continue
 	}
 
@@ -39,7 +39,7 @@ while { [gets $fd line] >= 0 } {
 		}
 
 		# If it is, then check if this is OUR section
-		if { $line in $sections } {
+		if { $oline in $sections } {
 			set insection 1
 			continue
 		}
@@ -51,7 +51,7 @@ while { [gets $fd line] >= 0 } {
 		}
 
 		# Otherwise read the current filename
-		lappend extracted $line
+		lappend extracted $oline
 	}
 }
 
