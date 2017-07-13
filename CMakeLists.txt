@@ -39,7 +39,8 @@ option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the
 option(ENABLE_CXX11 "Should the c++11 parts (stransmit) be enabled" ON)
 option(SRT_BUILD_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
 option(SRT_ENABLE_LOGGING "Should logging be enabled" ${SRT_ENABLE_LOGGING_DEFAULT})
-option(ENABLE_SHARED "Should haisrt and haicrypt be built as a shared library" ON)
+option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
+option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip be built" OFF)
 
 # Always turn logging on if the build type is debug
@@ -47,8 +48,8 @@ if (ENABLE_DEBUG)
 	set(SRT_ENABLE_LOGGING ON)
 endif()
 
-set(NAME_haisrt "haisrt" CACHE STRING "The name for the haisrt library")
-set(NAME_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library")
+set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
+set(TARGET_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library")
 
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
@@ -95,6 +96,12 @@ if ( ENABLE_SHARED )
     set (srt_libspec SHARED)
 else()
     set (srt_libspec STATIC)
+endif()
+
+if (ENABLE_SEPARATE_HAICRYPT)
+	set (haicrypt_libspec ${srt_libspec})
+else()
+	set (haicrypt_libspec VIRTUAL)
 endif()
 
 
@@ -145,8 +152,173 @@ else()
 	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 endif()
 
-add_subdirectory(haicrypt)
-add_subdirectory(srtcore)
+# ---
+# Target: haicrypt.
+# Completing sources and installable headers. Flag settings will follow.
+# ---
+MafRead(haicrypt/filelist.maf
+	SOURCES SOURCES_haicrypt_indir
+	PUBLIC_HEADERS HEADERS_haicrypt_indir
+	PROTECTED_HEADERS HEADERS_haicrypt_indir
+)
+
+adddirname(haicrypt "${SOURCES_haicrypt_indir}" SOURCES_haicrypt)
+adddirname(haicrypt "${HEADERS_haicrypt_indir}" HEADERS_haicrypt)
+
+if (WIN32)
+	MafRead(common/filelist_win32.maf
+		SOURCES SOURCES_common_indir
+		PUBLIC_HEADERS HEADERS_common_indir
+		PROTECTED_HEADERS HEADERS_common_indir
+	)
+	message(STATUS "WINDOWS detected: adding compat sources: ${SOURCES_common_indir}")
+	adddirname(common "${SOURCES_common_indir}" SOURCES_haicrypt)
+
+	# WARNING!
+	# The common headers are attached to haicrypt in case when
+	# the haicrypt library is a separate library. If this is a
+	# virtual library, the common headers will be attached to
+	# srt headers, and the haicrypt headers will not be published.
+	adddirname(common "${HEADERS_common_indir}" HEADERS_srt_win32)
+endif()
+
+message(STATUS "SOURCES(haicrypt): ${SOURCES_haicrypt}")
+
+# NOTE: The "virtual library" is a library specification that cmake
+# doesn't support. It's a private-only dependency type, where the project
+# isn't compiled into any library file at all - instead, all of its source
+# files are incorporated directly to the source list of the project that
+# depends on it. In cmake this must be handled manually.
+
+# For a separate haicrypt library it's allowed that the common compat
+# things are attached to haicrypt library. In the known uses of the
+# library separation, however, there is no extra compat stuff on the
+# platform where it's being used.
+if (NOT haicrypt_libspec STREQUAL VIRTUAL)
+	message(STATUS "Making haicrypt as a ${haicrypt_libspec} library")
+	add_library(${TARGET_haicrypt} ${haicrypt_libspec} ${SOURCES_haicrypt})
+
+	# Note: POSIX specific; this is used in haisrt.pc.in
+	set (IFNEEDED_LINK_HAICRYPT -l${TARGET_haicrypt})
+
+	# Add these extra settings only in case when haicrypt is compiled
+	# as a separate library. They are public interface oriented, so for
+	# virtual library - which is always a private dependency - it's not needed.
+
+	if (ENABLE_SHARED)
+		target_compile_definitions(${TARGET_haicrypt} PUBLIC -DHAICRYPT_DYNAMIC)
+	endif()
+	target_compile_definitions(${TARGET_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
+
+	install(TARGETS ${TARGET_haicrypt}
+		RUNTIME DESTINATION bin
+		ARCHIVE DESTINATION lib
+		LIBRARY DESTINATION lib
+	)
+	install(FILES ${HEADERS_haicrypt} DESTINATION include/srt)
+	if (WIN32)
+		install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+	endif()
+endif()
+# NOTE: rest of the settings for haicrypt follow.
+
+
+# ---
+# Target: srt. DEFINITION ONLY. Haicrypt flag settings follow.
+# ---
+MafRead(srtcore/filelist.maf
+	SOURCES SOURCES_srt_indir
+	PUBLIC_HEADERS HEADERS_srt_indir
+	PROTECTED_HEADERS HEADERS_srt_indir
+)
+
+adddirname(srtcore "${SOURCES_srt_indir}" SOURCES_srt)
+adddirname(srtcore "${HEADERS_srt_indir}" HEADERS_srt)
+
+# Manual handling of dependency on virtual library
+if (haicrypt_libspec STREQUAL VIRTUAL)
+	message(STATUS "Haicrypt attached to sources of srt")
+	# By setting the target, all settings applied to the haicrypt target
+	# will now apply to the dependent library.
+	set (TARGET_haicrypt ${TARGET_srt}) 
+	list(APPEND SOURCES_srt ${SOURCES_haicrypt})
+	set (DEPENDS_srt)
+	set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
+else()
+	set (DEPENDS_srt ${TARGET_haicrypt})
+endif()
+
+add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt})
+
+# ---
+# And back to target: haicrypt. Both targets must be defined
+# prior to setting flags, and after defining the list of sources
+# can no longer be extended.
+#
+# For haicrypt.spec = VIRTUAL, these settings apply to srt.
+# Otherwise they apply to haicrypt.
+# ---
+
+if (${SRT_BUILD_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
+    target_compile_options(${TARGET_haicrypt} PUBLIC -g -pg)
+	target_link_libraries(${TARGET_haicrypt} PUBLIC -g -pg)
+endif()
+
+# add extra warning flags for gccish compilers
+if (HAVE_COMPILER_GNU_COMPAT)
+	target_compile_options (${TARGET_haicrypt} PUBLIC -Wall -Wextra)
+endif()
+
+target_include_directories(${TARGET_haicrypt}
+	PRIVATE  ${OPENSSL_INCLUDE_DIR}
+	PUBLIC ${SRT_SRC_HAICRYPT_DIR} ${SRT_INCLUDE_DIR}
+)
+
+target_link_libraries(${TARGET_haicrypt} PRIVATE ${OPENSSL_LIBRARIES})
+if (WIN32)
+	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
+endif()
+
+# ---
+# So, back to target: srt. Setting the rest of the settings for srt target.
+# ---
+
+target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
+target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
+
+# Not sure why it's required, but somehow only on Linux
+if ( LINUX )
+	target_link_libraries(${TARGET_srt} PUBLIC rt)
+endif()
+
+
+target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
+if (ENABLE_SHARED)
+	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
+endif()
+
+if ( WIN32 )
+	if (NOT CYGWIN)
+    	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
+	endif()
+endif()
+
+install(TARGETS ${TARGET_srt}
+		RUNTIME DESTINATION bin
+		ARCHIVE DESTINATION lib
+		LIBRARY DESTINATION lib
+)
+install(FILES ${HEADERS_srt} DESTINATION include/srt)
+if (WIN32 AND TARGET_haicrypt STREQUAL TARGET_srt)
+	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+endif()
+
+# ---
+# That's all for target definition
+# ---
+
+message(STATUS "Target haicrypt: TYPE:${haicrypt_libspec} ACTUAL TARGET: ${TARGET_haicrypt} HEADERS: {${HEADERS_haicrypt}}")
+message(STATUS "Target srt: TYPE:${srt_libspec} SOURCES: {${SOURCES_srt}} DEPENDS: {${DEPENDS_srt}} HEADERS: {${HEADERS_srt}}")
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_FLAGS} ${SRT_GCC_WARN}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_FLAGS} ${SRT_GCC_WARN}")
@@ -186,8 +358,8 @@ if ( ENABLE_CXX11 )
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}")
-	target_link_libraries(stransmit ${NAME_haisrt} ${NAME_haicrypt})
-	target_link_libraries(utility-test ${NAME_haisrt})
+	target_link_libraries(stransmit ${TARGET_srt} ${TARGET_haicrypt})
+	target_link_libraries(utility-test ${TARGET_srt})
 	install(TARGETS stransmit RUNTIME DESTINATION bin)
 	install(PROGRAMS scripts/sfplay DESTINATION bin)
 
@@ -198,7 +370,7 @@ if ( ENABLE_SUFLIP )
 		${CMAKE_SOURCE_DIR}/apps/suflip.cpp ${CMAKE_SOURCE_DIR}/apps/uriparser.cpp
 	)
 
-	set(LIBS_suflip ${NAME_haicrypt} ${NAME_haisrt})
+	set(LIBS_suflip ${TARGET_haicrypt} ${TARGET_srt})
 
 	add_executable(suflip ${SOURCES_suflip})
 	target_link_libraries(suflip ${LIBS_suflip})
@@ -207,5 +379,5 @@ endif ()
 
 
 if (SRT_ENABLE_LOGGING)
-	target_compile_definitions(${NAME_haicrypt} PUBLIC -DENABLE_LOGGING=1)
+	target_compile_definitions(${TARGET_haicrypt} PUBLIC -DENABLE_LOGGING=1)
 endif()
