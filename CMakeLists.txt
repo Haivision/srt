@@ -15,41 +15,53 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library; If not, see <http://www.gnu.org/licenses/>
 #
-cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
+cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
+# XXX This can be potentially done in future, but there still exist
+# some dependent project using cmake 2.8 - this can't be done this way.
+#cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
+#project(SRT VERSION "1.2.1")
+project(SRT C CXX)
 
+set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(haiUtil)
+include(FindPkgConfig)
 
+set (SRT_VERSION 1.2.0)
+set_version_variables(SRT_VERSION ${SRT_VERSION})
 
-project(SRT VERSION "1.2.0")
-
+if (NOT DEFINED ENABLE_DEBUG)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 	set (ENABLE_DEBUG ON)
 else()
 	set (ENABLE_DEBUG OFF)
 endif()
+elseif (ENABLE_DEBUG)
+	set (CMAKE_BUILD_TYPE "Debug")
+endif()
 
 # option defaults
 if (ENV{SRT_LOGGING_ENABLED})
-	set(SRT_ENABLE_LOGGING_DEFAULT ON)
+	set(ENABLE_LOGGING_DEFAULT ON)
 else()
-	set(SRT_ENABLE_LOGGING_DEFAULT OFF)
+	set(ENABLE_LOGGING_DEFAULT OFF)
 endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (stransmit) be enabled" ON)
-option(SRT_BUILD_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
-option(SRT_ENABLE_LOGGING "Should logging be enabled" ${SRT_ENABLE_LOGGING_DEFAULT})
+option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
+option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
-option(ENABLE_SUFLIP "Shuld suflip be built" OFF)
+option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
 
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
-	set(SRT_ENABLE_LOGGING ON)
+	set(ENABLE_LOGGING ON)
 endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
-set(TARGET_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library")
+set(TARGET_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library, if compiled separately")
 
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
@@ -63,8 +75,13 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-include(haiUtil)
+if (DEFINED WITH_SRT_NAME)
+	set (TARGET_haisrt ${WITH_SRT_TARGET})
+endif()
+
+if (DEFINED WITH_HAICRYPT_NAME)
+	set (TARGET_haicrypt ${WITH_HAICRYPT_TARGET})
+endif()
 
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -75,12 +92,23 @@ message (STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
-foreach (gnid Intel Clang GNU AppleClang)
+foreach (gnid GNU Intel Clang AppleClang)
 	if (${CMAKE_CXX_COMPILER_ID} STREQUAL ${gnid})
 		set(HAVE_COMPILER_GNU_COMPAT 1)
 		break()
 	endif()
 endforeach()
+
+if (DISABLE_CXX11)
+	set (ENABLE_CXX11 0)
+elseif( DEFINED ENABLE_CXX11 )
+else()
+	set (ENABLE_CXX11 1)
+endif()
+
+if (NOT ENABLE_CXX11)
+	message(WARNING "Parts that require C++11 support will be disabled (stransmit)")
+endif()
 
 if (HAVE_COMPILER_GNU_COMPAT)
 	message(STATUS "COMPILER: GNU compat: ${CMAKE_CXX_COMPILER}")
@@ -88,9 +116,22 @@ else()
 	message(STATUS "COMPILER: NOT GNU compat: ${CMAKE_CXX_COMPILER}")
 endif()
 
-if (NOT ENABLE_CXX11)
-	message(WARNING "Parts that require C++11 support will be disabled (stransmit)")
+# add extra warning flags for gccish compilers
+if (HAVE_COMPILER_GNU_COMPAT)
+	set (SRT_GCC_WARN "-Wall -Wextra")
+else()
+	# cpp debugging on Windows :D
+	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+
+if (USE_STATIC_LIBSTDCXX)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+	else()
+		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
+	endif()
+endif()
+
 
 if ( ENABLE_SHARED )
     set (srt_libspec SHARED)
@@ -112,7 +153,6 @@ set (SRT_SRC_SRTCORE_DIR ${CMAKE_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_SOURCE_DIR}/tools)
 
-# get the windows specific source files
 if(WIN32)
     add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB)
 elseif(DARWIN)
@@ -137,6 +177,21 @@ add_definitions(
    -DSRT_VERSION="${SRT_VERSION}"
 )
 
+# This is obligatory include directory for all targets. This is only
+# for private headers. Installable headers should be exclusively used DIRECTLY.
+include_directories(${SRT_INCLUDE_DIR})
+
+if (ENABLE_LOGGING)
+    list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
+endif()
+
+if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
+    # They are actually cflags, not definitions, but CMake is stupid enough.
+    add_definitions(-g -pg)
+	link_libraries(-g -pg)
+endif()
+
+
 # find pthread
 find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 if (PTHREAD_INCLUDE_DIR)
@@ -151,6 +206,17 @@ if (PTHREAD_LIBRARY)
 else()
 	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 endif()
+
+# This is required in some projects that add some other sources
+# to the SRT library to be compiled together (aka "virtual library").
+if (DEFINED SRT_EXTRA_LIB_INC)
+	include(${SRT_EXTRA_LIB_INC}.cmake)
+	# Expected to provide variables:
+	# - SOURCES_srt_extra
+	# - EXTRA_stransmit
+endif()
+
+# ---------------------------------------------------------------------------
 
 # ---
 # Target: haicrypt.
@@ -248,7 +314,7 @@ else()
 	set (DEPENDS_srt ${TARGET_haicrypt})
 endif()
 
-add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt})
+add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
 
 # ---
 # And back to target: haicrypt. Both targets must be defined
@@ -259,24 +325,17 @@ add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt})
 # Otherwise they apply to haicrypt.
 # ---
 
-if (${SRT_BUILD_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
-    target_compile_options(${TARGET_haicrypt} PUBLIC -g -pg)
-	target_link_libraries(${TARGET_haicrypt} PUBLIC -g -pg)
-endif()
-
-# add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
-	target_compile_options (${TARGET_haicrypt} PUBLIC -Wall -Wextra)
-endif()
 
 target_include_directories(${TARGET_haicrypt}
 	PRIVATE  ${OPENSSL_INCLUDE_DIR}
-	PUBLIC ${SRT_SRC_HAICRYPT_DIR} ${SRT_INCLUDE_DIR}
+	PUBLIC ${SRT_SRC_HAICRYPT_DIR}
 )
 
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${OPENSSL_LIBRARIES})
+set (SRT_LIBS_PRIVATE ${OPENSSL_LIBRARIES})
 if (WIN32)
 	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 endif()
 
 # ---
@@ -284,11 +343,13 @@ endif()
 # ---
 
 target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
+set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
 # Not sure why it's required, but somehow only on Linux
 if ( LINUX )
 	target_link_libraries(${TARGET_srt} PUBLIC rt)
+	set (IFNEEDED_SRT_LDFLAGS -pthread)
 endif()
 
 
@@ -320,20 +381,37 @@ endif()
 message(STATUS "Target haicrypt: TYPE:${haicrypt_libspec} ACTUAL TARGET: ${TARGET_haicrypt} HEADERS: {${HEADERS_haicrypt}}")
 message(STATUS "Target srt: TYPE:${srt_libspec} SOURCES: {${SOURCES_srt}} DEPENDS: {${DEPENDS_srt}} HEADERS: {${HEADERS_srt}}")
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_FLAGS} ${SRT_GCC_WARN}")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_FLAGS} ${SRT_GCC_WARN}")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
 
 # PC file generation.
 if (NOT DEFINED INSTALLDIR)
 	set (INSTALLDIR ${CMAKE_INSTALL_PREFIX})
 	get_filename_component(INSTALLDIR ${INSTALLDIR} ABSOLUTE)
 endif()
+
+# XXX
+# These two flags are required if compiling a C application
+# The problem is that pkg-config cannot return flags that are
+# suitable for C or C++ only - just "cflags", and for C by default.
+# This may cause trouble when you want to compile your app with static libstdc++;
+# if your build requires it, you'd probably remove -lstdc++ from the list
+# obtained by `pkg-config --libs`.
+#
+# Some sensible solution for that is desired. Currently turned on only on demand.
+if (ENABLE_C_DEPS)
+if ( LINUX )
+	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
+endif()
+endif()
+
+join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
+
 # haisrt.pc left temporarily for backward compatibility. To be removed in future!
 configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
 configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
-
 
 # Applications
 
@@ -357,7 +435,7 @@ if ( ENABLE_CXX11 )
 	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}")
+	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
 	target_link_libraries(stransmit ${TARGET_srt} ${TARGET_haicrypt})
 	target_link_libraries(utility-test ${TARGET_srt})
 	install(TARGETS stransmit RUNTIME DESTINATION bin)
@@ -365,9 +443,16 @@ if ( ENABLE_CXX11 )
 
 endif()
 
+if (DEFINED SRT_EXTRA_APPS_INC)
+	include(${SRT_EXTRA_APPS_INC}.cmake)
+	# No extra variables expected. Just use the variables
+	# already provided and define additional targets.
+endif()
+
 if ( ENABLE_SUFLIP )
 	set (SOURCES_suflip
-		${CMAKE_SOURCE_DIR}/apps/suflip.cpp ${CMAKE_SOURCE_DIR}/apps/uriparser.cpp
+		${CMAKE_SOURCE_DIR}/apps/suflip.cpp
+		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
 	)
 
 	set(LIBS_suflip ${TARGET_haicrypt} ${TARGET_srt})
@@ -376,8 +461,3 @@ if ( ENABLE_SUFLIP )
 	target_link_libraries(suflip ${LIBS_suflip})
 	install(TARGETS suflip RUNTIME DESTINATION bin)
 endif ()
-
-
-if (SRT_ENABLE_LOGGING)
-	target_compile_definitions(${TARGET_haicrypt} PUBLIC -DENABLE_LOGGING=1)
-endif()

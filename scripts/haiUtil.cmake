@@ -47,6 +47,16 @@ MACRO(set_if varname)
    ENDIF(${ARGN})
 ENDMACRO(set_if)
 
+FUNCTION(join_arguments outvar)
+	set (output)
+
+	foreach (i ${ARGN})
+		set(output "${output} ${i}")
+	endforeach()
+
+	set (${outvar} ${output} PARENT_SCOPE)
+ENDFUNCTION()
+
 MACRO(MafRead maffile)
 	# ARGN contains the extra "section-variable" pairs
 	# If empty, return nothing
@@ -121,6 +131,9 @@ MACRO(MafRead maffile)
 
 ENDMACRO(MafRead)
 
+# NOTE: This is historical only. Not in use.
+# It should be a similar interface to mafread.tcl like
+# the above MafRead macro.
 MACRO(GetMafHeaders directory outvar)
 	EXECUTE_PROCESS(
 		COMMAND ${CMAKE_MODULE_PATH}/mafread.tcl
