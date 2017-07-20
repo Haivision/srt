@@ -39,7 +39,7 @@ written by
 #define HCRYPT_EVP_CTR_BLK_SZ       AES_BLOCK_SIZE
 
 typedef struct tag_hcOpenSSL_EVP_CTR_data {
-		EVP_CIPHER_CTX evp_ctx[2];
+		EVP_CIPHER_CTX *evp_ctx[2];
 
 #ifdef HAICRYPT_USE_OPENSSL_EVP_ECB4CTR
 #define HCRYPT_EVP_CTR_STREAM_SZ	2048
@@ -175,11 +175,11 @@ static hcrypt_CipherData *hcOpenSSL_EVP_CTR_Open(size_t max_len)
 	evp_data->outbuf_siz = HCRYPT_OPENSSL_EVP_CTR_OUTMSGMAX * padded_len;
 	evp_data->outbuf_ofs = 0;
 
-	EVP_CIPHER_CTX_init(&evp_data->evp_ctx[0]);
-	EVP_CIPHER_CTX_set_padding(&evp_data->evp_ctx[0], 0);
+	evp_data->evp_ctx[0] = EVP_CIPHER_CTX_new();
+	EVP_CIPHER_CTX_set_padding(evp_data->evp_ctx[0], 0);
 
-	EVP_CIPHER_CTX_init(&evp_data->evp_ctx[1]);
-	EVP_CIPHER_CTX_set_padding(&evp_data->evp_ctx[1], 0);
+	evp_data->evp_ctx[1] = EVP_CIPHER_CTX_new();
+	EVP_CIPHER_CTX_set_padding(evp_data->evp_ctx[1], 0);
 
 	return((hcrypt_CipherData *)evp_data);
 }
@@ -189,8 +189,8 @@ static int hcOpenSSL_EVP_CTR_Close(hcrypt_CipherData *cipher_data)
 	hcOpenSSL_EVP_CTR_data *evp_data = (hcOpenSSL_EVP_CTR_data *)cipher_data;
 
 	if (NULL != evp_data) {
-		EVP_CIPHER_CTX_cleanup(&evp_data->evp_ctx[0]);
-		EVP_CIPHER_CTX_cleanup(&evp_data->evp_ctx[1]);
+		EVP_CIPHER_CTX_free(evp_data->evp_ctx[0]);
+		EVP_CIPHER_CTX_free(evp_data->evp_ctx[1]);
 		free(evp_data);
 	}
 	return(0);
@@ -199,7 +199,7 @@ static int hcOpenSSL_EVP_CTR_Close(hcrypt_CipherData *cipher_data)
 static int hcOpenSSL_EVP_CTR_SetKey(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx, unsigned char *key, size_t key_len)
 {
 	hcOpenSSL_EVP_CTR_data *evp_data = (hcOpenSSL_EVP_CTR_data *)cipher_data;
-	EVP_CIPHER_CTX *evp_ctx = &evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)];
+	EVP_CIPHER_CTX *evp_ctx = evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)];
 	int enc = ((ctx->flags & HCRYPT_CTX_F_ENCRYPT) || (ctx->mode == HCRYPT_CTX_MODE_AESCTR));
 	const EVP_CIPHER *cipher = NULL;
 
@@ -271,7 +271,7 @@ static int hcOpenSSL_EVP_CTR_Crypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *c
 		out_msg = hcOpenSSL_EVP_CTR_GetOutbuf(evp_data, pfx_len, evp_data->ctr_stream_len);
 
 		/* Create KeyStream (encrypt CtrStream) */
-		iret = hcOpenSSL_EVP_CTR_CipherData(&evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)],
+		iret = hcOpenSSL_EVP_CTR_CipherData(evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)],
 			evp_data->ctr_stream, evp_data->ctr_stream_len, NULL, 
 			&out_msg[pfx_len], &out_len);
 		if (iret) {
@@ -284,7 +284,7 @@ static int hcOpenSSL_EVP_CTR_Crypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *c
 		out_msg = hcOpenSSL_EVP_CTR_GetOutbuf(evp_data, pfx_len, in_data[0].len);
 
 		/* Encrypt */
-		iret = hcOpenSSL_EVP_CTR_CipherData(&evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)],
+		iret = hcOpenSSL_EVP_CTR_CipherData(evp_data->evp_ctx[hcryptCtx_GetKeyIndex(ctx)],
 			in_data[0].payload, in_data[0].len, iv, 
 			&out_msg[pfx_len], &out_len);
 		if (iret) {
