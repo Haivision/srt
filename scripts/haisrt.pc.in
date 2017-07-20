@@ -7,5 +7,6 @@ Name: srt
 Description: SRT library set
 Version: @SRT_VERSION@
 Libs: -L${libdir} -l@TARGET_srt@ @IFNEEDED_LINK_HAICRYPT@ @IFNEEDED_SRTBASE@ @IFNEEDED_SRT_LDFLAGS@
+Libs.private: @SRT_LIBS_PRIVATE@
 Cflags: -I${includedir}
 
