@@ -331,6 +331,7 @@ target_include_directories(${TARGET_haicrypt}
 	PUBLIC ${SRT_SRC_HAICRYPT_DIR}
 )
 
+set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${OPENSSL_LIBRARIES})
 set (SRT_LIBS_PRIVATE ${OPENSSL_LIBRARIES})
 if (WIN32)
@@ -342,6 +343,7 @@ endif()
 # So, back to target: srt. Setting the rest of the settings for srt target.
 # ---
 
+set_target_properties (${TARGET_srt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
