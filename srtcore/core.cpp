@@ -4308,7 +4308,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    {
       // sends out probing packet pair
       ts = entertime;
-      probe = false;
    }
    else
    {

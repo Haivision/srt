@@ -121,7 +121,6 @@ int HaiCrypt_Create(HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 	if (inbuf_siz) {
 		crypto->inbuf = mem_buf;
 		crypto->inbuf_siz = inbuf_siz;
-		mem_buf += inbuf_siz;
 	}
 
 	crypto->cipher = cfg->cipher;

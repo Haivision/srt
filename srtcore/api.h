@@ -277,8 +277,8 @@ inline std::string SockaddrToString(const sockaddr* sadr)
         : 0;
 	// (cast to (void*) is required because otherwise the 2-3 arguments
 	// of ?: operator would have different types, which isn't allowed in C++.
-    if ( !addr )
-        return "unknown:0";
+        if ( !addr )
+            return "unknown:0";
 
 	std::ostringstream output;
 	char hostbuf[1024];
