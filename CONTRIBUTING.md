@@ -12,9 +12,7 @@ Comment on any GitHub issue, open or closed. The only guidelines here are to be 
 
 ## Pull Requests
 
-Submit a pull request at any time, whether an issue has been created or not. It may be helpful to discuss your goals in an issue first, though many things can best be shown with code.
-
-Please remember that any change you think of as fix or improvement may potentially harm the current users of SRT. Do not hesitate to ask other users for opinion and discuss the ideas using the ticketing system before you start making your changes. This is especially important in these areas:
+Submit a pull request at any time, whether an issue has been created or not. It may be helpful to discuss your goals in an issue first, though many things can best be shown with code. Also do not hesitate to ask other users for opinion and discuss the ideas using the ticketing system before you start making your changes. This is especially important in these areas:
 
 * the build system and its variables
 * the SRT library public API
