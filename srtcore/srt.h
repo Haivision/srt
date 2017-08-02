@@ -30,6 +30,22 @@ written by
 
 #define SRT_API UDT_API
 
+// For feature tests if you need.
+// You can use these constants with SRTO_MINVERSION option.
+#define SRT_VERSION_FEAT_HSv5 0x010300
+
+
+// To construct version value
+#define SRT_MAKE_VERSION(major, minor, patch) ((patch)+((minor)*0x100)+((major)*0x10000))
+
+#ifdef __GNUG__
+#define SRT_ATR_UNUSED __attribute__((unused))
+#define SRT_ATR_DEPRECATED __attribute__((deprecated))
+#else
+#define SRT_ATR_UNUSED
+#define SRT_ATR_DEPRECATED
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,28 +93,37 @@ typedef enum SRT_SOCKOPT {
 	SRTO_RCVDATA,         // size of data available for recv
 	SRTO_SENDER = 21,     // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
 	SRTO_TSBPDMODE = 22,  // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
-	SRTO_TSBPDDELAY = 23, // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
-	SRTO_LATENCY = 23,    // ALIAS: SRTO_TSBPDDELAY
+    SRTO_LATENCY = 23,    // DEPRECATED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
+	SRTO_TSBPDDELAY = 23, // ALIAS: SRTO_LATENCY
 	SRTO_INPUTBW = 24,    // Estimated input stream rate.
 	SRTO_OHEADBW,         // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
 	SRTO_PASSPHRASE = 26, // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
 	SRTO_PBKEYLEN,        // Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
 	SRTO_KMSTATE,         // Key Material exchange status (UDT_SRTKmState)
-	SRTO_IPTTL = 29,      // IP Time To Live
-	SRTO_IPTOS,           // IP Type of Service
+	SRTO_IPTTL = 29,      // IP Time To Live (passthru for system sockopt IPPROTO_IP/IP_TTL)
+	SRTO_IPTOS,           // IP Type of Service (passthru for system sockopt IPPROTO_IP/IP_TOS)
 	SRTO_TLPKTDROP = 31,  // Enable receiver pkt drop
-	SRTO_TSBPDMAXLAG,     // !!!IMPORTANT NOTE: obsolete parameter. Has no effect !!!
+	SRTO_TSBPDMAXLAG,     // Decoder's tolerated lag past TspPD delay (decoder's buffer)
 	SRTO_NAKREPORT = 33,  // Enable receiver to send periodic NAK reports
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
 	SRTO_CONNTIMEO = 36,   // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
-	SRTO_TWOWAYDATA = 37,
-	SRTO_SNDPBKEYLEN = 38,
-	SRTO_RCVPBKEYLEN,
-	SRTO_SNDPEERKMSTATE,
-	SRTO_RCVKMSTATE,
-	SRTO_LOSSMAXTTL,
+    // deprecated: SRTO_TWOWAYDATA (@c below)
+    SRTO_SNDPBKEYLEN = 38, // (DEPRECATED: use SRTO_PBKEYLEN)
+    SRTO_RCVPBKEYLEN,      // (DEPRECATED: use SRTO_PBKEYLEN)
+    SRTO_SNDPEERKMSTATE,  // (GET) the current state of the encryption at the peer side
+    SRTO_RCVKMSTATE,      // (GET) the current state of the encryption at the agent side
+    SRTO_LOSSMAXTTL,      // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
+    SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
+    SRTO_PEERLATENCY,     // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
+    SRTO_MINVERSION,      // Minimum SRT version needed for the peer (peers with less version will get connection reject)
+    SRTO_STREAMID         // A string set to a socket and passed to the listener's accepted socket
 } SRT_SOCKOPT;
+
+
+// SRTO_TWOWAYDATA: not to be used. SRT connection is always bidirectional if
+// both clients support HSv5 - that is, since version 1.3.0
+static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 
 // UDT error code
 // Using duplicated wrapper until backward-compatible apps using UDT
@@ -172,6 +197,8 @@ SRT_API extern int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API extern int srt_listen(SRTSOCKET u, int backlog);
 SRT_API extern SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API extern int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API extern int srt_rendezvous(UDTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+        const struct sockaddr* remote_name, int remote_namelen);
 SRT_API extern int srt_close(SRTSOCKET u);
 SRT_API extern int srt_getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API extern int srt_getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen);
@@ -198,7 +225,8 @@ SRT_API extern const char* srt_strerror(int code, int errnoval);
 SRT_API extern void srt_clearlasterror(void);
 
 // performance track
-SRT_API extern int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear);
+// srt_perfmon is deprecated - use srt_bstats, which provides the same stats plus more.
+SRT_API extern int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
 SRT_API extern int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 
 // Socket Status (for problem tracking)

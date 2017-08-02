@@ -41,6 +41,31 @@ int srt_listen(UDTSOCKET u, int backlog) { return UDT::listen(u, backlog); }
 UDTSOCKET srt_accept(UDTSOCKET u, struct sockaddr * addr, int * addrlen) { return UDT::accept(u, addr, addrlen); }
 int srt_connect(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::connect(u, name, namelen); }
 
+int srt_rendezvous(UDTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+        const struct sockaddr* remote_name, int remote_namelen)
+{
+    bool yes = 1;
+    UDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+
+    // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
+    // Just as a safety precaution, check the structs.
+    if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
+            || local_name->sa_family != remote_name->sa_family)
+        return SRT_EINVPARAM;
+
+    sockaddr_in* local_sin = (sockaddr_in*)local_name;
+    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
+
+    if (local_sin->sin_port != remote_sin->sin_port)
+        return SRT_EINVPARAM;
+
+    int st = srt_bind(u, local_name, local_namelen);
+    if ( st != 0 )
+        return st;
+
+    return srt_connect(u, remote_name, remote_namelen);
+}
+
 int srt_close(UDTSOCKET u)
 {
     SRT_SOCKSTATUS st = srt_getsockstate(u);

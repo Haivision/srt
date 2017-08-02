@@ -23,9 +23,9 @@
 #include <udt.h>
 #include <utilities.h>
 #include <packet.h>
-#include <csrtcc.h>
+#include <crypto.h>
 
-int main()
+int main( int argc __attribute__((unused)), char** argv  __attribute__((unused)))
 {
     using namespace std;
 

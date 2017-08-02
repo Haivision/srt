@@ -53,11 +53,13 @@ extern "C" {
 /* 
  * Define (in Makefile) the HaiCrypt ciphers compiled in
  */
+//#define HAICRYPT_USE_DAVINCI_DSP 1    /* Preferred for makito classic stream encryption */
 //#define HAICRYPT_USE_OPENSSL_EVP 1    /* Preferred for most cases */
 //#define HAICRYPT_USE_OPENSSL_AES 1    /* Mandatory for key wrapping and prng */
 
 typedef void *HaiCrypt_Cipher;
 
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_Davinci_DSP(void);   /* Makito DSP AES */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
@@ -115,11 +117,20 @@ typedef struct {
         unsigned int    km_pre_announce_pkt;    /* Keying Material Pre/Post Announce (pkts) */
 }HaiCrypt_Cfg;
 
-typedef void *HaiCrypt_Handle;
+typedef enum HaiCrypt_CryptoDir { HAICRYPT_CRYPTO_DIR_RX, HAICRYPT_CRYPTO_DIR_TX } HaiCrypt_CryptoDir;
+
+//typedef void *HaiCrypt_Handle;
+// internally it will be correctly interpreted,
+// for the outsider it's just some kinda incomplete type
+// but still if you use any kinda pointer instead, you'll get complaints
+typedef struct hcrypt_Session* HaiCrypt_Handle;
+
+
 
 HAICRYPT_API int  HaiCrypt_SetLogLevel(int level, int logfa);
 
-HAICRYPT_API int  HaiCrypt_Create(HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
+HAICRYPT_API int  HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
+HAICRYPT_API int  HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handle *phhc);
 HAICRYPT_API int  HaiCrypt_Close(HaiCrypt_Handle hhc);
 HAICRYPT_API int  HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_p);
 HAICRYPT_API int  HaiCrypt_Tx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
@@ -131,6 +142,13 @@ HAICRYPT_API int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
 HAICRYPT_API int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
 HAICRYPT_API int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 HAICRYPT_API int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
+
+/* Status values */
+
+#define HAICRYPT_ERROR -1
+#define HAICRYPT_ERROR_WRONG_SECRET -2
+#define HAICRYPT_OK 0
+
 
 #ifdef __cplusplus
 }

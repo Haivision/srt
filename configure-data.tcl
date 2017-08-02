@@ -34,7 +34,7 @@
 
 
 set options {
-	enable-dynamic "compile SRT parts as shared objects (dynamic libraries)"
+	enable-shared "compile SRT parts as shared objects (dynamic libraries)"
 	disable-c++11 "turn off parts that require C++11 support"
 	enable-debug "turn on debug+nonoptimized build mode"
 	enable-profile "turn on profile instrumentation"

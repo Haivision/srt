@@ -41,13 +41,18 @@ written by
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
 #define ATR_NOEXCEPT noexcept
+#define ATR_CONSTEXPR constexpr
 #else
+#define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
+#define ATR_CONSTEXPR
 #endif
 
 #include <string>
+#include <algorithm>
 #include <bitset>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <cstdlib>
 #include <cerrno>
@@ -115,6 +120,32 @@ struct Bits
 };
 
 
+//inline int32_t Bit(size_t b) { return 1 << b; }
+// XXX This would work only with 'constexpr', but this is
+// available only in C++11. In C++03 this can be only done
+// using a macro.
+//
+// Actually this can be expressed in C++11 using a better technique,
+// such as user-defined literals:
+// 2_bit  --> 1 >> 2
+
+#ifdef BIT
+#undef BIT
+#endif
+#define BIT(x) (1 << (x))
+
+
+// ------------------------------------------------------------
+// This is something that reminds a structure consisting of fields
+// of the same type, implemented as an array. It's parametrized
+// by the type of fields and the type, which's values should be
+// used for indexing (preferably an enum type). Whatever type is
+// used for indexing, it is converted to size_t for indexing the
+// actual array.
+// 
+// The user should use it as an array: ds[DS_NAME], stating
+// that DS_NAME is of enum type passed as 3rd parameter.
+// However trying to do ds[0] would cause a compile error.
 template <typename FieldType, size_t Size, typename IndexerType>
 struct DynamicStruct
 {
@@ -168,7 +199,21 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
+inline void HtoNLA(uint32_t* dst, const uint32_t* src, size_t size)
+{
+    for (size_t i = 0; i < size; ++ i)
+        dst[i] = htonl(src[i]);
+}
+
+inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
+{
+    for (size_t i = 0; i < size; ++ i)
+        dst[i] = ntohl(src[i]);
+}
+
 #if HAVE_CXX11
+
+#include <functional>
 
 // Replacement for a bare reference for passing a variable to be filled by a function call.
 // To pass a variable, just use the std::ref(variable). The call will be accepted if you
@@ -180,8 +225,20 @@ struct ref_t: public std::reference_wrapper<T>
     ref_t() {}
     ref_t(const ref_t& i): base(i) {}
     ref_t(const base& i): base(i) {}
+
+    ref_t& operator=(const ref_t&) = default;
+
+    void operator=(const T& i)
+    {
+        this->get() = i;
+    }
 };
 
+template <class In>
+inline auto Ref(In i) -> decltype(ref(i)) { return ref(i); }
+
+template <class In>
+inline auto Move(In i) -> decltype(move(i)) { return move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 
@@ -203,10 +260,105 @@ inline std::string Sprint(Args&&... args)
     return sout.str();
 }
 
+// We need to use UniquePtr, in the form of C++03 it will be a #define.
+// Naturally will be used std::move() so that it can later painlessly
+// switch to C++11.
+template <class T>
+using UniquePtr = std::unique_ptr<T>;
+
+#else
+
+// Homecooked version of ref_t. It's a copy of std::reference_wrapper
+// voided of unwanted properties and renamed to ref_t.
+
+template<typename Type>
+class ref_t
+{
+    Type* m_data;
+
+public:
+    typedef Type type;
+
+    explicit ref_t(Type& __indata)
+        : m_data(&__indata)
+        { }
+
+    ref_t(const ref_t<Type>& inref)
+        : m_data(inref.m_data)
+    { }
+
+    void operator=(const ref_t<Type>& inref)
+    {
+        m_data = inref.m_data;
+    }
+
+    void operator=(const Type& src)
+    {
+        *m_data = src;
+    }
+
+    operator Type&() const
+    { return this->get(); }
+
+    Type& get() const 
+    { return *m_data; }
+};
+
+template <class Type>
+ref_t<Type> Ref(Type& arg)
+{
+    return ref_t<Type>(arg);
+}
+
+// The unique_ptr requires C++11, and the rvalue-reference feature,
+// so here we're simulate the behavior using the old std::auto_ptr.
+
+// This is only to make a "move" call transparent and look ok towards
+// the C++11 code.
+template <class T>
+std::auto_ptr_ref<T> Move(const std::auto_ptr_ref<T>& in) { return in; }
+
+// We need to provide also some fixes for this type that were not present in auto_ptr,
+// but they are present in unique_ptr.
+
+// C++03 doesn't have a templated typedef, but still we need some things
+// that can only function as a class.
+template <class T>
+class UniquePtr: public std::auto_ptr<T>
+{
+    typedef std::auto_ptr<T> Base;
+
+public:
+
+    // This is a template - so method names must be declared explicitly
+    typedef typename Base::element_type element_type;
+    using Base::get;
+    using Base::reset;
+
+    // All constructor declarations must be repeated.
+    // "Constructor delegation" is also only C++11 feature.
+    explicit UniquePtr(element_type* __p = 0) throw() : Base(__p) {}
+    UniquePtr(UniquePtr& __a) throw() : Base(__a) { }
+    template<typename _Tp1>
+    UniquePtr(UniquePtr<_Tp1>& __a) throw() : Base(__a) {}
+
+    UniquePtr& operator=(UniquePtr& __a) throw() { return Base::operator=(__a); }
+    template<typename _Tp1>
+    UniquePtr& operator=(UniquePtr<_Tp1>& __a) throw() { return Base::operator=(__a); }
+
+    // Good, now we need to add some parts of the API of unique_ptr.
+
+    bool operator==(const UniquePtr& two) const { return get() == two.get(); }
+    bool operator!=(const UniquePtr& two) const { return get() != two.get(); }
+
+    bool operator==(const element_type* two) const { return get() == two; }
+    bool operator!=(const element_type* two) const { return get() != two; }
+
+    operator bool () { return get(); }
+};
+
+
 #endif
-
-
-////////////////////////////////////////////////////////////////////////////////
 
 class CTimer
 {
@@ -286,7 +438,11 @@ private:
 class CGuard
 {
 public:
-   CGuard(pthread_mutex_t& lock);
+   /// Constructs CGuard, which locks the given mutex for
+   /// the scope where this object exists.
+   /// @param lock Mutex to lock
+   /// @param if_condition If this is false, CGuard will do completely nothing
+   CGuard(pthread_mutex_t& lock, bool if_condition = true);
    ~CGuard();
 
 public:
@@ -383,8 +539,8 @@ public:
    }
 
 public:
-   static const int32_t m_iSeqNoTH;             // threshold for comparing seq. no.
-   static const int32_t m_iMaxSeqNo;            // maximum sequence number used in UDT
+   static const int32_t m_iSeqNoTH = 0x3FFFFFFF;             // threshold for comparing seq. no.
+   static const int32_t m_iMaxSeqNo = 0x7FFFFFFF;            // maximum sequence number used in UDT
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -398,7 +554,7 @@ public:
    {return (ackno == m_iMaxAckSeqNo) ? 0 : ackno + 1;}
 
 public:
-   static const int32_t m_iMaxAckSeqNo;         // maximum ACK sub-sequence number used in UDT
+   static const int32_t m_iMaxAckSeqNo = 0x7FFFFFFF;         // maximum ACK sub-sequence number used in UDT
 };
 
 
@@ -619,6 +775,62 @@ public:
     int64_t drift() { return m_qDrift; }
     int64_t overdrift() { return m_qOverdrift; }
 };
+
+
+inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
+{
+    if ( size == 0 )
+        return "";
+
+    char buf[256];
+    std::ostringstream os;
+
+    // I know, it's funny to use sprintf and ostringstream simultaneously,
+    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
+    // Too noisy. OTOH ostringstream solves the problem of memory allocation
+    // for a string of unpredictable size.
+    sprintf(buf, "%02X", int(bytes[0]));
+    os << buf;
+    for (size_t i = 1; i < size; ++i)
+    {
+        sprintf(buf, " %02X", int(bytes[i]));
+        os << buf;
+    }
+    return os.str();
+}
+
+
+// Version parsing
+inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
+{
+    return patch + minor*0x100 + major*0x10000;
+}
+
+inline int32_t SrtParseVersion(const char* v)
+{
+    int major, minor, patch;
+    int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
+
+    if ( result != 3 )
+    {
+        return 0;
+        fprintf(stderr, "Invalid version format for HAISRT_VERSION: %s - use m.n.p\n", v);
+        throw v; // Throwing exception, as this function will be run before main()
+    }
+
+    return major*0x10000 + minor*0x100 + patch;
+}
+
+inline std::string SrtVersionString(int version)
+{
+    int patch = version % 0x100;
+    int minor = (version/0x100)%0x100;
+    int major = version/0x10000;
+
+    char buf[20];
+    sprintf(buf, "%d.%d.%d", major, minor, patch);
+    return buf;
+}
 
 
 #endif
