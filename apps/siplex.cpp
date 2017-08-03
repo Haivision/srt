@@ -646,8 +646,13 @@ int main( int argc, char** argv )
         throw std::runtime_error("Can't initialize network!");
 
     // Initialize signals
-    signal(SIGINT, OnINT_SetIntState);
+#ifdef WIN32
+#define alarm(argument) (void)0
+#else
     signal(SIGALRM, OnALRM_SetAlarmState);
+#endif
+    signal(SIGINT, OnINT_SetIntState);
+    signal(SIGTERM, OnINT_SetIntState);
 
     // Symmetrically, this does a cleanup; put into a local destructor to ensure that
     // it's called regardless of how this function returns.
