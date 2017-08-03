@@ -39,6 +39,15 @@ written by
 
 #include "hcrypt.h"
 
+int HaiCrypt_SetLogLevel(int level, int logfa)
+{
+    // Oh well. Implement some day.
+    (void)logfa;
+    (void)level;
+    return 0;
+}
+
+
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 {
 	hcrypt_Session *crypto;

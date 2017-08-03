@@ -78,6 +78,7 @@ class ThreadName
 public:
 
     static bool get(char*) { return false; }
+    static bool set(char*) { return false; }
 
     ThreadName(const char*)
     {
@@ -87,13 +88,6 @@ public:
     {
     }
 
-    static bool get(char* namebuf)
-    {
-    }
-
-    static bool set(const char* name)
-    {
-    }
 };
 
 
