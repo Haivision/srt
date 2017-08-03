@@ -139,19 +139,19 @@ struct MediumPair
             ~MarkQuit()
             {
                 q = true;
-                applog.Note("MediumPair: Giving it 5 seconds delay before exiting");
+                applog.Note() << "MediumPair: Giving it 5 seconds delay before exiting";
                 this_thread::sleep_for(chrono::seconds(5));
             }
         } mq { has_quit };
 
-        applog.Note("STARTING TRANSMiSSION: ", name);
+        applog.Note() << "STARTING TRANSMiSSION: " << name;
 
         if (!initial_portion.empty())
         {
             tar->Write(initial_portion);
             if ( tar->Broken() )
             {
-                applog.Note("OUTPUT BROKEN for loop: ", name);
+                applog.Note() << "OUTPUT BROKEN for loop: " << name;
                 return;
             }
             initial_portion.clear();
@@ -177,43 +177,43 @@ struct MediumPair
                 if ( data.empty() && src->End() )
                 {
                     sout << "EOS";
-                    applog.Note(sout.str());
+                    applog.Note() << sout.str();
                     break;
                 }
                 tar->Write(data);
                 if ( tar->Broken() )
                 {
                     sout << " OUTPUT broken";
-                    applog.Note(sout.str());
+                    applog.Note() << sout.str();
                     break;
                 }
                 sout << " sent";
                 if ( int_state )
                 {
                     sout << " --- (interrupted on request)";
-                    applog.Note(sout.str());
+                    applog.Note() << sout.str();
                     break;
                 }
-                applog.Note(sout.str());
+                applog.Note() << sout.str();
             }
         }
         catch (Source::ReadEOF& x)
         {
-            applog.Note("EOS - closing media for loop: ", name);
+            applog.Note() << "EOS - closing media for loop: " << name;
             src->Close();
             tar->Close();
-            applog.Note("CLOSED: ", name);
+            applog.Note() << "CLOSED: " << name;
         }
         catch (std::runtime_error& x)
         {
-            applog.Note("INTERRUPTED: ", x.what());
+            applog.Note() << "INTERRUPTED: " << x.what();
             src->Close();
             tar->Close();
-            applog.Note("CLOSED: ", name);
+            applog.Note() << "CLOSED: " << name;
         }
         catch (...)
         {
-            applog.Note("UNEXPECTED EXCEPTION, rethrowing");
+            applog.Note() << "UNEXPECTED EXCEPTION, rethrowing";
             throw;
         }
     }
@@ -312,17 +312,17 @@ public:
 
             if (name.get() != "")
             {
-                applog.Note("Connect with requesting stream [", name.get(), "]");
+                applog.Note() << "Connect with requesting stream [" << name.get() << "]";
                 UDT::setstreamid(m_sock, name);
             }
             else
             {
-                applog.Warn("NO STREAM ID for SRT connection");
+                applog.Warn() << "NO STREAM ID for SRT connection";
             }
 
             if (m_outgoing_port)
             {
-                applog.Note("Setting outgoing port: ", m_outgoing_port);
+                applog.Note() << "Setting outgoing port: " << m_outgoing_port;
                 SetupAdapter("", m_outgoing_port);
             }
 
@@ -340,7 +340,7 @@ public:
                 }
 
                 m_outgoing_port = s.hport();
-                applog.Note("Extracted outgoing port: ", m_outgoing_port, " - will reuse it for next connections");
+                applog.Note() << "Extracted outgoing port: " << m_outgoing_port << " - will reuse it for next connections";
             }
         }
         else
@@ -349,15 +349,15 @@ public:
             // Check if the listener is already created first
             if (Listener() == SRT_INVALID_SOCK)
             {
-                applog.Note("Setting up listener: port=", m_port, " backlog=5");
+                applog.Note() << "Setting up listener: port=" << m_port << " backlog=5";
                 PrepareListener(m_adapter, m_port, 5);
             }
 
-            applog.Note("Accepting a client...");
+            applog.Note() << "Accepting a client...";
             AcceptNewClient();
             // This rewrites m_sock with a new SRT socket ("accepted" socket)
             name = UDT::getstreamid(m_sock);
-            applog.Note("... GOT CLIENT for stream [", name.get(), "]");
+            applog.Note() << "... GOT CLIENT for stream [" << name.get() << "]";
         }
 
         return true;
@@ -379,7 +379,7 @@ public:
                 ++i_next;
                 if (i->has_quit)
                 {
-                    applog.Note("Found QUIT mediumpair: ", i->name, " - removing from base");
+                    applog.Note() << "Found QUIT mediumpair: " << i->name << " - removing from base";
                     i->Stop();
                     g_media_base.media.erase(i);
                 }
@@ -387,7 +387,7 @@ public:
 
             if (g_media_base.media.empty())
             {
-                applog.Note("All media have quit. Marking exit.");
+                applog.Note() << "All media have quit. Marking exit.";
                 break;
             }
         }
@@ -422,7 +422,7 @@ string SelectMedium(string id, bool mode_output)
     // Empty ID is incorrect.
     if ( id == "" )
     {
-        applog.Error("SelectMedium: empty id");
+        applog.Error() << "SelectMedium: empty id";
         return "";
     }
 
@@ -436,14 +436,14 @@ string SelectMedium(string id, bool mode_output)
         {
             ++number;
             string sol = ResolveFilePattern(number);
-            applog.Warn("SelectMedium: for [", id, "] uri '", uri, "' is file with no path - autogenerating filename: ", sol);
+            applog.Warn() << "SelectMedium: for [" << id << "] uri '" << uri << "' is file with no path - autogenerating filename: " << sol;
             return sol;
         }
-        applog.Error("SelectMedium: id not found: [", id, "]");
+        applog.Error() << "SelectMedium: id not found: [" << id << "]";
         return "";
     }
 
-    applog.Note("SelectMedium: for [", id, "] found medium: ", uri);
+    applog.Note() << "SelectMedium: for [" << id << "] found medium: " << uri;
     return uri;
 }
 
@@ -822,7 +822,7 @@ int main( int argc, char** argv )
             ThreadName::set("main");
         }
 
-        applog.Note("All local stream definitions covered. Waiting for interrupt/broken all connections.");
+        applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";
         m.Stall();
     }
     catch (std::exception& x)
