@@ -1675,7 +1675,7 @@ void CUDTUnited::updateMux(
    s->m_iMuxID = m.m_iID;
 
    LOGC(mglog.Debug).form(
-      "creating new multiplexer for port %hu\n", m.m_iPort);
+      "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
 // XXX This is actually something completely stupid.
@@ -1733,7 +1733,7 @@ void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
       if (i->second.m_iPort == port)
       {
          LOGC(mglog.Debug).form(
-            "updateMux: reusing multiplexer for port %hd\n", port);
+            "updateMux: reusing multiplexer for port %i\n", port);
          // reuse the existing multiplexer
          ++ i->second.m_iRefCount;
          s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;

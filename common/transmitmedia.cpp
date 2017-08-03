@@ -68,7 +68,7 @@ public:
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() { ofile.close(); }
+    void Close() override { ofile.close(); }
 };
 
 template <class Iface> struct File;

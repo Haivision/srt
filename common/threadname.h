@@ -86,6 +86,14 @@ public:
     ~ThreadName() // just to make it "non-trivially-destructible" for compatibility with normal version
     {
     }
+
+    static bool get(char* namebuf)
+    {
+    }
+
+    static bool set(const char* name)
+    {
+    }
 };
 
 
