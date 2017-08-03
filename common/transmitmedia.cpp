@@ -430,6 +430,8 @@ void SrtCommon::PrepareClient()
 
 }
 
+/*
+ This may be used sometimes for testing, but it's nonportable.
 void SrtCommon::SpinWaitAsync()
 {
     static string udt_status_names [] = {
@@ -454,6 +456,7 @@ void SrtCommon::SpinWaitAsync()
         return;
     }
 }
+*/
 
 void SrtCommon::ConnectClient(string host, int port)
 {

@@ -25,12 +25,12 @@
 #include <packet.h>
 #include <crypto.h>
 
-int main( int argc __attribute__((unused)), char** argv  __attribute__((unused)))
+int main()
 {
     using namespace std;
 
     cout << "PacketBoundary: " << hex << MSGNO_PACKET_BOUNDARY::mask << endl;
-    
+
     cout << "PB_FIRST: " << hex << PacketBoundaryBits(PB_FIRST) << endl;
     cout << "PB_LAST: " << hex << PacketBoundaryBits(PB_LAST) << endl;
     cout << "PB_SOLO: " << hex << PacketBoundaryBits(PB_SOLO) << endl;

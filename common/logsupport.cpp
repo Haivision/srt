@@ -1,6 +1,7 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <cctype>
 #include "logsupport.hpp"
 #include "../srtcore/srt.h"
 
