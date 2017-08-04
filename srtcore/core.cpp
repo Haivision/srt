@@ -78,6 +78,7 @@ modified by
 #include "core.h"
 #include "logging.h"
 #include "crypto.h"
+#include "../common/logsupport.hpp" // Required due to containing extern srt_logger_config
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
@@ -3323,7 +3324,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
     switch (m_RdvState)
     {
-    case CHandShake::RDV_INVALID: return URQ_ERROR_REJECT;
+    case CHandShake::RDV_INVALID: return false;
 
     case CHandShake::RDV_WAVING:
         {

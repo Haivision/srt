@@ -481,7 +481,7 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          //faster approaches can be applied for specific systems in the future.
 
          //"select" has a limitation on the number of sockets
-         SYSSOCKET max_fd = 0;
+         int max_fd = 0;
          
          fd_set readfds;
          fd_set writefds;

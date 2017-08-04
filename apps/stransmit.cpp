@@ -53,6 +53,8 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
+#define REQUIRE_CXX11 1
+
 #include <cctype>
 #include <iostream>
 #include <string>

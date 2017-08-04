@@ -6,6 +6,8 @@
 #include <chrono>
 #include <csignal>
 
+#define REQUIRE_CXX11 1
+
 #include "../common/appcommon.hpp"  // CreateAddrInet
 #include "../common/uriparser.hpp"  // UriParser
 #include "../common/socketoptions.hpp"
@@ -18,6 +20,15 @@
 #include <srt.h>
 #include <logging.h>
 
+// Make the windows-nonexistent alarm an empty call
+#ifdef WIN32
+#define alarm(argument) (void)0
+#define signal_alarm(fn) (void)0
+#else
+#define signal_alarm(fn) signal(SIGALRM, fn)
+#endif
+
+
 using namespace std;
 
 // The length of the SRT payload used in srt_recvmsg call.
@@ -25,7 +36,6 @@ using namespace std;
 const size_t DEFAULT_CHUNK = 1316;
 const size_t DEF_MAX_STREAMS = 10;
 
-extern logging::LogConfig srt_logger_config;
 const logging::LogFA SRT_LOGFA_APP = 10;
 logging::Logger applog(SRT_LOGFA_APP, &srt_logger_config, "siplex");
 
@@ -646,11 +656,8 @@ int main( int argc, char** argv )
         throw std::runtime_error("Can't initialize network!");
 
     // Initialize signals
-#ifdef WIN32
-#define alarm(argument) (void)0
-#else
-    signal(SIGALRM, OnALRM_SetAlarmState);
-#endif
+
+    signal_alarm(OnALRM_SetAlarmState);
     signal(SIGINT, OnINT_SetIntState);
     signal(SIGTERM, OnINT_SetIntState);
 
@@ -804,7 +811,7 @@ int main( int argc, char** argv )
         for(;;)
         {
             string id = *ids.begin();
-            bool done = m.Establish(ref(id));
+            bool done = m.Establish(Ref(id));
             if ( !done )
                 break;
 

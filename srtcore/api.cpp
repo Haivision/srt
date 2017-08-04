@@ -2971,7 +2971,7 @@ inline void set_result(set<SOCKTYPE>* val, int* num, SOCKTYPE* fds)
         return;
 
     if (*num > int(val->size()))
-        *num = val->size(); // will get 0 if val->empty()
+        *num = int(val->size()); // will get 0 if val->empty()
     int count = 0;
 
     // This loop will run 0 times if val->empty()

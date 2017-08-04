@@ -236,7 +236,7 @@ public:
    bool isControl() const
    {
        // read bit 0
-       return SEQNO_CONTROL::unwrap(m_nHeader[PH_SEQNO]);
+       return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[PH_SEQNO]);
    }
 
    void setControl(UDTMessageType type)

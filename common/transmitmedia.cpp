@@ -1031,12 +1031,12 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 }
 
 
-extern std::unique_ptr<Source> Source::Create(const std::string& url)
+std::unique_ptr<Source> Source::Create(const std::string& url)
 {
     return CreateMedium<Source>(url);
 }
 
-extern std::unique_ptr<Target> Target::Create(const std::string& url)
+std::unique_ptr<Target> Target::Create(const std::string& url)
 {
     return CreateMedium<Target>(url);
 }

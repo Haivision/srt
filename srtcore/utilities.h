@@ -42,11 +42,27 @@ written by
 #define HAVE_CXX11 1
 #define ATR_NOEXCEPT noexcept
 #define ATR_CONSTEXPR constexpr
+// Microsoft Visual Studio supports C++11, but not fully,
+// and still did not change the value of __cplusplus. Treat
+// this special way.
+// _MSC_VER == 1800  means Microsoft Visual Studio 2013.
+#elif defined(_MSC_VER) && _MSC_VER >= 1800
+#define HAVE_CXX11 1
+#define ATR_NOEXCEPT
+#define ATR_CONSTEXPR
 #else
 #define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
 #define ATR_CONSTEXPR
+
+#if defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
+#error "The currently compiled application required C++11, but your compiler doesn't support it."
 #endif
+
+#endif
+
+// Windows warning disabler
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <string>
 #include <algorithm>
@@ -235,10 +251,10 @@ struct ref_t: public std::reference_wrapper<T>
 };
 
 template <class In>
-inline auto Ref(In i) -> decltype(ref(i)) { return ref(i); }
+inline auto Ref(In i) -> decltype(std::ref(i)) { return std::ref(i); }
 
 template <class In>
-inline auto Move(In i) -> decltype(move(i)) { return move(i); }
+inline auto Move(In i) -> decltype(std::move(i)) { return std::move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 
@@ -354,7 +370,7 @@ public:
     bool operator==(const element_type* two) const { return get() == two; }
     bool operator!=(const element_type* two) const { return get() != two; }
 
-    operator bool () { return get(); }
+    operator bool () { return 0!= get(); }
 };
 
 
