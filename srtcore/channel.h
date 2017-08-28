@@ -66,7 +66,7 @@ modified by
 
 #include "udt.h"
 #include "packet.h"
-
+#include "netinet_any.h"
 
 class CChannel
 {
@@ -90,7 +90,7 @@ public:
       /// Open a UDP channel based on an existing UDP socket.
       /// @param udpsock [in] UDP socket descriptor.
 
-   void open(UDPSOCKET udpsock);
+   void attach(UDPSOCKET udpsock);
 
       /// Disconnect and close the UDP entity.
 
@@ -138,7 +138,7 @@ public:
       /// @param packet [in] reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   int recvfrom(sockaddr* addr, CPacket& packet) const;
+   EReadStatus recvfrom(sockaddr* addr, CPacket& packet) const;
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
@@ -164,6 +164,9 @@ public:
    int getIpToS() const;
 #endif
 
+   const sockaddr* bindAddress() { return &m_BindAddr; }
+   const sockaddr_any& bindAddressAny() { return m_BindAddr; }
+
 private:
    void setUDPSockOpt();
 
@@ -178,6 +181,7 @@ private:
 #endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
+   sockaddr_any m_BindAddr;
 };
 
 

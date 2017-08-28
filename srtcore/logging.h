@@ -220,9 +220,6 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    // XXX this is C++03 solution only. Use unique_ptr in C++11.
-    // It must be done with dynamic ostringstream because ostringstream
-    // is not copyable.
     std::ostringstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging

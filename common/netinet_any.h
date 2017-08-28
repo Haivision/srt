@@ -52,8 +52,8 @@ struct sockaddr_any
     {
         switch (sa.sa_family)
         {
-        case AF_INET: return static_cast<socklen_t>(sizeof sin);
-        case AF_INET6: return static_cast<socklen_t>(sizeof sin6);
+        case AF_INET: return socklen_t(sizeof sin);
+        case AF_INET6: return socklen_t(sizeof sin6);
 
         default: return 0; // fallback, impossible
         }

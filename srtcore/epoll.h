@@ -129,7 +129,6 @@ public: // for CUDTUnited API
       /// @return 0 if success, otherwise an error number.
 
    int remove_ssock(const int eid, const SYSSOCKET& s);
-#ifdef HAI_PATCH
       /// update a UDT socket events from an EPoll.
       /// @param [in] eid EPoll ID.
       /// @param [in] u UDT socket ID.
@@ -145,7 +144,6 @@ public: // for CUDTUnited API
       /// @return 0 if success, otherwise an error number.
 
    int update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
-#endif /* HAI_PATCH */
 
       /// wait for EPoll events or timeout.
       /// @param [in] eid EPoll ID.

@@ -69,6 +69,7 @@ modified by
    #include <time.h>
 #endif
 #include "udt.h"
+#include "packet.h"
 
 namespace ACKWindowTools
 {
@@ -257,9 +258,19 @@ public:
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
        int64_t timediff = m_CurrArrTime - m_ProbeTime;
-       int64_t timediff_times_pl_size = timediff * (1500 - SRT_DATA_PKTHDR_SIZE);
+       int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
 
-       m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? int(timediff_times_pl_size / pktsz) : int(timediff);
+       // Let's take it simpler than it is coded here:
+       // (stating that a packet has never zero size)
+       //
+       // probe_case = (now - previous_packet_time) * SRT_MAX_PAYLOAD_SIZE / pktsz;
+       //
+       // Meaning: if the packet is fully packed, probe_case = timediff.
+       // Otherwise the timediff will be "converted" to a time that a fully packed packet "would take",
+       // provided the arrival time is proportional to the payload size and skipping
+       // the ETH+IP+UDP+SRT header part elliminates the constant packet delivery time influence.
+       //
+       m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? timediff_times_pl_size / pktsz : int(timediff);
 
        // OLD CODE BEFORE BSTATS:
        // record the probing packets interval

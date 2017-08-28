@@ -4,6 +4,11 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <time.h>
+
+// XXX Remove haicrypt dependency - this include file
+// and HAICRYPT_API modifier below. The gettimeofday function
+// should not be exposed as public and compiling srtcore
+// and haicrypt into one library file should suffice.
 #include "haicrypt.h"
 
 #ifdef __cplusplus

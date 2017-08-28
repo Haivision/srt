@@ -4,12 +4,12 @@ SOURCES
 api.cpp
 buffer.cpp
 cache.cpp
-ccc.cpp
 channel.cpp
 common.cpp
 core.cpp
-csrtcc.cpp
+crypto.cpp
 epoll.cpp
+handshake.cpp
 list.cpp
 md5.cpp
 packet.cpp
@@ -23,7 +23,7 @@ srt.h
 logging_api.h
 
 PROTECTED HEADERS
-platform_sys.h
+../common/platform_sys.h
 udt.h
 srt4udt.h
 
@@ -31,21 +31,20 @@ PRIVATE HEADERS
 api.h
 buffer.h
 cache.h
-ccc.h
 channel.h
 common.h
 core.h
-csrtcc.h
+crypto.h
 epoll.h
+handshake.h
 list.h
 logging.h
 md5.h
-netinet_any.h
+../common/netinet_any.h
 packet.h
-platform_sys.h
 queue.h
 srt4udt.h
-threadname.h
+../common/threadname.h
 utilities.h
 window.h
 

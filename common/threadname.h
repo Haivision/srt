@@ -78,6 +78,7 @@ class ThreadName
 public:
 
     static bool get(char*) { return false; }
+    static bool set(const char*) { return false; }
 
     ThreadName(const char*)
     {
@@ -86,6 +87,7 @@ public:
     ~ThreadName() // just to make it "non-trivially-destructible" for compatibility with normal version
     {
     }
+
 };
 
 
