@@ -241,6 +241,7 @@ CUDT::CUDT()
    m_iOPT_TsbPdDelay = 120;          //Receiver TsbPd delay (mSec)
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
 #ifdef SRT_ENABLE_TLPKTDROP
+   m_bOPT_TLPktDrop = true;
    m_bTLPktDrop = true;         //Too-late Packet Drop
 #endif /* SRT_ENABLE_TLPKTDROP */
    //Runtime
@@ -317,6 +318,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iTsbPdDelay = 0;
    m_iPeerTsbPdDelay = 0;
 #ifdef SRT_ENABLE_TLPKTDROP
+   m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
 #endif /* SRT_ENABLE_TLPKTDROP */
    //Runtime

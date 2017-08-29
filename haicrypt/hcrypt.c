@@ -41,10 +41,10 @@ written by
 
 int HaiCrypt_SetLogLevel(int level, int logfa)
 {
-    // Oh well. Implement some day.
-    (void)logfa;
-    (void)level;
-    return 0;
+	// Oh well. Implement some day.
+	(void)logfa;
+	(void)level;
+	return 0;
 }
 
 
@@ -60,9 +60,9 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 
 	ASSERT(NULL != cfg);
 
-    HCRYPT_LOG_INIT();
-    //Test log
-    HCRYPT_LOG(LOG_INFO, "creating crypto context(flags=0x%x)\n", cfg->flags);
+                HCRYPT_LOG_INIT();
+                //Test log
+                HCRYPT_LOG(LOG_INFO, "creating crypto context(flags=0x%x)\n", cfg->flags);
 
 	if (!(HAICRYPT_CFG_F_CRYPTO & cfg->flags)) {
 		HCRYPT_LOG(LOG_INFO, "no supported flags set (0x%x)\n", cfg->flags);
@@ -133,7 +133,7 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 	}
 
 	crypto->cipher = cfg->cipher;
-    crypto->cfg.data_max_len = cfg->data_max_len;
+                crypto->cfg.data_max_len = cfg->data_max_len;
 
 	/* Setup transport packet info */
 	switch (cfg->xport) {
@@ -201,8 +201,8 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handle *phhc)
 {
 	hcrypt_Session *cryptoSrc = (hcrypt_Session *)hhcSrc;
-    hcrypt_Session *cryptoClone;
-    unsigned char *mem_buf;
+	hcrypt_Session *cryptoClone;
+	unsigned char *mem_buf;
 	size_t mem_siz, inbuf_siz;
 
 	*phhc = NULL;
@@ -217,7 +217,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 
 	/* Allocate crypto session control struct */
 	mem_siz = sizeof(hcrypt_Session)	// structure
-			+ inbuf_siz;
+		+ inbuf_siz;
 
 	cryptoClone = malloc(mem_siz);
 	if (NULL == cryptoClone){	
@@ -226,8 +226,8 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 	}
 	mem_buf = (unsigned char *)cryptoClone;
 	mem_buf += sizeof(*cryptoClone);
-    memset(cryptoClone, 0, sizeof(*cryptoClone));
-    memcpy(cryptoClone, cryptoSrc, sizeof(*cryptoClone));
+	memset(cryptoClone, 0, sizeof(*cryptoClone));
+	memcpy(cryptoClone, cryptoSrc, sizeof(*cryptoClone));
 
 	if (inbuf_siz) {
 		cryptoClone->inbuf = mem_buf;
@@ -235,45 +235,45 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 	}
 	timerclear(&cryptoClone->km.tx_last);
 
-    /* Adjust pointers  pointing into cryproSrc after copy
-       msg_info adn ciphers are extern statics so this is ok*/
+	/* Adjust pointers  pointing into cryproSrc after copy
+	   msg_info adn ciphers are extern statics so this is ok*/
 	cryptoClone->ctx_pair[0].alt = &cryptoClone->ctx_pair[1];
 	cryptoClone->ctx_pair[1].alt = &cryptoClone->ctx_pair[0];
 
-    /* create a new cipher (OpenSSL) context */
-    cryptoClone->cipher_data = cryptoClone->cipher->open(cryptoClone->cfg.data_max_len);
+	/* create a new cipher (OpenSSL) context */
+	cryptoClone->cipher_data = cryptoClone->cipher->open(cryptoClone->cfg.data_max_len);
 	if (NULL == cryptoClone->cipher_data) {
-        //shred
-        free(cryptoClone);
+		//shred
+		free(cryptoClone);
 		return(-1);
 	}
 	if (tx) { /* Sender */
-        hcrypt_Ctx *ctx = cryptoClone->ctx = &cryptoClone->ctx_pair[0];
+		hcrypt_Ctx *ctx = cryptoClone->ctx = &cryptoClone->ctx_pair[0];
 
-        cryptoClone->ctx_pair[0].flags |= HCRYPT_CTX_F_ENCRYPT;
-        cryptoClone->ctx_pair[1].flags |= HCRYPT_CTX_F_ENCRYPT;
+		cryptoClone->ctx_pair[0].flags |= HCRYPT_CTX_F_ENCRYPT;
+		cryptoClone->ctx_pair[1].flags |= HCRYPT_CTX_F_ENCRYPT;
 
-        /* Set SEK in cipher */
-        if (cryptoClone->cipher->setkey(cryptoClone->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
-            HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
-            return(-1);
-        }
+		/* Set SEK in cipher */
+		if (cryptoClone->cipher->setkey(cryptoClone->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
+			HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
+			return(-1);
+		}
 		ctx->status = HCRYPT_CTX_S_ACTIVE;
 	} else { /* Receiver */
 
-        /* Configure contexts */
-        if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
-		||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
+		/* Configure contexts */
+		if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
+				||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
 			free(cryptoClone);
 			return(-1);
 		}
 
-        /* Clear salt to force later regeneration of KEK as AES decrypting key,
-           copyed one is encrypting key */
-        cryptoClone->ctx_pair[0].flags &= ~HCRYPT_CTX_F_ENCRYPT;
-        cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
-        memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
-        cryptoClone->ctx_pair[0].salt_len = 0;
+		/* Clear salt to force later regeneration of KEK as AES decrypting key,
+		   copyed one is encrypting key */
+		cryptoClone->ctx_pair[0].flags &= ~HCRYPT_CTX_F_ENCRYPT;
+		cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
+		memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
+		cryptoClone->ctx_pair[0].salt_len = 0;
 	}
 
 	*phhc = (void *)cryptoClone;

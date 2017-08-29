@@ -40,7 +40,7 @@ int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cf
 	if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
 		return(-1);
 	}
-    ctx->status = HCRYPT_CTX_S_SARDY;
+                    ctx->status = HCRYPT_CTX_S_SARDY;
 	return(0);
 }
 
