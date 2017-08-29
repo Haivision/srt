@@ -84,14 +84,14 @@ int srt_close(UDTSOCKET u)
 int srt_getpeername(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getpeername(u, name, namelen); }
 int srt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getsockname(u, name, namelen); }
 int srt_getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
-{ return UDT::getsockopt(u, level, UDT::SOCKOPT(optname), optval, optlen); }
+{ return UDT::getsockopt(u, level, optname, optval, optlen); }
 int srt_setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
-{ return UDT::setsockopt(u, level, UDT::SOCKOPT(optname), optval, optlen); }
+{ return UDT::setsockopt(u, level, optname, optval, optlen); }
 
 int srt_getsockflag(UDTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
-{ return UDT::getsockopt(u, 0, UDT::SOCKOPT(opt), optval, optlen); }
+{ return UDT::getsockopt(u, 0, opt, optval, optlen); }
 int srt_setsockflag(UDTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
-{ return UDT::setsockopt(u, 0, UDT::SOCKOPT(opt), optval, optlen); }
+{ return UDT::setsockopt(u, 0, opt, optval, optlen); }
 
 int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return UDT::send(u, buf, len, flags); }
 int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return UDT::recv(u, buf, len, flags); }

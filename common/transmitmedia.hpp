@@ -5,6 +5,7 @@
 #include <map>
 
 #include "transmitbase.hpp"
+#include <udt.h> // Needs access to CUDTException
 
 using namespace std;
 

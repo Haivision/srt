@@ -77,8 +77,7 @@ modified by
 #ifndef __UDT_H__
 #define __UDT_H__
 
-#include "srt4udt.h"
-#include "logging_api.h"
+#include "srt.h"
 
 /*
 * SRT_ENABLE_THREADCHECK (THIS IS SET IN MAKEFILE NOT HERE)
@@ -111,6 +110,11 @@ modified by
 #include <vector>
 #endif
 
+#include "srt.h"
+
+// Legacy/backward/deprecated
+#define UDT_API SRT_API
+
 ////////////////////////////////////////////////////////////////////////////////
 
 //if compiling on VC6.0 or pre-WindowsXP systems
@@ -120,157 +124,72 @@ modified by
 //use -D_WIN32_WINNT=0x0501
 
 
-#ifdef WIN32
-   #ifndef __MINGW__
-      // Explicitly define 32-bit and 64-bit numbers
-      typedef __int32 int32_t;
-      typedef __int64 int64_t;
-      typedef unsigned __int32 uint32_t;
-      #ifndef LEGACY_WIN32
-         typedef unsigned __int64 uint64_t;
-      #else
-         // VC 6.0 does not support unsigned __int64: may cause potential problems.
-         typedef __int64 uint64_t;
-      #endif
-
-	#ifdef UDT_DYNAMIC
-      #ifdef UDT_EXPORTS
-         #define UDT_API __declspec(dllexport)
-      #else
-         #define UDT_API __declspec(dllimport)
-      #endif
-	#else
-		#define UDT_API
-	#endif
-   #else
-      #define UDT_API
-   #endif
-#else
-   #define UDT_API __attribute__ ((visibility("default")))
-#endif
-
 #define NO_BUSY_WAITING
-
-#ifdef WIN32
-   #ifndef __MINGW__
-      typedef SOCKET SYSSOCKET;
-   #else
-      typedef int SYSSOCKET;
-   #endif
-#else
-   typedef int SYSSOCKET;
-#endif
-
-typedef SYSSOCKET UDPSOCKET;
-typedef int UDTSOCKET;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __cplusplus
 // This facility is used only for select() function.
 // This is considered obsolete and the epoll() functionality rather should be used.
-typedef std::set<UDTSOCKET> ud_set;
+typedef std::set<SRTSOCKET> ud_set;
 #define UD_CLR(u, uset) ((uset)->erase(u))
 #define UD_ISSET(u, uset) ((uset)->find(u) != (uset)->end())
 #define UD_SET(u, uset) ((uset)->insert(u))
 #define UD_ZERO(uset) ((uset)->clear())
 #endif
 
-enum SRT_KM_STATE
-{
-    SRT_KM_S_UNSECURED = 0,      //No encryption
-    SRT_KM_S_SECURING  = 1,      //Stream encrypted, exchanging Keying Material
-    SRT_KM_S_SECURED   = 2,      //Stream encrypted, keying Material exchanged, decrypting ok.
-    SRT_KM_S_NOSECRET  = 3,      //Stream encrypted and no secret to decrypt Keying Material
-    SRT_KM_S_BADSECRET = 4       //Stream encrypted and wrong secret, cannot decrypt Keying Material
-};
-
-enum UDT_EPOLL_OPT
-{
-   // this values are defined same as linux epoll.h
-   // so that if system values are used by mistake, they should have the same effect
-   UDT_EPOLL_IN = 0x1,
-   UDT_EPOLL_OUT = 0x4,
-   UDT_EPOLL_ERR = 0x8
-};
-
-enum UDTSTATUS {
-    UDT_INIT = 1,
-    UDT_OPENED,
-    UDT_LISTENING,
-    UDT_CONNECTING,
-    UDT_CONNECTED,
-    UDT_BROKEN,
-    UDT_CLOSING,
-    UDT_CLOSED,
-    UDT_NONEXIST
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX DEPRECATED, once the SRT(C) API is in use. All these values
-// are duplicated with SRTO_ prefix in srt.h file.
-enum UDT_SOCKOPT
-{
-   UDT_MSS,             // the Maximum Transfer Unit
-   UDT_SNDSYN,          // if sending is blocking
-   UDT_RCVSYN,          // if receiving is blocking
-   UDT_CC,              // custom congestion control algorithm
-   UDT_FC,		// Flight flag size (window size)
-   UDT_SNDBUF,          // maximum buffer in sending queue
-   UDT_RCVBUF,          // UDT receiving buffer size
-   UDT_LINGER,          // waiting for unsent data when closing
-   UDP_SNDBUF,          // UDP sending buffer size
-   UDP_RCVBUF,          // UDP receiving buffer size
-   UDT_MAXMSG,          // maximum datagram message size
-   UDT_MSGTTL,          // time-to-live of a datagram message
-   UDT_RENDEZVOUS,      // rendezvous connection mode
-   UDT_SNDTIMEO,        // send() timeout
-   UDT_RCVTIMEO,        // recv() timeout
-   UDT_REUSEADDR,       // reuse an existing port or create a new one
-   UDT_MAXBW,           // maximum bandwidth (bytes per second) that the connection can use
-   UDT_STATE,           // current socket state, see UDTSTATUS, read only
-   UDT_EVENT,           // current avalable events associated with the socket
-   UDT_SNDDATA,         // size of data in the sending buffer
-   UDT_RCVDATA,         // size of data available for recv
-   SRT_SENDER = 21,     // Set sender mode, independent of connection mode
-   SRT_TSBPDMODE = 22,  // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
-   SRT_TSBPDDELAY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
-   SRT_INPUTBW = 24,
-   SRT_OHEADBW,
-   SRT_PASSPHRASE = 26, // PBKDF2 passphrase size[0,10..80] 0:disable crypto
-   SRT_PBKEYLEN,        // PBKDF2 generated key len in bytes {16,24,32} Default: 16 (128-bit)
-   SRT_KMSTATE,         // Key Material exchange status (SRT_KM_STATE)
-#ifdef SRT_ENABLE_IPOPTS
-   SRT_IPTTL = 29,
-   SRT_IPTOS,
-#endif
-#ifdef SRT_ENABLE_TLPKTDROP
-   SRT_TLPKTDROP = 31,  // Enable/Disable receiver pkt drop
-   SRT_TSBPDMAXLAG,     // Decoder's tolerated lag past TspPD delay (decoder's buffer)
-#endif
-#ifdef SRT_ENABLE_NAKREPORT
-   SRT_RCVNAKREPORT = 33,   // Enable/Disable receiver's Periodic NAK Report to sender
-#endif
-   SRT_AGENTVERSION = 34,
-   SRT_PEERVERSION,
-#ifdef SRT_ENABLE_CONNTIMEO
-   SRT_CONNTIMEO = 36,
-#endif
-   //SRT_TWOWAYDATA = 37,
-   SRT_SNDPBKEYLEN = 38,
-   SRT_RCVPBKEYLEN,
-   SRT_SNDPEERKMSTATE,
-   SRT_RCVKMSTATE,
-   SRT_LOSSMAXTTL,
-   SRT_RCVLATENCY,
-   SRT_PEERLATENCY,
-   SRT_MINVERSION,
-   SRT_STREAMID
-};
+// Legacy names
+
+#define UDT_MSS SRTO_MSS
+#define UDT_SNDSYN SRTO_SNDSYN
+#define UDT_RCVSYN SRTO_RCVSYN
+#define UDT_FC SRTO_FC
+#define UDT_SNDBUF SRTO_SNDBUF
+#define UDT_RCVBUF SRTO_RCVBUF
+#define UDT_LINGER SRTO_LINGER
+#define UDP_SNDBUF SRTO_UDP_SNDBUF
+#define UDP_RCVBUF SRTO_UDP_RCVBUF
+#define UDT_MAXMSG SRTO_MAXMSG
+#define UDT_MSGTTL SRTO_MSGTTL
+#define UDT_RENDEZVOUS SRTO_RENDEZVOUS
+#define UDT_SNDTIMEO SRTO_SNDTIMEO
+#define UDT_RCVTIMEO SRTO_RCVTIMEO
+#define UDT_REUSEADDR SRTO_REUSEADDR
+#define UDT_MAXBW SRTO_MAXBW
+#define UDT_STATE SRTO_STATE
+#define UDT_EVENT SRTO_EVENT
+#define UDT_SNDDATA SRTO_SNDDATA
+#define UDT_RCVDATA SRTO_RCVDATA
+#define SRT_SENDER SRTO_SENDER
+#define SRT_TSBPDMODE SRTO_TSBPDMODE
+#define SRT_TSBPDDELAY SRTO_TSBPDDELAY
+#define SRT_INPUTBW SRTO_INPUTBW
+#define SRT_OHEADBW SRTO_OHEADBW
+#define SRT_PASSPHRASE SRTO_PASSPHRASE
+#define SRT_PBKEYLEN SRTO_PBKEYLEN
+#define SRT_KMSTATE SRTO_KMSTATE
+#define SRT_IPTTL SRTO_IPTTL
+#define SRT_IPTOS SRTO_IPTOS
+#define SRT_TLPKTDROP SRTO_TLPKTDROP
+#define SRT_TSBPDMAXLAG SRTO_TSBPDMAXLAG
+#define SRT_RCVNAKREPORT SRTO_RCVNAKREPORT
+#define SRT_CONNTIMEO SRTO_CONNTIMEO
+#define SRT_SNDPBKEYLEN SRTO_SNDPBKEYLEN
+#define SRT_RCVPBKEYLEN SRTO_RCVPBKEYLEN
+#define SRT_SNDPEERKMSTATE SRTO_SNDPEERKMSTATE
+#define SRT_RCVKMSTATE SRTO_RCVKMSTATE
+
+#define UDT_EPOLL_OPT SRT_EPOLL_OPT
+#define UDT_EPOLL_IN SRT_EPOLL_IN
+#define UDT_EPOLL_OUT SRT_EPOLL_OUT
+#define UDT_EPOLL_ERR SRT_EPOLL_ERR
 
 /* Binary backward compatibility obsolete options */
 #define SRT_NAKREPORT   SRT_RCVNAKREPORT
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -317,151 +236,6 @@ struct CPerfMon
    double mbpsBandwidth;                // estimated bandwidth, in Mb/s
    int byteAvailSndBuf;                 // available UDT sender buffer size
    int byteAvailRcvBuf;                 // available UDT receiver buffer size
-};
-
-struct CBytePerfMon
-{
-   // global measurements
-   int64_t msTimeStamp;                 // time since the UDT entity is started, in milliseconds
-   int64_t pktSentTotal;                // total number of sent data packets, including retransmissions
-   int64_t pktRecvTotal;                // total number of received packets
-   int pktSndLossTotal;                 // total number of lost packets (sender side)
-   int pktRcvLossTotal;                 // total number of lost packets (receiver side)
-   int pktRetransTotal;                 // total number of retransmitted packets
-   int pktSentACKTotal;                 // total number of sent ACK packets
-   int pktRecvACKTotal;                 // total number of received ACK packets
-   int pktSentNAKTotal;                 // total number of sent NAK packets
-   int pktRecvNAKTotal;                 // total number of received NAK packets
-   int64_t usSndDurationTotal;		// total time duration when UDT is sending data (idle time exclusive)
-   //>new
-   int pktSndDropTotal;                 // number of too-late-to-send dropped packets
-   int pktRcvDropTotal;                 // number of too-late-to play missing packets
-   int pktRcvUndecryptTotal;            // number of undecrypted packets
-   uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
-   uint64_t byteRecvTotal;              // total number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
-   uint64_t byteRcvLossTotal;           // total number of lost bytes
-#endif
-   uint64_t byteRetransTotal;           // total number of retransmitted bytes
-   uint64_t byteSndDropTotal;           // number of too-late-to-send dropped bytes
-   uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
-   uint64_t byteRcvUndecryptTotal;      // number of undecrypted bytes
-   //<
-
-   // local measurements
-   int64_t pktSent;                     // number of sent data packets, including retransmissions
-   int64_t pktRecv;                     // number of received packets
-   int pktSndLoss;                      // number of lost packets (sender side)
-   int pktRcvLoss;                      // number of lost packets (receiver side)
-   int pktRetrans;                      // number of retransmitted packets
-   int pktRcvRetrans;                   // number of retransmitted packets received
-   int pktSentACK;                      // number of sent ACK packets
-   int pktRecvACK;                      // number of received ACK packets
-   int pktSentNAK;                      // number of sent NAK packets
-   int pktRecvNAK;                      // number of received NAK packets
-   double mbpsSendRate;                 // sending rate in Mb/s
-   double mbpsRecvRate;                 // receiving rate in Mb/s
-   int64_t usSndDuration;		// busy sending time (i.e., idle time exclusive)
-   int pktReorderDistance;              // size of order discrepancy in received sequences
-   double pktRcvAvgBelatedTime;             // average time of packet delay for belated packets (packets with sequence past the ACK)
-   int64_t pktRcvBelated;              // number of received AND IGNORED packets due to having come too late
-   //>new
-   int pktSndDrop;                      // number of too-late-to-send dropped packets
-   int pktRcvDrop;                      // number of too-late-to play missing packets
-   int pktRcvUndecrypt;                 // number of undecrypted packets
-   uint64_t byteSent;                   // number of sent data bytes, including retransmissions
-   uint64_t byteRecv;                   // number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
-   uint64_t byteRcvLoss;                // number of retransmitted bytes
-#endif
-   uint64_t byteRetrans;                // number of retransmitted bytes
-   uint64_t byteSndDrop;                // number of too-late-to-send dropped bytes
-   uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
-   uint64_t byteRcvUndecrypt;           // number of undecrypted bytes
-   //<
-
-   // instant measurements
-   double usPktSndPeriod;               // packet sending period, in microseconds
-   int pktFlowWindow;                   // flow window size, in number of packets
-   int pktCongestionWindow;             // congestion window size, in number of packets
-   int pktFlightSize;                   // number of packets on flight
-   double msRTT;                        // RTT, in milliseconds
-   double mbpsBandwidth;                // estimated bandwidth, in Mb/s
-   int byteAvailSndBuf;                 // available UDT sender buffer size
-   int byteAvailRcvBuf;                 // available UDT receiver buffer size
-   //>new
-   double  mbpsMaxBW;                   // Transmit Bandwidth ceiling (Mbps)
-   int     byteMSS;                     // MTU
-
-   int     pktSndBuf;                   // UnACKed packets in UDT sender
-   int     byteSndBuf;                  // UnACKed bytes in UDT sender
-   int     msSndBuf;                    // UnACKed timespan (msec) of UDT sender
-   int     msSndTsbPdDelay;             // Timestamp-based Packet Delivery Delay
-
-   int     pktRcvBuf;                   // Undelivered packets in UDT receiver
-   int     byteRcvBuf;                  // Undelivered bytes of UDT receiver
-   int     msRcvBuf;                    // Undelivered timespan (msec) of UDT receiver
-   int     msRcvTsbPdDelay;             // Timestamp-based Packet Delivery Delay
-   //<
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Error codes - define outside the CUDTException class
-// because otherwise you'd have to use CUDTException::MJ_SUCCESS etc.
-// in all throw CUDTException expressions.
-enum CodeMajor
-{
-    MJ_UNKNOWN = -1,
-    MJ_SUCCESS = 0,
-    MJ_SETUP = 1,
-    MJ_CONNECTION = 2,
-    MJ_SYSTEMRES = 3,
-    MJ_FILESYSTEM = 4,
-    MJ_NOTSUP = 5,
-    MJ_AGAIN = 6,
-    MJ_PEERERROR = 7
-};
-
-enum CodeMinor
-{
-    // These are "minor" error codes from various "major" categories
-    // MJ_SETUP
-    MN_NONE = 0,
-    MN_TIMEOUT = 1,
-    MN_REJECTED = 2,
-    MN_NORES = 3,
-    MN_SECURITY = 4,
-    // MJ_CONNECTION
-    MN_CONNLOST = 1,
-    MN_NOCONN = 2,
-    // MJ_SYSTEMRES
-    MN_THREAD = 1,
-    MN_MEMORY = 2,
-    // MJ_FILESYSTEM
-    MN_SEEKGFAIL = 1,
-    MN_READFAIL = 2,
-    MN_SEEKPFAIL = 3,
-    MN_WRITEFAIL = 4,
-    // MJ_NOTSUP
-    MN_ISBOUND = 1,
-    MN_ISCONNECTED = 2,
-    MN_INVAL = 3,
-    MN_SIDINVAL = 4,
-    MN_ISUNBOUND = 5,
-    MN_NOLISTEN = 6,
-    MN_ISRENDEZVOUS = 7,
-    MN_ISRENDUNBOUND = 8,
-    MN_ISSTREAM = 9,
-    MN_ISDGRAM = 10,
-    MN_BUSY = 11,
-    MN_XSIZE = 12,
-    MN_EIDINVAL = 13,
-    // MJ_AGAIN
-    MN_WRAVAIL = 1,
-    MN_RDAVAIL = 2,
-    MN_XMTIMEOUT = 3,
-    MN_CONGESTION = 4
 };
 
 #ifdef __cplusplus
@@ -551,88 +325,6 @@ public: // Error Code
    static const int EUNKNOWN;
 };
 
-#endif // C++, exception class
-
-// Stupid, but effective. This will be #undefined, so don't worry.
-#define MJ(major) (1000*MJ_##major)
-#define MN(major, minor) (1000*MJ_##major + MN_##minor)
-
-// Some better way to define it, and better for C language.
-enum UDT_ERRNO
-{
-    UDT_EUNKNOWN = -1,
-    UDT_SUCCESS = MJ_SUCCESS,
-
-    UDT_ECONNSETUP = MJ(SETUP),
-    UDT_ENOSERVER  = MN(SETUP, TIMEOUT),
-    UDT_ECONNREJ   = MN(SETUP, REJECTED),
-    UDT_ESOCKFAIL  = MN(SETUP, NORES),
-    UDT_ESECFAIL   = MN(SETUP, SECURITY),
-
-    UDT_ECONNFAIL =  MJ(CONNECTION),
-    UDT_ECONNLOST =  MN(CONNECTION, CONNLOST),
-    UDT_ENOCONN =    MN(CONNECTION, NOCONN),
-
-    UDT_ERESOURCE =  MJ(SYSTEMRES),
-    UDT_ETHREAD =    MN(SYSTEMRES, THREAD),
-    UDT_ENOBUF =     MN(SYSTEMRES, MEMORY),
-
-    UDT_EFILE =      MJ(FILESYSTEM),
-    UDT_EINVRDOFF =  MN(FILESYSTEM, SEEKGFAIL),
-    UDT_ERDPERM =    MN(FILESYSTEM, READFAIL),
-    UDT_EINVWROFF =  MN(FILESYSTEM, SEEKPFAIL),
-    UDT_EWRPERM =    MN(FILESYSTEM, WRITEFAIL),
-
-    UDT_EINVOP =       MJ(NOTSUP),
-    UDT_EBOUNDSOCK =   MN(NOTSUP, ISBOUND),
-    UDT_ECONNSOCK =    MN(NOTSUP, ISCONNECTED),
-    UDT_EINVPARAM =    MN(NOTSUP, INVAL),
-    UDT_EINVSOCK =     MN(NOTSUP, SIDINVAL),
-    UDT_EUNBOUNDSOCK = MN(NOTSUP, ISUNBOUND),
-    UDT_ENOLISTEN =    MN(NOTSUP, NOLISTEN),
-    UDT_ERDVNOSERV =   MN(NOTSUP, ISRENDEZVOUS),
-    UDT_ERDVUNBOUND =  MN(NOTSUP, ISRENDUNBOUND),
-    UDT_ESTREAMILL =   MN(NOTSUP, ISSTREAM),
-    UDT_EDGRAMILL =    MN(NOTSUP, ISDGRAM),
-    UDT_EDUPLISTEN =   MN(NOTSUP, BUSY),
-    UDT_ELARGEMSG =    MN(NOTSUP, XSIZE),
-    UDT_EINVPOLLID =   MN(NOTSUP, EIDINVAL),
-
-    UDT_EASYNCFAIL = MJ(AGAIN),
-    UDT_EASYNCSND =  MN(AGAIN, WRAVAIL),
-    UDT_EASYNCRCV =  MN(AGAIN, RDAVAIL),
-    UDT_ETIMEOUT =   MN(AGAIN, XMTIMEOUT),
-    UDT_ECONGEST =   MN(AGAIN, CONGESTION),
-
-    UDT_EPEERERR = MJ(PEERERROR)
-};
-
-#undef MJ
-#undef MN
-
-// Logging API - specialization for SRT.
-
-// Define logging functional areas for log selection.
-// Use values greater than 0. Value 0 is reserved for LOGFA_GENERAL,
-// which is considered always enabled.
-
-// Logger Functional Areas
-// Note that 0 is "general".
-
-// Made by #define so that it's available also for C API.
-#define SRT_LOGFA_GENERAL 0
-#define SRT_LOGFA_BSTATS 1
-#define SRT_LOGFA_CONTROL 2
-#define SRT_LOGFA_DATA 3
-#define SRT_LOGFA_TSBPD 4
-#define SRT_LOGFA_REXMIT 5
-
-#define SRT_LOGFA_LASTNONE 99
-
-// Rest of the file is C++ only. It defines functions to be
-// called only from C++. For C equivalents, see udtc.h file.
-
-#ifdef __cplusplus
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -642,16 +334,18 @@ enum UDT_ERRNO
 // The following APIs: sendfile(), recvfile(), epoll_wait(), geterrormsg(),
 // include C++ specific feature, please use the corresponding sendfile2(), etc.
 
+typedef SRTSOCKET UDTSOCKET; //legacy alias
+
 namespace UDT
 {
 
 typedef CUDTException ERRORINFO;
-typedef UDT_SOCKOPT SOCKOPT;
+//typedef UDT_SOCKOPT SOCKOPT;
 typedef CPerfMon TRACEINFO;
 typedef CBytePerfMon TRACEBSTATS;
 typedef ud_set UDSET;
 
-UDT_API extern const UDTSOCKET INVALID_SOCK;
+UDT_API extern const SRTSOCKET INVALID_SOCK;
 #undef ERROR
 UDT_API extern const int ERROR;
 
@@ -666,8 +360,8 @@ UDT_API int connect(UDTSOCKET u, const struct sockaddr* name, int namelen);
 UDT_API int close(UDTSOCKET u);
 UDT_API int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockname(UDTSOCKET u, struct sockaddr* name, int* namelen);
-UDT_API int getsockopt(UDTSOCKET u, int level, SOCKOPT optname, void* optval, int* optlen);
-UDT_API int setsockopt(UDTSOCKET u, int level, SOCKOPT optname, const void* optval, int optlen);
+UDT_API int getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+UDT_API int setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
 UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
 UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
 
@@ -707,7 +401,7 @@ UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();
 UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true);
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
-UDT_API UDTSTATUS getsockstate(UDTSOCKET u);
+UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
 UDT_API void setloglevel(logging::LogLevel::type ll);
 UDT_API void addlogfa(logging::LogFA fa);

@@ -291,7 +291,7 @@ void CSndUList::insert(int64_t ts, const CUDT* u)
    insert_(ts, u);
 }
 
-void CSndUList::update(const CUDT* u, bool reschedule)
+void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
    CGuard listguard(m_ListLock);
 
@@ -299,7 +299,7 @@ void CSndUList::update(const CUDT* u, bool reschedule)
 
    if (n->m_iHeapLoc >= 0)
    {
-      if (!reschedule)
+      if (!reschedule) // EReschedule to bool conversion, predicted.
          return;
 
       if (n->m_iHeapLoc == 0)

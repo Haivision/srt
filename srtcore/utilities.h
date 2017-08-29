@@ -42,6 +42,8 @@ written by
 #define HAVE_CXX11 1
 #define ATR_NOEXCEPT noexcept
 #define ATR_CONSTEXPR constexpr
+#define ATR_OVERRIDE override
+#define ATR_FINAL final
 // Microsoft Visual Studio supports C++11, but not fully,
 // and still did not change the value of __cplusplus. Treat
 // this special way.
@@ -50,10 +52,14 @@ written by
 #define HAVE_CXX11 1
 #define ATR_NOEXCEPT
 #define ATR_CONSTEXPR
+#define ATR_OVERRIDE
+#define ATR_FINAL
 #else
 #define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
 #define ATR_CONSTEXPR
+#define ATR_OVERRIDE
+#define ATR_FINAL
 
 #if defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
 #error "The currently compiled application required C++11, but your compiler doesn't support it."

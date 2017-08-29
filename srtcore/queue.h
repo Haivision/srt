@@ -161,6 +161,10 @@ public:
 
 public:
 
+   enum EReschedule { DONT_RESCHEDULE = 0, DO_RESCHEDULE = 1 };
+
+   static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+
       /// Insert a new UDT instance into the list.
       /// @param [in] ts time stamp: next processing time
       /// @param [in] u pointer to the UDT instance
@@ -171,7 +175,7 @@ public:
       /// @param [in] u pointer to the UDT instance
       /// @param [in] resechedule if the timestampe shoudl be rescheduled
 
-   void update(const CUDT* u, bool reschedule = true);
+   void update(const CUDT* u, EReschedule reschedule = DO_RESCHEDULE);
 
       /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
       /// @param [out] addr destination address of the next packet

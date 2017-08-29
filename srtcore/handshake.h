@@ -44,12 +44,12 @@ typedef Bits<15, 0> HS_CMDSPEC_SIZE;
 
 enum SrtOptions
 {
-    SRT_OPT_TSBPDSND  = 0x00000001, /* Timestamp-based Packet delivery real-time data sender */
-    SRT_OPT_TSBPDRCV  = 0x00000002, /* Timestamp-based Packet delivery real-time data receiver */
-    SRT_OPT_HAICRYPT  = 0x00000004, /* HaiCrypt AES-128/192/256-CTR */
-    SRT_OPT_TLPKTDROP = 0x00000008, /* Drop real-time data packets too late to be processed in time */
-    SRT_OPT_NAKREPORT = 0x00000010, /* Periodic NAK report */
-    SRT_OPT_REXMITFLG = 0x00000020, // One bit in payload packet msgno is "retransmitted" flag
+    SRT_OPT_TSBPDSND  = BIT(0), /* Timestamp-based Packet delivery real-time data sender */
+    SRT_OPT_TSBPDRCV  = BIT(1), /* Timestamp-based Packet delivery real-time data receiver */
+    SRT_OPT_HAICRYPT  = BIT(2), /* HaiCrypt AES-128/192/256-CTR */
+    SRT_OPT_TLPKTDROP = BIT(3), /* Drop real-time data packets too late to be processed in time */
+    SRT_OPT_NAKREPORT = BIT(4), /* Periodic NAK report */
+    SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
 };
 
 
@@ -61,7 +61,8 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_KMREQ = 3,
       SRT_CMD_KMRSP = 4,
       SRT_CMD_SID = 5,
-      SRT_CMD_NONE = -1; // for cases when no pong for ping is required
+      SRT_CMD_SMOOTHER = 6,
+      SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
 
 enum SrtDataStruct
 {
@@ -216,7 +217,7 @@ public:
 
     static const int32_t HS_EXT_HSREQ = BIT(0);
     static const int32_t HS_EXT_KMREQ = BIT(1);
-    static const int32_t HS_EXT_SID   = BIT(2);
+    static const int32_t HS_EXT_CONFIG  = BIT(2);
 
     static std::string ExtensionFlagStr(int32_t fl)
     {
@@ -225,8 +226,8 @@ public:
             output += " hsreq";
         if ( fl & HS_EXT_KMREQ )
             output += " kmreq";
-        if ( fl & HS_EXT_SID )
-            output += " streamid";
+        if ( fl & HS_EXT_CONFIG )
+            output += " config";
         return output;
     }
 
@@ -239,7 +240,7 @@ public:
    int32_t m_iISN;              // random initial sequence number
    int32_t m_iMSS;              // maximum segment size
    int32_t m_iFlightFlagSize;   // flow control window size
-   UDTRequestType m_iReqType;          // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
+   UDTRequestType m_iReqType;   // handshake stage
    int32_t m_iID;		// socket ID
    int32_t m_iCookie;		// cookie
    uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
@@ -253,9 +254,17 @@ public:
 // The WAVING state is the very initial state of the rendezvous connection and restored after the
 // connection is closed.
 // The ATTENTION and FINE are two alternative states that are transited to from WAVING. The possible
-// situations are that:
-// - (most likely) one party transits to ATTENTION and the other party transits to FINE
-// - (rare case) both parties transit to ATTENTION
+// situations are:
+// - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
+// - "parallel arrangement" both parties transit to ATTENTION
+//
+// Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
+// URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
+// time, on machines with exactly the same performance and all things preceding the message sending
+// have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
+// the clients have started at different times, the one who started first sends a message and the
+// system of the receiver buffers this message even before the client binds the port for enough long
+// time so that it outlasts also the possible second, repeated waveahand.
 enum RendezvousState
 {
     RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.

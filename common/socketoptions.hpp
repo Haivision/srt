@@ -171,7 +171,9 @@ SocketOption srt_options [] {
     { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::INT, SocketOption::PRE },
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::INT, SocketOption::PRE },
     { "minversion", 0, SRTO_MINVERSION, SocketOption::INT, SocketOption::PRE },
-    { "streamid", 0, SRTO_STREAMID, SocketOption::STRING, SocketOption::PRE }
+    { "streamid", 0, SRTO_STREAMID, SocketOption::STRING, SocketOption::PRE },
+    { "smoother", 0, SRTO_SMOOTHER, SocketOption::STRING, SocketOption::PRE },
+    { "transtype", 0, SRTO_TRANSTYPE, SocketOption::STRING, SocketOption::PRE }
 };
 }
 
