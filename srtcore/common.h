@@ -391,9 +391,18 @@ public:
 
 struct EventSlot
 {
-    EventSlotBase* slot;
+    mutable EventSlotBase* slot;
     // Create empty slot. Calls are ignored.
     EventSlot(): slot(0) {}
+
+    // "Stealing" copy constructor, following the auto_ptr method.
+    // This isn't very nice, but no other way to do it in C++03
+    // without rvalue-reference and move.
+    EventSlot(const EventSlot& victim)
+    {
+        slot = victim.slot; // Should MOVE.
+        victim.slot = 0;
+    }
 
     EventSlot(void* op, EventSlotBase::dispatcher_t* disp)
     {
@@ -415,7 +424,8 @@ struct EventSlot
 
     ~EventSlot()
     {
-        delete slot;
+        if (slot)
+            delete slot;
     }
 };
 
