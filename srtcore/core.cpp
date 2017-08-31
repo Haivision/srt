@@ -666,6 +666,38 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
         break;
 
+   case SRTO_TRANSTYPE:
+      switch (*(SRT_TRANSTYPE*)optval)
+      {
+      case SRTT_LIVE:
+          // Default live options:
+          // - tsbpd: on
+          // - latency: 125ms
+          // - smoother: live
+          m_bOPT_TsbPd = true;
+          m_iOPT_TsbPdDelay = DEFAULT_LIVE_LATENCY;
+          m_iOPT_PeerTsbPdDelay = 0;
+          m_bTLPktDrop = true;
+          m_Smoother.select("live");
+          break;
+
+      case SRTT_VOD:
+          // File transfer mode:
+          // - tsbpd: off
+          // - latency: 0
+          // - smoother: file (original UDT congestion control)
+          m_bOPT_TsbPd = false;
+          m_iOPT_TsbPdDelay = 0;
+          m_iOPT_PeerTsbPdDelay = 0;
+          m_bTLPktDrop = false;
+          m_Smoother.select("file");
+          break;
+
+      default:
+          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+      }
+      break;
+
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -933,34 +965,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
           string tt = m_Smoother.selected_name();
           strcpy((char*)optval, tt.c_str());
           optlen = tt.size();
-      }
-      break;
-
-   case SRTO_TRANSTYPE:
-      switch (*(SRT_TRANSTYPE*)optval)
-      {
-      case SRTT_LIVE:
-          // Default live options:
-          // - tsbpd: on
-          // - latency: 125ms
-          // - smoother: live
-          m_bOPT_TsbPd = true;
-          m_iOPT_TsbPdDelay = DEFAULT_LIVE_LATENCY;
-          m_iOPT_PeerTsbPdDelay = 0;
-          m_bTLPktDrop = true;
-          m_Smoother.select("live");
-          break;
-
-      case SRTT_VOD:
-          m_bOPT_TsbPd = false;
-          m_iOPT_TsbPdDelay = 0;
-          m_iOPT_PeerTsbPdDelay = 0;
-          m_bTLPktDrop = false;
-          m_Smoother.select("file");
-          break;
-
-      default:
-          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
       }
       break;
 

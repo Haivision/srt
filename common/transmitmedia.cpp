@@ -380,13 +380,22 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     // host is only checked for emptiness and depending on that the connection mode is selected.
     // Here we are not exactly interested with that information.
     vector<string> failures;
+
+    // NOTE: here host = "", so the 'connmode' will be returned as LISTENER always,
+    // but it doesn't matter here. We don't use 'connmode' for anything else than
+    // checking for failures.
     SocketOption::Mode conmode = SrtConfigurePre(sock, "",  m_options, &failures);
 
-    if ( transmit_verbose && conmode == SocketOption::FAILURE )
+    if ( conmode == SocketOption::FAILURE )
     {
-        cout << "WARNING: failed to set options: ";
-        copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
-        cout << endl;
+        if (transmit_verbose )
+        {
+            cout << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            cout << endl;
+        }
+
+        return SRT_ERROR;
     }
 
     return 0;
@@ -813,8 +822,8 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 
 // More options can be added in future.
 SocketOption udp_options [] {
-    { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::INT, SocketOption::PRE },
-    { "iptos", IPPROTO_IP, IP_TOS, SocketOption::INT, SocketOption::PRE },
+    { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "iptos", IPPROTO_IP, IP_TOS, SocketOption::PRE, SocketOption::INT, nullptr },
 };
 
 class UdpCommon

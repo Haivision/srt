@@ -7,6 +7,11 @@ using namespace std;
 set<string> true_names = { "1", "yes", "on", "true" };
 set<string> false_names = { "0", "no", "off", "false" };
 
+std::map<std::string, int> enummap_transtype = {
+    { "live", SRTT_LIVE },
+    { "vod",  SRTT_VOD },
+    { "file", SRTT_VOD }
+};
 
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
 {
