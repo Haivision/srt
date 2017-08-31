@@ -171,48 +171,49 @@ private: // constructor and desctructor
 public: //API
     static int startup();
     static int cleanup();
-    static UDTSOCKET socket(int af, int type = SOCK_STREAM, int protocol = 0);
-    static int bind(UDTSOCKET u, const sockaddr* name, int namelen);
-    static int bind(UDTSOCKET u, UDPSOCKET udpsock);
-    static int listen(UDTSOCKET u, int backlog);
-    static UDTSOCKET accept(UDTSOCKET u, sockaddr* addr, int* addrlen);
-    static int connect(UDTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    static int close(UDTSOCKET u);
-    static int getpeername(UDTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockname(UDTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
-    static int setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
-    static int send(UDTSOCKET u, const char* buf, int len, int flags);
-    static int recv(UDTSOCKET u, char* buf, int len, int flags);
+    static SRTSOCKET socket(int af, int type = SOCK_STREAM, int protocol = 0);
+    static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
+    static int bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static int listen(SRTSOCKET u, int backlog);
+    static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
+    static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    static int close(SRTSOCKET u);
+    static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
+    static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
+    static int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+    static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
+    static int send(SRTSOCKET u, const char* buf, int len, int flags);
+    static int recv(SRTSOCKET u, char* buf, int len, int flags);
 #ifdef SRT_ENABLE_SRCTIMESTAMP
-    static int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
-    static int recvmsg(UDTSOCKET u, char* buf, int len, uint64_t& srctime);
+    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
+    static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
 #else
-    static int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
+    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
 #endif
-    static int recvmsg(UDTSOCKET u, char* buf, int len);
-    static int64_t sendfile(UDTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
-    static int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
+    static int recvmsg(SRTSOCKET u, char* buf, int len);
+    static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
+    static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
     static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
-    static int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
+    static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
-    static int epoll_add_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
+    static int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
     static int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    static int epoll_remove_usock(const int eid, const UDTSOCKET u);
+    static int epoll_remove_usock(const int eid, const SRTSOCKET u);
     static int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-    static int epoll_update_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
+    static int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
     static int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    static int epoll_wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
+    static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
-    static int perfmon(UDTSOCKET u, CPerfMon* perf, bool clear = true);
-    static int bstats(UDTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
+    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
-    static bool setstreamid(UDTSOCKET u, const std::string& sid);
-    static std::string getstreamid(UDTSOCKET u);
+    static bool setstreamid(SRTSOCKET u, const std::string& sid);
+    static std::string getstreamid(SRTSOCKET u);
+    static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
 
 public: // internal API
-    static const UDTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
+    static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
     static const int ERROR = -1;                      // socket api error returned value
 
     static const int HS_VERSION_UDT4 = 4;
@@ -244,10 +245,10 @@ public: // internal API
 #endif
     }
 
-    UDTSOCKET socketID() { return m_SocketID; }
+    SRTSOCKET socketID() { return m_SocketID; }
 
-    static CUDT* getUDTHandle(UDTSOCKET u);
-    static std::vector<UDTSOCKET> existingSockets();
+    static CUDT* getUDTHandle(SRTSOCKET u);
+    static std::vector<SRTSOCKET> existingSockets();
 
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
@@ -454,9 +455,9 @@ private:
 
 public:
 private: // Identification
-    UDTSOCKET m_SocketID;                        // UDT socket number
+    SRTSOCKET m_SocketID;                        // UDT socket number
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
-    UDTSOCKET m_PeerID;                          // peer id, for multiplexer
+    SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
     // Packet sizes
     int m_iUDPPacketSize;                              // Maximum/regular packet size, in bytes

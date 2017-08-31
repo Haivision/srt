@@ -532,6 +532,9 @@ SRT_API void srt_resetlogfa(const int* fara, size_t fara_size);
 SRT_API void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 SRT_API void srt_setlogflags(int flags);
 
+
+SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
+
 #ifdef __cplusplus
 }
 #endif

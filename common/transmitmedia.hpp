@@ -121,6 +121,15 @@ public:
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
 
+    size_t Still() override
+    {
+        size_t bytes;
+        int st = srt_getsndbuffer(m_sock, nullptr, &bytes);
+        if (st == -1)
+            return 0;
+        return bytes;
+    }
+
 };
 
 #endif

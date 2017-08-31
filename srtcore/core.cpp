@@ -7727,3 +7727,26 @@ void CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
         i->emit(tev, var);
     }
 }
+
+int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
+{
+    CUDTSocket* s = s_UDTUnited.locate(u);
+    if (!s || !s->m_pUDT)
+        return -1;
+
+    CSndBuffer* b = s->m_pUDT->m_pSndBuffer;
+
+    if (!b)
+        return -1;
+
+    int bytecount, timespan;
+    int count = b->getCurrBufSize(Ref(bytecount), Ref(timespan));
+
+    if (blocks)
+        *blocks = count;
+
+    if (bytes)
+        *bytes = bytecount;
+
+    return std::abs(timespan);
+}

@@ -45,6 +45,7 @@ public:
     virtual bool IsOpen() = 0;
     virtual bool Broken() = 0;
     virtual void Close() {}
+    virtual size_t Still() { return 0; }
     static std::unique_ptr<Target> Create(const std::string& url);
     virtual ~Target() {}
 };

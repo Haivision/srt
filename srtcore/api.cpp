@@ -841,11 +841,6 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
       throw e;
    }
 
-
-   // The same thing is done USING InvertedLock!
-   ////if (s->m_pUDT->m_bSynRecving)
-   ////   CGuard::enterCS(s->m_ControlLock);
-
    // record peer address
    delete s->m_pPeerAddr;
    if (AF_INET == s->m_iIPversion)
