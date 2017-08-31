@@ -5379,11 +5379,11 @@ void CUDT::releaseSynch()
 }
 
 #if ENABLE_LOGGING
-static void DebugAck(int prev, int ack, string CONID)
+static void DebugAck(string hdr, int prev, int ack)
 {
     if ( !prev )
     {
-        LOGC(mglog.Debug).form("ACK %d", ack);
+        LOGC(mglog.Debug) << hdr << "ACK " << ack;
         return;
     }
 
@@ -5391,7 +5391,7 @@ static void DebugAck(int prev, int ack, string CONID)
     int diff = CSeqNo::seqcmp(ack, prev);
     if ( diff < 0 )
     {
-        LOGC(mglog.Error).form("ACK %d-%d (%d)", prev, ack, 1+CSeqNo::seqcmp(ack, prev));
+        LOGC(mglog.Debug) << hdr << "ACK ERROR: " << prev << "-" << ack << "(diff " << CSeqNo::seqcmp(ack, prev) << ")";
         return;
     }
 
@@ -5404,10 +5404,10 @@ static void DebugAck(int prev, int ack, string CONID)
         ackv << prev << " ";
     if ( shorted )
         ackv << "...";
-    LOGC(mglog.Debug) << CONID << "ACK (" << (diff+1) << "): " << ackv.str() << ack;
+    LOGC(mglog.Debug) << hdr << "ACK (" << (diff+1) << "): " << ackv.str() << ack;
 }
 #else
-static inline void DebugAck(int, int, string) {}
+static inline void DebugAck(string int, int) {}
 #endif
 
 void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size)
@@ -5460,7 +5460,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.pack(pkttype, NULL, &ack, size);
          ctrlpkt.m_iID = m_PeerID;
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck(local_prevack, ack, CONID());
+         DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
          break;
       }
 
@@ -5586,7 +5586,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.m_iID = m_PeerID;
          ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck(local_prevack, ack, CONID());
+         DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
          m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
