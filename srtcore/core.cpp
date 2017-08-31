@@ -4265,25 +4265,26 @@ int CUDT::send(const char* data, int len)
          throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
       else
       {
-         // wait here during a blocking sending
-          pthread_mutex_lock(&m_SendBlockLock);
-          if (m_iSndTimeOut < 0)
           {
-              while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-                  pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-          }
-          else
-          {
-              uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-              timespec locktime;
+              // wait here during a blocking sending
+              CGuard sendblock_lock(m_SendBlockLock);
+              if (m_iSndTimeOut < 0)
+              {
+                  while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
+                      pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+              }
+              else
+              {
+                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                  timespec locktime;
 
-              locktime.tv_sec = exptime / 1000000;
-              locktime.tv_nsec = (exptime % 1000000) * 1000;
+                  locktime.tv_sec = exptime / 1000000;
+                  locktime.tv_nsec = (exptime % 1000000) * 1000;
 
-              while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth && (CTimer::getTime() < exptime))
-                  pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                  while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth && (CTimer::getTime() < exptime))
+                      pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+              }
           }
-          pthread_mutex_unlock(&m_SendBlockLock);
 
          // check the connection status
          if (m_bBroken || m_bClosing)
@@ -4509,25 +4510,27 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
          throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
       else
       {
-          // wait here during a blocking sending
-          pthread_mutex_lock(&m_SendBlockLock);
-          if (m_iSndTimeOut < 0)
           {
-              while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len))
-                  pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-          }
-          else
-          {
-              uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-              timespec locktime;
+              // wait here during a blocking sending
+              CGuard sendblock_lock(m_SendBlockLock);
 
-              locktime.tv_sec = exptime / 1000000;
-              locktime.tv_nsec = (exptime % 1000000) * 1000;
+              if (m_iSndTimeOut < 0)
+              {
+                  while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len))
+                      pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+              }
+              else
+              {
+                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                  timespec locktime;
 
-              while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len) && (CTimer::getTime() < exptime))
-                  pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                  locktime.tv_sec = exptime / 1000000;
+                  locktime.tv_nsec = (exptime % 1000000) * 1000;
+
+                  while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len) && (CTimer::getTime() < exptime))
+                      pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+              }
           }
-          pthread_mutex_unlock(&m_SendBlockLock);
 
          // check the connection status
          if (m_bBroken || m_bClosing)
@@ -4839,10 +4842,12 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
       unitsize = int((tosend >= block) ? block : tosend);
 
-      pthread_mutex_lock(&m_SendBlockLock);
-      while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-          pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-      pthread_mutex_unlock(&m_SendBlockLock);
+      {
+          CGuard lk(m_SendBlockLock);
+
+          while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
+              pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+      }
 
       if (m_bBroken || m_bClosing)
          throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -5880,11 +5885,11 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 #endif  SRT_ENABLE_TLPKTDROP */
 
       CGuard::leaveCS(m_AckLock);
-
-      pthread_mutex_lock(&m_SendBlockLock);
       if (m_bSynSending)
+      {
+          CGuard lk(m_SendBlockLock);
           pthread_cond_signal(&m_SendBlockCond);
-      pthread_mutex_unlock(&m_SendBlockLock);
+      }
 
       // acknowledde any waiting epolls to write
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
