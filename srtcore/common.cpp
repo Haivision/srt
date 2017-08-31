@@ -804,7 +804,8 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "hsrsp",
         "kmreq",
         "kmrsp",
-        "sid"
+        "sid",
+        "smoother"
     };
 
 #define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
@@ -813,7 +814,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
     {
         // Returrn "EXT:" with srt message name
         string val = "SRT:";
-        if ( extt <= 0 || extt > LEN(srt_types) )
+        if ( extt >= LEN(srt_types) )
             return "EXT:unknown";
 
         return val + srt_types[extt];
