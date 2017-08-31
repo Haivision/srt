@@ -667,6 +667,12 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
    case SRTO_TRANSTYPE:
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      // XXX Note that here the configuration for SRTT_LIVE
+      // is the same as DEFAULT VALUES for these fields set
+      // in CUDT::CUDT. 
       switch (*(SRT_TRANSTYPE*)optval)
       {
       case SRTT_LIVE:
@@ -678,6 +684,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_iOPT_TsbPdDelay = DEFAULT_LIVE_LATENCY;
           m_iOPT_PeerTsbPdDelay = 0;
           m_bTLPktDrop = true;
+          m_bRcvNakReport = true;
           m_Smoother.select("live");
           break;
 
@@ -690,6 +697,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_iOPT_TsbPdDelay = 0;
           m_iOPT_PeerTsbPdDelay = 0;
           m_bTLPktDrop = false;
+          m_bRcvNakReport = false;
           m_Smoother.select("file");
           break;
 
@@ -2348,11 +2356,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
             {
                 // Found some block that is not interesting here. Skip this and get the next one.
                 LOGC(mglog.Debug) << "interpretSrtHandshake: ... skipping " << MessageTypeStr(UMSG_EXT, cmd);
-                if ( !NextExtensionBlock(Ref(begin), next, Ref(length)) )
-                    break;
             }
 
-            continue;
+            if ( !NextExtensionBlock(Ref(begin), next, Ref(length)) )
+                break;
         }
     }
 
