@@ -5,11 +5,12 @@
 #include "core.h"
 #include "packet.h"
 #include "smoother.h"
+#include "logging.h"
 
 using namespace std;
 
 
-void SmootherBase::Initialize(CUDT* parent)
+SmootherBase::SmootherBase(CUDT* parent)
 {
     m_parent = parent;
     m_dMaxCWndSize = m_parent->flowWindowSize();
@@ -36,12 +37,13 @@ class LiveSmoother: public SmootherBase
     typedef LiveSmoother Me; // required for SSLOT macro
 
 public:
-    LiveSmoother(CUDT* parent)
+    LiveSmoother(CUDT* parent): SmootherBase(parent)
     {
-        Initialize(parent);
-
         m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
         m_iSndAvgPayloadSize = 7*188; // XXX = 1316 -- shouldn't be configurable?
+
+        LOGC(mglog.Debug) << "Creating LiveSmoother: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize;
+
         updatePktSndPeriod();
 
         parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
@@ -63,6 +65,7 @@ public:
     {
         const CPacket& packet = *var.get<EventVariant::PACKET>();
         m_iSndAvgPayloadSize = ((m_iSndAvgPayloadSize * 127) + packet.getLength()) / 128;
+        LOGC(mglog.Debug) << "LiveSmoother: avg payload size updated: " << m_iSndAvgPayloadSize;
     }
 
     void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
@@ -80,6 +83,7 @@ public:
     {
         double pktsize = m_iSndAvgPayloadSize + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
         m_dPktSndPeriod = 1000000.0 * (pktsize/m_llSndMaxBW);
+        LOGC(mglog.Debug) << "LiveSmoother: sending period updated: " << m_iSndAvgPayloadSize;
     }
 
     void setMaxBW(int64_t maxbw)
@@ -146,18 +150,17 @@ class FileSmoother: public SmootherBase
     int64_t m_maxSR;
 
 public:
-    FileSmoother(CUDT* parent)
+    FileSmoother(CUDT* parent): SmootherBase(parent)
     {
-        Initialize(parent);
         // Note that this function is called at the moment of
         // calling m_Smoother.configure(this). It is placed more less
         // at the same position as the series-of-parameter-setting-then-init
         // in the original UDT code. So, old CUDTCC::init() can be moved
         // to constructor.
 
-        m_iRCInterval = CPacket::SYN_INTERVAL;
+        m_iRCInterval = CUDT::COMM_SYN_INTERVAL_US;
         m_LastRCTime = CTimer::getTime();
-        m_iACKPeriod = CPacket::SYN_INTERVAL;
+        m_iACKPeriod = CUDT::COMM_SYN_INTERVAL_US;
 
         m_bSlowStart = true;
         m_iLastAck = parent->sndSeqNo();
@@ -178,12 +181,17 @@ public:
         parent->ConnectSignal(TEV_ACK, SSLOT(updateSndPeriod));
         parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(slowdownSndPeriod));
         parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
+
+        LOGC(mglog.Debug) << "Creating FileSmoother";
     }
 
     void updateBandwidth(int64_t maxbw, int64_t) ATR_OVERRIDE
     {
         if (maxbw != 0)
+        {
             m_maxSR = maxbw;
+            LOGC(mglog.Debug) << "LiveSmoother: updated BW: " << m_maxSR;
+        }
     }
 
     // SLOTS
@@ -213,13 +221,20 @@ public:
                 else
                     m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
             }
+
+            LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:"
+                << (m_bSlowStart ? "KEPT" : "ENDED") << ") wndsize=" << m_dCWndSize << " sndperiod=" << m_dPktSndPeriod << "us";
         }
         else
+        {
             m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->RTT() + m_iRCInterval) + 16;
+        }
 
         // During Slow Start, no rate increase
         if (m_bSlowStart)
+        {
             goto RATE_LIMIT;
+        }
 
         if (m_bLoss)
         {
@@ -245,6 +260,8 @@ public:
 
         m_dPktSndPeriod = (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval);
 
+        LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:OFF) wndsize=" << m_dCWndSize << " sndperiod=" << m_dPktSndPeriod << "us";
+
 
 RATE_LIMIT:
         //set maximum transfer rate
@@ -252,11 +269,16 @@ RATE_LIMIT:
         {
             double minSP = 1000000.0 / (double(m_maxSR) / m_parent->MSS());
             if (m_dPktSndPeriod < minSP)
+            {
                 m_dPktSndPeriod = minSP;
+                LOGC(mglog.Debug) << "FileSmoother: BW limited to " << m_maxSR << " - DECREASING snd period to " << m_dPktSndPeriod << "us";
+            }
         }
 
     }
 
+    // When a lossreport has been received, it might be due to having
+    // reached the available bandwidth limit. Slowdown to avoid further losses.
     void slowdownSndPeriod(ETransmissionEvent, EventVariant arg)
     {
         const int32_t* losslist = arg.get_ptr();
@@ -275,14 +297,17 @@ RATE_LIMIT:
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
             else
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+
+            LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, pktsndperiod=" << m_dPktSndPeriod << "us";
         }
 
         m_bLoss = true;
 
-        // In contradiction to UDT, this will effectively fire not only
-        // when the first-time loss was detected, but also when the loss
-        // report is to be sent due to NAKREPORT feature. Hopefully the
-        // "repeated loss report" case is to be cut off by this condition.
+        // In contradiction to UDT, TEV_LOSSREPORT will be reported also when
+        // the lossreport is being sent again, periodically, as a result of
+        // NAKREPORT feature. You should make sure that NAKREPORT is off when
+        // using FileSmoother, so relying on SRTO_TRANSTYPE rather than
+        // just SRTO_SMOOTHER is recommended.
         if (CSeqNo::seqcmp(SEQNO_VALUE::unwrap(losslist[0]), m_iLastDecSeq) > 0)
         {
             m_dLastDecPeriod = m_dPktSndPeriod;
@@ -299,12 +324,15 @@ RATE_LIMIT:
             m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
             if (m_iDecRandom < 1)
                 m_iDecRandom = 1;
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:NEW seq(rand)="
+                << m_iLastDecSeq << ", avg NAK:" << m_iAvgNAKNum << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
         else if ((m_iDecCount ++ < 5) && (0 == (++ m_iNAKCount % m_iDecRandom)))
         {
             // 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
             m_iLastDecSeq = m_parent->sndSeqNo();
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:PERIOD seq=" << m_iLastDecSeq << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
 
     }
@@ -326,9 +354,12 @@ RATE_LIMIT:
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
             else
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+            LOGC(mglog.Debug) << "FileSmoother: CHECKTIMER, SLOWSTART:OFF, pktsndperiod=" << m_dPktSndPeriod << "us";
         }
         else
         {
+            // XXX This code is a copy of legacy CUDTCC::onTimeout() body.
+            // This part was commented out there already.
             /*
                m_dLastDecPeriod = m_dPktSndPeriod;
                m_dPktSndPeriod = ceil(m_dPktSndPeriod * 2);

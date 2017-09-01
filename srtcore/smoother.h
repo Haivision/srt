@@ -24,7 +24,8 @@ protected:
     //int m_RTT;               // NOT REQUIRED. Use m_parent->RTT() instead.
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
-    void Initialize(CUDT* parent);
+    // Constructor in protected section so that this class is semi-abstract.
+    SmootherBase(CUDT* parent);
 public:
 
     // This could be also made abstract, but this causes a linkage
@@ -32,14 +33,14 @@ public:
     // and C++ compiler uses the location of the first virtual method as the
     // file to which it also emits the virtual call table. When this is
     // abstract, there would have to be simultaneously either defined
-    // an empty class in smoother.cpp file (obviously never called),
+    // an empty method in smoother.cpp file (obviously never called),
     // or simply left empty body here.
     virtual ~SmootherBase() { }
 
     // All these functions that return values interesting for processing
     // by CUDT can be overridden. Normally they should refer to the fields
     // and these fields should keep the values as a state.
-    virtual double pktSndPeriod() { return m_dPktSndPeriod; }
+    virtual double pktSndPeriod_us() { return m_dPktSndPeriod; }
     virtual double cgWindowSize() { return m_dCWndSize; }
     virtual double cgWindowMaxSize() { return m_dMaxCWndSize; }
 
@@ -56,10 +57,11 @@ public:
     // value.
     virtual int ACKInterval() { return 0; }
 
-    // Periodical timer to send an ACK, in milliseconds.
+    // Periodical timer to send an ACK, in microseconds.
     // If user-defined, this value in microseconds will be used to calculate
-    // the next ACK time every time ACK is considered to be sent. Otherwise this
-    // will be calculated internally in CUDT, normally taken from CPacket::SYN_INTERVAL.
+    // the next ACK time every time ACK is considered to be sent (see CUDT::checkTimers).
+    // Otherwise this will be calculated internally in CUDT, normally taken
+    // from CPacket::SYN_INTERVAL.
     virtual int ACKPeriod() { return 0; }
 
     // Called when the settings concerning m_llMaxBW were changed.

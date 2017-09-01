@@ -194,11 +194,11 @@ void CUDT::construct()
    m_lPeerSrtVersion = 0; // not defined until connected.
    m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
 
-   m_iTsbPdDelay = 0;
-   m_iPeerTsbPdDelay = 0;
+   m_iTsbPdDelay_ms = 0;
+   m_iPeerTsbPdDelay_ms = 0;
 
    m_bPeerTsbPd = false;
-   m_iPeerTsbPdDelay = 0;
+   m_iPeerTsbPdDelay_ms = 0;
    m_bTsbPd = false;
    m_bPeerTLPktDrop = false;
 
@@ -249,7 +249,7 @@ CUDT::CUDT()
    //Runtime
 #ifdef SRT_ENABLE_NAKREPORT
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
-   m_iMinNakInterval = 20000;   //Minimum NAK Report Period (usec)
+   m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
    m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
 #endif /* SRT_ENABLE_NAKREPORT */
    m_llInputBW = 0;             // Application provided input bandwidth (internal input rate sampling == 0)
@@ -310,7 +310,7 @@ CUDT::CUDT(const CUDT& ancestor)
    //Runtime
 #ifdef SRT_ENABLE_NAKREPORT
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
-   m_iMinNakInterval = ancestor.m_iMinNakInterval;
+   m_iMinNakInterval_us = ancestor.m_iMinNakInterval_us;
    m_iNakReportAccel = ancestor.m_iNakReportAccel;
 #endif /* SRT_ENABLE_NAKREPORT */
 
@@ -863,12 +863,12 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
 
    case SRTO_TSBPDDELAY:
    case SRTO_RCVLATENCY:
-      *(int32_t*)optval = m_iTsbPdDelay;
+      *(int32_t*)optval = m_iTsbPdDelay_ms;
       optlen = sizeof(int32_t);
       break;
 
    case SRTO_PEERLATENCY:
-      *(int32_t*)optval = m_iPeerTsbPdDelay;
+      *(int32_t*)optval = m_iPeerTsbPdDelay_ms;
       optlen = sizeof(int32_t);
       break;
 
@@ -1055,10 +1055,10 @@ void CUDT::clearData()
 
    // Resetting these data because this happens when agent isn't connected.
    m_bPeerTsbPd = false;
-   m_iPeerTsbPdDelay = 0;
+   m_iPeerTsbPdDelay_ms = 0;
 
    m_bTsbPd = m_bOPT_TsbPd; // Take the values from user-configurable options
-   m_iTsbPdDelay = m_iOPT_TsbPdDelay;
+   m_iTsbPdDelay_ms = m_iOPT_TsbPdDelay;
    m_bTLPktDrop = m_bOPT_TLPktDrop;
    m_bPeerTLPktDrop = false;
 
@@ -1068,7 +1068,7 @@ void CUDT::clearData()
 
    m_bPeerRexmitFlag = false;
 
-   m_llSndDuration_tk = m_llSndDurationTotal_tk = 0;
+   m_llSndDuration = m_llSndDurationTotal = 0;
 
    m_RdvState = CHandShake::RDV_INVALID;
    m_ullRcvPeerStartTime = 0;
@@ -1084,27 +1084,27 @@ void CUDT::open()
    if (m_pSNode == NULL)
       m_pSNode = new CSNode;
    m_pSNode->m_pUDT = this;
-   m_pSNode->m_llTimeStamp = 1;
+   m_pSNode->m_llTimeStamp_tk = 1;
    m_pSNode->m_iHeapLoc = -1;
 
    if (m_pRNode == NULL)
       m_pRNode = new CRNode;
    m_pRNode->m_pUDT = this;
-   m_pRNode->m_llTimeStamp = 1;
+   m_pRNode->m_llTimeStamp_tk = 1;
    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
    m_pRNode->m_bOnList = false;
 
-   m_iRTT = 10 * CPacket::SYN_INTERVAL;
+   m_iRTT = 10 * COMM_SYN_INTERVAL_US;
    m_iRTTVar = m_iRTT >> 1;
    m_ullCPUFrequency = CTimer::getCPUFrequency();
 
    // set up the timers
-   m_ullSYNInt_tk = CPacket::SYN_INTERVAL * m_ullCPUFrequency;
+   m_ullSYNInt_tk = COMM_SYN_INTERVAL_US * m_ullCPUFrequency;
 
    // set minimum NAK and EXP timeout to 300ms
 #ifdef SRT_ENABLE_NAKREPORT
    if (m_bRcvNakReport)
-      m_ullMinNakInt_tk = m_iMinNakInterval * m_ullCPUFrequency;
+      m_ullMinNakInt_tk = m_iMinNakInterval_us * m_ullCPUFrequency;
    else
 #endif
    m_ullMinNakInt_tk = 300000 * m_ullCPUFrequency;
@@ -1123,7 +1123,7 @@ void CUDT::open()
    m_iReXmitCount = 1;
 #endif /* SRT_ENABLE_FASTREXMIT */
 #ifdef SRT_ENABLE_CBRTIMESTAMP
-   m_ullSndLastCbrTime = currtime_tk;
+   m_ullSndLastCbrTime_tk = currtime_tk;
 #endif
    // Fix keepalive
    m_ullLastSndTime_tk = currtime_tk;
@@ -1131,8 +1131,8 @@ void CUDT::open()
    m_iPktCount = 0;
    m_iLightACKCount = 1;
 
-   m_ullTargetTime = 0;
-   m_ullTimeDiff = 0;
+   m_ullTargetTime_tk = 0;
+   m_ullTimeDiff_tk = 0;
 
    // Now UDT is opened.
    m_bOpened = true;
@@ -1196,8 +1196,8 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
     // (the latter is only in case of HSv5 and bidirectional connection).
     if (m_bOPT_TsbPd)
     {
-        m_iTsbPdDelay = m_iOPT_TsbPdDelay;
-        m_iPeerTsbPdDelay = m_iOPT_PeerTsbPdDelay;
+        m_iTsbPdDelay_ms = m_iOPT_TsbPdDelay;
+        m_iPeerTsbPdDelay_ms = m_iOPT_PeerTsbPdDelay;
         /*
          * Sent data is real-time, use Time-based Packet Delivery,
          * set option bit and configured delay
@@ -1207,17 +1207,17 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
         if ( hs_version < CUDT::HS_VERSION_SRT1 )
         {
             // HSv4 - this uses only one value.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay);
+            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay_ms);
         }
         else
         {
             // HSv5 - this will be understood only since this version when this exists.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay);
+            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
             m_bTsbPd = true;
             // And in the reverse direction.
             srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
-            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay);
+            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
 
             // This wasn't there for HSv4, this setting is only for the receiver.
             // HSv5 is bidirectional, so every party is a receiver.
@@ -1257,13 +1257,13 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
             if ( hs_version < HS_VERSION_SRT1 )
             {
                 // HSv4 - this uses only one value
-                srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay);
+                srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay_ms);
             }
             else
             {
                 // HSv5 - this puts "agent's" latency into RCV field and "peer's" -
                 // into SND field.
-                srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay);
+                srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
             }
         }
         else
@@ -1278,9 +1278,9 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
             // HSv5 is bidirectional - so send the TSBPDSND flag, and place also the
             // peer's latency into SND field.
             srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
-            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay);
+            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
-            LOGC(mglog.Debug) << "HSRSP/snd: HSv5 peer uses TSBPD, responding TSBPDSND latency=" << m_iPeerTsbPdDelay;
+            LOGC(mglog.Debug) << "HSRSP/snd: HSv5 peer uses TSBPD, responding TSBPDSND latency=" << m_iPeerTsbPdDelay_ms;
         }
         else
         {
@@ -1802,8 +1802,8 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
     // Prepare the initial runtime values of latency basing on the option values.
     // They are going to get the value fixed HERE.
-    m_iTsbPdDelay = m_iOPT_TsbPdDelay;
-    m_iPeerTsbPdDelay = m_iOPT_PeerTsbPdDelay;
+    m_iTsbPdDelay_ms = m_iOPT_TsbPdDelay;
+    m_iPeerTsbPdDelay_ms = m_iOPT_PeerTsbPdDelay;
 
     if (len < SRT_CMD_HSREQ_MINSZ)
     {
@@ -1906,10 +1906,10 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
             // Use the maximum latency out of latency from our settings and the latency
             // "proposed" by the peer.
-            int maxdelay = std::max(m_iTsbPdDelay, peer_decl_latency);
-            LOGC(mglog.Debug) << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay
+            int maxdelay = std::max(m_iTsbPdDelay_ms, peer_decl_latency);
+            LOGC(mglog.Debug) << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
                 << " Peer:" << peer_decl_latency << "  Selecting:" << maxdelay;
-            m_iTsbPdDelay = maxdelay;
+            m_iTsbPdDelay_ms = maxdelay;
         }
     }
     else
@@ -1932,10 +1932,10 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
         // used by it when receiving data. We take this as a peer's value,
         // and select the maximum of this one and our proposed latency for the peer.
         int peer_decl_latency = SRT_HS_LATENCY_RCV::unwrap(latencystr);
-        int maxdelay = std::max(m_iPeerTsbPdDelay, peer_decl_latency);
-        LOGC(mglog.Debug) << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay
+        int maxdelay = std::max(m_iPeerTsbPdDelay_ms, peer_decl_latency);
+        LOGC(mglog.Debug) << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
             << " Peer:" << peer_decl_latency << " Selecting:" << maxdelay;
-        m_iPeerTsbPdDelay = maxdelay;
+        m_iPeerTsbPdDelay_ms = maxdelay;
     }
     else
     {
@@ -2020,9 +2020,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         {
             //TsbPd feature enabled
             m_bPeerTsbPd = true;
-            m_iPeerTsbPdDelay = SRT_HS_LATENCY_LEG::unwrap(srtdata[SRT_HS_LATENCY]);
-            LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay
-                << " (Agent: declared:" << m_iTsbPdDelay << " rcv:" << m_iTsbPdDelay << ")";
+            m_iPeerTsbPdDelay_ms = SRT_HS_LATENCY_LEG::unwrap(srtdata[SRT_HS_LATENCY]);
+            LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms
+                << " (Agent: declared:" << m_iTsbPdDelay_ms << " rcv:" << m_iTsbPdDelay_ms << ")";
         }
         // TSBPDSND isn't set in HSv4 by the RESPONDER, because HSv4 RESPONDER is always RECEIVER.
     }
@@ -2034,8 +2034,8 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         {
             //TsbPd feature enabled
             m_bPeerTsbPd = true;
-            m_iPeerTsbPdDelay = SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]);
-            LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay;
+            m_iPeerTsbPdDelay_ms = SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]);
+            LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms << "ms";
         }
         else
         {
@@ -2052,8 +2052,8 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
             {
                 // Take this value as a good deal. In case when the Peer did not "correct" the latency
                 // because it has TSBPD turned off, just stay with the present value defined in options.
-                m_iTsbPdDelay = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
-                LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY Agent/rcv: " << m_iTsbPdDelay;
+                m_iTsbPdDelay_ms = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
+                LOGC(mglog.Debug) << "HSRSP/rcv: LATENCY Agent/rcv: " << m_iTsbPdDelay_ms << "ms";
             }
         }
     }
@@ -4024,7 +4024,7 @@ bool CUDT::setupCC()
     /*
      * Enable receiver's Periodic NAK Reports
      */
-    m_ullMinNakInt_tk = m_iMinNakInterval * m_ullCPUFrequency;
+    m_ullMinNakInt_tk = m_iMinNakInterval_us * m_ullCPUFrequency;
 #endif /* SRT_ENABLE_NAKREPORT */
 
     // Smoother will retrieve whatever parameters it needs
@@ -4324,7 +4324,7 @@ int CUDT::send(const char* data, int len)
 
    // record total time used for sending
    if (m_pSndBuffer->getCurrBufSize() == 0)
-      m_llSndDurationCounter_tk = CTimer::getTime();
+      m_llSndDurationCounter = CTimer::getTime();
 
    // insert the user buffer into the sending list
    m_pSndBuffer->addBuffer(data, size);
@@ -4472,7 +4472,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
       // >>using 1 sec for worse case 1 frame using all bit budget.
       // picture rate would be useful in auto SRT setting for min latency
       // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
-      int threshold_ms = std::max<int>(m_iPeerTsbPdDelay, SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*CPacket::SYN_INTERVAL/1000);
+      int threshold_ms = std::max<int>(m_iPeerTsbPdDelay_ms, SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*COMM_SYN_INTERVAL_US/1000);
       if (timespan > threshold_ms)
       {
          // protect packet retransmission
@@ -4506,7 +4506,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
          bCongestion = true;
          CGuard::leaveCS(m_AckLock);
       }
-      else if (timespan > (m_iPeerTsbPdDelay/2))
+      else if (timespan > (m_iPeerTsbPdDelay_ms/2))
       {
          LOGC(mglog.Debug).form("cong, NOW: %lluus, BYTES %d, TMSPAN %d", (unsigned long long)CTimer::getTime(), bytes, timespan);
          bCongestion = true;
@@ -4569,7 +4569,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    // record total time used for sending
    if (m_pSndBuffer->getCurrBufSize() == 0)
-      m_llSndDurationCounter_tk = CTimer::getTime();
+      m_llSndDurationCounter = CTimer::getTime();
 
    // insert the user buffer into the sending list
 #ifdef SRT_ENABLE_SRCTIMESTAMP
@@ -4579,12 +4579,12 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
       uint64_t currtime_tk;
       CTimer::rdtsc(currtime_tk);
 
-      m_ullSndLastCbrTime = max(currtime_tk, m_ullSndLastCbrTime + m_ullInterval);
-      srctime = m_ullSndLastCbrTime / m_ullCPUFrequency;
+      m_ullSndLastCbrTime_tk = max(currtime_tk, m_ullSndLastCbrTime_tk + m_ullInterval_tk);
+      srctime = m_ullSndLastCbrTime_tk / m_ullCPUFrequency;
    }
 #endif
    m_pSndBuffer->addBuffer(data, len, msttl, inorder, srctime);
-   LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << srctime << " DATA SIZE: " << len;
+   LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << srctime << "us DATA SIZE: " << len;
 
 #else /* SRT_ENABLE_SRCTIMESTAMP */
    m_pSndBuffer->addBuffer(data, len, msttl, inorder);
@@ -4873,7 +4873,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
       // record total time used for sending
       if (m_pSndBuffer->getCurrBufSize() == 0)
-         m_llSndDurationCounter_tk = CTimer::getTime();
+         m_llSndDurationCounter = CTimer::getTime();
 
       int64_t sentsize = m_pSndBuffer->addBufferFromFile(ifs, unitsize);
 
@@ -4989,7 +4989,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->pktRecvACK = m_iRecvACK;
    perf->pktSentNAK = m_iSentNAK;
    perf->pktRecvNAK = m_iRecvNAK;
-   perf->usSndDuration = m_llSndDuration_tk;
+   perf->usSndDuration = m_llSndDuration;
    perf->pktReorderDistance = m_iTraceReorderDistance;
    perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
    perf->pktRcvBelated = m_iTraceRcvBelated;
@@ -5003,14 +5003,14 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->pktRecvACKTotal = m_iRecvACKTotal;
    perf->pktSentNAKTotal = m_iSentNAKTotal;
    perf->pktRecvNAKTotal = m_iRecvNAKTotal;
-   perf->usSndDurationTotal = m_llSndDurationTotal_tk;
+   perf->usSndDurationTotal = m_llSndDurationTotal;
 
    double interval = double(currtime - m_LastSampleTime);
 
    perf->mbpsSendRate = double(m_llTraceSent) * m_iPayloadSize * 8.0 / interval;
    perf->mbpsRecvRate = double(m_llTraceRecv) * m_iPayloadSize * 8.0 / interval;
 
-   perf->usPktSndPeriod = m_ullInterval / double(m_ullCPUFrequency);
+   perf->usPktSndPeriod = m_ullInterval_tk / double(m_ullCPUFrequency);
    perf->pktFlowWindow = m_iFlowWindowSize;
    perf->pktCongestionWindow = (int)m_dCongestionWindow;
    perf->pktFlightSize = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
@@ -5035,7 +5035,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    if (clear)
    {
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
-      m_llSndDuration_tk = 0;
+      m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
       m_LastSampleTime = currtime;
    }
@@ -5066,7 +5066,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->pktRecvACK = m_iRecvACK;
    perf->pktSentNAK = m_iSentNAK;
    perf->pktRecvNAK = m_iRecvNAK;
-   perf->usSndDuration = m_llSndDuration_tk;
+   perf->usSndDuration = m_llSndDuration;
    perf->pktReorderDistance = m_iTraceReorderDistance;
    perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
    perf->pktRcvBelated = m_iTraceRcvBelated;
@@ -5098,7 +5098,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->pktRecvACKTotal = m_iRecvACKTotal;
    perf->pktSentNAKTotal = m_iSentNAKTotal;
    perf->pktRecvNAKTotal = m_iRecvNAKTotal;
-   perf->usSndDurationTotal = m_llSndDurationTotal_tk;
+   perf->usSndDurationTotal = m_llSndDurationTotal;
    //>new
    perf->byteSentTotal = m_ullBytesSentTotal + (m_llSentTotal * pktHdrSize);
    perf->byteRecvTotal = m_ullBytesRecvTotal + (m_llRecvTotal * pktHdrSize);
@@ -5121,14 +5121,14 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
    //<
 
-   perf->usPktSndPeriod = m_ullInterval / double(m_ullCPUFrequency);
+   perf->usPktSndPeriod = m_ullInterval_tk / double(m_ullCPUFrequency);
    perf->pktFlowWindow = m_iFlowWindowSize;
    perf->pktCongestionWindow = (int)m_dCongestionWindow;
    perf->pktFlightSize = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
    perf->msRTT = (double)m_iRTT/1000.0;
    //>new
-   perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay : 0;
-   perf->msRcvTsbPdDelay = m_bTsbPd ? m_iTsbPdDelay : 0;
+   perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+   perf->msRcvTsbPdDelay = m_bTsbPd ? m_iTsbPdDelay_ms : 0;
    perf->byteMSS = m_iMSS;
 
    perf->mbpsMaxBW = m_llMaxBW > 0 ? convertToMBPS(m_llMaxBW)
@@ -5209,7 +5209,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
       m_ullTraceBytesSent = m_ullTraceBytesRecv = m_ullTraceBytesRetrans = 0;
       //<
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
-      m_llSndDuration_tk = 0;
+      m_llSndDuration = 0;
       m_LastSampleTime = currtime;
    }
 }
@@ -5307,13 +5307,13 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_ullInterval = (uint64_t)(m_Smoother->pktSndPeriod() * m_ullCPUFrequency);
+        m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
         m_dCongestionWindow = m_Smoother->cgWindowSize();
     }
 
 #if 0//debug
     static int callcnt = 0;
-    if (!(callcnt++ % 250)) fprintf(stderr, "SndPeriod=%llu\n", (unsigned long long)m_ullInterval/m_ullCPUFrequency);
+    if (!(callcnt++ % 250)) fprintf(stderr, "SndPeriod=%llu\n", (unsigned long long)m_ullInterval_tk/m_ullCPUFrequency);
 #endif
 }
 
@@ -5771,7 +5771,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // send ACK acknowledgement
       // number of ACK2 can be much less than number of ACK
       uint64_t now = CTimer::getTime();
-      if ((now - m_ullSndLastAck2Time > (uint64_t)CPacket::SYN_INTERVAL) || (ack == m_iSndLastAck2))
+      if ((now - m_ullSndLastAck2Time > (uint64_t)COMM_SYN_INTERVAL_US) || (ack == m_iSndLastAck2))
       {
          sendCtrl(UMSG_ACKACK, &ack);
          m_iSndLastAck2 = ack;
@@ -5834,9 +5834,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           m_pSndBuffer->ackData(offset);
 
           // record total time used for sending
-          m_llSndDuration_tk += currtime_tk - m_llSndDurationCounter_tk;
-          m_llSndDurationTotal_tk += currtime_tk - m_llSndDurationCounter_tk;
-          m_llSndDurationCounter_tk = currtime_tk;
+          // XXX BUG? currtime_tk is in ticks, others are in microseconds
+          m_llSndDuration += currtime_tk - m_llSndDurationCounter;
+          m_llSndDurationTotal += currtime_tk - m_llSndDurationCounter;
+          m_llSndDurationCounter = currtime_tk;
 
           LOGC(mglog.Debug) << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ack << " [ACK=" << m_iSndLastAck << "] BUFr=" << m_iFlowWindowSize
               << " RTT=" << ackdata[ACKD_RTT] << " RTT*=" << ackdata[ACKD_RTTVAR]
@@ -5885,9 +5886,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pSndBuffer->ackData(offset);
 
       // record total time used for sending
-      m_llSndDuration_tk += currtime_tk - m_llSndDurationCounter_tk;
-      m_llSndDurationTotal_tk += currtime_tk - m_llSndDurationCounter_tk;
-      m_llSndDurationCounter_tk = currtime_tk;
+      m_llSndDuration += currtime_tk - m_llSndDurationCounter;
+      m_llSndDurationTotal += currtime_tk - m_llSndDurationCounter;
+      m_llSndDurationCounter = currtime_tk;
 
       // update sending variables
       m_iSndLastDataAck = ack;
@@ -6118,7 +6119,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
    case UMSG_CGWARNING: //100 - Delay Warning
       // One way packet delay is increasing, so decrease the sending rate
-      m_ullInterval = (uint64_t)ceil(m_ullInterval * 1.125);
+      m_ullInterval_tk = (uint64_t)ceil(m_ullInterval_tk * 1.125);
       m_iLastDecSeq = m_iSndCurrSeqNo;
       // XXX Note as interesting fact: this is only prepared for handling,
       // but nothing in the code is sending this message. Probably predicted
@@ -6303,12 +6304,12 @@ void CUDT::updateSrtRcvSettings()
     {
         /* We are TsbPd receiver */
         CGuard::enterCS(m_RecvLock);
-        m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, m_iTsbPdDelay * 1000);
+        m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, m_iTsbPdDelay_ms * 1000);
         CGuard::leaveCS(m_RecvLock);
 
         LOGC(mglog.Debug).form( "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03u secs",
-                m_iTsbPdDelay/1000,
-                m_iTsbPdDelay%1000);
+                m_iTsbPdDelay_ms/1000,
+                m_iTsbPdDelay_ms%1000);
     }
     else
     {
@@ -6322,14 +6323,14 @@ void CUDT::updateSrtSndSettings()
     {
         /* We are TsbPd sender */
         // XXX Check what happened here.
-        //m_iPeerTsbPdDelay = m_Smoother->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
+        //m_iPeerTsbPdDelay_ms = m_Smoother->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
         /* 
          * For sender to apply Too-Late Packet Drop
          * option (m_bTLPktDrop) must be enabled and receiving peer shall support it
          */
         LOGC(mglog.Debug).form( "AFTER HS: Set Snd TsbPd mode %s: delay=%d.%03d secs",
                 m_bPeerTLPktDrop ? "with TLPktDrop" : "without TLPktDrop",
-                m_iPeerTsbPdDelay/1000, m_iPeerTsbPdDelay%1000);
+                m_iPeerTsbPdDelay_ms/1000, m_iPeerTsbPdDelay_ms%1000);
     }
     else
     {
@@ -6378,7 +6379,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
     }
 }
 
-int CUDT::packData(CPacket& packet, uint64_t& ts)
+int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 {
    int payload = 0;
    bool probe = false;
@@ -6386,20 +6387,20 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
 
    int kflg = EK_NOENC;
 
-   uint64_t entertime;
-   CTimer::rdtsc(entertime);
+   uint64_t entertime_tk;
+   CTimer::rdtsc(entertime_tk);
 
 #if 0//debug: TimeDiff histogram
    static int lldiffhisto[23] = {0};
    static int llnodiff = 0;
-   if (m_ullTargetTime != 0)
+   if (m_ullTargetTime_tk != 0)
    {
-      int ofs = 11 + ((entertime - m_ullTargetTime)/(int64_t)m_ullCPUFrequency)/1000;
+      int ofs = 11 + ((entertime_tk - m_ullTargetTime_tk)/(int64_t)m_ullCPUFrequency)/1000;
       if (ofs < 0) ofs = 0;
       else if (ofs > 22) ofs = 22;
       lldiffhisto[ofs]++;
    }
-   else if(m_ullTargetTime == 0)
+   else if(m_ullTargetTime_tk == 0)
    {
       llnodiff++;
    }
@@ -6413,8 +6414,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
         lldiffhisto[18],lldiffhisto[19],lldiffhisto[20],lldiffhisto[21],lldiffhisto[21],llnodiff);
    }
 #endif
-   if ((0 != m_ullTargetTime) && (entertime > m_ullTargetTime))
-      m_ullTimeDiff += entertime - m_ullTargetTime;
+   if ((0 != m_ullTargetTime_tk) && (entertime_tk > m_ullTargetTime_tk))
+      m_ullTimeDiff_tk += entertime_tk - m_ullTargetTime_tk;
 
    string reason;
 
@@ -6505,9 +6506,9 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
          }
          else
          {
-            m_ullTargetTime = 0;
-            m_ullTimeDiff = 0;
-            ts = 0;
+            m_ullTargetTime_tk = 0;
+            m_ullTimeDiff_tk = 0;
+            ts_tk = 0;
             return 0;
          }
       }
@@ -6515,9 +6516,9 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
       {
           LOGC(dlog.Debug) << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
               << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << seqdiff;
-         m_ullTargetTime = 0;
-         m_ullTimeDiff = 0;
-         ts = 0;
+         m_ullTargetTime_tk = 0;
+         m_ullTimeDiff_tk = 0;
+         ts_tk = 0;
          return 0;
       }
 
@@ -6555,7 +6556,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
       {
           // Encryption failed 
           //>>Add stats for crypto failure
-          ts = 0;
+          ts_tk = 0;
           return -1; //Encryption failed
       }
       payload = packet.getLength(); /* Cipher may change length */
@@ -6569,7 +6570,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
 #endif
 
    // Fix keepalive
-   m_ullLastSndTime_tk = entertime;
+   m_ullLastSndTime_tk = entertime_tk;
 
    considerLegacySrtHandshake(0);
    updateCC(TEV_SEND, &packet);
@@ -6586,28 +6587,28 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    if (probe)
    {
       // sends out probing packet pair
-      ts = entertime;
+      ts_tk = entertime_tk;
       probe = false;
    }
    else
    {
       #ifndef NO_BUSY_WAITING
-         ts = entertime + m_ullInterval;
+         ts_tk = entertime_tk + m_ullInterval_tk;
       #else
-         if (m_ullTimeDiff >= m_ullInterval)
+         if (m_ullTimeDiff_tk >= m_ullInterval_tk)
          {
-            ts = entertime;
-            m_ullTimeDiff -= m_ullInterval;
+            ts_tk = entertime_tk;
+            m_ullTimeDiff_tk -= m_ullInterval_tk;
          }
          else
          {
-            ts = entertime + m_ullInterval - m_ullTimeDiff;
-            m_ullTimeDiff = 0;
+            ts_tk = entertime_tk + m_ullInterval_tk - m_ullTimeDiff_tk;
+            m_ullTimeDiff_tk = 0;
          }
       #endif
    }
 
-   m_ullTargetTime = ts;
+   m_ullTargetTime_tk = ts_tk;
 
    return payload;
 }
@@ -7437,8 +7438,8 @@ void CUDT::checkTimers()
     // update CC parameters
     updateCC(TEV_CHECKTIMER, TEV_CHT_INIT);
     //uint64_t minint = (uint64_t)(m_ullCPUFrequency * m_pSndTimeWindow->getMinPktSndInt() * 0.9);
-    //if (m_ullInterval < minint)
-    //   m_ullInterval = minint;
+    //if (m_ullInterval_tk < minint)
+    //   m_ullInterval_tk = minint;
     // NOTE: This commented-out ^^^ code was commented out in original UDT. Leaving for historical reasons
 
     uint64_t currtime_tk;
@@ -7518,7 +7519,7 @@ void CUDT::checkTimers()
     }
     else
     {
-        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + CPacket::SYN_INTERVAL) * m_ullCPUFrequency;
+        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
         if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
             exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
         next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
@@ -7630,7 +7631,7 @@ void CUDT::checkTimers()
 #endif
             &&  m_pSndBuffer->getCurrBufSize() > 0)
     {
-        uint64_t exp_int = (m_iReXmitCount * (m_iRTT + 4 * m_iRTTVar + 2 * CPacket::SYN_INTERVAL) + CPacket::SYN_INTERVAL) * m_ullCPUFrequency;
+        uint64_t exp_int = (m_iReXmitCount * (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
 
         if (currtime_tk > (m_ullLastRspAckTime_tk + exp_int))
         {
@@ -7669,8 +7670,8 @@ void CUDT::checkTimers()
     }
 #endif /* SRT_ENABLE_FASTREXMIT */
 
-    //   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + CPacket::SYN_INTERVAL) * m_ullCPUFrequency;
-    if (currtime_tk > m_ullLastSndTime_tk + (COMM_KEEPALIVE_PERIOD_MS * m_ullCPUFrequency))
+    //   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+    if (currtime_tk > m_ullLastSndTime_tk + (COMM_KEEPALIVE_PERIOD_US * m_ullCPUFrequency))
     {
         sendCtrl(UMSG_KEEPALIVE);
         LOGP(mglog.Debug, "KEEPALIVE");

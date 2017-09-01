@@ -227,7 +227,8 @@ public: // internal API
     static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000*1000; // 5 seconds
     static const int COMM_RESPONSE_MAX_EXP = 16;
     static const uint32_t SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
-    static const uint64_t COMM_KEEPALIVE_PERIOD_MS = 1*1000*1000;
+    static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
+    static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
 
     int handshakeVersion()
     {
@@ -523,8 +524,8 @@ private: // Identification
     bool m_bOPT_TLPktDrop;            // Whether Agent WILL DO TLPKTDROP on Rx.
     std::string m_sStreamName;
 
-    int m_iTsbPdDelay;                           // Rx delay to absorb burst in milliseconds
-    int m_iPeerTsbPdDelay;                       // Tx delay that the peer uses to absorb burst in milliseconds
+    int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
+    int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
@@ -572,8 +573,8 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;            // Packet sending time window
 
-    volatile uint64_t m_ullInterval;             // Inter-packet time, in CPU clock cycles
-    uint64_t m_ullTimeDiff;                      // aggregate difference in inter-packet time
+    volatile uint64_t m_ullInterval_tk;             // Inter-packet time, in CPU clock cycles
+    uint64_t m_ullTimeDiff_tk;                      // aggregate difference in inter-packet time
 
     volatile int m_iFlowWindowSize;              // Flow control window size
     volatile double m_dCongestionWindow;         // congestion window size
@@ -586,14 +587,14 @@ private: // Sending related data
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
 #ifdef SRT_ENABLE_CBRTIMESTAMP
-    uint64_t m_ullSndLastCbrTime;                 // Last timestamp set in a data packet to send (usec)
+    uint64_t m_ullSndLastCbrTime_tk;                 // Last timestamp set in a data packet to send (usec)
 #endif
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
 #ifdef SRT_ENABLE_NAKREPORT
-    int m_iMinNakInterval;                       // Minimum NAK Report Period (usec)
+    int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
     int m_iNakReportAccel;                       // NAK Report Period (RTT) accelerator
     bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
@@ -701,7 +702,7 @@ private: // Trace
     uint64_t m_ullRcvBytesDropTotal;
     int m_iRcvUndecryptTotal;
     uint64_t m_ullRcvBytesUndecryptTotal;
-    int64_t m_llSndDurationTotal_tk;		// total real time for sending
+    int64_t m_llSndDurationTotal;		// total real time for sending
 
     uint64_t m_LastSampleTime;                   // last performance sample time
     int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
@@ -727,8 +728,8 @@ private: // Trace
     uint64_t m_ullTraceRcvBytesDrop;
     int m_iTraceRcvUndecrypt;
     uint64_t m_ullTraceRcvBytesUndecrypt;
-    int64_t m_llSndDuration_tk;			// real time for sending
-    int64_t m_llSndDurationCounter_tk;		// timers to record the sending duration
+    int64_t m_llSndDuration;			// real time for sending
+    int64_t m_llSndDurationCounter;		// timers to record the sending duration
 
 public:
 
@@ -757,7 +758,7 @@ private: // Timers
     int m_iPktCount;				// packet counter for ACK
     int m_iLightACKCount;			// light ACK counter
 
-    uint64_t m_ullTargetTime;			// scheduled time of next packet sending
+    uint64_t m_ullTargetTime_tk;			// scheduled time of next packet sending
 
     void checkTimers();
 
