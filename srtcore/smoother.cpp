@@ -287,7 +287,10 @@ RATE_LIMIT:
         // Sanity check. Should be impossible that TEV_LOSSREPORT event
         // is called with a nonempty loss list.
         if ( losslist_size == 0 )
+        {
+            LOGC(mglog.Error) << "IPE: FileSmoother: empty loss list!";
             return;
+        }
 
         //Slow Start stopped, if it hasn't yet
         if (m_bSlowStart)
@@ -324,8 +327,10 @@ RATE_LIMIT:
             m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
             if (m_iDecRandom < 1)
                 m_iDecRandom = 1;
-            LOGC(mglog.Debug) << "FileSmoother: LOSS:NEW seq(rand)="
-                << m_iLastDecSeq << ", avg NAK:" << m_iAvgNAKNum << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:NEW lastseq=" << m_iLastDecSeq
+                << ", rand=" << m_iDecRandom
+                << " avg NAK:" << m_iAvgNAKNum
+                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
         else if ((m_iDecCount ++ < 5) && (0 == (++ m_iNAKCount % m_iDecRandom)))
         {
@@ -333,6 +338,12 @@ RATE_LIMIT:
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
             m_iLastDecSeq = m_parent->sndSeqNo();
             LOGC(mglog.Debug) << "FileSmoother: LOSS:PERIOD seq=" << m_iLastDecSeq << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+        }
+        else
+        {
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:STILL lastseq=" << m_iLastDecSeq
+                << ", lossseq=" << losslist[0]
+                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
 
     }

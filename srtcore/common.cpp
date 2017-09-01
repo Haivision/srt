@@ -782,6 +782,8 @@ void CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
+#define RA_LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
+
 std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
@@ -808,22 +810,20 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "smoother"
     };
 
-#define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
     if ( mt == UMSG_EXT )
     {
         // Returrn "EXT:" with srt message name
         string val = "SRT:";
-        if ( extt >= LEN(srt_types) )
+        if ( extt >= RA_LEN(srt_types) )
             return "EXT:unknown";
 
         return val + srt_types[extt];
     }
 
-    if ( size_t(mt) > LEN(udt_types) )
+    if ( size_t(mt) > RA_LEN(udt_types) )
         return "unknown";
 
-#undef LEN
 
     return udt_types[mt];
 }
@@ -841,3 +841,24 @@ std::string ConnectStatusStr(EConnectStatus cst)
         : "REJECTED");
 }
 
+std::string TransmissionEventStr(ETransmissionEvent ev)
+{
+    static std::string vals [] =
+    {
+        "init",
+        "handshake",
+        "ack",
+        "ackack",
+        "lossreport",
+        "checktimer",
+        "send",
+        "receive",
+        "custom"
+    };
+
+    size_t vals_size = RA_LEN(vals);
+
+    if (size_t(ev) >= vals_size)
+        return "UNKNOWN";
+    return vals[ev];
+}

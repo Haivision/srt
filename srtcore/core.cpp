@@ -1569,7 +1569,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         ra_size = wordsize;
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_SMOOTHER) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
-        LOGC(mglog.Debug) << "createSrtHandshake: after SMOOTHER [" << m_sStreamName << "] length=" << m_sStreamName.size() << " alignedln=" << aligned_bytesize
+        LOGC(mglog.Debug) << "createSrtHandshake: after SMOOTHER [" << sm << "] length=" << sm.size() << " alignedln=" << aligned_bytesize
             << ": offset=" << offset << " SMOOTHER size=" << ra_size << " space left: " << (total_ra_size - offset);
     }
 
@@ -5223,7 +5223,18 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
     // According to the rules, the smoother should be ready at the same
     // time when the sending buffer. For sanity check, check both first.
     if (!m_Smoother.ready() || !m_pSndBuffer)
+    {
+        bool both = !m_Smoother.ready() && !m_pSndBuffer;
+        LOGC(mglog.Error) << "updateCC: CAN'T DO UPDATE - smoother "
+            << (m_Smoother.ready() ? "ready" : "NOT READY")
+            << (both ? ", and " : ", but ")
+            << " sending buffer "
+            << (m_pSndBuffer ? "NOT CREATED" : "created");
+
         return;
+    }
+
+    LOGC(mglog.Debug) << "updateCC: EVENT:" << TransmissionEventStr(evt);
 
     if (evt == TEV_INIT)
     {
@@ -5262,6 +5273,10 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
                 // XXX Use constant for this 500000
                 m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? 500000 : 0);
             }
+
+            LOGC(mglog.Debug) << "updateCC: updating BW=" << m_llMaxBW
+                << (only_input == TEV_INIT_RESET ? " (UNCHANGED)"
+                        : only_input == TEV_INIT_OHEADBW ? " (only Overhead)": " (updated sampling rate)");
         }
     }
 
@@ -5295,6 +5310,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
                 m_pSndBuffer->setInputRateSmpPeriod(5000000); //5 sec period after fast start
         }
     }
+
+    LOGC(mglog.Debug) << "udpateCC: emitting signal for EVENT:" << TransmissionEventStr(evt);
 
     // Now execute a smoother-defined action for that event.
     EmitSignal(evt, arg);
@@ -5792,7 +5809,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       {
          CGuard::leaveCS(m_AckLock);
          //this should not happen: attack or bug
-         LOGC(glog.Error) << CONID() << "ATTACK/ISE: incoming ack seq " << ack << " exceeds current " << m_iSndCurrSeqNo << " by " << seqdiff << "!";
+         LOGC(glog.Error) << CONID() << "ATTACK/IPE: incoming ack seq " << ack << " exceeds current " << m_iSndCurrSeqNo << " by " << seqdiff << "!";
          m_bBroken = true;
          m_iBrokenCounter = 0;
          break;
@@ -5839,7 +5856,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           m_llSndDurationTotal += currtime_tk - m_llSndDurationCounter;
           m_llSndDurationCounter = currtime_tk;
 
-          LOGC(mglog.Debug) << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ack << " [ACK=" << m_iSndLastAck << "] BUFr=" << m_iFlowWindowSize
+          LOGC(mglog.Debug) << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ack
+              << " [ACK=" << m_iSndLastAck << "] BUFr=" << m_iFlowWindowSize
               << " RTT=" << ackdata[ACKD_RTT] << " RTT*=" << ackdata[ACKD_RTTVAR]
               << " BW=" << ackdata[ACKD_BANDWIDTH] << " Vrec=" << ackdata[ACKD_RCVSPEED];
           // update sending variables

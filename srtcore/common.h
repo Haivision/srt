@@ -180,6 +180,8 @@ enum ETransmissionEvent
     TEV__SIZE
 };
 
+std::string TransmissionEventStr(ETransmissionEvent ev);
+
 // Special parameter for TEV_CHECKTIMER
 enum ECheckTimerStage
 {
