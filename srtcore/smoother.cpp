@@ -190,7 +190,7 @@ public:
         if (maxbw != 0)
         {
             m_maxSR = maxbw;
-            LOGC(mglog.Debug) << "LiveSmoother: updated BW: " << m_maxSR;
+            LOGC(mglog.Debug) << "FileSmoother: updated BW: " << m_maxSR;
         }
     }
 
@@ -311,7 +311,10 @@ RATE_LIMIT:
         // NAKREPORT feature. You should make sure that NAKREPORT is off when
         // using FileSmoother, so relying on SRTO_TRANSTYPE rather than
         // just SRTO_SMOOTHER is recommended.
-        if (CSeqNo::seqcmp(SEQNO_VALUE::unwrap(losslist[0]), m_iLastDecSeq) > 0)
+        int32_t lossbegin = SEQNO_VALUE::unwrap(losslist[0]);
+        int seqdiff = CSeqNo::seqcmp(lossbegin, m_iLastDecSeq);
+
+        if (seqdiff > 0)
         {
             m_dLastDecPeriod = m_dPktSndPeriod;
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
@@ -337,12 +340,20 @@ RATE_LIMIT:
             // 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
             m_iLastDecSeq = m_parent->sndSeqNo();
-            LOGC(mglog.Debug) << "FileSmoother: LOSS:PERIOD seq=" << m_iLastDecSeq << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:PERIOD lseq=" << lossbegin
+                << ", dseq=" << m_iLastDecSeq
+                << ", seqdiff=" << seqdiff
+                << ", deccnt=" << m_iDecCount
+                << ", decrnd=" << m_iDecRandom
+                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
         else
         {
-            LOGC(mglog.Debug) << "FileSmoother: LOSS:STILL lastseq=" << m_iLastDecSeq
-                << ", lossseq=" << losslist[0]
+            LOGC(mglog.Debug) << "FileSmoother: LOSS:STILL lseq=" << lossbegin
+                << ", dseq=" << m_iLastDecSeq
+                << ", seqdiff=" << seqdiff
+                << ", deccnt=" << m_iDecCount
+                << ", decrnd=" << m_iDecRandom
                 << ", pktsndperiod=" << m_dPktSndPeriod << "us";
         }
 

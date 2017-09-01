@@ -683,7 +683,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bOPT_TsbPd = true;
           m_iOPT_TsbPdDelay = DEFAULT_LIVE_LATENCY;
           m_iOPT_PeerTsbPdDelay = 0;
-          m_bTLPktDrop = true;
+          m_bOPT_TLPktDrop = true;
           m_bRcvNakReport = true;
           m_Smoother.select("live");
           break;
@@ -696,7 +696,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bOPT_TsbPd = false;
           m_iOPT_TsbPdDelay = 0;
           m_iOPT_PeerTsbPdDelay = 0;
-          m_bTLPktDrop = false;
+          m_bOPT_TLPktDrop = false;
           m_bRcvNakReport = false;
           m_Smoother.select("file");
           break;
