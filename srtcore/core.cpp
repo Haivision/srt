@@ -245,6 +245,7 @@ CUDT::CUDT()
    m_bOPT_TsbPd = true;        //Enable TsbPd on sender
    m_iOPT_TsbPdDelay = DEFAULT_LIVE_LATENCY;          //Receiver TsbPd delay (mSec)
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
+   m_bOPT_TLPktDrop = true;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    //Runtime
 #ifdef SRT_ENABLE_NAKREPORT
@@ -306,6 +307,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bOPT_TsbPd = ancestor.m_bOPT_TsbPd;
    m_iOPT_TsbPdDelay = ancestor.m_iOPT_TsbPdDelay;
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
+   m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    //Runtime
 #ifdef SRT_ENABLE_NAKREPORT
