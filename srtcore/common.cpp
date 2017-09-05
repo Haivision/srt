@@ -510,12 +510,12 @@ const char* CUDTException::getErrorMessage()
            m_strMsg += ": Cannot call connect on UNBOUND socket in rendezvous connection setup";
            break;
 
-        case MN_ISSTREAM:
-           m_strMsg += ": This operation is not supported in SOCK_STREAM mode";
+        case MN_INVALMSGAPI:
+           m_strMsg += ": Message API (sendmsg/recvmsg) can't be used in this transmission mode.";
            break;
 
-        case MN_ISDGRAM:
-           m_strMsg += ": This operation is not supported in SOCK_DGRAM mode";
+        case MN_INVALBUFFERAPI:
+           m_strMsg += ": Buffer API (send/recv) or File API (sendfile/recvfile) can't be used in this transmission mode.";
            break;
 
         case MN_BUSY:
@@ -606,48 +606,6 @@ void CUDTException::clear()
    m_iMinor = MN_NONE;
    m_iErrno = 0;
 }
-
-// XXX Move these into udt.h
-const int CUDTException::SUCCESS = 0;
-const int CUDTException::ECONNSETUP = UDT_XCODE(MJ_SETUP, 0);
-const int CUDTException::ENOSERVER =  UDT_XCODE(MJ_SETUP, MN_TIMEOUT);
-const int CUDTException::ECONNREJ =   UDT_XCODE(MJ_SETUP, MN_REJECTED);
-const int CUDTException::ESOCKFAIL =  UDT_XCODE(MJ_SETUP, MN_NORES);
-const int CUDTException::ESECFAIL =   UDT_XCODE(MJ_SETUP, MN_SECURITY);
-const int CUDTException::ECONNFAIL = 2000;
-const int CUDTException::ECONNLOST = 2001;
-const int CUDTException::ENOCONN = 2002;
-const int CUDTException::ERESOURCE = 3000;
-const int CUDTException::ETHREAD = 3001;
-const int CUDTException::ENOBUF = 3002;
-const int CUDTException::EFILE = 4000;
-const int CUDTException::EINVRDOFF = 4001;
-const int CUDTException::ERDPERM = 4002;
-const int CUDTException::EINVWROFF = 4003;
-const int CUDTException::EWRPERM = 4004;
-const int CUDTException::EINVOP = 5000;
-const int CUDTException::EBOUNDSOCK = 5001;
-const int CUDTException::ECONNSOCK = 5002;
-const int CUDTException::EINVPARAM = 5003;
-const int CUDTException::EINVSOCK = 5004;
-const int CUDTException::EUNBOUNDSOCK = 5005;
-const int CUDTException::ENOLISTEN = 5006;
-const int CUDTException::ERDVNOSERV = 5007;
-const int CUDTException::ERDVUNBOUND = 5008;
-const int CUDTException::ESTREAMILL = 5009;
-const int CUDTException::EDGRAMILL = 5010;
-const int CUDTException::EDUPLISTEN = 5011;
-const int CUDTException::ELARGEMSG = 5012;
-const int CUDTException::EINVPOLLID = 5013;
-const int CUDTException::EASYNCFAIL = 6000;
-const int CUDTException::EASYNCSND = 6001;
-const int CUDTException::EASYNCRCV = 6002;
-const int CUDTException::ETIMEOUT = 6003;
-#ifdef SRT_ENABLE_ECN
-const int CUDTException::ECONGEST = 6004;
-#endif /* SRT_ENABLE_ECN */ 
-const int CUDTException::EPEERERR = 7000;
-const int CUDTException::EUNKNOWN = -1;
 
 #undef UDT_XCODE
 

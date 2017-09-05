@@ -236,7 +236,7 @@ public:
 
 public:
    int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
-   int32_t m_iType;             // UDT4: socket type (UDT_STREAM or UDT_DGRAM); SRT1: extension flags
+   int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
    int32_t m_iISN;              // random initial sequence number
    int32_t m_iMSS;              // maximum segment size
    int32_t m_iFlightFlagSize;   // flow control window size

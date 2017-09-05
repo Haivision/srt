@@ -9,7 +9,6 @@
 
 using namespace std;
 
-
 SmootherBase::SmootherBase(CUDT* parent)
 {
     m_parent = parent;
@@ -37,10 +36,14 @@ class LiveSmoother: public SmootherBase
     typedef LiveSmoother Me; // required for SSLOT macro
 
 public:
+
+    // This is also the maximum allowed payload size when using this smoother.
+    static const size_t MAX_PAYLOAD_SIZE = 7*188; // 1316
+
     LiveSmoother(CUDT* parent): SmootherBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
-        m_iSndAvgPayloadSize = 7*188; // XXX = 1316 -- shouldn't be configurable?
+        m_iSndAvgPayloadSize = MAX_PAYLOAD_SIZE;
 
         LOGC(mglog.Debug) << "Creating LiveSmoother: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize;
 
@@ -55,6 +58,40 @@ public:
         parent->ConnectSignal(TEV_ACK, SSLOT(updatePktSndPeriod_onAck));
     }
 
+    bool checkTransArgs(int flags, const char* , size_t size, int , bool ) ATR_OVERRIDE
+    {
+        Smoother::TransAPI api = TRANS_API::unwrapt<Smoother::TransAPI>(flags);
+        if (api != Smoother::STA_MESSAGE)
+        {
+            LOGC(mglog.Error) << "LiveSmoother: invalid API use. Only sendmsg/recvmsg allowed.";
+            return false;
+        }
+
+        int dir = TRANS_DIR::unwrap(flags);
+        if (dir == Smoother::STAD_SEND)
+        {
+            // For sending, check if the size of data doesn't exceed the maximum live packet size.
+            if (size > MAX_PAYLOAD_SIZE)
+            {
+                LOGC(mglog.Error) << "LiveSmoother: payload size: " << size << " exceeds maximum allowed " << (+MAX_PAYLOAD_SIZE);
+                return false;
+            }
+        }
+        else
+        {
+            // For receiving, check if the buffer has enough space to keep the payload.
+            if (size < MAX_PAYLOAD_SIZE)
+            {
+                LOGC(mglog.Error) << "LiveSmoother: buffer size: " << size << " is too small for the maximum possible " << (+MAX_PAYLOAD_SIZE);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // XXX You can decide here if the not-fully-packed packet should require immediate ACK or not.
+    // bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
 
     virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW; }
 
@@ -175,7 +212,6 @@ public:
         m_dCWndSize = 16;
         m_dPktSndPeriod = 1;
 
-
         m_maxSR = 0;
 
         parent->ConnectSignal(TEV_ACK, SSLOT(updateSndPeriod));
@@ -183,6 +219,25 @@ public:
         parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
 
         LOGC(mglog.Debug) << "Creating FileSmoother";
+    }
+
+    bool checkTransArgs(int , const char* , size_t , int , bool ) ATR_OVERRIDE
+    {
+        // XXX
+        // The FileSmoother has currently no restrictions, although it should be
+        // rather required that the "message" mode or "buffer" mode be used on both sides the same.
+        // This must be somehow checked separately.
+        return true;
+    }
+
+    bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
+    {
+        // For FileSmoother, treat non-full-buffer situation as an end-of-message situation;
+        // request ACK to be sent immediately.
+        if (pkt.getLength() < m_parent->maxPayloadSize())
+            return true;
+
+        return false;
     }
 
     void updateBandwidth(int64_t maxbw, int64_t) ATR_OVERRIDE
@@ -260,10 +315,11 @@ public:
 
         m_dPktSndPeriod = (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval);
 
-        LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:OFF) wndsize=" << m_dCWndSize << " sndperiod=" << m_dPktSndPeriod << "us";
-
-
 RATE_LIMIT:
+
+        LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:"
+            << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
+            << " sndperiod=" << m_dPktSndPeriod << "us";
         //set maximum transfer rate
         if (m_maxSR)
         {

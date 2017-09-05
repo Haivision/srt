@@ -119,7 +119,7 @@ enum AckDataItem
     ACKD_TOTAL_SIZE_VER100 = 6, // length = 24
     ACKD_RCVRATE = 6,
     ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
-    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iPayloadSize when set. Never got.
+    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
                      // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
 
     ACKD_TOTAL_SIZE_VER102 = 8, // 32
@@ -182,8 +182,8 @@ public: //API
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
-    static int send(SRTSOCKET u, const char* buf, int len, int flags);
-    static int recv(SRTSOCKET u, char* buf, int len, int flags);
+    static int send(SRTSOCKET u, const char* buf, int len);
+    static int recv(SRTSOCKET u, char* buf, int len);
 #ifdef SRT_ENABLE_SRCTIMESTAMP
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
@@ -226,7 +226,7 @@ public: // internal API
     // something only for a far future.
     static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000*1000; // 5 seconds
     static const int COMM_RESPONSE_MAX_EXP = 16;
-    static const uint32_t SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
+    static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
 
@@ -263,6 +263,7 @@ public: // internal API
     int bandwidth() { return m_iBandwidth; }
     int64_t maxBandwidth() { return m_llMaxBW; }
     int MSS() { return m_iMSS; }
+    size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -457,12 +458,16 @@ private:
 public:
 private: // Identification
     SRTSOCKET m_SocketID;                        // UDT socket number
+
+    // XXX Deprecated field. In any place where it's used, UDT_DGRAM is
+    // the only allowed value. The functionality of distinguishing the transmission
+    // method is now in m_Smoother.
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
     // Packet sizes
-    int m_iUDPPacketSize;                              // Maximum/regular packet size, in bytes
-    int m_iPayloadSize;                          // Maximum/regular payload size, in bytes
+    int m_iUDPPayloadSize;                        // Maximum/regular packet size, in bytes
+    int m_iMaxSRTPayloadSize;                          // Maximum/regular payload size, in bytes
 
     // Options
     int m_iMSS;                                  // Maximum Segment Size, in bytes

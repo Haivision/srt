@@ -223,7 +223,7 @@ CUDT::CUDT()
    m_Linger.l_linger = 180;
    m_iUDPSndBufSize = 65536;
    m_iUDPRcvBufSize = m_iRcvBufSize * m_iMSS;
-   m_iSockType = UDT_STREAM;
+   m_iSockType = UDT_DGRAM;
    m_iIPversion = AF_INET;
    m_bRendezvous = false;
 #ifdef SRT_ENABLE_CONNTIMEO
@@ -1013,15 +1013,15 @@ std::string CUDT::getstreamid(UDTSOCKET u)
 void CUDT::clearData()
 {
    // Initial sequence number, loss, acknowledgement, etc.
-   m_iUDPPacketSize = m_iMSS - CPacket::UDP_HDR_SIZE;
-   m_iPayloadSize = m_iUDPPacketSize - CPacket::HDR_SIZE;
+   m_iUDPPayloadSize = m_iMSS - CPacket::UDP_HDR_SIZE;
+   m_iMaxSRTPayloadSize = m_iUDPPayloadSize - CPacket::HDR_SIZE;
 
-   LOGC(mglog.Debug) << "clearData: PAYLOAD SIZE: " << m_iPayloadSize;
+   LOGC(mglog.Debug) << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize;
 
    m_iEXPCount = 1;
    m_iBandwidth = 1;    //pkts/sec
    // XXX use some constant for this 16
-   m_iDeliveryRate = 16 * m_iPayloadSize;
+   m_iDeliveryRate = 16 * m_iMaxSRTPayloadSize;
    m_iAckSeqNo = 0;
    m_ullLastAckTime_tk = 0;
 
@@ -1514,7 +1514,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     // Now use the original function to store the actual SRT_HS data
     // ra_size after that
-    // NOTE: so far, ra_size is m_iPayloadSize expressed in number of elements.
+    // NOTE: so far, ra_size is m_iMaxSRTPayloadSize expressed in number of elements.
     // WILL BE CHANGED HERE.
     ra_size = fillSrtHandshake(p+offset, total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
     *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
@@ -1531,7 +1531,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         // Now prepare the string with 4-byte alignment. The string size is limited
         // to half the payload size. Just a sanity check to not pack too much into
         // the conclusion packet.
-        size_t size_limit = m_iPayloadSize/2;
+        size_t size_limit = m_iMaxSRTPayloadSize/2;
 
         if ( m_sStreamName.size() >= size_limit )
         {
@@ -2454,7 +2454,12 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         m_RdvState = CHandShake::RDV_INVALID;
     }
 
-    m_ConnReq.m_iType = m_iSockType;
+    // The m_iType is used in the INDUCTION for nothing. This value is only regarded
+    // in CONCLUSION handshake, however this must be created after the handshake version
+    // is already known. UDT_DGRAM is the value that was the only valid in the old SRT 
+    // with HSv4 (it supported only live transmission), for HSv5 it will be changed to
+    // handle handshake extension flags.
+    m_ConnReq.m_iType = UDT_DGRAM;
     m_ConnReq.m_iMSS = m_iMSS;
     m_ConnReq.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize)? m_iRcvBufSize : m_iFlightFlagSize;
     m_ConnReq.m_iID = m_SocketID;
@@ -2483,7 +2488,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // Inform the server my configurations.
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);
-    reqpkt.allocate(m_iPayloadSize);
+    reqpkt.allocate(m_iMaxSRTPayloadSize);
     // XXX NOTE: Now the memory for the payload part is allocated automatically,
     // and such allocated memory is also automatically deallocated in the
     // destructor. If you use CPacket::allocate, remember that you must not:
@@ -2498,7 +2503,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // ID = 0, connection request
     reqpkt.m_iID = 0;
 
-    size_t hs_size = m_iPayloadSize;
+    size_t hs_size = m_iMaxSRTPayloadSize;
     m_ConnReq.store_to(reqpkt.m_pcData, Ref(hs_size));
 
     // Note that CPacket::allocate() sets also the size
@@ -2542,7 +2547,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // next incoming packet.
     CPacket response;
     response.setControl(UMSG_HANDSHAKE);
-    response.allocate(m_iPayloadSize);
+    response.allocate(m_iMaxSRTPayloadSize);
 
     CUDTException e;
 
@@ -2584,7 +2589,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         }
 
         EConnectStatus cst = CONN_CONTINUE;
-        response.setLength(m_iPayloadSize);
+        response.setLength(m_iMaxSRTPayloadSize);
         if (m_pRcvQueue->recvfrom(m_SocketID, Ref(response)) > 0)
         {
             LOGC(mglog.Debug) << CONID() << "startConnect: got response for connect request";
@@ -2656,18 +2661,12 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // Now serialize the handshake again to the existing buffer so that it's
             // then sent later in this loop.
 
-            // First, set the size back to the original size, m_iPayloadSize because
+            // First, set the size back to the original size, m_iMaxSRTPayloadSize because
             // this is the size of the originally allocated space. It might have been
             // shrunk by serializing the INDUCTION handshake (which was required before
             // sending this packet to the output queue) and therefore be too
             // small to store the CONCLUSION handshake (with HSv5 extensions).
-            reqpkt.setLength(m_iPayloadSize);
-
-            // These last 2 parameters designate the buffer, which is in use only for SRT_CMD_KMRSP.
-            // If m_ConnReq.m_iVersion == HS_VERSION_UDT4, this function will do nothing,
-            // except just serializing the UDT handshake.
-            // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
-            // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
+            reqpkt.setLength(m_iMaxSRTPayloadSize);
 
             LOGC(mglog.Debug) << "startConnect: creating HS CONCLUSION: buffer size=" << reqpkt.getLength();
 
@@ -2686,6 +2685,11 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // Now that this is fixed, the handshake messages from RendezvousQueue
             // are sent only when there is a rendezvous mode or non-blocking mode.
             createSrtHandshake(Ref(reqpkt), Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0);
+            // These last 2 parameters designate the buffer, which is in use only for SRT_CMD_KMRSP.
+            // If m_ConnReq.m_iVersion == HS_VERSION_UDT4, this function will do nothing,
+            // except just serializing the UDT handshake.
+            // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
+            // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
 
         if ( cst == CONN_REJECT )
@@ -2753,7 +2757,7 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
 
     CPacket request;
     request.setControl(UMSG_HANDSHAKE);
-    request.allocate(m_iPayloadSize);
+    request.allocate(m_iMaxSRTPayloadSize);
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - this->m_StartTime);
 
@@ -2781,7 +2785,7 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     else
     {
         // (this procedure will be also run for HSv4 rendezvous)
-        size_t hs_size = m_iPayloadSize;
+        size_t hs_size = m_iMaxSRTPayloadSize;
         LOGC(mglog.Debug) << "processAsyncConnectRequest: serializing HS: buffer size=" << request.getLength();
         if (!createSrtHandshake(Ref(request), Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
         {
@@ -2918,7 +2922,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
 
         LOGC(mglog.Debug) << "processConnectResponse: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize;
 
-        rpkt.setLength(m_iPayloadSize);
+        rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
             LOGC(mglog.Debug) << "processRendezvous: rejecting due to problems in createSrtHandshake.";
@@ -2968,7 +2972,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // serialization.
     m_ConnReq.m_extension = needs_extension;
 
-    rpkt.setLength(m_iPayloadSize);
+    rpkt.setLength(m_iMaxSRTPayloadSize);
     // needs_extension here distinguishes between cases 1 and 3.
     // NOTE: in case when interpretSrtHandshake was run under the conditions above (to interpret HSRSP),
     // then createSrtHandshake below will create only empty AGREEMENT message.
@@ -3221,8 +3225,8 @@ void CUDT::applyResponseSettings()
     // Re-configure according to the negotiated values.
     m_iMSS = m_ConnRes.m_iMSS;
     m_iFlowWindowSize = m_ConnRes.m_iFlightFlagSize;
-    m_iUDPPacketSize = m_iMSS - CPacket::UDP_HDR_SIZE;
-    m_iPayloadSize = m_iUDPPacketSize - CPacket::HDR_SIZE;
+    m_iUDPPayloadSize = m_iMSS - CPacket::UDP_HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_iUDPPayloadSize - CPacket::HDR_SIZE;
     m_iPeerISN = m_ConnRes.m_iISN;
     m_iRcvLastAck = m_ConnRes.m_iISN;
 #ifdef ENABLE_LOGGING
@@ -3234,7 +3238,7 @@ void CUDT::applyResponseSettings()
     m_PeerID = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
 
-    LOGC(mglog.Debug) << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iPayloadSize
+    LOGC(mglog.Debug) << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
         << " mss=" << m_ConnRes.m_iMSS
         << " flw=" << m_ConnRes.m_iFlightFlagSize
         << " isn=" << m_ConnRes.m_iISN
@@ -3814,7 +3818,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
 
     try
     {
-        m_pSndBuffer = new CSndBuffer(32, m_iPayloadSize);
+        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
         m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
@@ -3893,9 +3897,9 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    memcpy(m_piSelfIP, hs->m_piPeerIP, 16);
    CIPAddress::ntop(peer, hs->m_piPeerIP, m_iIPversion);
 
-   m_iUDPPacketSize = m_iMSS - CPacket::UDP_HDR_SIZE;
-   m_iPayloadSize = m_iUDPPacketSize - CPacket::HDR_SIZE;
-   LOGC(mglog.Debug) << "acceptAndRespond: PAYLOAD SIZE: " << m_iPayloadSize;
+   m_iUDPPayloadSize = m_iMSS - CPacket::UDP_HDR_SIZE;
+   m_iMaxSRTPayloadSize = m_iUDPPayloadSize - CPacket::HDR_SIZE;
+   LOGC(mglog.Debug) << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize;
 
    // Prepare all structures
    prepareConnectionObjects(*hs, HSD_DRAW, 0);
@@ -3945,7 +3949,7 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    // XXX Here create CONCLUSION RESPONSE with:
    // - just the UDT handshake, if HS_VERSION_UDT4,
    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP
-   size_t size = m_iPayloadSize;
+   size_t size = m_iMaxSRTPayloadSize;
    // Allocate the maximum possible memory for an SRT payload.
    // This is a maximum you can send once.
    CPacket response;
@@ -4247,17 +4251,18 @@ void CUDT::close()
 
 int CUDT::send(const char* data, int len)
 {
-   if (m_iSockType == UDT_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISDGRAM, 0);
-
    // throw an exception if not connected
    if (m_bBroken || m_bClosing)
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-   else if (!m_bConnected)
+   else if (!m_bConnected || !m_Smoother.ready())
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
    if (len <= 0)
       return 0;
+
+   // Check if the current smoother accepts the call with given parameters.
+   if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER | Smoother::STAD_SEND, data, len, -1, false))
+      throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
 
@@ -4320,7 +4325,7 @@ int CUDT::send(const char* data, int len)
       return 0;
    }
 
-   int size = (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize;
+   int size = (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMaxSRTPayloadSize;
    if (size > len)
       size = len;
 
@@ -4329,7 +4334,7 @@ int CUDT::send(const char* data, int len)
       m_llSndDurationCounter = CTimer::getTime();
 
    // insert the user buffer into the sending list
-   m_pSndBuffer->addBuffer(data, size);
+   m_pSndBuffer->addBuffer(data, size); // inorder=false, ttl=-1
 
    // insert this socket to snd list if it is not on the list yet
    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
@@ -4345,17 +4350,18 @@ int CUDT::send(const char* data, int len)
 
 int CUDT::recv(char* data, int len)
 {
-   if (m_iSockType == UDT_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISDGRAM, 0);
-
    // throw an exception if not connected
-   if (!m_bConnected)
+   if (!m_bConnected || !m_Smoother.ready())
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
    else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
    if (len <= 0)
       return 0;
+
+   if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER | Smoother::STAD_RECV, data, len, -1, false))
+      throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
+
 
    CGuard recvguard(m_RecvLock);
 
@@ -4432,181 +4438,185 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder, uint64_t s
 int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 #endif
 {
-   bool bCongestion = false;
+    bool bCongestion = false;
 
-   if (m_iSockType == UDT_STREAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISSTREAM, 0);
+    // throw an exception if not connected
+    if (m_bBroken || m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    else if (!m_bConnected || !m_Smoother.ready())
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   // throw an exception if not connected
-   if (m_bBroken || m_bClosing)
-      throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-   else if (!m_bConnected)
-      throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (len <= 0)
+        return 0;
 
-   if (len <= 0)
-      return 0;
+    // Sendmsg isn't restricted to the smoother type, however the smoother
+    // may want to have something to say here.
+    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE | Smoother::STAD_SEND, data, len, msttl, inorder))
+        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
-   if (len > m_iSndBufSize * m_iPayloadSize)
-      throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+    if (len > m_iSndBufSize * m_iMaxSRTPayloadSize)
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-   CGuard sendguard(m_SendLock);
+    CGuard sendguard(m_SendLock);
 
-   if (m_pSndBuffer->getCurrBufSize() == 0)
-   {
-      // delay the EXP timer to avoid mis-fired timeout
-      uint64_t currtime_tk;
-      CTimer::rdtsc(currtime_tk);
-      // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
+    if (m_pSndBuffer->getCurrBufSize() == 0)
+    {
+        // delay the EXP timer to avoid mis-fired timeout
+        uint64_t currtime_tk;
+        CTimer::rdtsc(currtime_tk);
+        // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
 #ifdef SRT_ENABLE_FASTREXMIT
-      m_ullLastRspAckTime_tk = currtime_tk;
-      m_iReXmitCount = 1;
+        m_ullLastRspAckTime_tk = currtime_tk;
+        m_iReXmitCount = 1;
 #endif /* SRT_ENABLE_FASTREXMIT */
-   }
+    }
 
-   if (m_bPeerTLPktDrop)
-   {
-      int bytes, timespan;
-      m_pSndBuffer->getCurrBufSize(Ref(bytes), Ref(timespan));
+    if (m_bPeerTLPktDrop)
+    {
+        int bytes, timespan;
+        m_pSndBuffer->getCurrBufSize(Ref(bytes), Ref(timespan));
 
-      // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
-      // Minimum value must accomodate an I-Frame (~8 x average frame size)
-      // >>need picture rate or app to set min treshold
-      // >>using 1 sec for worse case 1 frame using all bit budget.
-      // picture rate would be useful in auto SRT setting for min latency
-      // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
-      int threshold_ms = std::max<int>(m_iPeerTsbPdDelay_ms, SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*COMM_SYN_INTERVAL_US/1000);
-      if (timespan > threshold_ms)
-      {
-         // protect packet retransmission
-         CGuard::enterCS(m_AckLock);
-         int dbytes;
-         int dpkts = m_pSndBuffer->dropLateData(dbytes,  CTimer::getTime() - (threshold_ms * 1000));
-         if (dpkts > 0)
-         {
-            m_iTraceSndDrop += dpkts;
-            m_iSndDropTotal += dpkts;
-            m_ullTraceSndBytesDrop += dbytes;
-            m_ullSndBytesDropTotal += dbytes;
-
-            int32_t realack = m_iSndLastDataAck;
-            int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
-
-            m_iSndLastAck = fakeack;
-            m_iSndLastDataAck = fakeack;
-            m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
-            /* If we dropped packets not yet sent, advance current position */
-            // THIS MEANS: m_iSndCurrSeqNo = MAX(m_iSndCurrSeqNo, m_iSndLastDataAck-1)
-            if (CSeqNo::seqcmp(m_iSndCurrSeqNo, CSeqNo::decseq(m_iSndLastDataAck)) < 0)
+        // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
+        // Minimum value must accomodate an I-Frame (~8 x average frame size)
+        // >>need picture rate or app to set min treshold
+        // >>using 1 sec for worse case 1 frame using all bit budget.
+        // picture rate would be useful in auto SRT setting for min latency
+        // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
+        int threshold_ms = std::max(m_iPeerTsbPdDelay_ms, +SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*COMM_SYN_INTERVAL_US/1000);
+        if (timespan > threshold_ms)
+        {
+            // protect packet retransmission
+            CGuard::enterCS(m_AckLock);
+            int dbytes;
+            int dpkts = m_pSndBuffer->dropLateData(dbytes,  CTimer::getTime() - (threshold_ms * 1000));
+            if (dpkts > 0)
             {
-               m_iSndCurrSeqNo = CSeqNo::decseq(m_iSndLastDataAck);
+                m_iTraceSndDrop += dpkts;
+                m_iSndDropTotal += dpkts;
+                m_ullTraceSndBytesDrop += dbytes;
+                m_ullSndBytesDropTotal += dbytes;
+
+                int32_t realack = m_iSndLastDataAck; // needed for log only
+                int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
+
+                m_iSndLastAck = fakeack;
+                m_iSndLastDataAck = fakeack;
+
+                int32_t minlastack = CSeqNo::decseq(m_iSndLastDataAck);
+                m_pSndLossList->remove(minlastack);
+                /* If we dropped packets not yet sent, advance current position */
+                // THIS MEANS: m_iSndCurrSeqNo = MAX(m_iSndCurrSeqNo, m_iSndLastDataAck-1)
+                if (CSeqNo::seqcmp(m_iSndCurrSeqNo, minlastack) < 0)
+                {
+                    m_iSndCurrSeqNo = minlastack;
+                }
+                LOGC(dlog.Debug).form("drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
+                        (unsigned long long)CTimer::getTime(),
+                        realack, m_iSndCurrSeqNo,
+                        dpkts, dbytes, timespan);
             }
-            LOGC(dlog.Debug).form("drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
-                    (unsigned long long)CTimer::getTime(),
-                    realack, m_iSndCurrSeqNo,
-                    dpkts, dbytes, timespan);
-         }
-         bCongestion = true;
-         CGuard::leaveCS(m_AckLock);
-      }
-      else if (timespan > (m_iPeerTsbPdDelay_ms/2))
-      {
-         LOGC(mglog.Debug).form("cong, NOW: %lluus, BYTES %d, TMSPAN %d", (unsigned long long)CTimer::getTime(), bytes, timespan);
-         bCongestion = true;
-      }
-   }
+            bCongestion = true;
+            CGuard::leaveCS(m_AckLock);
+        }
+        else if (timespan > (m_iPeerTsbPdDelay_ms/2))
+        {
+            LOGC(mglog.Debug).form("cong, NOW: %lluus, BYTES %d, TMSPAN %dms", (unsigned long long)CTimer::getTime(), bytes, timespan);
+            bCongestion = true;
+        }
+    }
 
-   if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
-   {
-      //>>We should not get here if SRT_ENABLE_TLPKTDROP
-      // XXX Check if this needs to be removed, or put to an 'else' condition for m_bTLPktDrop.
-      if (!m_bSynSending)
-         throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
-      else
-      {
-          {
-              // wait here during a blocking sending
-              CGuard sendblock_lock(m_SendBlockLock);
+    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMaxSRTPayloadSize < len)
+    {
+        //>>We should not get here if SRT_ENABLE_TLPKTDROP
+        // XXX Check if this needs to be removed, or put to an 'else' condition for m_bTLPktDrop.
+        if (!m_bSynSending)
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+        else
+        {
+            {
+                // wait here during a blocking sending
+                CGuard sendblock_lock(m_SendBlockLock);
 
-              if (m_iSndTimeOut < 0)
-              {
-                  while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len))
-                      pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-              }
-              else
-              {
-                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-                  timespec locktime;
+                if (m_iSndTimeOut < 0)
+                {
+                    while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMaxSRTPayloadSize < len))
+                        pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+                }
+                else
+                {
+                    uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                    timespec locktime;
 
-                  locktime.tv_sec = exptime / 1000000;
-                  locktime.tv_nsec = (exptime % 1000000) * 1000;
+                    locktime.tv_sec = exptime / 1000000;
+                    locktime.tv_nsec = (exptime % 1000000) * 1000;
 
-                  while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len) && (CTimer::getTime() < exptime))
-                      pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
-              }
-          }
+                    while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMaxSRTPayloadSize < len) && (CTimer::getTime() < exptime))
+                        pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                }
+            }
 
-         // check the connection status
-         if (m_bBroken || m_bClosing)
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-         else if (!m_bConnected)
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-      }
-      /* 
-      * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
-      * If no free buffer available in non-blocking mode, we alredy returned. If buffer availaible,
-      * we test twice if this code is outside the else section.
-      * This fix move it in the else (blocking-mode) section
-      */
-      if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
-      {
-         if (m_iSndTimeOut >= 0)
-            throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+            // check the connection status
+            if (m_bBroken || m_bClosing)
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+            else if (!m_bConnected)
+                throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+        }
+        /* 
+         * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
+         * If no free buffer available in non-blocking mode, we alredy returned. If buffer availaible,
+         * we test twice if this code is outside the else section.
+         * This fix move it in the else (blocking-mode) section
+         */
+        if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMaxSRTPayloadSize < len)
+        {
+            if (m_iSndTimeOut >= 0)
+                throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-         // XXX Not sure if this was intended:
-         // The 'len' exceeds the bytes left in the send buffer...
-         // ... so we do nothing and return success???
-          return 0;
-      }
-   }
+            // XXX Not sure if this was intended:
+            // The 'len' exceeds the bytes left in the send buffer...
+            // ... so we do nothing and return success???
+            return 0;
+        }
+    }
 
-   // record total time used for sending
-   if (m_pSndBuffer->getCurrBufSize() == 0)
-      m_llSndDurationCounter = CTimer::getTime();
+    // record total time used for sending
+    if (m_pSndBuffer->getCurrBufSize() == 0)
+        m_llSndDurationCounter = CTimer::getTime();
 
-   // insert the user buffer into the sending list
+    // insert the user buffer into the sending list
 #ifdef SRT_ENABLE_SRCTIMESTAMP
 #ifdef SRT_ENABLE_CBRTIMESTAMP
-   if (srctime == 0)
-   {
-      uint64_t currtime_tk;
-      CTimer::rdtsc(currtime_tk);
+    if (srctime == 0)
+    {
+        uint64_t currtime_tk;
+        CTimer::rdtsc(currtime_tk);
 
-      m_ullSndLastCbrTime_tk = max(currtime_tk, m_ullSndLastCbrTime_tk + m_ullInterval_tk);
-      srctime = m_ullSndLastCbrTime_tk / m_ullCPUFrequency;
-   }
+        m_ullSndLastCbrTime_tk = max(currtime_tk, m_ullSndLastCbrTime_tk + m_ullInterval_tk);
+        srctime = m_ullSndLastCbrTime_tk / m_ullCPUFrequency;
+    }
 #endif
-   m_pSndBuffer->addBuffer(data, len, msttl, inorder, srctime);
-   LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << srctime << "us DATA SIZE: " << len;
+    m_pSndBuffer->addBuffer(data, len, msttl, inorder, srctime);
+    LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << srctime << "us DATA SIZE: " << len;
 
 #else /* SRT_ENABLE_SRCTIMESTAMP */
-   m_pSndBuffer->addBuffer(data, len, msttl, inorder);
+    m_pSndBuffer->addBuffer(data, len, msttl, inorder);
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
 
 
-   // insert this socket to the snd list if it is not on the list yet
-   m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
+    // insert this socket to the snd list if it is not on the list yet
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
 
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
-   }
+    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
+    {
+        // write is not available any more
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+    }
 
 #ifdef SRT_ENABLE_ECN
-   if (bCongestion)
-      throw CUDTException(MJ_AGAIN, MN_CONGESTION, 0);
+    if (bCongestion)
+        throw CUDTException(MJ_AGAIN, MN_CONGESTION, 0);
 #endif /* SRT_ENABLE_ECN */
-   return len;
+    return len;
 }
 
 int CUDT::recvmsg(char* data, int len)
@@ -4619,200 +4629,203 @@ int CUDT::recvmsg(char* data, int len)
 int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 {
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
-   if (m_iSockType == UDT_STREAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISSTREAM, 0);
 
-   // throw an exception if not connected
-   if (!m_bConnected)
-      throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (!m_bConnected || !m_Smoother.ready())
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   if (len <= 0)
-      return 0;
+    if (len <= 0)
+        return 0;
 
-   CGuard recvguard(m_RecvLock);
+    // Recvmsg isn't restricted to the smoother type, it's the most
+    // basic method of passing the data. You can retrieve data as
+    // they come in, however you need to match the size of the buffer.
+    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE | Smoother::STAD_RECV, data, len, -1, false))
+        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
-   /* XXX DEBUG STUFF - enable when required
-   char charbool[2] = {'0', '1'};
-   char ptrn [] = "RECVMSG/BEGIN BROKEN 1 CONN 1 CLOSING 1 SYNCR 1 NMSG                                ";
-   int pos [] = {21, 28, 38, 46, 53};
-   ptrn[pos[0]] = charbool[m_bBroken];
-   ptrn[pos[1]] = charbool[m_bConnected];
-   ptrn[pos[2]] = charbool[m_bClosing];
-   ptrn[pos[3]] = charbool[m_bSynRecving];
-   int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
-   strcpy(ptrn + pos[4] + wrtlen, "\n");
-   fputs(ptrn, stderr);
-   // */
+    CGuard recvguard(m_RecvLock);
 
-   if (m_bBroken || m_bClosing)
-   {
-      int res = m_pRcvBuffer->readMsg(data, len);
+    /* XXX DEBUG STUFF - enable when required
+       char charbool[2] = {'0', '1'};
+       char ptrn [] = "RECVMSG/BEGIN BROKEN 1 CONN 1 CLOSING 1 SYNCR 1 NMSG                                ";
+       int pos [] = {21, 28, 38, 46, 53};
+       ptrn[pos[0]] = charbool[m_bBroken];
+       ptrn[pos[1]] = charbool[m_bConnected];
+       ptrn[pos[2]] = charbool[m_bClosing];
+       ptrn[pos[3]] = charbool[m_bSynRecving];
+       int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
+       strcpy(ptrn + pos[4] + wrtlen, "\n");
+       fputs(ptrn, stderr);
+    // */
 
-      /* Kick TsbPd thread to schedule next wakeup (if running) */
-      if (m_bTsbPd)
-         pthread_cond_signal(&m_RcvTsbPdCond);
+    if (m_bBroken || m_bClosing)
+    {
+        int res = m_pRcvBuffer->readMsg(data, len);
 
-      if (!m_pRcvBuffer->isRcvDataReady())
-      {
-         // read is not available any more
-         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
-      }
-
-      if (res == 0)
-         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-      else
-         return res;
-   }
-
-   if (!m_bSynRecving)
-   {
-
-#ifdef SRT_ENABLE_SRCTIMESTAMP
-      int res = m_pRcvBuffer->readMsg(data, len, srctime);
-#else
-      int res = m_pRcvBuffer->readMsg(data, len);
-#endif
-      if (res == 0)
-      {
-         // read is not available any more
-
-         // Kick TsbPd thread to schedule next wakeup (if running)
-         if (m_bTsbPd)
+        /* Kick TsbPd thread to schedule next wakeup (if running) */
+        if (m_bTsbPd)
             pthread_cond_signal(&m_RcvTsbPdCond);
 
-         // Shut up EPoll if no more messages in non-blocking mode
-         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
-         throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
-      }
-      else
-      {
-         if (!m_pRcvBuffer->isRcvDataReady())
-         {
+        if (!m_pRcvBuffer->isRcvDataReady())
+        {
+            // read is not available any more
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        }
+
+        if (res == 0)
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        else
+            return res;
+    }
+
+    if (!m_bSynRecving)
+    {
+
+#ifdef SRT_ENABLE_SRCTIMESTAMP
+        int res = m_pRcvBuffer->readMsg(data, len, srctime);
+#else
+        int res = m_pRcvBuffer->readMsg(data, len);
+#endif
+        if (res == 0)
+        {
+            // read is not available any more
+
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
-               pthread_cond_signal(&m_RcvTsbPdCond);
+                pthread_cond_signal(&m_RcvTsbPdCond);
 
             // Shut up EPoll if no more messages in non-blocking mode
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+        }
+        else
+        {
+            if (!m_pRcvBuffer->isRcvDataReady())
+            {
+                // Kick TsbPd thread to schedule next wakeup (if running)
+                if (m_bTsbPd)
+                    pthread_cond_signal(&m_RcvTsbPdCond);
 
-            // After signaling the tsbpd for ready data, report the bandwidth.
-            double bw = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
-            LOGC(mglog.Debug) << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << ")";
-         }
-         return res;
-      }
-   }
+                // Shut up EPoll if no more messages in non-blocking mode
+                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
 
-   int res = 0;
-   bool timeout = false;
-   //Do not block forever, check connection status each 1 sec.
-   uint64_t recvtmo = m_iRcvTimeOut < 0 ? 1000 : m_iRcvTimeOut;
+                // After signaling the tsbpd for ready data, report the bandwidth.
+                double bw = m_iBandwidth * m_iMaxSRTPayloadSize * 8.0 / 1000000.0;
+                LOGC(mglog.Debug) << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << ")";
+            }
+            return res;
+        }
+    }
 
-   do
-   {
-      if (!m_bBroken && m_bConnected && !m_bClosing && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
-      {
-         /* Kick TsbPd thread to schedule next wakeup (if running) */
-         if (m_bTsbPd)
-         {
-             LOGP(tslog.Debug, "recvmsg: KICK tsbpd()");
-             pthread_cond_signal(&m_RcvTsbPdCond);
-         }
+    int res = 0;
+    bool timeout = false;
+    //Do not block forever, check connection status each 1 sec.
+    uint64_t recvtmo = m_iRcvTimeOut < 0 ? 1000 : m_iRcvTimeOut;
 
-         do
-         {
-             uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
-             timespec locktime;
+    do
+    {
+        if (!m_bBroken && m_bConnected && !m_bClosing && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
+        {
+            /* Kick TsbPd thread to schedule next wakeup (if running) */
+            if (m_bTsbPd)
+            {
+                LOGP(tslog.Debug, "recvmsg: KICK tsbpd()");
+                pthread_cond_signal(&m_RcvTsbPdCond);
+            }
 
-             locktime.tv_sec = exptime / 1000000;
-             locktime.tv_nsec = (exptime % 1000000) * 1000;
-             if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime) == ETIMEDOUT)
-             {
-                 if (!(m_iRcvTimeOut < 0))
-                     timeout = true;
-                 LOGP(tslog.Debug, "recvmsg: DATA COND: EXPIRED -- trying to get data anyway");
-             }
-             else
-             {
-                 LOGP(tslog.Debug, "recvmsg: DATA COND: KICKED.");
-             }
-         } while (!m_bBroken && m_bConnected && !m_bClosing && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
-      }
+            do
+            {
+                uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
+                timespec locktime;
 
-      /* XXX DEBUG STUFF - enable when required
-      char charbool[2] = {'0', '1'};
-      char ptrn [] = "RECVMSG/GO-ON BROKEN 1 CONN 1 CLOSING 1 TMOUT 1 NMSG                                ";
-      int pos [] = {21, 28, 38, 46, 53};
-      ptrn[pos[0]] = charbool[m_bBroken];
-      ptrn[pos[1]] = charbool[m_bConnected];
-      ptrn[pos[2]] = charbool[m_bClosing];
-      ptrn[pos[3]] = charbool[timeout];
-      int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
-      strcpy(ptrn + pos[4] + wrtlen, "\n");
-      fputs(ptrn, stderr);
-      // */
+                locktime.tv_sec = exptime / 1000000;
+                locktime.tv_nsec = (exptime % 1000000) * 1000;
+                if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime) == ETIMEDOUT)
+                {
+                    if (!(m_iRcvTimeOut < 0))
+                        timeout = true;
+                    LOGP(tslog.Debug, "recvmsg: DATA COND: EXPIRED -- trying to get data anyway");
+                }
+                else
+                {
+                    LOGP(tslog.Debug, "recvmsg: DATA COND: KICKED.");
+                }
+            } while (!m_bBroken && m_bConnected && !m_bClosing && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+        }
+
+        /* XXX DEBUG STUFF - enable when required
+           char charbool[2] = {'0', '1'};
+           char ptrn [] = "RECVMSG/GO-ON BROKEN 1 CONN 1 CLOSING 1 TMOUT 1 NMSG                                ";
+           int pos [] = {21, 28, 38, 46, 53};
+           ptrn[pos[0]] = charbool[m_bBroken];
+           ptrn[pos[1]] = charbool[m_bConnected];
+           ptrn[pos[2]] = charbool[m_bClosing];
+           ptrn[pos[3]] = charbool[timeout];
+           int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
+           strcpy(ptrn + pos[4] + wrtlen, "\n");
+           fputs(ptrn, stderr);
+        // */
 
 #ifdef SRT_ENABLE_SRCTIMESTAMP
-      res = m_pRcvBuffer->readMsg(data, len, srctime);
+        res = m_pRcvBuffer->readMsg(data, len, srctime);
 #else
-      res = m_pRcvBuffer->readMsg(data, len);
+        res = m_pRcvBuffer->readMsg(data, len);
 #endif
 
-      if (m_bBroken || m_bClosing)
-         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-      else if (!m_bConnected)
-         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-   } while ((res == 0) && !timeout);
+        if (m_bBroken || m_bClosing)
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        else if (!m_bConnected)
+            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    } while ((res == 0) && !timeout);
 
-   if (!m_pRcvBuffer->isRcvDataReady())
-   {
-       // Falling here means usually that res == 0 && timeout == true.
-       // res == 0 would repeat the above loop, unless there was also a timeout.
-       // timeout has interrupted the above loop, but with res > 0 this condition
-       // wouldn't be satisfied.
+    if (!m_pRcvBuffer->isRcvDataReady())
+    {
+        // Falling here means usually that res == 0 && timeout == true.
+        // res == 0 would repeat the above loop, unless there was also a timeout.
+        // timeout has interrupted the above loop, but with res > 0 this condition
+        // wouldn't be satisfied.
 
-       // read is not available any more
+        // read is not available any more
 
-       // Kick TsbPd thread to schedule next wakeup (if running)
-       if (m_bTsbPd)
+        // Kick TsbPd thread to schedule next wakeup (if running)
+        if (m_bTsbPd)
+        {
+            LOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
+            pthread_cond_signal(&m_RcvTsbPdCond);
+        }
+
+        // Shut up EPoll if no more messages in non-blocking mode
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+    }
+
+    /* XXX DEBUG STUFF - enable when required
        {
-           LOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-           pthread_cond_signal(&m_RcvTsbPdCond);
-       }
-
-       // Shut up EPoll if no more messages in non-blocking mode
-       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
-   }
-
-   /* XXX DEBUG STUFF - enable when required
-   {
        char ptrn [] = "RECVMSG/EXIT RES ? RCVTIMEOUT                ";
        char chartribool [3] = { '-', '0', '+' };
        int pos [] = { 17, 29 };
        ptrn[pos[0]] = chartribool[int(res >= 0) + int(res > 0)];
        sprintf(ptrn + pos[1], "%d\n", m_iRcvTimeOut);
        fputs(ptrn, stderr);
-   }
-   // */
+       }
+    // */
 
-   if ((res <= 0) && (m_iRcvTimeOut >= 0))
-      throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+    if ((res <= 0) && (m_iRcvTimeOut >= 0))
+        throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-   return res;
+    return res;
 }
 
 int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 {
-   if (m_iSockType == UDT_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISDGRAM, 0);
-
    if (m_bBroken || m_bClosing)
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-   else if (!m_bConnected)
+   else if (!m_bConnected || !m_Smoother.ready())
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
    if (size <= 0)
       return 0;
+
+   if (!m_Smoother->checkTransArgs(Smoother::STA_FILE | Smoother::STAD_SEND, 0, size, -1, false))
+      throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
 
@@ -4900,16 +4913,16 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
 int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
 {
-   if (m_iSockType == UDT_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_ISDGRAM, 0);
-
-   if (!m_bConnected)
+   if (!m_bConnected || !m_Smoother.ready())
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
    else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
    if (size <= 0)
       return 0;
+
+   if (!m_Smoother->checkTransArgs(Smoother::STA_FILE | Smoother::STAD_RECV, 0, size, -1, false))
+      throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard recvguard(m_RecvLock);
 
@@ -5009,15 +5022,15 @@ void CUDT::sample(CPerfMon* perf, bool clear)
 
    double interval = double(currtime - m_LastSampleTime);
 
-   perf->mbpsSendRate = double(m_llTraceSent) * m_iPayloadSize * 8.0 / interval;
-   perf->mbpsRecvRate = double(m_llTraceRecv) * m_iPayloadSize * 8.0 / interval;
+   perf->mbpsSendRate = double(m_llTraceSent) * m_iMaxSRTPayloadSize * 8.0 / interval;
+   perf->mbpsRecvRate = double(m_llTraceRecv) * m_iMaxSRTPayloadSize * 8.0 / interval;
 
    perf->usPktSndPeriod = m_ullInterval_tk / double(m_ullCPUFrequency);
    perf->pktFlowWindow = m_iFlowWindowSize;
    perf->pktCongestionWindow = (int)m_dCongestionWindow;
    perf->pktFlightSize = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
    perf->msRTT = m_iRTT/1000.0;
-   perf->mbpsBandwidth = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
+   perf->mbpsBandwidth = m_iBandwidth * m_iMaxSRTPayloadSize * 8.0 / 1000000.0;
 
    if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
    {
@@ -5140,7 +5153,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    //<
    uint32_t availbw = (uint64_t)(m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth);
 
-   perf->mbpsBandwidth = (double)(availbw * (m_iPayloadSize + pktHdrSize) * 8.0 / 1000000.0);
+   perf->mbpsBandwidth = (double)(availbw * (m_iMaxSRTPayloadSize + pktHdrSize) * 8.0 / 1000000.0);
 
    if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
    {
@@ -5426,7 +5439,7 @@ static void DebugAck(string hdr, int prev, int ack)
     LOGC(mglog.Debug) << hdr << "ACK (" << (diff+1) << "): " << ackv.str() << ack;
 }
 #else
-static inline void DebugAck(string int, int) {}
+static inline void DebugAck(string, int, int) {}
 #endif
 
 void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size)
@@ -5585,7 +5598,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
             if ( version == SrtVersion(1, 0, 2) )
             {
                 data[ACKD_RCVRATE] = rcvRate; //bytes/sec
-                data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_iPayloadSize; //bytes/sec
+                data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; //bytes/sec
                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
             }
             else if (version >= SrtVersion(1, 0, 3))
@@ -5645,9 +5658,9 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
               // this is periodically NAK report; make sure NAK cannot be sent back too often
 
               // read loss list from the local receiver loss list
-              int32_t* data = new int32_t[m_iPayloadSize / 4];
+              int32_t* data = new int32_t[m_iMaxSRTPayloadSize / 4];
               int losslen;
-              m_pRcvLossList->getLossArray(data, losslen, m_iPayloadSize / 4);
+              m_pRcvLossList->getLossArray(data, losslen, m_iMaxSRTPayloadSize / 4);
 
               if (0 < losslen)
               {
@@ -5852,11 +5865,11 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           // acknowledge the sending buffer (remove data that predate 'ack')
           m_pSndBuffer->ackData(offset);
 
-          // record total time used for sending
-          // XXX BUG? currtime_tk is in ticks, others are in microseconds
-          m_llSndDuration += currtime_tk - m_llSndDurationCounter;
-          m_llSndDurationTotal += currtime_tk - m_llSndDurationCounter;
-          m_llSndDurationCounter = currtime_tk;
+          int64_t currtime = currtime_tk/m_ullCPUFrequency;
+
+          m_llSndDuration += currtime - m_llSndDurationCounter;
+          m_llSndDurationTotal += currtime - m_llSndDurationCounter;
+          m_llSndDurationCounter = currtime;
 
           LOGC(mglog.Debug) << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ack
               << " [ACK=" << m_iSndLastAck << "] BUFr=" << m_iFlowWindowSize
@@ -5906,9 +5919,11 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pSndBuffer->ackData(offset);
 
       // record total time used for sending
-      m_llSndDuration += currtime_tk - m_llSndDurationCounter;
-      m_llSndDurationTotal += currtime_tk - m_llSndDurationCounter;
-      m_llSndDurationCounter = currtime_tk;
+      int64_t currtime = currtime_tk/m_ullCPUFrequency;
+
+      m_llSndDuration += currtime - m_llSndDurationCounter;
+      m_llSndDurationTotal += currtime - m_llSndDurationCounter;
+      m_llSndDurationCounter = currtime;
 
       // update sending variables
       m_iSndLastDataAck = ack;
@@ -5995,7 +6010,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          int pktps;
 
          if ((pktps = ackdata[ACKD_RCVSPEED]) > 0)
-            m_iDeliveryRate = (m_iDeliveryRate * 7 + (pktps * m_iPayloadSize)) >> 3;
+            m_iDeliveryRate = (m_iDeliveryRate * 7 + (pktps * m_iMaxSRTPayloadSize)) >> 3;
 
          if (ackdata[ACKD_BANDWIDTH] > 0)
             m_iBandwidth = (m_iBandwidth * 7 + ackdata[ACKD_BANDWIDTH]) >> 3;
@@ -6218,7 +6233,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          // XXX here interpret SRT handshake extension
          CPacket response;
          response.setControl(UMSG_HANDSHAKE);
-         response.allocate(m_iPayloadSize);
+         response.allocate(m_iMaxSRTPayloadSize);
 
          // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
          // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
@@ -6928,12 +6943,12 @@ int CUDT::processData(CUnit* unit)
        sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
 
    // This is not a regular fixed size packet...
-   //an irregular sized packet usually indicates the end of a message, so send an ACK immediately
-   if (pktsz != m_iPayloadSize)
-#ifdef SRT_ENABLE_LOWACKRATE
-      if (m_iSockType == UDT_STREAM)
-#endif
-      CTimer::rdtsc(m_ullNextACKTime_tk);
+   // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
+   // (if the smoother says so).
+   if (m_Smoother->needsQuickACK(packet))
+   {
+       CTimer::rdtsc(m_ullNextACKTime_tk);
+   }
 
    // Update the current largest sequence number that has been received.
    // Or it is a retransmitted packet, remove it from receiver loss list.
@@ -7355,14 +7370,19 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
    if (hs.m_iVersion == HS_VERSION_SRT1)
    {
        // No further check required.
-       // The m_iType contains flags informing about attached extensions.
+       // The m_iType contains handshake extension flags.
    }
    else if (hs.m_iVersion == HS_VERSION_UDT4)
    {
-       // Check additionally if the socktype also matches (OLD UDT compatibility).
-       // WARNING. The hs.m_iType has a different meaning in HS_VERSION_SRT1. In SRT version
-       // the socket may only be SOCK_DGRAM.
-       if (hs.m_iType != m_iSockType)
+       // In UDT, and so in older SRT version, the hs.m_iType field should contain
+       // the socket type, although SRT only allowed this field to be UDT_DGRAM.
+       // Older SRT version contained that value in a field, but now that this can
+       // only contain UDT_DGRAM the field itself has been abandoned.
+       // For the sake of any old client that reports version 4 handshake, interpret
+       // this hs.m_iType field as a socket type and check if it's UDT_DGRAM.
+
+       // Note that in HSv5 hs.m_iType contains extension flags.
+       if (hs.m_iType != UDT_DGRAM)
            accepted_hs = false;
    }
    else

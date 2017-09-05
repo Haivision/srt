@@ -223,7 +223,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
 
    m_iNextMsgNo ++;
 
-   // MSG_SEQ::mask has a form: 00000011111111...
+   // MSGNO_SEQ::mask has a form: 00000011111111...
    // At least it's known that it's from some index inside til the end (to bit 0).
    // If this value has been reached in a step of incrementation, it means that the
    // maximum value has been reached. Casting to int32_t to ensure the same sign

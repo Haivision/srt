@@ -99,10 +99,6 @@ modified by
 #endif
 #endif
 
-// This is a "protected header"; should include all required
-// system headers, as required on particular platform.
-#include "platform_sys.h"
-
 #ifdef __cplusplus
 #include <fstream>
 #include <set>
@@ -110,7 +106,6 @@ modified by
 #include <vector>
 #endif
 
-#include "srt.h"
 
 // Legacy/backward/deprecated
 #define UDT_API SRT_API
@@ -282,57 +277,49 @@ private:
    std::string m_strAPI;	// the name of UDT function that returns the error
    std::string m_strDebug;	// debug information, set to the original place that causes the error
 
-public: // Error Code
-   static const int SUCCESS;
-   static const int ECONNSETUP;
-   static const int ENOSERVER;
-   static const int ECONNREJ;
-   static const int ESOCKFAIL;
-   static const int ESECFAIL;
-   static const int ECONNFAIL;
-   static const int ECONNLOST;
-   static const int ENOCONN;
-   static const int ERESOURCE;
-   static const int ETHREAD;
-   static const int ENOBUF;
-   static const int EFILE;
-   static const int EINVRDOFF;
-   static const int ERDPERM;
-   static const int EINVWROFF;
-   static const int EWRPERM;
-   static const int EINVOP;
-   static const int EBOUNDSOCK;
-   static const int ECONNSOCK;
-   static const int EINVPARAM;
-   static const int EINVSOCK;
-   static const int EUNBOUNDSOCK;
-   static const int ENOLISTEN;
-   static const int ERDVNOSERV;
-   static const int ERDVUNBOUND;
-   static const int ESTREAMILL;
-   static const int EDGRAMILL;
-   static const int EDUPLISTEN;
-   static const int ELARGEMSG;
-   static const int EINVPOLLID;
-   static const int EASYNCFAIL;
-   static const int EASYNCSND;
-   static const int EASYNCRCV;
-   static const int ETIMEOUT;
-#ifdef SRT_ENABLE_ECN
-   static const int ECONGEST;
-#endif /* SRT_ENABLE_ECN */
-   static const int EPEERERR;
-   static const int EUNKNOWN;
+public: // Legacy Error Code
+
+    static const int EUNKNOWN = SRT_EUNKNOWN;
+    static const int SUCCESS = SRT_SUCCESS;
+    static const int ECONNSETUP = SRT_ECONNSETUP;
+    static const int ENOSERVER = SRT_ENOSERVER;
+    static const int ECONNREJ = SRT_ECONNREJ;
+    static const int ESOCKFAIL = SRT_ESOCKFAIL;
+    static const int ESECFAIL = SRT_ESECFAIL;
+    static const int ECONNFAIL = SRT_ECONNFAIL;
+    static const int ECONNLOST = SRT_ECONNLOST;
+    static const int ENOCONN = SRT_ENOCONN;
+    static const int ERESOURCE = SRT_ERESOURCE;
+    static const int ETHREAD = SRT_ETHREAD;
+    static const int ENOBUF = SRT_ENOBUF;
+    static const int EFILE = SRT_EFILE;
+    static const int EINVRDOFF = SRT_EINVRDOFF;
+    static const int ERDPERM = SRT_ERDPERM;
+    static const int EINVWROFF = SRT_EINVWROFF;
+    static const int EWRPERM = SRT_EWRPERM;
+    static const int EINVOP = SRT_EINVOP;
+    static const int EBOUNDSOCK = SRT_EBOUNDSOCK;
+    static const int ECONNSOCK = SRT_ECONNSOCK;
+    static const int EINVPARAM = SRT_EINVPARAM;
+    static const int EINVSOCK = SRT_EINVSOCK;
+    static const int EUNBOUNDSOCK = SRT_EUNBOUNDSOCK;
+    static const int ENOLISTEN = SRT_ENOLISTEN;
+    static const int ERDVNOSERV = SRT_ERDVNOSERV;
+    static const int ERDVUNBOUND = SRT_ERDVUNBOUND;
+    static const int EINVALMSGAPI = SRT_EINVALMSGAPI;
+    static const int EINVALBUFFERAPI = SRT_EINVALBUFFERAPI;
+    static const int EDUPLISTEN = SRT_EDUPLISTEN;
+    static const int ELARGEMSG = SRT_ELARGEMSG;
+    static const int EINVPOLLID = SRT_EINVPOLLID;
+    static const int EASYNCFAIL = SRT_EASYNCFAIL;
+    static const int EASYNCSND = SRT_EASYNCSND;
+    static const int EASYNCRCV = SRT_EASYNCRCV;
+    static const int ETIMEOUT = SRT_ETIMEOUT;
+    static const int ECONGEST = SRT_ECONGEST;
+    static const int EPEERERR = SRT_EPEERERR;
 };
 
 
-
-////////////////////////////////////////////////////////////////////////////////
-
-// If you need to export these APIs to be used by a different language,
-// declare extern "C" for them, and add a "udt_" prefix to each API.
-// The following APIs: sendfile(), recvfile(), epoll_wait(), geterrormsg(),
-// include C++ specific feature, please use the corresponding sendfile2(), etc.
 
 typedef SRTSOCKET UDTSOCKET; //legacy alias
 
@@ -399,7 +386,7 @@ UDT_API int epoll_release(int eid);
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();
-UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true);
+UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true) SRT_ATR_DEPRECATED;
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 

@@ -432,5 +432,377 @@ struct EventSlot
 };
 
 
+// Old UDT library specific classes, moved from utilities as utilities
+// should now be general-purpose.
+
+class CTimer
+{
+public:
+   CTimer();
+   ~CTimer();
+
+public:
+
+      /// Sleep for "interval" CCs.
+      /// @param interval [in] CCs to sleep.
+
+   void sleep(uint64_t interval);
+
+      /// Seelp until CC "nexttime".
+      /// @param nexttime [in] next time the caller is waken up.
+
+   void sleepto(uint64_t nexttime);
+
+      /// Stop the sleep() or sleepto() methods.
+
+   void interrupt();
+
+      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
+
+   void tick();
+
+public:
+
+      /// Read the CPU clock cycle into x.
+      /// @param x [out] to record cpu clock cycles.
+
+   static void rdtsc(uint64_t &x);
+
+      /// return the CPU frequency.
+      /// @return CPU frequency.
+
+   static uint64_t getCPUFrequency();
+
+      /// check the current time, 64bit, in microseconds.
+      /// @return current time in microseconds.
+
+   static uint64_t getTime();
+
+      /// trigger an event such as new connection, close, new data, etc. for "select" call.
+
+   static void triggerEvent();
+
+      /// wait for an event to br triggered by "triggerEvent".
+
+   static void waitForEvent();
+
+      /// sleep for a short interval. exact sleep time does not matter
+
+   static void sleep();
+
+private:
+   uint64_t getTimeInMicroSec();
+
+private:
+   uint64_t m_ullSchedTime;             // next schedulled time
+
+   pthread_cond_t m_TickCond;
+   pthread_mutex_t m_TickLock;
+
+   static pthread_cond_t m_EventCond;
+   static pthread_mutex_t m_EventLock;
+
+private:
+   static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
+   static uint64_t readCPUFrequency();
+   static bool m_bUseMicroSecond;       // No higher resolution timer available, use gettimeofday().
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+class CGuard
+{
+public:
+   /// Constructs CGuard, which locks the given mutex for
+   /// the scope where this object exists.
+   /// @param lock Mutex to lock
+   /// @param if_condition If this is false, CGuard will do completely nothing
+   CGuard(pthread_mutex_t& lock, bool if_condition = true);
+   ~CGuard();
+
+public:
+   static int enterCS(pthread_mutex_t& lock);
+   static int leaveCS(pthread_mutex_t& lock);
+
+   static void createMutex(pthread_mutex_t& lock);
+   static void releaseMutex(pthread_mutex_t& lock);
+
+   static void createCond(pthread_cond_t& cond);
+   static void releaseCond(pthread_cond_t& cond);
+
+private:
+   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
+   int m_iLocked;                       // Locking status
+
+   CGuard& operator=(const CGuard&);
+};
+
+class InvertedGuard
+{
+    pthread_mutex_t* m_pMutex;
+public:
+
+    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
+    {
+        if ( !smutex )
+            return;
+
+        CGuard::leaveCS(*smutex);
+    }
+
+    ~InvertedGuard()
+    {
+        if ( !m_pMutex )
+            return;
+
+        CGuard::enterCS(*m_pMutex);
+    }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+// UDT Sequence Number 0 - (2^31 - 1)
+
+// seqcmp: compare two seq#, considering the wraping
+// seqlen: length from the 1st to the 2nd seq#, including both
+// seqoff: offset from the 2nd to the 1st seq#
+// incseq: increase the seq# by 1
+// decseq: decrease the seq# by 1
+// incseq: increase the seq# by a given offset
+
+class CSeqNo
+{
+public:
+   inline static int seqcmp(int32_t seq1, int32_t seq2)
+   {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
+
+   inline static int seqlen(int32_t seq1, int32_t seq2)
+   {return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);}
+
+   inline static int seqoff(int32_t seq1, int32_t seq2)
+   {
+      if (abs(seq1 - seq2) < m_iSeqNoTH)
+         return seq2 - seq1;
+
+      if (seq1 < seq2)
+         return seq2 - seq1 - m_iMaxSeqNo - 1;
+
+      return seq2 - seq1 + m_iMaxSeqNo + 1;
+   }
+
+   inline static int32_t incseq(int32_t seq)
+   {return (seq == m_iMaxSeqNo) ? 0 : seq + 1;}
+
+   inline static int32_t decseq(int32_t seq)
+   {return (seq == 0) ? m_iMaxSeqNo : seq - 1;}
+
+   inline static int32_t incseq(int32_t seq, int32_t inc)
+   {return (m_iMaxSeqNo - seq >= inc) ? seq + inc : seq - m_iMaxSeqNo + inc - 1;}
+   // m_iMaxSeqNo >= inc + sec  --- inc + sec <= m_iMaxSeqNo
+   // if inc + sec > m_iMaxSeqNo then return seq + inc - (m_iMaxSeqNo+1)
+
+   inline static int32_t decseq(int32_t seq, int32_t dec)
+   {
+       // Check if seq - dec < 0, but before it would have happened
+       if ( seq < dec )
+       {
+           int32_t left = dec - seq; // This is so many that is left after dragging dec to 0
+           // So now decrement the (m_iMaxSeqNo+1) by "left"
+           return m_iMaxSeqNo - left + 1;
+       }
+       return seq - dec;
+   }
+
+public:
+   static const int32_t m_iSeqNoTH = 0x3FFFFFFF;             // threshold for comparing seq. no.
+   static const int32_t m_iMaxSeqNo = 0x7FFFFFFF;            // maximum sequence number used in UDT
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+// UDT ACK Sub-sequence Number: 0 - (2^31 - 1)
+
+class CAckNo
+{
+public:
+   inline static int32_t incack(int32_t ackno)
+   {return (ackno == m_iMaxAckSeqNo) ? 0 : ackno + 1;}
+
+public:
+   static const int32_t m_iMaxAckSeqNo = 0x7FFFFFFF;         // maximum ACK sub-sequence number used in UDT
+};
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+struct CIPAddress
+{
+   static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
+   static void ntop(const struct sockaddr* addr, uint32_t ip[4], int ver = AF_INET);
+   static void pton(struct sockaddr* addr, const uint32_t ip[4], int ver = AF_INET);
+   static std::string show(const struct sockaddr* adr);
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+struct CMD5
+{
+   static void compute(const char* input, unsigned char result[16]);
+};
+
+// Debug stats
+template <size_t SIZE>
+class StatsLossRecords
+{
+    int32_t initseq;
+    std::bitset<SIZE> array;
+
+public:
+
+    StatsLossRecords(): initseq(-1) {}
+
+    // To check if this structure still keeps record of that sequence.
+    // This is to check if the information about this not being found
+    // is still reliable.
+    bool exists(int32_t seq)
+    {
+        return initseq != -1 && CSeqNo::seqcmp(seq, initseq) >= 0;
+    }
+
+    int32_t base() { return initseq; }
+
+    void clear()
+    {
+        initseq = -1;
+        array.reset();
+    }
+
+    void add(int32_t lo, int32_t hi)
+    {
+        int32_t end = lo + CSeqNo::seqcmp(hi, lo);
+        for (int32_t i = lo; i != end; i = CSeqNo::incseq(i))
+            add(i);
+    }
+
+    void add(int32_t seq)
+    {
+        if ( array.none() )
+        {
+            // May happen it wasn't initialized. Set it as initial loss sequence.
+            initseq = seq;
+            array[0] = true;
+            return;
+        }
+
+        // Calculate the distance between this seq and the oldest one.
+        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        if ( seqdiff > int(SIZE) )
+        {
+            // Size exceeded. Drop the oldest sequences.
+            // First calculate how many must be removed.
+            size_t toremove = seqdiff - SIZE;
+            // Now, since that position, find the nearest 1
+            while ( !array[toremove] && toremove <= SIZE )
+                ++toremove;
+
+            // All have to be dropped, so simply reset the array
+            if ( toremove == SIZE )
+            {
+                initseq = seq;
+                array[0] = true;
+                return;
+            }
+
+            // Now do the shift of the first found 1 to position 0
+            // and its index add to initseq
+            initseq += toremove;
+            seqdiff -= toremove;
+            array >>= toremove;
+        }
+
+        // Now set appropriate bit that represents this seq
+        array[seqdiff] = true;
+    }
+
+    StatsLossRecords& operator << (int32_t seq)
+    {
+        add(seq);
+        return *this;
+    }
+
+    void remove(int32_t seq)
+    {
+        // Check if is in range. If not, ignore.
+        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        if ( seqdiff < 0 )
+            return; // already out of array
+        if ( seqdiff > SIZE )
+            return; // never was added!
+
+        array[seqdiff] = true;
+    }
+
+    bool find(int32_t seq) const
+    {
+        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        if ( seqdiff < 0 )
+            return false; // already out of array
+        if ( size_t(seqdiff) > SIZE )
+            return false; // never was added!
+
+        return array[seqdiff];
+    }
+
+#if HAVE_CXX11
+
+    std::string to_string() const
+    {
+        std::string out;
+        for (size_t i = 0; i < SIZE; ++i)
+        {
+            if ( array[i] )
+                out += std::to_string(initseq+i) + " ";
+        }
+
+        return out;
+    }
+#endif
+};
+
+
+// Version parsing
+inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
+{
+    return patch + minor*0x100 + major*0x10000;
+}
+
+inline int32_t SrtParseVersion(const char* v)
+{
+    int major, minor, patch;
+    int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
+
+    if ( result != 3 )
+    {
+        return 0;
+        fprintf(stderr, "Invalid version format for HAISRT_VERSION: %s - use m.n.p\n", v);
+        throw v; // Throwing exception, as this function will be run before main()
+    }
+
+    return major*0x10000 + minor*0x100 + patch;
+}
+
+inline std::string SrtVersionString(int version)
+{
+    int patch = version % 0x100;
+    int minor = (version/0x100)%0x100;
+    int major = version/0x10000;
+
+    char buf[20];
+    sprintf(buf, "%d.%d.%d", major, minor, patch);
+    return buf;
+}
+
+
 
 #endif

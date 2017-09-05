@@ -77,12 +77,6 @@ written by
 
 
 /*
-* SRT_ENABLE_LOWACKRATE
-* No ack on each packet in DGRAM mode
-*/
-#define SRT_ENABLE_LOWACKRATE 1
-
-/*
 * SRT_ENABLE_IPOPTS
 * Enable IP TTL and ToS setting
 */

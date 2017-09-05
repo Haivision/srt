@@ -572,46 +572,6 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     return true;
 }
 
-string Join(const vector<string>& in, string sep)
-{
-    if ( in.empty() )
-        return "";
-
-    ostringstream os;
-
-    os << in[0];
-    for (auto i = in.begin()+1; i != in.end(); ++i)
-        os << sep << *i;
-    return os.str();
-}
-
-typedef map<string,vector<string>> options_t;
-
-struct OutList
-{
-    typedef vector<string> type;
-    static type process(const options_t::mapped_type& i) { return i; }
-};
-
-struct OutString
-{
-    typedef string type;
-    static type process(const options_t::mapped_type& i) { return Join(i, " "); }
-};
-
-
-template <class OutType, class OutValue >
-typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
-
-template <class OutType, class OutValue, class... Args>
-typename OutType::type Option(const options_t& options, OutValue deflt, string key, Args... further_keys)
-{
-    auto i = options.find(key);
-    if ( i == options.end() )
-        return Option<OutType>(options, deflt, further_keys...);
-    return OutType::process(i->second);
-}
-
 void Usage(string program)
 {
     cerr << "Usage: " << program << " <SRT URI> [-i INPUT...] [-o OUTPUT...]\n";
@@ -672,25 +632,11 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    vector<string> args;
-    copy(argv+1, argv+argc, back_inserter(args));
+    //vector<string> args;
+    //copy(argv+1, argv+argc, back_inserter(args));
 
     // Check options
-    map<string, vector<string>> params;
-
-    string current_key = "";
-
-    for (string a: args)
-    {
-        if ( a[0] == '-' )
-        {
-            current_key = a.substr(1);
-            params[current_key].clear();
-            continue;
-        }
-
-        params[current_key].push_back(a);
-    }
+    map<string, vector<string>> params = ProcessOptions(argv, argc);
 
     // The call syntax is:
     //

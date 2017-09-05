@@ -94,8 +94,8 @@ int srt_getsockflag(UDTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 int srt_setsockflag(UDTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return CUDT::send(u, buf, len, flags); }
-int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return CUDT::recv(u, buf, len, flags); }
+int srt_send(UDTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len); }
+int srt_recv(UDTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len); }
 int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
 int srt_recvmsg(UDTSOCKET u, char * buf, int len) { return CUDT::recvmsg(u, buf, len); }
 

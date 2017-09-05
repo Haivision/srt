@@ -1674,7 +1674,7 @@ void CUDTUnited::updateMux(
    m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
    m.m_pRcvQueue = new CRcvQueue;
    m.m_pRcvQueue->init(
-      32, s->m_pUDT->m_iPayloadSize, m.m_iIPversion, 1024,
+      32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
       m.m_pChannel, m.m_pTimer);
 
    m_mMultiplexer[m.m_iID] = m;
@@ -2112,7 +2112,7 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
    }
 }
 
-int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
+int CUDT::send(SRTSOCKET u, const char* buf, int len)
 {
    try
    {
@@ -2139,7 +2139,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
    }
 }
 
-int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
+int CUDT::recv(SRTSOCKET u, char* buf, int len)
 {
    try
    {
@@ -2756,14 +2756,14 @@ int connect_debug(
    return CUDT::connect(u, name, namelen, forced_isn);
 }
 
-int send(SRTSOCKET u, const char* buf, int len, int flags)
+int send(SRTSOCKET u, const char* buf, int len)
 {
-   return CUDT::send(u, buf, len, flags);
+   return CUDT::send(u, buf, len);
 }
 
-int recv(SRTSOCKET u, char* buf, int len, int flags)
+int recv(SRTSOCKET u, char* buf, int len)
 {
-   return CUDT::recv(u, buf, len, flags);
+   return CUDT::recv(u, buf, len);
 }
 
 #ifdef SRT_ENABLE_SRCTIMESTAMP
@@ -3042,7 +3042,7 @@ const char* geterror_desc(int code, int err)
 }
 
 
-int perfmon(SRTSOCKET u, TRACEINFO* perf, bool clear)
+SRT_ATR_DEPRECATED int perfmon(SRTSOCKET u, TRACEINFO* perf, bool clear)
 {
    return CUDT::perfmon(u, perf, clear);
 }

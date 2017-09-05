@@ -5,71 +5,7 @@
 #include <string>
 
 class CUDT;
-
-class SmootherBase
-{
-protected:
-    // Here can be some common fields
-    CUDT* m_parent;
-
-    double m_dPktSndPeriod;
-    double m_dCWndSize;
-
-    //int m_iBandwidth; // NOT REQUIRED. Use m_parent->bandwidth() instead.
-    double m_dMaxCWndSize;
-
-    //int m_iMSS;              // NOT REQUIRED. Use m_parent->MSS() instead.
-    //int32_t m_iSndCurrSeqNo; // NOT REQUIRED. Use m_parent->sndSeqNo().
-    //int m_iRcvRate;          // NOT REQUIRED. Use m_parent->deliveryRate() instead.
-    //int m_RTT;               // NOT REQUIRED. Use m_parent->RTT() instead.
-    //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
-
-    // Constructor in protected section so that this class is semi-abstract.
-    SmootherBase(CUDT* parent);
-public:
-
-    // This could be also made abstract, but this causes a linkage
-    // problem in C++: this would constitute the first virtual method,
-    // and C++ compiler uses the location of the first virtual method as the
-    // file to which it also emits the virtual call table. When this is
-    // abstract, there would have to be simultaneously either defined
-    // an empty method in smoother.cpp file (obviously never called),
-    // or simply left empty body here.
-    virtual ~SmootherBase() { }
-
-    // All these functions that return values interesting for processing
-    // by CUDT can be overridden. Normally they should refer to the fields
-    // and these fields should keep the values as a state.
-    virtual double pktSndPeriod_us() { return m_dPktSndPeriod; }
-    virtual double cgWindowSize() { return m_dCWndSize; }
-    virtual double cgWindowMaxSize() { return m_dMaxCWndSize; }
-
-    virtual int64_t sndBandwidth() { return 0; }
-
-    // If user-defined, will return nonzero value.
-    // If not, it will be internally calculated.
-    virtual int RTO() { return 0; }
-
-    // How many packets to send one ACK, in packets.
-    // If user-defined, will return nonzero value.  It can enforce extra ACKs
-    // beside those calculated by ACK, sent only when the number of packets
-    // received since the last EXP that fired "fat" ACK does not exceed this
-    // value.
-    virtual int ACKInterval() { return 0; }
-
-    // Periodical timer to send an ACK, in microseconds.
-    // If user-defined, this value in microseconds will be used to calculate
-    // the next ACK time every time ACK is considered to be sent (see CUDT::checkTimers).
-    // Otherwise this will be calculated internally in CUDT, normally taken
-    // from CPacket::SYN_INTERVAL.
-    virtual int ACKPeriod() { return 0; }
-
-    // Called when the settings concerning m_llMaxBW were changed.
-    // Arg 1: value of CUDT::m_llMaxBW
-    // Arg 2: value calculated out of CUDT::m_llInputBW and CUDT::m_iOverheadBW.
-    virtual void updateBandwidth(int64_t, int64_t) {}
-};
-
+class SmootherBase;
 
 typedef SmootherBase* smoother_create_t(CUDT* parent);
 
@@ -134,6 +70,99 @@ public:
     // destruction.
     ~Smoother();
 
+
+    enum TransAPI
+    {
+        STA_MESSAGE = 0x1, // sendmsg/recvmsg functions
+        STA_BUFFER  = 0x2,  // send/recv functions
+        STA_FILE    = 0x3, // sendfile/recvfile functions
+    };
+
+    enum TransDir
+    {
+        STAD_RECV = 0,
+        STAD_SEND = 1
+    };
+};
+
+
+class SmootherBase
+{
+protected:
+    // Here can be some common fields
+    CUDT* m_parent;
+
+    double m_dPktSndPeriod;
+    double m_dCWndSize;
+
+    //int m_iBandwidth; // NOT REQUIRED. Use m_parent->bandwidth() instead.
+    double m_dMaxCWndSize;
+
+    //int m_iMSS;              // NOT REQUIRED. Use m_parent->MSS() instead.
+    //int32_t m_iSndCurrSeqNo; // NOT REQUIRED. Use m_parent->sndSeqNo().
+    //int m_iRcvRate;          // NOT REQUIRED. Use m_parent->deliveryRate() instead.
+    //int m_RTT;               // NOT REQUIRED. Use m_parent->RTT() instead.
+    //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
+
+    // Constructor in protected section so that this class is semi-abstract.
+    SmootherBase(CUDT* parent);
+public:
+
+    // This could be also made abstract, but this causes a linkage
+    // problem in C++: this would constitute the first virtual method,
+    // and C++ compiler uses the location of the first virtual method as the
+    // file to which it also emits the virtual call table. When this is
+    // abstract, there would have to be simultaneously either defined
+    // an empty method in smoother.cpp file (obviously never called),
+    // or simply left empty body here.
+    virtual ~SmootherBase() { }
+
+    // All these functions that return values interesting for processing
+    // by CUDT can be overridden. Normally they should refer to the fields
+    // and these fields should keep the values as a state.
+    virtual double pktSndPeriod_us() { return m_dPktSndPeriod; }
+    virtual double cgWindowSize() { return m_dCWndSize; }
+    virtual double cgWindowMaxSize() { return m_dMaxCWndSize; }
+
+    virtual int64_t sndBandwidth() { return 0; }
+
+    // If user-defined, will return nonzero value.
+    // If not, it will be internally calculated.
+    virtual int RTO() { return 0; }
+
+    // How many packets to send one ACK, in packets.
+    // If user-defined, will return nonzero value.  It can enforce extra ACKs
+    // beside those calculated by ACK, sent only when the number of packets
+    // received since the last EXP that fired "fat" ACK does not exceed this
+    // value.
+    virtual int ACKInterval() { return 0; }
+
+    // Periodical timer to send an ACK, in microseconds.
+    // If user-defined, this value in microseconds will be used to calculate
+    // the next ACK time every time ACK is considered to be sent (see CUDT::checkTimers).
+    // Otherwise this will be calculated internally in CUDT, normally taken
+    // from CPacket::SYN_INTERVAL.
+    virtual int ACKPeriod() { return 0; }
+
+    // Called when the settings concerning m_llMaxBW were changed.
+    // Arg 1: value of CUDT::m_llMaxBW
+    // Arg 2: value calculated out of CUDT::m_llInputBW and CUDT::m_iOverheadBW.
+    virtual void updateBandwidth(int64_t, int64_t) {}
+
+    virtual bool needsQuickACK(const CPacket&)
+    {
+        return false;
+    }
+
+    // A smoother is allowed to agree or disagree on the use of particular API.
+    virtual bool checkTransArgs(int /*flags*/, const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
+    {
+        return true;
+    }
+
+protected:
+    typedef Bits<2> TRANS_DIR;
+    typedef Bits<1, 0> TRANS_API;
 };
 
 

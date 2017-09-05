@@ -326,8 +326,8 @@ enum CodeMinor
     MN_NOLISTEN = 6,
     MN_ISRENDEZVOUS = 7,
     MN_ISRENDUNBOUND = 8,
-    MN_ISSTREAM = 9,
-    MN_ISDGRAM = 10,
+    MN_INVALMSGAPI = 9,
+    MN_INVALBUFFERAPI = 10,
     MN_BUSY = 11,
     MN_XSIZE = 12,
     MN_EIDINVAL = 13,
@@ -378,8 +378,8 @@ typedef enum SRT_ERRNO
     SRT_ENOLISTEN =    MN(NOTSUP, NOLISTEN),
     SRT_ERDVNOSERV =   MN(NOTSUP, ISRENDEZVOUS),
     SRT_ERDVUNBOUND =  MN(NOTSUP, ISRENDUNBOUND),
-    SRT_ESTREAMILL =   MN(NOTSUP, ISSTREAM),
-    SRT_EDGRAMILL =    MN(NOTSUP, ISDGRAM),
+    SRT_EINVALMSGAPI =   MN(NOTSUP, INVALMSGAPI),
+    SRT_EINVALBUFFERAPI = MN(NOTSUP, INVALBUFFERAPI),
     SRT_EDUPLISTEN =   MN(NOTSUP, BUSY),
     SRT_ELARGEMSG =    MN(NOTSUP, XSIZE),
     SRT_EINVPOLLID =   MN(NOTSUP, EIDINVAL),
@@ -481,10 +481,8 @@ SRT_API extern int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOP
 SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API extern int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API extern int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-/* Don't use it, not proven to work
-SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len, int flags);
-SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len, int flags);
-*/
+SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len);
+SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len);
 
 // The sendmsg/recvmsg and their 2 counterpart require MAXIMUM the size of SRT payload size (1316).
 // Any data over that size will be ignored.

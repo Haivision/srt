@@ -46,6 +46,38 @@ public:
     // Some predefined types
     Type type();
 
+    struct ParamProxy
+    {
+        std::map<std::string, std::string>& mp;
+        const std::string& key;
+
+        ParamProxy(std::map<std::string, std::string>& m, const std::string& k): mp(m), key(k) {}
+
+        void operator=(const std::string& val)
+        {
+            mp[key] = val;
+        }
+
+
+        std::map<std::string, std::string>::iterator find()
+        {
+            return mp.find(key);
+        }
+
+        operator std::string()
+        {
+            std::map<std::string, std::string>::iterator p = find();
+            if (p == mp.end())
+                return "";
+            return p->second;
+        }
+
+        bool exists()
+        {
+            return find() != mp.end();
+        }
+    };
+
 // Operations
 public:
     std::string uri() { return m_origUri; }
@@ -57,7 +89,7 @@ public:
     std::string hostport() { return host() + ":" + port(); }
     std::string path();
     std::string queryValue(const std::string& strKey);
-    std::string operator[](const std::string& key) { return queryValue(key); }
+    ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
     const std::map<std::string, std::string>& parameters() { return m_mapQuery; }
 
 private:
