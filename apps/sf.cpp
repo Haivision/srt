@@ -1,10 +1,13 @@
 
 #include <iostream>
+#include <iterator>
+#include <vector>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
-#include "srt.h"
-#include "udt.h"
+#include <srt.h>
+#include <udt.h>
 
 #include "appcommon.hpp"
 #include "uriparser.hpp"
@@ -18,7 +21,18 @@ bool Download(UriParser& srt, UriParser& file);
 
 int main( int argc, char** argv )
 {
-    options_t params = ProcessOptions(argv, argc);
+    vector<OptionScheme> optargs; // maybe later
+    options_t params = ProcessOptions(argv, argc, optargs);
+
+    /*
+    cerr << "OPTIONS (DEBUG)\n";
+    for (auto o: params)
+    {
+        cerr << "[" << o.first << "] ";
+        copy(o.second.begin(), o.second.end(), ostream_iterator<string>(cerr, " "));
+        cerr << endl;
+    }
+    */
 
     vector<string> args = params[""];
     if ( args.size() < 2 )
@@ -27,10 +41,16 @@ int main( int argc, char** argv )
         return 1;
     }
 
+    string vrb = Option<OutString>(params, "no", "verbose", "v");
+
+    ::transmit_verbose = (vrb != "no");
+
     string source = args[0];
     string target = args[1];
 
     UriParser us(source), ut(target);
+
+    Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
 
     if (us.scheme() == "srt")
     {
@@ -39,8 +59,7 @@ int main( int argc, char** argv )
             cerr << "SRT to FILE should be specified\n";
             return 1;
         }
-
-        Upload(ut, us);
+        Download(us, ut);
     }
     else if (ut.scheme() == "srt")
     {
@@ -49,7 +68,7 @@ int main( int argc, char** argv )
             cerr << "FILE to SRT should be specified\n";
             return 1;
         }
-        Download(us, ut);
+        Upload(ut, us);
     }
     else
     {

@@ -460,7 +460,12 @@ int main( int argc, char** argv )
     //copy(argv+1, argv+argc, back_inserter(args));
 
     // Check options
-    map<string, vector<string>> params = ProcessOptions(argv, argc);
+    vector<OptionScheme> optargs = {
+        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
+        { {"i"}, OptionScheme::ARG_VAR },
+        { {"o"}, OptionScheme::ARG_VAR }
+    };
+    map<string, vector<string>> params = ProcessOptions(argv, argc, optargs);
 
     // The call syntax is:
     //

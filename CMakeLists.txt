@@ -450,6 +450,11 @@ if ( ENABLE_CXX11 )
 		${SOURCES_transmit}
 	)
 
+	add_executable(sf
+		${CMAKE_SOURCE_DIR}/apps/sf.cpp
+		${SOURCES_transmit}
+	)
+
 	# Test programs
 	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)
 
@@ -461,6 +466,10 @@ if ( ENABLE_CXX11 )
 	set_target_properties(siplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
 	target_link_libraries(siplex ${TARGET_srt} ${TARGET_haicrypt})
 	install(TARGETS siplex RUNTIME DESTINATION bin)
+
+	set_target_properties(sf PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
+	target_link_libraries(sf ${TARGET_srt} ${TARGET_haicrypt})
+	install(TARGETS sf RUNTIME DESTINATION bin)
 
 	install(PROGRAMS scripts/sfplay DESTINATION bin)
 
