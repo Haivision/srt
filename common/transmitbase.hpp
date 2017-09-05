@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <iostream>
 
 typedef std::vector<char> bytevector;
 extern bool transmit_verbose;
@@ -11,6 +12,42 @@ extern volatile bool transmit_throw_on_interrupt;
 extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern std::ostream* transmit_cverb;
+
+static const struct VerboseLogNoEol {} VerbNoEOL;
+
+class VerboseLog
+{
+    bool noeol;
+public:
+
+    VerboseLog(): noeol(false) {}
+
+    template <class V>
+    VerboseLog& operator<<(const V& arg)
+    {
+        std::ostream& os = transmit_cverb ? *transmit_cverb : std::cout;
+        if (transmit_verbose)
+            os << arg;
+        return *this;
+    }
+
+    VerboseLog& operator<<(VerboseLogNoEol)
+    {
+        noeol = true;
+        return *this;
+    }
+
+    ~VerboseLog()
+    {
+        if (transmit_verbose && !noeol)
+        {
+            std::ostream& os = transmit_cverb ? *transmit_cverb : std::cout;
+            os << std::endl;
+        }
+    }
+};
+
+inline VerboseLog Verb() { return VerboseLog(); }
 
 class Location
 {

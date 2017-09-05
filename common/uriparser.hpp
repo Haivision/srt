@@ -22,6 +22,7 @@
 #include <string>
 #include <map>
 #include <cstdlib>
+#include "utilities.h"
 
 
 //++
@@ -46,37 +47,7 @@ public:
     // Some predefined types
     Type type();
 
-    struct ParamProxy
-    {
-        std::map<std::string, std::string>& mp;
-        const std::string& key;
-
-        ParamProxy(std::map<std::string, std::string>& m, const std::string& k): mp(m), key(k) {}
-
-        void operator=(const std::string& val)
-        {
-            mp[key] = val;
-        }
-
-
-        std::map<std::string, std::string>::iterator find()
-        {
-            return mp.find(key);
-        }
-
-        operator std::string()
-        {
-            std::map<std::string, std::string>::iterator p = find();
-            if (p == mp.end())
-                return "";
-            return p->second;
-        }
-
-        bool exists()
-        {
-            return find() != mp.end();
-        }
-    };
+    typedef MapProxy<std::string, std::string> ParamProxy;
 
 // Operations
 public:

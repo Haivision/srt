@@ -47,6 +47,6 @@ queue.h
 smoother.h
 srt4udt.h
 ../common/threadname.h
-utilities.h
+../common/utilities.h
 window.h
 

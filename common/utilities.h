@@ -26,10 +26,6 @@ written by
 #define INC__SRT_UTILITIES_H
 
 
-#ifndef __UDT_H__
-#error Must include udt.h prior to this header!
-#endif
-
 #ifdef __GNUG__
 #define ATR_UNUSED __attribute__((unused))
 #define ATR_DEPRECATED __attribute__((deprecated))
@@ -73,12 +69,14 @@ written by
 #include <string>
 #include <algorithm>
 #include <bitset>
+#include <map>
 #include <functional>
 #include <memory>
 #include <sstream>
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <arpa/inet.h> // hton/ntoh
 
 // -------------- UTILITIES ------------------------
 
@@ -291,6 +289,44 @@ inline std::string Sprint(Args&&... args)
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
 
+// Some utilities borrowed from tumux, as this is using options
+// similar way.
+template <class Container, class Value = typename Container::value_type, typename... Args> inline
+std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
+{
+    std::ostringstream os;
+    Print(os, args...);
+    os << "[ ";
+    for (auto i: in)
+        os << Value(i) << " ";
+    os << "]";
+    return os.str();
+}
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using Value = typename Container::value_type;
+    return Printable(in, Value());
+}
+
+template<typename Map, typename Key>
+auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
+{
+    auto it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
+{
+    auto it = m.find(key);
+    return it == m.end() ? nullptr : std::addressof(it->second);
+}
+
+
+
+
 #else
 
 // Homecooked version of ref_t. It's a copy of std::reference_wrapper
@@ -492,6 +528,78 @@ public:
     int64_t overdrift() { return m_qOverdrift; }
 };
 
+template <class KeyType, class ValueType>
+struct MapProxy
+{
+    std::map<KeyType, ValueType>& mp;
+    const KeyType& key;
 
+    MapProxy(std::map<KeyType, ValueType>& m, const KeyType& k): mp(m), key(k) {}
+
+    void operator=(const KeyType& val)
+    {
+        mp[key] = val;
+    }
+
+    typename std::map<KeyType, ValueType>::iterator find()
+    {
+        return mp.find(key);
+    }
+
+    typename std::map<KeyType, ValueType>::const_iterator find() const
+    {
+        return mp.find(key);
+    }
+
+    operator ValueType() const
+    {
+        typename std::map<KeyType, ValueType>::const_iterator p = find();
+        if (p == mp.end())
+            return "";
+        return p->second;
+    }
+
+    bool exists() const
+    {
+        return find() != mp.end();
+    }
+};
+
+
+template <class OutputIterator>
+inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
+{
+    if ( str.empty() )
+        return; // May cause crash and won't extract anything anyway
+
+    std::size_t start;
+    std::size_t end = -1;
+
+    do
+    {
+        start = end + 1;
+        end = str.find(delimiter, start);
+        *tokens = str.substr(
+                start,
+                (end == std::string::npos) ? std::string::npos : end - start);
+        ++tokens;
+    } while (end != std::string::npos);
+}
+
+template <class It>
+inline size_t safe_advance(It& it, size_t num, It end)
+{
+    while ( it != end && num )
+    {
+        --num;
+        ++it;
+    }
+
+    return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
+}
+
+// This is available only in C++17, dunno why not C++11 as it's pretty useful.
+template <class V, size_t N> inline
+ATR_CONSTEXPR size_t Size(const V (&arr)[N]) ATR_NOEXCEPT { return N; }
 
 #endif

@@ -132,4 +132,43 @@ public:
 
 };
 
+
+// This class is used when we don't know yet whether the given URI
+// designates an effective listener or caller. So we create it, initialize,
+// then we know what mode we'll be using.
+//
+// When caller, then we will do connect() using this object, then clone out
+// a new object - of a direction specific class - which will steal the socket
+// from this one and then roll the data. After this, this object is ready
+// to connect again, and will create its own socket for that occasion, and
+// the whole procedure repeats.
+//
+// When listener, then this object will be doing accept() and with every
+// successful acceptation it will clone out a new object - of a direction
+// specific class - which will steal just the connection socket from this
+// object. This object will still live on and accept new connections and
+// so on.
+class SrtModel: public SrtCommon
+{
+public:
+    bool is_caller = false;
+    string m_host;
+    int m_port = 0;
+
+
+    SrtModel(string host, int port, map<string,string> par);
+    bool Establish(ref_t<std::string> name);
+
+    void Close()
+    {
+        if (m_sock != SRT_INVALID_SOCK)
+        {
+            srt_close(m_sock);
+            m_sock = SRT_INVALID_SOCK;
+        }
+    }
+};
+
+
+
 #endif

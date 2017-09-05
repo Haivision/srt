@@ -10,6 +10,7 @@
 #include <map>
 #include <srt.h>
 
+#include "netinet_any.h"
 #include "appcommon.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -668,14 +669,11 @@ bytevector SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
                 {
-                    if ( transmit_verbose )
-                    {
-                        cout << "AGAIN: - waiting for data by epoll...\n";
-                    }
+                    Verb() << "AGAIN: - waiting for data by epoll...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
-                    SRTSOCKET ready[2];
-                    if ( srt_epoll_wait(srt_epoll, ready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
+                    SRTSOCKET sready[2];
+                    if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
                     {
                         if ( transmit_verbose )
                         {
@@ -709,10 +707,6 @@ bytevector SrtSource::Read(size_t chunk)
 
     if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
     {
-        //CPerfMon pmon;
-        //memset(&pmon, 0, sizeof pmon);
-        //UDT::perfmon(m_sock, &pmon, false);
-        //PrintSrtStats(m_sock, pmon);
         PrintSrtStats(m_sock, perf);
     }
 
@@ -758,6 +752,89 @@ void SrtTarget::Write(const bytevector& data)
         Error(UDT::getlasterror(), "srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 }
+
+SrtModel::SrtModel(string host, int port, map<string,string> par)
+{
+    InitParameters(host, par);
+    if (m_mode == "caller")
+        is_caller = true;
+    else if (m_mode != "listener")
+        throw std::invalid_argument("Only caller and listener modes supported");
+
+    m_host = host;
+    m_port = port;
+}
+
+
+bool SrtModel::Establish(ref_t<std::string> name)
+{
+    // This does connect or accept.
+    // When this returned true, the caller should create
+    // a new SrtSource or SrtTaget then call StealFrom(*this) on it.
+
+    // If this is a connector and the peer doesn't have a corresponding
+    // medium, it should send back a single byte with value 0. This means
+    // that agent should stop connecting.
+
+    if (is_caller)
+    {
+        // Establish a connection
+
+        PrepareClient();
+
+        if (name.get() != "")
+        {
+            Verb() << "Connect with requesting stream [" << name.get() << "]";
+            UDT::setstreamid(m_sock, name);
+        }
+        else
+        {
+            Verb() << "NO STREAM ID for SRT connection";
+        }
+
+        if (m_outgoing_port)
+        {
+            Verb() << "Setting outgoing port: " << m_outgoing_port;
+            SetupAdapter("", m_outgoing_port);
+        }
+
+        ConnectClient(m_host, m_port);
+
+        if (m_outgoing_port == 0)
+        {
+            // Must rely on a randomly selected one. Extract the port
+            // so that it will be reused next time.
+            sockaddr_any s(AF_INET);
+            int namelen = s.size();
+            if ( srt_getsockname(Socket(), &s, &namelen) == SRT_ERROR )
+            {
+                Error(UDT::getlasterror(), "srt_getsockname");
+            }
+
+            m_outgoing_port = s.hport();
+            Verb() << "Extracted outgoing port: " << m_outgoing_port << " - will reuse it for next connections";
+        }
+    }
+    else
+    {
+        // Listener - get a socket by accepting.
+        // Check if the listener is already created first
+        if (Listener() == SRT_INVALID_SOCK)
+        {
+            Verb() << "Setting up listener: port=" << m_port << " backlog=5";
+            PrepareListener(m_adapter, m_port, 5);
+        }
+
+        Verb() << "Accepting a client...";
+        AcceptNewClient();
+        // This rewrites m_sock with a new SRT socket ("accepted" socket)
+        name = UDT::getstreamid(m_sock);
+        Verb() << "... GOT CLIENT for stream [" << name.get() << "]";
+    }
+
+    return true;
+}
+
 
 
 template <class Iface> struct Srt;
