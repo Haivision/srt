@@ -1154,7 +1154,7 @@ public:
     {
         Init(host, port, par, true);
 	
-    if ( !m_blocking_mode )
+        if ( !m_blocking_mode )
         {
             srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
         }
