@@ -157,7 +157,7 @@ public:
 
 
     SrtModel(string host, int port, map<string,string> par);
-    bool Establish(ref_t<std::string> name);
+    void Establish(ref_t<std::string> name);
 
     void Close()
     {

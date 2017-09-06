@@ -52,27 +52,35 @@ int main( int argc, char** argv )
 
     Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
 
-    if (us.scheme() == "srt")
+    try
     {
-        if (ut.scheme() != "file")
+        if (us.scheme() == "srt")
         {
-            cerr << "SRT to FILE should be specified\n";
+            if (ut.scheme() != "file")
+            {
+                cerr << "SRT to FILE should be specified\n";
+                return 1;
+            }
+            Download(us, ut);
+        }
+        else if (ut.scheme() == "srt")
+        {
+            if (us.scheme() != "file")
+            {
+                cerr << "FILE to SRT should be specified\n";
+                return 1;
+            }
+            Upload(ut, us);
+        }
+        else
+        {
+            cerr << "SRT URI must be one of given media.\n";
             return 1;
         }
-        Download(us, ut);
     }
-    else if (ut.scheme() == "srt")
+    catch (std::exception& x)
     {
-        if (us.scheme() != "file")
-        {
-            cerr << "FILE to SRT should be specified\n";
-            return 1;
-        }
-        Upload(ut, us);
-    }
-    else
-    {
-        cerr << "SRT URI must be one of given media.\n";
+        cerr << "ERROR: " << x.what() << endl;
         return 1;
     }
 
@@ -82,6 +90,9 @@ int main( int argc, char** argv )
 
 void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
 {
+    //string& dir = r_dir;
+    //string& fname = r_fname;
+
     string directory = path;
     string filename = "";
 
@@ -130,8 +141,9 @@ bool DoUpload(UriParser& ut, string path, string filename)
     SrtModel m(ut.host(), ut.portno(), ut.parameters());
 
     string id = filename;
-    if ( !m.Establish(Ref(id)) )
-        return false;
+    Verb() << "Passing '" << id << "' as stream ID\n";
+
+    m.Establish(Ref(id));
 
     // Check if the filename was changed
     if (id != filename)
@@ -140,11 +152,14 @@ bool DoUpload(UriParser& ut, string path, string filename)
         return false;
     }
 
-    SrtTarget* tp = new SrtTarget;
-    tp->StealFrom(m);
-    unique_ptr<Target> target(tp);
+    Verb() << "USING ID: " << id;
 
-    SRTSOCKET ss = tp->Socket();
+    // SrtTarget* tp = new SrtTarget;
+    // tp->StealFrom(m);
+    // unique_ptr<Target> target(tp);
+
+    //SRTSOCKET ss = tp->Socket();
+    SRTSOCKET ss = m.Socket();
 
     // Use a manual loop for reading from SRT
     char buf[4096];
@@ -182,8 +197,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
     SrtModel m(us.host(), us.portno(), us.parameters());
 
     string id = filename;
-    if (m.Establish(Ref(id)))
-        return false;
+    m.Establish(Ref(id));
 
     // Disregard the filename, unless the destination file exists.
 
@@ -252,8 +266,10 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
     // fileuri is source-reading file
     // srt_target_uri is SRT target
 
-    string path = fileuri.path(), directory, filename;
-    ExtractPath(path, Ref(directory), Ref(filename));
+    string path = fileuri.path();
+    string directory, filename;
+    ExtractPath(path, ref(directory), ref(filename));
+    Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
 

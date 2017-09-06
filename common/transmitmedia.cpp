@@ -766,7 +766,7 @@ SrtModel::SrtModel(string host, int port, map<string,string> par)
 }
 
 
-bool SrtModel::Establish(ref_t<std::string> name)
+void SrtModel::Establish(ref_t<std::string> name)
 {
     // This does connect or accept.
     // When this returned true, the caller should create
@@ -831,8 +831,6 @@ bool SrtModel::Establish(ref_t<std::string> name)
         name = UDT::getstreamid(m_sock);
         Verb() << "... GOT CLIENT for stream [" << name.get() << "]";
     }
-
-    return true;
 }
 
 

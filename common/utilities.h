@@ -257,11 +257,17 @@ struct ref_t: public std::reference_wrapper<T>
     }
 };
 
+// This alias was created so that 'Ref' (not 'ref') is used everywhere.
+// Normally the C++11 'ref' fits perfectly here, however in C++03 mode
+// it would have to be newly created. This would then cause a conflict
+// between C++03 SRT and C++11 applications as well as between C++ standard
+// library and SRT when SRT is compiled in C++11 mode (as it happens on
+// Darwin/clang).
 template <class In>
-inline auto Ref(In i) -> decltype(std::ref(i)) { return std::ref(i); }
+inline auto Ref(In& i) -> decltype(std::ref(i)) { return std::ref(i); }
 
 template <class In>
-inline auto Move(In i) -> decltype(std::move(i)) { return std::move(i); }
+inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 

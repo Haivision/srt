@@ -587,9 +587,7 @@ int main( int argc, char** argv )
         for(;;)
         {
             string id = *ids.begin();
-            bool done = m.Establish(Ref(id));
-            if ( !done )
-                break;
+            m.Establish(Ref(id));
 
             // The 'id' could have been altered.
             // If Establish did connect(), then it gave this stream id,
