@@ -85,6 +85,10 @@ typedef struct {
         hcrypt_MsgInfo *    msg_info;
 
         struct {
+            size_t          data_max_len;
+        }cfg;
+
+        struct {
             struct timeval  tx_period;      /* Keying Material tx period (milliseconds) */  
             struct timeval  tx_last;        /* Keying Material last tx time */
             unsigned int    refresh_rate;   /* SEK use period */
@@ -201,10 +205,10 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
         } while(0)
 
 
-int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Secret *secret);
+int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Secret *secret);
 int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
 
-int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg);
+int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg);
 int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
 int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto);
 int hcryptCtx_Tx_PreSwitch(hcrypt_Session *crypto);
@@ -214,7 +218,7 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto);
 int hcryptCtx_Tx_InjectKM(hcrypt_Session *crypto, void *out_p[], size_t out_len_p[], int maxout);
 
-int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg);
+int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg);
 int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *msg, size_t msg_len);
 
 #endif /* HCRYPT_H */

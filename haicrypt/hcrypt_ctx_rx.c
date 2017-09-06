@@ -30,16 +30,17 @@ written by
 #include <string.h>				/* memcpy */
 #include "hcrypt.h"
 
-int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg)
+int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
 	ctx->mode = HCRYPT_CTX_MODE_AESCTR;
 	ctx->status = HCRYPT_CTX_S_INIT;
 
 	ctx->msg_info = crypto->msg_info;
 
-	if (hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
+	if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
 		return(-1);
 	}
+                    ctx->status = HCRYPT_CTX_S_SARDY;
 	return(0);
 }
 
@@ -69,7 +70,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 	int do_pbkdf = 0;
 
 	if (NULL == crypto) {
-		HCRYPT_LOG(LOG_INFO, "%s", "Invalid params\n");
+		HCRYPT_LOG(LOG_ERR, "Rx_ParseKM: invalid params: crypto=%p\n", crypto);
 		return(-1);
 	}
 
@@ -170,7 +171,6 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		HCRYPT_LOG(LOG_WARNING, "%s", "unwrap key failed\n");
 		return(-2); //Report unmatched shared secret
 	}
-
 	/*
 	 * First SEK in KMmsg is eSEK if both SEK present
 	 */

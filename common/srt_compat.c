@@ -151,7 +151,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
    buf[0] = '\0';
 
 #if defined(_WIN32) || defined(WIN32)
-   const char* lpMsgBuf;
+   char* lpMsgBuf;
 
    // Note: Intentionally the "fixed char size" types are used despite using
    // character size dependent FormatMessage (instead of FormatMessageA) so that

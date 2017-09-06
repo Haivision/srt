@@ -73,6 +73,7 @@ modified by
 #include "queue.h"
 #include "cache.h"
 #include "epoll.h"
+#include "handshake.h"
 
 class CUDT;
 
@@ -162,7 +163,7 @@ public:
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
-   int newConnection(const UDTSOCKET listen, const sockaddr* peer, CHandShake* hs);
+   int newConnection(const UDTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
 
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.
@@ -193,10 +194,8 @@ public:
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const UDTSOCKET u);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-#ifdef HAI_PATCH
    int epoll_update_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-#endif /* HAI_PATCH */
    int epoll_wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
    int epoll_release(const int eid);
 
@@ -232,7 +231,7 @@ private:
    CUDTSocket* locate(const UDTSOCKET u);
    CUDTSocket* locate(const sockaddr* peer, const UDTSOCKET id, int32_t isn);
    void updateMux(CUDTSocket* s, const sockaddr* addr = NULL, const UDPSOCKET* = NULL);
-   void updateMux(CUDTSocket* s, const CUDTSocket* ls);
+   void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
@@ -277,8 +276,8 @@ inline std::string SockaddrToString(const sockaddr* sadr)
         : 0;
 	// (cast to (void*) is required because otherwise the 2-3 arguments
 	// of ?: operator would have different types, which isn't allowed in C++.
-        if ( !addr )
-            return "unknown:0";
+    if ( !addr )
+        return "unknown:0";
 
 	std::ostringstream output;
 	char hostbuf[1024];

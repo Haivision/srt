@@ -298,17 +298,18 @@ void CTimer::sleep()
 
 //
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock):
-m_Mutex(lock),
-m_iLocked()
+CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
+    m_Mutex(lock),
+    m_iLocked(-1)
 {
-    m_iLocked = pthread_mutex_lock(&m_Mutex);
+    if (shouldwork)
+        m_iLocked = pthread_mutex_lock(&m_Mutex);
 }
 
 // Automatically unlock in destructor
 CGuard::~CGuard()
 {
-    if (0 == m_iLocked)
+    if (m_iLocked == 0)
         pthread_mutex_unlock(&m_Mutex);
 }
 
@@ -347,7 +348,7 @@ CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
-   if (-1 == err)
+   if (err == -1)
       #ifndef WIN32
          m_iErrno = errno;
       #else
@@ -393,11 +394,7 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_NORES:
-#ifdef HAI_PATCH
            m_strMsg += ": unable to create/configure SRT socket";
-#else  /* HAI_PATCH */
-           m_strMsg += ": unable to create/configure UDP socket";
-#endif /* HAI_PATCH */
            break;
 
         case MN_SECURITY:
@@ -523,11 +520,7 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_XSIZE:
-#ifdef HAI_PATCH
            m_strMsg += ": Message is too large to send (it must be less than the SRT send buffer size)";
-#else  /* HAI_PATCH */
-           m_strMsg += ": Message is too large to send (it must be less than the UDT send buffer size)";
-#endif /* HAI_PATCH */
            break;
 
         case MN_EIDINVAL:
@@ -803,11 +796,12 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
     };
 
     static string srt_types [] = {
-        "",
+        "none",
         "hsreq",
         "hsrsp",
         "kmreq",
         "kmrsp",
+        "sid"
     };
 
 #define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
@@ -829,3 +823,17 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
     return udt_types[mt];
 }
+
+std::string ConnectStatusStr(EConnectStatus cst)
+{
+    return (cst == CONN_CONTINUE
+        ? "INDUCED/CONCLUDING"
+        : cst == CONN_ACCEPT
+        ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS
+        ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN
+        ? "AGAIN"
+        : "REJECTED");
+}
+

@@ -102,10 +102,62 @@ enum UDTMessageType
     UMSG_EXT = 0x7FFF //< For the use of user-defined control packets.
 };
 
+// This side's role is: INITIATOR prepares the environment first, and sends
+// appropriate information to the peer. The peer must be RESPONDER and be ready
+// to receive it.  It's important for the encryption: the INITIATOR side generates
+// the KM, and sends it to RESPONDER. RESPONDER awaits KM received from the
+// INITIATOR. Note that in bidirectional mode - that is always with HSv5 - the
+// INITIATOR creates both sending and receiving contexts, then sends the key to
+// RESPONDER, which creates both sending and receiving contexts, using the same
+// key received from INITIATOR.
+//
+// The method of selection:
+//
+// In HSv4, it's always data sender INITIATOR, and receiver - RESPONDER. The HSREQ
+// and KMREQ are done AFTER the UDT connection is done using UMSG_EXT extension
+// messages. As this is unidirectional, the INITIATOR prepares the sending context
+// only, the RESPONDER - receiving context only.
+//
+// In HSv5, for caller-listener configuration, it's simple: caller is INITIATOR,
+// listener is RESPONDER. In case of rendezvous the parties are equivalent,
+// so the role is resolved by "cookie contest". Rendezvous sockets both know
+// each other's cookie generated during the URQ_WAVEAHAND handshake phase.
+// The cookies are simply compared as integer numbers; the party that has baked
+// a bigger cookie wins, and becomes a INITIATOR. The other loses and becomes an
+// RESPONDER.
+//
+// The case of a draw - that both occasionally have baked identical cookies -
+// is treated as an extremely rare and virtually impossible case, so this
+// results in connection rejected.
+enum HandshakeSide
+{
+    HSD_DRAW,
+    HSD_INITIATOR,    //< Side that initiates HSREQ/KMREQ. HSv4: data sender, HSv5: connecting socket or winner rendezvous socket
+    HSD_RESPONDER  //< Side that expects HSREQ/KMREQ from the peer. HSv4: data receiver, HSv5: accepted socket or loser rendezvous socket
+};
+
 // For debug
 std::string MessageTypeStr(UDTMessageType mt, uint32_t extt = 0);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// Commonly used by various reading facilities
+enum EReadStatus
+{
+    RST_OK = 0,      // A new portion of data has been received
+    RST_AGAIN,       // Nothing has been received, try again
+    RST_ERROR = -1   // Irrecoverable error, please close descriptor and stop reading.
+};
+
+enum EConnectStatus
+{
+    CONN_ACCEPT = 0,     // Received final handshake that confirms connection established
+    CONN_REJECT = -1,    // Error during processing handshake.
+    CONN_CONTINUE = 1,   // induction->conclusion phase
+    CONN_RENDEZVOUS = 2, // pass to a separate rendezvous processing (HSv5 only)
+    CONN_AGAIN = -2      // No data was read, don't change any state.
+};
+
+std::string ConnectStatusStr(EConnectStatus est);
 
 #endif

@@ -50,14 +50,12 @@ public:
 
 
     ThreadName(const char* name)
-        : good(false)
     {
         if ( get(old_name) )
         {
             snprintf(new_name, 127, "%s", name);
             new_name[127] = 0;
             prctl(PR_SET_NAME, (unsigned long)new_name, 0, 0);
-            good = true;
         }
     }
 

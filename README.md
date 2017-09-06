@@ -23,6 +23,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 # Requirements
 
 * cmake (as build system)
+* Tcl 8.5 (optional for user-friendly build system)
 * OpenSSL
 * Pthreads (for POSIX systems it's builtin, for Windows there's a library)
 
