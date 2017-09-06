@@ -812,7 +812,7 @@ void SrtModel::Establish(ref_t<std::string> name)
             }
 
             m_outgoing_port = s.hport();
-            Verb() << "Extracted outgoing port: " << m_outgoing_port << " - will reuse it for next connections";
+            Verb() << "Extracted outgoing port: " << m_outgoing_port;
         }
     }
     else
