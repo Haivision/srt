@@ -227,8 +227,15 @@ bool DoDownload(UriParser& us, string directory, string filename)
         }
     }
 
-    ofstream ofile(path);
+    ofstream ofile(path, ios::out | ios::trunc);
+    if ( !ofile.good() )
+    {
+        cerr << "Download: can't create output file: " << path;
+        return false;
+    }
     SRTSOCKET ss = m.Socket();
+
+    Verb() << "Downloading from '" << us.uri() << "' to '" << path;
 
     char buf[4096];
 
