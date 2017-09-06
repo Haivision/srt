@@ -174,6 +174,8 @@ typedef enum SRT_SOCKOPT {
     SRTO_MINVERSION,      // Minimum SRT version needed for the peer (peers with less version will get connection reject)
     SRTO_STREAMID,         // A string set to a socket and passed to the listener's accepted socket
     SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
+    SRTO_MESSAGEAPI,
+    SRTO_PAYLOADSIZE,
     SRTO_TRANSTYPE         // Transmission type (set of options required for given transmission type)
 } SRT_SOCKOPT;
 

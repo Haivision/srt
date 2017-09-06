@@ -119,7 +119,7 @@ enum AckDataItem
     ACKD_TOTAL_SIZE_VER100 = 6, // length = 24
     ACKD_RCVRATE = 6,
     ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
-    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
+    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_zMaxSRTPayloadSize when set. Never got.
                      // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
 
     ACKD_TOTAL_SIZE_VER102 = 8, // 32
@@ -224,7 +224,7 @@ public: // internal API
     // Note: use notation with X*1000*1000* ... instead of million zeros in a row.
     // In C++17 there is a possible notation of 5'000'000 for convenience, but that's
     // something only for a far future.
-    static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000*1000; // 5 seconds
+    static const int COMM_RESPONSE_TIMEOUT_US = 5*1000*1000; // 5 seconds
     static const int COMM_RESPONSE_MAX_EXP = 16;
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
@@ -263,7 +263,8 @@ public: // internal API
     int bandwidth() { return m_iBandwidth; }
     int64_t maxBandwidth() { return m_llMaxBW; }
     int MSS() { return m_iMSS; }
-    size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
+    size_t maxPayloadSize() { return m_zMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -436,7 +437,7 @@ private:
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
     void handshakeDone()
     {
-        m_SndHsRetryCnt = 0;
+        m_iSndHsRetryCnt = 0;
     }
 
     int64_t withOverhead(int64_t basebw)
@@ -444,18 +445,32 @@ private:
         return (basebw * (100 + m_iOverheadBW))/100;
     }
 
-    double convertToMBPS(int64_t basebw)
+    static double Bps2Mbps(int64_t basebw)
     {
         return double(basebw) * 8.0/1000000.0;
     }
 
+    bool stillConnected()
+    {
+        // Still connected is when:
+        // - no "broken" condition appeared (security, protocol error, response timeout)
+        return !m_bBroken
+            // - still connected (no one called srt_close())
+            && m_bConnected
+            // - isn't currently closing (srt_close() called, response timeout, shutdown)
+            && !m_bClosing;
+    }
+
+    int sndSpaceLeft()
+    {
+        return ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_zMaxSRTPayloadSize);
+    }
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
-public:
 private: // Identification
     SRTSOCKET m_SocketID;                        // UDT socket number
 
@@ -465,9 +480,8 @@ private: // Identification
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
-    // Packet sizes
-    int m_iUDPPayloadSize;                        // Maximum/regular packet size, in bytes
-    int m_iMaxSRTPayloadSize;                          // Maximum/regular payload size, in bytes
+    size_t m_zMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
+    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
 
     // Options
     int m_iMSS;                                  // Maximum Segment Size, in bytes
@@ -504,25 +518,10 @@ private: // Identification
     bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
-    uint64_t m_SndHsLastTime;	    //Last SRT handshake request time
-    int      m_SndHsRetryCnt;       //SRT handshake retries left
+    uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time
+    int      m_iSndHsRetryCnt;       //SRT handshake retries left
 
-    // MOVED FROM CSRTCC, extract to CCC.
-    // First two were normally synchzonized with CUDT after every event dispatch.
-    // This is now done in CUDT::updateCC().
-    //double m_dPktSndPeriod;              // Packet sending period, in microseconds
-    //double m_dCWndSize;                  // Congestion window size, in packets
-    //double m_dMaxCWndSize;               // maximum cwnd size, in packets
-
-    // This below field should be moved to some CCC imp. It's a duplicated field here.
-    //int m_iRcvRate;			// packet arrive rate at receiver side, packets per second
-    //int m_iACKPeriod;                    // Periodical timer to send an ACK, in milliseconds
-    //int m_iACKInterval;                  // How many packets to send one ACK, in packets
-    //bool m_bUserDefinedRTO;              // if the RTO value is defined by users
-    //int m_iRTO;                          // RTO value, microseconds
-
-    // Extra CC fields used in SRT/live
-
+    bool m_bMessageAPI;
     bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
     int m_iOPT_TsbPdDelay;           // Agent's Rx latency
     int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.

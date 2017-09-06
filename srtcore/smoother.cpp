@@ -32,18 +32,20 @@ class LiveSmoother: public SmootherBase
 {
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
     int      m_iSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    size_t   m_zMaxPayloadSize;
 
     typedef LiveSmoother Me; // required for SSLOT macro
 
 public:
 
-    // This is also the maximum allowed payload size when using this smoother.
-    static const size_t MAX_PAYLOAD_SIZE = 7*188; // 1316
 
     LiveSmoother(CUDT* parent): SmootherBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
-        m_iSndAvgPayloadSize = MAX_PAYLOAD_SIZE;
+        m_zMaxPayloadSize = parent->OPT_PayloadSize();
+        if ( m_zMaxPayloadSize == 0 )
+            m_zMaxPayloadSize = parent->maxPayloadSize();
+        m_iSndAvgPayloadSize = m_zMaxPayloadSize;
 
         LOGC(mglog.Debug) << "Creating LiveSmoother: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize;
 
@@ -71,18 +73,18 @@ public:
         if (dir == Smoother::STAD_SEND)
         {
             // For sending, check if the size of data doesn't exceed the maximum live packet size.
-            if (size > MAX_PAYLOAD_SIZE)
+            if (size > m_zMaxPayloadSize)
             {
-                LOGC(mglog.Error) << "LiveSmoother: payload size: " << size << " exceeds maximum allowed " << (+MAX_PAYLOAD_SIZE);
+                LOGC(mglog.Error) << "LiveSmoother: payload size: " << size << " exceeds maximum allowed " << m_zMaxPayloadSize;
                 return false;
             }
         }
         else
         {
             // For receiving, check if the buffer has enough space to keep the payload.
-            if (size < MAX_PAYLOAD_SIZE)
+            if (size < m_zMaxPayloadSize)
             {
-                LOGC(mglog.Error) << "LiveSmoother: buffer size: " << size << " is too small for the maximum possible " << (+MAX_PAYLOAD_SIZE);
+                LOGC(mglog.Error) << "LiveSmoother: buffer size: " << size << " is too small for the maximum possible " << m_zMaxPayloadSize;
                 return false;
             }
         }
