@@ -793,9 +793,12 @@ int CRcvBuffer::readBuffer(char* data, int len)
    LOGC(mglog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
    while ((p != lastack) && (rs > 0))
    {
-      LOGC(mglog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
-      if (m_bTsbPdMode && (getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
-         break; /* too early for this unit, return whatever was copied */
+      if (m_bTsbPdMode)
+      {
+          LOGC(mglog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
+          if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
+              break; /* too early for this unit, return whatever was copied */
+      }
 
       int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)

@@ -804,7 +804,6 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     static std::string vals [] =
     {
         "init",
-        "handshake",
         "ack",
         "ackack",
         "lossreport",
