@@ -11,6 +11,7 @@
 
 #include "appcommon.hpp"
 #include "uriparser.hpp"
+#include "logsupport.hpp"
 #include "socketoptions.hpp"
 #include "transmitbase.hpp"
 #include "transmitmedia.hpp"
@@ -19,9 +20,13 @@
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
+const logging::LogFA SRT_LOGFA_APP = 10;
+
 int main( int argc, char** argv )
 {
-    vector<OptionScheme> optargs; // maybe later
+    vector<OptionScheme> optargs = {
+        { {"ll", "loglevel"}, OptionScheme::ARG_ONE }
+    };
     options_t params = ProcessOptions(argv, argc, optargs);
 
     /*
@@ -41,9 +46,14 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    string vrb = Option<OutString>(params, "no", "verbose", "v");
+    string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
+    logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    UDT::setloglevel(lev);
+    UDT::addlogfa(SRT_LOGFA_APP);
 
-    ::transmit_verbose = (vrb != "no");
+    string verbo = Option<OutString>(params, "no", "v", "verbose");
+    if ( verbo == "" || !false_names.count(verbo) )
+        ::transmit_verbose = true;
 
     string source = args[0];
     string target = args[1];

@@ -9,14 +9,14 @@
 
 #define REQUIRE_CXX11 1
 
-#include "../common/appcommon.hpp"  // CreateAddrInet
-#include "../common/uriparser.hpp"  // UriParser
-#include "../common/socketoptions.hpp"
-#include "../common/logsupport.hpp"
-#include "../common/transmitbase.hpp"
-#include "../common/transmitmedia.hpp"
-#include "../common/netinet_any.h"
-#include "../common/threadname.h"
+#include "appcommon.hpp"  // CreateAddrInet
+#include "uriparser.hpp"  // UriParser
+#include "socketoptions.hpp"
+#include "logsupport.hpp"
+#include "transmitbase.hpp"
+#include "transmitmedia.hpp"
+#include "netinet_any.h"
+#include "threadname.h"
 
 #include <srt.h>
 #include <logging.h>
