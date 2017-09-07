@@ -5,6 +5,8 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
@@ -22,10 +24,13 @@ bool Download(UriParser& srt, UriParser& file);
 
 const logging::LogFA SRT_LOGFA_APP = 10;
 
+size_t g_buffer_size = 4096;
+
 int main( int argc, char** argv )
 {
     vector<OptionScheme> optargs = {
-        { {"ll", "loglevel"}, OptionScheme::ARG_ONE }
+        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
+        { {"b", "buffer"}, OptionScheme::ARG_ONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
 
@@ -54,6 +59,12 @@ int main( int argc, char** argv )
     string verbo = Option<OutString>(params, "no", "v", "verbose");
     if ( verbo == "" || !false_names.count(verbo) )
         ::transmit_verbose = true;
+
+    string bs = Option<OutString>(params, "", "b", "buffer");
+    if ( bs != "" )
+    {
+        ::g_buffer_size = stoi(bs);
+    }
 
     string source = args[0];
     string target = args[1];
@@ -172,7 +183,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     SRTSOCKET ss = m.Socket();
 
     // Use a manual loop for reading from SRT
-    char buf[4096];
+    char buf[::g_buffer_size];
 
     ifstream ifile(path);
     if ( !ifile )
@@ -183,7 +194,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
 
     for (;;)
     {
-        size_t n = ifile.read(buf, 4096).gcount();
+        size_t n = ifile.read(buf, ::g_buffer_size).gcount();
         if (n > 0)
         {
             Verb() << "Upload: --> " << n;
@@ -203,6 +214,26 @@ bool DoUpload(UriParser& ut, string path, string filename)
             cerr << "ERROR while reading file\n";
             return false;
         }
+    }
+
+    // send-flush-loop
+    for (;;)
+    {
+        size_t bytes;
+        size_t blocks;
+        int st = srt_getsndbuffer(ss, &blocks, &bytes);
+        if (st == SRT_ERROR)
+        {
+            cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str() << endl;
+            return false;
+        }
+        if (bytes == 0)
+        {
+            Verb() << "Sending buffer DEPLETED - ok.";
+            break;
+        }
+        Verb() << "Sending buffer still: bytes=" << bytes << " blocks=" << blocks;
+        this_thread::sleep_for(chrono::milliseconds(250));
     }
 
     return true;
@@ -253,11 +284,11 @@ bool DoDownload(UriParser& us, string directory, string filename)
 
     Verb() << "Downloading from '" << us.uri() << "' to '" << path;
 
-    char buf[4096];
+    char buf[::g_buffer_size];
 
     for (;;)
     {
-        int n = srt_recv(ss, buf, 4096);
+        int n = srt_recv(ss, buf, ::g_buffer_size);
         if (n == SRT_ERROR)
         {
             cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
