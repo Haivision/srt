@@ -1153,6 +1153,11 @@ public:
     SrtTarget(string host, int port, const map<string,string>& par)
     {
         Init(host, port, par, true);
+	
+        if ( !m_blocking_mode )
+        {
+            srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        }
     }
 
     virtual int ConfigurePre(SRTSOCKET sock) override
