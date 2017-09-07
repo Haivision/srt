@@ -4411,8 +4411,10 @@ int CUDT::recv(char* data, int len)
             // make this function return 0, potentially also without breaking
             // the connection and potentially also with losing no ability to
             // send some larger portion of data next time.
+            LOGC(mglog.Debug) << "STREAM API, SHUTDOWN: marking as EOF";
             return 0;
         }
+        LOGC(mglog.Debug) << (m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown?"":"no") << " SHUTDOWN. Reporting as BROKEN.";
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -4472,7 +4474,11 @@ int CUDT::recv(char* data, int len)
     {
         // See at the beginning
         if (!m_bMessageAPI && m_bShutdown)
+        {
+            LOGC(mglog.Debug) << "STREAM API, SHUTDOWN: marking as EOF";
             return 0;
+        }
+        LOGC(mglog.Debug) << (m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown?"":"no") << " SHUTDOWN. Reporting as BROKEN.";
 
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
@@ -4781,7 +4787,7 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 
                 // After signaling the tsbpd for ready data, report the bandwidth.
                 double bw = Bps2Mbps( m_iBandwidth * m_zMaxSRTPayloadSize );
-                LOGC(mglog.Debug) << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << ")";
+                LOGC(mglog.Debug) << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)";
             }
             return res;
         }

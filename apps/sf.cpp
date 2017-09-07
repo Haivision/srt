@@ -176,7 +176,13 @@ bool DoUpload(UriParser& ut, string path, string filename)
         size_t n = ifile.read(buf, 4096).gcount();
         if (n > 0)
         {
-            srt_send(ss, buf, n);
+            Verb() << "Upload: --> " << n;
+            int st = srt_send(ss, buf, n);
+            if (st == SRT_ERROR)
+            {
+                cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;
+                return false;
+            }
         }
 
         if (ifile.eof())

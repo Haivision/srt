@@ -670,7 +670,7 @@ std::string SrtFlagString(int32_t flags)
 #define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
     std::string output;
-    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag" };
+    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag", "StreamAPI" };
 
     size_t i = 0;
     for ( ; i < LEN(namera); ++i )
