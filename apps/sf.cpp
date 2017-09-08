@@ -24,7 +24,7 @@ bool Download(UriParser& srt, UriParser& file);
 
 const logging::LogFA SRT_LOGFA_APP = 10;
 
-size_t g_buffer_size = 4096;
+size_t g_buffer_size = 1456;
 
 int main( int argc, char** argv )
 {
