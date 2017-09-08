@@ -483,8 +483,8 @@ SRT_API extern int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOP
 SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API extern int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API extern int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len);
-SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len);
+SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len, int flags);
+SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len, int flags);
 
 // The sendmsg/recvmsg and their 2 counterpart require MAXIMUM the size of SRT payload size (1316).
 // Any data over that size will be ignored.

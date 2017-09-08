@@ -182,8 +182,8 @@ public: //API
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
-    static int send(SRTSOCKET u, const char* buf, int len);
-    static int recv(SRTSOCKET u, char* buf, int len);
+    static int send(SRTSOCKET u, const char* buf, int len, int flags);
+    static int recv(SRTSOCKET u, char* buf, int len, int flags);
 #ifdef SRT_ENABLE_SRCTIMESTAMP
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
@@ -744,20 +744,20 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers
-    uint64_t m_ullCPUFrequency;                  // CPU clock frequency, used for Timer, ticks per microsecond
-    uint64_t m_ullNextACKTime_tk;			// Next ACK time, in CPU clock cycles, same below
-    uint64_t m_ullNextNAKTime_tk;			// Next NAK time
+    uint64_t m_ullCPUFrequency;               // CPU clock frequency, used for Timer, ticks per microsecond
+    uint64_t m_ullNextACKTime_tk;			  // Next ACK time, in CPU clock cycles, same below
+    uint64_t m_ullNextNAKTime_tk;			  // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;		// SYN interval
-    volatile uint64_t m_ullACKInt_tk;		// ACK interval
-    volatile uint64_t m_ullNAKInt_tk;		// NAK interval
-    volatile uint64_t m_ullLastRspTime_tk;		// time stamp of last response from the peer
+    volatile uint64_t m_ullSYNInt_tk;		  // SYN interval
+    volatile uint64_t m_ullACKInt_tk;         // ACK interval
+    volatile uint64_t m_ullNAKInt_tk;         // NAK interval
+    volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
 #ifdef SRT_ENABLE_FASTREXMIT
-    volatile uint64_t m_ullLastRspAckTime_tk;   // time stamp of last ACK from the peer
+    volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
 #endif /* SRT_ENABLE_FASTREXMIT */
-    volatile uint64_t m_ullLastSndTime_tk;		// time stamp of last data/ctrl sent (in system ticks)
-    uint64_t m_ullMinNakInt_tk;			// NAK timeout lower bound; too small value can cause unnecessary retransmission
-    uint64_t m_ullMinExpInt_tk;			// timeout lower bound threshold: too small timeout can cause problem
+    volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
+    uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
+    uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
 
     int m_iPktCount;				// packet counter for ACK
     int m_iLightACKCount;			// light ACK counter

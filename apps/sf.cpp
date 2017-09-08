@@ -198,7 +198,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
         if (n > 0)
         {
             Verb() << "Upload: --> " << n;
-            int st = srt_send(ss, buf, n);
+            int st = srt_send(ss, buf, n, 0);
             if (st == SRT_ERROR)
             {
                 cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;
@@ -288,7 +288,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
 
     for (;;)
     {
-        int n = srt_recv(ss, buf.data(), ::g_buffer_size);
+        int n = srt_recv(ss, buf.data(), ::g_buffer_size, 0);
         if (n == SRT_ERROR)
         {
             cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;

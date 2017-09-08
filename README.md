@@ -62,6 +62,15 @@ make
 Install cmake and openssl with development files from "brew". Note that the
 system version of OpenSSL is inappropriate, although you should be able to
 use any newer version compiled from sources, if you prefer.
+```
+brew install cmake
+brew install openssl
+export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+export OPENSSL_LIB_DIR=$(brew --prefix openssl)"/lib"
+export OPENSSL_INCLUDE_DIR=$(brew --prefix openssl)"/include"
+./configure
+make
+```
 
 ## For Windows:
 

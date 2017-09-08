@@ -555,7 +555,7 @@ int CUDTUnited::bind(const SRTSOCKET u, const sockaddr* name, int namelen)
    CGuard cg(s->m_ControlLock);
 
    // cannot bind a socket more than once
-   if (SRTS_INIT != s->m_Status)
+   if (s->m_Status != SRTS_INIT)
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
    // check the size of SOCKADDR structure
@@ -589,7 +589,7 @@ int CUDTUnited::bind(SRTSOCKET u, UDPSOCKET udpsock)
    CGuard cg(s->m_ControlLock);
 
    // cannot bind a socket more than once
-   if (SRTS_INIT != s->m_Status)
+   if (s->m_Status != SRTS_INIT)
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
    sockaddr_in name4;
@@ -1087,7 +1087,7 @@ int CUDTUnited::select(
       for (set<SRTSOCKET>::iterator i2 = writefds->begin();
          i2 != writefds->end(); ++ i2)
       {
-         if (SRTS_BROKEN == getStatus(*i2))
+         if (getStatus(*i2) == SRTS_BROKEN)
          {
             ws.insert(*i2);
             ++ count;
@@ -1101,7 +1101,7 @@ int CUDTUnited::select(
       for (set<SRTSOCKET>::iterator i3 = exceptfds->begin();
          i3 != exceptfds->end(); ++ i3)
       {
-         if (SRTS_BROKEN == getStatus(*i3))
+         if (getStatus(*i3) == SRTS_BROKEN)
          {
             es.insert(*i3);
             ++ count;
@@ -2112,7 +2112,7 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
    }
 }
 
-int CUDT::send(SRTSOCKET u, const char* buf, int len)
+int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
 {
    try
    {
@@ -2139,7 +2139,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len)
    }
 }
 
-int CUDT::recv(SRTSOCKET u, char* buf, int len)
+int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
 {
    try
    {
@@ -2756,14 +2756,14 @@ int connect_debug(
    return CUDT::connect(u, name, namelen, forced_isn);
 }
 
-int send(SRTSOCKET u, const char* buf, int len)
+int send(SRTSOCKET u, const char* buf, int len, int flags)
 {
-   return CUDT::send(u, buf, len);
+   return CUDT::send(u, buf, len, flags);
 }
 
-int recv(SRTSOCKET u, char* buf, int len)
+int recv(SRTSOCKET u, char* buf, int len, int flags)
 {
-   return CUDT::recv(u, buf, len);
+   return CUDT::recv(u, buf, len, flags);
 }
 
 #ifdef SRT_ENABLE_SRCTIMESTAMP
