@@ -284,11 +284,11 @@ bool DoDownload(UriParser& us, string directory, string filename)
 
     Verb() << "Downloading from '" << us.uri() << "' to '" << path;
 
-    char buf[::g_buffer_size];
+    vector<char> buf(::g_buffer_size);
 
     for (;;)
     {
-        int n = srt_recv(ss, buf, ::g_buffer_size);
+        int n = srt_recv(ss, buf.data(), ::g_buffer_size);
         if (n == SRT_ERROR)
         {
             cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
@@ -304,7 +304,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
         // Write to file any amount of data received
 
         Verb() << "Download: --> " << n;
-        ofile.write(buf, n);
+        ofile.write(buf.data(), n);
     }
 
     return true;

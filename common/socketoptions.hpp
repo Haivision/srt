@@ -184,7 +184,7 @@ extern std::map<std::string, int> enummap_transtype;
 
 namespace {
 SocketOption srt_options [] {
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "maxbw", 0, SRTO_MAXBW, SocketOption::PRE, SocketOption::INT64, nullptr},
     { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::PRE, SocketOption::INT, nullptr},
     { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::PRE, SocketOption::STRING, nullptr},
 

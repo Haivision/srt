@@ -319,9 +319,19 @@ public:
 
 RATE_LIMIT:
 
+#if ENABLE_LOGGING
+        // Try to do reverse-calculation for m_dPktSndPeriod, as per minSP below
+        // sndperiod = mega / (maxbw / MSS)
+        // 1/sndperiod = (maxbw/MSS) / mega
+        // mega/sndperiod = maxbw/MSS
+        // maxbw = (MSS*mega)/sndperiod
+        uint64_t usedbw = (m_parent->MSS() * 1000000.0) / m_dPktSndPeriod;
+
         LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:"
             << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
-            << " sndperiod=" << m_dPktSndPeriod << "us";
+            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")";
+#endif
+
         //set maximum transfer rate
         if (m_maxSR)
         {
@@ -329,7 +339,8 @@ RATE_LIMIT:
             if (m_dPktSndPeriod < minSP)
             {
                 m_dPktSndPeriod = minSP;
-                LOGC(mglog.Debug) << "FileSmoother: BW limited to " << m_maxSR << " - DECREASING snd period to " << m_dPktSndPeriod << "us";
+                LOGC(mglog.Debug) << "FileSmoother: BW limited to " << m_maxSR
+                    << " - DECREASING snd period to " << m_dPktSndPeriod << "us";
             }
         }
 

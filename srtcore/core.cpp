@@ -507,6 +507,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_MAXBW:
         m_llMaxBW = *(int64_t*)optval;
 
+        LOGC(mglog.Debug) << "OPTION:SRTO_MAXBW set to " << m_llMaxBW << " - calling updateCC TEV_INIT RESET";
+
         // This can be done on both connected and unconnected socket.
         // When not connected, this will do nothing, however this
         // event will be repeated just after connecting anyway.
@@ -5352,6 +5354,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
         if (only_input && m_llMaxBW)
         {
+            LOGC(mglog.Debug) << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW;
             // Don't change
         }
         else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
@@ -5379,7 +5382,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
                 m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? 500000 : 0);
             }
 
-            LOGC(mglog.Debug) << "updateCC: updating BW=" << m_llMaxBW
+            LOGC(mglog.Debug) << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
                 << (only_input == TEV_INIT_RESET ? " (UNCHANGED)"
                         : only_input == TEV_INIT_OHEADBW ? " (only Overhead)": " (updated sampling rate)");
         }

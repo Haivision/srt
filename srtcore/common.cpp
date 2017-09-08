@@ -746,7 +746,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
 
-    static string udt_types [] = {
+    static const char* const udt_types [] = {
         "handshake",
         "keepalive",
         "ack",
@@ -758,30 +758,27 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "peererror", //8
     };
 
-    static string srt_types [] = {
-        "none",
-        "hsreq",
-        "hsrsp",
-        "kmreq",
-        "kmrsp",
-        "sid",
-        "smoother"
+    static const char* const srt_types [] = {
+        "EXT:none",
+        "EXT:hsreq",
+        "EXT:hsrsp",
+        "EXT:kmreq",
+        "EXT:kmrsp",
+        "EXT:sid",
+        "EXT:smoother"
     };
 
 
     if ( mt == UMSG_EXT )
     {
-        // Returrn "EXT:" with srt message name
-        string val = "SRT:";
         if ( extt >= RA_LEN(srt_types) )
             return "EXT:unknown";
 
-        return val + srt_types[extt];
+        return srt_types[extt];
     }
 
     if ( size_t(mt) > RA_LEN(udt_types) )
         return "unknown";
-
 
     return udt_types[mt];
 }

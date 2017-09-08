@@ -167,7 +167,9 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
    uint64_t time = CTimer::getTime();
    int32_t inorder = order ? MSGNO_PACKET_INORDER::mask : 0;
 
-   LOGC(dlog.Debug) << CONID() << "CSndBuffer: adding " << size << " packets (" << len << " bytes) to send";
+   LOGC(dlog.Debug) << CONID() << "addBuffer: adding "
+       << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
+       << (inorder ? "" : " NOT") << " in order";
 
    Block* s = m_pLastBlock;
    for (int i = 0; i < size; ++ i)
@@ -176,6 +178,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
       if (pktlen > m_iMSS)
          pktlen = m_iMSS;
 
+      LOGC(dlog.Debug) << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData;
       memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
       s->m_iLength = pktlen;
 
@@ -221,13 +224,14 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
 
    CGuard::leaveCS(m_BufLock);
 
-   m_iNextMsgNo ++;
 
    // MSGNO_SEQ::mask has a form: 00000011111111...
    // At least it's known that it's from some index inside til the end (to bit 0).
    // If this value has been reached in a step of incrementation, it means that the
    // maximum value has been reached. Casting to int32_t to ensure the same sign
    // in comparison, although it's far from reaching the sign bit.
+
+   m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
       m_iNextMsgNo = 1;
 }
@@ -419,6 +423,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
    // this time possibly in order to find the real data to be sent.
 
    // if found block is stale
+   // (This is for messages that have declared TTL - messages that fail to be sent
+   // before the TTL defined time comes, will be dropped).
    if ((p->m_iTTL >= 0) && ((CTimer::getTime() - p->m_OriginTime) / 1000 > (uint64_t)p->m_iTTL))
    {
       int32_t msgno = p->getMsgSeq();
@@ -434,6 +440,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
             m_pCurrBlock = p;
          msglen ++;
       }
+
+      LOGC(dlog.Debug) << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno;
 
       // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
       // This means that in this case it should be written by the message sequence value only
@@ -458,6 +466,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
       p->m_SourceTime ? p->m_SourceTime :
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
       p->m_OriginTime;
+
+   LOGC(dlog.Debug) << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]";
 
    return readlen;
 }
@@ -632,6 +642,8 @@ void CSndBuffer::increase()
       pb = pb->m_pNext;
    }
 
+   LOGC(dlog.Debug) << "CSndBuffer: BUFFER FULL - adding " << (unitsize*m_iMSS) << " bytes spread to " << unitsize << " blocks";
+
    // insert the new blocks onto the existing one
    pb->m_pNext = m_pLastBlock->m_pNext;
    m_pLastBlock->m_pNext = nblk;
@@ -787,15 +799,16 @@ int CRcvBuffer::readBuffer(char* data, int len)
    int p = m_iStartPos;
    int lastack = m_iLastAckPos;
    int rs = len;
+   char* begin = data; // logging only
 
    uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : 0LL);
 
-   LOGC(mglog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
+   LOGC(dlog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
    while ((p != lastack) && (rs > 0))
    {
       if (m_bTsbPdMode)
       {
-          LOGC(mglog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
+          LOGC(dlog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
           if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
               break; /* too early for this unit, return whatever was copied */
       }
@@ -804,6 +817,8 @@ int CRcvBuffer::readBuffer(char* data, int len)
       if (unitsize > rs)
          unitsize = rs;
 
+      LOGC(dlog.Debug) << CONID() << "readBuffer: copying buffer #" << p
+          << " targetpos=" << int(data-begin) << " sourcepos=" << m_iNotch << " size=" << unitsize << " left=" << (unitsize-rs);
       memcpy(data, m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
       data += unitsize;
 
