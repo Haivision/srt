@@ -65,6 +65,12 @@ inline void SysCleanupNetwork() {}
 
 #include <string>
 #include <cstring>
+// For Options
+#include <iostream>
+#include <sstream>
+#include <vector>
+#include <map>
+#include <set>
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
 //    http://mingw.5.n7.nabble.com/Win32API-request-for-new-functions-td22029.html
@@ -144,5 +150,118 @@ inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
 
     return sa;
 }
+
+inline std::string Join(const std::vector<std::string>& in, std::string sep)
+{
+    if ( in.empty() )
+        return "";
+
+    std::ostringstream os;
+
+    os << in[0];
+    for (auto i = in.begin()+1; i != in.end(); ++i)
+        os << sep << *i;
+    return os.str();
+}
+
+typedef std::map<std::string, std::vector<std::string>> options_t;
+
+struct OutList
+{
+    typedef std::vector<std::string> type;
+    static type process(const options_t::mapped_type& i) { return i; }
+};
+
+struct OutString
+{
+    typedef std::string type;
+    static type process(const options_t::mapped_type& i) { return Join(i, " "); }
+};
+
+
+template <class OutType, class OutValue> inline
+typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
+
+template <class OutType, class OutValue, class... Args> inline
+typename OutType::type Option(const options_t& options, OutValue deflt, std::string key, Args... further_keys)
+{
+    auto i = options.find(key);
+    if ( i == options.end() )
+        return Option<OutType>(options, deflt, further_keys...);
+    return OutType::process(i->second);
+}
+
+struct OptionScheme
+{
+    std::set<std::string> names;
+    enum Args { ARG_NONE, ARG_ONE, ARG_VAR } type;
+};
+
+inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
+{
+    using namespace std;
+
+    string current_key = "";
+    size_t vals = 0;
+    OptionScheme::Args type = OptionScheme::ARG_VAR; // This is for no-option-yet or consumed
+    map<string, vector<string>> params;
+
+    for (char* const* p = argv+1; p != argv+argc; ++p)
+    {
+        const char* a = *p;
+        // cout << "*D ARG: '" << a << "'\n";
+        if ( a[0] == '-' )
+        {
+            current_key = a+1;
+            params[current_key].clear();
+            vals = 0;
+
+            // Find the key in the scheme. If not found, treat it as ARG_NONE.
+            for (auto s: scheme)
+            {
+                if (s.names.count(current_key))
+                {
+                    // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
+                    if ( s.type == OptionScheme::ARG_NONE )
+                    {
+                        // Anyway, consider it already processed.
+                        break;
+                    }
+                    type = s.type;
+                    goto Found;
+                }
+
+            }
+            // Not found: set ARG_NONE.
+            // cout << "*D KEY '" << current_key << "' assumed type NONE\n";
+
+            type = OptionScheme::ARG_VAR;
+            current_key = "";
+            continue;
+Found:
+            continue;
+        }
+
+        // Collected a value - check if full
+        // cout << "*D COLLECTING '" << a << "' for key '" << current_key << "' (" << vals << " so far)\n";
+        params[current_key].push_back(a);
+        ++vals;
+        if ( vals == 1 && type == OptionScheme::ARG_ONE )
+        {
+            // cout << "*D KEY TYPE ONE - resetting to empty key\n";
+            // Reset the key to "default one".
+            current_key = "";
+            vals = 0;
+            type = OptionScheme::ARG_VAR;
+        }
+        else
+        {
+            // cout << "*D KEY type VAR - still collecting until the end of options or next option.\n";
+        }
+    }
+
+    return params;
+}
+
 
 #endif // INC__APPCOMMON_H

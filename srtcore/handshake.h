@@ -44,12 +44,13 @@ typedef Bits<15, 0> HS_CMDSPEC_SIZE;
 
 enum SrtOptions
 {
-    SRT_OPT_TSBPDSND  = 0x00000001, /* Timestamp-based Packet delivery real-time data sender */
-    SRT_OPT_TSBPDRCV  = 0x00000002, /* Timestamp-based Packet delivery real-time data receiver */
-    SRT_OPT_HAICRYPT  = 0x00000004, /* HaiCrypt AES-128/192/256-CTR */
-    SRT_OPT_TLPKTDROP = 0x00000008, /* Drop real-time data packets too late to be processed in time */
-    SRT_OPT_NAKREPORT = 0x00000010, /* Periodic NAK report */
-    SRT_OPT_REXMITFLG = 0x00000020, // One bit in payload packet msgno is "retransmitted" flag
+    SRT_OPT_TSBPDSND  = BIT(0), /* Timestamp-based Packet delivery real-time data sender */
+    SRT_OPT_TSBPDRCV  = BIT(1), /* Timestamp-based Packet delivery real-time data receiver */
+    SRT_OPT_HAICRYPT  = BIT(2), /* HaiCrypt AES-128/192/256-CTR */
+    SRT_OPT_TLPKTDROP = BIT(3), /* Drop real-time data packets too late to be processed in time */
+    SRT_OPT_NAKREPORT = BIT(4), /* Periodic NAK report */
+    SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
+                                // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
 };
 
 
@@ -235,11 +236,11 @@ public:
 
 public:
    int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
-   int32_t m_iType;             // UDT4: socket type (UDT_STREAM or UDT_DGRAM); SRT1: extension flags
+   int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
    int32_t m_iISN;              // random initial sequence number
    int32_t m_iMSS;              // maximum segment size
    int32_t m_iFlightFlagSize;   // flow control window size
-   UDTRequestType m_iReqType;          // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
+   UDTRequestType m_iReqType;   // handshake stage
    int32_t m_iID;		// socket ID
    int32_t m_iCookie;		// cookie
    uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
@@ -253,9 +254,17 @@ public:
 // The WAVING state is the very initial state of the rendezvous connection and restored after the
 // connection is closed.
 // The ATTENTION and FINE are two alternative states that are transited to from WAVING. The possible
-// situations are that:
-// - (most likely) one party transits to ATTENTION and the other party transits to FINE
-// - (rare case) both parties transit to ATTENTION
+// situations are:
+// - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
+// - "parallel arrangement" both parties transit to ATTENTION
+//
+// Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
+// URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
+// time, on machines with exactly the same performance and all things preceding the message sending
+// have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
+// the clients have started at different times, the one who started first sends a message and the
+// system of the receiver buffers this message even before the client binds the port for enough long
+// time so that it outlasts also the possible second, repeated waveahand.
 enum RendezvousState
 {
     RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.

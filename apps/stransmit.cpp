@@ -292,20 +292,20 @@ int main( int argc, char** argv )
     signal(SIGINT, OnINT_SetIntState);
     signal(SIGTERM, OnINT_SetIntState);
 
+    auto src = Source::Create(params[0]);
+    auto tar = Target::Create(params[1]);
+
+    // Now loop until broken
+    BandwidthGuard bw(bandwidth);
+
+    if ( transmit_verbose )
+    {
+        cout << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'\n";
+    }
+
+    extern logging::Logger glog;
     try
     {
-        auto src = Source::Create(params[0]);
-        auto tar = Target::Create(params[1]);
-
-        // Now loop until broken
-        BandwidthGuard bw(bandwidth);
-
-        if ( transmit_verbose )
-        {
-            cout << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'\n";
-        }
-
-        extern logging::Logger glog;
         for (;;)
         {
             if ( timeout != -1 )
@@ -341,6 +341,22 @@ int main( int argc, char** argv )
             }
 
             bw.Checkpoint(chunk, transmit_bw_report);
+        }
+
+    } catch (Source::ReadEOF&) {
+
+        cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+        for (;;)
+        {
+            size_t still = tar->Still();
+            if (still == 0)
+            {
+                cerr << "(DEBUG) DEPLETED. Done.\n";
+                break;
+            }
+
+            cerr << "(DEBUG)... still " << still << " bytes\n";
+            this_thread::sleep_for(chrono::seconds(1));
         }
         alarm(0);
     } catch (std::exception& x) {

@@ -291,7 +291,7 @@ void CSndUList::insert(int64_t ts, const CUDT* u)
    insert_(ts, u);
 }
 
-void CSndUList::update(const CUDT* u, bool reschedule)
+void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
    CGuard listguard(m_ListLock);
 
@@ -299,12 +299,12 @@ void CSndUList::update(const CUDT* u, bool reschedule)
 
    if (n->m_iHeapLoc >= 0)
    {
-      if (!reschedule)
+      if (!reschedule) // EReschedule to bool conversion, predicted.
          return;
 
       if (n->m_iHeapLoc == 0)
       {
-         n->m_llTimeStamp = 1;
+         n->m_llTimeStamp_tk = 1;
          m_pTimer->interrupt();
          return;
       }
@@ -325,7 +325,7 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
    // no pop until the next schedulled time
    uint64_t ts;
    CTimer::rdtsc(ts);
-   if (ts < m_pHeap[0]->m_llTimeStamp)
+   if (ts < m_pHeap[0]->m_llTimeStamp_tk)
       return -1;
 
    CUDT* u = m_pHeap[0]->m_pUDT;
@@ -361,7 +361,7 @@ uint64_t CSndUList::getNextProcTime()
    if (-1 == m_iLastEntry)
       return 0;
 
-   return m_pHeap[0]->m_llTimeStamp;
+   return m_pHeap[0]->m_llTimeStamp_tk;
 }
 
 void CSndUList::insert_(int64_t ts, const CUDT* u)
@@ -374,14 +374,14 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
 
    m_iLastEntry ++;
    m_pHeap[m_iLastEntry] = n;
-   n->m_llTimeStamp = ts;
+   n->m_llTimeStamp_tk = ts;
 
    int q = m_iLastEntry;
    int p = q;
    while (p != 0)
    {
       p = (q - 1) >> 1;
-      if (m_pHeap[p]->m_llTimeStamp > m_pHeap[q]->m_llTimeStamp)
+      if (m_pHeap[p]->m_llTimeStamp_tk > m_pHeap[q]->m_llTimeStamp_tk)
       {
          CSNode* t = m_pHeap[p];
          m_pHeap[p] = m_pHeap[q];
@@ -423,10 +423,10 @@ void CSndUList::remove_(const CUDT* u)
       int p = q * 2 + 1;
       while (p <= m_iLastEntry)
       {
-         if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->m_llTimeStamp > m_pHeap[p + 1]->m_llTimeStamp))
+         if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->m_llTimeStamp_tk > m_pHeap[p + 1]->m_llTimeStamp_tk))
             p ++;
 
-         if (m_pHeap[q]->m_llTimeStamp > m_pHeap[p]->m_llTimeStamp)
+         if (m_pHeap[q]->m_llTimeStamp_tk > m_pHeap[p]->m_llTimeStamp_tk)
          {
             CSNode* t = m_pHeap[p];
             m_pHeap[p] = m_pHeap[q];
@@ -636,7 +636,7 @@ CRcvUList::~CRcvUList()
 void CRcvUList::insert(const CUDT* u)
 {
    CRNode* n = u->m_pRNode;
-   CTimer::rdtsc(n->m_llTimeStamp);
+   CTimer::rdtsc(n->m_llTimeStamp_tk);
 
    if (NULL == m_pUList)
    {
@@ -692,7 +692,7 @@ void CRcvUList::update(const CUDT* u)
    if (!n->m_bOnList)
       return;
 
-   CTimer::rdtsc(n->m_llTimeStamp);
+   CTimer::rdtsc(n->m_llTimeStamp_tk);
 
    // if n is the last node, do not need to change
    if (NULL == n->m_pNext)
@@ -1111,12 +1111,12 @@ void* CRcvQueue::worker(void* param)
 
 
        // take care of the timing event for all UDT sockets
-       uint64_t currtime;
-       CTimer::rdtsc(currtime);
+       uint64_t currtime_tk;
+       CTimer::rdtsc(currtime_tk);
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
-       uint64_t ctime = currtime - 100000 * CTimer::getCPUFrequency();
-       while ((NULL != ul) && (ul->m_llTimeStamp < ctime))
+       uint64_t ctime_tk = currtime_tk - 100000 * CTimer::getCPUFrequency();
+       while ((NULL != ul) && (ul->m_llTimeStamp_tk < ctime_tk))
        {
            CUDT* u = ul->m_pUDT;
 

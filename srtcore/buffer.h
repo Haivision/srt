@@ -132,17 +132,15 @@ public:
 
    int getCurrBufSize() const;
 
-#ifdef SRT_ENABLE_TLPKTDROP
    int dropLateData(int &bytes, uint64_t latetime);
-#endif
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    void updAvgBufSize(uint64_t time);
-   int getAvgBufSize(int &bytes, int &timespan);
+   int getAvgBufSize(ref_t<int> bytes, ref_t<int> timespan);
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
-   int getCurrBufSize(int &bytes, int &timespan);
+   int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   int getInputRate(int& payloadtsz, int& period);
+   int getInputRate(ref_t<int> payloadtsz, ref_t<int> period);
    void updInputRate(uint64_t time, int pkts, int bytes);
    void setInputRateSmpPeriod(int period);
 
@@ -371,7 +369,6 @@ public:
    void printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg);
 #endif
 
-#ifdef SRT_ENABLE_TLPKTDROP
       /// Get information on the 1st message in queue.
       // Parameters (of the 1st packet queue, ready to play or not):
       /// @param tsbpdtime [out] localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
@@ -383,14 +380,13 @@ public:
       ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
 
 
-   bool getRcvFirstMsg(uint64_t& tsbpdtime, bool& passack, int32_t& skipseqno, CPacket** pppkt=0);
+   bool getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, CPacket** pppkt=0);
 
       /// Update the ACK point of the buffer.
       /// @param len [in] size of data to be skip & acknowledged.
 
    void skipData(int len);
 
-#endif /* SRT_ENABLE_TLPKTDROP */
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
@@ -400,7 +396,7 @@ private:
       /// @retval false tsbpdtime = 0: no packet ready to play
 
 
-   bool getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt = 0);
+   bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, CPacket** pppkt = 0);
 
       /// Get packet delivery local time base (adjusted for wrap around)
       /// @param timestamp [in] packet timestamp (relative to peer StartTime), wrapping around every ~72 min
