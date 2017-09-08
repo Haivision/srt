@@ -538,6 +538,4 @@ inline std::string SrtVersionString(int version)
     return buf;
 }
 
-
-
 #endif

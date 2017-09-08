@@ -88,6 +88,13 @@ written by
 */
 #define SRT_ENABLE_IPOPTS 1
 
+/*
+* SRT_ENABLE_SND2WAYPROTECT
+* Protect sender-only from back handshake and traffic
+*/
+#define SRT_ENABLE_SND2WAYPROTECT 1
+
+
 
 #define SRT_ENABLE_CLOSE_SYNCH 0
 
