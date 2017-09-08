@@ -346,11 +346,8 @@ template<> struct EventVariant::VariantFor<EventVariant::INIT>
 // define it any compatible way.  There were already problems with ref_t and
 // unique_ptr/auto_ptr, for which custom classes were needed.
 
-// I'd stay with custom class, completely. This can be changed in future, when
-// all compilers that don't support C++11 are finally abandoned. Not sure when
-// this will happen - I remember that "ARM C++" pre-standard version has been
-// abandoned maybe around 2008 year, or maybe it's even still rolling around
-// somewhere. Hopes of abandoning C language are even more a wishful thinking.
+// This can be changed in future to use C++11 way, but only after C++03
+// compatibility is finally abaondoned. Until then, this stays with a custom class.
 
 class EventSlotBase
 {
