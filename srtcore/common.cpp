@@ -511,11 +511,11 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_INVALMSGAPI:
-           m_strMsg += ": Message API (sendmsg/recvmsg) can't be used in this transmission mode.";
+           m_strMsg += ": Incorrect use of Message API (sendmsg/recvmsg).";
            break;
 
         case MN_INVALBUFFERAPI:
-           m_strMsg += ": Buffer API (send/recv) or File API (sendfile/recvfile) can't be used in this transmission mode.";
+           m_strMsg += ": Incorrect use of Buffer API (send/recv) or File API (sendfile/recvfile).";
            break;
 
         case MN_BUSY:

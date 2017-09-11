@@ -155,14 +155,10 @@ public:
     }
 
     // A smoother is allowed to agree or disagree on the use of particular API.
-    virtual bool checkTransArgs(int /*flags*/, const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
+    virtual bool checkTransArgs(Smoother::TransAPI , Smoother::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
     {
         return true;
     }
-
-protected:
-    typedef Bits<2> TRANS_DIR;
-    typedef Bits<1, 0> TRANS_API;
 };
 
 

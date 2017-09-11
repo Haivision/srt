@@ -60,16 +60,14 @@ public:
         parent->ConnectSignal(TEV_ACK, SSLOT(updatePktSndPeriod_onAck));
     }
 
-    bool checkTransArgs(int flags, const char* , size_t size, int , bool ) ATR_OVERRIDE
+    bool checkTransArgs(Smoother::TransAPI api, Smoother::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
     {
-        Smoother::TransAPI api = TRANS_API::unwrapt<Smoother::TransAPI>(flags);
         if (api != Smoother::STA_MESSAGE)
         {
             LOGC(mglog.Error) << "LiveSmoother: invalid API use. Only sendmsg/recvmsg allowed.";
             return false;
         }
 
-        int dir = TRANS_DIR::unwrap(flags);
         if (dir == Smoother::STAD_SEND)
         {
             // For sending, check if the size of data doesn't exceed the maximum live packet size.
@@ -223,7 +221,7 @@ public:
         LOGC(mglog.Debug) << "Creating FileSmoother";
     }
 
-    bool checkTransArgs(int , const char* , size_t , int , bool ) ATR_OVERRIDE
+    bool checkTransArgs(Smoother::TransAPI, Smoother::TransDir, const char* , size_t , int , bool ) ATR_OVERRIDE
     {
         // XXX
         // The FileSmoother has currently no restrictions, although it should be

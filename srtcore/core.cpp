@@ -4301,7 +4301,7 @@ int CUDT::send(const char* data, int len)
       return 0;
 
    // Check if the current smoother accepts the call with given parameters.
-   if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER | Smoother::STAD_SEND, data, len, -1, false))
+   if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER, Smoother::STAD_SEND, data, len, -1, false))
       throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
@@ -4423,7 +4423,7 @@ int CUDT::recv(char* data, int len)
     if (len <= 0)
         return 0;
 
-    if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER | Smoother::STAD_RECV, data, len, -1, false))
+    if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER, Smoother::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
 
@@ -4526,7 +4526,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
     // Sendmsg isn't restricted to the smoother type, however the smoother
     // may want to have something to say here.
-    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE | Smoother::STAD_SEND, data, len, msttl, inorder))
+    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_SEND, data, len, msttl, inorder))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     if (len > int(m_iSndBufSize * m_zMaxSRTPayloadSize))
@@ -4714,7 +4714,7 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
     // Recvmsg isn't restricted to the smoother type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
-    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE | Smoother::STAD_RECV, data, len, -1, false))
+    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard(m_RecvLock);
@@ -4907,7 +4907,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
    if (size <= 0)
       return 0;
 
-   if (!m_Smoother->checkTransArgs(Smoother::STA_FILE | Smoother::STAD_SEND, 0, size, -1, false))
+   if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_SEND, 0, size, -1, false))
       throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
@@ -5008,7 +5008,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
     if (size <= 0)
         return 0;
 
-    if (!m_Smoother->checkTransArgs(Smoother::STA_FILE | Smoother::STAD_RECV, 0, size, -1, false))
+    if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_RECV, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     CGuard recvguard(m_RecvLock);
