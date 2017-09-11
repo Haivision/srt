@@ -32,16 +32,16 @@ written by
 
 int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
-	ctx->mode = HCRYPT_CTX_MODE_AESCTR;
-	ctx->status = HCRYPT_CTX_S_INIT;
+    ctx->mode = HCRYPT_CTX_MODE_AESCTR;
+    ctx->status = HCRYPT_CTX_S_INIT;
 
-	ctx->msg_info = crypto->msg_info;
+    ctx->msg_info = crypto->msg_info;
 
-	if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
-		return(-1);
-	}
-                    ctx->status = HCRYPT_CTX_S_SARDY;
-	return(0);
+    if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
+        return(-1);
+    }
+    ctx->status = HCRYPT_CTX_S_SARDY;
+    return(0);
 }
 
 int hcryptCtx_Rx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *sek, size_t sek_len)

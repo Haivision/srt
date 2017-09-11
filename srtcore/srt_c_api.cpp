@@ -28,24 +28,25 @@ written by
 #endif
 #include "srt.h"
 #include "common.h"
-
+#include "core.h"
 
 extern "C" {
 
-int srt_startup() { return UDT::startup(); }
-int srt_cleanup() { return UDT::cleanup(); }
-UDTSOCKET srt_socket(int af, int type, int protocol) { return UDT::socket(af, type, protocol); }
-int srt_bind(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::bind(u, name, namelen); }
-int srt_bind_peerof(UDTSOCKET u, UDPSOCKET udpsock) { return UDT::bind2(u, udpsock); }
-int srt_listen(UDTSOCKET u, int backlog) { return UDT::listen(u, backlog); }
-UDTSOCKET srt_accept(UDTSOCKET u, struct sockaddr * addr, int * addrlen) { return UDT::accept(u, addr, addrlen); }
-int srt_connect(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::connect(u, name, namelen); }
+int srt_startup() { return CUDT::startup(); }
+int srt_cleanup() { return CUDT::cleanup(); }
+UDTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
+int srt_bind(UDTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
+int srt_bind_peerof(UDTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+int srt_listen(UDTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
+UDTSOCKET srt_accept(UDTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
+int srt_connect(UDTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
+int srt_connect_debug(UDTSOCKET u, const struct sockaddr * name, int namelen, int32_t forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 
 int srt_rendezvous(UDTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
-    UDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+    CUDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
 
     // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
     // Just as a safety precaution, check the structs.
@@ -78,38 +79,38 @@ int srt_close(UDTSOCKET u)
         return 0;
     }
 
-    return UDT::close(u);
+    return CUDT::close(u);
 }
 
-int srt_getpeername(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getpeername(u, name, namelen); }
-int srt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen) { return UDT::getsockname(u, name, namelen); }
+int srt_getpeername(UDTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
+int srt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
 int srt_getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
-{ return UDT::getsockopt(u, level, UDT::SOCKOPT(optname), optval, optlen); }
+{ return CUDT::getsockopt(u, level, optname, optval, optlen); }
 int srt_setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
-{ return UDT::setsockopt(u, level, UDT::SOCKOPT(optname), optval, optlen); }
+{ return CUDT::setsockopt(u, level, optname, optval, optlen); }
 
 int srt_getsockflag(UDTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
-{ return UDT::getsockopt(u, 0, UDT::SOCKOPT(opt), optval, optlen); }
+{ return CUDT::getsockopt(u, 0, opt, optval, optlen); }
 int srt_setsockflag(UDTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
-{ return UDT::setsockopt(u, 0, UDT::SOCKOPT(opt), optval, optlen); }
+{ return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return UDT::send(u, buf, len, flags); }
-int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return UDT::recv(u, buf, len, flags); }
-int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return UDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(UDTSOCKET u, char * buf, int len) { return UDT::recvmsg(u, buf, len); }
+int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return CUDT::send(u, buf, len, flags); }
+int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return CUDT::recv(u, buf, len, flags); }
+int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
+int srt_recvmsg(UDTSOCKET u, char * buf, int len) { return CUDT::recvmsg(u, buf, len); }
 
 int srt_sendmsg2(UDTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     if (mctrl)
-        return UDT::sendmsg(u, buf, len, -1, true, mctrl->srctime);
+        return CUDT::sendmsg(u, buf, len, -1, true, mctrl->srctime);
     else
-        return UDT::sendmsg(u, buf, len);
+        return CUDT::sendmsg(u, buf, len);
 }
 
 int srt_recvmsg2(UDTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     uint64_t srctime = 0;
-    int rc = UDT::recvmsg(u, buf, len, srctime);
+    int rc = CUDT::recvmsg(u, buf, len, srctime);
     if (rc == UDT::ERROR) {
         // error happen
         return -1;
@@ -126,7 +127,7 @@ int srt_getlasterror(int* loc_errno)
 {
     if ( loc_errno )
         *loc_errno = UDT::getlasterror().getErrno();
-    return UDT::getlasterror().getErrorCode();
+    return CUDT::getlasterror().getErrorCode();
 }
 
 const char* srt_strerror(int code, int err)
@@ -142,17 +143,17 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_perfmon(UDTSOCKET u, SRT_TRACEINFO * perf, int clear) { return UDT::perfmon(u, perf, 0!=  clear); }
-int srt_bstats(UDTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return UDT::bstats(u, perf, 0!=  clear); }
+int srt_perfmon(UDTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
+int srt_bstats(UDTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
 
-SRT_SOCKSTATUS srt_getsockstate(UDTSOCKET u) { return SRT_SOCKSTATUS((int)UDT::getsockstate(u)); }
+SRT_SOCKSTATUS srt_getsockstate(UDTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
 
 // event mechanism
-int srt_epoll_create() { return UDT::epoll_create(); }
+int srt_epoll_create() { return CUDT::epoll_create(); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
-int srt_epoll_add_usock(int eid, UDTSOCKET u, const int * events) { return UDT::epoll_add_usock(eid, u, events); }
+int srt_epoll_add_usock(int eid, UDTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
 
 int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
@@ -162,24 +163,24 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
     if (events) {
         flag = *events;
 	} else {
-        flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
     if (events) {
         flag = *events;
 	} else {
-        flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #else
-    flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+    flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 #endif
 
     // call UDT native function
-    return UDT::epoll_add_ssock(eid, s, &flag);
+    return CUDT::epoll_add_ssock(eid, s, &flag);
 }
 
-int srt_epoll_remove_usock(int eid, UDTSOCKET u) { return UDT::epoll_remove_usock(eid, u); }
-int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return UDT::epoll_remove_ssock(eid, s); }
+int srt_epoll_remove_usock(int eid, UDTSOCKET u) { return CUDT::epoll_remove_usock(eid, u); }
+int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_ssock(eid, s); }
 
 int srt_epoll_update_usock(int eid, UDTSOCKET u, const int * events)
 {
@@ -188,10 +189,10 @@ int srt_epoll_update_usock(int eid, UDTSOCKET u, const int * events)
 	if (events) {
         srt_ev = *events;
 	} else {
-		srt_ev = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+		srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 	}
 
-	return UDT::epoll_update_usock(eid, u, &srt_ev);
+	return CUDT::epoll_update_usock(eid, u, &srt_ev);
 }
 
 int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
@@ -202,20 +203,20 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
     if (events) {
         flag = *events;
 	} else {
-        flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
     if (events) {
         flag = *events;
 	} else {
-        flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #else
-    flag = UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR;
+    flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 #endif
 
     // call UDT native function
-    return UDT::epoll_update_ssock(eid, s, &flag);
+    return CUDT::epoll_update_ssock(eid, s, &flag);
 }
 
 int srt_epoll_wait(
@@ -231,7 +232,7 @@ int srt_epoll_wait(
     		lrfds, lrnum, lwfds, lwnum);
 }
 
-int srt_epoll_release(int eid) { return UDT::epoll_release(eid); }
+int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
@@ -265,6 +266,10 @@ void srt_setlogflags(int flags)
     UDT::setlogflags(flags);
 }
 
+int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
+{
+    return CUDT::getsndbuffer(sock, blocks, bytes);
+}
 
 
 }

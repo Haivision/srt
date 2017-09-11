@@ -25,16 +25,10 @@ written by
 #ifndef SRT4UDT_H
 #define SRT4UDT_H
 
-#ifndef __UDT_H__
+#ifndef INC__SRTC_H
 #error "This is protected header, used by udt.h. This shouldn't be included directly"
 #endif
 
-/*
-* SRT_ENABLE_SRTCC_API: "C" application setting ("C" wrapper)
-*/
-//undef SRT_ENABLE_SRTCC_API    1
-
-#define SRT_ENABLE_TLPKTDROP 1          /* Too-Late Pkts Dropping: Sender drop unacked data too late to be sent and recver forget late missing data */
 //undef SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
 #define SRT_ENABLE_SRCTIMESTAMP 1       /* Support timestamp carryover from one SRT connection (Rx) to the next (Tx) */
 #define SRT_ENABLE_CBRTIMESTAMP 1       /* Set timestamp for Constant Bit Rate flow (requires SRCTIMESTAMP) */
@@ -100,11 +94,6 @@ written by
 */
 #define SRT_ENABLE_SND2WAYPROTECT 1
 
-/*
-* SRT_FIX_KEEPALIVE
-* 
-*/
-#define SRT_FIX_KEEPALIVE 1
 
 
 #define SRT_ENABLE_CLOSE_SYNCH 0

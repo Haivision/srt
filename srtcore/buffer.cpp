@@ -167,7 +167,9 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
    uint64_t time = CTimer::getTime();
    int32_t inorder = order ? MSGNO_PACKET_INORDER::mask : 0;
 
-   LOGC(dlog.Debug) << CONID() << "CSndBuffer: adding " << size << " packets (" << len << " bytes) to send";
+   LOGC(dlog.Debug) << CONID() << "addBuffer: adding "
+       << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
+       << (inorder ? "" : " NOT") << " in order";
 
    Block* s = m_pLastBlock;
    for (int i = 0; i < size; ++ i)
@@ -176,6 +178,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
       if (pktlen > m_iMSS)
          pktlen = m_iMSS;
 
+      LOGC(dlog.Debug) << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData;
       memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
       s->m_iLength = pktlen;
 
@@ -221,13 +224,14 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
 
    CGuard::leaveCS(m_BufLock);
 
-   m_iNextMsgNo ++;
 
-   // MSG_SEQ::mask has a form: 00000011111111...
+   // MSGNO_SEQ::mask has a form: 00000011111111...
    // At least it's known that it's from some index inside til the end (to bit 0).
    // If this value has been reached in a step of incrementation, it means that the
    // maximum value has been reached. Casting to int32_t to ensure the same sign
    // in comparison, although it's far from reaching the sign bit.
+
+   m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
       m_iNextMsgNo = 1;
 }
@@ -265,7 +269,7 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
    }
 }
 
-int CSndBuffer::getInputRate(int& payloadsz, int& period)
+int CSndBuffer::getInputRate(ref_t<int> payloadsz, ref_t<int> period)
 {
    uint64_t time = CTimer::getTime();
 
@@ -419,6 +423,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
    // this time possibly in order to find the real data to be sent.
 
    // if found block is stale
+   // (This is for messages that have declared TTL - messages that fail to be sent
+   // before the TTL defined time comes, will be dropped).
    if ((p->m_iTTL >= 0) && ((CTimer::getTime() - p->m_OriginTime) / 1000 > (uint64_t)p->m_iTTL))
    {
       int32_t msgno = p->getMsgSeq();
@@ -434,6 +440,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
             m_pCurrBlock = p;
          msglen ++;
       }
+
+      LOGC(dlog.Debug) << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno;
 
       // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
       // This means that in this case it should be written by the message sequence value only
@@ -458,6 +466,8 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
       p->m_SourceTime ? p->m_SourceTime :
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
       p->m_OriginTime;
+
+   LOGC(dlog.Debug) << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]";
 
    return readlen;
 }
@@ -493,7 +503,7 @@ int CSndBuffer::getCurrBufSize() const
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
 
-int CSndBuffer::getAvgBufSize(int &bytes, int &timespan)
+int CSndBuffer::getAvgBufSize(ref_t<int> bytes, ref_t<int> timespan)
 {
    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
 
@@ -515,7 +525,7 @@ void CSndBuffer::updAvgBufSize(uint64_t now)
    if (1000000 < elapsed)
    {
       /* No sampling in last 1 sec, initialize average */
-      m_iCountMAvg = getCurrBufSize(m_iBytesCountMAvg, m_TimespanMAvg);
+      m_iCountMAvg = getCurrBufSize(Ref(m_iBytesCountMAvg), Ref(m_TimespanMAvg));
       m_LastSamplingTime = now;
    } 
    else //((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 <= elapsed)
@@ -529,9 +539,10 @@ void CSndBuffer::updAvgBufSize(uint64_t now)
       */
       int instspan;
       int bytescount;
-      int count = getCurrBufSize(bytescount, instspan);
+      int count = getCurrBufSize(Ref(bytescount), Ref(instspan));
 
-      LOGC(dlog.Debug).form("updAvgBufSize: %6d: %6d %6d %6d ms\n", (int)elapsed, count, bytescount, instspan);
+      LOGC(dlog.Debug).form("updAvgBufSize: %6llu: %6d %6d %6d ms\n",
+              (unsigned long long)elapsed, count, bytescount, instspan);
 
       m_iCountMAvg      = (int)(((count      * (1000 - elapsed)) + (count      * elapsed)) / 1000);
       m_iBytesCountMAvg = (int)(((bytescount * (1000 - elapsed)) + (bytescount * elapsed)) / 1000);
@@ -542,7 +553,7 @@ void CSndBuffer::updAvgBufSize(uint64_t now)
 
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
-int CSndBuffer::getCurrBufSize(int &bytes, int &timespan)
+int CSndBuffer::getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan)
 {
    bytes = m_iBytesCount;
    /* 
@@ -559,7 +570,6 @@ int CSndBuffer::getCurrBufSize(int &bytes, int &timespan)
    return m_iCount;
 }
 
-#ifdef SRT_ENABLE_TLPKTDROP
 int CSndBuffer::dropLateData(int &bytes, uint64_t latetime)
 {
    int dpkts = 0;
@@ -588,7 +598,6 @@ int CSndBuffer::dropLateData(int &bytes, uint64_t latetime)
 // CTimer::triggerEvent();
    return(dpkts);
 }
-#endif /* SRT_ENABLE_TLPKTDROP */
 
 void CSndBuffer::increase()
 {
@@ -632,6 +641,8 @@ void CSndBuffer::increase()
       pb->m_pNext = new Block;
       pb = pb->m_pNext;
    }
+
+   LOGC(dlog.Debug) << "CSndBuffer: BUFFER FULL - adding " << (unitsize*m_iMSS) << " bytes spread to " << unitsize << " blocks";
 
    // insert the new blocks onto the existing one
    pb->m_pNext = m_pLastBlock->m_pNext;
@@ -788,20 +799,26 @@ int CRcvBuffer::readBuffer(char* data, int len)
    int p = m_iStartPos;
    int lastack = m_iLastAckPos;
    int rs = len;
+   char* begin = data; // logging only
 
    uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : 0LL);
 
-   LOGC(mglog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
+   LOGC(dlog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
    while ((p != lastack) && (rs > 0))
    {
-      LOGC(mglog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
-      if (m_bTsbPdMode && (getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
-         break; /* too early for this unit, return whatever was copied */
+      if (m_bTsbPdMode)
+      {
+          LOGC(dlog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
+          if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
+              break; /* too early for this unit, return whatever was copied */
+      }
 
       int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
          unitsize = rs;
 
+      LOGC(dlog.Debug) << CONID() << "readBuffer: copying buffer #" << p
+          << " targetpos=" << int(data-begin) << " sourcepos=" << m_iNotch << " size=" << unitsize << " left=" << (unitsize-rs);
       memcpy(data, m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
       data += unitsize;
 
@@ -894,8 +911,6 @@ void CRcvBuffer::ackData(int len)
    CTimer::triggerEvent();
 }
 
-#ifdef SRT_ENABLE_TLPKTDROP
-
 void CRcvBuffer::skipData(int len)
 {
    /* 
@@ -910,7 +925,7 @@ void CRcvBuffer::skipData(int len)
       m_iMaxPos = 0;
 }
 
-bool CRcvBuffer::getRcvFirstMsg(uint64_t& tsbpdtime, bool& passack, int32_t& skipseqno, CPacket** pppkt)
+bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, CPacket** pppkt)
 {
     skipseqno = -1;
 
@@ -965,9 +980,8 @@ bool CRcvBuffer::getRcvFirstMsg(uint64_t& tsbpdtime, bool& passack, int32_t& ski
     }
     return false;
 }
-#endif /* SRT_ENABLE_TLPKTDROP */
 
-bool CRcvBuffer::getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt)
+bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, CPacket** pppkt)
 {
    tsbpdtime = 0;
    int rmpkts = 0; 
@@ -1432,7 +1446,7 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
    {
       passack = false;
 
-      if (getRcvReadyMsg(tsbpdtime))
+      if (getRcvReadyMsg(Ref(tsbpdtime)))
       {
          empty = false;
          p = q = m_iStartPos;
