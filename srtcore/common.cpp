@@ -740,8 +740,6 @@ void CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
-#define RA_LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
-
 std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
@@ -771,13 +769,13 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
     if ( mt == UMSG_EXT )
     {
-        if ( extt >= RA_LEN(srt_types) )
+        if ( extt >= Size(srt_types) )
             return "EXT:unknown";
 
         return srt_types[extt];
     }
 
-    if ( size_t(mt) > RA_LEN(udt_types) )
+    if ( size_t(mt) > Size(udt_types) )
         return "unknown";
 
     return udt_types[mt];

@@ -35,7 +35,6 @@ using namespace std;
 // The length of the SRT payload used in srt_recvmsg call.
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
-const size_t DEF_MAX_STREAMS = 10;
 
 const logging::LogFA SRT_LOGFA_APP = 10;
 logging::Logger applog(SRT_LOGFA_APP, &srt_logger_config, "siplex");
