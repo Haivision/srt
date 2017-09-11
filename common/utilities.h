@@ -66,6 +66,8 @@ written by
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS
 
+#include "platform_sys.h"
+
 #include <string>
 #include <algorithm>
 #include <bitset>
@@ -76,7 +78,6 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
-#include <arpa/inet.h> // hton/ntoh
 
 // -------------- UTILITIES ------------------------
 
