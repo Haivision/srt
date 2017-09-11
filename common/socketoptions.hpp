@@ -180,7 +180,6 @@ inline bool SocketOption::apply(int socket, std::string value) const
     return false;
 }
 
-extern std::map<std::string, int> enummap_transtype;
 
 namespace {
 SocketOption srt_options [] {
