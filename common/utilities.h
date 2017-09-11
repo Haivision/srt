@@ -169,16 +169,16 @@ struct Bits
 // The user should use it as an array: ds[DS_NAME], stating
 // that DS_NAME is of enum type passed as 3rd parameter.
 // However trying to do ds[0] would cause a compile error.
-template <typename FieldType, size_t Size, typename IndexerType>
+template <typename FieldType, size_t NoOfFields, typename IndexerType>
 struct DynamicStruct
 {
-    FieldType inarray[Size];
+    FieldType inarray[NoOfFields];
 
     void clear()
     {
         // As a standard library, it can be believed that this call
         // can be optimized when FieldType is some integer.
-        std::fill(inarray, inarray + Size, FieldType());
+        std::fill(inarray, inarray + NoOfFields, FieldType());
     }
 
     FieldType operator[](IndexerType ix) const { return inarray[size_t(ix)]; }
@@ -606,6 +606,6 @@ inline size_t safe_advance(It& it, size_t num, It end)
 
 // This is available only in C++17, dunno why not C++11 as it's pretty useful.
 template <class V, size_t N> inline
-ATR_CONSTEXPR size_t Size(const V (&arr)[N]) ATR_NOEXCEPT { return N; }
+ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 
 #endif

@@ -13,7 +13,7 @@ extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern std::ostream* transmit_cverb;
 
-static const struct VerboseLogNoEol {} VerbNoEOL;
+static const struct VerboseLogNoEol { VerboseLogNoEol() {} } VerbNoEOL;
 
 class VerboseLog
 {
