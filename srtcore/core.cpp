@@ -179,28 +179,28 @@ void CUDT::construct()
     m_ullSndHsLastTime_us = 0;
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY+1; // Will be reset to 0 for HSv5, this value is important for HSv4
 
-   // Initial status
-   m_bOpened = false;
-   m_bListening = false;
-   m_bConnecting = false;
-   m_bConnected = false;
-   m_bClosing = false;
-   m_bShutdown = false;
-   m_bBroken = false;
-   m_bPeerHealth = true;
-   m_ullLingerExpiration = 0;
+    // Initial status
+    m_bOpened = false;
+    m_bListening = false;
+    m_bConnecting = false;
+    m_bConnected = false;
+    m_bClosing = false;
+    m_bShutdown = false;
+    m_bBroken = false;
+    m_bPeerHealth = true;
+    m_ullLingerExpiration = 0;
 
-   m_lSrtVersion = SRT_DEF_VERSION;
-   m_lPeerSrtVersion = 0; // not defined until connected.
-   m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
+    m_lSrtVersion = SRT_DEF_VERSION;
+    m_lPeerSrtVersion = 0; // not defined until connected.
+    m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
 
-   m_iTsbPdDelay_ms = 0;
-   m_iPeerTsbPdDelay_ms = 0;
+    m_iTsbPdDelay_ms = 0;
+    m_iPeerTsbPdDelay_ms = 0;
 
-   m_bPeerTsbPd = false;
-   m_iPeerTsbPdDelay_ms = 0;
-   m_bTsbPd = false;
-   m_bPeerTLPktDrop = false;
+    m_bPeerTsbPd = false;
+    m_iPeerTsbPdDelay_ms = 0;
+    m_bTsbPd = false;
+    m_bPeerTLPktDrop = false;
 
     // Initilize mutex and condition variables
     initSynch();
