@@ -265,6 +265,7 @@ public: // internal API
     int MSS() { return m_iMSS; }
     size_t maxPayloadSize() { return m_zMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
+    uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -533,9 +534,7 @@ private: // Identification
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
-#ifdef SRT_ENABLE_NAKREPORT
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
-#endif
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
     CCache<CInfoBlock>* m_pCache;                // network information cache
@@ -597,15 +596,9 @@ private: // Sending related data
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
-#ifdef SRT_ENABLE_NAKREPORT
-    int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
-    int m_iNakReportAccel;                       // NAK Report Period (RTT) accelerator
     bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
-#endif /* SRT_ENABLE_NAKREPORT */
-#ifdef SRT_ENABLE_FASTREXMIT
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
-#endif /* SRT_ENABLE_FASTREXMIT */
 
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;               //< Receiver buffer
@@ -752,9 +745,7 @@ private: // Timers
     volatile uint64_t m_ullACKInt_tk;         // ACK interval
     volatile uint64_t m_ullNAKInt_tk;         // NAK interval
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
-#ifdef SRT_ENABLE_FASTREXMIT
     volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
-#endif /* SRT_ENABLE_FASTREXMIT */
     volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
     uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
     uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem

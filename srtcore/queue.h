@@ -175,7 +175,7 @@ public:
       /// @param [in] u pointer to the UDT instance
       /// @param [in] resechedule if the timestampe shoudl be rescheduled
 
-   void update(const CUDT* u, EReschedule reschedule = DO_RESCHEDULE);
+   void update(const CUDT* u, EReschedule reschedule);
 
       /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
       /// @param [out] addr destination address of the next packet

@@ -34,10 +34,13 @@ class LiveSmoother: public SmootherBase
     int      m_iSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
 
+    // NAKREPORT stuff.
+    int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
+    int m_iNakReportAccel;                       // NAK Report Period (RTT) accelerator
+
     typedef LiveSmoother Me; // required for SSLOT macro
 
 public:
-
 
     LiveSmoother(CUDT* parent): SmootherBase(parent)
     {
@@ -46,6 +49,9 @@ public:
         if ( m_zMaxPayloadSize == 0 )
             m_zMaxPayloadSize = parent->maxPayloadSize();
         m_iSndAvgPayloadSize = m_zMaxPayloadSize;
+
+        m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
+        m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
 
         LOGC(mglog.Debug) << "Creating LiveSmoother: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize;
 
@@ -161,6 +167,38 @@ public:
 
         setMaxBW(bw);
     }
+
+    Smoother::RexmitMethod rexmitMethod() ATR_OVERRIDE
+    {
+        return Smoother::SRM_FASTREXMIT;
+    }
+
+    uint64_t updateNAKInterval(uint64_t nakint_tk, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
+    {
+        /*
+         * duB:
+         * The RTT accounts for the time for the last NAK to reach sender and start resending lost pkts.
+         * The rcv_speed add the time to resend all the pkts in the loss list.
+         * 
+         * For realtime Transport Stream content, pkts/sec is not a good indication of time to transmit
+         * since packets are not filled to m_iMSS and packet size average is lower than (7*188)
+         * for low bit rates.
+         * If NAK report is lost, another cycle (RTT) is requred which is bad for low latency so we
+         * accelerate the NAK Reports frequency, at the cost of possible duplicate resend.
+         * Finally, the UDT4 native minimum NAK interval (m_ullMinNakInt_tk) is 300 ms which is too high
+         * (~10 i30 video frames) to maintain low latency.
+         */
+
+        // Note: this value will still be reshaped to defined minimum,
+        // as per minNAKInterval.
+        return nakint_tk / m_iNakReportAccel;
+    }
+
+    uint64_t minNAKInterval() ATR_OVERRIDE
+    {
+        return m_iMinNakInterval_us * CTimer::getCPUFrequency();
+    }
+
 };
 
 
@@ -457,6 +495,10 @@ RATE_LIMIT:
         }
     }
 
+    Smoother::RexmitMethod rexmitMethod() ATR_OVERRIDE
+    {
+        return Smoother::SRM_LATEREXMIT;
+    }
 };
 
 

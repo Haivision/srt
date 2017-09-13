@@ -70,6 +70,11 @@ public:
     // destruction.
     ~Smoother();
 
+    enum RexmitMethod
+    {
+        SRM_LATEREXMIT,
+        SRM_FASTREXMIT
+    };
 
     enum TransAPI
     {
@@ -158,6 +163,21 @@ public:
     virtual bool checkTransArgs(Smoother::TransAPI , Smoother::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
     {
         return true;
+    }
+
+    virtual Smoother::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
+
+    virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
+    {
+        if (rcv_speed > 0)
+            nakint_tk += (loss_length * 1000000ULL / rcv_speed) * CTimer::getCPUFrequency();
+
+        return nakint_tk;
+    }
+
+    virtual uint64_t minNAKInterval()
+    {
+        return 0; // Leave default
     }
 };
 

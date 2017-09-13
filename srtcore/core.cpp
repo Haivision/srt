@@ -250,11 +250,7 @@ CUDT::CUDT()
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = DEFAULT_LIVE_PAYLOAD_SIZE;
    //Runtime
-#ifdef SRT_ENABLE_NAKREPORT
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
-   m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
-   m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
-#endif /* SRT_ENABLE_NAKREPORT */
    m_llInputBW = 0;             // Application provided input bandwidth (internal input rate sampling == 0)
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
    m_bTwoWayData = false;
@@ -314,11 +310,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
    //Runtime
-#ifdef SRT_ENABLE_NAKREPORT
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
-   m_iMinNakInterval_us = ancestor.m_iMinNakInterval_us;
-   m_iNakReportAccel = ancestor.m_iNakReportAccel;
-#endif /* SRT_ENABLE_NAKREPORT */
 
    m_CryptoSecret = ancestor.m_CryptoSecret;
    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
@@ -613,13 +605,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iSndCryptoKeyLen = *(int*)optval;
         break;
 
-#ifdef SRT_ENABLE_NAKREPORT
     case SRTO_NAKREPORT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_bRcvNakReport = bool_int_value(optval, optlen);
         break;
-#endif /* SRT_ENABLE_NAKREPORT */
 
 #ifdef SRT_ENABLE_CONNTIMEO
     case SRTO_CONNTIMEO:
@@ -958,12 +948,10 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int32_t);
       break;
 
-#ifdef SRT_ENABLE_NAKREPORT
    case SRTO_NAKREPORT:
       *(bool*)optval = m_bRcvNakReport;
       optlen = sizeof(bool);
       break;
-#endif /* SRT_ENABLE_NAKREPORT */
 
    case SRTO_VERSION:
       *(int32_t*)optval = m_lSrtVersion;
@@ -1089,9 +1077,7 @@ void CUDT::clearData()
    m_bTLPktDrop = m_bOPT_TLPktDrop;
    m_bPeerTLPktDrop = false;
 
-#ifdef SRT_ENABLE_NAKREPORT
    m_bPeerNakReport = false;
-#endif /* SRT_ENABLE_NAKREPORT */
 
    m_bPeerRexmitFlag = false;
 
@@ -1129,11 +1115,18 @@ void CUDT::open()
    m_ullSYNInt_tk = COMM_SYN_INTERVAL_US * m_ullCPUFrequency;
 
    // set minimum NAK and EXP timeout to 300ms
+   /*
+      XXX This code is blocked because the value of
+      m_ullMinNakInt_tk will be overwritten again in setupCC.
+      And in setupCC it will have an opportunity to make the
+      value overridden according to the statements in the Smoother.
+
 #ifdef SRT_ENABLE_NAKREPORT
    if (m_bRcvNakReport)
       m_ullMinNakInt_tk = m_iMinNakInterval_us * m_ullCPUFrequency;
    else
 #endif
+*/
    m_ullMinNakInt_tk = 300000 * m_ullCPUFrequency;
    m_ullMinExpInt_tk = 300000 * m_ullCPUFrequency;
 
@@ -1145,10 +1138,8 @@ void CUDT::open()
    m_ullLastRspTime_tk = currtime_tk;
    m_ullNextACKTime_tk = currtime_tk + m_ullSYNInt_tk;
    m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-#ifdef SRT_ENABLE_FASTREXMIT
    m_ullLastRspAckTime_tk = currtime_tk;
    m_iReXmitCount = 1;
-#endif /* SRT_ENABLE_FASTREXMIT */
 #ifdef SRT_ENABLE_CBRTIMESTAMP
    m_ullSndLastCbrTime_tk = currtime_tk;
 #endif
@@ -1330,7 +1321,6 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
     }
 
 
-#ifdef SRT_ENABLE_NAKREPORT
     if (m_bRcvNakReport)
     {
         // HSv5: Note that this setting is independent on the value of
@@ -1348,7 +1338,6 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
         if (m_lPeerSrtVersion <= SrtVersion(1, 0, 7))
             srtdata[SRT_HS_FLAGS] &= ~SRT_OPT_TLPKTDROP;
     }
-#endif
 
     if ( m_lSrtVersion >= SrtVersion(1, 2, 0) )
     {
@@ -1994,13 +1983,11 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
             //Too late packets dropping feature supported
             m_bPeerTLPktDrop = true;
         }
-#ifdef SRT_ENABLE_NAKREPORT
         if (IsSet(peer_srt_options, SRT_OPT_NAKREPORT))
         {
             //Peer will send Periodic NAK Reports
             m_bPeerNakReport = true;
         }
-#endif /* SRT_ENABLE_NAKREPORT */
     }
 
 
@@ -2105,13 +2092,12 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         //Too late packets dropping feature supported
         m_bPeerTLPktDrop = true;
     }
-#ifdef SRT_ENABLE_NAKREPORT
+
     if ((m_lSrtVersion >= SrtVersion(1, 1, 0)) && IsSet(peer_srt_options, SRT_OPT_NAKREPORT))
     {
         //Peer will send Periodic NAK Reports
         m_bPeerNakReport = true;
     }
-#endif /* SRT_ENABLE_NAKREPORT */
 
     if ( m_lSrtVersion >= SrtVersion(1, 2, 0) )
     {
@@ -4066,16 +4052,16 @@ bool CUDT::setupCC()
     //if (bidirectional || m_bDataSender || m_bTwoWayData)
     //    m_bPeerTsbPd = m_bOPT_TsbPd;
 
-#ifdef SRT_ENABLE_NAKREPORT
-    /*
-     * Enable receiver's Periodic NAK Reports
-     */
-    m_ullMinNakInt_tk = m_iMinNakInterval_us * m_ullCPUFrequency;
-#endif /* SRT_ENABLE_NAKREPORT */
-
     // Smoother will retrieve whatever parameters it needs
     // from *this.
     m_Smoother.configure(this);
+
+    // Override the value of minimum NAK interval, per Smoother's wish.
+    // When default 0 value is returned, the current value set by CUDT
+    // is preserved.
+    uint64_t min_nak_tk = m_Smoother->minNAKInterval();
+    if ( min_nak_tk )
+        m_ullMinNakInt_tk = min_nak_tk;
 
     LOGC(mglog.Debug) << "setupCC: setting parameters: mss=" << m_iMSS
         << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
@@ -4312,10 +4298,8 @@ int CUDT::send(const char* data, int len)
       uint64_t currtime_tk;
       CTimer::rdtsc(currtime_tk);
       // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
-#ifdef SRT_ENABLE_FASTREXMIT
       m_ullLastRspAckTime_tk = currtime_tk;
       m_iReXmitCount = 1;
-#endif /* SRT_ENABLE_FASTREXMIT */
    }
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
@@ -4540,10 +4524,8 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
         uint64_t currtime_tk;
         CTimer::rdtsc(currtime_tk);
         // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
-#ifdef SRT_ENABLE_FASTREXMIT
         m_ullLastRspAckTime_tk = currtime_tk;
         m_iReXmitCount = 1;
-#endif /* SRT_ENABLE_FASTREXMIT */
     }
 
     if (m_bPeerTLPktDrop)
@@ -4918,10 +4900,8 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
       uint64_t currtime_tk;
       CTimer::rdtsc(currtime_tk);
       // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
-#ifdef SRT_ENABLE_FASTREXMIT
       m_ullLastRspAckTime_tk = currtime_tk;
       m_iReXmitCount = 1;
-#endif /* SRT_ENABLE_FASTREXMIT */
    }
 
    int64_t tosend = size;
@@ -5770,26 +5750,16 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
 
           // update next NAK time, which should wait enough time for the retansmission, but not too long
           m_ullNAKInt_tk = (m_iRTT + 4 * m_iRTTVar) * m_ullCPUFrequency;
-#ifdef SRT_ENABLE_NAKREPORT
-          /*
-           * duB:
-           * The RTT accounts for the time for the last NAK to reach sender and start resending lost pkts.
-           * The rcv_speed add the time to resend all the pkts in the loss list.
-           * 
-           * For realtime Transport Stream content, pkts/sec is not a good indication of time to transmit
-           * since packets are not filled to m_iMSS and packet size average is lower than (7*188)
-           * for low bit rates.
-           * If NAK report is lost, another cycle (RTT) is requred which is bad for low latency so we
-           * accelerate the NAK Reports frequency, at the cost of possible duplicate resend.
-           * Finally, the UDT4 native minimum NAK interval (m_ullMinNakInt_tk) is 300 ms which is too high
-           * (~10 i30 video frames) to maintain low latency.
-           */
-          m_ullNAKInt_tk /= m_iNakReportAccel;
-#else
-      int rcv_speed = m_RcvTimeWindow.getPktRcvSpeed();
-          if (rcv_speed > 0)
-              m_ullNAKInt_tk += (m_pRcvLossList->getLossLength() * 1000000ULL / rcv_speed) * m_ullCPUFrequency;
-#endif
+
+          // Fix the NAKreport period according to the smoother
+          m_ullNAKInt_tk = m_Smoother->updateNAKInterval(
+                  m_ullNAKInt_tk,
+                  m_RcvTimeWindow.getPktRcvSpeed(),
+                  m_pRcvLossList->getLossLength()
+          );
+
+          // This is necessary because a smoother need not wish to define
+          // its own minimum interval, in which case the default one is used.
           if (m_ullNAKInt_tk < m_ullMinNakInt_tk)
               m_ullNAKInt_tk = m_ullMinNakInt_tk;
 
@@ -5881,10 +5851,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             LOGC(mglog.Debug) << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ack << " [ACK=" << m_iSndLastAck << "] (FLW: " << m_iFlowWindowSize << ") [LITE]";
 
             m_iSndLastAck = ack;
-#ifdef SRT_ENABLE_FASTREXMIT
             m_ullLastRspAckTime_tk = currtime_tk;
             m_iReXmitCount = 1;       // Reset re-transmit count since last ACK
-#endif /* SRT_ENABLE_FASTREXMIT */
          }
 
          break;
@@ -5928,10 +5896,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          // Update Flow Window Size, must update before and together with m_iSndLastAck
          m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
          m_iSndLastAck = ack;
-#ifdef SRT_ENABLE_FASTREXMIT
          m_ullLastRspAckTime_tk = currtime_tk;
          m_iReXmitCount = 1;       // Reset re-transmit count since last ACK
-#endif /* SRT_ENABLE_FASTREXMIT */
       }
 
       /* 
@@ -5991,10 +5957,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          // Update Flow Window Size, must update before and together with m_iSndLastAck
          m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
          m_iSndLastAck = ack;
-#ifdef SRT_ENABLE_FASTREXMIT
          m_ullLastRspAckTime_tk = currtime_tk;
          m_iReXmitCount = 1;       // Reset re-transmit count since last ACK
-#endif // SRT_ENABLE_FASTREXMIT 
       }
 
       // protect packet retransmission
@@ -6237,7 +6201,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       }
 
       // the lost packet (retransmission) should be sent out immediately
-      m_pSndQueue->m_pSndUList->update(this);
+      m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
       ++ m_iRecvNAK;
       ++ m_iRecvNAKTotal;
@@ -7613,22 +7577,24 @@ void CUDT::checkTimers()
         ++ m_iLightACKCount;
     }
 
-#ifdef SRT_ENABLE_NAKREPORT
-    /*
-     * Enable NAK reports for SRT.
-     * Retransmission based on timeout is bandwidth consuming,
-     * not knowing what to retransmit when the only NAK sent by receiver is lost,
-     * all packets past last ACK are retransmitted (SRT_ENABLE_FASTREXMIT).
-     */
-    if ((currtime_tk > m_ullNextNAKTime_tk) && m_bRcvNakReport && (m_pRcvLossList->getLossLength() > 0))
-    {
-        // NAK timer expired, and there is loss to be reported.
-        sendCtrl(UMSG_LOSSREPORT);
 
-        CTimer::rdtsc(currtime_tk);
-        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-    }
-#else
+    if (m_bRcvNakReport)
+    {
+        /*
+         * Enable NAK reports for SRT.
+         * Retransmission based on timeout is bandwidth consuming,
+         * not knowing what to retransmit when the only NAK sent by receiver is lost,
+         * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
+         */
+        if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
+        {
+            // NAK timer expired, and there is loss to be reported.
+            sendCtrl(UMSG_LOSSREPORT);
+
+            CTimer::rdtsc(currtime_tk);
+            m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+        }
+    } // ELSE {
     // we are not sending back repeated NAK anymore and rely on the sender's EXP for retransmission
     //if ((m_pRcvLossList->getLossLength() > 0) && (currtime_tk > m_ullNextNAKTime_tk))
     //{
@@ -7638,7 +7604,7 @@ void CUDT::checkTimers()
     //   CTimer::rdtsc(currtime_tk);
     //   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
     //}
-#endif
+    //}
 
     // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
     // There's nothing in the original code that alters these values.
@@ -7674,7 +7640,7 @@ void CUDT::checkTimers()
             m_iBrokenCounter = 30;
 
             // update snd U list to remove this socket
-            m_pSndQueue->m_pSndUList->update(this);
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
             releaseSynch();
 
@@ -7686,54 +7652,53 @@ void CUDT::checkTimers()
             return;
         }
 
-        // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-        // recver: Send out a keep-alive packet
-        if (m_pSndBuffer->getCurrBufSize() > 0)
+        /* 
+         * This part is only used with FileSmoother. This retransmits
+         * unacknowledged packet only when nothing in the loss list.
+         * This does not work well for real-time data that is delayed too much.
+         * For LiveSmoother, see the case of SRM_FASTREXMIT later in function.
+         */
+        if (m_Smoother->rexmitMethod() == Smoother::SRM_LATEREXMIT)
         {
-#ifdef SRT_ENABLE_FASTREXMIT
-            /* 
-             * Do nothing here, UDT retransmits unacknowledged packet only when nothing in the loss list.
-             * This does not work well for real-time data that is delayed too much.
-             * See fast retransmit handling later in function
-             */
-            ;
-#else  /* SRT_ENABLE_FASTREXMIT */
-            // protect packet retransmission
-            CGuard::enterCS(m_AckLock);
-
-            // FASTREXMIT works only under the following conditions:
-            // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
-            // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-            // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
-            if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
+            // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
+            // recver: Send out a keep-alive packet
+            if (m_pSndBuffer->getCurrBufSize() > 0)
             {
-                // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-                int32_t csn = m_iSndCurrSeqNo;
-                int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                if (num > 0) {
-                    // HAIVISION KULABYTE MODIFIED - MARC
-                    m_iTraceSndLoss += 1; // num;
-                    m_iSndLossTotal += 1; // num;
-                    // HAIVISION KULABYTE MODIFIED - MARC
+                // protect packet retransmission
+                CGuard::enterCS(m_AckLock);
 
-                    LOGC(mglog.Debug) << CONID() << "ENFORCED reXmit by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
-                        << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)";
+                // LATEREXMIT works only under the following conditions:
+                // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
+                // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
+                // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
+                if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
+                {
+                    // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
+                    int32_t csn = m_iSndCurrSeqNo;
+                    int num = m_pSndLossList->insert(m_iSndLastAck, csn);
+                    if (num > 0) {
+                        m_iTraceSndLoss += 1; // num;
+                        m_iSndLossTotal += 1; // num;
+
+                        LOGC(mglog.Debug) << CONID() << "ENFORCED LATEREXMIT by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
+                            << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)";
+                    }
                 }
+                // protect packet retransmission
+                CGuard::leaveCS(m_AckLock);
+
+                checkSndTimers(DONT_REGEN_KM);
+                updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
+
+                // immediately restart transmission
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
             }
-            // protect packet retransmission
-            CGuard::leaveCS(m_AckLock);
-
-            checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
-
-            // immediately restart transmission
-            m_pSndQueue->m_pSndUList->update(this);
-#endif /* SRT_ENABLE_FASTREXMIT */
-        }
-        else
-        {
-            // (fix keepalive) sendCtrl(UMSG_KEEPALIVE);
-            LOGC(mglog.Debug) << CONID() << "(FIX) NOT SENDING KEEPALIVE";
+            else
+            {
+                // (fix keepalive)
+                // XXX (the fix was for Live transmission; this is used in file transmission. Restore?)
+                //sendCtrl(UMSG_KEEPALIVE);
+            }
         }
         ++ m_iEXPCount;
 
@@ -7751,14 +7716,15 @@ void CUDT::checkTimers()
         // (fixed) m_ullLastRspTime_tk = currtime_tk;
 
     }
-#ifdef SRT_ENABLE_FASTREXMIT
     // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
     //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
     //         Not required if peer send Periodic NAK Reports.
-    if ((1)
-#ifdef SRT_ENABLE_NAKREPORT
-            &&  !m_bPeerNakReport 
-#endif
+    if (m_Smoother->rexmitMethod() == Smoother::SRM_FASTREXMIT
+            // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
+            // there's no "blind rexmit" done at all. The only other rexmit method
+            // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
+            // again after it didn't get a "response" for the previous one).
+            &&  !m_bPeerNakReport
             &&  m_pSndBuffer->getCurrBufSize() > 0)
     {
         uint64_t exp_int = (m_iReXmitCount * (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
@@ -7773,17 +7739,15 @@ void CUDT::checkTimers()
                 int32_t csn = m_iSndCurrSeqNo;
                 int num = m_pSndLossList->insert(m_iSndLastAck, csn);
 #if ENABLE_LOGGING
-                LOGC(mglog.Debug) << CONID() << "ENFORCED reXmit by ACK-TMOUT PREPARED: " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
+                LOGC(mglog.Debug) << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
                     << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)";
 
                 LOGC(mglog.Debug).form( "timeout lost: pkts=%d rtt+4*var=%d cnt=%d diff=%llu", num,
                         m_iRTT + 4 * m_iRTTVar, m_iReXmitCount, (unsigned long long)(currtime_tk - (m_ullLastRspAckTime_tk + exp_int)));
 #endif
                 if (num > 0) {
-                    // HAIVISION KULABYTE MODIFIED - MARC
                     m_iTraceSndLoss += 1; // num;
                     m_iSndLossTotal += 1; // num;
-                    // HAIVISION KULABYTE MODIFIED - MARC
                 }
             }
             // protect packet retransmission
@@ -7792,13 +7756,12 @@ void CUDT::checkTimers()
             ++m_iReXmitCount;
 
             checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
+            updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
 
             // immediately restart transmission
-            m_pSndQueue->m_pSndUList->update(this);
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
         }
     }
-#endif /* SRT_ENABLE_FASTREXMIT */
 
     //   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
     if (currtime_tk > m_ullLastSndTime_tk + (COMM_KEEPALIVE_PERIOD_US * m_ullCPUFrequency))
@@ -7817,20 +7780,13 @@ void CUDT::addEPoll(const int eid)
    if (!stillConnected())
        return;
 
-/* new code */
    CGuard::enterCS(m_RecvLock);
    if (m_pRcvBuffer->isRcvDataReady())
    {
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
    }
    CGuard::leaveCS(m_RecvLock);
-/* (OLD CODE)
-   if (((m_iSockType == UDT_DGRAM) && (m_pRcvBuffer->getRcvMsgNum() > 0))
-           ||  ((m_iSockType == UDT_STREAM) &&  m_pRcvBuffer->isRcvDataReady()))
-   {
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
-   }
-*/
+
    if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
    {
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
