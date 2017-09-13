@@ -1,8 +1,16 @@
 
+#if defined(unix)
+// XXX will be nonportable
+#include <sys/ioctl.h>
+#endif
+
 #include <string>
 #include <cmath>
+
+
 #include "common.h"
 #include "core.h"
+#include "queue.h"
 #include "packet.h"
 #include "smoother.h"
 #include "logging.h"
@@ -363,9 +371,19 @@ RATE_LIMIT:
         // maxbw = (MSS*mega)/sndperiod
         uint64_t usedbw = (m_parent->MSS() * 1000000.0) / m_dPktSndPeriod;
 
+#if defined(unix)
+        // Check the outgoing system queue level
+        int udp_buffer_size = m_parent->sndQueue()->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
+        int udp_buffer_level = m_parent->sndQueue()->ioctlQuery(TIOCOUTQ);
+        int udp_buffer_free = udp_buffer_size - udp_buffer_level;
+#else
+        int udp_buffer_free = -1;
+#endif
+
         LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:"
             << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
-            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")";
+            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")"
+            " SYSTEM BUFFER LEFT: " << udp_buffer_free;
 #endif
 
         //set maximum transfer rate
@@ -376,7 +394,7 @@ RATE_LIMIT:
             {
                 m_dPktSndPeriod = minSP;
                 LOGC(mglog.Debug) << "FileSmoother: BW limited to " << m_maxSR
-                    << " - DECREASING snd period to " << m_dPktSndPeriod << "us";
+                    << " - SLOWDOWN sndperiod=" << m_dPktSndPeriod << "us";
             }
         }
 
@@ -481,7 +499,7 @@ RATE_LIMIT:
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
             else
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
-            LOGC(mglog.Debug) << "FileSmoother: CHECKTIMER, SLOWSTART:OFF, pktsndperiod=" << m_dPktSndPeriod << "us";
+            LOGC(mglog.Debug) << "FileSmoother: CHECKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us";
         }
         else
         {

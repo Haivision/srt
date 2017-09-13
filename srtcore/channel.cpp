@@ -65,6 +65,7 @@ modified by
       #include "TargetConditionals.h"
    #endif
    #include <sys/socket.h>
+   #include <sys/ioctl.h>
    #include <netdb.h>
    #include <arpa/inet.h>
    #include <unistd.h>
@@ -300,6 +301,26 @@ void CChannel::setIpToS(int tos)
 }
 
 #endif
+
+int CChannel::ioctlQuery(int type) const
+{
+    int value = 0;
+    int res = ::ioctl(m_iSocket, type, &value);
+    if ( res == -1 )
+        return -1;
+
+    return value;
+}
+
+int CChannel::sockoptQuery(int level, int option) const
+{
+    int value = 0;
+    socklen_t len = sizeof (int);
+    int res = ::getsockopt(m_iSocket, level, option, &value, &len);
+    if ( res == -1 )
+        return -1;
+    return value;
+}
 
 void CChannel::getSockAddr(sockaddr* addr) const
 {

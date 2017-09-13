@@ -765,6 +765,10 @@ private: // for UDP multiplexer
     CSNode* m_pSNode;				// node information for UDT list used in snd queue
     CRNode* m_pRNode;                            // node information for UDT list used in rcv queue
 
+public: // For smoother
+    const CSndQueue* sndQueue() { return m_pSndQueue; }
+    const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
+
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     void addEPoll(const int eid);
