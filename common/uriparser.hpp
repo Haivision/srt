@@ -22,6 +22,7 @@
 #include <string>
 #include <map>
 #include <cstdlib>
+#include "utilities.h"
 
 
 //++
@@ -46,6 +47,8 @@ public:
     // Some predefined types
     Type type();
 
+    typedef MapProxy<std::string, std::string> ParamProxy;
+
 // Operations
 public:
     std::string uri() { return m_origUri; }
@@ -57,7 +60,7 @@ public:
     std::string hostport() { return host() + ":" + port(); }
     std::string path();
     std::string queryValue(const std::string& strKey);
-    std::string operator[](const std::string& key) { return queryValue(key); }
+    ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
     const std::map<std::string, std::string>& parameters() { return m_mapQuery; }
 
 private:

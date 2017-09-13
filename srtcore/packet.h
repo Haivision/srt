@@ -320,8 +320,6 @@ public:
    static const uint32_t MAX_TIMESTAMP = 0xFFFFFFFF; //Full 32 bit (01h11m35s)
 #endif
 
-   static const int32_t SYN_INTERVAL = 10000;        // Periodical Rate Control Interval, 10000 microsecond
-
 protected:
    static const uint32_t TIMESTAMP_MASK = MAX_TIMESTAMP; // this value to be also used as a mask
 public:
