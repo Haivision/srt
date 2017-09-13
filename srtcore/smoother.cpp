@@ -1,7 +1,35 @@
+/*****************************************************************************
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2017 Haivision Systems Inc.
+ * 
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; If not, see <http://www.gnu.org/licenses/>
+ * 
+ * Based on UDT4 SDK version 4.11
+ *****************************************************************************/
 
+
+// This is a controversial thing, so temporarily blocking
+//#define SRT_ENABLE_SYSTEMBUFFER_TRACE
+
+
+
+
+#ifdef SRT_ENABLE_SYSTEMBUFFER_TRACE
 #if defined(unix)
 // XXX will be nonportable
 #include <sys/ioctl.h>
+#endif
 #endif
 
 #include <string>
@@ -371,7 +399,7 @@ RATE_LIMIT:
         // maxbw = (MSS*mega)/sndperiod
         uint64_t usedbw = (m_parent->MSS() * 1000000.0) / m_dPktSndPeriod;
 
-#if defined(unix)
+#if defined(unix) && defined (SRT_ENABLE_SYSTEMBUFFER_TRACE)
         // Check the outgoing system queue level
         int udp_buffer_size = m_parent->sndQueue()->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
         int udp_buffer_level = m_parent->sndQueue()->ioctlQuery(TIOCOUTQ);
@@ -424,7 +452,7 @@ RATE_LIMIT:
             else
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
 
-            LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, pktsndperiod=" << m_dPktSndPeriod << "us";
+            LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us";
         }
 
         m_bLoss = true;
@@ -456,7 +484,7 @@ RATE_LIMIT:
             LOGC(mglog.Debug) << "FileSmoother: LOSS:NEW lastseq=" << m_iLastDecSeq
                 << ", rand=" << m_iDecRandom
                 << " avg NAK:" << m_iAvgNAKNum
-                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+                << ", sndperiod=" << m_dPktSndPeriod << "us";
         }
         else if ((m_iDecCount ++ < 5) && (0 == (++ m_iNAKCount % m_iDecRandom)))
         {
@@ -468,7 +496,7 @@ RATE_LIMIT:
                 << ", seqdiff=" << seqdiff
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
-                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+                << ", sndperiod=" << m_dPktSndPeriod << "us";
         }
         else
         {
@@ -477,7 +505,7 @@ RATE_LIMIT:
                 << ", seqdiff=" << seqdiff
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
-                << ", pktsndperiod=" << m_dPktSndPeriod << "us";
+                << ", sndperiod=" << m_dPktSndPeriod << "us";
         }
 
     }
