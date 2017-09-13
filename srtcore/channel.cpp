@@ -316,7 +316,28 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
-    LOGC(mglog.Debug) << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr) << "/ID=" << packet.m_iID;
+#if ENABLE_LOGGING
+    std::ostringstream spec;
+
+    if (packet.isControl())
+    {
+        spec << " CONTROL size=" << packet.getLength()
+             << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
+             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
+    }
+    else
+    {
+        spec << " DATA size=" << packet.getLength()
+             << " seq=" << packet.getSeqNo();
+        if (packet.getRexmitFlag())
+            spec << " [REXMIT]";
+    }
+
+    LOGC(mglog.Debug) << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+        << " target=%" << packet.m_iID
+        << spec.str();
+#endif
+
    // convert control information into network order
    // XXX USE HtoNLA!
    if (packet.isControl())

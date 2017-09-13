@@ -28,7 +28,7 @@ extern std::set<std::string> false_names, true_names;
 
 struct SocketOption
 {
-    enum Type { STRING = 0, INT, INT64, BOOL };
+    enum Type { STRING = 0, INT, INT64, BOOL, ENUM };
     enum Binding { PRE = 0, POST };
     enum Domain { SYSTEM, SRT };
     enum Mode {FAILURE = -1, LISTENER = 0, CALLER = 1, RENDEZVOUS = 2};
@@ -36,8 +36,9 @@ struct SocketOption
     std::string name;
     int protocol;
     int symbol;
-    Type type;
     Binding binding;
+    Type type;
+    std::map<std::string, int>* valmap;
 
     template <Domain D>
     bool apply(int socket, std::string value) const;
@@ -49,7 +50,7 @@ struct SocketOption
     static int setso(int socket, int protocol, int symbol, const void* data, size_t size);
 
     template<Type T>
-    static void extract(std::string value, OptionValue& val);
+    void extract(std::string value, OptionValue& val) const;
 };
 
 template<> inline
@@ -65,7 +66,7 @@ int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, co
 }
 
 template<> inline
-void SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue& o)
+void SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue& o) const
 {
     o.s = value;
     o.value = o.s.data();
@@ -73,7 +74,7 @@ void SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue&
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::INT>(std::string value, OptionValue& o)
+inline void SocketOption::extract<SocketOption::INT>(std::string value, OptionValue& o) const
 {
     try
     {
@@ -89,7 +90,7 @@ inline void SocketOption::extract<SocketOption::INT>(std::string value, OptionVa
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::INT64>(std::string value, OptionValue& o)
+inline void SocketOption::extract<SocketOption::INT64>(std::string value, OptionValue& o) const
 {
     try
     {
@@ -106,7 +107,7 @@ inline void SocketOption::extract<SocketOption::INT64>(std::string value, Option
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::BOOL>(std::string value, OptionValue& o)
+inline void SocketOption::extract<SocketOption::BOOL>(std::string value, OptionValue& o) const
 {
     bool val;
     if ( false_names.count(value) )
@@ -119,6 +120,36 @@ inline void SocketOption::extract<SocketOption::BOOL>(std::string value, OptionV
     o.b = val;
     o.value = &o.b;
     o.size = sizeof o.b;
+}
+
+template<>
+inline void SocketOption::extract<SocketOption::ENUM>(std::string value, OptionValue& o) const
+{
+    if (valmap)
+    {
+        // Search value in the map. If found, set to o.
+        auto p = valmap->find(value);
+        if ( p != valmap->end() )
+        {
+            o.i = p->second;
+            o.value = &o.i;
+            o.size = sizeof o.i;
+            return;
+        }
+    }
+
+    // Fallback: try interpreting it as integer.
+    try
+    {
+        o.i = stoi(value, 0, 0);
+        o.value = &o.i;
+        o.size = sizeof o.i;
+        return;
+    }
+    catch (...) // stoi throws
+    {
+        return; // do not change o
+    }
 }
 
 template <SocketOption::Domain D, SocketOption::Type T>
@@ -142,36 +173,38 @@ inline bool SocketOption::apply(int socket, std::string value) const
         SRT_HANDLE_TYPE(INT);
         SRT_HANDLE_TYPE(INT64);
         SRT_HANDLE_TYPE(BOOL);
+        SRT_HANDLE_TYPE(ENUM);
 
 #undef SRT_HANDLE_TYPE
     }
     return false;
 }
 
+
 namespace {
 SocketOption srt_options [] {
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT, SocketOption::PRE },
-    { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::INT, SocketOption::PRE },
-    { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::STRING, SocketOption::PRE },
+    { "maxbw", 0, SRTO_MAXBW, SocketOption::PRE, SocketOption::INT64, nullptr},
+    { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::PRE, SocketOption::STRING, nullptr},
 
-    { "mss", 0, SRTO_MSS, SocketOption::INT, SocketOption::PRE },
-    { "fc", 0, SRTO_FC, SocketOption::INT, SocketOption::PRE },
-    { "sndbuf", 0, SRTO_SNDBUF, SocketOption::INT, SocketOption::PRE },
-    { "rcvbuf", 0, SRTO_RCVBUF, SocketOption::INT, SocketOption::PRE },
-    { "ipttl", 0, SRTO_IPTTL, SocketOption::INT, SocketOption::PRE },
-    { "iptos", 0, SRTO_IPTOS, SocketOption::INT, SocketOption::PRE },
-    { "inputbw", 0, SRTO_INPUTBW, SocketOption::INT64, SocketOption::POST },
-    { "oheadbw", 0, SRTO_OHEADBW, SocketOption::INT, SocketOption::POST },
-    { "latency", 0, SRTO_LATENCY, SocketOption::INT, SocketOption::PRE },
-    { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::INT, SocketOption::PRE },
-    { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::BOOL, SocketOption::PRE },
-    { "nakreport", 0, SRTO_NAKREPORT, SocketOption::BOOL, SocketOption::PRE },
-    { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::INT, SocketOption::PRE },
-    { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::INT, SocketOption::PRE },
-    { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::INT, SocketOption::PRE },
-    { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::INT, SocketOption::PRE },
-    { "minversion", 0, SRTO_MINVERSION, SocketOption::INT, SocketOption::PRE },
-    { "streamid", 0, SRTO_STREAMID, SocketOption::STRING, SocketOption::PRE }
+    { "mss", 0, SRTO_MSS, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "fc", 0, SRTO_FC, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "sndbuf", 0, SRTO_SNDBUF, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "rcvbuf", 0, SRTO_RCVBUF, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "ipttl", 0, SRTO_IPTTL, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "iptos", 0, SRTO_IPTOS, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "inputbw", 0, SRTO_INPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
+    { "oheadbw", 0, SRTO_OHEADBW, SocketOption::POST, SocketOption::INT, nullptr},
+    { "latency", 0, SRTO_LATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::PRE, SocketOption::BOOL, nullptr},
+    { "nakreport", 0, SRTO_NAKREPORT, SocketOption::PRE, SocketOption::BOOL, nullptr},
+    { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "minversion", 0, SRTO_MINVERSION, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "streamid", 0, SRTO_STREAMID, SocketOption::PRE, SocketOption::STRING, nullptr},
 };
 }
 
