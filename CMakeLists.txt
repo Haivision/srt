@@ -450,10 +450,13 @@ if ( ENABLE_CXX11 )
 		${SOURCES_transmit}
 	)
 
+# sf must be temporarily blocked on Windows because it's not yet portable
+	if (NOT WIN32)
 	add_executable(sf
 		${CMAKE_SOURCE_DIR}/apps/sf.cpp
 		${SOURCES_transmit}
 	)
+	endif()
 
 	# Test programs
 	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)
@@ -467,9 +470,11 @@ if ( ENABLE_CXX11 )
 	target_link_libraries(siplex ${TARGET_srt} ${TARGET_haicrypt})
 	install(TARGETS siplex RUNTIME DESTINATION bin)
 
+	if (NOT WIN32)
 	set_target_properties(sf PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
 	target_link_libraries(sf ${TARGET_srt} ${TARGET_haicrypt})
 	install(TARGETS sf RUNTIME DESTINATION bin)
+	endif()
 
 	install(PROGRAMS scripts/sfplay DESTINATION bin)
 
