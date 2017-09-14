@@ -78,6 +78,7 @@ modified by
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
+#include "smoother.h"
 #include "utilities.h"
 
 #include <haicrypt.h>
@@ -110,15 +111,15 @@ enum AckDataItem
     ACKD_RTT = 1,
     ACKD_RTTVAR = 2,
     ACKD_BUFFERLEFT = 3,
-    ACKD_TOTAL_SIZE_UDTBASE = 4,
+    ACKD_TOTAL_SIZE_SMALL = 4,
 
     // Extra stats for SRT
     ACKD_RCVSPEED = 4,   // length would be 16
     ACKD_BANDWIDTH = 5,
-    ACKD_TOTAL_SIZE_VER100 = 6, // length = 24
+    ACKD_TOTAL_SIZE_UDTBASE = 6, // length = 24
     ACKD_RCVRATE = 6,
     ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
-    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iPayloadSize when set. Never got.
+    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_zMaxSRTPayloadSize when set. Never got.
                      // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
 
     ACKD_TOTAL_SIZE_VER102 = 8, // 32
@@ -255,6 +256,27 @@ public: // internal API
 
     bool isTsbPd() { return m_bOPT_TsbPd; }
     int RTT() { return m_iRTT; }
+    int32_t sndSeqNo() { return m_iSndCurrSeqNo; }
+    int32_t rcvSeqNo() { return m_iRcvCurrSeqNo; }
+    int flowWindowSize() { return m_iFlowWindowSize; }
+    int32_t deliveryRate() { return m_iDeliveryRate; }
+    int bandwidth() { return m_iBandwidth; }
+    int64_t maxBandwidth() { return m_llMaxBW; }
+    int MSS() { return m_iMSS; }
+    size_t maxPayloadSize() { return m_zMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
+    uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
+
+    // XXX See CUDT::tsbpd() to see how to implement it. This should
+    // do the same as TLPKTDROP feature when skipping packets that are agreed
+    // to be lost. Note that this is predicted to be called with TSBPD off.
+    // This is to be exposed for the application so that it can require this
+    // sequence to be skipped, if that packet has been otherwise arrived through
+    // a different channel.
+    void skipIncoming(int32_t seq);
+
+    void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
+    void DisconnectSignal(ETransmissionEvent tev);
 
 private:
     /// initialize a UDT entity and bind to a local address.
@@ -308,7 +330,7 @@ private:
 
     size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
-    void processSrtMsg(const CPacket *ctrlpkt);
+    bool processSrtMsg(const CPacket *ctrlpkt);
     int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
@@ -419,6 +441,16 @@ private:
         m_iSndHsRetryCnt = 0;
     }
 
+    int64_t withOverhead(int64_t basebw)
+    {
+        return (basebw * (100 + m_iOverheadBW))/100;
+    }
+
+    static double Bps2Mbps(int64_t basebw)
+    {
+        return double(basebw) * 8.0/1000000.0;
+    }
+
     bool stillConnected()
     {
         // Still connected is when:
@@ -432,7 +464,7 @@ private:
 
     int sndSpaceLeft()
     {
-        return ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize);
+        return ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_zMaxSRTPayloadSize);
     }
 
     // TSBPD thread main function.
@@ -449,8 +481,8 @@ private: // Identification
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
-    int m_iPktSize;                              // Maximum/regular packet size, in bytes
-    int m_iPayloadSize;                          // Maximum/regular payload size, in bytes
+    size_t m_zMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
+    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
 
     // Options
     int m_iMSS;                                  // Maximum Segment Size, in bytes
@@ -486,30 +518,11 @@ private: // Identification
     bool m_bDataSender;
     bool m_bTwoWayData;
 
+    // HSv4 (legacy handshake) support)
     uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time
     int      m_iSndHsRetryCnt;       //SRT handshake retries left
 
-    // MOVED FROM CSRTCC
-    double m_dPktSndPeriod;              // Packet sending period, in microseconds
-    double m_dCWndSize;                  // Congestion window size, in packets
-    double m_dMaxCWndSize;               // maximum cwnd size, in packets
-    int m_iRcvRate;			// packet arrive rate at receiver side, packets per second
-    int m_iACKPeriod;                    // Periodical timer to send an ACK, in milliseconds
-    int m_iACKInterval;                  // How many packets to send one ACK, in packets
-    bool m_bUserDefinedRTO;              // if the RTO value is defined by users
-    int m_iRTO;                          // RTO value, microseconds
-
-    int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    int      m_iSndAvgPayloadSize;  //Average Payload Size of packets to xmit
-
-    void updatePktSndPeriod()
-    {
-        double pktsize = m_iSndAvgPayloadSize + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-        m_dPktSndPeriod = 1000000.0 * (pktsize/m_llSndMaxBW);
-    }
-
-    void setMaxBW(int64_t maxbw);
-
+    bool m_bMessageAPI;
     bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
     int m_iOPT_TsbPdDelay;           // Agent's Rx latency
     int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.
@@ -521,14 +534,19 @@ private: // Identification
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
-#ifdef SRT_ENABLE_NAKREPORT
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
-#endif
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
-private: // Status
+    // Congestion control
+    std::vector<EventSlot> m_Slots[TEV__SIZE];
+    Smoother m_Smoother;
+
+    // Attached tool function
+    void EmitSignal(ETransmissionEvent tev, EventVariant var);
+
+    // Internal state
     volatile bool m_bListening;                  // If the UDT entit is listening to connection
     volatile bool m_bConnecting;                 // The short phase when connect() is called but not yet completed
     volatile bool m_bConnected;                  // Whether the connection is on or off
@@ -544,6 +562,17 @@ private: // Status
     int m_iRTT;                                  // RTT, in microseconds
     int m_iRTTVar;                               // RTT variance
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
+    int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
+
+    int sevenEight(int oldvalue, int newvalue)
+    {
+        return (oldvalue*7 + newvalue) >> 3;
+    }
+
+    int threeFour(int oldvalue, int newvalue)
+    {
+        return (oldvalue*3 + newvalue) >> 2;
+    }
 
     uint64_t m_ullLingerExpiration;              // Linger expiration time (for GC to close a socket with data in sending buffer)
 
@@ -578,17 +607,9 @@ private: // Sending related data
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
-#ifdef SRT_ENABLE_NAKREPORT
-    int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
-    int m_iNakReportAccel;                       // NAK Report Period (RTT) accelerator
     bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
-#endif /* SRT_ENABLE_NAKREPORT */
-#ifdef SRT_ENABLE_FASTREXMIT
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
-#endif /* SRT_ENABLE_FASTREXMIT */
-
-    void CCUpdate();
 
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;               //< Receiver buffer
@@ -655,6 +676,7 @@ private: // synchronization: mutexes and conditions
 
 private: // Common connection Congestion Control setup
     bool setupCC();
+    void updateCC(ETransmissionEvent, EventVariant arg);
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
@@ -725,20 +747,18 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers
-    uint64_t m_ullCPUFrequency;                  // CPU clock frequency, used for Timer, ticks per microsecond
-    uint64_t m_ullNextACKTime_tk;			// Next ACK time, in CPU clock cycles, same below
-    uint64_t m_ullNextNAKTime_tk;			// Next NAK time
+    uint64_t m_ullCPUFrequency;               // CPU clock frequency, used for Timer, ticks per microsecond
+    uint64_t m_ullNextACKTime_tk;			  // Next ACK time, in CPU clock cycles, same below
+    uint64_t m_ullNextNAKTime_tk;			  // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;		// SYN interval
-    volatile uint64_t m_ullACKInt_tk;		// ACK interval
-    volatile uint64_t m_ullNAKInt_tk;		// NAK interval
-    volatile uint64_t m_ullLastRspTime_tk;		// time stamp of last response from the peer
-#ifdef SRT_ENABLE_FASTREXMIT
-    volatile uint64_t m_ullLastRspAckTime_tk;   // time stamp of last ACK from the peer
-#endif /* SRT_ENABLE_FASTREXMIT */
-    volatile uint64_t m_ullLastSndTime_tk;		// time stamp of last data/ctrl sent
-    uint64_t m_ullMinNakInt_tk;			// NAK timeout lower bound; too small value can cause unnecessary retransmission
-    uint64_t m_ullMinExpInt_tk;			// timeout lower bound threshold: too small timeout can cause problem
+    volatile uint64_t m_ullSYNInt_tk;		  // SYN interval
+    volatile uint64_t m_ullACKInt_tk;         // ACK interval
+    volatile uint64_t m_ullNAKInt_tk;         // NAK interval
+    volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
+    volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
+    volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
+    uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
+    uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
 
     int m_iPktCount;				// packet counter for ACK
     int m_iLightACKCount;			// light ACK counter
@@ -754,6 +774,10 @@ private: // for UDP multiplexer
     uint32_t m_piSelfIP[4];			// local UDP IP address
     CSNode* m_pSNode;				// node information for UDT list used in snd queue
     CRNode* m_pRNode;                            // node information for UDT list used in rcv queue
+
+public: // For smoother
+    const CSndQueue* sndQueue() { return m_pSndQueue; }
+    const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
 
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger

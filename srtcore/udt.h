@@ -306,8 +306,8 @@ public: // Legacy Error Code
     static const int ENOLISTEN = SRT_ENOLISTEN;
     static const int ERDVNOSERV = SRT_ERDVNOSERV;
     static const int ERDVUNBOUND = SRT_ERDVUNBOUND;
-    static const int EISSTREAM = SRT_EISSTREAM;
-    static const int EISDGRAM = SRT_EISDGRAM;
+    static const int EINVALMSGAPI = SRT_EINVALMSGAPI;
+    static const int EINVALBUFFERAPI = SRT_EINVALBUFFERAPI;
     static const int EDUPLISTEN = SRT_EDUPLISTEN;
     static const int ELARGEMSG = SRT_ELARGEMSG;
     static const int EINVPOLLID = SRT_EINVPOLLID;

@@ -77,23 +77,10 @@ written by
 
 
 /*
-* SRT_ENABLE_LOWACKRATE
-* No ack on each packet in DGRAM mode
-*/
-#define SRT_ENABLE_LOWACKRATE 1
-
-/*
 * SRT_ENABLE_IPOPTS
 * Enable IP TTL and ToS setting
 */
 #define SRT_ENABLE_IPOPTS 1
-
-/*
-* SRT_ENABLE_SND2WAYPROTECT
-* Protect sender-only from back handshake and traffic
-*/
-#define SRT_ENABLE_SND2WAYPROTECT 1
-
 
 
 #define SRT_ENABLE_CLOSE_SYNCH 0

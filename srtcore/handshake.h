@@ -51,6 +51,7 @@ enum SrtOptions
     SRT_OPT_NAKREPORT = BIT(4), /* Periodic NAK report */
     SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
+    SRT_OPT_STREAM    = BIT(6)
 };
 
 
@@ -62,7 +63,8 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_KMREQ = 3,
       SRT_CMD_KMRSP = 4,
       SRT_CMD_SID = 5,
-      SRT_CMD_NONE = -1; // for cases when no pong for ping is required
+      SRT_CMD_SMOOTHER = 6,
+      SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
 
 enum SrtDataStruct
 {
@@ -217,7 +219,7 @@ public:
 
     static const int32_t HS_EXT_HSREQ = BIT(0);
     static const int32_t HS_EXT_KMREQ = BIT(1);
-    static const int32_t HS_EXT_SID   = BIT(2);
+    static const int32_t HS_EXT_CONFIG  = BIT(2);
 
     static std::string ExtensionFlagStr(int32_t fl)
     {
@@ -226,8 +228,8 @@ public:
             output += " hsreq";
         if ( fl & HS_EXT_KMREQ )
             output += " kmreq";
-        if ( fl & HS_EXT_SID )
-            output += " streamid";
+        if ( fl & HS_EXT_CONFIG )
+            output += " config";
         return output;
     }
 

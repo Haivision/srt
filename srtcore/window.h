@@ -178,7 +178,7 @@ public:
    /// Calculate the packets arrival speed.
    /// @return Packet arrival speed (packets per second).
 
-   int getPktRcvSpeed(int& bytesps) const
+   int getPktRcvSpeed(ref_t<int> bytesps) const
    {
        // Lock access to the packet Window
        CGuard cg(m_lockPktWindow);
@@ -190,7 +190,7 @@ public:
    int getPktRcvSpeed() const
    {
        int bytesps;
-       return(getPktRcvSpeed(bytesps));
+       return getPktRcvSpeed(Ref(bytesps));
    }
 
    /// Estimate the bandwidth.
