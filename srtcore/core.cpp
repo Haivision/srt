@@ -1034,7 +1034,8 @@ void CUDT::clearData()
    m_iEXPCount = 1;
    m_iBandwidth = 1;    //pkts/sec
    // XXX use some constant for this 16
-   m_iDeliveryRate = 16 * m_zMaxSRTPayloadSize;
+   m_iDeliveryRate = 16;
+   m_iByteDeliveryRate = 16 * m_zMaxSRTPayloadSize;
    m_iAckSeqNo = 0;
    m_ullLastAckTime_tk = 0;
 
@@ -4065,7 +4066,7 @@ bool CUDT::setupCC()
 
     LOGC(mglog.Debug) << "setupCC: setting parameters: mss=" << m_iMSS
         << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
-        << " rcvrate=" << m_iDeliveryRate
+        << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
         << " rtt=" << m_iRTT
         << " bw=" << m_iBandwidth;
 
@@ -5414,6 +5415,11 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // - m_dCWndSize
         m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
         m_dCongestionWindow = m_Smoother->cgWindowSize();
+#if ENABLE_LOGGING
+        LOGC(mglog.Debug) << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
+            << "tk (" << m_Smoother->pktSndPeriod_us() << "us) cgwindow="
+            << std::setprecision(3) << m_dCongestionWindow;
+#endif
     }
 
 #if 0//debug
@@ -5658,34 +5664,35 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
             data[ACKD_BUFFERLEFT] = 2;
 
 		 if (currtime_tk - m_ullLastAckTime_tk > m_ullSYNInt_tk)
-		 {
-			 int rcvRate;
-			 uint32_t version = 0;
-			 int ctrlsz = ACKD_TOTAL_SIZE_VER100 * ACKD_FIELD_SIZE; // Minimum required size
+         {
+             int rcvRate;
+             int ctrlsz = ACKD_TOTAL_SIZE_UDTBASE * ACKD_FIELD_SIZE; // Minimum required size
 
-            data[ACKD_RCVSPEED] = m_RcvTimeWindow.getPktRcvSpeed(rcvRate);
-            data[ACKD_BANDWIDTH] = m_RcvTimeWindow.getBandwidth();
+             data[ACKD_RCVSPEED] = m_RcvTimeWindow.getPktRcvSpeed(Ref(rcvRate));
+             data[ACKD_BANDWIDTH] = m_RcvTimeWindow.getBandwidth();
 
-            version = m_lPeerSrtVersion;
-            //>>Patch while incompatible (1.0.2) receiver floating around
-            if ( version == SrtVersion(1, 0, 2) )
-            {
-                data[ACKD_RCVRATE] = rcvRate; //bytes/sec
-                data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_zMaxSRTPayloadSize; //bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
-            }
-            else if (version >= SrtVersion(1, 0, 3))
-            {
-                data[ACKD_RCVRATE] = rcvRate; //bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER101;
+             //>>Patch while incompatible (1.0.2) receiver floating around
+             if (m_lPeerSrtVersion == SrtVersion(1, 0, 2))
+             {
+                 data[ACKD_RCVRATE] = rcvRate; //bytes/sec
+                 data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_zMaxSRTPayloadSize; //bytes/sec
+                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
+             }
+             else if (m_lPeerSrtVersion >= SrtVersion(1, 0, 3))
+             {
+                 // Normal, currently expected version.
+                 data[ACKD_RCVRATE] = rcvRate; //bytes/sec
+                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER101;
 
-            }
-            ctrlpkt.pack(pkttype, &m_iAckSeqNo, data, ctrlsz);
-            CTimer::rdtsc(m_ullLastAckTime_tk);
+             }
+             // ELSE: leave the buffer with ...UDTBASE size.
+
+             ctrlpkt.pack(pkttype, &m_iAckSeqNo, data, ctrlsz);
+             CTimer::rdtsc(m_ullLastAckTime_tk);
          }
          else
          {
-            ctrlpkt.pack(pkttype, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_UDTBASE);
+             ctrlpkt.pack(pkttype, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
          }
 
          ctrlpkt.m_iID = m_PeerID;
@@ -6023,18 +6030,20 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // Update RTT
       //m_iRTT = ackdata[ACKD_RTT];
       //m_iRTTVar = ackdata[ACKD_RTTVAR];
+      // XXX These ^^^ commented-out were blocked in UDT;
+      // the current RTT calculations are exactly the same as in UDT4.
       int rtt = ackdata[ACKD_RTT];
-      m_iRTTVar = (m_iRTTVar * 3 + abs(rtt - m_iRTT)) >> 2;
-      m_iRTT = (m_iRTT * 7 + rtt) >> 3;
 
+      m_iRTTVar = threeFour(m_iRTTVar, abs(rtt - m_iRTT));
+      m_iRTT = sevenEight(m_iRTT, rtt);
 
       /* Version-dependent fields:
-       * Original UDT (total size: ACKD_TOTAL_SIZE_UDTBASE):
+       * Original UDT (total size: ACKD_TOTAL_SIZE_SMALL):
        *   ACKD_RCVLASTACK
        *   ACKD_RTT
        *   ACKD_RTTVAR
        *   ACKD_BUFFERLEFT
-       * SRT extension version 1.0.0:
+       * Additional UDT fields, not always attached:
        *   ACKD_RCVSPEED
        *   ACKD_BANDWIDTH
        * SRT extension version 1.0.2 (bstats):
@@ -6043,37 +6052,31 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
        *   ACKD_XMRATE
        */
 
-      if (acksize >= ACKD_TOTAL_SIZE_VER101)    //was 32 in SRT v1.0.2
+      if (acksize > ACKD_TOTAL_SIZE_SMALL)
       {
-         /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE]) and delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
-         /* SRT v1.0.3 Bytes-based stats: only delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
-         int bytesps = ackdata[ACKD_RCVRATE];
+          // This means that ACKD_RCVSPEED and ACKD_BANDWIDTH fields are available.
+          int pktps = ackdata[ACKD_RCVSPEED];
+          int bandwidth = ackdata[ACKD_BANDWIDTH];
+          int bytesps;
 
-         if (bytesps > 0)
-            m_iDeliveryRate = (m_iDeliveryRate * 7 + bytesps) >> 3;
+          /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE]) and delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
+          /* SRT v1.0.3 Bytes-based stats: only delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
+          if (acksize > ACKD_TOTAL_SIZE_UDTBASE)
+              bytesps = ackdata[ACKD_RCVRATE];
+          else
+              bytesps = pktps * m_zMaxSRTPayloadSize;
 
-         if (ackdata[ACKD_BANDWIDTH] > 0)
-            m_iBandwidth = (m_iBandwidth * 7 + ackdata[ACKD_BANDWIDTH]) >> 3;
+          m_iBandwidth = sevenEight(m_iBandwidth, bandwidth);
+          m_iDeliveryRate = sevenEight(m_iDeliveryRate, pktps);
+          m_iByteDeliveryRate = sevenEight(m_iByteDeliveryRate, bytesps);
+          // XXX not sure if ACKD_XMRATE is of any use. This is simply
+          // calculated as ACKD_BANDWIDTH * m_zMaxSRTPayloadSize.
 
-         // Update Estimated Bandwidth and packet delivery rate
-         // m_iRcvRate = m_iDeliveryRate;
-         // ^^ This has been removed because with the Smoother class
-         // instead of reading the m_iRcvRate local field this will read
-         // cudt->deliveryRate() instead.
-      }
-      else if (acksize > ACKD_TOTAL_SIZE_UDTBASE) // This embraces range (...UDTBASE - ...VER100)
-      {
-         // Peer provides only pkts/sec stats, convert to bits/sec for DeliveryRate
-         int pktps;
-
-         if ((pktps = ackdata[ACKD_RCVSPEED]) > 0)
-            m_iDeliveryRate = (m_iDeliveryRate * 7 + (pktps * m_zMaxSRTPayloadSize)) >> 3;
-
-         if (ackdata[ACKD_BANDWIDTH] > 0)
-            m_iBandwidth = (m_iBandwidth * 7 + ackdata[ACKD_BANDWIDTH]) >> 3;
-
-         // Update Estimated Bandwidth and packet delivery rate
-         // m_iRcvRate = m_iDeliveryRate; // SEE ABOVE
+          // Update Estimated Bandwidth and packet delivery rate
+          // m_iRcvRate = m_iDeliveryRate;
+          // ^^ This has been removed because with the Smoother class
+          // instead of reading the m_iRcvRate local field this will read
+          // cudt->deliveryRate() instead.
       }
 
       checkSndTimers(REGEN_KM);

@@ -448,11 +448,18 @@ RATE_LIMIT:
         {
             m_bSlowStart = false;
             if (m_parent->deliveryRate() > 0)
+            {
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
+                LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
+                    << m_parent->deliveryRate() << ")";
+            }
             else
+            {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+                LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
+                    << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")";
+            }
 
-            LOGC(mglog.Debug) << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us";
         }
 
         m_bLoss = true;
@@ -524,10 +531,17 @@ RATE_LIMIT:
         {
             m_bSlowStart = false;
             if (m_parent->deliveryRate() > 0)
+            {
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
+                LOGC(mglog.Debug) << "FileSmoother: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
+                    << m_parent->deliveryRate() << ")";
+            }
             else
+            {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
-            LOGC(mglog.Debug) << "FileSmoother: CHECKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us";
+                LOGC(mglog.Debug) << "FileSmoother: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
+                    << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")";
+            }
         }
         else
         {

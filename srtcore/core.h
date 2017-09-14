@@ -111,12 +111,12 @@ enum AckDataItem
     ACKD_RTT = 1,
     ACKD_RTTVAR = 2,
     ACKD_BUFFERLEFT = 3,
-    ACKD_TOTAL_SIZE_UDTBASE = 4,
+    ACKD_TOTAL_SIZE_SMALL = 4,
 
     // Extra stats for SRT
     ACKD_RCVSPEED = 4,   // length would be 16
     ACKD_BANDWIDTH = 5,
-    ACKD_TOTAL_SIZE_VER100 = 6, // length = 24
+    ACKD_TOTAL_SIZE_UDTBASE = 6, // length = 24
     ACKD_RCVRATE = 6,
     ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
     ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_zMaxSRTPayloadSize when set. Never got.
@@ -562,6 +562,17 @@ private:
     int m_iRTT;                                  // RTT, in microseconds
     int m_iRTTVar;                               // RTT variance
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
+    int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
+
+    int sevenEight(int oldvalue, int newvalue)
+    {
+        return (oldvalue*7 + newvalue) >> 3;
+    }
+
+    int threeFour(int oldvalue, int newvalue)
+    {
+        return (oldvalue*3 + newvalue) >> 2;
+    }
 
     uint64_t m_ullLingerExpiration;              // Linger expiration time (for GC to close a socket with data in sending buffer)
 
