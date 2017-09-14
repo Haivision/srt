@@ -304,22 +304,25 @@ void CChannel::setIpToS(int tos)
 
 int CChannel::ioctlQuery(int type) const
 {
+#ifdef unix
     int value = 0;
     int res = ::ioctl(m_iSocket, type, &value);
-    if ( res == -1 )
-        return -1;
-
-    return value;
+    if ( res != -1 )
+        return value;
+#endif
+    return -1;
 }
 
 int CChannel::sockoptQuery(int level, int option) const
 {
+#ifdef unix
     int value = 0;
     socklen_t len = sizeof (int);
     int res = ::getsockopt(m_iSocket, level, option, &value, &len);
-    if ( res == -1 )
-        return -1;
-    return value;
+    if ( res != -1 )
+        return value;
+#endif
+    return -1;
 }
 
 void CChannel::getSockAddr(sockaddr* addr) const
