@@ -183,7 +183,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     SRTSOCKET ss = m.Socket();
 
     // Use a manual loop for reading from SRT
-    char buf[::g_buffer_size];
+    vector<char> buf(::g_buffer_size);
 
     ifstream ifile(path);
     if ( !ifile )
@@ -194,16 +194,20 @@ bool DoUpload(UriParser& ut, string path, string filename)
 
     for (;;)
     {
-        size_t n = ifile.read(buf, ::g_buffer_size).gcount();
-        if (n > 0)
+        size_t n = ifile.read(buf.data(), ::g_buffer_size).gcount();
+        size_t shift = 0;
+        while (n > 0)
         {
-            Verb() << "Upload: --> " << n;
-            int st = srt_send(ss, buf, n, 0);
+            int st = srt_send(ss, buf.data()+shift, n, 0);
+            Verb() << "Upload: " << n << " --> " << st << (!shift ? string() : "+" + Sprint(shift));
             if (st == SRT_ERROR)
             {
                 cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;
                 return false;
             }
+
+            n -= st;
+            shift += st;
         }
 
         if (ifile.eof())
