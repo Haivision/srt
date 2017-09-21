@@ -490,6 +490,7 @@ if ( ENABLE_CXX11 )
 	# this alias can be preserved. The <TARGET_FILE> recommended by cmake
 	# returns an empty string, so do me a favor and don't change this,
 	# otherwise deprecated, LOCATION.
+	cmake_policy(SET CMP0026 OLD)
     get_target_property(EXEFILE srt-live-transmit LOCATION)
 	#set (EXEFILE $<TARGET_FILE:srt-live-transmit>)
 	#message ("OUTPUT FOR srt-live-transmit: ${EXEFILE}")
