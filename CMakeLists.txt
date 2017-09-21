@@ -48,7 +48,7 @@ endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-option(ENABLE_CXX11 "Should the c++11 parts (stransmit) be enabled" ON)
+option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
@@ -109,7 +109,7 @@ else()
 endif()
 
 if (NOT ENABLE_CXX11)
-	message(WARNING "Parts that require C++11 support will be disabled (stransmit)")
+	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
 endif()
 
 if (HAVE_COMPILER_GNU_COMPAT)
@@ -416,9 +416,9 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 # haisrt.pc left temporarily for backward compatibility. To be removed in future!
-configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
+configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
-configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
+configure_file(scripts/srt.pc.in srt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
 
 # Applications
@@ -440,43 +440,71 @@ if ( ENABLE_CXX11 )
 		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
 	)
 
-	add_executable(stransmit
-		${CMAKE_SOURCE_DIR}/apps/stransmit.cpp
+	add_executable(srt-live-transmit
+		${CMAKE_SOURCE_DIR}/apps/srt-live-transmit.cpp
 		${SOURCES_transmit}
 	)
 
-	add_executable(siplex
-		${CMAKE_SOURCE_DIR}/apps/siplex.cpp
+	add_executable(srt-multiplex
+		${CMAKE_SOURCE_DIR}/apps/srt-multiplex.cpp
 		${SOURCES_transmit}
 	)
 
-# sf must be temporarily blocked on Windows because it's not yet portable
+# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
 	if (NOT WIN32)
-	add_executable(sf
-		${CMAKE_SOURCE_DIR}/apps/sf.cpp
+	add_executable(srt-file-transmit
+		${CMAKE_SOURCE_DIR}/apps/srt-file-transmit.cpp
 		${SOURCES_transmit}
 	)
+	endif()
+
+	# This is recommended by cmake, but it doesn't work anyway.
+	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
+	# is added as is.
+    # set (CMAKE_SKIP_RPATH FALSE)
+    # set (CMAKE_SKIP_BUILD_RPATH FALSE)
+    # set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+    # set (CMAKE_INSTALL_RPATH "../lib")
+    # set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    # set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+	if (LINUX)
+		# This is only needed on Linux, on Windows (including Cygwin) the library file will
+		# be placed into the binrary directory anyway.
+		# XXX not sure about Mac.
+		# XXX This needs to be probably lib64 on 64-bit systems and 64-bit build.
+		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
+		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,../lib BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
 	# Test programs
 	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
-	target_link_libraries(stransmit ${TARGET_srt} ${TARGET_haicrypt})
-	install(TARGETS stransmit RUNTIME DESTINATION bin)
+	set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+	target_link_libraries(srt-live-transmit ${TARGET_srt} ${DEPENDS_srt})
+	install(TARGETS srt-live-transmit RUNTIME DESTINATION bin)
+	# For backward compatibility with the old name
+	#add_custom_target(stransmit)
+	add_custom_command(
+		TARGET srt-live-transmit
+		POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy
+			${CMAKE_BINARY_DIR}/srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX}
+			${CMAKE_BINARY_DIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX})
+	install(PROGRAMS ${CMAKE_BINARY_DIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 
-	set_target_properties(siplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
-	target_link_libraries(siplex ${TARGET_srt} ${TARGET_haicrypt})
-	install(TARGETS siplex RUNTIME DESTINATION bin)
+	set_target_properties(srt-multiplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+	target_link_libraries(srt-multiplex ${TARGET_srt} ${DEPENDS_srt})
+	install(TARGETS srt-multiplex RUNTIME DESTINATION bin)
 
 	if (NOT WIN32)
-	set_target_properties(sf PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
-	target_link_libraries(sf ${TARGET_srt} ${TARGET_haicrypt})
-	install(TARGETS sf RUNTIME DESTINATION bin)
+	set_target_properties(srt-file-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+	target_link_libraries(srt-file-transmit ${TARGET_srt} ${DEPENDS_srt})
+	install(TARGETS srt-file-transmit RUNTIME DESTINATION bin)
 	endif()
 
-	install(PROGRAMS scripts/sfplay DESTINATION bin)
+	install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
 
 	target_link_libraries(utility-test ${TARGET_srt})
 
