@@ -676,6 +676,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_zOPT_ExpPayloadSize = *(int*)optval;
+        break;
 
    case SRTO_TRANSTYPE:
         if (m_bConnected)
@@ -4039,7 +4040,7 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     return m_pCryptoControl->init(side, bidirectional);
 }
 
-bool CUDT::setupCC()
+void CUDT::setupCC()
 {
     // Prepare configuration object,
     // Create the CCC object and configure it.
@@ -4071,7 +4072,6 @@ bool CUDT::setupCC()
         << " bw=" << m_iBandwidth;
 
     updateCC(TEV_INIT, TEV_INIT_RESET);
-    return true;
 }
 
 void CUDT::considerLegacySrtHandshake(uint64_t timebase)

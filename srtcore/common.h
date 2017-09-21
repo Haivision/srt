@@ -253,7 +253,7 @@ struct EventVariant
         *this = arg;
     }
 
-    int32_t* get_ptr()
+    const int32_t* get_ptr() const
     {
         return u.array.ptr;
     }
