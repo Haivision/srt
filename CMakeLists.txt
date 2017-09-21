@@ -485,14 +485,30 @@ if ( ENABLE_CXX11 )
 	target_link_libraries(srt-live-transmit ${TARGET_srt} ${DEPENDS_srt})
 	install(TARGETS srt-live-transmit RUNTIME DESTINATION bin)
 	# For backward compatibility with the old name
-	#add_custom_target(stransmit)
+	
+	# I spent quite a time to extract a path to executable file so that
+	# this alias can be preserved. The <TARGET_FILE> recommended by cmake
+	# returns an empty string, so do me a favor and don't change this,
+	# otherwise deprecated, LOCATION.
+    get_target_property(EXEFILE srt-live-transmit LOCATION)
+	#set (EXEFILE $<TARGET_FILE:srt-live-transmit>)
+	#message ("OUTPUT FOR srt-live-transmit: ${EXEFILE}")
+	#get_filename_component(EXEDIR $<TARGET_FILE:srt-live-transmit> DIRECTORY)
+	get_filename_component(EXEDIR "${EXEFILE}" DIRECTORY)
+	message ("OUTPUT DIRECTORY:  ${EXEDIR}")
+	#set (EXEDIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+	#if (NOT CMAKE_CONFIGURATION_TYPES STREQUAL "")
+	#	# Not sure why, but this is how cmake does it with Visual Studio
+	#	set (EXEDIR ${EXEDIR}/${CMAKE_BUILD_TYPE})
+	#endif()
+
 	add_custom_command(
 		TARGET srt-live-transmit
 		POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy
-			${CMAKE_BINARY_DIR}/srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX}
-			${CMAKE_BINARY_DIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX})
-	install(PROGRAMS ${CMAKE_BINARY_DIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
+			${EXEDIR}/srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX}
+			${EXEDIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX})
+	install(PROGRAMS ${EXEDIR}/stransmit${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 
 	set_target_properties(srt-multiplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 	target_link_libraries(srt-multiplex ${TARGET_srt} ${DEPENDS_srt})

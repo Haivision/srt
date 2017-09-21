@@ -5,12 +5,6 @@
 #include <windows.h>
 #include <time.h>
 
-// XXX Remove haicrypt dependency - this include file
-// and HAICRYPT_API modifier below. The gettimeofday function
-// should not be exposed as public and compiling srtcore
-// and haicrypt into one library file should suffice.
-#include "haicrypt.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -38,8 +32,7 @@ struct timezone
 #endif
 
 void timeradd(struct timeval *a, struct timeval *b, struct timeval *result);
-
-HAICRYPT_API int gettimeofday(struct timeval* tp, struct timezone* tz);
+int gettimeofday(struct timeval* tp, struct timezone* tz);
 
 #ifdef __cplusplus
 }
