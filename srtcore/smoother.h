@@ -3,6 +3,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 
 class CUDT;
 class SmootherBase;
@@ -11,16 +12,17 @@ typedef SmootherBase* smoother_create_t(CUDT* parent);
 
 class Smoother
 {
+    // Temporarily changed to linear searching, until this is exposed
+    // for a user-defined smoother.
     // Note that this is a pointer to function :)
-    static std::map<std::string, smoother_create_t*> registerred_smoothers;
 
-    // Required for portable and problemless global initialization of
-    // the above registerred_smoothers with the "builtin" smoothers.
-    friend class SmootherBaseInitializer;
+    static const size_t N_SMOOTHERS = 2;
+    typedef std::pair<const char*, smoother_create_t*> NamePtr;
+    static NamePtr smoothers[N_SMOOTHERS];
 
     // This is a smoother container.
     SmootherBase* smoother;
-    std::map<std::string, smoother_create_t*>::iterator selector;
+    size_t selector;
 
     void Check();
 
@@ -33,24 +35,32 @@ public:
     SmootherBase* operator->() { Check(); return smoother; }
 
     // In the beginning it's uninitialized
-    Smoother(): smoother(), selector(registerred_smoothers.end()) {}
+    Smoother(): smoother(), selector(N_SMOOTHERS) {}
+
+    struct IsName
+    {
+        std::string n;
+        IsName(std::string nn): n(nn) {}
+        bool operator()(NamePtr np) { return n == np.first; }
+    };
 
     // You can call select() multiple times, until finally
     // the 'configure' method is called.
     bool select(const std::string& name)
     {
-        std::map<std::string, smoother_create_t*>::iterator try_selector = registerred_smoothers.find(name);
-        if (try_selector == registerred_smoothers.end())
+        NamePtr* end = smoothers+N_SMOOTHERS;
+        NamePtr* try_selector = std::find_if(smoothers, end, IsName(name));
+        if (try_selector == end)
             return false;
-        selector = try_selector;
+        selector = try_selector - smoothers;
         return true;
     }
 
     std::string selected_name()
     {
-        if (selector == registerred_smoothers.end())
+        if (selector == N_SMOOTHERS)
             return "";
-        return selector->first;
+        return smoothers[selector].first;
     }
 
     // Copy constructor - important when listener-spawning

@@ -570,28 +570,20 @@ struct Creator
     static SmootherBase* Create(CUDT* parent) { return new Target(parent); }
 };
 
-typedef map<string, smoother_create_t*> smoother_base_t;
-smoother_base_t Smoother::registerred_smoothers;
-
-class SmootherBaseInitializer
+Smoother::NamePtr Smoother::smoothers[N_SMOOTHERS] =
 {
-public:
-    SmootherBaseInitializer()
-    {
-        Smoother::registerred_smoothers["live"] = Creator<LiveSmoother>::Create;
-        Smoother::registerred_smoothers["file"] = Creator<FileSmoother>::Create;
-    }
-
-} g_smoother_base_initializer;
+    NamePtr("live", Creator<LiveSmoother>::Create),
+    NamePtr("file", Creator<FileSmoother>::Create)
+};
 
 
 bool Smoother::configure(CUDT* parent)
 {
-    if (selector == registerred_smoothers.end())
+    if (selector == N_SMOOTHERS)
         return false;
 
     // Found a smoother, so call the creation function
-    smoother = (*selector->second)(parent);
+    smoother = (*smoothers[selector].second)(parent);
 
     // The smoother should have pinned in all events
     // that are of its interest. It's stated that
