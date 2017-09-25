@@ -24,7 +24,7 @@ struct OptionValue
     size_t size = 0;
 };
 
-extern std::set<std::string> false_names, true_names;
+extern const std::set<std::string> false_names, true_names;
 
 struct SocketOption
 {
@@ -38,7 +38,7 @@ struct SocketOption
     int symbol;
     Binding binding;
     Type type;
-    std::map<std::string, int>* valmap;
+    const std::map<std::string, int>* valmap;
 
     template <Domain D>
     bool apply(int socket, std::string value) const;
@@ -180,9 +180,10 @@ inline bool SocketOption::apply(int socket, std::string value) const
     return false;
 }
 
+extern const std::map<std::string, int> enummap_transtype;
 
 namespace {
-SocketOption srt_options [] {
+const SocketOption srt_options [] {
     { "maxbw", 0, SRTO_MAXBW, SocketOption::PRE, SocketOption::INT64, nullptr},
     { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::PRE, SocketOption::INT, nullptr},
     { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::PRE, SocketOption::STRING, nullptr},
@@ -205,6 +206,10 @@ SocketOption srt_options [] {
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "minversion", 0, SRTO_MINVERSION, SocketOption::PRE, SocketOption::INT, nullptr},
     { "streamid", 0, SRTO_STREAMID, SocketOption::PRE, SocketOption::STRING, nullptr},
+    { "smoother", 0, SRTO_SMOOTHER, SocketOption::PRE, SocketOption::STRING, nullptr},
+    { "messageapi", 0, SRTO_MESSAGEAPI, SocketOption::PRE, SocketOption::BOOL, nullptr},
+    { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype }
 };
 }
 

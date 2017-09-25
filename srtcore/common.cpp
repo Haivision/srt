@@ -510,12 +510,12 @@ const char* CUDTException::getErrorMessage()
            m_strMsg += ": Cannot call connect on UNBOUND socket in rendezvous connection setup";
            break;
 
-        case MN_ISSTREAM:
-           m_strMsg += ": This operation is not supported in SOCK_STREAM mode";
+        case MN_INVALMSGAPI:
+           m_strMsg += ": Incorrect use of Message API (sendmsg/recvmsg).";
            break;
 
-        case MN_ISDGRAM:
-           m_strMsg += ": This operation is not supported in SOCK_DGRAM mode";
+        case MN_INVALBUFFERAPI:
+           m_strMsg += ": Incorrect use of Buffer API (send/recv) or File API (sendfile/recvfile).";
            break;
 
         case MN_BUSY:
@@ -794,3 +794,23 @@ std::string ConnectStatusStr(EConnectStatus cst)
         : "REJECTED");
 }
 
+std::string TransmissionEventStr(ETransmissionEvent ev)
+{
+    static const std::string vals [] =
+    {
+        "init",
+        "ack",
+        "ackack",
+        "lossreport",
+        "checktimer",
+        "send",
+        "receive",
+        "custom"
+    };
+
+    size_t vals_size = Size(vals);
+
+    if (size_t(ev) >= vals_size)
+        return "UNKNOWN";
+    return vals[ev];
+}
