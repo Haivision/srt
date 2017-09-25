@@ -572,8 +572,8 @@ struct Creator
 
 Smoother::NamePtr Smoother::smoothers[N_SMOOTHERS] =
 {
-    NamePtr("live", Creator<LiveSmoother>::Create),
-    NamePtr("file", Creator<FileSmoother>::Create)
+    {"live", Creator<LiveSmoother>::Create },
+    {"file", Creator<FileSmoother>::Create }
 };
 
 

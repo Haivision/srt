@@ -17,7 +17,8 @@ class Smoother
     // Note that this is a pointer to function :)
 
     static const size_t N_SMOOTHERS = 2;
-    typedef std::pair<const char*, smoother_create_t*> NamePtr;
+    // The first/second is to mimic the map.
+    typedef struct { const char* first; smoother_create_t* second; } NamePtr;
     static NamePtr smoothers[N_SMOOTHERS];
 
     // This is a smoother container.
