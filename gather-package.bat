@@ -20,5 +20,5 @@ copy %APPVEYOR_BUILD_FOLDER%\%CONFIGURATION%\*.lib %APPVEYOR_BUILD_FOLDER%\packa
 copy %APPVEYOR_BUILD_FOLDER%\%CONFIGURATION%\*.lib %APPVEYOR_BUILD_FOLDER%\package\lib\
 
 rem gather 3rd party elements
-(robocopy c:\pthread-win32\ %APPVEYOR_BUILD_FOLDER%\package\pthread-win32 /s /e) ^& IF %ERRORLEVEL% LEQ 1 exit 0
 (robocopy c:\openssl-win64\ %APPVEYOR_BUILD_FOLDER%\package\openssl-win64 /s /e) ^& IF %ERRORLEVEL% LEQ 1 exit 0
+(robocopy c:\pthread-win32\ %APPVEYOR_BUILD_FOLDER%\package\pthread-win32 /s /e) ^& IF %ERRORLEVEL% LEQ 1 exit 0
