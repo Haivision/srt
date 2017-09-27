@@ -1,4 +1,5 @@
 rem Create empty directories for package bundle
+@echo off
 
 md %APPVEYOR_BUILD_FOLDER%\package
 md %APPVEYOR_BUILD_FOLDER%\package\include
