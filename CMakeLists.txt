@@ -440,6 +440,10 @@ if ( ENABLE_CXX11 )
 		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
 		${CMAKE_SOURCE_DIR}/common/srt_compat.c
 	)
+	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
+	# This should result in exactly the same as when it was compiled as C, with the
+	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
 
 	add_executable(srt-live-transmit
 		${CMAKE_SOURCE_DIR}/apps/srt-live-transmit.cpp
