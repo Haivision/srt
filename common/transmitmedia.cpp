@@ -925,6 +925,7 @@ protected:
             if ( adapter == "" )
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
+                maddr.sin_family = AF_INET;
                 maddr.sin_addr.s_addr = htonl(INADDR_ANY);
                 maddr.sin_port = htons(port); // necessary for temporary use
             }
