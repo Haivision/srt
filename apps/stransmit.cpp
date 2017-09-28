@@ -1299,6 +1299,7 @@ protected:
             if ( adapter == "" )
             {
                 maddr.sin_addr.s_addr = htonl(INADDR_ANY);
+		maddr.sin_port = htons(port); // necessary for temporary use     
             }
             else
             {
@@ -1315,7 +1316,15 @@ protected:
             const void* mreq_arg = &mreq;
             const auto status_error = -1;
 #endif
-            int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
+		
+#if defined(WIN32) || defined(__CYGWIN__) 
+	// On Windows it somehow doesn't work when bind() 
+	// is called with multicast address. Write the address 
+	// that designates the network device here. 
+	sadr = maddr; 
+#endif
+
+	    int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
 
             if ( res == status_error )
             {
