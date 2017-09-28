@@ -125,6 +125,12 @@ static inline int inet_pton(int af, const char * src, void * dst)
 }
 #endif // __MINGW__
 
+#ifdef WIN32
+inline int SysError() { return ::GetLastError(); }
+#else
+inline int SysError() { return errno; }
+#endif
+
 inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
 {
     sockaddr_in sa;

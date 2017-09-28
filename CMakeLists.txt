@@ -438,6 +438,7 @@ if ( ENABLE_CXX11 )
 		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
 		${CMAKE_SOURCE_DIR}/common/logsupport.cpp
 		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
+		${CMAKE_SOURCE_DIR}/common/srt_compat.c
 	)
 
 	add_executable(srt-live-transmit
