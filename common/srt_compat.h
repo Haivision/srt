@@ -26,6 +26,7 @@ written by
 #define HAISRT_COMPAT_H__
 
 #include <stddef.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +37,6 @@ extern "C" {
 #if defined(__MACH__)
 
 #include <AvailabilityMacros.h>
-#include <time.h>
 #include <errno.h>
 #include <pthread.h>
 #include <string.h>
@@ -187,7 +187,6 @@ inline struct tm LocalTime(time_t tt)
 }
 
 
-
-#endif
+#endif // defined C++
 
 #endif // HAISRT_COMPAT_H__

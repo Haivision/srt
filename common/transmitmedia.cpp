@@ -15,6 +15,7 @@
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "transmitmedia.hpp"
+#include "srt_compat.h"
 
 using namespace std;
 
@@ -527,7 +528,7 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
         cerr << "\nERROR #" << udtResult << ": " << message << endl;
 
     udtError.clear();
-    throw std::runtime_error("error in " + src + ": " + message);
+    throw std::runtime_error("error: " + src + ": " + message);
 }
 
 void SrtCommon::OpenRendezvous(string adapter, string host, int port)
@@ -913,10 +914,11 @@ protected:
     {
         m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == -1)
-        {
-            perror("UdpCommon:socket");
-            throw std::runtime_error("UdpCommon: failed to create a socket");
-        }
+            Error(SysError(), "UdpCommon::Setup: socket");
+
+        int yes = 1;
+        ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
+
         sadr = CreateAddrInet(host, port);
 
         if ( attr.count("multicast") )
@@ -925,10 +927,14 @@ protected:
             sockaddr_in maddr;
             if ( adapter == "" )
             {
+                Verb() << "Multicast: home address: INADDR_ANY:" << port;
+                maddr.sin_family = AF_INET;
                 maddr.sin_addr.s_addr = htonl(INADDR_ANY);
+                maddr.sin_port = htons(port); // necessary for temporary use
             }
             else
             {
+                Verb() << "Multicast: home address: " << adapter << ":" << port;
                 maddr = CreateAddrInet(adapter, port);
             }
 
@@ -941,6 +947,16 @@ protected:
 #else
             const void* mreq_arg = &mreq;
             const auto status_error = -1;
+#endif
+
+#if defined(WIN32) || defined(__CYGWIN__)
+            // On Windows it somehow doesn't work when bind()
+            // is called with multicast address. Write the address
+            // that designates the network device here.
+            sadr = maddr;
+            Verb() << "Multicast(Windows): will bind to home address";
+#else
+            Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
 #endif
             int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
 
@@ -965,6 +981,19 @@ protected:
                     cout << "WARNING: failed to set '" << o.name << "' to " << value << endl;
             }
         }
+    }
+
+    void Error(int err, string src)
+    {
+        char buf[512];
+        string message = SysStrError(err, buf, 512u);
+
+        if ( transmit_verbose )
+            cout << "FAILURE\n" << src << ": [" << err << "] " << message << endl;
+        else
+            cerr << "\nERROR #" << err << ": " << message << endl;
+
+        throw std::runtime_error("error: " + src + ": " + message);
     }
 
     ~UdpCommon()
@@ -993,10 +1022,7 @@ public:
         Setup(host, port, attr);
         int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
-        {
-            perror("bind");
-            throw runtime_error("bind failed, UDP cannot read");
-        }
+            Error(SysError(), "Binding address for UDP");
         eof = false;
     }
 
@@ -1006,7 +1032,10 @@ public:
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if ( stat == -1 || stat == 0 )
+        if ( stat == -1 )
+            Error(SysError(), "UDP Read/recvfrom");
+
+        if ( stat < 1 )
         {
             eof = true;
             return bytevector();
@@ -1035,10 +1064,7 @@ public:
     {
         int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
-        {
-            perror("UdpTarget: write");
-            throw runtime_error("Error during write");
-        }
+            Error(SysError(), "UDP Write/sendto");
     }
 
     bool IsOpen() override { return m_sock != -1; }
