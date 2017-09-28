@@ -916,6 +916,9 @@ protected:
         if (m_sock == -1)
             Error(SysError(), "UdpCommon::Setup: socket");
 
+        int yes = 1;
+        ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
+
         sadr = CreateAddrInet(host, port);
 
         if ( attr.count("multicast") )
