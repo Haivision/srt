@@ -24,13 +24,24 @@ bool Download(UriParser& srt, UriParser& file);
 
 const logging::LogFA SRT_LOGFA_APP = 10;
 
-size_t g_buffer_size = 1456;
+static size_t g_buffer_size = 1456;
+static bool g_skip_flushing = false;
+
+using namespace std;
+
 
 int main( int argc, char** argv )
 {
+    set<string>
+        o_loglevel = { "ll", "loglevel" },
+        o_buffer = {"b", "buffer" },
+        o_verbose = {"v", "verbose" },
+        o_noflush = {"s", "skipflush" };
+
+    // Options that expect no arguments (ARG_NONE) need not be mentioned.
     vector<OptionScheme> optargs = {
-        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
-        { {"b", "buffer"}, OptionScheme::ARG_ONE }
+        { o_loglevel, OptionScheme::ARG_ONE },
+        { o_buffer, OptionScheme::ARG_ONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
 
@@ -51,20 +62,24 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
+    string loglevel = Option<OutString>(params, "error", o_loglevel);
     logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 
-    string verbo = Option<OutString>(params, "no", "v", "verbose");
+    string verbo = Option<OutString>(params, "no", o_verbose);
     if ( verbo == "" || !false_names.count(verbo) )
         ::transmit_verbose = true;
 
-    string bs = Option<OutString>(params, "", "b", "buffer");
+    string bs = Option<OutString>(params, "", o_buffer);
     if ( bs != "" )
     {
         ::g_buffer_size = stoi(bs);
     }
+
+    string sf = Option<OutString>(params, "no", o_noflush);
+    if (sf == "" || !false_names.count(sf))
+        ::g_skip_flushing = true;
 
     string source = args[0];
     string target = args[1];
@@ -220,24 +235,28 @@ bool DoUpload(UriParser& ut, string path, string filename)
         }
     }
 
-    // send-flush-loop
-    for (;;)
+    if ( !::g_skip_flushing )
     {
-        size_t bytes;
-        size_t blocks;
-        int st = srt_getsndbuffer(ss, &blocks, &bytes);
-        if (st == SRT_ERROR)
+        // send-flush-loop
+
+        for (;;)
         {
-            cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str() << endl;
-            return false;
+            size_t bytes;
+            size_t blocks;
+            int st = srt_getsndbuffer(ss, &blocks, &bytes);
+            if (st == SRT_ERROR)
+            {
+                cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str() << endl;
+                return false;
+            }
+            if (bytes == 0)
+            {
+                Verb() << "Sending buffer DEPLETED - ok.";
+                break;
+            }
+            Verb() << "Sending buffer still: bytes=" << bytes << " blocks=" << blocks;
+            this_thread::sleep_for(chrono::milliseconds(250));
         }
-        if (bytes == 0)
-        {
-            Verb() << "Sending buffer DEPLETED - ok.";
-            break;
-        }
-        Verb() << "Sending buffer still: bytes=" << bytes << " blocks=" << blocks;
-        this_thread::sleep_for(chrono::milliseconds(250));
     }
 
     return true;
