@@ -113,13 +113,16 @@ enum AckDataItem
     ACKD_BUFFERLEFT = 3,
     ACKD_TOTAL_SIZE_SMALL = 4,
 
-    // Extra stats for SRT
+    // Extra fields existing in UDT (not always sent)
+
     ACKD_RCVSPEED = 4,   // length would be 16
     ACKD_BANDWIDTH = 5,
     ACKD_TOTAL_SIZE_UDTBASE = 6, // length = 24
+    // Extra stats for SRT
+
     ACKD_RCVRATE = 6,
     ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
-    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_zMaxSRTPayloadSize when set. Never got.
+    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
                      // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
 
     ACKD_TOTAL_SIZE_VER102 = 8, // 32
@@ -184,12 +187,8 @@ public: //API
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
-#ifdef SRT_ENABLE_SRCTIMESTAMP
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
-#else
-    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
-#endif
     static int recvmsg(SRTSOCKET u, char* buf, int len);
     static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
     static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
@@ -211,6 +210,12 @@ public: //API
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+
+    static int setError(const CUDTException& e)
+    {
+        s_UDTUnited.setError(new CUDTException(e));
+        return SRT_ERROR;
+    }
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -263,9 +268,10 @@ public: // internal API
     int bandwidth() { return m_iBandwidth; }
     int64_t maxBandwidth() { return m_llMaxBW; }
     int MSS() { return m_iMSS; }
-    size_t maxPayloadSize() { return m_zMaxSRTPayloadSize; }
+    size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
+    int32_t ISN() { return m_iISN; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -372,19 +378,13 @@ private:
     /// @param srctime [in] Time when the data were ready to send.
     /// @return Actual size of data sent.
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
     int sendmsg(const char* data, int len, int ttl, bool inorder, uint64_t srctime);
-#else
-    int sendmsg(const char* data, int len, int ttl, bool inorder);
-#endif
     /// Receive a message to buffer "data".
     /// @param data [out] data received.
     /// @param len [in] size of the buffer.
     /// @return Actual size of data received.
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
     int recvmsg(char* data, int len, uint64_t& srctime);
-#endif
     int recvmsg(char* data, int len);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
@@ -464,8 +464,14 @@ private:
 
     int sndSpaceLeft()
     {
-        return ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_zMaxSRTPayloadSize);
+        return sndBuffersLeft() * m_iMaxSRTPayloadSize;
     }
+
+    int sndBuffersLeft()
+    {
+        return m_iSndBufSize - m_pSndBuffer->getCurrBufSize();
+    }
+
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
@@ -481,7 +487,7 @@ private: // Identification
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
-    size_t m_zMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
+    int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
     size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
 
     // Options
@@ -563,16 +569,6 @@ private:
     int m_iRTTVar;                               // RTT variance
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
-
-    int sevenEight(int oldvalue, int newvalue)
-    {
-        return (oldvalue*7 + newvalue) >> 3;
-    }
-
-    int threeFour(int oldvalue, int newvalue)
-    {
-        return (oldvalue*3 + newvalue) >> 2;
-    }
 
     uint64_t m_ullLingerExpiration;              // Linger expiration time (for GC to close a socket with data in sending buffer)
 
@@ -740,7 +736,7 @@ private: // Trace
 
 public:
 
-    static const int m_iSelfClockInterval = 64;  // ACK interval for self-clocking
+    static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking
     static const int SEND_LITE_ACK = sizeof(int32_t); // special size for ack containing only ack seq
     static const int PACKETPAIR_MASK = 0xF;
 

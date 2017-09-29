@@ -481,9 +481,14 @@ public:
 
    static void triggerEvent();
 
-      /// wait for an event to br triggered by "triggerEvent".
+   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
 
-   static void waitForEvent();
+      /// wait for an event to br triggered by "triggerEvent".
+      /// @retval WT_EVENT The event has happened
+      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
+      /// @retval WT_ERROR The function has exit due to an error
+
+   static EWait waitForEvent();
 
       /// sleep for a short interval. exact sleep time does not matter
 

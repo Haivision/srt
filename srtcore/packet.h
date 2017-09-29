@@ -281,7 +281,7 @@ public:
       /// Read the message sequence number.
       /// @return packet header field [1]
 
-   int32_t getMsgSeq(bool has_rexmit) const;
+   int32_t getMsgSeq(bool has_rexmit = true) const;
 
       /// Read the message crypto key bits.
       /// @return packet header field [1] (bit 3~4).
@@ -381,7 +381,7 @@ public:
    char*& m_pcData;                     // alias: data/control information
 
    //static const int m_iPktHdrSize;	// packet header size
-   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size
+   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = PH_SIZE * sizeof(uint32_t)
 
    // Used in many computations
    // Actually this can be also calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).

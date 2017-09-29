@@ -34,15 +34,15 @@ extern "C" {
 
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
-UDTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
-int srt_bind(UDTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-int srt_bind_peerof(UDTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
-int srt_listen(UDTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
-UDTSOCKET srt_accept(UDTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
-int srt_connect(UDTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
-int srt_connect_debug(UDTSOCKET u, const struct sockaddr * name, int namelen, int32_t forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+SRTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
+int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
+int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
+SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
+int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
+int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int32_t forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 
-int srt_rendezvous(UDTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
@@ -67,7 +67,7 @@ int srt_rendezvous(UDTSOCKET u, const struct sockaddr* local_name, int local_nam
     return srt_connect(u, remote_name, remote_namelen);
 }
 
-int srt_close(UDTSOCKET u)
+int srt_close(SRTSOCKET u)
 {
     SRT_SOCKSTATUS st = srt_getsockstate(u);
 
@@ -82,24 +82,24 @@ int srt_close(UDTSOCKET u)
     return CUDT::close(u);
 }
 
-int srt_getpeername(UDTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
-int srt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
-int srt_getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
+int srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
+int srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+int srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
-int srt_setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
+int srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
 { return CUDT::setsockopt(u, level, optname, optval, optlen); }
 
-int srt_getsockflag(UDTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
+int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 { return CUDT::getsockopt(u, 0, opt, optval, optlen); }
-int srt_setsockflag(UDTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
+int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-int srt_send(UDTSOCKET u, const char * buf, int len, int flags) { return CUDT::send(u, buf, len, flags); }
-int srt_recv(UDTSOCKET u, char * buf, int len, int flags) { return CUDT::recv(u, buf, len, flags); }
-int srt_sendmsg(UDTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(UDTSOCKET u, char * buf, int len) { return CUDT::recvmsg(u, buf, len); }
+int srt_send(SRTSOCKET u, const char * buf, int len, int flags) { return CUDT::send(u, buf, len, flags); }
+int srt_recv(SRTSOCKET u, char * buf, int len, int flags) { return CUDT::recv(u, buf, len, flags); }
+int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
+int srt_recvmsg(SRTSOCKET u, char * buf, int len) { return CUDT::recvmsg(u, buf, len); }
 
-int srt_sendmsg2(UDTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
+int srt_sendmsg2(SRTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     if (mctrl)
         return CUDT::sendmsg(u, buf, len, -1, true, mctrl->srctime);
@@ -107,7 +107,7 @@ int srt_sendmsg2(UDTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
         return CUDT::sendmsg(u, buf, len);
 }
 
-int srt_recvmsg2(UDTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
+int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     uint64_t srctime = 0;
     int rc = CUDT::recvmsg(u, buf, len, srctime);
@@ -143,17 +143,17 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_perfmon(UDTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
-int srt_bstats(UDTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
+int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
+int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
 
-SRT_SOCKSTATUS srt_getsockstate(UDTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
+SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
 
 // event mechanism
 int srt_epoll_create() { return CUDT::epoll_create(); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
-int srt_epoll_add_usock(int eid, UDTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
+int srt_epoll_add_usock(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
 
 int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
@@ -179,10 +179,10 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
     return CUDT::epoll_add_ssock(eid, s, &flag);
 }
 
-int srt_epoll_remove_usock(int eid, UDTSOCKET u) { return CUDT::epoll_remove_usock(eid, u); }
+int srt_epoll_remove_usock(int eid, SRTSOCKET u) { return CUDT::epoll_remove_usock(eid, u); }
 int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_ssock(eid, s); }
 
-int srt_epoll_update_usock(int eid, UDTSOCKET u, const int * events)
+int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
 	int srt_ev = 0;
 
@@ -221,7 +221,7 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 
 int srt_epoll_wait(
 		int eid,
-		UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum,
+		SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
 		int64_t msTimeOut,
         SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
 {

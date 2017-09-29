@@ -399,7 +399,7 @@ void CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
         m_SndKmLastTime = CTimer::getTime();
 }
 
-CCryptoControl::CCryptoControl(CUDT* parent, UDTSOCKET id):
+CCryptoControl::CCryptoControl(CUDT* parent, SRTSOCKET id):
 m_parent(parent), // should be initialized in createCC()
 m_SocketID(id),
 m_iSndKmKeyLen(0),

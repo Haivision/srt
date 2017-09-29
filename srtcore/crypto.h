@@ -49,7 +49,7 @@ class CCryptoControl
 {
 //public:
     class CUDT* m_parent;
-    UDTSOCKET   m_SocketID;
+    SRTSOCKET   m_SocketID;
 
     size_t      m_iSndKmKeyLen;        //Key length
     size_t      m_iRcvKmKeyLen;        //Key length from rx KM
@@ -117,7 +117,7 @@ public:
         return false;
     }
 
-    CCryptoControl(CUDT* parent, UDTSOCKET id);
+    CCryptoControl(CUDT* parent, SRTSOCKET id);
 
     std::string CONID() const;
 

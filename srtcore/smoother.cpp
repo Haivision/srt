@@ -93,6 +93,9 @@ public:
 
         updatePktSndPeriod();
 
+
+        // NOTE: TEV_SEND gets dispatched from Sending thread, all others
+        // from receiving thread.
         parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
 
         /*
@@ -137,13 +140,22 @@ public:
 
     virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW; }
 
+private:
     // SLOTS:
 
     // TEV_SEND -> CPacket*.
     void updatePayloadSize(ETransmissionEvent, EventVariant var)
     {
         const CPacket& packet = *var.get<EventVariant::PACKET>();
-        m_iSndAvgPayloadSize = ((m_iSndAvgPayloadSize * 127) + packet.getLength()) / 128;
+
+        // XXX NOTE: TEV_SEND is sent from CSndQueue::worker thread, which is
+        // different to threads running any other events (TEV_CHECKTIMER and TEV_ACK).
+        // The m_iSndAvgPayloadSize field is however left unguarded because as
+        // 'int' type it's considered atomic, as well as there's no other modifier
+        // of this field. Worst case scenario, the procedure running in CRcvQueue::worker
+        // thread will pick up a "slightly outdated" average value from this
+        // field - this is insignificant.
+        m_iSndAvgPayloadSize = avg_iir<128, int>(m_iSndAvgPayloadSize, packet.getLength());
         LOGC(mglog.Debug) << "LiveSmoother: avg payload size updated: " << m_iSndAvgPayloadSize;
     }
 
@@ -160,8 +172,9 @@ public:
 
     void updatePktSndPeriod()
     {
-        double pktsize = m_iSndAvgPayloadSize + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-        m_dPktSndPeriod = 1000000.0 * (pktsize/m_llSndMaxBW);
+        // packet = payload + header
+        double pktsize = m_iSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
+        m_dPktSndPeriod = 1000*1000.0 * (pktsize/m_llSndMaxBW);
         LOGC(mglog.Debug) << "LiveSmoother: sending period updated: " << m_iSndAvgPayloadSize;
     }
 
@@ -323,6 +336,8 @@ public:
         }
     }
 
+private:
+
     // SLOTS
     void updateSndPeriod(ETransmissionEvent, EventVariant arg)
     {
@@ -346,13 +361,28 @@ public:
             {
                 m_bSlowStart = false;
                 if (m_parent->deliveryRate() > 0)
+                {
                     m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
+                    LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:ENDED) wndsize="
+                        << m_dCWndSize << "/" << m_dMaxCWndSize
+                        << " sndperiod=" << m_dPktSndPeriod << "us = mega/("
+                        << m_parent->deliveryRate() << "B/s)";
+                }
                 else
+                {
                     m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+                    LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:ENDED) wndsize="
+                        << m_dCWndSize << "/" << m_dMaxCWndSize
+                        << " sndperiod=" << m_dPktSndPeriod << "us = wndsize/(RTT+RCIV) RTT="
+                        << m_parent->RTT() << " RCIV=" << m_iRCInterval;
+                }
             }
-
-            LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:"
-                << (m_bSlowStart ? "KEPT" : "ENDED") << ") wndsize=" << m_dCWndSize << " sndperiod=" << m_dPktSndPeriod << "us";
+            else
+            {
+                LOGC(mglog.Debug) << "FileSmoother: UPD (slowstart:KEPT) wndsize="
+                    << m_dCWndSize << "/" << m_dMaxCWndSize
+                    << " sndperiod=" << m_dPktSndPeriod << "us";
+            }
         }
         else
         {

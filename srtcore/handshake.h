@@ -106,42 +106,43 @@ public:
 
 struct SrtHSRequest: public SrtHandshakeExtension
 {
-   static const int32_t SRT_MAGIC_CODE = 0x4A171510;
+    //  ....                                HAIVISIOn
+    static const int32_t SRT_MAGIC_CODE = 0x4A171510;
 private:
-   friend class CHandShake;
+    friend class CHandShake;
 
-   static const size_t SRT_HS_SIZE = 4*sizeof(uint32_t); // 4 existing fields
-   static const size_t SRT_EXT_HS_SIZE = 2*sizeof(uint32_t) + SRT_HS_SIZE; // SRT magic and SRT HS type, used only in UDT HS ext
+    static const size_t SRT_HS_SIZE = 4*sizeof(uint32_t); // 4 existing fields
+    static const size_t SRT_EXT_HS_SIZE = 2*sizeof(uint32_t) + SRT_HS_SIZE; // SRT magic and SRT HS type, used only in UDT HS ext
 
-   typedef Bits<15, 0> SRT_TSBPD_DELAY;
+    typedef Bits<15, 0> SRT_TSBPD_DELAY;
 
-   uint32_t m_iSrtVersion;
-   uint32_t m_iSrtFlags;
-   uint32_t m_iSrtTsbpd;
-   uint32_t m_iSrtReserved;
+    uint32_t m_iSrtVersion;
+    uint32_t m_iSrtFlags;
+    uint32_t m_iSrtTsbpd;
+    uint32_t m_iSrtReserved;
 
 public:
 
-   SrtHSRequest(): SrtHandshakeExtension(SRT_CMD_HSREQ), m_iSrtVersion(), m_iSrtFlags(), m_iSrtTsbpd(), m_iSrtReserved() {}
+    SrtHSRequest(): SrtHandshakeExtension(SRT_CMD_HSREQ), m_iSrtVersion(), m_iSrtFlags(), m_iSrtTsbpd(), m_iSrtReserved() {}
 
-   void setVersion(uint32_t v) { m_iSrtVersion = v; }
-   uint32_t version() const { return m_iSrtVersion; }
+    void setVersion(uint32_t v) { m_iSrtVersion = v; }
+    uint32_t version() const { return m_iSrtVersion; }
 
-   void setFlag(SrtOptions opt) { m_iSrtFlags |= uint32_t(opt); }
-   void clearFlag(SrtOptions opt) { m_iSrtFlags &= ~opt; }
-   uint32_t flags() const { return m_iSrtFlags; }
+    void setFlag(SrtOptions opt) { m_iSrtFlags |= uint32_t(opt); }
+    void clearFlag(SrtOptions opt) { m_iSrtFlags &= ~opt; }
+    uint32_t flags() const { return m_iSrtFlags; }
 
-   void setTsbPdDelay(uint16_t delay) { m_iSrtTsbpd |= SRT_TSBPD_DELAY::wrap(delay); }
-   // Unknown what the 1-16 bits have to be used for.
-   uint16_t tsbPdDelay() const
-   {
-       return SRT_TSBPD_DELAY::unwrap(m_iSrtTsbpd);
-   }
+    void setTsbPdDelay(uint16_t delay) { m_iSrtTsbpd |= SRT_TSBPD_DELAY::wrap(delay); }
+    // Unknown what the 1-16 bits have to be used for.
+    uint16_t tsbPdDelay() const
+    {
+        return SRT_TSBPD_DELAY::unwrap(m_iSrtTsbpd);
+    }
 
-   size_t size() const { return SRT_EXT_HS_SIZE; }
+    size_t size() const { return SRT_EXT_HS_SIZE; }
 
-   bool serialize(char* p, size_t size) const;
-   bool deserialize(const char* mem, size_t size);
+    bool serialize(char* p, size_t size) const;
+    bool deserialize(const char* mem, size_t size);
 };
 
 struct SrtKMRequest: public SrtHandshakeExtension
