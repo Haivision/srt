@@ -197,6 +197,18 @@ typename OutType::type Option(const options_t& options, OutValue deflt, std::str
     return OutType::process(i->second);
 }
 
+template <class OutType, class OutValue> inline
+typename OutType::type Option(const options_t& options, OutValue deflt, const std::set<std::string>& keys)
+{
+    for (auto key: keys)
+    {
+        auto i = options.find(key);
+        if ( i != options.end() )
+            return OutType::process(i->second);
+    }
+    return deflt;
+}
+
 struct OptionScheme
 {
     std::set<std::string> names;
@@ -211,14 +223,24 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
     size_t vals = 0;
     OptionScheme::Args type = OptionScheme::ARG_VAR; // This is for no-option-yet or consumed
     map<string, vector<string>> params;
+    bool moreoptions = true;
 
     for (char* const* p = argv+1; p != argv+argc; ++p)
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if ( a[0] == '-' )
+        if ( moreoptions && a[0] == '-' )
         {
             current_key = a+1;
+            if ( current_key == "-" )
+            {
+                // The -- argument terminates the options.
+                // The default key is restored to empty so that
+                // it collects now all arguments under the empty key
+                // (not-option-assigned argument).
+                moreoptions = false;
+                goto EndOfArgs;
+            }
             params[current_key].clear();
             vals = 0;
 
@@ -240,10 +262,9 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
             }
             // Not found: set ARG_NONE.
             // cout << "*D KEY '" << current_key << "' assumed type NONE\n";
-
+EndOfArgs:
             type = OptionScheme::ARG_VAR;
             current_key = "";
-            continue;
 Found:
             continue;
         }

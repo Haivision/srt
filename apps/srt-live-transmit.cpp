@@ -253,6 +253,8 @@ int main( int argc, char** argv )
 
     bool internal_log = Option("no", "loginternal") != "no";
 
+    bool skip_flushing = Option("no", "S", "skipflush") != "no";
+
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
@@ -344,21 +346,24 @@ int main( int argc, char** argv )
         }
 
     } catch (Source::ReadEOF&) {
-
-        cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
-        for (;;)
-        {
-            size_t still = tar->Still();
-            if (still == 0)
-            {
-                cerr << "(DEBUG) DEPLETED. Done.\n";
-                break;
-            }
-
-            cerr << "(DEBUG)... still " << still << " bytes\n";
-            this_thread::sleep_for(chrono::seconds(1));
-        }
         alarm(0);
+
+        if (!skip_flushing)
+        {
+            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            for (;;)
+            {
+                size_t still = tar->Still();
+                if (still == 0)
+                {
+                    cerr << "(DEBUG) DEPLETED. Done.\n";
+                    break;
+                }
+
+                cerr << "(DEBUG)... still " << still << " bytes\n";
+                this_thread::sleep_for(chrono::seconds(1));
+            }
+        }
     } catch (std::exception& x) {
 
         cerr << "STD EXCEPTION: " << x.what() << endl;
