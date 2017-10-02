@@ -128,6 +128,7 @@ typedef enum SRT_SOCKOPT {
 	SRTO_MSS = 0,             // the Maximum Transfer Unit
 	SRTO_SNDSYN = 1,          // if sending is blocking
 	SRTO_RCVSYN = 2,          // if receiving is blocking
+	SRTO_ISN = 3,             // Initial Sequence Number (valid only after srt_connect or srt_accept-ed sockets)
 	SRTO_FC = 4,              // Flight flag size (window size)
 	SRTO_SNDBUF = 5,          // maximum buffer in sending queue
 	SRTO_RCVBUF = 6,          // UDT receiving buffer size
@@ -194,8 +195,8 @@ static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
 // known as Smoother and settable by SRTO_SMOOTHER, or more generally by
-// SRTO_TRANSTYPE. The freed number will be reused for some other
-// option. This option should have never been used anywhere, just for safety
+// SRTO_TRANSTYPE. The freed number has been reused for a read-only option
+// SRTO_ISN. This option should have never been used anywhere, just for safety
 // this is temporarily declared as deprecated.
 static const SRT_SOCKOPT SRTO_CC SRT_ATR_DEPRECATED = (SRT_SOCKOPT)3;
 
@@ -219,6 +220,19 @@ typedef enum SRT_TRANSTYPE
     SRTT_FILE,
     SRTT_INVALID
 } SRT_TRANSTYPE;
+
+// These sizes should be used for Live mode. In Live mode you should not
+// exceed the size that fits in a single MTU.
+
+// This is for MPEG TS and it's a default SRTO_PAYLOADSIZE for SRTT_LIVE.
+static const int SRT_LIVE_DEF_PLSIZE = 1316; // = 188*7, recommended for MPEG TS
+
+// This is the maximum payload size for Live mode, should you have a different
+// payload type than MPEG TS.
+static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
+
+// Latency for Live transmission: default is 120
+static const int SRT_LIVE_DEF_LATENCY_MS = 120;
 
 
 struct CBytePerfMon
@@ -480,17 +494,6 @@ inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
 typedef struct CPerfMon SRT_TRACEINFO;
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
-// This structure is only a kind-of wannabe. The only use of it is currently
-// the 'srctime', however the functionality of application-supplied timestamps
-// also doesn't work properly. Left for future until the problems are solved.
-// This may prove useful as currently there's no way to tell the application
-// that TLPKTDROP facility has dropped some data in favor of timely delivery.
-typedef struct SRT_MsgCtrl_ {
-   int flags;
-   int boundary;                        //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;                    //source timestamp (usec), 0LL: use internal time     
-} SRT_MSGCTRL;
-
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;
 
@@ -500,11 +503,13 @@ SRT_API extern int srt_cleanup(void);
 
 // socket operations
 SRT_API extern SRTSOCKET srt_socket(int af, int type, int protocol);
+SRT_API extern SRTSOCKET srt_create_socket();
 SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API extern int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API extern int srt_listen(SRTSOCKET u, int backlog);
 SRT_API extern SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API extern int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API extern int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API extern int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen);
 SRT_API extern int srt_close(SRTSOCKET u);
@@ -514,15 +519,62 @@ SRT_API extern int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOP
 SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API extern int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API extern int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len, int flags);
-SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len, int flags);
 
-// The sendmsg/recvmsg and their 2 counterpart require MAXIMUM the size of SRT payload size (1316).
-// Any data over that size will be ignored.
+// XXX Note that the srctime functionality doesn't work yet and needs fixing.
+typedef struct SRT_MsgCtrl_
+{
+   int flags;            // Left for future
+   int msgttl;           // TTL for a message, default -1 (delivered always)
+   int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
+   int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
+   uint64_t srctime;     // source timestamp (usec), 0LL: use internal time     
+   int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
+   int32_t msgno;        // message number (output value for both sending and receiving)
+} SRT_MSGCTRL;
+
+// You are free to use either of these two methods to set SRT_MSGCTRL object
+// to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.
+SRT_API extern void srt_msgctrl_init(SRT_MSGCTRL* mctrl);
+SRT_API extern const SRT_MSGCTRL srt_msgctrl_default;
+
+// The send/receive functions.
+// These functions have different names due to different sets of parameters
+// to be supplied. Not all of them are needed or make sense in all modes:
+
+// Plain: supply only the buffer and its size.
+// Msg: supply additionally
+// - TTL (message is not delivered when exceeded) and
+// - INORDER (when false, the message is allowed to be delivered in different
+// order than when it was sent, when the later message is earlier ready to
+// deliver)
+// Msg2: Supply extra parameters in SRT_MSGCTRL. When receiving, these
+// parameters will be filled, as needed. NULL is acceptable, in which case
+// the defaults are used.
+
+// NOTE: srt_send and srt_recv have the last "..." left to allow ignore a
+// deprecated and unused "flags" parameter. After confirming that all
+// compat applications that pass useless 0 there are fixed, this will be
+// removed.
+
+// Sending
+SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len, ...);
 SRT_API extern int srt_sendmsg(SRTSOCKET u, const char* buf, int len, int ttl/* = -1*/, int inorder/* = false*/);
-SRT_API extern int srt_recvmsg(SRTSOCKET u, char* buf, int len);
 SRT_API extern int srt_sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL *mctrl);
+
+// Receiving
+SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len, ...);
+
+// srt_recvmsg is actually an alias to srt_recv, it stays under the old name for compat reasons.
+SRT_API extern int srt_recvmsg(SRTSOCKET u, char* buf, int len);
 SRT_API extern int srt_recvmsg2(SRTSOCKET u, char *buf, int len, SRT_MSGCTRL *mctrl);
+
+
+// Special send/receive functions for files only.
+#define SRT_DEFAULT_SENDFILE_BLOCK 364000
+#define SRT_DEFAULT_RECVFILE_BLOCK 7280000
+int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
+int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
+
 
 // last error detection
 SRT_API extern const char* srt_getlasterror_str(void);

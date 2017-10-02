@@ -162,10 +162,6 @@ std::string ConnectStatusStr(EConnectStatus est);
 
 
 const int64_t BW_INFINITE =  30000000/8;         //Infinite=> 30Mbps
-const int DEFAULT_LIVE_LATENCY = 120; // (mSec)
-
-const size_t DEFAULT_MPEG_UNIT_SIZE = 188;
-const size_t DEFAULT_LIVE_PAYLOAD_SIZE = 7*DEFAULT_MPEG_UNIT_SIZE; // 1316
 
 
 enum ETransmissionEvent
