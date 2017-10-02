@@ -1153,7 +1153,7 @@ public:
     SrtTarget(string host, int port, const map<string,string>& par)
     {
         Init(host, port, par, true);
-	
+
         if ( !m_blocking_mode )
         {
             srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
@@ -1228,7 +1228,7 @@ public:
     bytevector Read(size_t chunk) override
     {
         bytevector data(chunk);
-		bool st = cin.read(data.data(), chunk).good();
+        bool st = cin.read(data.data(), chunk).good();
         chunk = size_t(cin.gcount());
         if ( chunk == 0 && !st )
             return bytevector();
@@ -1321,7 +1321,14 @@ protected:
     // On Windows it somehow doesn't work when bind() 
     // is called with multicast address. Write the address 
     // that designates the network device here. 
+    // Also, sets port sharing when working with multicast
     sadr = maddr; 
+    int reuse = 1;
+    int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+    if (shareAddrRes == status_error)
+    {
+        throw runtime_error("marking socket for shared use failed");
+    }
 #endif
 
     int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
