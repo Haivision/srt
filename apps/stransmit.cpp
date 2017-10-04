@@ -1299,7 +1299,7 @@ protected:
             if ( adapter == "" )
             {
                 maddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        maddr.sin_port = htons(port); // necessary for temporary use     
+                maddr.sin_port = htons(port); // necessary for temporary use     
             }
             else
             {
@@ -1318,20 +1318,20 @@ protected:
 #endif
 
 #if defined(WIN32) || defined(__CYGWIN__)
-    // On Windows it somehow doesn't work when bind() 
-    // is called with multicast address. Write the address 
-    // that designates the network device here. 
-    // Also, sets port sharing when working with multicast
-    sadr = maddr; 
-    int reuse = 1;
-    int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
-    if (shareAddrRes == status_error)
-    {
-        throw runtime_error("marking socket for shared use failed");
-    }
+            // On Windows it somehow doesn't work when bind() 
+            // is called with multicast address. Write the address 
+            // that designates the network device here. 
+            // Also, sets port sharing when working with multicast
+            sadr = maddr; 
+            int reuse = 1;
+            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+            if (shareAddrRes == status_error)
+            {
+                throw runtime_error("marking socket for shared use failed");
+            }
 #endif
 
-    int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
+            int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
 
             if ( res == status_error )
             {
