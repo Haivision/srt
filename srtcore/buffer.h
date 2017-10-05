@@ -362,7 +362,7 @@ public:
       /// Add packet timestamp for drift caclculation and compensation
       /// @param [in] timestamp packet time stamp
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp);
+   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
