@@ -24,8 +24,8 @@ bool Download(UriParser& srt, UriParser& file);
 
 const logging::LogFA SRT_LOGFA_APP = 10;
 
-size_t g_buffer_size = 1456;
-bool g_skip_flushing = false;
+static size_t g_buffer_size = 1456;
+static bool g_skip_flushing = false;
 
 using namespace std;
 
