@@ -352,13 +352,8 @@ UDT_API int setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void* 
 UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
 UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
 
-// If SRT_ENABLE_SRCTIMESTAMP is NOT enabled, 'srctime' argument is ignored.
 UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
-#ifdef SRT_ENABLE_SRCTIMESTAMP
-// For non-SRCTIMESTAMP, this version is not available for the application
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len, uint64_t& srctime);
-#endif
-// For SRCTIMESTAMP this version is still available, it just ignores the received timestamp.
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
 
 UDT_API int64_t sendfile(UDTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);

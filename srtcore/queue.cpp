@@ -585,7 +585,7 @@ void* CSndQueue::worker(void* param)
             }
             self->m_pChannel->sendto(addr, pkt);
 
-#if      defined(HAI_DEBUG_SNDQ_HIGHRATE)
+#if      defined(SRT_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lSendTo++;
 #endif   /* SRT_DEBUG_SNDQ_HIGHRATE */
         }
@@ -823,7 +823,7 @@ CRendezvousQueue::~CRendezvousQueue()
    m_lRendezvousID.clear();
 }
 
-void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
+void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
    CGuard vg(m_RIDVectorLock);
 
@@ -838,7 +838,7 @@ void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const socka
    m_lRendezvousID.push_back(r);
 }
 
-void CRendezvousQueue::remove(const UDTSOCKET& id, bool should_lock)
+void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 {
    CGuard vg(m_RIDVectorLock, should_lock);
 
@@ -858,10 +858,10 @@ void CRendezvousQueue::remove(const UDTSOCKET& id, bool should_lock)
    }
 }
 
-CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<UDTSOCKET> r_id)
+CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
 {
    CGuard vg(m_RIDVectorLock);
-   UDTSOCKET& id = r_id;
+   SRTSOCKET& id = r_id;
 
    // TODO: optimize search
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
@@ -1056,7 +1056,7 @@ void* CRcvQueue::worker(void* param)
    while (!self->m_bClosing)
    {
        bool have_received = false;
-       EReadStatus rst = self->worker_RetrieveUnit(id, unit, &sa);
+       EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa);
        if (rst == RST_OK)
        {
            if ( id < 0 )
@@ -1173,7 +1173,7 @@ static string PacketInfo(const CPacket& pkt)
     return os.str();
 }
 
-EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr* addr)
+EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr* addr)
 {
 #ifdef NO_BUSY_WAITING
     m_pTimer->tick();
@@ -1449,12 +1449,12 @@ void CRcvQueue::removeListener(const CUDT* u)
       m_pListener = NULL;
 }
 
-void CRcvQueue::registerConnector(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
+void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
    m_pRendezvousQueue->insert(id, u, ipv, addr, ttl);
 }
 
-void CRcvQueue::removeConnector(const UDTSOCKET& id, bool should_lock)
+void CRcvQueue::removeConnector(const SRTSOCKET& id, bool should_lock)
 {
     LOGC(mglog.Debug) << "removeConnector: removing %" << id;
     m_pRendezvousQueue->remove(id, should_lock);

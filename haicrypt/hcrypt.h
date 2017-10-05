@@ -48,6 +48,12 @@ written by
    #include <sys/time.h>
 #endif
 
+#ifdef __GNUC__
+#define ATR_UNUSED __attribute__((unused))
+#else
+#define ATR_UNUSED
+#endif
+
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
 #include "hcrypt_ctx.h"

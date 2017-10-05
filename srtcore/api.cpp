@@ -2161,7 +2161,6 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
    }
 }
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
 int CUDT::sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
    uint64_t srctime)
@@ -2170,15 +2169,6 @@ int CUDT::sendmsg(
    {
       CUDT* udt = s_UDTUnited.lookup(u);
       return udt->sendmsg(buf, len, ttl, inorder, srctime);
-#else
-int CUDT::sendmsg(
-   SRTSOCKET u, const char* buf, int len, int ttl, bool inorder)
-{
-   try
-   {
-      CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->sendmsg(buf, len, ttl, inorder);
-#endif
    }
    catch (CUDTException e)
    {
@@ -2222,7 +2212,6 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len)
    }
 }
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
 int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
 {
    try
@@ -2244,7 +2233,6 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
       return ERROR;
    }
 }
-#endif
 
 int64_t CUDT::sendfile(
    SRTSOCKET u, fstream& ifs, int64_t& offset, int64_t size, int block)
@@ -2766,7 +2754,6 @@ int recv(SRTSOCKET u, char* buf, int len, int flags)
    return CUDT::recv(u, buf, len, flags);
 }
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
 
 int sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
@@ -2781,19 +2768,6 @@ int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
-#else
-int sendmsg(
-   SRTSOCKET u,
-   const char* buf,
-   int len,
-   int ttl,
-   bool inorder,
-   uint64_t /*ignored*/)
-{
-   return CUDT::sendmsg(u, buf, len, ttl, inorder);
-}
-
-#endif
 
 int recvmsg(SRTSOCKET u, char* buf, int len)
 {
