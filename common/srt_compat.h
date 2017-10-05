@@ -30,15 +30,15 @@ written by
 
 #ifdef WIN32
    #ifndef __MINGW__
-	#ifdef SRT_DYNAMIC
-      #ifdef SRT_EXPORTS
-         #define SRT_API __declspec(dllexport)
+      #ifdef SRT_DYNAMIC
+         #ifdef SRT_EXPORTS
+            #define SRT_API __declspec(dllexport)
+         #else
+            #define SRT_API __declspec(dllimport)
+         #endif
       #else
-         #define SRT_API __declspec(dllimport)
+         #define SRT_API
       #endif
-	#else
-		#define SRT_API
-	#endif
    #else
       #define SRT_API
    #endif
