@@ -9,8 +9,7 @@ extern const set<string> false_names = { "0", "no", "off", "false" };
 
 extern const std::map<std::string, int> enummap_transtype = {
     { "live", SRTT_LIVE },
-    { "vod",  SRTT_VOD },
-    { "file", SRTT_VOD }
+    { "file", SRTT_FILE }
 };
 
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)

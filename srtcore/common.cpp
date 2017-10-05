@@ -269,7 +269,7 @@ void CTimer::triggerEvent()
     pthread_cond_signal(&m_EventCond);
 }
 
-void CTimer::waitForEvent()
+CTimer::EWait CTimer::waitForEvent()
 {
     timeval now;
     timespec timeout;
@@ -285,8 +285,10 @@ void CTimer::waitForEvent()
         timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
     }
     pthread_mutex_lock(&m_EventLock);
-    pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
+    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
     pthread_mutex_unlock(&m_EventLock);
+
+    return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
 }
 
 void CTimer::sleep()

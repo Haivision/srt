@@ -503,8 +503,9 @@ inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
 }
 
 template <class... Args>
-inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::string& area, Args&&... args)
+inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, Args&&... args ATR_UNUSED)
 {
+#ifdef ENABLE_LOGGING
     std::ostringstream serr;
     CreateLogLinePrefix(serr);
     PrintArgs(serr, args...);
@@ -514,13 +515,15 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
 
     // Not sure, but it wasn't ever used.
     SendLogLine(file, line, area, serr.str());
+#endif
 }
 
 #else
 
 template <class Arg>
-inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::string& area, const Arg& arg)
+inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, const Arg& arg ATR_UNUSED)
 {
+#ifdef ENABLE_LOGGING
     std::ostringstream serr;
     CreateLogLinePrefix(serr);
     serr << arg;
@@ -530,10 +533,14 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
 
     // Not sure, but it wasn't ever used.
     SendLogLine(file, line, area, serr.str());
+#endif
 }
 
 #endif
 
+// SendLogLine can be compiled normally. It's intermediately used by:
+// - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
+// - PrintLogLine, which has empty body when !ENABLE_LOGGING
 inline void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
 {
     src_config->lock();

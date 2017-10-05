@@ -125,27 +125,26 @@ typedef enum SRT_SOCKSTATUS {
 // backward compatibility until all compat is destroyed.
 typedef enum SRT_SOCKOPT {
 
-	SRTO_MSS,             // the Maximum Transfer Unit
-	SRTO_SNDSYN,          // if sending is blocking
-	SRTO_RCVSYN,          // if receiving is blocking
-	SRTO_CC,              // custom congestion control algorithm
-	SRTO_FC,              // Flight flag size (window size)
-	SRTO_SNDBUF,          // maximum buffer in sending queue
-	SRTO_RCVBUF,          // UDT receiving buffer size
-	SRTO_LINGER,          // waiting for unsent data when closing
-	SRTO_UDP_SNDBUF,      // UDP sending buffer size
-	SRTO_UDP_RCVBUF,      // UDP receiving buffer size
-	SRTO_MAXMSG,          // maximum datagram message size
-	SRTO_MSGTTL,          // time-to-live of a datagram message
-	SRTO_RENDEZVOUS,      // rendezvous connection mode
-	SRTO_SNDTIMEO,        // send() timeout
-	SRTO_RCVTIMEO,        // recv() timeout
-	SRTO_REUSEADDR,       // reuse an existing port or create a new one
-	SRTO_MAXBW,           // maximum bandwidth (bytes per second) that the connection can use
-	SRTO_STATE,           // current socket state, see UDTSTATUS, read only
-	SRTO_EVENT,           // current available events associated with the socket
-	SRTO_SNDDATA,         // size of data in the sending buffer
-	SRTO_RCVDATA,         // size of data available for recv
+	SRTO_MSS = 0,             // the Maximum Transfer Unit
+	SRTO_SNDSYN = 1,          // if sending is blocking
+	SRTO_RCVSYN = 2,          // if receiving is blocking
+	SRTO_FC = 4,              // Flight flag size (window size)
+	SRTO_SNDBUF = 5,          // maximum buffer in sending queue
+	SRTO_RCVBUF = 6,          // UDT receiving buffer size
+	SRTO_LINGER = 7,          // waiting for unsent data when closing
+	SRTO_UDP_SNDBUF = 8,      // UDP sending buffer size
+	SRTO_UDP_RCVBUF = 9,      // UDP receiving buffer size
+    // XXX Here space free for 2 options
+    // after deprecated ones are removed
+	SRTO_RENDEZVOUS = 12,      // rendezvous connection mode
+	SRTO_SNDTIMEO = 13,        // send() timeout
+	SRTO_RCVTIMEO = 14,        // recv() timeout
+	SRTO_REUSEADDR = 15,       // reuse an existing port or create a new one
+	SRTO_MAXBW = 16,           // maximum bandwidth (bytes per second) that the connection can use
+	SRTO_STATE = 17,           // current socket state, see UDTSTATUS, read only
+	SRTO_EVENT = 18,           // current available events associated with the socket
+	SRTO_SNDDATA = 19,         // size of data in the sending buffer
+	SRTO_RCVDATA = 20,         // size of data available for recv
 	SRTO_SENDER = 21,     // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
 	SRTO_TSBPDMODE = 22,  // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
     SRTO_LATENCY = 23,    // DEPRECATED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
@@ -163,10 +162,10 @@ typedef enum SRT_SOCKOPT {
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
 	SRTO_CONNTIMEO = 36,   // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
-    // deprecated: SRTO_TWOWAYDATA (@c below)
-    SRTO_SNDPBKEYLEN = 38, // (DEPRECATED: use SRTO_PBKEYLEN)
-    SRTO_RCVPBKEYLEN,      // (DEPRECATED: use SRTO_PBKEYLEN)
-    SRTO_SNDPEERKMSTATE,  // (GET) the current state of the encryption at the peer side
+    // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
+    _DEPRECATED_SRTO_SNDPBKEYLEN = 38, // (needed to use inside the code without generating -Wswitch)
+    //
+    SRTO_SNDPEERKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
     SRTO_RCVKMSTATE,      // (GET) the current state of the encryption at the agent side
     SRTO_LOSSMAXTTL,      // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
@@ -179,18 +178,45 @@ typedef enum SRT_SOCKOPT {
     SRTO_TRANSTYPE         // Transmission type (set of options required for given transmission type)
 } SRT_SOCKOPT;
 
+// DEPRECATED OPTIONS:
+
 // SRTO_TWOWAYDATA: not to be used. SRT connection is always bidirectional if
-// both clients support HSv5 - that is, since version 1.3.0
+// both clients support HSv5 - that is, since version 1.3.0. This flag was
+// introducted around 1.2.0 version when full bidirectional support was added,
+// but the bidirectional feature was decided no to be enabled due to huge
+// differences between bidirectional support (especially concerning encryption)
+// with HSv4 and HSv5 (that is, HSv4 was decided to remain unidirectional only,
+// even though partial support is already provided in this version).
 static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 
 // This has been deprecated a long time ago, treat this as never implemented.
 static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
+// This option is a derivative from UDT; the mechanism that uses it is now
+// known as Smoother and settable by SRTO_SMOOTHER, or more generally by
+// SRTO_TRANSTYPE. The freed number will be reused for some other
+// option. This option should have never been used anywhere, just for safety
+// this is temporarily declared as deprecated.
+static const SRT_SOCKOPT SRTO_CC SRT_ATR_DEPRECATED = (SRT_SOCKOPT)3;
+
+// These two flags were derived from UDT, but they were never used.
+// Probably it didn't make sense anyway. The maximum size of the message
+// in File/Message mode is defined by SRTO_SNDBUF, and the MSGTTL is
+// a parameter used in `srt_sendmsg` and `srt_sendmsg2`.
+static const SRT_SOCKOPT SRTO_MAXMSG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)10;
+static const SRT_SOCKOPT SRTO_MSGTTL SRT_ATR_DEPRECATED = (SRT_SOCKOPT)11;
+
+// These flags come from an older experimental implementation of bidirectional
+// encryption support, which were used two different SEKs, KEKs and passphrases
+// per direction. The current implementation uses just one in both directions,
+// so SRTO_PBKEYLEN should be used for both cases.
+static const SRT_SOCKOPT SRTO_SNDPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)38;
+static const SRT_SOCKOPT SRTO_RCVPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)39;
 
 typedef enum SRT_TRANSTYPE
 {
     SRTT_LIVE,
-    SRTT_VOD,
+    SRTT_FILE,
     SRTT_INVALID
 } SRT_TRANSTYPE;
 

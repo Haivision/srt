@@ -133,7 +133,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return desc.m_iID;
 }
 
-int CEPoll::add_usock(const int eid, const UDTSOCKET& u, const int* events)
+int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);
 
@@ -220,7 +220,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
+int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
 {
    CGuard pg(m_EPollLock);
 
@@ -275,7 +275,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 }
 
 // Need this to atomically modify polled events (ex: remove write/keep read)
-int CEPoll::update_usock(const int eid, const UDTSOCKET& u, const int* events)
+int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);
 
@@ -379,7 +379,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
+int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
    if (!readfds && !writefds && !lrfds && lwfds && (msTimeOut < 0))
@@ -416,14 +416,14 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
       if ((NULL != readfds) && (!p->second.m_sUDTReads.empty() || !p->second.m_sUDTExcepts.empty()))
       {
          *readfds = p->second.m_sUDTReads;
-         for (set<UDTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
+         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
             readfds->insert(*i);
          total += p->second.m_sUDTReads.size() + p->second.m_sUDTExcepts.size();
       }
       if ((NULL != writefds) && (!p->second.m_sUDTWrites.empty() || !p->second.m_sUDTExcepts.empty()))
       {
          *writefds = p->second.m_sUDTWrites;
-         for (set<UDTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
+         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
             writefds->insert(*i);
          total += p->second.m_sUDTWrites.size() + p->second.m_sUDTExcepts.size();
       }
@@ -560,7 +560,7 @@ int CEPoll::release(const int eid)
 namespace
 {
 
-void update_epoll_sets(const UDTSOCKET& uid, const set<UDTSOCKET>& watch, set<UDTSOCKET>& result, bool enable)
+void update_epoll_sets(const SRTSOCKET& uid, const set<SRTSOCKET>& watch, set<SRTSOCKET>& result, bool enable)
 {
    if (enable && (watch.find(uid) != watch.end()))
    {
@@ -574,7 +574,7 @@ void update_epoll_sets(const UDTSOCKET& uid, const set<UDTSOCKET>& watch, set<UD
 
 }  // namespace
 
-int CEPoll::update_events(const UDTSOCKET& uid, std::set<int>& eids, int events, bool enable)
+int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
 {
    CGuard pg(m_EPollLock);
 

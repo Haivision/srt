@@ -30,7 +30,6 @@ written by
 #endif
 
 //undef SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
-#define SRT_ENABLE_SRCTIMESTAMP 1       /* Support timestamp carryover from one SRT connection (Rx) to the next (Tx) */
 #define SRT_ENABLE_CBRTIMESTAMP 1       /* Set timestamp for Constant Bit Rate flow (requires SRCTIMESTAMP) */
 
 //undef SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
@@ -39,12 +38,6 @@ written by
 //undef SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 //undef SRT_DEBUG_SNDQ_HIGHRATE 1
 
-
-/*
-* SRT_ENABLE_FASTREXMIT
-* Earlier [re-]retransmission of lost retransmitted packets
-*/
-#define SRT_ENABLE_FASTREXMIT 1
 
 /*
 * SRT_ENABLE_CONNTIMEO

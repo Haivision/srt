@@ -313,21 +313,21 @@ public:
    ~CRendezvousQueue();
 
 public:
-   void insert(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
+   void insert(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
 
    // The should_lock parameter is given here to state as to whether
    // the lock should be applied here. If called from some internals
    // and the lock IS ALREADY APPLIED, use false here to prevent
    // double locking and deadlock in result.
-   void remove(const UDTSOCKET& id, bool should_lock);
-   CUDT* retrieve(const sockaddr* addr, ref_t<UDTSOCKET> id);
+   void remove(const SRTSOCKET& id, bool should_lock);
+   CUDT* retrieve(const sockaddr* addr, ref_t<SRTSOCKET> id);
 
    void updateConnStatus(EConnectStatus, const CPacket& response);
 
 private:
    struct CRL
    {
-      UDTSOCKET m_iID;			// UDT socket ID (self)
+      SRTSOCKET m_iID;			// UDT socket ID (self)
       CUDT* m_pUDT;			// UDT instance
       int m_iIPversion;                 // IP version
       sockaddr* m_pPeerAddr;		// UDT sonnection peer address
@@ -456,7 +456,7 @@ private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
    // Subroutines of worker
-   EReadStatus worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr* sa);
+   EReadStatus worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr* sa);
    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr* sa);
    EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr* sa);
    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr* sa);
@@ -478,8 +478,8 @@ private:
    int setListener(CUDT* u);
    void removeListener(const CUDT* u);
 
-   void registerConnector(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
-   void removeConnector(const UDTSOCKET& id, bool should_lock = true);
+   void registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
+   void removeConnector(const SRTSOCKET& id, bool should_lock = true);
 
    void setNewEntry(CUDT* u);
    bool ifNewEntry();

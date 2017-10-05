@@ -89,11 +89,7 @@ public:
       /// @param [in] ttl time to live in milliseconds
       /// @param [in] order if the block should be delivered in order, for DGRAM only
 
-#ifdef SRT_ENABLE_SRCTIMESTAMP
    void addBuffer(const char* data, int len, int ttl = -1, bool order = false, uint64_t srctime = 0);
-#else
-   void addBuffer(const char* data, int len, int ttl = -1, bool order = false);
-#endif
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.
@@ -156,10 +152,8 @@ private:
       int m_iLength;                    // length of the block
 
       int32_t m_iMsgNoBitset;                 // message number
-      uint64_t m_OriginTime;            // original request time
-#ifdef SRT_ENABLE_SRCTIMESTAMP
-      uint64_t m_SourceTime;
-#endif
+      uint64_t m_ullOriginTime_us;            // original request time
+      uint64_t m_ullSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block
@@ -195,7 +189,7 @@ private:
    int m_iCount;                        // number of used blocks
 
    int m_iBytesCount;                   // number of payload bytes in queue
-   uint64_t m_LastOriginTime;
+   uint64_t m_ullLastOriginTime_us;
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    uint64_t m_LastSamplingTime;
