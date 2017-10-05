@@ -28,6 +28,24 @@ written by
 #include <stddef.h>
 #include <time.h>
 
+#ifdef WIN32
+   #ifndef __MINGW__
+      #ifdef SRT_DYNAMIC
+         #ifdef SRT_EXPORTS
+            #define SRT_API __declspec(dllexport)
+         #else
+            #define SRT_API __declspec(dllimport)
+         #endif
+      #else
+         #define SRT_API
+      #endif
+   #else
+      #define SRT_API
+   #endif
+#else
+   #define SRT_API __attribute__ ((visibility("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -156,7 +174,7 @@ static inline size_t SysStrnlen(const char * s, size_t maxlen)
 #endif
 
 /* Ensures that we store the error in the buffer and return the bufer. */
-const char * SysStrError(int errnum, char * buf, size_t buflen);
+SRT_API const char * SysStrError(int errnum, char * buf, size_t buflen);
 
 #ifdef __cplusplus
 } // extern C
