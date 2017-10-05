@@ -55,8 +55,8 @@ written by
          typedef __int64 uint64_t;
       #endif
 
-	#ifdef UDT_DYNAMIC
-      #ifdef UDT_EXPORTS
+	#ifdef SRT_DYNAMIC
+      #ifdef SRT_EXPORTS
          #define SRT_API __declspec(dllexport)
       #else
          #define SRT_API __declspec(dllimport)

@@ -361,9 +361,9 @@ if ( LINUX )
 endif()
 
 
-target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
+target_compile_definitions(${TARGET_srt} PRIVATE -DSRT_EXPORTS )
 if (ENABLE_SHARED)
-	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
+	target_compile_definitions(${TARGET_srt} PUBLIC -DSRT_DYNAMIC) 
 endif()
 
 if ( WIN32 )
