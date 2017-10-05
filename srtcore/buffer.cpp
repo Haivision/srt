@@ -1018,8 +1018,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
                      * Tell 1st valid packet seqno so caller can skip (drop) the missing packets.
                      */
                     skipseqno = m_pUnit[i]->m_Packet.m_iSeqNo;
-                    if ( pppkt )
-                        *pppkt = &m_pUnit[i]->m_Packet;
+                    r_curpktseq = skipseqno.get();
                 }
 
                 // NOTE: if haslost is not set, it means that this is the VERY FIRST

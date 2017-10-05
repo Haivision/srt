@@ -337,7 +337,7 @@ public:
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
-   bool isRcvDataReady(uint64_t& tsbpdtime, CPacket** pppkt = 0);
+   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
    bool isRcvDataReady();
    bool isRcvDataAvailable()
    {
