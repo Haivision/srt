@@ -6109,9 +6109,13 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       updateCC(TEV_ACKACK, ack);
 
-      CGuard::enterCS(m_RecvLock);
-      m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp());
-      CGuard::leaveCS(m_RecvLock);
+      // This function will put a lock on m_RecvLock by itself, as needed.
+      // It must be done inside because this function reads the current time
+      // and if waiting for the lock has caused a delay, the time will be
+      // inaccurate. Additionally it won't lock if TSBPD mode is off, and
+      // won't update anything. Note that if you set TSBPD mode and use
+      // srt_recvfile (which doesn't make any sense), you'll have e deadlock.
+      m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
 
       // update last ACK that has been received by the sender
       if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)

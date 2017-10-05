@@ -1449,7 +1449,7 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp)
+void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
         return;
@@ -1472,6 +1472,9 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp)
     // either schedule time or a time supplied by the application).
 
     int64_t iDrift = CTimer::getTime() - (getTsbPdTimeBase(timestamp) + timestamp);
+
+    CGuard::enterCS(mutex_to_lock);
+
     bool updated = m_DriftTracer.update(iDrift);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
@@ -1487,6 +1490,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp)
         m_ullTsbPdTimeBase += m_DriftTracer.overdrift();
     }
 
+    CGuard::leaveCS(mutex_to_lock);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
