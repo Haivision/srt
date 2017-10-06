@@ -152,10 +152,10 @@ public:
 
       /// Create a new UDT socket.
       /// @param [in] af IP version, IPv4 (AF_INET) or IPv6 (AF_INET6).
-      /// @param [in] type socket type, SOCK_STREAM or SOCK_DGRAM
+      /// @param [in] type (ignored)
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket(int af, int type);
+   SRTSOCKET newSocket(int af, int );
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;

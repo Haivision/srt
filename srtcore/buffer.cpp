@@ -150,7 +150,7 @@ CSndBuffer::~CSndBuffer()
    pthread_mutex_destroy(&m_BufLock);
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime)
+void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno)
 {
    int size = len / m_iMSS;
    if ((len % m_iMSS) != 0)
@@ -173,6 +173,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
        << (inorder ? "" : " NOT") << " in order";
 
    Block* s = m_pLastBlock;
+   r_msgno = m_iNextMsgNo;
    for (int i = 0; i < size; ++ i)
    {
       int pktlen = len - i * m_iMSS;
@@ -940,7 +941,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - passack: false (the report concerns a packet with an exactly next sequence)
     // - skipseqno == -1: no packets to skip towards the first RTP
-    // - ppkt: that exactly packet is reported (for debugging purposes)
+    // - ppkt: that exactly packet that is reported (for debugging purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
@@ -988,7 +989,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     // be also capable of checking if the next available packet, if it is
     // there, is the next sequence packet or not. Retrieving this exactly
     // packet would be most useful, as the test for play-readiness and
-    // "monotonicness" can be done on it directly.
+    // sequentiality can be done on it directly.
     //
     // When done so, the below loop would be completely unnecessary.
 
@@ -1493,23 +1494,24 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
 
 int CRcvBuffer::readMsg(char* data, int len)
 {
-    uint64_t tsbpdtime;
-    return readMsg(data, len, tsbpdtime);
+    SRT_MSGCTRL dummy = srt_msgctrl_default;
+    return readMsg(data, len, &dummy);
 }
 
 
-int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
+int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL* msgctl /*[[nonnull]]*/)
 {
     int p, q;
     bool passack;
     bool empty = true;
+    uint64_t& r_tsbpdtime = msgctl->srctime;
 
     if (m_bTsbPdMode)
     {
         passack = false;
       int seq = 0;
 
-      if (getRcvReadyMsg(Ref(tsbpdtime), Ref(seq)))
+      if (getRcvReadyMsg(Ref(r_tsbpdtime), Ref(seq)))
         {
             empty = false;
 
@@ -1520,12 +1522,12 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
             uint64_t now = CTimer::getTime();
-            if ((now - tsbpdtime)/10 < 10)
-                m_ulPdHisto[0][(now - tsbpdtime)/10]++;
-            else if ((now - tsbpdtime)/100 < 10)
-                m_ulPdHisto[1][(now - tsbpdtime)/100]++;
-            else if ((now - tsbpdtime)/1000 < 10)
-                m_ulPdHisto[2][(now - tsbpdtime)/1000]++;
+            if ((now - r_tsbpdtime)/10 < 10)
+                m_ulPdHisto[0][(now - r_tsbpdtime)/10]++;
+            else if ((now - r_tsbpdtime)/100 < 10)
+                m_ulPdHisto[1][(now - r_tsbpdtime)/100]++;
+            else if ((now - r_tsbpdtime)/1000 < 10)
+                m_ulPdHisto[2][(now - r_tsbpdtime)/1000]++;
             else
                 m_ulPdHisto[3][1]++;
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
@@ -1533,14 +1535,23 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
     }
     else
     {
-        tsbpdtime = 0;
-        if (scanMsg(p, q, passack))
+        r_tsbpdtime = 0;
+        if (scanMsg(Ref(p), Ref(q), Ref(passack)))
             empty = false;
 
     }
 
     if (empty)
         return 0;
+
+    // This should happen just once. By 'empty' condition
+    // we have a guarantee that m_pUnit[p] exists and is valid.
+    CPacket& pkt1 = m_pUnit[p]->m_Packet;
+
+    // This returns the sequence number and message number to
+    // the API caller.
+    msgctl->pktseq = pkt1.getSeqNo();
+    msgctl->msgno = pkt1.getMsgSeq();
 
     int rs = len;
     while (p != (q + 1) % m_iSize)
@@ -1603,7 +1614,7 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
 }
 
 
-bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
+bool CRcvBuffer::scanMsg(ref_t<int> p, ref_t<int> q, ref_t<bool> passack)
 {
     // empty buffer
     if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
@@ -1614,7 +1625,8 @@ bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
     //skip all bad msgs at the beginning
     while (m_iStartPos != m_iLastAckPos)
     {
-        if (NULL == m_pUnit[m_iStartPos])
+        // Roll up to the first valid unit
+        if (!m_pUnit[m_iStartPos])
         {
             if (++ m_iStartPos == m_iSize)
                 m_iStartPos = 0;
@@ -1704,7 +1716,7 @@ bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
 
     for (int i = 0, n = m_iMaxPos + getRcvDataSize(); i < n; ++ i)
     {
-        if ((NULL != m_pUnit[q]) && (CUnit::GOOD == m_pUnit[q]->m_iFlag))
+        if (m_pUnit[q] && m_pUnit[q]->m_iFlag == CUnit::GOOD)
         {
             // Equivalent pseudocode:
             // PacketBoundary bound = m_pUnit[q]->m_Packet.getMsgBoundary();

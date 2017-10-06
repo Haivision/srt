@@ -23,6 +23,7 @@ written by
  *****************************************************************************/
 
 #include <iterator>
+#include <fstream>
 #if __APPLE__
    #include "TargetConditionals.h"
 #endif
@@ -30,11 +31,32 @@ written by
 #include "common.h"
 #include "core.h"
 
+using namespace std;
+
+
 extern "C" {
 
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
+
 SRTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
+SRTSOCKET srt_create_socket()
+{
+    // XXX This must include rework around m_iIPVersion. This must be
+    // abandoned completely and all "IP VERSION" thing should rely on
+    // the exact specification in the 'sockaddr' objects passed to other functions,
+    // that is, the "current IP Version" remains undefined until any of
+    // srt_bind() or srt_connect() function is done. And when any of these
+    // functions are being called, the IP version is contained in the
+    // sockaddr object passed there.
+
+    // Until this rework is done, srt_create_socket() will set the
+    // default AF_INET family.
+
+    // Note that all arguments except the first one here are ignored.
+    return CUDT::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+}
+
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
 int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
@@ -94,31 +116,64 @@ int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-int srt_send(SRTSOCKET u, const char * buf, int len, int flags) { return CUDT::send(u, buf, len, flags); }
-int srt_recv(SRTSOCKET u, char * buf, int len, int flags) { return CUDT::recv(u, buf, len, flags); }
+int srt_send(SRTSOCKET u, const char * buf, int len, ...) { return CUDT::send(u, buf, len, 0); }
+int srt_recv(SRTSOCKET u, char * buf, int len, ...) { return CUDT::recv(u, buf, len, 0); }
 int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(SRTSOCKET u, char * buf, int len) { return CUDT::recvmsg(u, buf, len); }
+int srt_recvmsg(SRTSOCKET u, char * buf, int len) { uint64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
+int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block)
+{
+    if (!path || !offset )
+    {
+        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+    }
+    fstream ifs(path, ios::binary | ios::in);
+    if (!ifs)
+    {
+        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_READFAIL, 0));
+    }
+    int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
+    ifs.close();
+    return ret;
+}
+
+int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block)
+{
+    if (!path || !offset )
+    {
+        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+    }
+    fstream ofs(path, ios::binary | ios::out);
+    if (!ofs)
+    {
+        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_WRAVAIL, 0));
+    }
+    int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
+    ofs.close();
+    return ret;
+}
+
+extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0 };
+
+void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
+{
+    *mctrl = srt_msgctrl_default;
+}
 
 int srt_sendmsg2(SRTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
+    // Allow NULL mctrl in the API, but not internally.
     if (mctrl)
-        return CUDT::sendmsg(u, buf, len, -1, true, mctrl->srctime);
-    else
-        return CUDT::sendmsg(u, buf, len);
+        return CUDT::sendmsg2(u, buf, len, mctrl);
+    SRT_MSGCTRL mignore = srt_msgctrl_default;
+    return CUDT::sendmsg2(u, buf, len, &mignore);
 }
 
 int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
 {
-    uint64_t srctime = 0;
-    int rc = CUDT::recvmsg(u, buf, len, srctime);
-    if (rc == UDT::ERROR) {
-        // error happen
-        return -1;
-    }
-
     if (mctrl)
-        mctrl->srctime = srctime;
-    return rc;
+        return CUDT::recvmsg2(u, buf, len, mctrl);
+    SRT_MSGCTRL mignore = srt_msgctrl_default;
+    return CUDT::recvmsg2(u, buf, len, &mignore);
 }
 
 const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
