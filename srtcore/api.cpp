@@ -3109,11 +3109,11 @@ void setlogflags(int flags)
     srt_logger_config.flags = flags;
 }
 
-UDT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
 {
     return CUDT::setstreamid(u, sid);
 }
-UDT_API std::string getstreamid(SRTSOCKET u)
+SRT_API std::string getstreamid(SRTSOCKET u)
 {
     return CUDT::getstreamid(u);
 }

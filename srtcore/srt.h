@@ -572,8 +572,8 @@ SRT_API extern int srt_recvmsg2(SRTSOCKET u, char *buf, int len, SRT_MSGCTRL *mc
 // Special send/receive functions for files only.
 #define SRT_DEFAULT_SENDFILE_BLOCK 364000
 #define SRT_DEFAULT_RECVFILE_BLOCK 7280000
-int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
-int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
+SRT_API int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
+SRT_API int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block);
 
 
 // last error detection
