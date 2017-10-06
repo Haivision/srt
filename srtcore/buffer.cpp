@@ -150,7 +150,7 @@ CSndBuffer::~CSndBuffer()
    pthread_mutex_destroy(&m_BufLock);
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime)
+void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno)
 {
    int size = len / m_iMSS;
    if ((len % m_iMSS) != 0)
@@ -173,6 +173,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
        << (inorder ? "" : " NOT") << " in order";
 
    Block* s = m_pLastBlock;
+   r_msgno = m_iNextMsgNo;
    for (int i = 0; i < size; ++ i)
    {
       int pktlen = len - i * m_iMSS;
@@ -940,7 +941,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - passack: false (the report concerns a packet with an exactly next sequence)
     // - skipseqno == -1: no packets to skip towards the first RTP
-    // - ppkt: that exactly packet is reported (for debugging purposes)
+    // - ppkt: that exactly packet that is reported (for debugging purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
