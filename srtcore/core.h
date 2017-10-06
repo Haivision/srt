@@ -659,13 +659,6 @@ private: // synchronization: mutexes and conditions
 
     pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
 
-    // This is required to synchronize the background part of the closing socket process
-    // with the call of srt_close(). The condition is broadcast at the end regardless of
-    // the settings. The srt_close() function is blocked from exiting until this signal
-    // is received when the socket is set SRTO_SNDSYN.
-    pthread_mutex_t m_CloseSynchLock;
-    pthread_cond_t m_CloseSynchCond;
-
     void initSynch();
     void destroySynch();
     void releaseSynch();

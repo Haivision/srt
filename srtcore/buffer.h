@@ -89,7 +89,7 @@ public:
       /// @param [in] ttl time to live in milliseconds
       /// @param [in] order if the block should be delivered in order, for DGRAM only
 
-   void addBuffer(const char* data, int len, int ttl = -1, bool order = false, uint64_t srctime = 0);
+   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno);
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.
@@ -311,7 +311,7 @@ public:
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return actuall size of data read.
 
-   int readMsg(char* data, int len, uint64_t& tsbpdtime);
+   int readMsg(char* data, int len, SRT_MSGCTRL* mctrl);
 
       /// Query how many messages are available now.
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
@@ -356,7 +356,7 @@ public:
       /// Add packet timestamp for drift caclculation and compensation
       /// @param [in] timestamp packet time stamp
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock);
+   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -413,7 +413,7 @@ private:
    void countBytes(int pkts, int bytes, bool acked = false);
 
 private:
-   bool scanMsg(int& start, int& end, bool& passack);
+   bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer

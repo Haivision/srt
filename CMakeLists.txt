@@ -467,6 +467,16 @@ if ( ENABLE_CXX11 )
 	)
 	endif()
 
+	add_executable(sendfile
+		${CMAKE_SOURCE_DIR}/apps/legacy/sendfile.cpp
+	)
+
+	add_executable(recvfile
+		${CMAKE_SOURCE_DIR}/apps/legacy/recvfile.cpp
+	)
+	target_link_libraries(sendfile ${TARGET_srt} ${DEPENDS_srt})
+	target_link_libraries(recvfile ${TARGET_srt} ${DEPENDS_srt})
+
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
 	# is added as is.

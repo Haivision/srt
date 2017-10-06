@@ -76,6 +76,6 @@ written by
 #define SRT_ENABLE_IPOPTS 1
 
 
-#define SRT_ENABLE_CLOSE_SYNCH 0
+#define SRT_ENABLE_CLOSE_SYNCH 1
 
 #endif /* SRT4UDT_H */
