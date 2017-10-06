@@ -932,7 +932,7 @@ void CRcvBuffer::skipData(int len)
       m_iMaxPos = 0;
 }
 
-bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, CPacket** pppkt)
+bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> r_curpktseq)
 {
     skipseqno = -1;
     passack = false;
@@ -945,7 +945,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
-    if (getRcvReadyMsg(tsbpdtime, pppkt))
+    if (getRcvReadyMsg(tsbpdtime, r_curpktseq))
     {
         return true;
     }
@@ -1019,8 +1019,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
                      * Tell 1st valid packet seqno so caller can skip (drop) the missing packets.
                      */
                     skipseqno = m_pUnit[i]->m_Packet.m_iSeqNo;
-                    if ( pppkt )
-                        *pppkt = &m_pUnit[i]->m_Packet;
+                    r_curpktseq = skipseqno.get();
                 }
 
                 // NOTE: if haslost is not set, it means that this is the VERY FIRST
@@ -1042,7 +1041,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     return false;
 }
 
-bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, CPacket** pppkt)
+bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
 {
    tsbpdtime = 0;
    int rmpkts = 0; 
@@ -1059,8 +1058,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, CPacket** pppkt)
          continue;
       }
 
-      if ( pppkt )
-          *pppkt = &m_pUnit[i]->m_Packet;
+      curpktseq = m_pUnit[i]->m_Packet.getSeqNo();
 
       if (m_pUnit[i]->m_iFlag != CUnit::GOOD)
       {
@@ -1107,7 +1105,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, CPacket** pppkt)
 * used in the code (core.cpp) is expensive in TsbPD mode, hence this simpler function
 * that only check if first packet in queue is ready.
 */
-bool CRcvBuffer::isRcvDataReady(uint64_t& tsbpdtime, CPacket** pppkt)
+bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
 {
    tsbpdtime = 0;
 
@@ -1121,8 +1119,7 @@ bool CRcvBuffer::isRcvDataReady(uint64_t& tsbpdtime, CPacket** pppkt)
             * Only say ready if time to deliver.
             * Report the timestamp, ready or not.
             */
-            if ( pppkt )
-               *pppkt = pkt;
+            curpktseq = pkt->getSeqNo();
             tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
             if (tsbpdtime <= CTimer::getTime())
                return true;
@@ -1152,8 +1149,9 @@ CPacket* CRcvBuffer::getRcvReadyPacket()
 bool CRcvBuffer::isRcvDataReady()
 {
    uint64_t tsbpdtime;
+   int32_t seq;
 
-   return isRcvDataReady(tsbpdtime);
+   return isRcvDataReady(Ref(tsbpdtime), Ref(seq));
 }
 
 int CRcvBuffer::getAvailBufSize() const
@@ -1511,8 +1509,9 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL* msgctl /*[[nonnull]]*/
     if (m_bTsbPdMode)
     {
         passack = false;
+      int seq = 0;
 
-        if (getRcvReadyMsg(Ref(r_tsbpdtime)))
+      if (getRcvReadyMsg(Ref(r_tsbpdtime), Ref(seq)))
         {
             empty = false;
 

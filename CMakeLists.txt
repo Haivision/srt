@@ -361,9 +361,9 @@ if ( LINUX )
 endif()
 
 
-target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
+target_compile_definitions(${TARGET_srt} PRIVATE -DSRT_EXPORTS )
 if (ENABLE_SHARED)
-	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
+	target_compile_definitions(${TARGET_srt} PUBLIC -DSRT_DYNAMIC) 
 endif()
 
 if ( WIN32 )
@@ -438,12 +438,16 @@ if ( ENABLE_CXX11 )
 		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
 		${CMAKE_SOURCE_DIR}/common/logsupport.cpp
 		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
-		${CMAKE_SOURCE_DIR}/common/srt_compat.c
+		#${CMAKE_SOURCE_DIR}/common/srt_compat.c
 	)
+	# XXX This fix was never necessary, srt_compat.c is
+	# included in the SRT library. This was motivated by some error report
+	# from some CI system, so leaving the commented-out parts for historical reasons.
+	
 	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
 	# This should result in exactly the same as when it was compiled as C, with the
 	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
-	set_source_files_properties(${CMAKE_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
+	#set_source_files_properties(${CMAKE_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
 
 	add_executable(srt-live-transmit
 		${CMAKE_SOURCE_DIR}/apps/srt-live-transmit.cpp
