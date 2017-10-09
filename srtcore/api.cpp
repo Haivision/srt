@@ -887,7 +887,9 @@ int CUDTUnited::close(const SRTSOCKET u)
 
    LOGC(mglog.Debug) << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)";
 
-   bool synch_close = s->m_pUDT->m_bSynSending;
+   bool synch_close_snd = s->m_pUDT->m_bSynSending;
+   //bool synch_close_rcv = s->m_pUDT->m_bSynRecving;
+
    int id = s->m_SocketID;
 
    if (s->m_Status == SRTS_LISTENING)
@@ -953,52 +955,80 @@ int CUDTUnited::close(const SRTSOCKET u)
 
    // Check if the ID is still in closed sockets before you access it
    // (the last triggerEvent could have deleted it).
-   if ( synch_close )
+   if ( synch_close_snd )
    {
 #if SRT_ENABLE_CLOSE_SYNCH
 
-       // Ok, now you are keeping GC thread hands off the internal data.
-       // You can check then if it has already deleted the socket or not.
-       // The socket is either in m_ClosedSockets or is already gone.
-       LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing socket resources...";
+       LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...";
        for (;;)
        {
+           CSndBuffer* sb = s->m_pUDT->m_pSndBuffer;
+
+           // Disconnected from buffer - nothing more to check.
+           if (!sb)
+           {
+               LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.";
+               break;
+           }
+
+           // Sender buffer empty
+           if (sb->getCurrBufSize() == 0)
+           {
+               LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.";
+               break;
+           }
+
+           // Ok, now you are keeping GC thread hands off the internal data.
+           // You can check then if it has already deleted the socket or not.
+           // The socket is either in m_ClosedSockets or is already gone.
+
            // Done the other way, but still done. You can stop waiting.
-           if ( m_ClosedSockets.count(id) == 0 || !s->m_pUDT->m_bOpened )
+           bool isgone = false;
+           {
+               CGuard manager_cg(m_ControlLock);
+               isgone = m_ClosedSockets.count(id) == 0;
+           }
+           if (!isgone)
+           {
+               isgone = !s->m_pUDT->m_bOpened;
+           }
+           if (isgone)
            {
                LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().";
                break;
            }
 
-           // If so, we can then take out the control lock and let GC do its job.
-           // It means that the thing to be done by CUDT::close() is not yet complete,
-           // so we have to wait.
+           LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: ... still waiting for any update.";
+           CTimer::EWait wt = CTimer::waitForEvent();
 
-           // This below will unlock the control lock and wait for the signal.
-
-           // Do a 0.20s rolling, just for safety, when we missed the signal.
-           timeval now;
-           timespec timeout;
-           gettimeofday(&now, 0);
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 200000) * 1000;
-
-           int st = pthread_cond_timedwait(&s->m_pUDT->m_CloseSynchCond, &m_ControlLock, &timeout);
-
-           // In case of whatever error, jump back to checking the condition.
-           // One of the errors that MIGHT happen is that the condition object
-           // has been deleted while waiting. This will cause this function to return
-           // error code. But if this happened, then surely it was deleted together with
-           // the whole object and so the socket has been removed from m_ClosedSockets.
-           // This way, the entry condition in this loop will be false and the loop breaks.
-           if ( st == 0 )
+           if ( wt == CTimer::WT_ERROR )
            {
-               LOGC(mglog.Debug) << "GLOBAL CLOSING: ... synch-closed. Exiting close().";
+               LOGC(mglog.Debug) << "GLOBAL CLOSING: ... ERROR WHEN WAITING FOR EVENT. Exiting close() to prevent hangup.";
                break;
            }
+
+           // Continue waiting in case when an event happened or 1s waiting time passed for checkpoint.
        }
 #endif
    }
+
+   /*
+      This code is PUT ASIDE for now.
+      Most likely this will be never required.
+      It had to hold the closing activity until the time when the receiver buffer is depleted.
+      However the closing of the socket should only happen when the receiver has received
+      an information about that the reading is no longer possible (error report from recv/recvfile).
+      When this happens, the receiver buffer is definitely depleted already and there's no need to check
+      anything.
+
+      Should there appear any other conditions in future under which the closing process should be
+      delayed until the receiver buffer is empty, this code can be filled here.
+
+   if ( synch_close_rcv )
+   {
+   ...
+   }
+   */
 
    return 0;
 }
