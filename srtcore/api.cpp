@@ -983,7 +983,16 @@ int CUDTUnited::close(const SRTSOCKET u)
            // The socket is either in m_ClosedSockets or is already gone.
 
            // Done the other way, but still done. You can stop waiting.
-           if ( m_ClosedSockets.count(id) == 0 || !s->m_pUDT->m_bOpened )
+           bool isgone = false;
+           {
+               CGuard manager_cg(m_ControlLock);
+               isgone = m_ClosedSockets.count(id) == 0;
+           }
+           if (!isgone)
+           {
+               isgone = !s->m_pUDT->m_bOpened;
+           }
+           if (isgone)
            {
                LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().";
                break;
