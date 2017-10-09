@@ -441,6 +441,45 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 
     int res = ::recvmsg(m_iSocket, &mh, 0);
     int msg_flags = mh.msg_flags;
+
+
+	// Note that there are exactly four groups of possible errors
+	// reported by recvmsg():
+
+	// 1. Temporary error, can't get the data, but you can try again.
+	// Codes: EAGAIN/EWOULDBLOCK, EINTR
+	// Return: RST_AGAIN.
+	//
+	// 2. Problems that should never happen due to unused configurations.
+	// Codes: ECONNREFUSED, ENOTCONN
+	// Return: RST_ERROR, just formally treat this as IPE.
+	//
+	// 3. Unexpected runtime errors:
+	// Codes: EINVAL, EFAULT, ENOMEM, ENOTSOCK
+	// Return: RST_ERROR. Except ENOMEM, this can only be an IPE. ENOMEM
+	// should make the program stop as lacking memory will kill the program anyway soon.
+	//
+	// 4. Expected socket closed in the meantime by another thread.
+	// Codes: EBADF
+	// Return: RST_ERROR. This will simply make the worker thread exit, which is
+	// expected to happen after CChannel::close() is called by another thread.
+
+	if (res == -1)
+	{
+		int err = NET_ERROR;
+		if (err == EAGAIN || err == EINTR) // For EAGAIN, this isn't an error, just a useless call.
+		{
+			status = RST_AGAIN;
+		}
+		else
+		{
+			LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
+			status = RST_ERROR;
+		}
+
+		goto Return_error;
+	}
+
 #else
     // XXX This procedure uses the WSARecvFrom function that just reads
     // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
@@ -460,47 +499,27 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     DWORD flag = 0;
     int addrsize = m_iSockAddrSize;
 
-    int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-    res = (0 == res) ? size : -1;
+    int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
+	int res = (0 == sockerror) ? size : -1;
+	if (sockerror)
+	{
+		// On Windows this is a little bit more complicated, so simply treat every error
+		// as an "again" situation. This should still be probably fixed, but it needs more
+		// thorough research. For example, the problem usually reported from here is
+		// WSAETIMEDOUT, which isn't mentioned in the documentation of WSARecvFrom at all.
+		int err = NET_ERROR;
+		LOGC(mglog.Debug) << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]";
+		status = RST_AGAIN;
+	
+		goto Return_error;
+	}
+
+	// Not sure if this problem has ever occurred on Windows, just a sanity check.
     int msg_flags = 0;
+	if (flag & MSG_PARTIAL)
+		msg_flags = 1;
 #endif
 
-    // Note that there are exactly four groups of possible errors
-    // reported by recvmsg():
-
-    // 1. Temporary error, can't get the data, but you can try again.
-    // Codes: EAGAIN/EWOULDBLOCK, EINTR
-    // Return: RST_AGAIN.
-    //
-    // 2. Problems that should never happen due to unused configurations.
-    // Codes: ECONNREFUSED, ENOTCONN
-    // Return: RST_ERROR, just formally treat this as IPE.
-    //
-    // 3. Unexpected runtime errors:
-    // Codes: EINVAL, EFAULT, ENOMEM, ENOTSOCK
-    // Return: RST_ERROR. Except ENOMEM, this can only be an IPE. ENOMEM
-    // should make the program stop as lacking memory will kill the program anyway soon.
-    //
-    // 4. Expected socket closed in the meantime by another thread.
-    // Codes: EBADF
-    // Return: RST_ERROR. This will simply make the worker thread exit, which is
-    // expected to happen after CChannel::close() is called by another thread.
-
-    if ( res == -1 )
-    {
-        int err = NET_ERROR;
-        if ( err == EAGAIN || err == EINTR ) // For EAGAIN, this isn't an error, just a useless call.
-        {
-            status = RST_AGAIN;
-        }
-        else
-        {
-            LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
-            status = RST_ERROR;
-        }
-
-        goto Return_error;
-    }
 
     // Sanity check for a case when it didn't fill in even the header
     if ( size_t(res) < CPacket::HDR_SIZE )
