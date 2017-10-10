@@ -80,8 +80,13 @@ modified by
 #include <string>
 #include <sstream>
 #include <cmath>
+#include <iostream>
+#include <iomanip>
+#include "srt.h"
 #include "md5.h"
 #include "common.h"
+#include "logging.h"
+#include "threadname.h"
 
 #include <srt_compat.h> // SysStrError
 
@@ -816,3 +821,148 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
         return "UNKNOWN";
     return vals[ev];
 }
+
+std::string logging::FormatTime(uint64_t time)
+{
+    using namespace std;
+
+    time_t sec = time/1000000;
+    time_t usec = time%1000000;
+
+    time_t tt = sec;
+    struct tm tm = LocalTime(tt);
+
+    char tmp_buf[512];
+#ifdef WIN32
+    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+#else
+    strftime(tmp_buf, 512, "%T.", &tm);
+#endif
+    ostringstream out;
+    out << tmp_buf << setfill('0') << setw(6) << usec;
+    return out.str();
+}
+// Some logging imps
+#if ENABLE_LOGGING
+
+logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+{
+	i_file = "";
+	i_line = 0;
+	flags = that.flags;
+	if (that_enabled)
+	{
+		// Create logger prefix
+		that.CreateLogLinePrefix(os);
+	}
+}
+
+logging::LogDispatcher::Proxy logging::LogDispatcher::operator()()
+{
+	return Proxy(*this);
+}
+
+void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+{
+    using namespace std;
+
+    char tmp_buf[512];
+    if ( (flags & SRT_LOGF_DISABLE_TIME) == 0 )
+    {
+        // Not necessary if sending through the queue.
+        timeval tv;
+        gettimeofday(&tv, 0);
+        time_t t = tv.tv_sec;
+        struct tm tm = LocalTime(t);
+
+        // Looxlike The %T is nonstandard and Windows
+        // uses %X here. And "excepts" when using %T.
+#ifdef WIN32
+        strftime(tmp_buf, 512, "%X.", &tm);
+#else
+        strftime(tmp_buf, 512, "%T.", &tm);
+#endif
+
+        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+    }
+
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    string out_prefix;
+    if ( (flags & SRT_LOGF_DISABLE_SEVERITY) == 0 )
+    {
+        out_prefix = prefix;
+    }
+
+    if ( (flags & SRT_LOGF_DISABLE_THREADNAME) == 0 && ThreadName::get(tmp_buf) )
+    {
+        serr << "/" << tmp_buf << out_prefix << ": ";
+    }
+    else
+    {
+        serr << out_prefix << ": ";
+    }
+}
+
+std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+{
+    if ( pretty_function == "" )
+        return "";
+    size_t pos = pretty_function.find('(');
+    if ( pos == std::string::npos )
+        return pretty_function; // return unchanged.
+
+    pretty_function = pretty_function.substr(0, pos);
+
+    // There are also template instantiations where the instantiating
+    // parameters are encrypted inside. Therefore, search for the first
+    // open < and if found, search for symmetric >.
+
+    int depth = 1;
+    pos = pretty_function.find('<');
+    if ( pos != std::string::npos )
+    {
+        size_t end = pos+1;
+        for(;;)
+        {
+            ++pos;
+            if ( pos == pretty_function.size() )
+            {
+                --pos;
+                break;
+            }
+            if ( pretty_function[pos] == '<' )
+            {
+                ++depth;
+                continue;
+            }
+
+            if ( pretty_function[pos] == '>' )
+            {
+                --depth;
+                if ( depth <= 0 )
+                    break;
+                continue;
+            }
+        }
+
+        std::string afterpart = pretty_function.substr(pos+1);
+        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
+    }
+
+    // Now see how many :: can be found in the name.
+    // If this occurs more than once, take the last two.
+    pos = pretty_function.rfind("::");
+
+    if ( pos == std::string::npos || pos < 2 )
+        return pretty_function; // return whatever this is. No scope name.
+
+    // Find the next occurrence of :: - if found, copy up to it. If not,
+    // return whatever is found.
+    pos -= 2;
+    pos = pretty_function.rfind("::", pos);
+    if ( pos == std::string::npos )
+        return pretty_function; // nothing to cut
+
+    return pretty_function.substr(pos+2);
+}
+#endif
