@@ -179,7 +179,7 @@ struct SRT_API LogDispatcher
 
     struct Proxy;
 
-	Proxy operator()();
+    Proxy operator()();
 #else
 
     // Dummy proxy that does nothing

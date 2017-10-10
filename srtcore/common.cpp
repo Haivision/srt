@@ -875,10 +875,10 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         time_t t = tv.tv_sec;
         struct tm tm = LocalTime(t);
 
-		// Looxlike The %T is nonstandard and Windows
-		// uses %X here. And "excepts" when using %T.
+        // Looxlike The %T is nonstandard and Windows
+        // uses %X here. And "excepts" when using %T.
 #ifdef WIN32
-		strftime(tmp_buf, 512, "%X.", &tm);
+        strftime(tmp_buf, 512, "%X.", &tm);
 #else
         strftime(tmp_buf, 512, "%T.", &tm);
 #endif
