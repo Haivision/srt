@@ -59,13 +59,13 @@ int main(int argc, char* argv[])
    // send name information of the requested file
    int len = strlen(argv[3]);
 
-   if (SRT_ERROR == srt_send(fhandle, (char*)&len, sizeof(int), 0))
+   if (SRT_ERROR == srt_send(fhandle, (char*)&len, sizeof(int)))
    {
       cout << "send: " << srt_getlasterror_str() << endl;
       return -1;
    }
 
-   if (SRT_ERROR == srt_send(fhandle, argv[3], len, 0))
+   if (SRT_ERROR == srt_send(fhandle, argv[3], len))
    {
       cout << "send: " << srt_getlasterror_str() << endl;
       return -1;
@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
    // get size information
    int64_t size;
 
-   if (SRT_ERROR == srt_recv(fhandle, (char*)&size, sizeof(int64_t), 0))
+   if (SRT_ERROR == srt_recv(fhandle, (char*)&size, sizeof(int64_t)))
    {
       cout << "send: " << srt_getlasterror_str() << endl;
       return -1;

@@ -311,7 +311,7 @@ public:
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return actuall size of data read.
 
-   int readMsg(char* data, int len, SRT_MSGCTRL* mctrl);
+   int readMsg(char* data, int len, ref_t<SRT_MSGCTRL> mctrl);
 
       /// Query how many messages are available now.
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay

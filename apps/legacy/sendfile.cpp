@@ -129,13 +129,13 @@ DWORD WINAPI sendfile(LPVOID usocket)
    char file[1024];
    int len;
 
-   if (SRT_ERROR == srt_recv(fhandle, (char*)&len, sizeof(int), 0))
+   if (SRT_ERROR == srt_recv(fhandle, (char*)&len, sizeof(int)))
    {
       cout << "recv: " << srt_getlasterror_str() << endl;
       return 0;
    }
 
-   if (SRT_ERROR == srt_recv(fhandle, file, len, 0))
+   if (SRT_ERROR == srt_recv(fhandle, file, len))
    {
       cout << "recv: " << srt_getlasterror_str() << endl;
       return 0;
@@ -151,7 +151,7 @@ DWORD WINAPI sendfile(LPVOID usocket)
    ifs.close();
 
    // send file size information
-   if (SRT_ERROR == srt_send(fhandle, (char*)&size, sizeof(int64_t), 0))
+   if (SRT_ERROR == srt_send(fhandle, (char*)&size, sizeof(int64_t)))
    {
       cout << "send: " << srt_getlasterror_str() << endl;
       return 0;

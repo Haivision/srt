@@ -1495,16 +1495,17 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
 int CRcvBuffer::readMsg(char* data, int len)
 {
     SRT_MSGCTRL dummy = srt_msgctrl_default;
-    return readMsg(data, len, &dummy);
+    return readMsg(data, len, Ref(dummy));
 }
 
 
-int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL* msgctl /*[[nonnull]]*/)
+int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 {
+    SRT_MSGCTRL& msgctl = r_msgctl;
     int p, q;
     bool passack;
     bool empty = true;
-    uint64_t& r_tsbpdtime = msgctl->srctime;
+    uint64_t& r_tsbpdtime = msgctl.srctime;
 
     if (m_bTsbPdMode)
     {
@@ -1550,8 +1551,8 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL* msgctl /*[[nonnull]]*/
 
     // This returns the sequence number and message number to
     // the API caller.
-    msgctl->pktseq = pkt1.getSeqNo();
-    msgctl->msgno = pkt1.getMsgSeq();
+    msgctl.pktseq = pkt1.getSeqNo();
+    msgctl.msgno = pkt1.getMsgSeq();
 
     int rs = len;
     while (p != (q + 1) % m_iSize)

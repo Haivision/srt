@@ -2204,12 +2204,12 @@ int CUDT::sendmsg(
 }
 
 int CUDT::sendmsg2(
-   SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL* m)
+   SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->sendmsg2(buf, len, m);
+      return udt->sendmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
    {
@@ -2253,12 +2253,12 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    }
 }
 
-int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL* m)
+int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recvmsg2(buf, len, m);
+      return udt->recvmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
    {

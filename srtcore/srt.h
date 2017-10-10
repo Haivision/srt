@@ -557,12 +557,12 @@ SRT_API extern const SRT_MSGCTRL srt_msgctrl_default;
 // removed.
 
 // Sending
-SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len, ...);
+SRT_API extern int srt_send(SRTSOCKET u, const char* buf, int len);
 SRT_API extern int srt_sendmsg(SRTSOCKET u, const char* buf, int len, int ttl/* = -1*/, int inorder/* = false*/);
 SRT_API extern int srt_sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL *mctrl);
 
 // Receiving
-SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len, ...);
+SRT_API extern int srt_recv(SRTSOCKET u, char* buf, int len);
 
 // srt_recvmsg is actually an alias to srt_recv, it stays under the old name for compat reasons.
 SRT_API extern int srt_recvmsg(SRTSOCKET u, char* buf, int len);

@@ -4576,11 +4576,12 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder, uint64_t s
     mctrl.msgttl = msttl;
     mctrl.inorder = inorder;
     mctrl.srctime = srctime;
-    return this->sendmsg2(data, len, &mctrl);
+    return this->sendmsg2(data, len, Ref(mctrl));
 }
 
-int CUDT::sendmsg2(const char* data, int len, SRT_MSGCTRL* mctrl /* [[nonnull]] */)
+int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
+    SRT_MSGCTRL& mctrl = r_mctrl;
     bool bCongestion = false;
 
     // throw an exception if not connected
@@ -4595,8 +4596,8 @@ int CUDT::sendmsg2(const char* data, int len, SRT_MSGCTRL* mctrl /* [[nonnull]] 
         return 0;
     }
 
-    int msttl = mctrl->msgttl;
-    bool inorder = mctrl->inorder;
+    int msttl = mctrl.msgttl;
+    bool inorder = mctrl.inorder;
 
     // Sendmsg isn't restricted to the smoother type, however the smoother
     // may want to have something to say here.
@@ -4754,17 +4755,17 @@ int CUDT::sendmsg2(const char* data, int len, SRT_MSGCTRL* mctrl /* [[nonnull]] 
 
     // insert the user buffer into the sending list
 #ifdef SRT_ENABLE_CBRTIMESTAMP
-    if (mctrl->srctime == 0)
+    if (mctrl.srctime == 0)
     {
         uint64_t currtime_tk;
         CTimer::rdtsc(currtime_tk);
 
         m_ullSndLastCbrTime_tk = max(currtime_tk, m_ullSndLastCbrTime_tk + m_ullInterval_tk);
-        mctrl->srctime = m_ullSndLastCbrTime_tk / m_ullCPUFrequency;
+        mctrl.srctime = m_ullSndLastCbrTime_tk / m_ullCPUFrequency;
     }
 #endif
-    m_pSndBuffer->addBuffer(data, size, mctrl->msgttl, mctrl->inorder, mctrl->srctime, Ref(mctrl->msgno));
-    LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << mctrl->srctime << "us DATA SIZE: " << size;
+    m_pSndBuffer->addBuffer(data, size, mctrl.msgttl, mctrl.inorder, mctrl.srctime, Ref(mctrl.msgno));
+    LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << mctrl.srctime << "us DATA SIZE: " << size;
 
     // insert this socket to the snd list if it is not on the list yet
     m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
@@ -4796,7 +4797,7 @@ int CUDT::recv(char* data, int len)
     if (m_bMessageAPI)
     {
         SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        return receiveMessage(data, len, &mctrl);
+        return receiveMessage(data, len, Ref(mctrl));
     }
 
     return receiveBuffer(data, len);
@@ -4816,7 +4817,7 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
     if (m_bMessageAPI)
     {
         SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        int ret = receiveMessage(data, len, &mctrl);
+        int ret = receiveMessage(data, len, Ref(mctrl));
         srctime = mctrl.srctime;
         return ret;
     }
@@ -4824,7 +4825,7 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
     return receiveBuffer(data, len);
 }
 
-int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL* mctrl)
+int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 {
     if (!m_bConnected || !m_Smoother.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -4841,8 +4842,9 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL* mctrl)
     return receiveBuffer(data, len);
 }
 
-int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL* mctrl)
+int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
+    SRT_MSGCTRL& mctrl = r_mctrl;
     // Recvmsg isn't restricted to the smoother type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
@@ -4867,7 +4869,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL* mctrl)
     if (m_bBroken || m_bClosing)
     {
         int res = m_pRcvBuffer->readMsg(data, len);
-        mctrl->srctime = 0;
+        mctrl.srctime = 0;
 
         /* Kick TsbPd thread to schedule next wakeup (if running) */
         if (m_bTsbPd)
@@ -4892,7 +4894,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL* mctrl)
     if (!m_bSynRecving)
     {
 
-        int res = m_pRcvBuffer->readMsg(data, len, mctrl);
+        int res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
         if (res == 0)
         {
             // read is not available any more
@@ -4973,7 +4975,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL* mctrl)
            fputs(ptrn, stderr);
         // */
 
-        res = m_pRcvBuffer->readMsg(data, len, mctrl);
+        res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
 
         if (m_bBroken || m_bClosing)
         {
@@ -5024,112 +5026,112 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL* mctrl)
 
 int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 {
-   if (m_bBroken || m_bClosing)
-      throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-   else if (!m_bConnected || !m_Smoother.ready())
-      throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bBroken || m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    else if (!m_bConnected || !m_Smoother.ready())
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   if (size <= 0 && size != -1)
-      return 0;
+    if (size <= 0 && size != -1)
+        return 0;
 
-   if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_SEND, 0, size, -1, false))
-      throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
+    if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_SEND, 0, size, -1, false))
+        throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
-   CGuard sendguard(m_SendLock);
+    CGuard sendguard(m_SendLock);
 
-   if (m_pSndBuffer->getCurrBufSize() == 0)
-   {
-      // delay the EXP timer to avoid mis-fired timeout
-      uint64_t currtime_tk;
-      CTimer::rdtsc(currtime_tk);
-      // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
-      m_ullLastRspAckTime_tk = currtime_tk;
-      m_iReXmitCount = 1;
-   }
+    if (m_pSndBuffer->getCurrBufSize() == 0)
+    {
+        // delay the EXP timer to avoid mis-fired timeout
+        uint64_t currtime_tk;
+        CTimer::rdtsc(currtime_tk);
+        // (fix keepalive) m_ullLastRspTime_tk = currtime_tk;
+        m_ullLastRspAckTime_tk = currtime_tk;
+        m_iReXmitCount = 1;
+    }
 
-   // positioning...
-   try
-   {
-       if (size == -1)
-       {
-           ifs.seekg(0, std::ios::end);
-           size = ifs.tellg();
-           if (offset > size)
-               throw 0; // let it be caught below
-       }
+    // positioning...
+    try
+    {
+        if (size == -1)
+        {
+            ifs.seekg(0, std::ios::end);
+            size = ifs.tellg();
+            if (offset > size)
+                throw 0; // let it be caught below
+        }
 
-       // This will also set the position back to the beginning
-       // in case when it was moved to the end for measuring the size.
-       // This will also fail if the offset exceeds size, so measuring
-       // the size can be skipped if not needed.
-       ifs.seekg((streamoff)offset);
-       if (!ifs.good())
-           throw 0;
-   }
-   catch (...)
-   {
-       // XXX It would be nice to note that this is reported
-       // by exception only if explicitly requested by setting
-       // the exception flags in the stream. Here it's fixed so
-       // that when this isn't set, the exception is "thrown manually".
-      throw CUDTException(MJ_FILESYSTEM, MN_SEEKGFAIL);
-   }
+        // This will also set the position back to the beginning
+        // in case when it was moved to the end for measuring the size.
+        // This will also fail if the offset exceeds size, so measuring
+        // the size can be skipped if not needed.
+        ifs.seekg((streamoff)offset);
+        if (!ifs.good())
+            throw 0;
+    }
+    catch (...)
+    {
+        // XXX It would be nice to note that this is reported
+        // by exception only if explicitly requested by setting
+        // the exception flags in the stream. Here it's fixed so
+        // that when this isn't set, the exception is "thrown manually".
+        throw CUDTException(MJ_FILESYSTEM, MN_SEEKGFAIL);
+    }
 
-   int64_t tosend = size;
-   int unitsize;
+    int64_t tosend = size;
+    int unitsize;
 
-   // sending block by block
-   while (tosend > 0)
-   {
-      if (ifs.fail())
-         throw CUDTException(MJ_FILESYSTEM, MN_WRITEFAIL);
+    // sending block by block
+    while (tosend > 0)
+    {
+        if (ifs.fail())
+            throw CUDTException(MJ_FILESYSTEM, MN_WRITEFAIL);
 
-      if (ifs.eof())
-         break;
+        if (ifs.eof())
+            break;
 
-      unitsize = int((tosend >= block) ? block : tosend);
+        unitsize = int((tosend >= block) ? block : tosend);
 
-      {
-          CGuard lk(m_SendBlockLock);
+        {
+            CGuard lk(m_SendBlockLock);
 
-          while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-              pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-      }
+            while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
+                pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+        }
 
-      if (m_bBroken || m_bClosing)
-         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-      else if (!m_bConnected)
-         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-      else if (!m_bPeerHealth)
-      {
-         // reset peer health status, once this error returns, the app should handle the situation at the peer side
-         m_bPeerHealth = true;
-         throw CUDTException(MJ_PEERERROR);
-      }
+        if (m_bBroken || m_bClosing)
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        else if (!m_bConnected)
+            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+        else if (!m_bPeerHealth)
+        {
+            // reset peer health status, once this error returns, the app should handle the situation at the peer side
+            m_bPeerHealth = true;
+            throw CUDTException(MJ_PEERERROR);
+        }
 
-      // record total time used for sending
-      if (m_pSndBuffer->getCurrBufSize() == 0)
-         m_llSndDurationCounter = CTimer::getTime();
+        // record total time used for sending
+        if (m_pSndBuffer->getCurrBufSize() == 0)
+            m_llSndDurationCounter = CTimer::getTime();
 
-      int64_t sentsize = m_pSndBuffer->addBufferFromFile(ifs, unitsize);
+        int64_t sentsize = m_pSndBuffer->addBufferFromFile(ifs, unitsize);
 
-      if (sentsize > 0)
-      {
-         tosend -= sentsize;
-         offset += sentsize;
-      }
+        if (sentsize > 0)
+        {
+            tosend -= sentsize;
+            offset += sentsize;
+        }
 
-      // insert this socket to snd list if it is not on the list yet
-      m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
-   }
+        // insert this socket to snd list if it is not on the list yet
+        m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+    }
 
-   if (sndBuffersLeft() <= 0)
-   {
-      // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
-   }
+    if (sndBuffersLeft() <= 0)
+    {
+        // write is not available any more
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+    }
 
-   return size - tosend;
+    return size - tosend;
 }
 
 int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
