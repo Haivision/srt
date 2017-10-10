@@ -239,8 +239,17 @@ int CUDTUnited::cleanup()
    m_bClosing = true;
    pthread_cond_signal(&m_GCStopCond);
    pthread_join(m_GCThread, NULL);
+   
+   // XXX There's some weird bug here causing this
+   // to hangup on Windows. This might be either something
+   // bigger, or some problem in pthread-win32. As this is
+   // the application cleanup section, this can be temporarily
+   // tolerated with simply exit the application without cleanup,
+   // counting on that the system will take care of it anyway.
+#ifndef WIN32
    pthread_mutex_destroy(&m_GCStopLock);
    pthread_cond_destroy(&m_GCStopCond);
+#endif
 
    m_bGCStatus = false;
 
