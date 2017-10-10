@@ -17,9 +17,11 @@ matrix:
         - os: osx
           osx_image: xcode7.3
           env: BUILD_TYPE=Debug
+          before_install: brew update
           install: brew install openssl
         - os: osx
           osx_image: xcode7.3
+          before_install: brew update
           install: brew install openssl
           env: BUILD_TYPE=Release
 
