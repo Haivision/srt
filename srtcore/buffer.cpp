@@ -989,7 +989,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, 
     // be also capable of checking if the next available packet, if it is
     // there, is the next sequence packet or not. Retrieving this exactly
     // packet would be most useful, as the test for play-readiness and
-    // "monotonicness" can be done on it directly.
+    // sequentiality can be done on it directly.
     //
     // When done so, the below loop would be completely unnecessary.
 
