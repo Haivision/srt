@@ -87,6 +87,7 @@ modified by
 #include "packet.h"
 #include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
+#include "utilities.h"
 
 #ifdef WIN32
     typedef int socklen_t;
@@ -441,29 +442,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 
     int res = ::recvmsg(m_iSocket, &mh, 0);
     int msg_flags = mh.msg_flags;
-#else
-    // XXX This procedure uses the WSARecvFrom function that just reads
-    // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
-    // uses the equivalent of msghdr - WSAMSG, which has different field
-    // names and also uses the equivalet of iovec - WSABUF, which has different
-    // field names and layout. It is important that this code be translated
-    // to the "proper" solution, however this requires that CPacket::m_PacketVector
-    // also uses the "platform independent" (or, better, platform-suitable) type
-    // which can be appropriate for the appropriate system function, not just iovec.
-    //
-    // For the time being, the msg_flags variable is defined in both cases
-    // so that it can be checked independently, however it won't have any other
-    // value one Windows than 0, unless this procedure below is rewritten
-    // to use WSARecvMsg().
 
-    DWORD size = CPacket::HDR_SIZE + packet.getLength();
-    DWORD flag = 0;
-    int addrsize = m_iSockAddrSize;
-
-    int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-    res = (0 == res) ? size : -1;
-    int msg_flags = 0;
-#endif
 
     // Note that there are exactly four groups of possible errors
     // reported by recvmsg():
@@ -486,10 +465,10 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     // Return: RST_ERROR. This will simply make the worker thread exit, which is
     // expected to happen after CChannel::close() is called by another thread.
 
-    if ( res == -1 )
+    if (res == -1)
     {
         int err = NET_ERROR;
-        if ( err == EAGAIN || err == EINTR ) // For EAGAIN, this isn't an error, just a useless call.
+        if (err == EAGAIN || err == EINTR) // For EAGAIN, this isn't an error, just a useless call.
         {
             status = RST_AGAIN;
         }
@@ -501,6 +480,71 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 
         goto Return_error;
     }
+
+#else
+    // XXX This procedure uses the WSARecvFrom function that just reads
+    // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
+    // uses the equivalent of msghdr - WSAMSG, which has different field
+    // names and also uses the equivalet of iovec - WSABUF, which has different
+    // field names and layout. It is important that this code be translated
+    // to the "proper" solution, however this requires that CPacket::m_PacketVector
+    // also uses the "platform independent" (or, better, platform-suitable) type
+    // which can be appropriate for the appropriate system function, not just iovec.
+    //
+    // For the time being, the msg_flags variable is defined in both cases
+    // so that it can be checked independently, however it won't have any other
+    // value one Windows than 0, unless this procedure below is rewritten
+    // to use WSARecvMsg().
+
+    DWORD size = CPacket::HDR_SIZE + packet.getLength();
+    DWORD flag = 0;
+    int addrsize = m_iSockAddrSize;
+
+    int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
+    int res;
+    if (sockerror == 0)
+    {
+        res = size;
+    }
+    else // == SOCKET_ERROR
+    {
+        res = -1;
+        // On Windows this is a little bit more complicated, so simply treat every error
+        // as an "again" situation. This should still be probably fixed, but it needs more
+        // thorough research. For example, the problem usually reported from here is
+        // WSAETIMEDOUT, which isn't mentioned in the documentation of WSARecvFrom at all.
+        //
+        // These below errors are treated as "fatal", all others are treated as "again".
+        static const int fatals [] =
+        {
+            WSAECONNRESET,
+            WSAEFAULT,
+            WSAEINVAL,
+            WSAENETDOWN,
+            WSANOTINITIALISED,
+            WSA_OPERATION_ABORTED
+        };
+        static const int* fatals_end = fatals + Size(fatals);
+        int err = NET_ERROR;
+        if (std::find(fatals, fatals_end, err) != fatals_end)
+        {
+            LOGC(mglog.Debug) << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]";
+            status = RST_ERROR;
+        }
+        else
+        {
+            status = RST_AGAIN;
+        }
+
+        goto Return_error;
+    }
+
+    // Not sure if this problem has ever occurred on Windows, just a sanity check.
+    int msg_flags = 0;
+    if (flag & MSG_PARTIAL)
+        msg_flags = 1;
+#endif
+
 
     // Sanity check for a case when it didn't fill in even the header
     if ( size_t(res) < CPacket::HDR_SIZE )
