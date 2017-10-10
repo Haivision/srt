@@ -87,6 +87,7 @@ modified by
 #include "packet.h"
 #include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
+#include "utilities.h"
 
 #ifdef WIN32
     typedef int socklen_t;
@@ -500,16 +501,32 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     int addrsize = m_iSockAddrSize;
 
     int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-    int res = (0 == sockerror) ? size : -1;
-    if (sockerror)
+    int res;
+    if (sockerror == 0)
     {
+        res = size;
+    }
+    else // == SOCKET_ERROR
+    {
+        res = -1;
         // On Windows this is a little bit more complicated, so simply treat every error
         // as an "again" situation. This should still be probably fixed, but it needs more
         // thorough research. For example, the problem usually reported from here is
         // WSAETIMEDOUT, which isn't mentioned in the documentation of WSARecvFrom at all.
+        //
+        // These below errors are treated as "fatal", all others are treated as "again".
+        static const int fatals [] = {WSAECONNRESET, WSAEFAULT, WSAEINVAL, WSAENETDOWN, WSANOTINITIALISED, WSA_OPERATION_ABORTED};
+        static const int* fatals_end = fatals + Size(fatals);
         int err = NET_ERROR;
-        LOGC(mglog.Debug) << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]";
-        status = RST_AGAIN;
+        if (std::find(fatals, fatals_end, err) != fatals_end)
+        {
+            LOGC(mglog.Debug) << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]";
+            status = RST_ERROR;
+        }
+        else
+        {
+            status = RST_AGAIN;
+        }
 
         goto Return_error;
     }
