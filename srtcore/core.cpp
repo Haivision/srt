@@ -4282,11 +4282,6 @@ void CUDT::close()
    m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
    m_ullRcvPeerStartTime = 0;
 
-   LOGC(mglog.Debug) << "CLOSING %" << m_SocketID << " - sync signal";
-   //pthread_mutex_lock(&m_CloseSynchLock);
-   pthread_cond_broadcast(&m_CloseSynchCond);
-   //pthread_mutex_unlock(&m_CloseSynchLock);
-   // CLOSED.
    m_bOpened = false;
 }
 
@@ -5437,9 +5432,6 @@ void CUDT::initSynch()
       pthread_mutex_init(&m_ConnectionLock, NULL);
       memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
       pthread_cond_init(&m_RcvTsbPdCond, NULL);
-
-      pthread_mutex_init(&m_CloseSynchLock, NULL);
-      pthread_cond_init(&m_CloseSynchCond, NULL);
 }
 
 void CUDT::destroySynch()
@@ -5455,8 +5447,6 @@ void CUDT::destroySynch()
       pthread_mutex_destroy(&m_ConnectionLock);
       pthread_cond_destroy(&m_RcvTsbPdCond);
 
-      pthread_mutex_destroy(&m_CloseSynchLock);
-      pthread_cond_destroy(&m_CloseSynchCond);
 }
 
 void CUDT::releaseSynch()
