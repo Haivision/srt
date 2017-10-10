@@ -252,16 +252,8 @@ int CUDTUnited::cleanup()
    return 0;
 }
 
-SRTSOCKET CUDTUnited::newSocket(int af, int type)
+SRTSOCKET CUDTUnited::newSocket(int af, int)
 {
-   // XXX Type will be soon removed from here and moved
-   // to the depreacted API 'srt_socket()'. The new function
-   // 'srt_socket_new' will simply require only the 'af' parameter.
-   // SRT has actually never been supporting "socket type" from UDT and the
-   // file transfer will be implemented using a different internal
-   // setup. Possibly a configuration object might be a good idea.
-   if (type != SOCK_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    CUDTSocket* ns = NULL;
 
@@ -805,7 +797,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    {
       if (!s->m_pUDT->m_bRendezvous)
       {
-         s->m_pUDT->open();
+         s->m_pUDT->open(); // XXX here use the AF_* family value from 'name'
          updateMux(s);  // <<---- updateMux
                         // -> C(Snd|Rcv)Queue::init
                         // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
@@ -1875,14 +1867,14 @@ int CUDT::cleanup()
    return s_UDTUnited.cleanup();
 }
 
-SRTSOCKET CUDT::socket(int af, int type, int)
+SRTSOCKET CUDT::socket(int af, int, int)
 {
    if (!s_UDTUnited.m_bGCStatus)
       s_UDTUnited.startup();
 
    try
    {
-      return s_UDTUnited.newSocket(af, type);
+      return s_UDTUnited.newSocket(af, 0);
    }
    catch (CUDTException& e)
    {
@@ -2220,22 +2212,28 @@ int CUDT::sendmsg(
    }
 }
 
-int CUDT::recvmsg(SRTSOCKET u, char* buf, int len)
+int CUDT::sendmsg2(
+   SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recvmsg(buf, len);
+      return udt->sendmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return ERROR;
+   }
    catch (std::exception& ee)
    {
       LOGC(mglog.Fatal)
-         << "recvmsg: UNEXPECTED EXCEPTION: "
+         << "sendmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what();
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2264,6 +2262,27 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    }
 }
 
+int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
+{
+   try
+   {
+      CUDT* udt = s_UDTUnited.lookup(u);
+      return udt->recvmsg2(buf, len, r_m);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal)
+         << "recvmsg: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what();
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
 int64_t CUDT::sendfile(
    SRTSOCKET u, fstream& ifs, int64_t& offset, int64_t size, int block)
 {
@@ -2792,16 +2811,9 @@ int sendmsg(
    return CUDT::sendmsg(u, buf, len, ttl, inorder, srctime);
 }
 
-// This version is available ADDITIONALLY to that without srctime
 int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
 {
    return CUDT::recvmsg(u, buf, len, srctime);
-}
-
-
-int recvmsg(SRTSOCKET u, char* buf, int len)
-{
-   return CUDT::recvmsg(u, buf, len);
 }
 
 int64_t sendfile(
@@ -3106,11 +3118,11 @@ void setlogflags(int flags)
     srt_logger_config.flags = flags;
 }
 
-UDT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
 {
     return CUDT::setstreamid(u, sid);
 }
-UDT_API std::string getstreamid(SRTSOCKET u)
+SRT_API std::string getstreamid(SRTSOCKET u)
 {
     return CUDT::getstreamid(u);
 }
