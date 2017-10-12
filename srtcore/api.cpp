@@ -239,8 +239,17 @@ int CUDTUnited::cleanup()
    m_bClosing = true;
    pthread_cond_signal(&m_GCStopCond);
    pthread_join(m_GCThread, NULL);
+   
+   // XXX There's some weird bug here causing this
+   // to hangup on Windows. This might be either something
+   // bigger, or some problem in pthread-win32. As this is
+   // the application cleanup section, this can be temporarily
+   // tolerated with simply exit the application without cleanup,
+   // counting on that the system will take care of it anyway.
+#ifndef WIN32
    pthread_mutex_destroy(&m_GCStopLock);
    pthread_cond_destroy(&m_GCStopCond);
+#endif
 
    m_bGCStatus = false;
 
@@ -252,16 +261,8 @@ int CUDTUnited::cleanup()
    return 0;
 }
 
-SRTSOCKET CUDTUnited::newSocket(int af, int type)
+SRTSOCKET CUDTUnited::newSocket(int af, int)
 {
-   // XXX Type will be soon removed from here and moved
-   // to the depreacted API 'srt_socket()'. The new function
-   // 'srt_socket_new' will simply require only the 'af' parameter.
-   // SRT has actually never been supporting "socket type" from UDT and the
-   // file transfer will be implemented using a different internal
-   // setup. Possibly a configuration object might be a good idea.
-   if (type != SOCK_DGRAM)
-      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    CUDTSocket* ns = NULL;
 
@@ -805,7 +806,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    {
       if (!s->m_pUDT->m_bRendezvous)
       {
-         s->m_pUDT->open();
+         s->m_pUDT->open(); // XXX here use the AF_* family value from 'name'
          updateMux(s);  // <<---- updateMux
                         // -> C(Snd|Rcv)Queue::init
                         // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
@@ -887,7 +888,9 @@ int CUDTUnited::close(const SRTSOCKET u)
 
    LOGC(mglog.Debug) << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)";
 
-   bool synch_close = s->m_pUDT->m_bSynSending;
+   bool synch_close_snd = s->m_pUDT->m_bSynSending;
+   //bool synch_close_rcv = s->m_pUDT->m_bSynRecving;
+
    int id = s->m_SocketID;
 
    if (s->m_Status == SRTS_LISTENING)
@@ -953,52 +956,80 @@ int CUDTUnited::close(const SRTSOCKET u)
 
    // Check if the ID is still in closed sockets before you access it
    // (the last triggerEvent could have deleted it).
-   if ( synch_close )
+   if ( synch_close_snd )
    {
 #if SRT_ENABLE_CLOSE_SYNCH
 
-       // Ok, now you are keeping GC thread hands off the internal data.
-       // You can check then if it has already deleted the socket or not.
-       // The socket is either in m_ClosedSockets or is already gone.
-       LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing socket resources...";
+       LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...";
        for (;;)
        {
+           CSndBuffer* sb = s->m_pUDT->m_pSndBuffer;
+
+           // Disconnected from buffer - nothing more to check.
+           if (!sb)
+           {
+               LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.";
+               break;
+           }
+
+           // Sender buffer empty
+           if (sb->getCurrBufSize() == 0)
+           {
+               LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.";
+               break;
+           }
+
+           // Ok, now you are keeping GC thread hands off the internal data.
+           // You can check then if it has already deleted the socket or not.
+           // The socket is either in m_ClosedSockets or is already gone.
+
            // Done the other way, but still done. You can stop waiting.
-           if ( m_ClosedSockets.count(id) == 0 || !s->m_pUDT->m_bOpened )
+           bool isgone = false;
+           {
+               CGuard manager_cg(m_ControlLock);
+               isgone = m_ClosedSockets.count(id) == 0;
+           }
+           if (!isgone)
+           {
+               isgone = !s->m_pUDT->m_bOpened;
+           }
+           if (isgone)
            {
                LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().";
                break;
            }
 
-           // If so, we can then take out the control lock and let GC do its job.
-           // It means that the thing to be done by CUDT::close() is not yet complete,
-           // so we have to wait.
+           LOGC(mglog.Debug) << "%" << id << " GLOBAL CLOSING: ... still waiting for any update.";
+           CTimer::EWait wt = CTimer::waitForEvent();
 
-           // This below will unlock the control lock and wait for the signal.
-
-           // Do a 0.20s rolling, just for safety, when we missed the signal.
-           timeval now;
-           timespec timeout;
-           gettimeofday(&now, 0);
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 200000) * 1000;
-
-           int st = pthread_cond_timedwait(&s->m_pUDT->m_CloseSynchCond, &m_ControlLock, &timeout);
-
-           // In case of whatever error, jump back to checking the condition.
-           // One of the errors that MIGHT happen is that the condition object
-           // has been deleted while waiting. This will cause this function to return
-           // error code. But if this happened, then surely it was deleted together with
-           // the whole object and so the socket has been removed from m_ClosedSockets.
-           // This way, the entry condition in this loop will be false and the loop breaks.
-           if ( st == 0 )
+           if ( wt == CTimer::WT_ERROR )
            {
-               LOGC(mglog.Debug) << "GLOBAL CLOSING: ... synch-closed. Exiting close().";
+               LOGC(mglog.Debug) << "GLOBAL CLOSING: ... ERROR WHEN WAITING FOR EVENT. Exiting close() to prevent hangup.";
                break;
            }
+
+           // Continue waiting in case when an event happened or 1s waiting time passed for checkpoint.
        }
 #endif
    }
+
+   /*
+      This code is PUT ASIDE for now.
+      Most likely this will be never required.
+      It had to hold the closing activity until the time when the receiver buffer is depleted.
+      However the closing of the socket should only happen when the receiver has received
+      an information about that the reading is no longer possible (error report from recv/recvfile).
+      When this happens, the receiver buffer is definitely depleted already and there's no need to check
+      anything.
+
+      Should there appear any other conditions in future under which the closing process should be
+      delayed until the receiver buffer is empty, this code can be filled here.
+
+   if ( synch_close_rcv )
+   {
+   ...
+   }
+   */
 
    return 0;
 }
@@ -1845,14 +1876,14 @@ int CUDT::cleanup()
    return s_UDTUnited.cleanup();
 }
 
-SRTSOCKET CUDT::socket(int af, int type, int)
+SRTSOCKET CUDT::socket(int af, int, int)
 {
    if (!s_UDTUnited.m_bGCStatus)
       s_UDTUnited.startup();
 
    try
    {
-      return s_UDTUnited.newSocket(af, type);
+      return s_UDTUnited.newSocket(af, 0);
    }
    catch (CUDTException& e)
    {
@@ -2190,22 +2221,28 @@ int CUDT::sendmsg(
    }
 }
 
-int CUDT::recvmsg(SRTSOCKET u, char* buf, int len)
+int CUDT::sendmsg2(
+   SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recvmsg(buf, len);
+      return udt->sendmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return ERROR;
+   }
    catch (std::exception& ee)
    {
       LOGC(mglog.Fatal)
-         << "recvmsg: UNEXPECTED EXCEPTION: "
+         << "sendmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what();
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2234,6 +2271,27 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    }
 }
 
+int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
+{
+   try
+   {
+      CUDT* udt = s_UDTUnited.lookup(u);
+      return udt->recvmsg2(buf, len, r_m);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal)
+         << "recvmsg: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what();
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
 int64_t CUDT::sendfile(
    SRTSOCKET u, fstream& ifs, int64_t& offset, int64_t size, int block)
 {
@@ -2762,16 +2820,9 @@ int sendmsg(
    return CUDT::sendmsg(u, buf, len, ttl, inorder, srctime);
 }
 
-// This version is available ADDITIONALLY to that without srctime
 int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
 {
    return CUDT::recvmsg(u, buf, len, srctime);
-}
-
-
-int recvmsg(SRTSOCKET u, char* buf, int len)
-{
-   return CUDT::recvmsg(u, buf, len);
 }
 
 int64_t sendfile(
@@ -3076,11 +3127,11 @@ void setlogflags(int flags)
     srt_logger_config.flags = flags;
 }
 
-UDT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
 {
     return CUDT::setstreamid(u, sid);
 }
-UDT_API std::string getstreamid(SRTSOCKET u)
+SRT_API std::string getstreamid(SRTSOCKET u)
 {
     return CUDT::getstreamid(u);
 }

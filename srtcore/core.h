@@ -189,9 +189,10 @@ public: //API
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
-    static int recvmsg(SRTSOCKET u, char* buf, int len);
-    static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
-    static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
+    static int sendmsg2(SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
+    static int recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
+    static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_SENDFILE_BLOCK);
+    static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_RECVFILE_BLOCK);
     static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
     static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
@@ -346,6 +347,8 @@ private:
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
 
+    void checkNeedDrop(ref_t<bool> bCongestion);
+
     /// Connect to a UDT entity listening at address "peer", which has sent "hs" request.
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
@@ -361,7 +364,10 @@ private:
     /// @param len [in] The size of the data block.
     /// @return Actual size of data sent.
 
-    int send(const char* data, int len);
+    int send(const char* data, int len)
+    {
+        return sendmsg(data, len, -1, false, 0);
+    }
 
     /// Request UDT to receive data to a memory block "data" with size of "len".
     /// @param data [out] data received.
@@ -384,8 +390,14 @@ private:
     /// @param len [in] size of the buffer.
     /// @return Actual size of data received.
 
+    int sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> m);
+
     int recvmsg(char* data, int len, uint64_t& srctime);
-    int recvmsg(char* data, int len);
+
+    int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
+
+    int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    int receiveBuffer(char* data, int len);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
     /// @param ifs [in] The input file stream.
@@ -658,13 +670,6 @@ private: // synchronization: mutexes and conditions
     pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
 
     pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-
-    // This is required to synchronize the background part of the closing socket process
-    // with the call of srt_close(). The condition is broadcast at the end regardless of
-    // the settings. The srt_close() function is blocked from exiting until this signal
-    // is received when the socket is set SRTO_SNDSYN.
-    pthread_mutex_t m_CloseSynchLock;
-    pthread_cond_t m_CloseSynchCond;
 
     void initSynch();
     void destroySynch();

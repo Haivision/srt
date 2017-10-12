@@ -192,10 +192,10 @@ inline std::string SysStrError(int errnum)
 
 inline struct tm LocalTime(time_t tt)
 {
-	struct tm tm;
+	struct tm tm = {};
 #ifdef WIN32
 	errno_t rr = localtime_s(&tm, &tt);
-	if (rr)
+	if (rr == 0)
 		return tm;
 #else
 	tm = *localtime_r(&tt, &tm);
