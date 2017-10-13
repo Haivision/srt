@@ -12,6 +12,7 @@ extern volatile bool transmit_throw_on_interrupt;
 extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern std::ostream* transmit_cverb;
+extern size_t transmit_chunk_size;
 
 static const struct VerboseLogNoEol { VerboseLogNoEol() {} } VerbNoEOL;
 
