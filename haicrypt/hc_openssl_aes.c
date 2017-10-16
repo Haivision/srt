@@ -29,15 +29,9 @@ written by
 
 #include "hcrypt.h"
 
+#include <stdlib.h>
 #ifdef HAICRYPT_USE_OPENSSL_AES
 #include <string.h>
-#include <openssl/evp.h>	/* PKCS5_xxx() */
-#include <openssl/aes.h>	/* AES_xxx() */
-#include <openssl/modes.h>	/* CRYPTO_xxx() */
-#include <openssl/rand.h>
-#include <openssl/err.h>
-
-//#include "hc_openssl_aes.h"
 
 typedef struct tag_hcOpenSSL_AES_data {
         AES_KEY         aes_key[2];		/* even/odd SEK */
@@ -48,14 +42,11 @@ typedef struct tag_hcOpenSSL_AES_data {
         size_t          outbuf_siz;		/* circle buffer size */
 } hcOpenSSL_AES_data;
 
-
-#include <openssl/opensslv.h>
 #if (OPENSSL_VERSION_NUMBER < 0x0090808fL) //0.9.8h
 /*
 * AES_wrap_key()/AES_unwrap_key() introduced in openssl 0.9.8h
 * Here is an implementation using AES native API for earlier versions
 */
-#include <openssl/bio.h>
 
 static const unsigned char default_iv[] = {
   0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6,
@@ -83,7 +74,11 @@ int AES_wrap_key(AES_KEY *key, const unsigned char *iv,
 		for (i = 0; i < inlen; i += 8, t++, R += 8)
 			{
 			memcpy(B + 8, R, 8);
+#if defined(USE_NETTLE)
+			aes128_encrypt(key, sizeof(B), B, B);
+#else
 			AES_encrypt(B, B, key);
+#endif
 			A[7] ^= (unsigned char)(t & 0xff);
 			if (t > 0xff)	
 				{
@@ -126,7 +121,11 @@ int AES_unwrap_key(AES_KEY *key, const unsigned char *iv,
 				A[4] ^= (unsigned char)((t >> 24) & 0xff);
 				}
 			memcpy(B + 8, R, 8);
+#if defined(USE_NETTLE)
+			aes128_decrypt(key, sizeof(B), B, B);
+#else
 			AES_decrypt(B, B, key);
+#endif
 			memcpy(R, B + 8, 8);
 			}
 		}
@@ -265,6 +264,15 @@ static int hcOpenSSL_AES_Encrypt(
 			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
 			/* Encrypt packet payload in output message buffer */
+#if defined(USE_NETTLE)
+			ctr_crypt (aes_key,        /* ctx */
+                                   aes128_encrypt, /* nettle_cipher_func */
+                                   128,            /* cipher blocksize */
+                                   ctr,            /* ctr */
+                                   in_data[0].len, /* length */
+                                   &out_msg[pfx_len],   /* dest */
+                                   in_data[0].payload   /* src */);
+#else
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			CRYPTO_ctr128_encrypt(in_data[0].payload, &out_msg[pfx_len], 
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs, (block128_f) AES_encrypt);
@@ -272,7 +280,7 @@ static int hcOpenSSL_AES_Encrypt(
 			AES_ctr128_encrypt(in_data[0].payload, &out_msg[pfx_len], 
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs);
 #endif
-
+#endif /* defined(USE_NETTLE) */
 
 			/* Prepend packet prefix (clear text) in output buffer */
 			memcpy(out_msg, in_data[0].pfx, pfx_len);
@@ -289,15 +297,27 @@ static int hcOpenSSL_AES_Encrypt(
 
 			/* Encrypt packet payload, block by block, in output buffer */
 			for (i=0; i<nb; i++){
+#if defined(USE_NETTLE)
+				aes128_encrypt(aes_key, AES_BLOCK_SIZE, 
+				               &out_msg[pfx_len + (i*AES_BLOCK_SIZE)],
+				               &in_data[0].payload[(i*AES_BLOCK_SIZE)]);
+#else
 				AES_ecb_encrypt(&in_data[0].payload[(i*AES_BLOCK_SIZE)],
 					&out_msg[pfx_len + (i*AES_BLOCK_SIZE)], aes_key, 1);
+#endif /* defined(USE_NETTLE) */
 			}
 			/* Encrypt last incomplete block */
 			if (0 < nmore) {
 				unsigned char intxt[AES_BLOCK_SIZE];
 				memcpy(intxt, &in_data[0].payload[(nb*AES_BLOCK_SIZE)], nmore);
 				memset(intxt+nmore, 0, AES_BLOCK_SIZE-nmore);
+#if defined(USE_NETTLE)
+				aes128_encrypt(aes_key, AES_BLOCK_SIZE, 
+				               &out_msg[pfx_len + (nb*AES_BLOCK_SIZE)],
+				               intxt);
+#else
 				AES_ecb_encrypt(intxt, &out_msg[pfx_len + (nb*AES_BLOCK_SIZE)], aes_key, 1);
+#endif /* defined(USE_NETTLE) */
 				nb++;
 				//VF patch: pass padding size in pki
 				ctx->msg_info->setPki(out_msg, 16 - nmore);
@@ -403,6 +423,16 @@ static int hcOpenSSL_AES_Decrypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx
 			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
 			/* Decrypt message (same as encrypt for CTR mode) */
+#if defined(USE_NETTLE)
+			ctr_crypt (aes_key,        /* ctx */
+                                   aes128_encrypt, /* nettle_cipher_func */
+                                   128,            /* cipher blocksize */
+                                   ctr,            /* ctr */
+                                   in_data[0].len, /* length */
+                                   out_txt,             /* dest */
+                                   in_data[0].payload   /* src */);
+#else
+
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			CRYPTO_ctr128_encrypt(in_data[0].payload, out_txt, 
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs, (block128_f) AES_encrypt);
@@ -410,6 +440,7 @@ static int hcOpenSSL_AES_Decrypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx
 			AES_ctr128_encrypt(in_data[0].payload, out_txt, 
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs);
 #endif
+#endif /* defined(USE_NETTLE) */
 			out_len = in_data[0].len;
 			break;
 		}
@@ -422,7 +453,13 @@ static int hcOpenSSL_AES_Decrypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx
 
 			/* Decrypt message (same as encrypt for CTR mode) */
 			for (i=0; i<nb; i++){
+#if defined(USE_NETTLE)
+				aes128_decrypt(aes_key, AES_BLOCK_SIZE, 
+				               &out_txt[i*AES_BLOCK_SIZE],
+				               &in_data[0].payload[(i*AES_BLOCK_SIZE)]);
+#else
 				AES_ecb_encrypt(&in_data[0].payload[(i*AES_BLOCK_SIZE)], &out_txt[i*AES_BLOCK_SIZE], aes_key, 0);
+#endif /* defined(USE_NETTLE) */
 			}
 			out_len = in_data[0].len - nbpad;
 			break;

@@ -88,9 +88,19 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	int iret;
 	(void)crypto;
 
+#if defined(USE_NETTLE)
+	struct hmac_sha1_ctx sha1_ctx;
+	hmac_sha1_set_key(&sha1_ctx, ctx->cfg.pwd_len, ctx->cfg.pwd);
+
+	PBKDF2(&sha1_ctx, hmac_sha1_update, hmac_sha1_digest,
+	       kek_len, HAICRYPT_PBKDF2_ITER_CNT,
+	       pbkdf_salt_len, &ctx->salt[ctx->salt_len - pbkdf_salt_len],
+               kek_len, kek);  
+#else
 	PKCS5_PBKDF2_HMAC_SHA1(ctx->cfg.pwd, ctx->cfg.pwd_len, 
 		&ctx->salt[ctx->salt_len - pbkdf_salt_len], pbkdf_salt_len, 
 		HAICRYPT_PBKDF2_ITER_CNT, kek_len, kek);
+#endif
 
 	HCRYPT_PRINTKEY(ctx->cfg.pwd, ctx->cfg.pwd_len, "pwd");
 	HCRYPT_PRINTKEY(kek, kek_len, "kek");

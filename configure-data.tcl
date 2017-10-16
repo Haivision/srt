@@ -46,6 +46,7 @@ set options {
 	with-openssl-ldflags=<ldflags> "Use given -lDIR values for OpenSSL or absolute library filename"
 	with-pthread-includedir=<incdir> "Use extra path for pthreads (usually for Windows)"
 	with-pthread-ldflags=<flags> "Use specific flags for pthreads (some platforms require -pthread)"
+        use-nettle "Use nettle instead of openssl"
 }
 
 # Just example. Available in the system.
@@ -199,6 +200,20 @@ proc postprocess {} {
 		set have_openssl 1
 	}
 
+	set use_nettle 0
+	if { [lsearch -glob $::optkeys --use-nettle] != -1 } {
+		set use_nettle 1
+	}
+
+	if { $have_openssl && $use_nettle } {
+		puts "NOTE: nettle option will be ignored. nettle and openssl shouldn't be used together."
+		set use_nettle 0
+	}
+
+	if { $use_nettle } {
+		lappend ::cmakeopt "-DUSE_NETTLE=ON"
+	}
+
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
@@ -207,8 +222,10 @@ proc postprocess {} {
 	# Autodetect OpenSSL and pthreads
 	if { $::HAVE_WINDOWS } {
 
-		if { !$have_openssl } {
-    		puts "Letting cmake detect OpenSSL installation"
+		if { !$have_openssl || !$use_nettle } {
+	    		puts "Letting cmake detect OpenSSL installation"
+		} elseif { $use_nettle } {
+	    		puts "Letting cmake detect Nettle installation"
 		} else {
 			puts "HAVE_OPENSSL: [lsearch -inline $::optkeys --with-openssl*]"
 		}
@@ -229,7 +246,7 @@ proc postprocess {} {
 		# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
 		# This must use brew-provided OpenSSL.
 		#
-		if { !$have_openssl } {
+		if { !$have_openssl || !$use_nettle } {
 		
 			set er [catch {exec brew info openssl} res]
 			if { $er } {
@@ -238,6 +255,11 @@ proc postprocess {} {
 
 			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
 			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
+		} elseif { $use_nettle } {
+			set er [catch {exec brew info nettle} res]
+			if { $er } {
+				error "Cannot find nettle in brew"
+			}
 		}
 	}
 

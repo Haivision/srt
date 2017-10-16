@@ -18,11 +18,11 @@ matrix:
           osx_image: xcode7.3
           env: BUILD_TYPE=Debug
           before_install: brew update
-          install: brew install openssl
+          install: brew install openssl gnutls nettle
         - os: osx
           osx_image: xcode7.3
           before_install: brew update
-          install: brew install openssl
+          install: brew install openssl gnutls nettle
           env: BUILD_TYPE=Release
 
 

@@ -25,6 +25,7 @@ written by
         HaiCrypt initial implementation.
 *****************************************************************************/
 
+#include <stdio.h>
 #include <string.h>				/* memcpy */
 #include <haicrypt.h>
 #include "hcrypt.h"
@@ -127,9 +128,19 @@ static int hc_ut_pbkdf2(unsigned verbose)
 			gettimeofday(&tstart, NULL);
 		}	
 
+#if defined(USE_NETTLE)
+		struct hmac_sha1_ctx sha1_ctx;
+		hmac_sha1_set_key(&sha1_ctx, tv[i].pwd_len, tv[i].pwd);
+
+		PBKDF2(&sha1_ctx, hmac_sha1_update, hmac_sha1_digest,
+		       tv[i].dk_len, tv[i].cnt,
+		       tv[i].salt_len, tv[i].salt,
+		       tv[i].dk_len, dk);
+#else
 		PKCS5_PBKDF2_HMAC_SHA1(tv[i].pwd, tv[i].pwd_len, 
 			tv[i].salt, tv[i].salt_len, 
 			tv[i].cnt, tv[i].dk_len, dk);
+#endif
 
 		if (verbose) {
 			gettimeofday(&tstop, NULL);
@@ -171,10 +182,12 @@ int hc_ut_encrypt_ctr_speed(void)
 
 	crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | HAICRYPT_CFG_F_TX;
 	crypto_cfg.xport = HAICRYPT_XPT_SRT;
+#if defined(HAICRYPT_USE_OPENSSL_EVP)
 #ifdef HAICRYPT_USE_OPENSSL_EVP_CBC
 	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP_CBC();
 #else
 	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP();
+#endif
 #endif
 	crypto_cfg.key_len = (size_t)128/8;
 	crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU

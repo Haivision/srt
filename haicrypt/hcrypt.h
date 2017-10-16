@@ -48,6 +48,7 @@ written by
    #include <sys/time.h>
 #endif
 
+#include "cryptographic-internal.h"
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
 #include "hcrypt_ctx.h"
@@ -111,10 +112,6 @@ typedef struct {
 #endif
 
 #ifdef HAICRYPT_USE_OPENSSL_AES
-#include <openssl/opensslv.h>   /* OPENSSL_VERSION_NUMBER  */
-#include <openssl/evp.h>        /* PKCS5_ */
-#include <openssl/rand.h>       /* RAND_bytes */
-#include <openssl/aes.h>        /* AES_ */
 
 #define hcrypt_Prng(rn, len)    (RAND_bytes(rn, len) <= 0 ? -1 : 0)
 
@@ -141,7 +138,6 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 
 
 #ifdef  HAICRYPT_USE_OPENSSL_EVP
-#include <openssl/opensslv.h>   // OPENSSL_VERSION_NUMBER 
 
 #define HAICRYPT_USE_OPENSSL_EVP_CTR 1
         /*
