@@ -54,6 +54,7 @@ option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
+option(USE_NETTLE "Should use nettle instead of openssl" OFF)
 
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
@@ -87,8 +88,20 @@ set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
 # find OpenSSL
-find_package(OpenSSL REQUIRED)
-message (STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
+if ( USE_NETTLE )
+	pkg_search_module(NETTLE nettle)
+	set(NETTLE_DEFINITIONS ${NETTLE_CFLAGS_OTHER})
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_NETTLE=1")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_NETTLE=1")
+	message (STATUS "Detected nettle version: ${NETTLE_VERSION}")
+
+	pkg_search_module(GNUTLS gnutls)
+	set(OPENSSL_INCLUDES ${NETTLE_INCLUDES} ${GNUTLS_INCLUDES})
+	set(OPENSSL_LIBRARIES ${NETTLE_LIBRARIES} ${GNUTLS_LIBRARIES})
+else()
+	find_package(OpenSSL)
+	message (STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
+endif()
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -172,7 +185,6 @@ add_definitions(
    -D_GNU_SOURCE
    -DHAI_PATCH=1
    -DHAI_ENABLE_SRT=1
-   -DHAICRYPT_USE_OPENSSL_EVP=1
    -DHAICRYPT_USE_OPENSSL_AES
    -DSRT_VERSION="${SRT_VERSION}"
 )
@@ -230,6 +242,15 @@ MafRead(haicrypt/filelist.maf
 
 adddirname(haicrypt "${SOURCES_haicrypt_indir}" SOURCES_haicrypt)
 adddirname(haicrypt "${HEADERS_haicrypt_indir}" HEADERS_haicrypt)
+
+
+if ( USE_NETTLE )
+	list(APPEND SOURCES_haicrypt "haicrypt/cryptographic-internal.c")
+else ()
+	add_definitions(
+   		-DHAICRYPT_USE_OPENSSL_EVP=1
+	)
+endif ()
 
 if (WIN32)
 	MafRead(common/filelist_win32.maf

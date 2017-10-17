@@ -31,7 +31,6 @@ written by
 #define HCRYPT_CTX_H
 
 #include <sys/types.h>
-#include <openssl/aes.h>		//AES_KEY for kek
 
 #if !defined(HAISRT_VERSION_INT)
 #include "haicrypt.h"

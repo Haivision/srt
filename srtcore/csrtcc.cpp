@@ -835,7 +835,11 @@ HaiCrypt_Handle CSRTCC::createCryptoCtx(int keylen, int tx)
 
         crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (tx ? HAICRYPT_CFG_F_TX : 0);
         crypto_cfg.xport = HAICRYPT_XPT_SRT;
+#if !defined(USE_NETTLE)
+#ifdef  HAICRYPT_USE_OPENSSL_EVP
         crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP();
+#endif
+#endif
         crypto_cfg.key_len = (size_t)keylen;
         crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
         crypto_cfg.km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;
