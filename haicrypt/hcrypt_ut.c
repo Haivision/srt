@@ -26,6 +26,7 @@ written by
 *****************************************************************************/
 
 #include <string.h>				/* memcpy */
+#include <stdio.h>
 #include <haicrypt.h>
 #include "hcrypt.h"
 
