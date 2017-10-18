@@ -77,5 +77,7 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 
 #endif /* HAICRYPT_USE_OPENSSL_EVP */
 
+#define hcrypt_pbkdf2_hmac_sha1(p,p_len,sa,sa_len,itr,out_len,out) \
+   PKCS5_PBKDF2_HMAC_SHA1(p,p_len,sa,sa_len,itr,out_len,out)
 
 #endif /* __HCRYPT_OPENSSL_H__ */

@@ -128,7 +128,7 @@ static int hc_ut_pbkdf2(unsigned verbose)
 			gettimeofday(&tstart, NULL);
 		}	
 
-		PKCS5_PBKDF2_HMAC_SHA1(tv[i].pwd, tv[i].pwd_len, 
+		hcrypt_pbkdf2_hmac_sha1(tv[i].pwd, tv[i].pwd_len, 
 			tv[i].salt, tv[i].salt_len, 
 			tv[i].cnt, tv[i].dk_len, dk);
 

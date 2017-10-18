@@ -88,7 +88,7 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	int iret;
 	(void)crypto;
 
-	PKCS5_PBKDF2_HMAC_SHA1(ctx->cfg.pwd, ctx->cfg.pwd_len, 
+	hcrypt_pbkdf2_hmac_sha1(ctx->cfg.pwd, ctx->cfg.pwd_len, 
 		&ctx->salt[ctx->salt_len - pbkdf_salt_len], pbkdf_salt_len, 
 		HAICRYPT_PBKDF2_ITER_CNT, kek_len, kek);
 
