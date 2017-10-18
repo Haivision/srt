@@ -89,7 +89,15 @@ set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
 # find OpenSSL
 if ( USE_GNUTLS )
-	message (FATAL_ERROR "Not yet implemented")
+	pkg_check_modules (SSL REQUIRED gnutls nettle)
+
+	add_definitions(
+		-DUSE_GNUTLS=1
+	)
+
+	link_directories(
+		${SSL_LIBRARY_DIRS}
+	)
 else()
 	find_package(OpenSSL REQUIRED)
 	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
@@ -234,7 +242,7 @@ endif()
 # Completing sources and installable headers. Flag settings will follow.
 # ---
 if ( USE_GNUTLS )
-	message (FATAL_ERROR "Not yet implemented")
+	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist-gnutls.maf")
 else()
 	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist.maf")
 endif()

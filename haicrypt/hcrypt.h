@@ -50,9 +50,13 @@ written by
 
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
-#if !defined(USE_GNUTLS)
+
+#if defined(USE_GNUTLS)
+#include "hcrypt-gnutls.h"
+#else
 #include "hcrypt-openssl.h"
 #endif
+
 #include "hcrypt_ctx.h"
 
 //#define HCRYPT_DEV 1  /* Development: should not be defined in committed code */
