@@ -79,5 +79,7 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 
 #define hcrypt_pbkdf2_hmac_sha1(p,p_len,sa,sa_len,itr,out_len,out) \
    PKCS5_PBKDF2_HMAC_SHA1(p,p_len,sa,sa_len,itr,out_len,out)
+#define hcrypt_aes_set_encrypt_key AES_set_encrypt_key
+#define hcrypt_aes_set_decrypt_key AES_set_decrypt_key
 
 #endif /* __HCRYPT_OPENSSL_H__ */
