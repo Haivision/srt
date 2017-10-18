@@ -50,6 +50,9 @@ written by
 
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
+#if !defined(USE_GNUTLS)
+#include "hcrypt-openssl.h"
+#endif
 #include "hcrypt_ctx.h"
 
 //#define HCRYPT_DEV 1  /* Development: should not be defined in committed code */
@@ -110,7 +113,6 @@ typedef struct {
 #define ASSERT(c)   assert(c)
 #endif
 
-#include "hcrypt-openssl.h"
 
 /* HaiCrypt-TP CTR mode IV (128-bit):
  *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
