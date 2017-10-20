@@ -82,10 +82,6 @@
 #include <srt.h>
 #include <logging.h>
 
-// The length of the SRT payload used in srt_recvmsg call.
-// So far, this function must be used and up to this length of payload.
-const size_t DEFAULT_CHUNK = 1316;
-
 using namespace std;
 
 
@@ -240,7 +236,14 @@ int main( int argc, char** argv )
     int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
     size_t chunk = stoul(Option("0", "c", "chunk"), 0, 0);
     if ( chunk == 0 )
-        chunk = DEFAULT_CHUNK;
+    {
+        chunk = SRT_LIVE_DEF_PLSIZE;
+    }
+    else
+    {
+        transmit_chunk_size = chunk;
+    }
+
     size_t bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"), 0, 0);
     transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"), 0, 0);
     transmit_verbose = Option("no", "v", "verbose") != "no";
@@ -285,6 +288,7 @@ int main( int argc, char** argv )
             UDT::setlogstream(logfile_stream);
         }
     }
+
 
 #ifdef WIN32
 #define alarm(argument) (void)0
