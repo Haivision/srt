@@ -25,6 +25,8 @@ written by
 #ifndef INC__SRTC_H
 #define INC__SRTC_H
 
+#include "version.h"
+
 #include "platform_sys.h"
 
 #include <string.h>
@@ -76,10 +78,6 @@ written by
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
-
-
-// To construct version value
-#define SRT_MAKE_VERSION(major, minor, patch) ((patch)+((minor)*0x100)+((major)*0x10000))
 
 #ifdef __GNUG__
 #define SRT_ATR_UNUSED __attribute__((unused))
