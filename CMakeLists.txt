@@ -148,12 +148,12 @@ else()
 endif()
 
 
-set (SRT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/common)
+set (SRT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
-set (SRT_SRC_HAICRYPT_DIR ${CMAKE_SOURCE_DIR}/haicrypt)
-set (SRT_SRC_SRTCORE_DIR ${CMAKE_SOURCE_DIR}/srtcore)
-set (SRT_SRC_COMMON_DIR ${CMAKE_SOURCE_DIR}/common)
-set (SRT_SRC_TOOLS_DIR ${CMAKE_SOURCE_DIR}/tools)
+set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
+set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
+set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
+set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 
 if(WIN32)
     add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB)
@@ -435,11 +435,11 @@ endif()
 if ( ENABLE_CXX11 )
 
 	set (SOURCES_transmit 
-		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
-		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
-		${CMAKE_SOURCE_DIR}/common/logsupport.cpp
-		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
-		#${CMAKE_SOURCE_DIR}/common/srt_compat.c
+		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/socketoptions.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/logsupport.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/transmitmedia.cpp
+		#${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c
 	)
 	# XXX This fix was never necessary, srt_compat.c is
 	# included in the SRT library. This was motivated by some error report
@@ -448,32 +448,32 @@ if ( ENABLE_CXX11 )
 	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
 	# This should result in exactly the same as when it was compiled as C, with the
 	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
-	#set_source_files_properties(${CMAKE_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
+	#set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
 
 	add_executable(srt-live-transmit
-		${CMAKE_SOURCE_DIR}/apps/srt-live-transmit.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-live-transmit.cpp
 		${SOURCES_transmit}
 	)
 
 	add_executable(srt-multiplex
-		${CMAKE_SOURCE_DIR}/apps/srt-multiplex.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-multiplex.cpp
 		${SOURCES_transmit}
 	)
 
 # srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
 	if (NOT WIN32)
 	add_executable(srt-file-transmit
-		${CMAKE_SOURCE_DIR}/apps/srt-file-transmit.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-file-transmit.cpp
 		${SOURCES_transmit}
 	)
 	endif()
 
 	add_executable(sendfile
-		${CMAKE_SOURCE_DIR}/apps/legacy/sendfile.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/sendfile.cpp
 	)
 
 	add_executable(recvfile
-		${CMAKE_SOURCE_DIR}/apps/legacy/recvfile.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/recvfile.cpp
 	)
 	target_link_libraries(sendfile ${TARGET_srt} ${DEPENDS_srt})
 	target_link_libraries(recvfile ${TARGET_srt} ${DEPENDS_srt})
@@ -498,7 +498,7 @@ if ( ENABLE_CXX11 )
 	endif()
 
 	# Test programs
-	add_executable(utility-test ${CMAKE_SOURCE_DIR}/apps/utility-test.cpp)
+	add_executable(utility-test ${CMAKE_CURRENT_SOURCE_DIR}/apps/utility-test.cpp)
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
@@ -537,8 +537,8 @@ endif()
 
 if ( ENABLE_SUFLIP )
 	set (SOURCES_suflip
-		${CMAKE_SOURCE_DIR}/apps/suflip.cpp
-		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/suflip.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
 	)
 
 	set(LIBS_suflip ${TARGET_haicrypt} ${TARGET_srt})
