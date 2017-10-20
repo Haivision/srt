@@ -357,6 +357,7 @@ target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC
 # Not sure why it's required, but somehow only on Linux
 if ( LINUX )
 	target_link_libraries(${TARGET_srt} PUBLIC rt)
+	target_link_libraries(${TARGET_srt} PUBLIC dl)
 	set (IFNEEDED_SRT_LDFLAGS -pthread)
 endif()
 
