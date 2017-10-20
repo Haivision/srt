@@ -26,7 +26,11 @@ set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
 
-set (SRT_VERSION 1.3.0)
+set(SRT_VERSION_MAJOR 1)
+set(SRT_VERSION_MINOR 3)
+set(SRT_VERSION_PATCH 0)
+
+set(SRT_VERSION "${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR}.${SRT_VERSION_PATCH}")
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 if (NOT DEFINED ENABLE_DEBUG)
@@ -306,6 +310,11 @@ MafRead(srtcore/filelist.maf
 
 adddirname(srtcore "${SOURCES_srt_indir}" SOURCES_srt)
 adddirname(srtcore "${HEADERS_srt_indir}" HEADERS_srt)
+
+# Auto generated version file and add it to the HEADERS_srt list.
+configure_file("srtcore/version.h.in" "version.h" @ONLY)
+list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 # Manual handling of dependency on virtual library
 if (haicrypt_libspec STREQUAL VIRTUAL)
