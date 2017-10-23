@@ -2825,6 +2825,13 @@ int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
+int recvmsg(SRTSOCKET u, char* buf, int len)
+{
+   uint64_t srctime;
+
+   return CUDT::recvmsg(u, buf, len, srctime);
+}
+
 int64_t sendfile(
    SRTSOCKET u,
    fstream& ifs,
