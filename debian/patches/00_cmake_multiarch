@@ -1,0 +1,63 @@
+Description: Enable multi-arch support
+ This patch add support for multi-arch thanks to GNUInstallDirs module
+ for CMake.
+Author: Derfel <code@derfel.net>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Last-Update: 2017-10-24
+
+--- srt-1.2.0.orig/CMakeLists.txt
++++ srt-1.2.0/CMakeLists.txt
+@@ -22,6 +22,8 @@ cmake_minimum_required (VERSION 2.8.12 F
+ #project(SRT VERSION "1.2.1")
+ project(SRT C CXX)
+ 
++include(GNUInstallDirs)
++
+ set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+ include(haiUtil)
+ include(FindPkgConfig)
+@@ -278,10 +280,10 @@ if (NOT haicrypt_libspec STREQUAL VIRTUA
+ 
+ 	install(TARGETS ${TARGET_haicrypt}
+ 		RUNTIME DESTINATION bin
+-		ARCHIVE DESTINATION lib
+-		LIBRARY DESTINATION lib
++		ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
++		LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+ 	)
+-	install(FILES ${HEADERS_haicrypt} DESTINATION include/srt)
++	install(FILES ${HEADERS_haicrypt} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/srt")
+ 	if (WIN32)
+ 		install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+ 	endif()
+@@ -368,10 +370,10 @@ endif()
+ 
+ install(TARGETS ${TARGET_srt}
+ 		RUNTIME DESTINATION bin
+-		ARCHIVE DESTINATION lib
+-		LIBRARY DESTINATION lib
++		ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
++		LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+ )
+-install(FILES ${HEADERS_srt} DESTINATION include/srt)
++install(FILES ${HEADERS_srt} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/srt")
+ if (WIN32 AND TARGET_haicrypt STREQUAL TARGET_srt)
+ 	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+ endif()
+@@ -411,9 +413,9 @@ join_arguments(SRT_LIBS_PRIVATE ${SRT_LI
+ 
+ # haisrt.pc left temporarily for backward compatibility. To be removed in future!
+ configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
+-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
++install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+ configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
+-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
++install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+ 
+ # Applications
+ 
