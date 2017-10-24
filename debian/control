@@ -1,0 +1,39 @@
+Source: srt
+Priority: optional
+Maintainer: derfel <derfel@finwe.lorien.arda>
+Build-Depends: debhelper (>= 9), tclsh, pkg-config, cmake, libssl-dev, build-essential
+Standards-Version: 3.9.8
+Section: libs
+Homepage: https://github.com/Haivision/srt
+
+Package: libsrt-dev
+Section: libdevel
+Architecture: any
+Depends: libsrt1 (= ${binary:Version}), ${misc:Depends}
+Description: SRT - Secure, Reliable, Transport
+ Secure Reliable Transport (SRT) is a proprietary transport
+ technology that optimizes streaming performance across
+ unpredictable networks, such as the Internet.
+ .
+ This package contains development files for libsrt1
+
+Package: libsrt1
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SRT - Secure, Reliable, Transport
+ Secure Reliable Transport (SRT) is a proprietary transport
+ technology that optimizes streaming performance across
+ unpredictable networks, such as the Internet.
+ .
+ This package contains library files for libsrt1
+
+Package: srt-bin
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SRT - Secure, Reliable, Transport
+ Secure Reliable Transport (SRT) is a proprietary transport
+ technology that optimizes streaming performance across
+ unpredictable networks, such as the Internet.
+ .
+ This package contains srt binary commands.
+

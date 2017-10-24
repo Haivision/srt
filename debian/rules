@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_clean:
+	dh_clean
+	rm -f CMakeCache.txt Makefile cmake_install.cmake haisrt.pc install_manifest.txt srt.pc
+	rm -f libsrt.so.1.2.0 stransmit utility-test libsrt.so.1 libsrt.so
+	rm -rf CMakeFiles
+
