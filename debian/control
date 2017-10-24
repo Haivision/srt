@@ -1,7 +1,7 @@
 Source: srt
 Priority: optional
-Maintainer: derfel <derfel@finwe.lorien.arda>
-Build-Depends: debhelper (>= 9), tclsh, pkg-config, cmake, libssl-dev, build-essential
+Maintainer: derfel <code@derfel.net>
+Build-Depends: debhelper (>= 9), tcl, pkg-config, cmake, libssl-dev
 Standards-Version: 3.9.8
 Section: libs
 Homepage: https://github.com/Haivision/srt
