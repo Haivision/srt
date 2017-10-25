@@ -24,7 +24,7 @@ Join the conversation in the #development channel on Slack at https://srtallianc
 
 To receive an invite please email info@srtalliance.org or open an issue here!
 
-## Guides
+# Guides
 * [Why SRT Was Created](docs/why-srt-was-created.md)
 * [Using the `stransmit` App](docs/stransmit.md)
 * [SRT Encryption](docs/encryption.md)
