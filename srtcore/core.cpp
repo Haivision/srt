@@ -1470,8 +1470,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         int srths_cmd, int srtkm_cmd,
         const uint32_t* kmdata, size_t kmdata_wordsize /* IN WORDS, NOT BYTES!!! */)
 {
-    CPacket& pkt = r_pkt;
-    CHandShake& hs = r_hs;
+    CPacket& pkt = *r_pkt;
+    CHandShake& hs = *r_hs;
 
     LOGC(mglog.Debug) << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize;
 
@@ -1708,13 +1708,13 @@ static int FindExtensionBlock(uint32_t* begin, size_t total_length,
     // Check if there's anything to process
     if (total_length == 0)
     {
-        r_next_block = NULL;
-        r_out_len = 0;
+        *r_next_block = NULL;
+        *r_out_len = 0;
         return SRT_CMD_NONE;
     }
 
-    size_t& out_len = r_out_len;
-    uint32_t*& next_block = r_next_block;
+    size_t& out_len = *r_out_len;
+    uint32_t*& next_block = *r_next_block;
     // This function extracts the block command from the block and its length.
     // The command value is returned as a function result.
     // The size of that command block is stored into out_len.
@@ -1753,8 +1753,8 @@ static inline bool NextExtensionBlock(ref_t<uint32_t*> begin, uint32_t* next, re
     if (!next)
         return false;
 
-    length = length - (next - begin);
-    begin = next;
+    *length = +length - (next - +begin);
+    *begin = next;
     return true;
 }
 
@@ -2904,7 +2904,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
 
     uint32_t kmdata[SRTDATA_MAXSIZE];
     size_t kmdatasize = SRTDATA_MAXSIZE;
-    CPacket& rpkt = reqpkt;
+    CPacket& rpkt = *reqpkt;
 
     cookieContest();
 
@@ -3406,7 +3406,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
     // the peer, while the peer could not send URQ_CONCLUSION without switching off RDV_WAVING
     // (actually to RDV_ATTENTION). There's also no exit to RDV_FINE from RDV_ATTENTION.
 
-    needs_extension = false;
+    *needs_extension = false;
 
     string reason;
 
@@ -3432,7 +3432,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 << RequestTypeStr(orq) << "->" << RequestTypeStr(nrq) << "] "
                 << (needext ? "HSREQ-ext" : "") << (reason == "" ? string() : "reason:" + reason);
         }
-    } l_logend(m_RdvState, req, m_RdvState, rsptype, needs_extension, reason);
+    } l_logend(m_RdvState, req, m_RdvState, *rsptype, *needs_extension, reason);
 
 #endif
 
@@ -3447,18 +3447,18 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 m_RdvState = CHandShake::RDV_ATTENTION;
 
                 // NOTE: if this->isWinner(), attach HSREQ
-                rsptype = URQ_CONCLUSION;
+                *rsptype = URQ_CONCLUSION;
                 if ( hsd == HSD_INITIATOR )
-                    needs_extension = true;
+                    *needs_extension = true;
                 return false;
             }
 
             if ( req == URQ_CONCLUSION )
             {
                 m_RdvState = CHandShake::RDV_FINE;
-                rsptype = URQ_CONCLUSION;
+                *rsptype = URQ_CONCLUSION;
 
-                needs_extension = true; // (see below - this needs to craft either HSREQ or HSRSP)
+                *needs_extension = true; // (see below - this needs to craft either HSREQ or HSRSP)
                 // if this->isWinner(), then craft HSREQ for that response.
                 // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
                 if ( hsd == HSD_RESPONDER )
@@ -3479,9 +3479,9 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // agent has switched to ATTENTION state and continues sending
                 // waveahands. In this case, just remain in ATTENTION state and
                 // retry with URQ_CONCLUSION, as normally.
-                rsptype = URQ_CONCLUSION;
+                *rsptype = URQ_CONCLUSION;
                 if ( hsd == HSD_INITIATOR )
-                    needs_extension = true;
+                    *needs_extension = true;
                 return false;
             }
 
@@ -3496,12 +3496,13 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                     // If no HSRSP attached, stay in this state.
                     if (m_ConnRes.m_iType == 0)
                     {
-                        LOGC(mglog.Debug) << "rendezvousSwitchState: {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]";
-                        rsptype = URQ_CONCLUSION;
+                        LOGC(mglog.Debug) << "rendezvousSwitchState: "
+                            "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]";
+                        *rsptype = URQ_CONCLUSION;
                         return false;
                     }
                     m_RdvState = CHandShake::RDV_CONNECTED;
-                    rsptype = URQ_AGREEMENT;
+                    *rsptype = URQ_AGREEMENT;
                     return false;
                 }
 
@@ -3509,7 +3510,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 if ( hsd == HSD_RESPONDER )
                 {
                     m_RdvState = CHandShake::RDV_INITIATED;
-                    rsptype = URQ_CONCLUSION;
+                    *rsptype = URQ_CONCLUSION;
                     return true;
                 }
             }
@@ -3529,7 +3530,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                     m_RdvState = CHandShake::RDV_CONNECTED;
 
                     // Both sides are connected, no need to send anything anymore.
-                    rsptype = URQ_DONE;
+                    *rsptype = URQ_DONE;
                     return false;
                 }
 
@@ -3539,7 +3540,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                     // we have to request this once again. Send URQ_CONCLUSION in order to
                     // inform the other party that we need the conclusion message once again.
                     // The ATTENTION state should be maintained.
-                    rsptype = URQ_CONCLUSION;
+                    *rsptype = URQ_CONCLUSION;
                     // This is a conclusion message to call for getting HSREQ, so no extensions.
                     return false;
                 }
@@ -3589,13 +3590,15 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
                 if ( !correct_switch )
                 {
-                    rsptype = URQ_CONCLUSION;
-                    needs_extension = true; // initiator should send HSREQ, responder HSRSP, in both cases extension is needed
+                    *rsptype = URQ_CONCLUSION;
+                    // initiator should send HSREQ, responder HSRSP,
+                    // in both cases extension is needed
+                    *needs_extension = true;
                     return hsd == HSD_RESPONDER;
                 }
 
                 m_RdvState = CHandShake::RDV_CONNECTED;
-                rsptype = URQ_AGREEMENT;
+                *rsptype = URQ_AGREEMENT;
                 return false;
             }
 
@@ -3609,7 +3612,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // This will be dispatched in the main loop and discarded.
 
                 m_RdvState = CHandShake::RDV_CONNECTED;
-                rsptype = URQ_DONE;
+                *rsptype = URQ_DONE;
                 return false;
             }
 
@@ -3624,7 +3627,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
             if ( req == URQ_AGREEMENT )
             {
                 m_RdvState = CHandShake::RDV_CONNECTED;
-                rsptype = URQ_DONE;
+                *rsptype = URQ_DONE;
                 return false;
             }
 
@@ -3633,11 +3636,13 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // Receiving conclusion in this state means that the other party
                 // didn't get our conclusion, so send it again, the same as when
                 // exiting the ATTENTION state.
-                rsptype = URQ_CONCLUSION;
+                *rsptype = URQ_CONCLUSION;
                 if ( hsd == HSD_RESPONDER )
                 {
-                    LOGC(mglog.Debug) << "rendezvousSwitchState: {RESPONDER}[INITIATED] awaits AGREEMENT, got CONCLUSION, sending CONCLUSION+HSRSP";
-                    needs_extension = true;
+                    LOGC(mglog.Debug) << "rendezvousSwitchState: "
+                        "{RESPONDER}[INITIATED] awaits AGREEMENT, "
+                        "got CONCLUSION, sending CONCLUSION+HSRSP";
+                    *needs_extension = true;
                     return true;
                 }
 
@@ -3647,13 +3652,17 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // HSREQ, and set responding HSRSP in that case.
                 if ( m_ConnRes.m_iType == 0 )
                 {
-                    LOGC(mglog.Debug) << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, got empty CONCLUSION, responding empty CONCLUSION";
-                    needs_extension = false;
+                    LOGC(mglog.Debug) << "rendezvousSwitchState: "
+                        "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                        "got empty CONCLUSION, responding empty CONCLUSION";
+                    *needs_extension = false;
                     return false;
                 }
 
-                LOGC(mglog.Debug) << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP";
-                needs_extension = true;
+                LOGC(mglog.Debug) << "rendezvousSwitchState: "
+                    "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                    "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP";
+                *needs_extension = true;
                 return true;
             }
         }
@@ -3663,14 +3672,14 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
     case CHandShake::RDV_CONNECTED:
         // Do nothing. This theoretically should never happen.
-        rsptype = URQ_DONE;
+        *rsptype = URQ_DONE;
         return false;
     }
 
     LOGC(mglog.Debug) << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID";
     // All others are treated as errors
     m_RdvState = CHandShake::RDV_WAVING;
-    rsptype = URQ_ERROR_INVALID;
+    *rsptype = URQ_ERROR_INVALID;
     return false;
 }
 
@@ -4559,13 +4568,13 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
                     realack, m_iSndCurrSeqNo,
                     dpkts, dbytes, timespan_ms);
         }
-        bCongestion = true;
+        *bCongestion = true;
         CGuard::leaveCS(m_AckLock);
     }
     else if (timespan_ms > (m_iPeerTsbPdDelay_ms/2))
     {
         LOGC(mglog.Debug).form("cong, NOW: %lluus, BYTES %d, TMSPAN %dms", (unsigned long long)CTimer::getTime(), bytes, timespan_ms);
-        bCongestion = true;
+        *bCongestion = true;
     }
 }
 
@@ -4581,7 +4590,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder, uint64_t s
 
 int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
-    SRT_MSGCTRL& mctrl = r_mctrl;
+    SRT_MSGCTRL& mctrl = *r_mctrl;
     bool bCongestion = false;
 
     // throw an exception if not connected
@@ -4844,7 +4853,7 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 
 int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
-    SRT_MSGCTRL& mctrl = r_mctrl;
+    SRT_MSGCTRL& mctrl = *r_mctrl;
     // Recvmsg isn't restricted to the smoother type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.

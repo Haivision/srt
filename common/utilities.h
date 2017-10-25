@@ -246,16 +246,16 @@ template <class T>
 struct ref_t: public std::reference_wrapper<T>
 {
     typedef std::reference_wrapper<T> base;
-    ref_t() {}
+    explicit ref_t(const T& i): base(i) {}
     ref_t(const ref_t& i): base(i) {}
     ref_t(const base& i): base(i) {}
 
     ref_t& operator=(const ref_t&) = default;
 
-    void operator=(const T& i)
-    {
-        this->get() = i;
-    }
+    T& operator*() { return this->get(); }
+    T operator+() { return this->get(); }
+
+    operator T&() = delete;
 
     T operator->() const
     { return this->get(); }
@@ -358,20 +358,17 @@ public:
         : m_data(inref.m_data)
     { }
 
+    // This *REBINDS* the reference, not
+    // assigns a value. 
     void operator=(const ref_t<Type>& inref)
     {
         m_data = inref.m_data;
     }
 
-    void operator=(const Type& src)
-    {
-        *m_data = src;
-    }
+    Type& operator*() { return *m_data; }
+    Type operator+() { return *m_data; }
 
-    operator Type&() const
-    { return this->get(); }
-
-    Type& get() const 
+    Type& get() const
     { return *m_data; }
 
     Type operator->() const
