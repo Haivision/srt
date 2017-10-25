@@ -184,18 +184,18 @@ typedef std::set<SRTSOCKET> ud_set;
 /* Binary backward compatibility obsolete options */
 #define SRT_NAKREPORT   SRT_RCVNAKREPORT
 
-typedef enum
-{
-   INIT        = SRTS_INIT,
-   OPENED      = SRTS_OPENED,
-   LISTENING   = SRTS_LISTENING,
-   CONNECTING  = SRTS_CONNECTING,
-   CONNECTED   = SRTS_CONNECTED,
-   BROKEN      = SRTS_BROKEN,
-   CLOSING     = SRTS_CLOSING,
-   CLOSED      = SRTS_CLOSED,
-   NONEXIST    = SRTS_NONEXIST
-} UDTSTATUS;
+#if !defined(SRT_DISABLE_LEGACY_UDTSTATUS)
+#define UDTSTATUS    SRT_SOCKSTATUS
+#define INIT         SRTS_INIT
+#define OPENED       SRTS_OPENED
+#define LISTENING    SRTS_LISTENING
+#define CONNECTING   SRTS_CONNECTING
+#define CONNECTED    SRTS_CONNECTED
+#define BROKEN       SRTS_BROKEN
+#define CLOSING      SRTS_CLOSING
+#define CLOSED       SRTS_CLOSED
+#define NONEXIST     SRTS_NONEXIS
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
