@@ -1753,7 +1753,7 @@ static inline bool NextExtensionBlock(ref_t<uint32_t*> begin, uint32_t* next, re
     if (!next)
         return false;
 
-    *length = +length - (next - +begin);
+    *length = *length - (next - *begin);
     *begin = next;
     return true;
 }

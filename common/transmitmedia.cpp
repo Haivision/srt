@@ -800,7 +800,7 @@ void SrtModel::Establish(ref_t<std::string> name)
         if (name.get() != "")
         {
             Verb() << "Connect with requesting stream [" << name.get() << "]";
-            UDT::setstreamid(m_sock, +name);
+            UDT::setstreamid(m_sock, *name);
         }
         else
         {

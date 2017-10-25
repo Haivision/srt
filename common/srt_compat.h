@@ -192,17 +192,8 @@ inline std::string SysStrError(int errnum)
 
 inline struct tm LocalTime(time_t tt)
 {
-#ifdef __cplusplus
-    // As a POD, in C++ tm will be zero-initialized
-    // with explicit default initializer. No warns.
-    tm tms = tm();
-#else
-    // This will issue a warning in C, but still
-    // it will do the same as memset(&tms, 0...).
-    // Using a zero-list is a portability risk.
-    // Using one zero becuase {} is not C99 standard.
-	struct tm tms = {0};
-#endif
+    struct tm tms;
+    memset(&tms, 0, sizeof tms);
 #ifdef WIN32
 	errno_t rr = localtime_s(&tms, &tt);
 	if (rr == 0)

@@ -508,7 +508,7 @@ bool CCryptoControl::createCryptoCtx(ref_t<HaiCrypt_Handle> hCrypto, size_t keyl
 {
     //HaiCrypt_Handle& hCrypto (rh);
 
-    if (+hCrypto)
+    if (*hCrypto)
     {
         // XXX You can check here if the existing handle represents
         // a correctly defined crypto. But this doesn't seem to be

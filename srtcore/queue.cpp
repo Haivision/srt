@@ -1191,7 +1191,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
     }
     // find next available slot for incoming packet
     *r_unit = m_UnitQueue.getNextAvailUnit();
-    if (!+r_unit)
+    if (!*r_unit)
     {
         // no space, skip this packet
         CPacket temp;

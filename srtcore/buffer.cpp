@@ -957,7 +957,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     {
         return true;
     }
-    else if (+r_tsbpdtime != 0)
+    else if (*r_tsbpdtime != 0)
     {
         return false;
     }
@@ -1017,7 +1017,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
         {
             /* We got the 1st valid packet */
             *r_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
-            if (+r_tsbpdtime <= CTimer::getTime())
+            if (*r_tsbpdtime <= CTimer::getTime())
             {
                 /* Packet ready to play */
                 if (haslost)
@@ -1077,7 +1077,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         else
         {
             *tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
-            int64_t towait = (+tsbpdtime - CTimer::getTime());
+            int64_t towait = (*tsbpdtime - CTimer::getTime());
             if (towait > 0)
             {
                 LOGC(mglog.Debug) << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)";
@@ -1143,7 +1143,7 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             */
             *curpktseq = pkt->getSeqNo();
             *tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
-            if (+tsbpdtime <= CTimer::getTime())
+            if (*tsbpdtime <= CTimer::getTime())
                return true;
        }
        return false;
@@ -1788,7 +1788,7 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
         if (found)
         {
             // the msg has to be ack'ed or it is allowed to read out of order, and was not read before
-            if (!+passack || !m_pUnit[q]->m_Packet.getMsgOrderFlag())
+            if (!*passack || !m_pUnit[q]->m_Packet.getMsgOrderFlag())
             {
                 LOGC(mglog.Debug) << "scanMsg: found next-to-broken message, delivering OUT OF ORDER.";
                 break;
