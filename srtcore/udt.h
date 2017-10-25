@@ -164,12 +164,12 @@ typedef std::set<SRTSOCKET> ud_set;
 #define SRT_OHEADBW SRTO_OHEADBW
 #define SRT_PASSPHRASE SRTO_PASSPHRASE
 #define SRT_PBKEYLEN SRTO_PBKEYLEN
-#define SRT_KMSTATE SRTO_KMSTATE
+#define SRT_KMSTATE SRTO_RCVKMSTATE // FIXME: SRTO_KMSTATE is not implemented?
 #define SRT_IPTTL SRTO_IPTTL
 #define SRT_IPTOS SRTO_IPTOS
 #define SRT_TLPKTDROP SRTO_TLPKTDROP
 #define SRT_TSBPDMAXLAG SRTO_TSBPDMAXLAG
-#define SRT_RCVNAKREPORT SRTO_RCVNAKREPORT
+#define SRT_RCVNAKREPORT SRTO_NAKREPORT
 #define SRT_CONNTIMEO SRTO_CONNTIMEO
 #define SRT_SNDPBKEYLEN SRTO_SNDPBKEYLEN
 #define SRT_RCVPBKEYLEN SRTO_RCVPBKEYLEN
@@ -184,7 +184,18 @@ typedef std::set<SRTSOCKET> ud_set;
 /* Binary backward compatibility obsolete options */
 #define SRT_NAKREPORT   SRT_RCVNAKREPORT
 
-
+#if !defined(SRT_DISABLE_LEGACY_UDTSTATUS)
+#define UDTSTATUS    SRT_SOCKSTATUS
+#define INIT         SRTS_INIT
+#define OPENED       SRTS_OPENED
+#define LISTENING    SRTS_LISTENING
+#define CONNECTING   SRTS_CONNECTING
+#define CONNECTED    SRTS_CONNECTED
+#define BROKEN       SRTS_BROKEN
+#define CLOSING      SRTS_CLOSING
+#define CLOSED       SRTS_CLOSED
+#define NONEXIST     SRTS_NONEXIS
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -303,6 +314,8 @@ public: // Legacy Error Code
     static const int EINVPARAM = SRT_EINVPARAM;
     static const int EINVSOCK = SRT_EINVSOCK;
     static const int EUNBOUNDSOCK = SRT_EUNBOUNDSOCK;
+    static const int ESTREAMILL = SRT_EINVALMSGAPI;
+    static const int EDGRAMILL = SRT_EINVALBUFFERAPI;
     static const int ENOLISTEN = SRT_ENOLISTEN;
     static const int ERDVNOSERV = SRT_ERDVNOSERV;
     static const int ERDVUNBOUND = SRT_ERDVUNBOUND;
