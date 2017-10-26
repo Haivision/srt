@@ -235,31 +235,45 @@ inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
         dst[i] = ntohl(src[i]);
 }
 
+// Homecooked version of ref_t. It's a copy of std::reference_wrapper
+// voided of unwanted properties and renamed to ref_t.
+
+
 #if HAVE_CXX11
-
 #include <functional>
+#endif
 
-// Replacement for a bare reference for passing a variable to be filled by a function call.
-// To pass a variable, just use the std::ref(variable). The call will be accepted if you
-// pass the result of ref(), but will be rejected if you just pass a variable.
-template <class T>
-struct ref_t: public std::reference_wrapper<T>
+template<typename Type>
+class ref_t
 {
-    typedef std::reference_wrapper<T> base;
-    ref_t() {}
-    ref_t(const ref_t& i): base(i) {}
-    ref_t(const base& i): base(i) {}
+    Type* m_data;
 
-    ref_t& operator=(const ref_t&) = default;
+public:
+    typedef Type type;
 
-    void operator=(const T& i)
-    {
-        this->get() = i;
-    }
+    explicit ref_t(Type& __indata)
+        : m_data(&__indata)
+        { }
 
-    T operator->() const
-    { return this->get(); }
+    ref_t(const ref_t<Type>& inref)
+        : m_data(inref.m_data)
+    { }
+
+#if HAVE_CXX11
+    ref_t(const std::reference_wrapper<Type>& i): m_data(&i.get()) {}
+#endif
+
+    Type& operator*() { return *m_data; }
+
+    Type& get() const
+    { return *m_data; }
+
+    Type operator->() const
+    { return *m_data; }
 };
+
+
+#if HAVE_CXX11
 
 // This alias was created so that 'Ref' (not 'ref') is used everywhere.
 // Normally the C++11 'ref' fits perfectly here, however in C++03 mode
@@ -335,48 +349,7 @@ auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
 }
 
 
-
-
 #else
-
-// Homecooked version of ref_t. It's a copy of std::reference_wrapper
-// voided of unwanted properties and renamed to ref_t.
-
-template<typename Type>
-class ref_t
-{
-    Type* m_data;
-
-public:
-    typedef Type type;
-
-    explicit ref_t(Type& __indata)
-        : m_data(&__indata)
-        { }
-
-    ref_t(const ref_t<Type>& inref)
-        : m_data(inref.m_data)
-    { }
-
-    void operator=(const ref_t<Type>& inref)
-    {
-        m_data = inref.m_data;
-    }
-
-    void operator=(const Type& src)
-    {
-        *m_data = src;
-    }
-
-    operator Type&() const
-    { return this->get(); }
-
-    Type& get() const 
-    { return *m_data; }
-
-    Type operator->() const
-    { return *m_data; }
-};
 
 template <class Type>
 ref_t<Type> Ref(Type& arg)

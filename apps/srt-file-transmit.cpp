@@ -168,8 +168,8 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         directory = wd + "/" + directory;
     }
 
-    dir = directory;
-    fname = filename;
+    *dir = directory;
+    *fname = filename;
 }
 
 bool DoUpload(UriParser& ut, string path, string filename)

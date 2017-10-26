@@ -64,7 +64,7 @@ m_extension(false)
 
 int CHandShake::store_to(char* buf, ref_t<size_t> r_size)
 {
-   size_t& size = r_size;
+   size_t& size = *r_size;
    if (size < m_iContentSize)
       return -1;
 

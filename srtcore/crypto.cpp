@@ -103,7 +103,7 @@ void CCryptoControl::updateKmState(int cmd, size_t srtlen)
 
 int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv)
 {
-    size_t& srtlen = r_srtlen;
+    size_t& srtlen = *r_srtlen;
     //Receiver
     /* All 32-bit msg fields swapped on reception
      * But HaiCrypt expect network order message
@@ -508,7 +508,7 @@ bool CCryptoControl::createCryptoCtx(ref_t<HaiCrypt_Handle> hCrypto, size_t keyl
 {
     //HaiCrypt_Handle& hCrypto (rh);
 
-    if (hCrypto)
+    if (*hCrypto)
     {
         // XXX You can check here if the existing handle represents
         // a correctly defined crypto. But this doesn't seem to be
@@ -585,7 +585,7 @@ EncryptionStatus CCryptoControl::encrypt(ref_t<CPacket> r_packet)
     if ( getSndCryptoFlags() == EK_NOENC )
         return ENCS_CLEAR;
 
-    CPacket& packet = r_packet;
+    CPacket& packet = *r_packet;
     int rc = HaiCrypt_Tx_Data(m_hSndCrypto, (uint8_t*)packet.getHeader(), (uint8_t*)packet.m_pcData, packet.getLength());
     if (rc < 0)
     {
@@ -603,7 +603,7 @@ EncryptionStatus CCryptoControl::encrypt(ref_t<CPacket> r_packet)
 
 EncryptionStatus CCryptoControl::decrypt(ref_t<CPacket> r_packet)
 {
-    CPacket& packet = r_packet;
+    CPacket& packet = *r_packet;
 
     if (packet.getMsgCryptoFlags() == EK_NOENC)
     {

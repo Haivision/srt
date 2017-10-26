@@ -800,7 +800,7 @@ void SrtModel::Establish(ref_t<std::string> name)
         if (name.get() != "")
         {
             Verb() << "Connect with requesting stream [" << name.get() << "]";
-            UDT::setstreamid(m_sock, name);
+            UDT::setstreamid(m_sock, *name);
         }
         else
         {
@@ -843,7 +843,7 @@ void SrtModel::Establish(ref_t<std::string> name)
         Verb() << "Accepting a client...";
         AcceptNewClient();
         // This rewrites m_sock with a new SRT socket ("accepted" socket)
-        name = UDT::getstreamid(m_sock);
+        *name = UDT::getstreamid(m_sock);
         Verb() << "... GOT CLIENT for stream [" << name.get() << "]";
     }
 }

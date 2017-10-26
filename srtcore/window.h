@@ -184,7 +184,7 @@ public:
        CGuard cg(m_lockPktWindow);
 
        int pktReplica[ASIZE];          // packet information window (inter-packet time)
-       return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, bytesps);
+       return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, *bytesps);
    }
 
    int getPktRcvSpeed() const
