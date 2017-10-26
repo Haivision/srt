@@ -2895,6 +2895,8 @@ int epoll_wait(
    }
 #endif
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 // Trial version, not yet used :)
 static inline void set_result(
    set<UDTSOCKET>* val,
@@ -2915,6 +2917,7 @@ static inline void set_result(
         fds[count ++] = *it;
     }
 }
+#pragma GCC diagnostic pop
 
 int epoll_wait2(
    int eid, UDTSOCKET* readfds,
