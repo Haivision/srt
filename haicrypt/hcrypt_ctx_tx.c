@@ -262,7 +262,7 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 	} else {
 		seks = ctx->sek;
 	}
-	if (0 > hcrypt_WrapKey(&ctx->aes_kek,
+	if (0 < hcrypt_WrapKey(&ctx->aes_kek,
 		&km_msg[HCRYPT_MSG_KM_OFS_SALT + ctx->salt_len],
 		seks, sek_cnt * ctx->sek_len)) {
 
