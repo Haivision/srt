@@ -4,151 +4,143 @@ Live streaming with SRT - guidelines
 
 SRT is primarily created for live streaming. Before you use it, you must keep
 in mind that Live Streaming is a process with its own rules, of which SRT
-fulfills only and exclusively the transmission part. Live Streaming process
-consists of more parts, though.
+fulfills only and exclusively the transmission part. The Live Streaming process
+consists of more parts.
 
 
 Transmitting MPEG TS binary protocol over SRT
 =============================================
 
-MPEG-TS is the most important protocol predicted to be sent over internet using
-SRT and the main reason of initiating this project. SRT obviously isn't limited
-to MPEG-TS, however it is still limited in use to any data transmission that can
-be called Live Streaming - at least if you use the Live mode (which is SRT
-default).
+MPEG-TS is the most important protocol commonly sent over internet using
+SRT, and the main reason for initiating this project. 
 
-MPEG-TS consists of single units of 188 bytes. By having `188*7` we get the
-size of 1316, which is the maximum multiplicity of 188 that results still less
-than 1500 (`188*8=1504`), the standard MTU size in Ethernet. The headers for IP
-and UDP protocol occupy 28 bytes in this size, leaving 1472 bytes of size, and
-SRT occupies next 16 bytes for its own header, which leaves the maximum payload
-size 1456 bytes. The 1316-byte cell is then a good single transport unit size
-for SRT and it's also often used when sending MPEG-TS over UDP.
+MPEG-TS consists of single units of 188 bytes. Multiplying `188*7` we get 1316, which 
+is the maximum product of 188 that is less than 1500 (`188*8=1504`), which is the 
+standard MTU size in Ethernet. The headers for the IP and UDP protocols occupy 28 bytes 
+of a standard MTU, leaving 1472 bytes, and SRT occupies next 16 bytes for its own header, 
+which leaves a maximum payload size of 1456 bytes. A 1316-byte cell is a good single 
+transport unit size for SRT, and it is also often used when sending MPEG-TS over UDP.
 
-SRT isn't limited to MPEG-TS - you can use any other data format that you
-think can be suitable, as well as use any intermediate protocol on top of
-MPEG-TS with an extra header (you still have extra 140 bytes per unit for that
-purpose). But even though that, the transmission must still satisfy the Live
-Streaming Requirements.
+Note that SRT isn't limited to MPEG-TS -- it can be applied to any "live streaming" data 
+transmission (as long as you use Live mode, which is the SRT default mode). You can use 
+any other suitable data format, and any intermediate protocol on top of MPEG-TS with 
+an extra header (you still have an extra 140 bytes per unit for that purpose). 
+However, the transmission must still satisfy the Live Streaming Requirements.
 
 
 Live Streaming Requirements
 ===========================
 
-The MPEG-TS stream, let it be used as a good example, consists of Frames. Each
-Frame is a portion of data assigned to particular stream (as usually you have
-multipe streams interleaved, at least video and audio). The video stream has
-always its playing speed expressed in a unit of fps (frames per second). This
-value maps to a duration for one video frame, so for example 60fps means that
-one video frame should be "displayed" for a time of 1/60s (it's called
-"duration"). Then, you can extract from the stream both one video frame and
-several "audio frames", that is, single units that turn into audio stream and
-they cover the same time range as the video frame. Every such unit in the
-stream has its own *timestamp*, which can be used to synchronize the reading
-and displaying the data.
+The MPEG-TS stream, as a good example, consists of Frames. Each
+Frame is a portion of data assigned to a particular stream (usually you have
+multipe streams interleaved, at least video and audio). The video stream always has 
+its playing speed expressed in fps (frames per second) units. This
+value maps to a duration for one video frame. So, for example, 60 fps means that
+one video frame should be "displayed" for a duration of 1/60 of a second. You can 
+extract from the stream one video frame and several "audio frames", that is, single units 
+that are part of the audio stream that cover the same time range as the video frame. 
+Every such unit in the stream has its own *timestamp*, which can be used to synchronize 
+the reading and displaying of the data.
 
-Now, imagine the very first video frame since the time you started reading the
-stream, which is called I-frame. This frame is just a compressed picture and it
-needs no more information than this to decode it into a displayable pixmap. You
-can imagine that it needs several transport units (of 1316 bytes) to transmit
-it over the network, plus the audio frames for the corresponding time covered
-by this very video frame should also fit in this "duration" time. So, you need
-to send several units of 1316 bytes to transmit all these data over the
-network, however you usually spend much less time to do it than this "duration"
-time (1/60s in our example). It doesn't mean, however, that you should send it
-as fast as possible and then simply "sleep" for the remaining time! It means
-that you should split the whole 1/60s time **evenly** to all single 1316-byte
-units.  So, there is a "unit duration" for every single 1316-byte unit, so you
-send the unit, and then you should "sleep" **after every unit**, if sending (as
-it usually happens) has taken less time than the exact time predicted to be
-spent by sending this unit.
+Now, imagine the very first video frame in the
+stream, which is called an "I-frame". This frame is just a compressed picture, and it
+needs no additional information to decode it into a displayable pixmap. Several 
+transport units (of 1316 bytes) are needed to transmit the I-frame over the network. 
+The audio frames for the period of time corresponding to this video frame 
+should also fit into this "duration". So, you will need to send several units of 
+1316 bytes to transmit all these data over a network. But you usually spend much less 
+time to transmit than the actual "duration" (1/60s in our example). This doesn't mean, 
+however, that you should send the video and audio data as fast as possible and then 
+simply "sleep" for the remaining time! It means that you should split the whole 
+1/60 second **evenly** across all single 1316-byte units. There is a "unit duration" for 
+every single 1316-byte unit, so you send the unit, and then "sleep" **after 
+every unit**, if sending (as usually happens) has taken less time than the exact time 
+predicted to be spent by sending this unit.
 
-Should that whole "I-Frame with corresponding audio" sending take **exactly**
-1/60s? Of course, not exactly. This may have some slight time differences,
-which come from two reasons:
+Should sending that whole "I-Frame with corresponding audio" take **exactly** 1/60s? 
+No, not exactly -- there may be some slight time differences, for two reasons:
 
-1. Sending over the network has only average time perdictability. Unusual and
+1. Sending over a network has only average time predictability. Unusual and
 unexpected delays, coming from both the network and your system, may slightly
-destroy your perfect time calculations. Therefore you should not rely on the
-exact number of bytes sent by one "frame package", but rather on overall
-transmission size, and do often periodic synchronization of the transmission
-time basing on the timestamps in the stream.
+disrupt time calculations. Therefore you should not rely on the
+exact number of bytes sent in one "frame package", but rather on overall
+transmission size, and do frequent periodic synchronization of the transmission
+time based on the timestamps in the stream.
 
 2. Not all frames are I-Frames. Most of the frames sent in the video stream are
-"difference frames" (P or B frames), which need all preceding (or even
-succeding) frames already received to be able to decode the designated frame.
-As you can guess, difference frames are much shorter than I-Frames, so it makes
-the whole "frame package" carry much less data to transport, but they still
-cover the same time gap ("duration"). 
+"difference frames" (P or B frames), which can only be decoded if all preceding (or even
+succeding) frames are already received. As you can guess, difference frames are much 
+shorter than I-Frames, so there is much less data in a whole "frame package" to 
+transport, even though these frames still cover the same time period ("duration"). 
 
-Taking all the above things into account, you know now that actually the most
-important in the synchronization is to make the I-Frame completely transported
-at specified time, and every next frame must be received at more-less the same
-time as I-Frame, next by one duration period, and with some only slight time
-tolerance, which results from size difference. what must be absolutely adhered
-to, however, is that the distance between the first network unit transporting
-the first portion of one I-Frame, and the same unit for the next I-Frame must
-correspond with the time distance between these two same I-frames that results
-from their timestamps.
+Taking the above into consideration, you can understand that the most important factor 
+in synchronizing the streaming data is to make sure that the entire I-Frame is 
+transported at a specified time, and that every subsequent frame is received at more 
+or less the same time as the I-Frame, plus one duration period. There is only a slight 
+time tolerance, which results from size differences. 
 
-In other words: there is some slight buffering at the receiving side, but the
-requirement for a live streaming is that: data must be transmitted with exactly
-the same **average** speed, as the video player that would play it, or even
-more exactly, the data must be produced exactly the same fast as they will be
-consumed by the video player.
+What must be absolutely adhered to, however, is that the interval between the first 
+network unit transporting the first portion of one I-frame and the same unit for the 
+next I-frame must correspond to the interval between these same I-frames as given
+by their timestamps.
+
+In other words, there is some slight buffering at the receiving side, but the
+requirement for a live stream is that data must be transmitted with exactly the same 
+**average** speed as they are output by a video player. More precisely, the data must 
+be produced at exactly the same speed as they will be consumed by the video player.
 
 
 Live Streaming Process
 ======================
 
-Now that you know how the Live Streaming should turn a bunch of MPEG-TS
-encoded video and audio frames into a network live stream, let's complete the
-definition of the live streaming transport over the network using SRT.
+Now that you know how Live Streaming turns a bunch of MPEG-TS encoded video and audio 
+frames into a network live stream, let's complete the definition of live streaming 
+by describing transport over the network using SRT.
 
-The source side should be a real live stream, that is, for example:
+The source side should be a real live stream, such as for example:
 
-- a file read by an application that can make a live stream out of it
-- a grab device that is capturing data at constant rates, passing them
-next to a live encoder
-- some existing live network encoder that streams a live stream over UDP
+- a file read by an application that can generate a live stream
+- a frame grabber or other device that is capturing data at constant rates, and then 
+passing them to a live encoder
+- a live network encoder sending a live stream over UDP
 - a camera that uses some simple encoding method, like MJPEG
 
-As an example of an application that can make a live stream out of a file
-can be `ffmpeg`. You just need to remember about two things here:
+`ffmpeg` is an example of an application that can generate a live stream from a file. 
+Note the following:
 
-- The `-re` options is required for making the live stream out of a file
-- The `pkt_size=1316` parameter should be added to UDP output URI, if you make
+- The `-re` option is required for making a live stream from a file
+- The `pkt_size=1316` parameter should be added to the UDP output URI, if you make
 ffmpeg output to UDP
 
-Pay attention first that the splitting the data for transport into individual
-cells that can fit in one UDP packet, and first of all defining time distances
-between these cells is something that must come in synch with the timestamps in
-the transport stream. Even if you have a grab device, it will usually capture
-one video frame and corresponding audio at once, but still this must be split
-into single network units with appropriate time distance between them. Still,
-this can only be done by an application, which well knows the type of the
-stream and knows how it must be most properly split into the time-divided
-single network transport units.
+As we described above, you must first split the data into individual cells that can fit 
+into one UDP packet. This entails defining time intervals between these cells so that 
+they are in synch with the timestamps in the transport stream. 
+
+If you have a device that is capable of grabbing individual frames, it will usually 
+capture only one video frame and the corresponding audio at a time, which must be split
+into single network units with appropriate time intervals between them. This can only 
+be done by an application with explicit knowledge of the type of stream and how to 
+transform it into time-divided single network transport units.
 
 The `stransmit` application, or any other application that uses SRT for
-reading, should read always in 1316-byte portions (network transport units) and
-feed each such unit into the call to appropriate `srt_send*` function. The
-important part of that process is that these 1316 units appear at exactly
-required times so that SRT can replay them with the identical time distance
-between them at the reception side.
+reading, should always read data in 1316-byte segments (network transport units) and
+feed each such unit into the call to an appropriate `srt_send*` function. The
+important part of this process is that these 1316-byte units appear at precise times 
+so that SRT can replay them with the identical time interval
+between them on the receiving side.
 
-So, you feed these 1316-byte units into SRT, SRT will send them to the other
-side, applying a configurable delay, known as "latency". This is an extra time
-that the packet will have to spend in the "anteroom" on the receiving side
-before it's delivered to the output. This time should cover both the
-unexpectedly delayed transmission of one UDP packet, as well as have extra time
-for a case when the packet was lost and had to be retransmitted. Every UDP
+When you feed these 1316-byte units into SRT it will send them to the other
+side, applying a configurable delay known as "latency". This is an extra amount of time
+that a packet will have to spend in the "anteroom" on the receiving side
+before it is delivered to the output. This time should cover both any
+unexpected transmission delays for a UDP packet, as well as allowing extra time
+for the case where a packet is lost and has to be retransmitted. Every UDP
 packet carrying an SRT packet has a timestamp, which is grabbed at the time
-when the packet is passed to SRT for sending, and using that timestamp the
-appropriate delay is applied before delivering to the output, so that time
-distances between two consecutive packets at the delivery application is aimed
-to be exactly the same as the time distance between these same packets at the
-time when they are given up to SRT for sending.
+when the packet is passed to SRT for sending. Using that timestamp the
+appropriate delay is applied before delivering to the output. This ensures that the 
+time intervals between two consecutive packets at the delivery application are identical 
+to the intervals between these same packets at the moment they were passed to SRT 
+for streaming.
 
 
 
