@@ -363,6 +363,28 @@ int main( int argc, char** argv )
 
 // Class utilities
 
+        if ( !m_blocking_mode )
+        {
+            srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        }
+        bool st = cin.read(data.data(), chunk).good();
+                maddr.sin_port = htons(port); // necessary for temporary use     
+
+#if defined(WIN32) || defined(__CYGWIN__)
+            // On Windows it somehow doesn't work when bind() 
+            // is called with multicast address. Write the address 
+            // that designates the network device here. 
+            // Also, sets port sharing when working with multicast
+            sadr = maddr; 
+            int reuse = 1;
+            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+            if (shareAddrRes == status_error)
+            {
+                throw runtime_error("marking socket for shared use failed");
+            }
+#endif
+
+
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {

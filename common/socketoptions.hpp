@@ -150,7 +150,7 @@ inline bool SocketOption::apply(int socket, std::string value) const
 
 namespace {
 SocketOption srt_options [] {
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT, SocketOption::PRE },
+    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT64, SocketOption::PRE },
     { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::INT, SocketOption::PRE },
     { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::STRING, SocketOption::PRE },
 

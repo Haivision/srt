@@ -59,7 +59,9 @@ extern "C" {
 
 typedef void *HaiCrypt_Cipher;
 
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_Get_Instance (void);     /* Return a efault cipher instance */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_Davinci_DSP(void);   /* Makito DSP AES */
+
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
