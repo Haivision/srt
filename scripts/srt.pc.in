@@ -3,7 +3,7 @@ exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 includedir=${prefix}/include
 
-Name: haisrt
+Name: srt
 Description: SRT library set
 Version: @SRT_VERSION@
 Requires: libsrt-@SRT_VERSION_MAJOR@
