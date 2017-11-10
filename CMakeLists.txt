@@ -409,11 +409,13 @@ endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
+configure_file(scripts/libsrt-${SRT_VERSION_MAJOR}.pc.in libsrt-${SRT_VERSION_MAJOR}.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsrt-${SRT_VERSION_MAJOR}.pc DESTINATION lib/pkgconfig)
 # haisrt.pc left temporarily for backward compatibility. To be removed in future!
+configure_file(scripts/srt.pc.in srt.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
 configure_file(scripts/haisrt.pc.in haisrt.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
-configure_file(scripts/haisrt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
 
 # Applications
 
