@@ -20,9 +20,7 @@ SRT is applied to contribution and distribution endpoints as part of a video str
 
 As audio/video packets are streamed from a source to a destination device, SRT detects and adapts to the real-time network conditions between the two endpoints. SRT helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks, such as the Internet. Its error recovery mechanism minimizes the packet loss typical of Internet connections. And SRT supports AES encryption for end-to-end security, keeping your streams safe from prying eyes.
 
-Join the conversation in the #development channel on Slack at https://srtalliance.slack.com
-
-To receive an invite please email info@srtalliance.org or open an issue here!
+[Join the conversation](https://join.slack.com/t/srtalliance/shared_invite/enQtMjY5MzY4MjQ0Njc4LTJjYWYzMmYzN2RjYWI4MWMxZDdiYTE4OTZlMDE4YWQyOGJhNTgwYjIzOTdiODY5OGE4YTQ4ZGZjN2Y0OTI5ZTA) in the #development channel on [Slack](https://srtalliance.slack.com).
 
 # Guides
 * [Why SRT Was Created](docs/why-srt-was-created.md)
