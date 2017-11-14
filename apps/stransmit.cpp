@@ -1272,6 +1272,8 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 SocketOption udp_options [] {
     { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::INT, SocketOption::PRE },
     { "iptos", IPPROTO_IP, IP_TOS, SocketOption::INT, SocketOption::PRE },
+    { "mcttl", IPPROTO_IP, IP_MULTICAST_TTL, SocketOption::INT, SocketOption::PRE },
+    { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::INT, SocketOption::PRE }
 };
 
 class UdpCommon
