@@ -54,6 +54,7 @@ option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
+option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
@@ -87,8 +88,28 @@ set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
 # find OpenSSL
-find_package(OpenSSL REQUIRED)
-message (STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
+if ( USE_GNUTLS )
+	pkg_check_modules (SSL REQUIRED gnutls nettle)
+
+	add_definitions(
+		-DUSE_GNUTLS=1
+	)
+
+	link_directories(
+		${SSL_LIBRARY_DIRS}
+	)
+else()
+	find_package(OpenSSL REQUIRED)
+	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+
+	add_definitions(
+		-DHAICRYPT_USE_OPENSSL_EVP=1
+		-DHAICRYPT_USE_OPENSSL_AES
+	)
+endif()
+
+message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -172,8 +193,6 @@ add_definitions(
    -D_GNU_SOURCE
    -DHAI_PATCH=1
    -DHAI_ENABLE_SRT=1
-   -DHAICRYPT_USE_OPENSSL_EVP=1
-   -DHAICRYPT_USE_OPENSSL_AES
    -DSRT_VERSION="${SRT_VERSION}"
 )
 
@@ -222,7 +241,13 @@ endif()
 # Target: haicrypt.
 # Completing sources and installable headers. Flag settings will follow.
 # ---
-MafRead(haicrypt/filelist.maf
+if ( USE_GNUTLS )
+	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist-gnutls.maf")
+else()
+	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist.maf")
+endif()
+
+MafRead(${HAICRYPT_FILELIST_MAF}
 	SOURCES SOURCES_haicrypt_indir
 	PUBLIC_HEADERS HEADERS_haicrypt_indir
 	PROTECTED_HEADERS HEADERS_haicrypt_indir
@@ -327,13 +352,13 @@ add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
 
 
 target_include_directories(${TARGET_haicrypt}
-	PRIVATE  ${OPENSSL_INCLUDE_DIR}
+	PRIVATE  ${SSL_INCLUDE_DIRS}
 	PUBLIC ${SRT_SRC_HAICRYPT_DIR}
 )
 
 set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries(${TARGET_haicrypt} PRIVATE ${OPENSSL_LIBRARIES})
-set (SRT_LIBS_PRIVATE ${OPENSSL_LIBRARIES})
+target_link_libraries(${TARGET_haicrypt} PRIVATE ${SSL_LIBRARIES})
+set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
 if (WIN32)
 	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
