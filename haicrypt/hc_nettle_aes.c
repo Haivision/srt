@@ -125,7 +125,7 @@ hcNettle_AES_Open (size_t max_len)
   unsigned char *membuf;
   size_t memsiz, padded_len = hcryptMsg_PaddedLen (max_len, 128 / 8);
 
-  HCRYPT_LOG (LOG_DEBUG, "%s", "Using OpenSSL AES\n");
+  HCRYPT_LOG (LOG_DEBUG, "%s", "Using Nettle AES\n");
 
   memsiz = sizeof (*aes_data) + (HCRYPT_OPENSSL_OUTMSGMAX * padded_len);
   aes_data = malloc (memsiz);
