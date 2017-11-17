@@ -1270,11 +1270,18 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 
 // More options can be added in future.
 SocketOption udp_options [] {
-    { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::INT, SocketOption::PRE },
     { "iptos", IPPROTO_IP, IP_TOS, SocketOption::INT, SocketOption::PRE },
-    { "mcttl", IPPROTO_IP, IP_MULTICAST_TTL, SocketOption::INT, SocketOption::PRE },
+    // IP_TTL and IP_MULTICAST_TTL are handled separately by a common option, "ipttl".
     { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::INT, SocketOption::PRE }
 };
+
+
+static inline bool IsMulticast(in_addr_t adr)
+{
+    unsigned char* abytes = (unsigned char*)&adr;
+    unsigned char c = abytes[0];
+    return c >= 224 && c <= 239;
+}
 
 class UdpCommon
 {
@@ -1294,8 +1301,27 @@ protected:
         }
         sadr = CreateAddrInet(host, port);
 
+        bool is_multicast = false;
+
+        int ip_ttl_option = IP_TTL;
+
         if ( attr.count("multicast") )
         {
+            if (!IsMulticast(sadr.sin_addr.s_addr))
+            {
+                throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
+            }
+            is_multicast = true;
+        }
+        else if (IsMulticast(sadr.sin_addr.s_addr))
+        {
+            is_multicast = true;
+        }
+
+        if (is_multicast)
+        {
+            ip_ttl_option = IP_MULTICAST_TTL;
+
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
             sockaddr_in maddr;
             if ( adapter == "" )
@@ -1341,6 +1367,18 @@ protected:
             }
             attr.erase("multicast");
             attr.erase("adapter");
+        }
+
+        // The "ipttl" options is handled separately, it maps to either IP_TTL
+        // or IP_MULTICAST_TTL, depending on whether the address is sc or mc.
+        if (attr.count("ipttl"))
+        {
+            int ttl = stoi(attr.at("ipttl"));
+            int res = setsockopt(m_sock, IPPROTO_IP, ip_ttl_option, &ttl, sizeof ttl);
+            if (res == -1)
+                cout << "WARNING: failed to set 'ipttl' to " << ttl << endl;
+
+            attr.erase("ipttl");
         }
 
         m_options = attr;
