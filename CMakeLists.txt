@@ -26,7 +26,7 @@ set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
 
-set (SRT_VERSION 1.2.0)
+set (SRT_VERSION 1.2.2)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 if (NOT DEFINED ENABLE_DEBUG)
