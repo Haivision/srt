@@ -1270,11 +1270,18 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 
 // More options can be added in future.
 SocketOption udp_options [] {
-    { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::INT, SocketOption::PRE },
     { "iptos", IPPROTO_IP, IP_TOS, SocketOption::INT, SocketOption::PRE },
-    { "mcttl", IPPROTO_IP, IP_MULTICAST_TTL, SocketOption::INT, SocketOption::PRE },
+    // IP_TTL and IP_MULTICAST_TTL are handled separately by a common option, "ttl".
     { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::INT, SocketOption::PRE }
 };
+
+
+static inline bool IsMulticast(in_addr adr)
+{
+    unsigned char* abytes = (unsigned char*)&adr.s_addr;
+    unsigned char c = abytes[0];
+    return c >= 224 && c <= 239;
+}
 
 class UdpCommon
 {
@@ -1294,7 +1301,22 @@ protected:
         }
         sadr = CreateAddrInet(host, port);
 
+        bool is_multicast = false;
+
         if ( attr.count("multicast") )
+        {
+            if (!IsMulticast(sadr.sin_addr))
+            {
+                throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
+            }
+            is_multicast = true;
+        }
+        else if (IsMulticast(sadr.sin_addr))
+        {
+            is_multicast = true;
+        }
+
+        if (is_multicast)
         {
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
             sockaddr_in maddr;
@@ -1341,6 +1363,21 @@ protected:
             }
             attr.erase("multicast");
             attr.erase("adapter");
+        }
+
+        // The "ttl" options is handled separately, it maps to either IP_TTL
+        // or IP_MULTICAST_TTL, depending on whether the address is sc or mc.
+        if (attr.count("ttl"))
+        {
+            int ttl = stoi(attr.at("ttl"));
+            int res = setsockopt(m_sock, IPPROTO_IP, IP_TTL, (const char*)&ttl, sizeof ttl);
+            if (res == -1)
+                cout << "WARNING: failed to set 'ttl' (IP_TTL) to " << ttl << endl;
+            res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof ttl);
+            if (res == -1)
+                cout << "WARNING: failed to set 'ttl' (IP_MULTICAST_TTL) to " << ttl << endl;
+
+            attr.erase("ttl");
         }
 
         m_options = attr;
