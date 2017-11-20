@@ -1276,9 +1276,9 @@ SocketOption udp_options [] {
 };
 
 
-static inline bool IsMulticast(void* adr)
+static inline bool IsMulticast(in_addr adr)
 {
-    unsigned char* abytes = (unsigned char*)adr;
+    unsigned char* abytes = (unsigned char*)&adr.s_addr;
     unsigned char c = abytes[0];
     return c >= 224 && c <= 239;
 }
@@ -1305,13 +1305,13 @@ protected:
 
         if ( attr.count("multicast") )
         {
-            if (!IsMulticast(&sadr.sin_addr.s_addr))
+            if (!IsMulticast(sadr.sin_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (IsMulticast(&sadr.sin_addr.s_addr))
+        else if (IsMulticast(sadr.sin_addr))
         {
             is_multicast = true;
         }
