@@ -49,10 +49,6 @@ written by
 #include <mach/mach_time.h>
 #include <AvailabilityMacros.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 
 int OSX_clock_gettime(clockid_t clock_id, struct timespec * ts)
 {
@@ -141,15 +137,8 @@ int OSX_clock_gettime(clockid_t clock_id, struct timespec * ts)
    return result;
 }
 
-#ifdef __cplusplus
-} // extern C
-#endif
-
 #endif // (__MACH__)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 {
@@ -162,7 +151,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
    buf[0] = '\0';
 
 #if defined(_WIN32) || defined(WIN32)
-   char* lpMsgBuf;
+   const char* lpMsgBuf;
 
    // Note: Intentionally the "fixed char size" types are used despite using
    // character size dependent FormatMessage (instead of FormatMessageA) so that
@@ -213,8 +202,3 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
    }
 #endif
 }
-
-
-#ifdef __cplusplus
-} // extern C
-#endif

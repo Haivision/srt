@@ -46,6 +46,7 @@ set options {
 	with-openssl-ldflags=<ldflags> "Use given -lDIR values for OpenSSL or absolute library filename"
 	with-pthread-includedir=<incdir> "Use extra path for pthreads (usually for Windows)"
 	with-pthread-ldflags=<flags> "Use specific flags for pthreads (some platforms require -pthread)"
+	use-gnutls "Use GNUTLS library instead of OpenSSL for cryptographic features"
 }
 
 # Just example. Available in the system.
@@ -106,6 +107,13 @@ proc preprocess {} {
 
 		# Don't check for Windows, non-Windows parts will not use it.
 		set ::DRIVE_C C:
+	}
+
+	# Alias to old name --with-gnutls, which enforces using gnutls instead of openssl
+	if { [info exists ::optval(--with-gnutls)] } {
+		unset ::optval(--with-gnutls)
+		set ::optval(--use-gnutls) ON
+		puts "WARNING: --with-gnutls is a deprecated alias to --use-gnutls, please use the latter one"
 	}
 
 }
@@ -199,6 +207,16 @@ proc postprocess {} {
 		set have_openssl 1
 	}
 
+	set have_gnutls 0
+	if { [lsearch -glob $::optkeys --use-gnutls] != -1 } {
+		set have_gnutls 1
+	}
+
+	if { $have_openssl && $have_gnutls } {
+		puts "NOTE: SSL library is exclusively selectable. Thus, --use-gnutls option will be ignored"
+		set have_gnutls 0
+	}
+
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
@@ -207,8 +225,10 @@ proc postprocess {} {
 	# Autodetect OpenSSL and pthreads
 	if { $::HAVE_WINDOWS } {
 
-		if { !$have_openssl } {
-    		puts "Letting cmake detect OpenSSL installation"
+		if { !$have_openssl || !$have_gnutls } {
+			puts "Letting cmake detect OpenSSL installation"
+		} elseif { $have_gnutls } {
+			puts "Letting cmake detect GnuTLS installation"
 		} else {
 			puts "HAVE_OPENSSL: [lsearch -inline $::optkeys --with-openssl*]"
 		}
@@ -229,7 +249,7 @@ proc postprocess {} {
 		# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
 		# This must use brew-provided OpenSSL.
 		#
-		if { !$have_openssl } {
+		if { !$have_openssl || !$have_gnutls } {
 		
 			set er [catch {exec brew info openssl} res]
 			if { $er } {
@@ -238,6 +258,11 @@ proc postprocess {} {
 
 			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
 			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
+		} elseif { $have_gnutls } {
+			set er [catch {exec brew info gnutls} res]
+			if { $er } {
+				error "Cannot find gnutls in brew"
+			}
 		}
 	}
 

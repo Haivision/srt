@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 
-#include <haisrt/srt.h>
+#include "srt.h"
 
 int main( int argc, char** argv )
 {

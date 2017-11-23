@@ -1,3 +1,6 @@
+init:
+ # -ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+ 
 configuration:
   - Release
   - Debug
@@ -23,3 +26,12 @@ build_script:
   - ps: if ( $VS_VERSION -eq "2013" ) { $CMAKE_GENERATOR = "Visual Studio 12 2013 Win64" } else { $CMAKE_GENERATOR = "Visual Studio 14 2015 Win64" }
   - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64
+  
+after_build:
+- cmd: >-
+    gather-package.bat
+        7z a SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-%APPVEYOR_BUILD_VERSION%.zip %APPVEYOR_BUILD_FOLDER%\package\*
+        appveyor PushArtifact SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-%APPVEYOR_BUILD_VERSION%.zip
+
+on_finish:
+ # - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))

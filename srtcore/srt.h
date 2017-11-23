@@ -378,8 +378,8 @@ enum CodeMinor
     MN_CONGESTION = 4
 };
 
-static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = CodeMinor(9);
-static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = CodeMinor(10);
+static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
+static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
 
 // Stupid, but effective. This will be #undefined, so don't worry.
 #define MJ(major) (1000*MJ_##major)
@@ -435,8 +435,8 @@ typedef enum SRT_ERRNO
     SRT_EPEERERR = MJ(PEERERROR)
 } SRT_ERRNO;
 
-static const SRT_ERRNO SRT_EISSTREAM SRT_ATR_DEPRECATED = SRT_ERRNO MN(NOTSUP, INVALMSGAPI);
-static const SRT_ERRNO SRT_EISDGRAM = SRT_ERRNO MN(NOTSUP, INVALBUFFERAPI);
+static const SRT_ERRNO SRT_EISSTREAM SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALMSGAPI);
+static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALBUFFERAPI);
 
 #undef MJ
 #undef MN
