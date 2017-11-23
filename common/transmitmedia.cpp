@@ -868,7 +868,7 @@ public:
     bytevector Read(size_t chunk) override
     {
         bytevector data(chunk);
-		bool st = cin.read(data.data(), chunk).good();
+        bool st = cin.read(data.data(), chunk).good();
         chunk = cin.gcount();
         if ( chunk == 0 && !st )
             return bytevector();
@@ -912,9 +912,18 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 
 // More options can be added in future.
 SocketOption udp_options [] {
-    { "ipttl", IPPROTO_IP, IP_TTL, SocketOption::PRE, SocketOption::INT, nullptr },
     { "iptos", IPPROTO_IP, IP_TOS, SocketOption::PRE, SocketOption::INT, nullptr },
+    // IP_TTL and IP_MULTICAST_TTL are handled separately by a common option, "ttl".
+    { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::PRE, SocketOption::INT, nullptr }
 };
+
+static inline bool IsMulticast(in_addr adr)
+{
+    unsigned char* abytes = (unsigned char*)&adr.s_addr;
+    unsigned char c = abytes[0];
+    return c >= 224 && c <= 239;
+}
+
 
 class UdpCommon
 {
@@ -935,7 +944,22 @@ protected:
 
         sadr = CreateAddrInet(host, port);
 
+        bool is_multicast = false;
+
         if ( attr.count("multicast") )
+        {
+            if (!IsMulticast(sadr.sin_addr))
+            {
+                throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
+            }
+            is_multicast = true;
+        }
+        else if (IsMulticast(sadr.sin_addr))
+        {
+            is_multicast = true;
+        }
+
+        if (is_multicast)
         {
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
             sockaddr_in maddr;
@@ -967,7 +991,14 @@ protected:
             // On Windows it somehow doesn't work when bind()
             // is called with multicast address. Write the address
             // that designates the network device here.
+            // Also, sets port sharing when working with multicast
             sadr = maddr;
+            int reuse = 1;
+            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+            if (shareAddrRes == status_error)
+            {
+                throw runtime_error("marking socket for shared use failed");
+            }
             Verb() << "Multicast(Windows): will bind to home address";
 #else
             Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
@@ -980,6 +1011,21 @@ protected:
             }
             attr.erase("multicast");
             attr.erase("adapter");
+        }
+
+        // The "ttl" options is handled separately, it maps to either IP_TTL
+        // or IP_MULTICAST_TTL, depending on whether the address is sc or mc.
+        if (attr.count("ttl"))
+        {
+            int ttl = stoi(attr.at("ttl"));
+            int res = setsockopt(m_sock, IPPROTO_IP, IP_TTL, (const char*)&ttl, sizeof ttl);
+            if (res == -1)
+                cout << "WARNING: failed to set 'ttl' (IP_TTL) to " << ttl << endl;
+            res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof ttl);
+            if (res == -1)
+                cout << "WARNING: failed to set 'ttl' (IP_MULTICAST_TTL) to " << ttl << endl;
+
+            attr.erase("ttl");
         }
 
         m_options = attr;

@@ -55,6 +55,7 @@ extern "C" {
 #if defined(__MACH__)
 
 #include <AvailabilityMacros.h>
+#include <time.h>
 #include <errno.h>
 #include <pthread.h>
 #include <string.h>

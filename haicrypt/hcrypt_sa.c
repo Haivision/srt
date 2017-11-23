@@ -45,9 +45,9 @@ int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_
 		ctx->cfg.pwd_len = 0;
 		/* KEK: Key Encrypting Key */
 		if (HCRYPT_CTX_F_ENCRYPT & ctx->flags) {
-			iret = AES_set_encrypt_key(secret->str, secret->len * 8, &ctx->aes_kek);
+			iret = hcrypt_aes_set_encrypt_key(secret->str, secret->len * 8, &ctx->aes_kek);
 		} else {
-			iret = AES_set_decrypt_key(secret->str, secret->len * 8, &ctx->aes_kek);
+			iret = hcrypt_aes_set_decrypt_key(secret->str, secret->len * 8, &ctx->aes_kek);
 		}			
 		if (0 > iret) {
 		HCRYPT_LOG(LOG_ERR, "AES_set_%s_key(kek[%zd]) failed (rc=%d)\n", 
@@ -88,7 +88,7 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	int iret;
 	(void)crypto;
 
-	PKCS5_PBKDF2_HMAC_SHA1(ctx->cfg.pwd, ctx->cfg.pwd_len, 
+	hcrypt_pbkdf2_hmac_sha1(ctx->cfg.pwd, ctx->cfg.pwd_len, 
 		&ctx->salt[ctx->salt_len - pbkdf_salt_len], pbkdf_salt_len, 
 		HAICRYPT_PBKDF2_ITER_CNT, kek_len, kek);
 
@@ -97,12 +97,12 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	
 	/* KEK: Key Encrypting Key */
 	if (HCRYPT_CTX_F_ENCRYPT & ctx->flags) {
-		if (0 > (iret = AES_set_encrypt_key(kek, kek_len * 8, &ctx->aes_kek))) {
+		if (0 > (iret = hcrypt_aes_set_encrypt_key(kek, kek_len * 8, &ctx->aes_kek))) {
 		HCRYPT_LOG(LOG_ERR, "AES_set_encrypt_key(pdkek[%zd]) failed (rc=%d)\n", kek_len, iret);
 			return(-1);
 		}
 	} else {
-		if (0 > (iret = AES_set_decrypt_key(kek, kek_len * 8, &ctx->aes_kek))) {
+		if (0 > (iret = hcrypt_aes_set_decrypt_key(kek, kek_len * 8, &ctx->aes_kek))) {
 		HCRYPT_LOG(LOG_ERR, "AES_set_decrypt_key(pdkek[%zd]) failed (rc=%d)\n", kek_len, iret);
 			return(-1);
 		}
