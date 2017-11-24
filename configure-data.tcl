@@ -116,6 +116,13 @@ proc preprocess {} {
 		puts "WARNING: --with-gnutls is a deprecated alias to --use-gnutls, please use the latter one"
 	}
 
+	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
+	if { [info exists ::optval(--with-compiler-prefix)] } {
+		set px $::optval(--with-compiler-prefix)
+		set ::optval(--cmake-c-compiler) ${px}gcc
+		set ::optval(--cmake-c++-compiler) ${px}g++
+		unset ::optval(--with-compiler-prefix)
+	}
 }
 
 proc GetCompilerCommand {} {
