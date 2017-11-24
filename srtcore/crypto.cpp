@@ -122,11 +122,11 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
 
     // Local macro to return rejection appropriately.
-    // For HSv5 this function is part of the general handshake, so this should
-    // reject the connection.
-    // For HSv4 this is received by a custom message after the connection is
-    // established, so in this case the rejection response must be sent as KMRSP.
-#define KMREQ_RESULT_REJECTION() if (bidirectional) { return SRT_CMD_NONE; } else { srtlen = 1; goto HSv4_ErrorReport; }
+    // CHANGED. The first version made HSv5 reject the connection.
+    // This isn't well handled by applications, so the connection is
+    // still established, but unable to handle any transport.
+//#define KMREQ_RESULT_REJECTION() if (bidirectional) { return SRT_CMD_NONE; } else { srtlen = 1; goto HSv4_ErrorReport; }
+#define KMREQ_RESULT_REJECTION() { srtlen = 1; goto HSv4_ErrorReport; }
 
     int rc = HAICRYPT_OK; // needed before 'goto' run from KMREQ_RESULT_REJECTION macro
     size_t sek_len = 0;
@@ -218,7 +218,8 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     {
         // For HSv5, the above error indication should turn into rejection reaction.
         if ( srtlen == 1 )
-            return SRT_CMD_NONE;
+            //return SRT_CMD_NONE;
+            goto HSv4_ErrorReport;
 
         m_iSndKmKeyLen = m_iRcvKmKeyLen;
         if (HaiCrypt_Clone(m_hRcvCrypto, HAICRYPT_CRYPTO_DIR_TX, &m_hSndCrypto))
@@ -240,7 +241,8 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMREQ", false, SRT_CMD_KMREQ, bytelen, m_iSndKmState, m_iSndPeerKmState));
 
         if ( srtlen == 1 )
-            return SRT_CMD_NONE;
+            //return SRT_CMD_NONE;
+            goto HSv4_ErrorReport;
     }
 
     return SRT_CMD_KMRSP;

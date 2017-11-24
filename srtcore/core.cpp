@@ -2279,7 +2279,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         if (m_iSndCryptoKeyLen <= 0)
         {
             LOGC(mglog.Error) << "HS KMREQ: Peer declares encryption, but agent does not.";
-            return false;
+
+            // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
+            return true;
         }
 
         uint32_t* begin = p;
@@ -2418,8 +2420,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     // Check if peer declared encryption
     if ( !encrypted && m_iSndCryptoKeyLen > 0 )
     {
-        LOGC(mglog.Error) << "HS EXT: Agent declares encryption, but peer does not.";
-        return false;
+        LOGC(mglog.Error) << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets from Peer).";
+        return true;
     }
 
     // If agent has set some nondefault smoother, then smoother is expected from the peer.
@@ -4647,6 +4649,12 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         LOGC(dlog.Error) << "Message length (" << len << ") exceeds the size of sending buffer: "
             << (m_iSndBufSize * m_iMaxSRTPayloadSize) << ". Use SRTO_SNDBUF if needed.";
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+    }
+
+    if (!m_pCryptoControl->sendingAllowed())
+    {
+        LOGC(dlog.Error) << "Sending disabled due to security reasons";
+        throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
 
     CGuard sendguard(m_SendLock);

@@ -78,6 +78,23 @@ private:
 
 public:
 
+    bool sendingAllowed()
+    {
+        // This function is called to state as to whether the
+        // crypter allows the packet to be sent over the link.
+        // This is possible in two cases:
+        // - when Agent didn't set a password, no matter the crypto state
+        if (m_KmSecret.len == 0)
+            return true;
+        // - when Agent did set a password and the crypto state is SECURED.
+        if (m_KmSecret.len > 0 && m_iSndKmState == SRT_KM_S_SECURED
+                // && m_iRcvPeerKmState == SRT_KM_S_SECURED ?
+           )
+            return true;
+
+        return false;
+    }
+
 private:
 
     void regenCryptoKm(bool sendit, bool bidirectional);
