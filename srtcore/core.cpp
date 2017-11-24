@@ -1527,9 +1527,20 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     if (m_iSndCryptoKeyLen > 0)
     {
-        have_kmreq = true;
-        hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-        logext += ",KMREQ";
+        if (srtkm_cmd == SRT_CMD_KMRSP && kmdata_wordsize == 0)
+        {
+            // It means that Agent is responder and it expected to receive KMREQ
+            // from the peer, but no such thing happened. In result, also don't
+            // send any KMRSP. The connection will be unable to handle any sending
+            // from Agent to Peer, but still sending Peer to Agent should work.
+            LOGC(mglog.Error) << "createSrtHandshake: Agent/responder declares encryption, but Peer/initiator did not. NOT SENDING KMRSP.";
+        }
+        else
+        {
+            have_kmreq = true;
+            hs.m_iType |= CHandShake::HS_EXT_KMREQ;
+            logext += ",KMREQ";
+        }
     }
 
     LOGC(mglog.Debug) << "createSrtHandshake: (ext: " << logext << ") data: " << hs.show();
@@ -7070,6 +7081,10 @@ int CUDT::processData(CUnit* unit)
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
           }
+      }
+      else
+      {
+          LOGC(dlog.Debug) << "crypter: data not encrypted, returning as plain";
       }
 
    }  /* End of offsetcg */
