@@ -4651,12 +4651,6 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
-    if (!m_pCryptoControl->sendingAllowed())
-    {
-        LOGC(dlog.Error) << "Sending disabled due to security reasons";
-        throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
-    }
-
     CGuard sendguard(m_SendLock);
 
     if (m_pSndBuffer->getCurrBufSize() == 0)
