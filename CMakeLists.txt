@@ -77,6 +77,31 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Handle WITH_COMPILER_PREFIX and WITH_COMPILER_TYPE options
+if (DEFINED WITH_COMPILER_PREFIX)
+	message("Handling compiler with WITH_COMPILER_PREFIX=${WITH_COMPILER_PREFIX}")
+	# Check also type. Default is gcc.
+	if (NOT DEFINED WIHT_COMPILER_TYPE)
+		set (WITH_COMPILER_TYPE gcc)
+	endif()
+
+	if (${WITH_COMPILER_TYPE} STREQUAL gcc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc)
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++)
+	elseif (${WITH_COMPILER_TYPE} STREQUAL cc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc)
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++)
+	else()
+		# Use blindly <command> for C compiler and <command>++ for C++.
+		# At least this matches clang.
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE}++)
+	endif()
+else()
+	message("No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
+endif()
+
+
 if (DEFINED WITH_SRT_TARGET)
 	set (TARGET_haisrt ${WITH_SRT_TARGET})
 endif()
@@ -88,26 +113,35 @@ endif()
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
-# find OpenSSL
-if ( USE_GNUTLS )
-	pkg_check_modules (SSL REQUIRED gnutls nettle)
+# In case when a crosscompiler is detected, do not require strictly
+# to use OpenSSL - assume it's provided by the system. In such a case
+# it's not possible to determine if OpenSSL is available; the below
+# checking will see if OpenSSL is installed ON THE COMPILER SYSTEM,
+# but this has nothing to do with having OpenSSL on the TARGET SYSTEM.
+if (NOT HAVE_CROSSCOMPILER)
 
-	add_definitions(
-		-DUSE_GNUTLS=1
-	)
+	# find OpenSSL
+	if ( USE_GNUTLS )
+		pkg_check_modules (SSL REQUIRED gnutls nettle)
 
-	link_directories(
-		${SSL_LIBRARY_DIRS}
-	)
-else()
-	find_package(OpenSSL REQUIRED)
-	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+		add_definitions(
+			-DUSE_GNUTLS=1
+		)
 
-	add_definitions(
-		-DHAICRYPT_USE_OPENSSL_EVP=1
-		-DHAICRYPT_USE_OPENSSL_AES
-	)
+		link_directories(
+			${SSL_LIBRARY_DIRS}
+		)
+	else()
+		find_package(OpenSSL REQUIRED)
+		set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+		set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+
+		add_definitions(
+			-DHAICRYPT_USE_OPENSSL_EVP=1
+			-DHAICRYPT_USE_OPENSSL_AES
+		)
+	endif()
+
 endif()
 
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
@@ -212,20 +246,23 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
+if (NOT HAVE_CROSSCOMPILER)
 
-# find pthread
-find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-if (PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-else()
-	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-endif()
+	# find pthread
+	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+	if (PTHREAD_INCLUDE_DIR)
+		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+	else()
+		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+	endif()
 
-find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
-if (PTHREAD_LIBRARY)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-else()
-	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
+	if (PTHREAD_LIBRARY)
+		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	else()
+		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	endif()
+
 endif()
 
 # This is required in some projects that add some other sources
