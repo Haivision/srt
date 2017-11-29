@@ -244,6 +244,8 @@ struct CPerfMon
    int byteAvailRcvBuf;                 // available UDT receiver buffer size
 };
 
+typedef SRTSOCKET UDTSOCKET; //legacy alias
+
 #ifdef __cplusplus
 
 // Class CUDTException exposed for C++ API.
@@ -331,10 +333,6 @@ public: // Legacy Error Code
     static const int ECONGEST = SRT_ECONGEST;
     static const int EPEERERR = SRT_EPEERERR;
 };
-
-
-
-typedef SRTSOCKET UDTSOCKET; //legacy alias
 
 namespace UDT
 {
