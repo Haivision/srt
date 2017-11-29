@@ -131,7 +131,7 @@ if (NOT HAVE_CROSSCOMPILER)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-		message("SSL Dependency: using GNUTLS+Nettle, as requested")
+		message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 	else()
 		find_package(OpenSSL REQUIRED)
 		set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
@@ -141,15 +141,17 @@ if (NOT HAVE_CROSSCOMPILER)
 			-DHAICRYPT_USE_OPENSSL_EVP=1
 			-DHAICRYPT_USE_OPENSSL_AES
 		)
-		message("SSL Dependency: using OpenSSL (default)")
+		message(STATUS "SSL Dependency: using OpenSSL (default)")
 	endif()
 else()
-	message("SSL Dependency: CROSSCOMPILER detected, assuming OpenSSL is in the system.")
+	message(STATUS "SSL Dependency: CROSSCOMPILER detected, assuming OpenSSL is in the system.")
 
 	add_definitions(
 		-DHAICRYPT_USE_OPENSSL_EVP=1
 		-DHAICRYPT_USE_OPENSSL_AES
 	)
+
+	set (SSL_LIBRARIES "-lcrypto")
 endif()
 
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
