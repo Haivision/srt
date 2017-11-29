@@ -116,13 +116,62 @@ proc preprocess {} {
 		puts "WARNING: --with-gnutls is a deprecated alias to --use-gnutls, please use the latter one"
 	}
 
-	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
-	if { [info exists ::optval(--with-compiler-prefix)] } {
-		set px $::optval(--with-compiler-prefix)
-		set ::optval(--cmake-c-compiler) ${px}gcc
-		set ::optval(--cmake-c++-compiler) ${px}g++
-		unset ::optval(--with-compiler-prefix)
-	}
+#	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
+#	set enforce_compiler 0
+#	set compiler ""
+#	if { [info exists ::optval(--with-compiler-type)] } {
+#		set compiler $::optval(--with-compiler-type)
+#		set enforce_compiler 1
+#	
+#		switch -- $compiler {
+#			gcc {
+#				set xcompiler g++
+#			}
+#	
+#			cc {
+#				set xcompiler c++
+#			}
+#	
+#			default {
+#				set xcompiler ${compiler}++
+#			}
+#		}
+#	
+#	} else {
+#		set compiler gcc
+#		set xcompiler g++
+#	}
+#	
+#	set px ""
+#	if { [info exists ::optval(--with-compiler-prefix)] } {
+#		set enforce_compiler 1
+#		set px $::optval(--with-compiler-prefix)
+#		unset ::optval(--with-compiler-prefix)
+#	}
+#	
+#	if { $enforce_compiler } {
+#	
+#		# If prefix path was not 
+#		if { $px == "" } {
+#			set cmd [auto_execok $compiler]
+#			if { $cmd == "" } {
+#				puts "ERROR: --with-compiler-type: '$compiler' is not a command (add --with-compiler-prefix if not in PATH)"
+#				exit 1
+#			}
+#			set px [file dirname $cmd]/
+#			set cmd [auto_execok $xcompiler]
+#			if { $cmd == "" } {
+#				puts "ERROR: --with-compiler-type=$compiler, can't find correspoding C++ compiler '$xcompiler'"
+#				exit 1
+#			}
+#			set pxx [file dirname $cmd]/
+#		} else {
+#			set pxx $px
+#		}
+#	
+#		set ::optval(--cmake-c-compiler) ${px}${compiler}
+#		set ::optval(--cmake-c++-compiler) ${pxx}${xcompiler}
+#	}
 }
 
 proc GetCompilerCommand {} {
