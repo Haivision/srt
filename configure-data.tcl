@@ -116,6 +116,11 @@ proc preprocess {} {
 		puts "WARNING: --with-gnutls is a deprecated alias to --use-gnutls, please use the latter one"
 	}
 
+	if { [info exists ::optval(--with-target-path)] } {
+		set ::target_path $::optval(--with-target-path)
+		unset ::optval(--with-target-path)
+	} 
+
 #	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
 #	set enforce_compiler 0
 #	set compiler ""
@@ -232,24 +237,26 @@ proc postprocess {} {
 	if { $toolchain_changed } {
 		# Check characteristics of the compiler - in particular, whether the target is different
 		# than the current target.
+		set compiler_path ""
 		set cmd [GetCompilerCommand]
 		if { $cmd != "" } {
 			set gcc_version [exec $cmd -v 2>@1]
 			set target ""
+			set compiler_path [file dirname $cmd]
 			foreach l [split $gcc_version \n] {
 				if { [string match Target:* $l] } {
-					set name [lindex $l 1] ;# [0]Target: [1]x86_64-some-things-further
-					set target [lindex [split $name -] 0]  ;# [0]x86_64 [1]redhat [2]linux
+					set target [lindex $l 1] ;# [0]Target: [1]x86_64-some-things-further
+					set target_platform [lindex [split $target -] 0]  ;# [0]x86_64 [1]redhat [2]linux
 					break
 				}
 			}
 
-			if { $target == "" } {
+			if { $target_platform == "" } {
 				puts "NOTE: can't obtain target from gcc -v: $l"
 			} else {
-				if { $target != $::tcl_platform(machine) } {
-					puts "NOTE: foreign target type detected ($target) - setting CROSSCOMPILING flag"
-					lappend ::cmakeopt "-DHAVE_CROSSCOMPILER=1"
+				if { $target_platform != $::tcl_platform(machine) } {
+					puts "NOTE: foreign target type detected ($target)" ;# - setting CROSSCOMPILING flag"
+					#lappend ::cmakeopt "-DHAVE_CROSSCOMPILER=1"
 					set iscross 1
 				}
 			}
@@ -276,6 +283,61 @@ proc postprocess {} {
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
+	}
+
+	if {$iscross} {
+
+		proc check-target-path {path} {
+			puts "Checking path '$path'"
+			if { [file isdir $path]
+					&& [file isdir $path/bin]
+					&& [file isdir $path/include]
+					&& ([file isdir $path/lib] || [file isdir $path/lib64]) } {
+				return yes
+			}
+			return no
+		}
+
+		if { ![info exists ::target_path)] } {
+			# Try to autodetect the target path by having the basic 3 directories.
+			set target_path ""
+			set compiler_prefix [file dirname $compiler_path] ;# strip 'bin' directory
+			foreach path [list $compiler_path $compiler_prefix/$target] {
+				if { [check-target-path $path] } {
+					set target_path $path
+					puts "NOTE: target path detected: $target_path"
+					break
+				}
+			}
+
+			if { $target_path == "" } {
+				puts "ERROR: Can't determine compiler's platform files root path (using compiler command path). Specify --with-target-path."
+				exit 1
+			}
+		} else {
+			set target_path $::target_path
+			# Still, check if correct.
+			if { ![check-target-path $target_path] } {
+				puts "ERROR: path in --with-target-path does not contain typical subdirectories"
+				exit 1
+			}
+			puts "NOTE: Using explicit target path: $target_path"
+
+			# Prevent --with-target-path from being translated
+			unset ::optval(--with-target-path)
+		}
+
+		# Add this for cmake, should it need for something
+		lappend ::cmakeopt "-DCMAKE_PREFIX_PATH=$target_path"
+
+		# Add explicitly the path for pkg-config
+		# which lib
+		if { [file isdir $target_path/lib64/pkgconfig] } {
+			set env(PKG_CONFIG_PATH) $target_path/lib64/pkgconfig
+		} elseif { [file isdir $target_path/lib/pkgconfig] } {
+			set env(PKG_CONFIG_PATH) $target_path/lib/pkgconfig
+		}
+		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
 
 	# Autodetect OpenSSL and pthreads

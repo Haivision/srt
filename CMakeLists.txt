@@ -113,45 +113,31 @@ endif()
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
-# In case when a crosscompiler is detected, do not require strictly
-# to use OpenSSL - assume it's provided by the system. In such a case
-# it's not possible to determine if OpenSSL is available; the below
-# checking will see if OpenSSL is installed ON THE COMPILER SYSTEM,
-# but this has nothing to do with having OpenSSL on the TARGET SYSTEM.
-if (NOT HAVE_CROSSCOMPILER)
+# When you use crosscompiling, you have to take care that PKT_CONFIG_PATH
+# and CMAKE_PREFIX_PATH are set properly.
 
-	# find OpenSSL
-	if ( USE_GNUTLS )
-		pkg_check_modules (SSL REQUIRED gnutls nettle)
+# find OpenSSL
+if ( USE_GNUTLS )
+	pkg_check_modules (SSL REQUIRED gnutls nettle)
 
-		add_definitions(
-			-DUSE_GNUTLS=1
-		)
+	add_definitions(
+		-DUSE_GNUTLS=1
+	)
 
-		link_directories(
-			${SSL_LIBRARY_DIRS}
-		)
-		message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
-	else()
-		find_package(OpenSSL REQUIRED)
-		set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-		set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-
-		add_definitions(
-			-DHAICRYPT_USE_OPENSSL_EVP=1
-			-DHAICRYPT_USE_OPENSSL_AES
-		)
-		message(STATUS "SSL Dependency: using OpenSSL (default)")
-	endif()
+	link_directories(
+		${SSL_LIBRARY_DIRS}
+	)
+	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 else()
-	message(STATUS "SSL Dependency: CROSSCOMPILER detected, assuming OpenSSL is in the system.")
+	find_package(OpenSSL REQUIRED)
+	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 
 	add_definitions(
 		-DHAICRYPT_USE_OPENSSL_EVP=1
 		-DHAICRYPT_USE_OPENSSL_AES
 	)
-
-	set (SSL_LIBRARIES "-lcrypto")
+	message(STATUS "SSL Dependency: using OpenSSL (default)")
 endif()
 
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
@@ -256,24 +242,22 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-if (NOT HAVE_CROSSCOMPILER)
 
-	# find pthread
+# find pthread
 	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-	if (PTHREAD_INCLUDE_DIR)
-		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-	endif()
+if (PTHREAD_INCLUDE_DIR)
+	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+else()
+	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+endif()
 
 	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
-	if (PTHREAD_LIBRARY)
-		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-	endif()
-
+if (PTHREAD_LIBRARY)
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+else()
+	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 endif()
+
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
