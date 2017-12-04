@@ -282,7 +282,7 @@ inline std::string SockaddrToString(const sockaddr* sadr)
 
 	std::ostringstream output;
 	char hostbuf[1024];
-	if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024))
+	if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
 	{
 		output << hostbuf;
 	}

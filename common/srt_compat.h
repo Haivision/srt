@@ -26,6 +26,7 @@ written by
 #define HAISRT_COMPAT_H__
 
 #include <stddef.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
