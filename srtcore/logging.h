@@ -57,7 +57,7 @@ written by
 #if ENABLE_LOGGING
 
 // Usage: LOGC(mglog.Debug) << param1 << param2 << param3;
-#define LOGC(logdes, args) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__) << args
+#define LOGC(logdes, args) if (logdes.CheckEnabled()) { logging::LogDispatcher::Proxy log(logdes); log.setloc(__FILE__, __LINE__, __FUNCTION__); args; }
 #define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 // LOGP is C++11 only OR with only one string argument.
 // Usage: LOGP(mglog.Debug, param1, param2, param3);
