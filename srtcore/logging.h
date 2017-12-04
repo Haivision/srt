@@ -54,11 +54,22 @@ written by
 #define PRINTF_LIKE 
 #endif
 
+#if ENABLE_LOGGING
+
 // Usage: LOGC(mglog.Debug) << param1 << param2 << param3;
-#define LOGC(logdes) logdes().setloc(__FILE__, __LINE__, __FUNCTION__)
+#define LOGC(logdes, args) if (logdes.CheckEnabled()) { logging::LogDispatcher::Proxy log(logdes); log.setloc(__FILE__, __LINE__, __FUNCTION__); args; }
+#define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 // LOGP is C++11 only OR with only one string argument.
 // Usage: LOGP(mglog.Debug, param1, param2, param3);
-#define LOGP(logdes, ...) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
+#define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
+
+#else
+
+#define LOGC(...)
+#define LOGF(...)
+#define LOGP(...)
+
+#endif
 
 namespace logging
 {
@@ -138,19 +149,13 @@ struct SRT_API LogDispatcher
     template<class Arg1, class... Args>
     void operator()(Arg1&& arg1, Args&&... args)
     {
-        if ( CheckEnabled() )
-        {
-            PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg1, args...);
-        }
+        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg1, args...);
     }
 
     template<class Arg1, class... Args>
     void printloc(const char* file, int line, const std::string& area, Arg1&& arg1, Args&&... args)
     {
-        if ( CheckEnabled() )
-        {
-            PrintLogLine(file, line, area, arg1, args...);
-        }
+        PrintLogLine(file, line, area, arg1, args...);
     }
 #else
     template <class Arg>
@@ -160,18 +165,12 @@ struct SRT_API LogDispatcher
     template <class Arg>
     void operator()(const Arg& arg)
     {
-        if ( CheckEnabled() )
-        {
-            PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg);
-        }
+        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg);
     }
 
     void printloc(const char* file, int line, const std::string& area, const std::string& arg1)
     {
-        if ( CheckEnabled() )
-        {
-            PrintLogLine(file, line, area, arg1);
-        }
+        PrintLogLine(file, line, area, arg1);
     }
 #endif
 

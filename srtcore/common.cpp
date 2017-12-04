@@ -847,11 +847,11 @@ std::string logging::FormatTime(uint64_t time)
 
 logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	i_file = "";
-	i_line = 0;
-	flags = that.flags;
 	if (that_enabled)
 	{
+        i_file = "";
+        i_line = 0;
+        flags = that.flags;
 		// Create logger prefix
 		that.CreateLogLinePrefix(os);
 	}

@@ -429,7 +429,7 @@ EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
 {
     if ( !hcrypto )
     {
-        LOGC(mglog.Error) << "IPE: NULL crypto passed to CPacket::encrypt!";
+        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
         return ENCS_FAILED;
     }
 
@@ -449,13 +449,13 @@ EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
 {
    if (getMsgCryptoFlags() == EK_NOENC)
    {
-       //LOGC(mglog.Debug) << "CPacket::decrypt: packet not encrypted";
+       //LOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
        return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
    }
 
    if (!hcrypto)
    {
-        LOGC(mglog.Error) << "IPE: NULL crypto passed to CPacket::decrypt!";
+        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
         return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
    }
 
