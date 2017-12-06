@@ -243,22 +243,25 @@ proc postprocess {} {
 	}
 
 	if { $::HAVE_DARWIN } {
-		# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
-		# This must use brew-provided OpenSSL.
-		#
-		if { !$have_openssl || !$have_gnutls } {
-		
-			set er [catch {exec brew info openssl} res]
-			if { $er } {
-				error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
-			}
 
-			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
-			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
-		} elseif { $have_gnutls } {
+		if { $have_gnutls } {
 			set er [catch {exec brew info gnutls} res]
 			if { $er } {
 				error "Cannot find gnutls in brew"
+			}
+		} else {
+			# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
+			# This must use brew-provided OpenSSL.
+			#
+			if { !$have_openssl } {
+		
+				set er [catch {exec brew info openssl} res]
+				if { $er } {
+					error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
+				}
+
+				lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
+				lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
 			}
 		}
 	}
