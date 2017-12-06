@@ -194,7 +194,7 @@ typedef std::set<SRTSOCKET> ud_set;
 #define BROKEN       SRTS_BROKEN
 #define CLOSING      SRTS_CLOSING
 #define CLOSED       SRTS_CLOSED
-#define NONEXIST     SRTS_NONEXIS
+#define NONEXIST     SRTS_NONEXIST
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
