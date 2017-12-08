@@ -298,8 +298,25 @@ int main( int argc, char** argv )
     signal(SIGINT, OnINT_SetIntState);
     signal(SIGTERM, OnINT_SetIntState);
 
-    auto src = Source::Create(params[0]);
-    auto tar = Target::Create(params[1]);
+    unique_ptr<Source> src;
+    unique_ptr<Target> tar;
+
+    try
+    {
+        src = Source::Create(params[0]);
+        tar = Target::Create(params[1]);
+    }
+    catch(std::exception& x)
+    {
+        if ( transmit_verbose )
+        {
+            cout << "MEDIA CREATION FAILED: " << x.what() << " - exitting";
+        }
+
+        // Don't speak anything when no -v option.
+        // (the "requested interrupt" will be printed anyway)
+        return 2;
+    }
 
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
