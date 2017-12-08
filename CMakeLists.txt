@@ -113,12 +113,19 @@ endif()
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
-# When you use crosscompiling, you have to take care that PKT_CONFIG_PATH
+# When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
 # find OpenSSL
 if ( USE_GNUTLS )
-	pkg_check_modules (SSL REQUIRED gnutls nettle)
+	set (SSL_REQUIRED_MODULES "gnutls nettle")
+	if (WIN32)
+		if (MINGW)
+			set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+		endif()
+	endif()
+ 
+	pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
 	add_definitions(
 		-DUSE_GNUTLS=1
@@ -243,21 +250,24 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 endif()
 
 
-# find pthread
-	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-if (PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+if (MINGW)
+	set (PTHREAD_LIBRARY -lpthreadGC2)
 else()
-	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-endif()
+	# find pthread
+	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+	if (PTHREAD_INCLUDE_DIR)
+		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+	else()
+		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+	endif()
 
 	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
-if (PTHREAD_LIBRARY)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-else()
-	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-endif()
-
+	if (PTHREAD_LIBRARY)
+		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	else()
+		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	endif()
+endif() # if (NOT MINGW)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -400,7 +410,8 @@ target_include_directories(${TARGET_haicrypt}
 set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${SSL_LIBRARIES})
 set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
-if (WIN32)
+
+if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
 	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 endif()
@@ -414,7 +425,7 @@ target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
-# Not sure why it's required, but somehow only on Linux
+# Not sure why librt is required, but somehow only on Linux
 if ( LINUX )
 	target_link_libraries(${TARGET_srt} PUBLIC rt)
 	target_link_libraries(${TARGET_srt} PUBLIC dl)
@@ -427,10 +438,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(${TARGET_srt} PUBLIC -DSRT_DYNAMIC) 
 endif()
 
-if ( WIN32 )
-	if (NOT CYGWIN)
-    	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
-	endif()
+if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
+   	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
 endif()
 
 install(TARGETS ${TARGET_srt}
@@ -494,6 +503,11 @@ endif()
 
 if ( ENABLE_CXX11 )
 
+ if ( MINGW )
+	# FIXME: with MINGW, it fails to build stransmit
+	# https://github.com/Haivision/srt/issues/177
+	message(WARNING "On MinGW, C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
+ else()
 	set (SOURCES_transmit 
 		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/socketoptions.cpp
@@ -581,6 +595,7 @@ if ( ENABLE_CXX11 )
 	target_link_libraries(srt-file-transmit ${TARGET_srt} ${DEPENDS_srt})
 	install(TARGETS srt-file-transmit RUNTIME DESTINATION bin)
 	endif()
+ endif() # ( MINGW )
 
 	install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
 
