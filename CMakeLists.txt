@@ -106,6 +106,7 @@ if ( USE_GNUTLS )
 		${SSL_LIBRARY_DIRS}
 	)
 else()
+	set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 	find_package(OpenSSL REQUIRED)
 	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
@@ -115,7 +116,6 @@ else()
 		-DHAICRYPT_USE_OPENSSL_AES
 	)
 endif()
-
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
 
 # Detect if the compiler is GNU compatable for flags
@@ -369,8 +369,7 @@ target_include_directories(${TARGET_haicrypt}
 )
 
 set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries(${TARGET_haicrypt} PRIVATE ${SSL_LIBRARIES})
-set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
+target_link_libraries(${TARGET_haicrypt} PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
 
 if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
 	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
