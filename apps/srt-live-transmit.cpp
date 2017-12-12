@@ -100,18 +100,38 @@ string Option(string deflt, string key, Args... further_keys)
 
 ostream* cverb = &cout;
 
+struct ForcedExit: public std::runtime_error
+{
+    ForcedExit(const std::string& arg):
+        std::runtime_error(arg)
+    {
+    }
+};
+
+struct AlarmExit: public std::runtime_error
+{
+    AlarmExit(const std::string& arg):
+        std::runtime_error(arg)
+    {
+    }
+};
+
 volatile bool int_state = false;
-void OnINT_SetIntState(int)
+volatile bool timer_state = false;
+void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     int_state = true;
     if ( transmit_throw_on_interrupt )
-        throw std::runtime_error("Requested exception interrupt");
+        throw ForcedExit("Requested exception interrupt");
 }
 
 void OnAlarm_Interrupt(int)
 {
-    throw std::runtime_error("Watchdog bites hangup");
+    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
+    int_state = false; // JIC
+    timer_state = true;
+    throw AlarmExit("Watchdog bites hangup");
 }
 
 struct BandwidthGuard
@@ -258,6 +278,8 @@ int main( int argc, char** argv )
 
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
 
+    size_t stoptime = stoul(Option("0", "d", "stoptime"), 0, 0);
+
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
@@ -292,11 +314,41 @@ int main( int argc, char** argv )
 
 #ifdef WIN32
 #define alarm(argument) (void)0
+
+    if (stoptime != 0)
+    {
+        cerr << "ERROR: The -stoptime option (-d) is not implemented on Windows\n";
+        return 1;
+    }
+
 #else
     signal(SIGALRM, OnAlarm_Interrupt);
 #endif
-    signal(SIGINT, OnINT_SetIntState);
-    signal(SIGTERM, OnINT_SetIntState);
+    signal(SIGINT, OnINT_ForceExit);
+    signal(SIGTERM, OnINT_ForceExit);
+
+    if (stoptime < 10)
+    {
+        cerr << "ERROR: -stoptime (-d) must be at least 10 seconds\n";
+        return 1;
+    }
+    time_t start_time { time(0) };
+    time_t end_time { -1 };
+
+    if (stoptime != 0)
+    {
+        alarm(stoptime);
+        cerr << "STOPTIME: will interrupt after " << stoptime << "s\n";
+        if (timeout != 30)
+        {
+            cerr << "WARNING: -timeout (-t) option ignored due to specified -stoptime (-d)\n";
+        }
+    }
+
+    // XXX This could be also controlled by an option.
+    int final_delay = 5;
+
+    // In the beginning, set Alarm 
 
     unique_ptr<Source> src;
     unique_ptr<Target> tar;
@@ -308,15 +360,37 @@ int main( int argc, char** argv )
     }
     catch(std::exception& x)
     {
+        if (::int_state)
+        {
+            // The application was terminated by SIGINT or SIGTERM.
+            // Don't print anything, just exit gently like ffmpeg.
+            cerr << "Exit on request.\n";
+            return 255;
+        }
+
+        if (stoptime != 0 && ::timer_state)
+        {
+            cerr << "Exit on timeout.\n";
+            return 0;
+        }
+
         if ( transmit_verbose )
         {
-            cout << "MEDIA CREATION FAILED: " << x.what() << " - exitting";
+            cout << "MEDIA CREATION FAILED: " << x.what() << " - exitting.\n";
         }
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
         return 2;
     }
+    catch (...)
+    {
+        cerr << "ERROR: UNKNOWN EXCEPTION\n";
+        return 2;
+    }
+
+    alarm(0);
+    end_time = time(0);
 
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
@@ -326,12 +400,30 @@ int main( int argc, char** argv )
         cout << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'\n";
     }
 
+    // After the time has been spent in the creation
+    // (including waiting for connection)
+    // rest of the time should be spent for transmission.
+    if (stoptime != 0)
+    {
+        int elapsed = end_time - start_time;
+        int remain = stoptime - elapsed;
+
+        if (remain <= final_delay)
+        {
+            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
+            return 0;
+        }
+
+        cerr << "NOTE: stoptime: remaining " << remain << " seconds (setting alarm to " << (remain - final_delay) << "s)\n";
+        alarm(remain - final_delay);
+    }
+
     extern logging::Logger glog;
     try
     {
         for (;;)
         {
-            if ( timeout != -1 )
+            if (stoptime == 0 && timeout != -1 )
             {
                 alarm(timeout);
             }
@@ -345,7 +437,7 @@ int main( int argc, char** argv )
                 break;
             }
             tar->Write(data);
-            if ( timeout != -1 )
+            if (stoptime == 0 && timeout != -1 )
             {
                 alarm(0);
             }
@@ -364,6 +456,18 @@ int main( int argc, char** argv )
             }
 
             bw.Checkpoint(chunk, transmit_bw_report);
+
+            if (stoptime != 0)
+            {
+                int elapsed = time(0) - end_time;
+                int remain = stoptime - final_delay - elapsed;
+                if (remain < 0)
+                {
+                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
+                    this_thread::sleep_for(chrono::seconds(final_delay));
+                    break;
+                }
+            }
         }
 
     } catch (Source::ReadEOF&) {
@@ -381,15 +485,34 @@ int main( int argc, char** argv )
                     break;
                 }
 
-                cerr << "(DEBUG)... still " << still << " bytes\n";
+                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
-    } catch (std::exception& x) {
+    } catch (std::exception& x) { // Catches TransmissionError and AlarmExit
 
-        cerr << "STD EXCEPTION: " << x.what() << endl;
-        cerr << "Waiting 5s for possible cleanup...\n";
-        this_thread::sleep_for(chrono::seconds(5));
+        if (stoptime != 0 && ::timer_state)
+        {
+            cerr << "Exit on timeout.\n";
+        }
+        else if (::int_state)
+        {
+            // Do nothing.
+        }
+        else
+        {
+            cerr << "STD EXCEPTION: " << x.what() << endl;
+        }
+
+        if (final_delay > 0)
+        {
+            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
+            this_thread::sleep_for(chrono::seconds(final_delay));
+        }
+        if (stoptime != 0 && ::timer_state)
+            return 0;
+
+        return 255;
 
     } catch (...) {
 
