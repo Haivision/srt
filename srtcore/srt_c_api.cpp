@@ -307,9 +307,7 @@ void srt_dellogfa(int fa)
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    std::set<logging::LogFA> fas;
-    std::copy(fara, fara + fara_size, std::inserter(fas, fas.begin()));
-    UDT::resetlogfa(fas);
+    UDT::resetlogfa(fara, fara_size);
 }
 
 void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)

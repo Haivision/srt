@@ -37,7 +37,7 @@ using namespace std;
 const size_t DEFAULT_CHUNK = 1316;
 
 const logging::LogFA SRT_LOGFA_APP = 10;
-logging::Logger applog(SRT_LOGFA_APP, &srt_logger_config, "siplex");
+logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "siplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)

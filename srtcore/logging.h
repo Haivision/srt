@@ -76,22 +76,23 @@ namespace logging
 
 struct LogConfig
 {
-    std::set<int> enabled_fa;
-    LogLevel::type max_level;
+    typedef std::bitset<SRT_LOGFA_LASTNONE+1> fa_bitset_t;
+    fa_bitset_t enabled_fa;   // REQUIRED: ATOMIC XXX
+    LogLevel::type max_level; // REQUIRED: ATOMIC XXX
     std::ostream* log_stream;
     SRT_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
     pthread_mutex_t mutex;
     int flags;
 
-    LogConfig(const std::set<int>& initial_fa):
+    LogConfig(const fa_bitset_t& initial_fa):
         enabled_fa(initial_fa),
         max_level(LogLevel::warning),
         log_stream(&std::cerr)
     {
         pthread_mutex_init(&mutex, 0);
     }
-    LogConfig(const std::set<int> efa, LogLevel::type l, std::ostream* ls):
+    LogConfig(const fa_bitset_t& efa, LogLevel::type l, std::ostream* ls):
         enabled_fa(efa), max_level(l), log_stream(ls)
     {
         pthread_mutex_init(&mutex, 0);
@@ -106,23 +107,27 @@ struct LogConfig
     void unlock() { pthread_mutex_unlock(&mutex); }
 };
 
-
+// The LogDispatcher class represents the object that is responsible for
+// a decision whether to log something or not. 
 struct SRT_API LogDispatcher
 {
+private:
     int fa;
     LogLevel::type level;
     std::string prefix;
-    bool enabled;
     LogConfig* src_config;
-    int flags; // copy of config flags as this must be accessed once.
     pthread_mutex_t mutex;
 
-    LogDispatcher(int functional_area, LogLevel::type log_level, const std::string& pfx, LogConfig* config):
+    bool flags(int flg) { return (src_config->flags & flg) != 0; }
+
+public:
+
+    LogDispatcher(int functional_area, LogLevel::type log_level, const std::string& pfx, LogConfig& config):
         fa(functional_area),
         level(log_level),
         prefix(pfx),
-        enabled(false),
-        src_config(config)
+        //enabled(false),
+        src_config(&config)
     {
         pthread_mutex_init(&mutex, 0);
     }
@@ -133,7 +138,7 @@ struct SRT_API LogDispatcher
     }
 
     bool CheckEnabled();
-    LogDispatcher(bool v): enabled(v) {}
+    //LogDispatcher(bool v): enabled(v) {}
 
     void CreateLogLinePrefix(std::ostringstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
@@ -177,6 +182,7 @@ struct SRT_API LogDispatcher
 #if ENABLE_LOGGING
 
     struct Proxy;
+    friend Proxy;
 
     Proxy operator()();
 #else
@@ -248,7 +254,7 @@ struct LogDispatcher::Proxy
     std::string ExtractName(std::string pretty_function);
 
 	Proxy(LogDispatcher& guy);
-    
+
     // Copy constructor is needed due to noncopyable ostringstream.
     // This is used only in creation of the default object, so just
     // use the default values, just copy the location cache.
@@ -257,7 +263,7 @@ struct LogDispatcher::Proxy
         i_file = p.i_file;
         i_line = p.i_line;
         that_enabled = false;
-        flags = that.flags;
+        flags = p.flags;
     }
 
 
@@ -317,8 +323,7 @@ class Logger
 {
     std::string m_prefix;
     int m_fa;
-    //bool enabled = false;
-    LogConfig* m_config;
+    LogConfig& m_config;
 
 public:
 
@@ -328,7 +333,7 @@ public:
     LogDispatcher Error;
     LogDispatcher Fatal;
 
-    Logger(int functional_area, LogConfig* config, std::string globprefix = std::string()):
+    Logger(int functional_area, LogConfig& config, std::string globprefix = std::string()):
         m_prefix( globprefix == "" ? globprefix : ": " + globprefix),
         m_fa(functional_area),
         m_config(config),
@@ -345,17 +350,16 @@ public:
 inline bool LogDispatcher::CheckEnabled()
 {
     // Don't use enabler caching. Check enabled state every time.
-    bool enabled = false;
-    src_config->lock();
 
-        // If the thread is interrupted during any of this process, in worst case 
-        // we'll just overwrite the already set values with the same.
-    enabled = src_config->enabled_fa.count(fa) && level <= src_config->max_level;
-    flags = src_config->flags;
-    
-    src_config->unlock();
+    // These assume to be atomic, so the lock is not needed.
+    // It's also no problem if the level was changed at the moment
+    // when the enabler check is tested here. Worst case, the log
+    // will be printed just a moment after it was turned off.
+    const LogConfig* config = src_config; // to enforce using const operator[]
+    int configured_enabled_fa = config->enabled_fa[fa];
+    int configured_maxlevel = config->max_level;
 
-    return enabled;
+    return configured_enabled_fa && level <= configured_maxlevel;
 }
 
 SRT_API std::string FormatTime(uint64_t time);
@@ -381,7 +385,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
     CreateLogLinePrefix(serr);
     PrintArgs(serr, args...);
 
-    if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
+    if ( !flags(SRT_LOGF_DISABLE_EOL) )
         serr << std::endl;
 
     // Not sure, but it wasn't ever used.
@@ -399,7 +403,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
     CreateLogLinePrefix(serr);
     serr << arg;
 
-    if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
+    if ( !flags( SRT_LOGF_DISABLE_EOL) )
         serr << std::endl;
 
     // Not sure, but it wasn't ever used.

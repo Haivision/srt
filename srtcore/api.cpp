@@ -3063,21 +3063,28 @@ void setloglevel(logging::LogLevel::type ll)
 void addlogfa(logging::LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.insert(fa);
+    srt_logger_config.enabled_fa.set(fa, true);
 }
 
 void dellogfa(logging::LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.erase(fa);
+    srt_logger_config.enabled_fa.set(fa, false);
 }
 
 void resetlogfa(set<logging::LogFA> fas)
 {
     CGuard gg(srt_logger_config.mutex);
-    set<int> enfas;
-    copy(fas.begin(), fas.end(), std::inserter(enfas, enfas.begin()));
-    srt_logger_config.enabled_fa = enfas;
+    for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
+        srt_logger_config.enabled_fa.set(i, fas.count(i));
+}
+
+void resetlogfa(const int* fara, size_t fara_size)
+{
+    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.enabled_fa.reset();
+    for (const int* i = fara; i != fara + fara_size; ++i)
+        srt_logger_config.enabled_fa.set(*i, true);
 }
 
 void setlogstream(std::ostream& stream)

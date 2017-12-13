@@ -92,26 +92,26 @@ using namespace std;
 
 struct AllFaOn
 {
-    set<int> allfa;
+    logging::LogConfig::fa_bitset_t allfa;
 
     AllFaOn()
     {
-        allfa.insert(SRT_LOGFA_BSTATS);
-        allfa.insert(SRT_LOGFA_CONTROL);
-        allfa.insert(SRT_LOGFA_DATA);
-        allfa.insert(SRT_LOGFA_TSBPD);
-        allfa.insert(SRT_LOGFA_REXMIT);
+        allfa.set(SRT_LOGFA_BSTATS, true);
+        allfa.set(SRT_LOGFA_CONTROL, true);
+        allfa.set(SRT_LOGFA_DATA, true);
+        allfa.set(SRT_LOGFA_TSBPD, true);
+        allfa.set(SRT_LOGFA_REXMIT, true);
     }
 } logger_fa_all;
 
 logging::LogConfig srt_logger_config (logger_fa_all.allfa);
 
-logging::Logger glog(SRT_LOGFA_GENERAL, &srt_logger_config, "SRT.g");
-logging::Logger blog(SRT_LOGFA_BSTATS, &srt_logger_config, "SRT.b");
-logging::Logger mglog(SRT_LOGFA_CONTROL, &srt_logger_config, "SRT.c");
-logging::Logger dlog(SRT_LOGFA_DATA, &srt_logger_config, "SRT.d");
-logging::Logger tslog(SRT_LOGFA_TSBPD, &srt_logger_config, "SRT.t");
-logging::Logger rxlog(SRT_LOGFA_REXMIT, &srt_logger_config, "SRT.r");
+logging::Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
+logging::Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
+logging::Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
+logging::Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
+logging::Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
+logging::Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
 
 CUDTUnited CUDT::s_UDTUnited;
 

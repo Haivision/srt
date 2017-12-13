@@ -400,6 +400,7 @@ UDT_API void setloglevel(logging::LogLevel::type ll);
 UDT_API void addlogfa(logging::LogFA fa);
 UDT_API void dellogfa(logging::LogFA fa);
 UDT_API void resetlogfa(std::set<logging::LogFA> fas);
+UDT_API void resetlogfa(const int* fara, size_t fara_size);
 UDT_API void setlogstream(std::ostream& stream);
 UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 UDT_API void setlogflags(int flags);
