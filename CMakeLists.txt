@@ -113,6 +113,8 @@ endif()
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
+set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
@@ -579,12 +581,32 @@ if ( ENABLE_CXX11 )
 	target_link_libraries(srt-live-transmit ${TARGET_srt} ${DEPENDS_srt})
 	install(TARGETS srt-live-transmit RUNTIME DESTINATION bin)
 	# For backward compatibility with the old name
+
+
+	if (SYMLINKABLE)
+		set (REPLI_COMMAND create_symlink )
+	else()
+		set (REPLI_COMMAND copy)
+	endif()
+
 	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
 	add_custom_command(
 		TARGET srt-live-transmit
 		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:srt-live-transmit> ${stransmit_path})
-	install(PROGRAMS ${stransmit_path} DESTINATION bin)
+		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} $<TARGET_FILE:srt-live-transmit> ${stransmit_path})
+
+	if (SYMLINKABLE)
+		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use symbolic link")
+		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/bin/stransmit)
+	elseif(${CMAKE_MAJOR_VERSION} LESS 3)
+		message(FATAL_ERROR "Your system can't install symbolic link to 'stransmit', copy-on-install requires cmake at least 3.0.2")
+	else()
+		# This installation doesn't work with cmake earlier than 3.0
+		# (looxlike cmake 2.8 somehow doesn't have a problem with resolving the $<TARGET_FILE_DIR:...>
+		# inside the generated makefile, but does have problem with its own generated cmake_install.cmake :D)
+		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use copying")
+		install(PROGRAMS ${stransmit_path} DESTINATION bin)
+	endif()
 
 	set_target_properties(srt-multiplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 	target_link_libraries(srt-multiplex ${TARGET_srt} ${DEPENDS_srt})
