@@ -77,8 +77,8 @@ namespace logging
 struct LogConfig
 {
     typedef std::bitset<SRT_LOGFA_LASTNONE+1> fa_bitset_t;
-    fa_bitset_t enabled_fa;   // REQUIRED: ATOMIC XXX
-    LogLevel::type max_level; // REQUIRED: ATOMIC XXX
+    fa_bitset_t enabled_fa;   // NOTE: assumed atomic reading
+    LogLevel::type max_level; // NOTE: assumed atomic reading
     std::ostream* log_stream;
     SRT_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
@@ -108,7 +108,7 @@ struct LogConfig
 };
 
 // The LogDispatcher class represents the object that is responsible for
-// a decision whether to log something or not. 
+// a decision whether to log something or not, and if so, print the log.
 struct SRT_API LogDispatcher
 {
 private:
@@ -138,7 +138,6 @@ public:
     }
 
     bool CheckEnabled();
-    //LogDispatcher(bool v): enabled(v) {}
 
     void CreateLogLinePrefix(std::ostringstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
@@ -351,7 +350,8 @@ inline bool LogDispatcher::CheckEnabled()
 {
     // Don't use enabler caching. Check enabled state every time.
 
-    // These assume to be atomic, so the lock is not needed.
+    // These assume to be atomically read, so the lock is not needed
+    // (note that writing to this field is still mutex-protected).
     // It's also no problem if the level was changed at the moment
     // when the enabler check is tested here. Worst case, the log
     // will be printed just a moment after it was turned off.
