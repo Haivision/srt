@@ -542,7 +542,7 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
         cerr << "\nERROR #" << udtResult << ": " << message << endl;
 
     udtError.clear();
-    throw std::runtime_error("error: " + src + ": " + message);
+    throw TransmissionError("error: " + src + ": " + message);
 }
 
 void SrtCommon::OpenRendezvous(string adapter, string host, int port)
@@ -1053,7 +1053,7 @@ protected:
         else
             cerr << "\nERROR #" << err << ": " << message << endl;
 
-        throw std::runtime_error("error: " + src + ": " + message);
+        throw TransmissionError("error: " + src + ": " + message);
     }
 
     ~UdpCommon()
