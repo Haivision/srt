@@ -332,10 +332,15 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt)
 {
    CUDTSocket* ns = NULL;
-   CUDTSocket* ls = locate(listen);
 
+   // Can't manage this error through an exception because this is
+   // running in the listener loop.
+   CUDTSocket* ls = locate(listen);
    if (!ls)
-      return -1;
+   {
+       LOGC(mglog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
+       return -1;
+   }
 
    // if this connection has already been processed
    if ((ns = locate(peer, hs->m_iID, hs->m_iISN)) != NULL)
@@ -370,7 +375,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
 
    // exceeding backlog, refuse the connection request
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
-      return -1;
+   {
+       LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+       return -1;
+   }
 
    try
    {
@@ -394,12 +402,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    catch (...)
    {
       delete ns;
+      LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
       return -1;
    }
 
    CGuard::enterCS(m_IDLock);
    ns->m_SocketID = -- m_SocketIDGenerator;
-   LOGF(mglog.Debug, "newConnection: generated socket id %d\n", ns->m_SocketID);
+   LOGF(mglog.Debug, "newConnection: generated socket id %d", ns->m_SocketID);
    CGuard::leaveCS(m_IDLock);
 
    ns->m_ListenSocket = listen;
@@ -422,7 +431,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        // Without this mapping the socket cannot be found and therefore
        // the SRT Handshake message would fail.
        LOGF(mglog.Debug, 
-               "newConnection: incoming %s, mapping socket %d\n",
+               "newConnection: incoming %s, mapping socket %d",
                SockaddrToString(peer).c_str(), ns->m_SocketID);
        {
            CGuard cg(m_ControlLock);
@@ -446,7 +455,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
            m_Sockets.erase(ns->m_SocketID);
        }
        error = 1;
-       LOGF(mglog.Debug, 
+       LOGP(mglog.Debug,
                "newConnection: error while accepting, connection rejected");
        goto ERR_ROLLBACK;
    }

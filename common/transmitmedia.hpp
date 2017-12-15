@@ -3,11 +3,23 @@
 
 #include <string>
 #include <map>
+#include <stdexcept>
 
 #include "transmitbase.hpp"
 #include <udt.h> // Needs access to CUDTException
 
 using namespace std;
+
+// Trial version of an exception. Try to implement later an official
+// interruption mechanism in SRT using this.
+
+struct TransmissionError: public std::runtime_error
+{
+    TransmissionError(const std::string& arg):
+        std::runtime_error(arg)
+    {
+    }
+};
 
 class SrtCommon
 {
