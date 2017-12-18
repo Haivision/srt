@@ -867,7 +867,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     using namespace std;
 
     char tmp_buf[512];
-    if ( !flags(SRT_LOGF_DISABLE_TIME) )
+    if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
@@ -887,13 +887,13 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     }
 
     string out_prefix;
-    if ( !flags(SRT_LOGF_DISABLE_SEVERITY) )
+    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
     {
         out_prefix = prefix;
     }
 
     // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
-    if ( !flags(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
+    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
     {
         serr << "/" << tmp_buf << out_prefix << ": ";
     }

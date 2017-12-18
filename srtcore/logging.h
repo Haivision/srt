@@ -118,7 +118,7 @@ private:
     LogConfig* src_config;
     pthread_mutex_t mutex;
 
-    bool flags(int flg) { return (src_config->flags & flg) != 0; }
+    bool isset(int flg) { return (src_config->flags & flg) != 0; }
 
 public:
 
@@ -385,7 +385,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
     CreateLogLinePrefix(serr);
     PrintArgs(serr, args...);
 
-    if ( !flags(SRT_LOGF_DISABLE_EOL) )
+    if ( !isset(SRT_LOGF_DISABLE_EOL) )
         serr << std::endl;
 
     // Not sure, but it wasn't ever used.
@@ -403,7 +403,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
     CreateLogLinePrefix(serr);
     serr << arg;
 
-    if ( !flags( SRT_LOGF_DISABLE_EOL) )
+    if ( !isset(SRT_LOGF_DISABLE_EOL) )
         serr << std::endl;
 
     // Not sure, but it wasn't ever used.
