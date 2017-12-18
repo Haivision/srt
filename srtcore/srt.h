@@ -458,7 +458,9 @@ static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP,
 #define SRT_LOGFA_TSBPD 4
 #define SRT_LOGFA_REXMIT 5
 
-#define SRT_LOGFA_LASTNONE 99
+// To make a typical int32_t size, although still use std::bitset.
+// C API will carry it over.
+#define SRT_LOGFA_LASTNONE 31
 
 enum SRT_KM_STATE
 {

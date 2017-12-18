@@ -851,7 +851,7 @@ logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabl
 	{
         i_file = "";
         i_line = 0;
-        flags = that.flags;
+        flags = that.src_config->flags;
 		// Create logger prefix
 		that.CreateLogLinePrefix(os);
 	}
@@ -867,7 +867,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     using namespace std;
 
     char tmp_buf[512];
-    if ( (flags & SRT_LOGF_DISABLE_TIME) == 0 )
+    if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
@@ -886,14 +886,14 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     string out_prefix;
-    if ( (flags & SRT_LOGF_DISABLE_SEVERITY) == 0 )
+    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
     {
         out_prefix = prefix;
     }
 
-    if ( (flags & SRT_LOGF_DISABLE_THREADNAME) == 0 && ThreadName::get(tmp_buf) )
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
     {
         serr << "/" << tmp_buf << out_prefix << ": ";
     }
