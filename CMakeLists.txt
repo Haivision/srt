@@ -54,6 +54,7 @@ option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
+option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
@@ -90,7 +91,14 @@ set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
 # find OpenSSL
 if ( USE_GNUTLS )
-	pkg_check_modules (SSL REQUIRED gnutls nettle)
+	set (SSL_REQUIRED_MODULES "gnutls nettle")
+	if (WIN32)
+		if (MINGW)
+			set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+		endif()
+	endif()
+ 
+	pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
 	add_definitions(
 		-DUSE_GNUTLS=1
@@ -100,6 +108,7 @@ if ( USE_GNUTLS )
 		${SSL_LIBRARY_DIRS}
 	)
 else()
+	set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 	find_package(OpenSSL REQUIRED)
 	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
@@ -213,6 +222,7 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 endif()
 
 
+if (NOT MINGW)
 # find pthread
 find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 if (PTHREAD_INCLUDE_DIR)
@@ -227,6 +237,10 @@ if (PTHREAD_LIBRARY)
 else()
 	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 endif()
+
+else()
+set (PTHREAD_LIBRARY -lpthreadGC2)
+endif() # if (NOT MINGW)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -369,7 +383,7 @@ target_include_directories(${TARGET_haicrypt}
 set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${SSL_LIBRARIES})
 set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
-if (WIN32)
+if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
 	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 endif()
@@ -396,10 +410,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(${TARGET_srt} PUBLIC -DSRT_DYNAMIC) 
 endif()
 
-if ( WIN32 )
-	if (NOT CYGWIN)
-    	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
-	endif()
+if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
+    target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
 endif()
 
 install(TARGETS ${TARGET_srt}
@@ -463,6 +475,9 @@ endif()
 
 if ( ENABLE_CXX11 )
 
+# FIXME: with MINGW, it fails to build stransmit
+# https://github.com/Haivision/srt/issues/177
+if ( NOT MINGW )
 	set (SOURCES_transmit 
 		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/socketoptions.cpp
@@ -473,6 +488,7 @@ if ( ENABLE_CXX11 )
 	# XXX This fix was never necessary, srt_compat.c is
 	# included in the SRT library. This was motivated by some error report
 	# from some CI system, so leaving the commented-out parts for historical reasons.
+    # Please remove it completely once 1.3.0 version is released.
 	
 	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
 	# This should result in exactly the same as when it was compiled as C, with the
@@ -554,6 +570,8 @@ if ( ENABLE_CXX11 )
 	install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
 
 	target_link_libraries(utility-test ${TARGET_srt})
+
+endif() # if ( NOT MINGW )
 
 endif()
 

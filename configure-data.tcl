@@ -217,6 +217,10 @@ proc postprocess {} {
 		set have_gnutls 0
 	}
 
+	if { $have_gnutls } {
+		lappend ::cmakeopt "-DUSE_GNUTLS=ON"
+	}
+
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
@@ -246,24 +250,34 @@ proc postprocess {} {
 	}
 
 	if { $::HAVE_DARWIN } {
-		# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
-		# This must use brew-provided OpenSSL.
-		#
-		if { !$have_openssl || !$have_gnutls } {
-		
-			set er [catch {exec brew info openssl} res]
-			if { $er } {
-				error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
-			}
 
-			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
-			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
-		} elseif { $have_gnutls } {
+		if { $have_gnutls } {
+			# Use gnutls explicitly, as found in brew
 			set er [catch {exec brew info gnutls} res]
 			if { $er } {
 				error "Cannot find gnutls in brew"
 			}
-		}
+		} else {
+
+			# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
+			# This must use brew-provided OpenSSL, if required implicitly
+
+			set er [catch {exec brew info openssl} res]
+			if { $er } {
+
+				# The --use-openssl option only changes the error message,
+				# as using it means that the user is aware that only the brew-provided
+				# version will be taken into account.
+				if { $have_openssl } {
+					error "Cannot find openssl in brew"
+				} else {
+					error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
+				}
+			}
+			
+			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
+			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
+		} 
 	}
 
 }
