@@ -1066,6 +1066,7 @@ void CUDT::clearData()
    m_llSentTotal = m_llRecvTotal = m_iSndLossTotal = m_iRcvLossTotal = m_iRetransTotal = m_iSentACKTotal = m_iRecvACKTotal = m_iSentNAKTotal = m_iRecvNAKTotal = 0;
    m_LastSampleTime = CTimer::getTime();
    m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
+   m_iTraceRcvRetrans = 0;
    m_iTraceReorderDistance = 0;
    m_fTraceBelatedTime = 0.0;
    m_iTraceRcvBelated = 0;

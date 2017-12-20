@@ -54,6 +54,7 @@ option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
+option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
@@ -138,6 +139,7 @@ if ( USE_GNUTLS )
 	)
 	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 else()
+	set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 	find_package(OpenSSL REQUIRED)
 	set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 	set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
@@ -441,7 +443,7 @@ if (ENABLE_SHARED)
 endif()
 
 if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
-   	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
+    target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
 endif()
 
 install(TARGETS ${TARGET_srt}
@@ -520,6 +522,7 @@ if ( ENABLE_CXX11 )
 	# XXX This fix was never necessary, srt_compat.c is
 	# included in the SRT library. This was motivated by some error report
 	# from some CI system, so leaving the commented-out parts for historical reasons.
+    # Please remove it completely once 1.3.0 version is released.
 	
 	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
 	# This should result in exactly the same as when it was compiled as C, with the
