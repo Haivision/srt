@@ -181,7 +181,7 @@ public:
 #if ENABLE_LOGGING
 
     struct Proxy;
-    friend Proxy;
+    friend struct Proxy;
 
     Proxy operator()();
 #else
