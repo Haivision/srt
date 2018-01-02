@@ -177,10 +177,16 @@ inline struct tm LocalTime(time_t tt)
 {
 	struct tm tm;
 #ifdef WIN32
+#if defined(_MSC_VER) && (_MSC_VER>=1500)
 	errno_t rr = localtime_s(&tm, &tt);
 	if (rr)
 		return tm;
+
 #else
+	tm = *localtime(&tt);
+#endif // _MSC_VER
+
+#else // WIN32
 	tm = *localtime_r(&tt, &tm);
 #endif
 
