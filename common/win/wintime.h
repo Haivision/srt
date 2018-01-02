@@ -4,7 +4,6 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <time.h>
-#include "haicrypt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +33,7 @@ struct timezone
 
 void timeradd(struct timeval *a, struct timeval *b, struct timeval *result);
 
-HAICRYPT_API int gettimeofday(struct timeval* tp, struct timezone* tz);
+int gettimeofday(struct timeval* tp, struct timezone* tz);
 
 #ifdef __cplusplus
 }
