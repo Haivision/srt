@@ -180,6 +180,9 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_ADD, s, &ev) < 0)
       throw CUDTException();
+
+   p->second.m_sLocals.insert(s);
+
 #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
    struct kevent ke[2];
    int num = 0;
@@ -202,20 +205,19 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
       throw CUDTException();
-#else
-
-#ifdef _MSC_VER
-// Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
-// Use #pragma message with the same text.
-// All other compilers should be ok :)
-#pragma message("WARNING: Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform.")
-#else
-#warning "Unsupported system for epoll. The epoll_add_ssock() API call won't work on this platform."
-#endif
-
-#endif
 
    p->second.m_sLocals.insert(s);
+#elif defined(WIN32)
+   CEPollFD pollFD;
+   pollFD.fd = s;
+
+   if (NULL == events)
+      pollFD.events = (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
+   else
+      pollFD.events = *events;
+
+   p->second.m_mLocals[s] = pollFD;
+#endif
 
    return 0;
 }
@@ -257,6 +259,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
    epoll_event ev;  // ev is ignored, for compatibility with old Linux kernel only.
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_DEL, s, &ev) < 0)
       throw CUDTException();
+   p->second.m_sLocals.erase(s);
 #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
    struct kevent ke;
 
@@ -268,9 +271,10 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
    kevent(p->second.m_iLocalID, &ke, 1, NULL, 0, NULL);
    EV_SET(&ke, s, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
    kevent(p->second.m_iLocalID, &ke, 1, NULL, 0, NULL);
-#endif
-
    p->second.m_sLocals.erase(s);
+#elif defined(WIN32)
+   p->second.m_mLocals.erase(s);
+#endif
 
    return 0;
 }
@@ -373,6 +377,16 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
       throw CUDTException();
+#elif defined(WIN32)
+   CEPollFD pollFD;
+   pollFD.fd = s;
+
+   if (NULL == events)
+      pollFD.events = (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
+   else
+      pollFD.events = *events;
+
+   p->second.m_mLocals[s] = pollFD;
 #endif
 // Assuming add is used if not inserted
 //   p->second.m_sLocals.insert(s);
@@ -406,8 +420,11 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          CGuard::leaveCS(m_EPollLock);
          throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
       }
-
+#if defined(WIN32)
+      if (p->second.m_sUDTSocksIn.empty() && p->second.m_sUDTSocksOut.empty() && p->second.m_mLocals.empty() && (msTimeOut < 0))
+#else
       if (p->second.m_sUDTSocksIn.empty() && p->second.m_sUDTSocksOut.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
+#endif
       {
          // no socket is being monitored, this may be a deadlock
          CGuard::leaveCS(m_EPollLock);
@@ -478,6 +495,47 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
                ++ total;
             }
          }
+         #elif defined(WIN32)
+
+         DWORD ready;
+         DWORD timeout_ms = 10;
+         const int nhandles = p->second.m_mLocals.size();
+         HANDLE handles[MAXIMUM_WAIT_OBJECTS];
+         int i = 0;
+
+         for (std::map<SYSSOCKET, CEPollFD>::iterator it = p->second.m_mLocals.begin();
+              it != p->second.m_mLocals.end();
+              ++it)
+         {
+            handles[i++] = (HANDLE) it->first;
+         }
+
+         ready = WaitForMultipleObjectsEx(nhandles, handles, FALSE, timeout_ms, TRUE);
+
+         if (ready == WAIT_FAILED)
+         {
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+         }
+
+         if (ready >= WAIT_OBJECT_0 && ready < WAIT_OBJECT_0 + nhandles)
+         {
+            SYSSOCKET s = *((int *)&handles[ready - WAIT_OBJECT_0]);
+            CEPollFD pollFD = p->second.m_mLocals[s];
+            pollFD.revents = pollFD.events;
+
+            if ((NULL != lrfds) && (pollFD.events & UDT_EPOLL_IN))
+            {
+               lrfds->insert(pollFD.fd);
+               ++ total;
+            }
+
+            if ((NULL != lwfds) && (pollFD.events & UDT_EPOLL_OUT))
+            {
+               lwfds->insert(pollFD.fd);
+               ++ total;
+            }
+         }
+
          #else
          //currently "select" is used for all non-Linux platforms.
          //faster approaches can be applied for specific systems in the future.
