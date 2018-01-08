@@ -42,7 +42,14 @@ written by
 
 #include <assert.h>
 #include <sys/time.h>
+#ifdef __APPLE__
+#include "TargetConditionals.h"
+#endif
+#if TARGET_OS_IOS || TARGET_OS_WATCH || TARGET_OS_TV
+#include <MobileCoreServices/MobileCoreServices.h>
+#else
 #include <CoreServices/CoreServices.h>
+#endif
 #include <pthread.h>
 #include <mach/mach.h>
 #include <mach/clock.h>
