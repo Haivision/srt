@@ -93,7 +93,7 @@ static inline int inet_pton(int af, const char * src, void * dst)
 
    ZeroMemory(&ss, sizeof(ss));
 
-   // work around stupid non-const API
+   // work around non-const API
    strncpy(srcCopy, src, INET6_ADDRSTRLEN + 1);
    srcCopy[INET6_ADDRSTRLEN] = '\0';
 

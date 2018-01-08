@@ -632,12 +632,12 @@ int CUDTUnited::bind(SRTSOCKET u, UDPSOCKET udpsock)
 
 int CUDTUnited::listen(const SRTSOCKET u, int backlog)
 {
-   if (backlog <= 0 )
+   if (backlog <= 0)
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    // Don't search for the socket if it's already -1;
    // this never is a valid socket.
-   if ( u == UDT::INVALID_SOCK )
+   if (u == UDT::INVALID_SOCK)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
    CUDTSocket* s = locate(u);
@@ -675,8 +675,7 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    catch (...)
    {
       delete s->m_pQueuedSockets;
-      delete s->m_pAcceptSockets;   // XXX If this was exception-interrupted,
-                                    // then nothing is allocated!
+      delete s->m_pAcceptSockets;
 
       // XXX Translated std::bad_alloc into CUDTException specifying
       // memory allocation failure...
@@ -725,11 +724,13 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
        }
        else if (ls->m_pQueuedSockets->size() > 0)
        {
-           // XXX Actually this should at best be something like that:
+           // XXX REFACTORING REQUIRED HERE!
+           // Actually this should at best be something like that:
            // set<SRTSOCKET>::iterator b = ls->m_pQueuedSockets->begin();
            // u = *b;
            // ls->m_pQueuedSockets->erase(b);
-           // ls->m_pAcceptSockets.insert(u);
+           // ls->m_pAcceptSockets->insert(u);
+           //
            // It is also questionable why m_pQueuedSockets should be of type 'set'.
            // There's no quick-searching capabilities of that container used anywhere except
            // checkBrokenSockets and garbageCollect, which aren't performance-critical,
@@ -739,9 +740,10 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
            // the first is taken here, which is actually the socket with lowest
            // possible descriptor value (as default operator< and ascending sorting
            // used for std::set<SRTSOCKET> where SRTSOCKET=int).
+           //
+           // Consider using std::list or std::vector here.
 
            u = *(ls->m_pQueuedSockets->begin());
-           // why suggest the position - it is std::set!
            ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
            ls->m_pQueuedSockets->erase(ls->m_pQueuedSockets->begin());
            accepted = true;
@@ -909,14 +911,14 @@ int CUDTUnited::close(const SRTSOCKET u)
       s->m_TimeStamp = CTimer::getTime();
       s->m_pUDT->m_bBroken = true;
 
-      // NOTE: (changed by Sektor)
+      // Change towards original UDT: 
       // Leave all the closing activities for garbageCollect to happen,
       // however remove the listener from the RcvQueue IMMEDIATELY.
-      // This is because the listener socket is useless anyway and should
-      // not be used for anything NEW since now.
-
-      // But there's no reason to destroy the world by occupying the
-      // listener slot in the RcvQueue.
+      // Even though garbageCollect would eventually remove the listener
+      // as well, there would be some time interval between now and the
+      // moment when it's done, and during this time the application will
+      // be unable to bind to this port that the about-to-delete listener
+      // is currently occupying (due to blocked slot in the RcvQueue).
 
       LOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing listener immediately)");
       {
@@ -948,7 +950,7 @@ int CUDTUnited::close(const SRTSOCKET u)
 
        s->m_Status = SRTS_CLOSED;
 
-       // a socket will not be immediated removed when it is closed
+       // a socket will not be immediately removed when it is closed
        // in order to prevent other methods from accessing invalid address
        // a timer is started and the socket will be removed after approximately
        // 1 second
@@ -1693,7 +1695,7 @@ void CUDTUnited::updateMux(
       throw e;
    }
 
-   // XXX Looks stupid. Simplify. Use sockaddr_any.
+   // XXX Simplify this. Use sockaddr_any.
    sockaddr* sa = (AF_INET == s->m_pUDT->m_iIPversion)
       ? (sockaddr*) new sockaddr_in
       : (sockaddr*) new sockaddr_in6;
@@ -1726,7 +1728,8 @@ void CUDTUnited::updateMux(
       "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
-// XXX This is actually something completely stupid.
+// XXX This functionality needs strong refactoring.
+//
 // This function is going to find a multiplexer for the port contained
 // in the 'ls' listening socket, by searching through the multiplexer
 // container.
@@ -1738,34 +1741,37 @@ void CUDTUnited::updateMux(
 // didn't, this function wouldn't even have a chance to be called.
 //
 // Why can't then the multiplexer be recorded in the 'ls' listening socket data
-// to be accessed immediately, especially when one listener can't bind to more than
-// one multiplexer at a time (well, even if it could, there's still no reason why
-// this should be extracted by "querying")?
+// to be accessed immediately, especially when one listener can't bind to more
+// than one multiplexer at a time (well, even if it could, there's still no
+// reason why this should be extracted by "querying")?
 //
 // Maybe because the multiplexer container is a map, not a list.
 // Why is this then a map? Because it's addressed by MuxID. Why do we need
 // mux id? Because we don't have a list... ?
 // 
-// But what's the multiplexer ID? It's a socket ID for which it was originally created.
+// But what's the multiplexer ID? It's a socket ID for which it was originally
+// created.
 //
-// Is this then shared? Yes, only between the listener socket and the accepted sockets,
-// or in case of "bound" connecting sockets (by binding you can enforce the port number,
-// which can be the same for multiple SRT sockets).
+// Is this then shared? Yes, only between the listener socket and the accepted
+// sockets, or in case of "bound" connecting sockets (by binding you can
+// enforce the port number, which can be the same for multiple SRT sockets).
 // Not shared in case of unbound connecting socket or rendezvous socket.
 //
-// Ok, in which situation do we need dispatching by mux id? Only when the socket is being
-// deleted. How does the deleting procedure know the muxer id? Because it is recorded here
-// at the time when it's found, as... the socket ID of the actual listener socket being
-// actually the first socket to create the multiplexer, so the multiplexer gets its id.
+// Ok, in which situation do we need dispatching by mux id? Only when the
+// socket is being deleted. How does the deleting procedure know the muxer id?
+// Because it is recorded here at the time when it's found, as... the socket ID
+// of the actual listener socket being actually the first socket to create the
+// multiplexer, so the multiplexer gets its id.
 //
-// Still, no reasons found why the socket can't contain a list iterator to a multiplexer
-// INSTEAD of m_iMuxID. There's no danger in this solutio because the multiplexer is never
-// deleted until there's at least one socket using it.
+// Still, no reasons found why the socket can't contain a list iterator to a
+// multiplexer INSTEAD of m_iMuxID. There's no danger in this solution because
+// the multiplexer is never deleted until there's at least one socket using it.
 //
-// The multiplexer may even physically be contained in the CUDTUnited object, just track
-// the multiple users of it (the listener and the accepted sockets). When deleting, you
-// simply "unsubscribe" yourself from the multiplexer, which will unref it and remove the
-// list element by the iterator kept by the socket.
+// The multiplexer may even physically be contained in the CUDTUnited object,
+// just track the multiple users of it (the listener and the accepted sockets).
+// When deleting, you simply "unsubscribe" yourself from the multiplexer, which
+// will unref it and remove the list element by the iterator kept by the
+// socket.
 void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    CGuard cg(m_ControlLock);
@@ -3041,8 +3047,6 @@ int getlasterror_errno()
 // Get error string of a given error code
 const char* geterror_desc(int code, int err)
 {
-   // static CUDTException e; //>>Need something better than static here.
-   // Yeah, of course. Here you are:
    CUDTException e (CodeMajor(code/1000), CodeMinor(code%1000), err);
    return(e.getErrorMessage());
 }

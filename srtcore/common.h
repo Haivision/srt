@@ -104,7 +104,7 @@ enum UDTMessageType
 
 // This side's role is: INITIATOR prepares the environment first, and sends
 // appropriate information to the peer. The peer must be RESPONDER and be ready
-// to receive it.  It's important for the encryption: the INITIATOR side generates
+// to receive it. It's important for the encryption: the INITIATOR side generates
 // the KM, and sends it to RESPONDER. RESPONDER awaits KM received from the
 // INITIATOR. Note that in bidirectional mode - that is always with HSv5 - the
 // INITIATOR creates both sending and receiving contexts, then sends the key to
@@ -113,18 +113,19 @@ enum UDTMessageType
 //
 // The method of selection:
 //
-// In HSv4, it's always data sender INITIATOR, and receiver - RESPONDER. The HSREQ
-// and KMREQ are done AFTER the UDT connection is done using UMSG_EXT extension
-// messages. As this is unidirectional, the INITIATOR prepares the sending context
-// only, the RESPONDER - receiving context only.
+// In HSv4, it's always data sender (the party that sets SRTO_SENDER flag on the
+// socket) INITIATOR, and receiver - RESPONDER. The HSREQ and KMREQ are done
+// AFTER the UDT connection is done using UMSG_EXT extension messages. As this
+// is unidirectional, the INITIATOR prepares the sending context only, the
+// RESPONDER - receiving context only.
 //
 // In HSv5, for caller-listener configuration, it's simple: caller is INITIATOR,
 // listener is RESPONDER. In case of rendezvous the parties are equivalent,
 // so the role is resolved by "cookie contest". Rendezvous sockets both know
 // each other's cookie generated during the URQ_WAVEAHAND handshake phase.
-// The cookies are simply compared as integer numbers; the party that has baked
-// a bigger cookie wins, and becomes a INITIATOR. The other loses and becomes an
-// RESPONDER.
+// The cookies are simply compared as integer numbers; the party which's cookie
+// is a greater number becomes an INITIATOR, and the other party becomes a
+// RESPONDER. 
 //
 // The case of a draw - that both occasionally have baked identical cookies -
 // is treated as an extremely rare and virtually impossible case, so this
@@ -144,18 +145,18 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt = 0);
 // Commonly used by various reading facilities
 enum EReadStatus
 {
-    RST_OK = 0,      // A new portion of data has been received
-    RST_AGAIN,       // Nothing has been received, try again
-    RST_ERROR = -1   // Irrecoverable error, please close descriptor and stop reading.
+    RST_OK = 0,      //< A new portion of data has been received
+    RST_AGAIN,       //< Nothing has been received, try again
+    RST_ERROR = -1   //< Irrecoverable error, please close descriptor and stop reading.
 };
 
 enum EConnectStatus
 {
-    CONN_ACCEPT = 0,     // Received final handshake that confirms connection established
-    CONN_REJECT = -1,    // Error during processing handshake.
-    CONN_CONTINUE = 1,   // induction->conclusion phase
-    CONN_RENDEZVOUS = 2, // pass to a separate rendezvous processing (HSv5 only)
-    CONN_AGAIN = -2      // No data was read, don't change any state.
+    CONN_ACCEPT = 0,     //< Received final handshake that confirms connection established
+    CONN_REJECT = -1,    //< Error during processing handshake.
+    CONN_CONTINUE = 1,   //< induction->conclusion phase
+    CONN_RENDEZVOUS = 2, //< pass to a separate rendezvous processing (HSv5 only)
+    CONN_AGAIN = -2      //< No data was read, don't change any state.
 };
 
 std::string ConnectStatusStr(EConnectStatus est);
@@ -167,13 +168,13 @@ const int64_t BW_INFINITE =  30000000/8;         //Infinite=> 30Mbps
 enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
-    TEV_ACK,        // --> CCC:onAck()
+    TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
     TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::RTT().
-    TEV_LOSSREPORT, // --> CCC::onLoss()
+    TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
-    TEV_SEND,       // --> CCC::onPktSent
-    TEV_RECEIVE,    // --> CCC::onPktReceived
-    TEV_CUSTOM,      // --> CCC::processCustomMsg, but probably dead call
+    TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
+    TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
+    TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
 
     TEV__SIZE
 };
@@ -311,7 +312,7 @@ class EventArgType;
 
 
 // The 'type' field wouldn't be even necessary if we
-// could use any method of extracting 'type' from 'type U::*' expression.
+
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
     typedef CPacket* type;
@@ -336,14 +337,16 @@ template<> struct EventVariant::VariantFor<EventVariant::INIT>
     static type U::*field() { return &U::init; }
 };
 
-// Sigh. The code must be C++03, C++11 and C++17 compliant.
-// There's std::mem_fun in C++03, but it's deprecated in C++11 and removed in
-// C++17.  There's std::function and std::bind, but only since C++11. No way to
-// define it any compatible way.  There were already problems with ref_t and
-// unique_ptr/auto_ptr, for which custom classes were needed.
+// Using a hand-crafted solution because there's a non-backward-compatible
+// change between C++03 and others on the way up to C++17 (and we want this
+// code to be compliant with all C++ standards):
+//
+// - there's std::mem_fun in C++03 - deprecated in C++11, removed in C++17
+// - std::function in C++11 would be perfect, but not in C++03
 
 // This can be changed in future to use C++11 way, but only after C++03
-// compatibility is finally abaondoned. Until then, this stays with a custom class.
+// compatibility is finally abaondoned. Until then, this stays with a custom
+// class.
 
 class EventSlotBase
 {
@@ -439,12 +442,12 @@ public:
 public:
 
       /// Sleep for "interval" CCs.
-      /// @param interval [in] CCs to sleep.
+      /// @param [in] interval CCs to sleep.
 
    void sleep(uint64_t interval);
 
       /// Seelp until CC "nexttime".
-      /// @param nexttime [in] next time the caller is waken up.
+      /// @param [in] nexttime next time the caller is waken up.
 
    void sleepto(uint64_t nexttime);
 
@@ -459,7 +462,7 @@ public:
 public:
 
       /// Read the CPU clock cycle into x.
-      /// @param x [out] to record cpu clock cycles.
+      /// @param [out] x to record cpu clock cycles.
 
    static void rdtsc(uint64_t &x);
 

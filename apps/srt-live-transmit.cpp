@@ -46,7 +46,8 @@
 //   option is SRTO_RCVSYN, which makes connect/accept call asynchronous.
 //   Because of that this option is treated special way in this app.
 //
-// See 'srt_options' global variable for a list of all options.
+// See 'srt_options' global variable (common/socketoptions.hpp) for a list of
+// all options.
 
 // MSVS likes to complain about lots of standard C functions being unsafe.
 #ifdef _MSC_VER
@@ -78,7 +79,7 @@
 
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
-// use <haisrt/srt.h>
+// use <srt/srt.h>
 #include <srt.h>
 #include <logging.h>
 

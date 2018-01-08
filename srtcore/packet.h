@@ -70,10 +70,14 @@ modified by
 
 #ifdef WIN32
 
-// XXX This is stupid. Instead of providing this, the
-// appropriate equivalent system type on Windows should be used.
-// Then, instead of `iovec`, some portable definition should be used.
-// See the definition of WSARecvMsg for details.
+// XXX REFACTOR THIS.
+
+// Instead of providing this, the appropriate equivalent system type on Windows
+// should be used. Then, instead of `iovec`, some portable definition should
+// be used. See the definition of WSARecvMsg for details.
+
+// Note that iovec is part of CPacket definition, so the common type name should
+// be used there. Fortunately, the Windows definition differs only by field names.
 
    struct iovec
    {
@@ -255,7 +259,7 @@ public:
    int32_t getAckSeqNo() const;
    uint16_t getControlFlags() const;
 
-   // Note: this will return a stupid value, if the packet
+   // Note: this will return a "singular" value, if the packet
    // contains the control message
    int32_t getSeqNo() const
    {

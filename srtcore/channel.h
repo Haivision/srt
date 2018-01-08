@@ -83,12 +83,12 @@ public:
    ~CChannel();
 
       /// Open a UDP channel.
-      /// @param addr [in] The local address that UDP will use.
+      /// @param [in] addr The local address that UDP will use.
 
    void open(const sockaddr* addr = NULL);
 
       /// Open a UDP channel based on an existing UDP socket.
-      /// @param udpsock [in] UDP socket descriptor.
+      /// @param [in] udpsock UDP socket descriptor.
 
    void attach(UDPSOCKET udpsock);
 
@@ -107,53 +107,53 @@ public:
    int getRcvBufSize();
 
       /// Set the UDP sending buffer size.
-      /// @param size [in] expected UDP sending buffer size.
+      /// @param [in] size expected UDP sending buffer size.
 
    void setSndBufSize(int size);
 
       /// Set the UDP receiving buffer size.
-      /// @param size [in] expected UDP receiving buffer size.
+      /// @param [in] size expected UDP receiving buffer size.
 
    void setRcvBufSize(int size);
 
       /// Query the socket address that the channel is using.
-      /// @param addr [out] pointer to store the returned socket address.
+      /// @param [out] addr pointer to store the returned socket address.
 
    void getSockAddr(sockaddr* addr) const;
 
       /// Query the peer side socket address that the channel is connect to.
-      /// @param addr [out] pointer to store the returned socket address.
+      /// @param [out] addr pointer to store the returned socket address.
 
    void getPeerAddr(sockaddr* addr) const;
 
       /// Send a packet to the given address.
-      /// @param addr [in] pointer to the destination address.
-      /// @param packet [in] reference to a CPacket entity.
+      /// @param [in] addr pointer to the destination address.
+      /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data sent.
 
    int sendto(const sockaddr* addr, CPacket& packet) const;
 
       /// Receive a packet from the channel and record the source address.
-      /// @param addr [in] pointer to the source address.
-      /// @param packet [in] reference to a CPacket entity.
+      /// @param [in] addr pointer to the source address.
+      /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
    EReadStatus recvfrom(sockaddr* addr, CPacket& packet) const;
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
-      /// @param ttl [in] IP Time To Live.
+      /// @param [in] ttl IP Time To Live.
       /// @return none.
 
    void setIpTTL(int ttl);
 
       /// Set the IP Type of Service.
-      /// @param tos [in] IP Type of Service.
+      /// @param [in] tos IP Type of Service.
 
    void setIpToS(int tos);
 
       /// Get the IP TTL.
-      /// @param ttl [in] IP Time To Live.
+      /// @param [in] ttl IP Time To Live.
       /// @return TTL.
 
    int getIpTTL() const;

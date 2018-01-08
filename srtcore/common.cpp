@@ -306,7 +306,6 @@ void CTimer::sleep()
 }
 
 
-//
 // Automatically lock in constructor
 CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
     m_Mutex(lock),
@@ -875,8 +874,13 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         time_t t = tv.tv_sec;
         struct tm tm = LocalTime(t);
 
-        // Looxlike The %T is nonstandard and Windows
-        // uses %X here. And "excepts" when using %T.
+        // Nice to have %T as "standard time format" for logs,
+        // but it's Single Unix Specification and doesn't exist
+        // on Windows. Use %X on Windows (it's described as
+        // current time without date according to locale spec).
+        //
+        // XXX Consider using %X everywhere, as it should work
+        // on both systems.
 #ifdef WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
 #else

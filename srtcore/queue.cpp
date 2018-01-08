@@ -1255,8 +1255,8 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
             // drop the connection request. The only user process that is connected
             // to it is accept() call (or connect() in case of rendezvous), but
             // the system cannot return an error from accept() just because some
-            // user was attempting to connect, but was too stupid to properly
-            // formulate the connection request.
+            // user was attempting to connect, but formulated the connection
+            // request incorrectly.
 
             // The only thing that could be done in case when the "listen" call
             // fails, is to probably send a short information packet (once; it's

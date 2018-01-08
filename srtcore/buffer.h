@@ -265,22 +265,22 @@ public:
    int getRcvDataSize() const;
 
       /// Query how many data was received and acknowledged.
-      /// @param bytes [out] bytes
-      /// @param spantime [out] spantime
+      /// @param [out] bytes bytes
+      /// @param [out] spantime spantime
       /// @return size in pkts of acked data.
 
    int getRcvDataSize(int &bytes, int &spantime);
 #if SRT_ENABLE_RCVBUFSZ_MAVG
 
       /// Query a 1 sec moving average of how many data was received and acknowledged.
-      /// @param bytes [out] bytes
-      /// @param spantime [out] spantime
+      /// @param [out] bytes bytes
+      /// @param [out] spantime spantime
       /// @return size in pkts of acked data.
 
    int getRcvAvgDataSize(int &bytes, int &spantime);
 
       /// Query how many data of the receive buffer is acknowledged.
-      /// @param now [in] current time in us.
+      /// @param [in] now current time in us.
       /// @return none.
 
    void updRcvAvgDataSize(uint64_t now);
@@ -313,27 +313,10 @@ public:
 
    int readMsg(char* data, int len, ref_t<SRT_MSGCTRL> mctrl);
 
-      /// Query how many messages are available now.
-      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
-      /// @return number of messages available for recvmsg.
-
-      // XXX This seems to be a little bit kind-of dissonance
-      // between the intended code and the reality. This function
-      // had to return the number of messages available for processing.
-      // However it turned out that actually:
-      //  - no one is interested with how many messages are available
-      //  - stating that "none" or "any" suffices for all cases
-      //  - so getRcvMsgNum has more-less always the same definition as below
-      // Which means that there's no difference between
-      // (getRcvMsgNum() > 0) and (isRcvDataReady()) expression.
-      // These functions are now blocked as it doesn't make sense completely.
-
-      // int getRcvMsgNum(uint64_t& tsbpdtime) { return isRcvDataReady(tsbpdtime)? 1 : 0; }
-      // int getRcvMsgNum() { return isRcvDataReady()? 1 : 0; }
-
       /// Query if data is ready to read (tsbpdtime <= now if TsbPD is active).
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       ///                        of next packet in recv buffer, ready or not.
+      /// @param [out] curpktseq Sequence number of the packet if there is one ready to play
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
@@ -355,6 +338,7 @@ public:
 
       /// Add packet timestamp for drift caclculation and compensation
       /// @param [in] timestamp packet time stamp
+      /// @param [ref] lock Mutex that should be locked for the operation
 
    void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
 
@@ -365,9 +349,9 @@ public:
 
       /// Get information on the 1st message in queue.
       // Parameters (of the 1st packet queue, ready to play or not):
-      /// @param tsbpdtime [out] localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
-      /// @param passack [out] true if 1st ready packet is not yet acknowleged
-      /// @param skipseqno [out] -1 or seq number of 1st unacknowledged pkt ready to play preceeded by missing packets.
+      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
+      /// @param [out] passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
+      /// @param [out] skipseqno -1 or seq number of 1st unacknowledged pkt ready to play preceeded by missing packets.
       /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
       /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
       ///                   IF skipseqno != -1, packet ready to play preceeded by missing packets.;
@@ -377,7 +361,7 @@ public:
    bool getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> curpktseq);
 
       /// Update the ACK point of the buffer.
-      /// @param len [in] size of data to be skip & acknowledged.
+      /// @param [in] len size of data to be skip & acknowledged.
 
    void skipData(int len);
 
@@ -385,7 +369,7 @@ public:
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
       // Parameters (of the 1st packet queue, ready to play or not):
-      /// @param tsbpdtime [out] localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
+      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
       /// @retval true 1st packet ready to play without discontinuity (no hole)
       /// @retval false tsbpdtime = 0: no packet ready to play
 
@@ -393,7 +377,7 @@ private:
    bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
 
       /// Get packet delivery local time base (adjusted for wrap around)
-      /// @param timestamp [in] packet timestamp (relative to peer StartTime), wrapping around every ~72 min
+      /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
 
    uint64_t getTsbPdTimeBase(uint32_t timestamp);
@@ -407,7 +391,7 @@ public:
 private:
 
    /// thread safe bytes counter
-   /// @param bytes [in] number of bytes added/delete (if negative) to/from rcv buffer.
+   /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.
    // XXX Please document.
 
    void countBytes(int pkts, int bytes, bool acked = false);

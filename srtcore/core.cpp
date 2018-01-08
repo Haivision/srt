@@ -317,7 +317,7 @@ CUDT::CUDT(const CUDT& ancestor)
 
    m_pCache = ancestor.m_pCache;
 
-   // Smoother's copy constructur copies the selection,
+   // Smoother's copy constructor copies the selection,
    // but not the underlying smoother object. After
    // copy-constructed, the 'configure' must be called on it again.
    m_Smoother = ancestor.m_Smoother;
@@ -696,7 +696,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       case SRTT_LIVE:
           // Default live options:
           // - tsbpd: on
-          // - latency: 125ms
+          // - latency: 120ms
           // - smoother: live
           // - extraction method: message (reading call extracts one message)
           m_bOPT_TsbPd = true;
@@ -1608,8 +1608,13 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     if (have_smoother)
     {
         // Pass the smoother to the other side as informational.
-        // The other side should rejeect connection if it uses a different smoother.
+        // The other side should reject connection if it uses a different smoother.
         // The other side should also respond with the smoother it uses, if its non-default (for backward compatibility).
+
+        // XXX Consider change the smoother settings in the listener socket to "adaptive"
+        // smoother and also "adaptive" value of CUDT::m_bMessageAPI so that the caller
+        // may ask for whatever kind of transmission it wants, or select transmission
+        // type differently for different connections, however with the same listener.
 
         offset += ra_size;
         pcmdspec = p+offset;
@@ -2737,12 +2742,12 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // turned into conclusion, but was sending still the original
             // induction handshake challenge message. It was working only
             // thanks to that simultaneously there were being sent handshake
-            // messages from a separate thread (CSndQueue::worker) from - weird
-            // as it's used in this mode - RendezvousQueue, this time
-            // serialized properly, which caused that with blocking mode there
-            // was a kinda initial "drunk passenger with taxi driver talk"
-            // until the RendezvousQueue sends (when "the time comes") the
-            // right CONCLUSION handshake challenge.
+            // messages from a separate thread (CSndQueue::worker) from
+            // RendezvousQueue, this time serialized properly, which caused
+            // that with blocking mode there was a kinda initial "drunk
+            // passenger with taxi driver talk" until the RendezvousQueue sends
+            // (when "the time comes") the right CONCLUSION handshake
+            // challenge message.
             //
             // Now that this is fixed, the handshake messages from RendezvousQueue
             // are sent only when there is a rendezvous mode or non-blocking mode.
@@ -2810,8 +2815,8 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
 
 bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr)
 {
-    // Ok, LISTEN UP!
-    //
+    // IMPORTANT!
+
     // This function is called, still asynchronously, but in the order
     // of call just after the call to the above processAsyncConnectResponse.
     // This should have got the original value returned from
@@ -3104,7 +3109,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // Returned values:
     // - CONN_REJECT: there was some error when processing the response, connection should be rejected
     // - CONN_ACCEPT: the handshake is done and finished correctly
-    // - CONN_CONTINUE: the induction handshake has been processed correctly, it's expected CONCLUSION handshake
+    // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
    if (!m_bConnecting)
       return CONN_REJECT;
@@ -4653,7 +4658,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     //   such number of data will be then written out, and this function
     //   will effectively return either -1 (error) or the value of 'len'.
     //   This call will be also rejected from upside when trying to send
-    //   out a message of lengh that exceeds the total size of sending
+    //   out a message of a length that exceeds the total size of the sending
     //   buffer (configurable by SRTO_SNDBUF).
 
     if (m_bMessageAPI && len > int(m_iSndBufSize * m_iMaxSRTPayloadSize))
@@ -4731,6 +4736,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 throw CUDTException(MJ_PEERERROR);
             }
         }
+
         /* 
          * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
          * If no free buffer available in non-blocking mode, we alredy returned. If buffer availaible,
@@ -4986,17 +4992,10 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         }
 
         /* XXX DEBUG STUFF - enable when required
-           char charbool[2] = {'0', '1'};
-           char ptrn [] = "RECVMSG/GO-ON BROKEN 1 CONN 1 CLOSING 1 TMOUT 1 NMSG                                ";
-           int pos [] = {21, 28, 38, 46, 53};
-           ptrn[pos[0]] = charbool[m_bBroken];
-           ptrn[pos[1]] = charbool[m_bConnected];
-           ptrn[pos[2]] = charbool[m_bClosing];
-           ptrn[pos[3]] = charbool[timeout];
-           int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
-           strcpy(ptrn + pos[4] + wrtlen, "\n");
-           fputs(ptrn, stderr);
-        // */
+        LOGC(dlog.Debug, "RECVMSG/GO-ON BROKEN " << m_bBroken << " CONN " << m_bConnected
+                << " CLOSING " << m_bClosing << " TMOUT " << timeout
+                << " NMSG " << m_pRcvBuffer->getRcvMsgNum());
+                */
 
         res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
 
@@ -5030,16 +5029,8 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
     }
 
-    /* XXX DEBUG STUFF - enable when required
-       {
-       char ptrn [] = "RECVMSG/EXIT RES ? RCVTIMEOUT                ";
-       char chartribool [3] = { '-', '0', '+' };
-       int pos [] = { 17, 29 };
-       ptrn[pos[0]] = chartribool[int(res >= 0) + int(res > 0)];
-       sprintf(ptrn + pos[1], "%d\n", m_iRcvTimeOut);
-       fputs(ptrn, stderr);
-       }
-    // */
+    // Unblock when required
+    //LOGC(tslog.Debug, "RECVMSG/EXIT RES " << res << " RCVTIMEOUT");
 
     if ((res <= 0) && (m_iRcvTimeOut >= 0))
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
@@ -5841,13 +5832,13 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       else if (ack == m_iRcvLastAck)
       {
          // If the ACK was just sent already AND elapsed time did not exceed RTT, 
-         if ((currtime_tk - m_ullLastAckTime_tk) < ((m_iRTT + 4 * m_iRTTVar) * m_ullCPUFrequency)) 
+         if ((currtime_tk - m_ullLastAckTime_tk) < ((m_iRTT + 4 * m_iRTTVar) * m_ullCPUFrequency))
          {
             CGuard::leaveCS(m_AckLock);
             break;
          }
       }
-      else 
+      else
       {
          // Not possible (m_iRcvCurrSeqNo+1 < m_iRcvLastAck ?)
          CGuard::leaveCS(m_AckLock);
@@ -5863,8 +5854,11 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          // also known as ACKD_TOTAL_SIZE_VER100. 
          int32_t data[ACKD_TOTAL_SIZE];
 
-         // Pay no attention to this stupidity. CAckNo::incack does exactly
-         // the same thing as CSeqNo::incseq - and it wouldn't work otherwise.
+         // Case you care, CAckNo::incack does exactly the same thing as
+         // CSeqNo::incseq. Logically the ACK number is a different thing
+         // than sequence number (it's a "journal" for ACK request-response,
+         // and starts from 0, unlike sequence, which starts from a random
+         // number), but still the numbers are from exactly the same domain.
          m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
          data[ACKD_RCVLASTACK] = m_iRcvLastAck;
          data[ACKD_RTT] = m_iRTT;
@@ -6773,9 +6767,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       m_ullTraceBytesRetrans += payload;
       m_ullBytesRetransTotal += payload;
 
-      //*
-
-      // Alright, gr8. Despite the contextual interpretation of packet.m_iMsgNo around
+      // Kinda confusion here. Despite the contextual interpretation of packet.m_iMsgNo around
       // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
       // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
       // So, set here the rexmit flag if the peer understands it.
@@ -6783,7 +6775,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       {
           packet.m_iMsgNo |= PACKET_SND_REXMIT;
       }
-      // */
       reason = "reXmit";
    }
    else
@@ -7703,7 +7694,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
            LOGF(mglog.Error, "UU:newConnection: rsp(REJECT): %d", URQ_ERROR_REJECT);
        }
 
-       // XXX developer disorder warning!
+       // CONFUSION WARNING!
        //
        // The newConnection() will call acceptAndRespond() if the processing
        // was successful - IN WHICH CASE THIS PROCEDURE SHOULD DO NOTHING.
@@ -7959,7 +7950,8 @@ void CUDT::checkTimers()
             // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
             // there's no "blind rexmit" done at all. The only other rexmit method
             // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
-            // again after it didn't get a "response" for the previous one).
+            // again after it didn't get a "response" for the previous one). MIND that
+            // probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
             &&  !m_bPeerNakReport
             &&  m_pSndBuffer->getCurrBufSize() > 0)
     {

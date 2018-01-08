@@ -1122,8 +1122,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 /*
 * Return receivable data status (packet timestamp ready to play if TsbPd mode)
 * Return playtime (tsbpdtime) of 1st packet in queue, ready to play or not
-*/
-/* 
+*
 * Return data ready to be received (packet timestamp ready to play if TsbPd mode)
 * Using getRcvDataSize() to know if there is something to read as it was widely
 * used in the code (core.cpp) is expensive in TsbPD mode, hence this simpler function
@@ -1403,7 +1402,7 @@ int CRcvBuffer::setRcvTsbPdMode(uint64_t timebase, uint32_t delay)
     //
     // This function is called in the HSREQ reception handler only.
     m_ullTsbPdTimeBase = timebase;
-    // XXX Note that this is completely wrong.
+    // XXX Seems like this may not work correctly.
     // At least this solution this way won't work with application-supplied
     // timestamps. For that case the timestamps should be taken exclusively
     // from the data packets because in case of application-supplied timestamps
