@@ -40,17 +40,18 @@ elseif (ENABLE_DEBUG)
 endif()
 
 # option defaults
-if (ENV{SRT_LOGGING_ENABLED})
+#if (ENV{SRT_LOGGING_ENABLED})
 	set(ENABLE_LOGGING_DEFAULT ON)
-else()
+#else()
 	set(ENABLE_LOGGING_DEFAULT OFF)
-endif()
+#endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
+option(ENABLE_HEAVY_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
@@ -60,6 +61,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
 	set(ENABLE_LOGGING ON)
+	set(ENABLE_HEAVY_LOGGING ON)
 endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
@@ -243,6 +245,9 @@ include_directories(${SRT_INCLUDE_DIR})
 
 if (ENABLE_LOGGING)
     list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
+	if (ENABLE_HEAVY_LOGGING)
+		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
+	endif()
 endif()
 
 if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
@@ -457,6 +462,8 @@ endif()
 # ---
 # That's all for target definition
 # ---
+
+join_arguments(SRT_EXTRA_CFLAGS ${SRT_EXTRA_CFLAGS})
 
 message(STATUS "Target haicrypt: TYPE:${haicrypt_libspec} ACTUAL TARGET: ${TARGET_haicrypt} HEADERS: {${HEADERS_haicrypt}}")
 message(STATUS "Target srt: TYPE:${srt_libspec} SOURCES: {${SOURCES_srt}} DEPENDS: {${DEPENDS_srt}} HEADERS: {${HEADERS_srt}}")
