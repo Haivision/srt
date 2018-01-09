@@ -522,8 +522,8 @@ if ( ENABLE_CXX11 )
 	# XXX This fix was never necessary, srt_compat.c is
 	# included in the SRT library. This was motivated by some error report
 	# from some CI system, so leaving the commented-out parts for historical reasons.
-    # Please remove it completely once 1.3.0 version is released.
-	
+	# Please remove it completely once 1.3.0 version is released.
+
 	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
 	# This should result in exactly the same as when it was compiled as C, with the
 	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
@@ -539,7 +539,7 @@ if ( ENABLE_CXX11 )
 		${SOURCES_transmit}
 	)
 
-# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
+	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
 	if (NOT WIN32)
 	add_executable(srt-file-transmit
 		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-file-transmit.cpp
