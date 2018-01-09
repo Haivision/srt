@@ -40,11 +40,10 @@ elseif (ENABLE_DEBUG)
 endif()
 
 # option defaults
-#if (ENV{SRT_LOGGING_ENABLED})
-	set(ENABLE_LOGGING_DEFAULT ON)
-#else()
-	set(ENABLE_LOGGING_DEFAULT OFF)
-#endif()
+# XXX CHANGE: Logging is enabled now by default,
+# use ENABLE_LOGGING=NO in cmake or
+# --disable-logging in configure.
+set(ENABLE_LOGGING_DEFAULT ON)
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
