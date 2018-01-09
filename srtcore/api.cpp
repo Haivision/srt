@@ -500,8 +500,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    if (error > 0)
    {
 #if ENABLE_LOGGING
-       static const char* why = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
-       LOGC(mglog.Debug, log << CONID() << "newConnection: connection rejected due to: " << why[error]);
+       static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
+       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
       ns->m_pUDT->close();
       ns->m_Status = SRTS_CLOSED;
