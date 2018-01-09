@@ -280,6 +280,10 @@ proc postprocess {} {
 		set have_gnutls 0
 	}
 
+	if { $have_gnutls } {
+		lappend ::cmakeopt "-DUSE_GNUTLS=ON"
+	}
+
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
@@ -366,6 +370,7 @@ proc postprocess {} {
 	if { $::HAVE_DARWIN } {
 
 		if { $have_gnutls } {
+			# Use gnutls explicitly, as found in brew
 			set er [catch {exec brew info gnutls} res]
 			if { $er } {
 				error "Cannot find gnutls in brew"
