@@ -93,6 +93,10 @@ written by
 #define LOGF(...)
 #define LOGP(...)
 
+#define HLOGC(...)
+#define HLOGF(...)
+#define HLOGP(...)
+
 #endif
 
 namespace logging
