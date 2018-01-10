@@ -82,9 +82,24 @@ written by
 // -------------- UTILITIES ------------------------
 
 // Bit numbering utility.
-// Usage: Bits<leftmost, rightmost>
 //
-// You can use it as a typedef (say, "MASKTYPE") and then use the following members:
+// This is something that allows you to turn 32-bit integers into bit fields.
+// Although bitfields are part of C++ language, they are not designed to be
+// interchanged with 32-bit numbers, and any attempt to doing it (by placing
+// inside a union, for example) is nonportable (order of bitfields inside
+// same-covering 32-bit integer number is dependent on the endian), so they are
+// popularly disregarded as useless. Instead the 32-bit numbers with bits
+// individually selected is preferred, with usually manual playing around with
+// & and | operators, as well as << and >>. This tool is designed to simplify
+// the use of them. This can be used to qualify a range of bits inside a 32-bit
+// number to be a separate number, you can "wrap" it by placing the integer
+// value in the range of these bits, as well as "unwrap" (extract) it from
+// the given place. For your own safety, use one prefix to all constants that
+// concern bit ranges intended to be inside the same "bit container".
+//
+// Usage: typedef Bits<leftmost, rightmost> MASKTYPE;  // MASKTYPE is a name of your choice.
+//
+// With this defined, you can use the following members:
 // - MASKTYPE::mask - to get the int32_t value with bimask (used bits set to 1, others to 0)
 // - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
 // - MASKTYPE::wrap(int value) - to create a bitset where given value is encoded in given bits
@@ -495,7 +510,7 @@ public:
     //
     // IMPORTANT: drift() can be called at any time, just remember
     // that this value may look different than before only if the
-    // last update() return true, which need not be important for you.
+    // last update() returned true, which need not be important for you.
     //
     // CASE: CLEAR_ON_UPDATE = true
     // overdrift() should be read only immediately after update() returned

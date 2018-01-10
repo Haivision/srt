@@ -737,9 +737,9 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
         return result;
 
     int yes = 1;
-    // This is for the HSv4 compatibility, if both parties are HSv5
+    // This is for the HSv4 compatibility; if both parties are HSv5
     // (min. version 1.2.1), then this setting simply does nothing.
-    // In HSv4 this setting is obligatory otherwise the SRT handshake
+    // In HSv4 this setting is obligatory; otherwise the SRT handshake
     // extension will not be done at all.
     result = srt_setsockopt(sock, 0, SRTO_SENDER, &yes, sizeof yes);
     if ( result == -1 )
@@ -1013,8 +1013,8 @@ protected:
             attr.erase("adapter");
         }
 
-        // The "ttl" options is handled separately, it maps to either IP_TTL
-        // or IP_MULTICAST_TTL, depending on whether the address is sc or mc.
+        // The "ttl" options is handled separately, it maps to both IP_TTL
+        // and IP_MULTICAST_TTL so that TTL setting works for both uni- and multicast.
         if (attr.count("ttl"))
         {
             int ttl = stoi(attr.at("ttl"));

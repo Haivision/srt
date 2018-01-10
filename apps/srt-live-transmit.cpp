@@ -46,7 +46,8 @@
 //   option is SRTO_RCVSYN, which makes connect/accept call asynchronous.
 //   Because of that this option is treated special way in this app.
 //
-// See 'srt_options' global variable for a list of all options.
+// See 'srt_options' global variable (common/socketoptions.hpp) for a list of
+// all options.
 
 // MSVS likes to complain about lots of standard C functions being unsafe.
 #ifdef _MSC_VER
@@ -78,7 +79,7 @@
 
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
-// use <haisrt/srt.h>
+// use <srt/srt.h>
 #include <srt.h>
 #include <logging.h>
 
@@ -264,21 +265,30 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    size_t bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"), 0, 0);
-    transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"), 0, 0);
     transmit_verbose = Option("no", "v", "verbose") != "no";
     bool crashonx = Option("no", "k", "crash") != "no";
-
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");
     string logfile = Option("", "logfile");
-    transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"), 0, 0);
-
     bool internal_log = Option("no", "loginternal") != "no";
-
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
 
-    size_t stoptime = stoul(Option("0", "d", "stoptime"), 0, 0);
+    // Options that require integer conversion
+    size_t bandwidth;
+    size_t stoptime;
+
+    try
+    {
+        bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
+        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
+        transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
+        stoptime = stoul(Option("0", "d", "stoptime"));
+    }
+    catch (std::invalid_argument)
+    {
+        cerr << "ERROR: Incorrect integer number specified for an option.\n";
+        return 1;
+    }
 
     std::ofstream logfile_stream; // leave unused if not set
 
@@ -327,16 +337,16 @@ int main( int argc, char** argv )
     signal(SIGINT, OnINT_ForceExit);
     signal(SIGTERM, OnINT_ForceExit);
 
-    if (stoptime < 10)
-    {
-        cerr << "ERROR: -stoptime (-d) must be at least 10 seconds\n";
-        return 1;
-    }
     time_t start_time { time(0) };
     time_t end_time { -1 };
 
     if (stoptime != 0)
     {
+        if (stoptime < 10)
+        {
+            cerr << "ERROR: -stoptime (-d) must be at least 10 seconds\n";
+            return 1;
+        }
         alarm(stoptime);
         cerr << "STOPTIME: will interrupt after " << stoptime << "s\n";
         if (timeout != 30)
