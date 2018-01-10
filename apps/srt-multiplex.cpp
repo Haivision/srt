@@ -37,7 +37,7 @@ using namespace std;
 const size_t DEFAULT_CHUNK = 1316;
 
 const logging::LogFA SRT_LOGFA_APP = 10;
-logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "siplex");
+logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
@@ -416,8 +416,8 @@ void Help(string program)
 "interperted by the application and used to set resource id on an SRT socket when connecting\n"
 "or to match with the id extracted from the accepted socket of incoming connection.\n"
 "Example:\n"
-"\tSender:    siplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high\n"
-"\tReceiver:  siplex srt://:2000 -o output-high.ts?id=high output-low.ts?id=low\n"
+"\tSender:    srt-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high\n"
+"\tReceiver:  srt-multiplex srt://:2000 -o output-high.ts?id=high output-low.ts?id=low\n"
 "\nHere you create a Sender which will connect to 'remhost' port 2000 using multiple SRT\n"
 "sockets, all of which will be using the same outgoing port. Here the port is autoselected\n"
 "by the first socket when connecting, every next one will reuse that port. Alternatively you\n"
@@ -425,8 +425,8 @@ void Help(string program)
 "Then for every input resource a separate connection is made and appropriate resource id\n"
 "will be set to particular socket assigned to that resource according to the 'id' parameter.\n"
 "When the listener side (here Receiver) gets the socket accepted, it will have the resource\n"
-"id set just as the caller side did, in which case siplex will search for this id among the\n"
-"registered resources and match the resource (output here) with this id. If the resource is\n"
+"id set just as the caller side did, in which case srt-multiplex will search for this id among\n"
+"the registered resources and match the resource (output here) with this id. If the resource is\n"
 "not found, the connection is closed immediately. This works the same way regardless of which\n"
 "direction is used by caller or listener\n";
 
@@ -455,9 +455,6 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    //vector<string> args;
-    //copy(argv+1, argv+argc, back_inserter(args));
-
     // Check options
     vector<OptionScheme> optargs = {
         { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
@@ -468,7 +465,7 @@ int main( int argc, char** argv )
 
     // The call syntax is:
     //
-    //      siplex <SRT URI> -o/-i ARGS...
+    //      srt-multiplex <SRT URI> -o/-i ARGS...
     //
     // SRT URI should contain:
     // srt://[host]:port?mode=MODE&adapter=ADAPTER&port=PORT&otherparameters...

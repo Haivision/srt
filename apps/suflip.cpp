@@ -54,7 +54,7 @@ struct InitializeMe
         copy(false_names_i, false_names_i+4, inserter(false_names, false_names.begin()));
     }
 
-} g_moron;
+} g_initialize_names;
 
 bool verbose = false;
 volatile bool throw_on_interrupt = false;
