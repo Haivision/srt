@@ -499,12 +499,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_MAXBW:
         m_llMaxBW = *(int64_t*)optval;
 
-        LOGC(mglog.Debug, log << "OPTION:SRTO_MAXBW set to " << m_llMaxBW << " - calling updateCC TEV_INIT RESET");
-
         // This can be done on both connected and unconnected socket.
         // When not connected, this will do nothing, however this
         // event will be repeated just after connecting anyway.
-        updateCC(TEV_INIT, TEV_INIT_RESET);
+        if (m_bConnected)
+            updateCC(TEV_INIT, TEV_INIT_RESET);
         break;
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -526,7 +525,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_INPUTBW:
         m_llInputBW = *(int64_t*)optval;
-        updateCC(TEV_INIT, TEV_INIT_INPUTBW);
+        // (only if connected; if not, then the value
+        // from m_iOverheadBW will be used initially)
+        if (m_bConnected)
+            updateCC(TEV_INIT, TEV_INIT_INPUTBW);
         break;
 
     case SRTO_OHEADBW:
@@ -536,7 +538,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iOverheadBW = *(int*)optval;
 
         // Changed overhead BW, so spread the change
-        updateCC(TEV_INIT, TEV_INIT_OHEADBW);
+        // (only if connected; if not, then the value
+        // from m_iOverheadBW will be used initially)
+        if (m_bConnected)
+            updateCC(TEV_INIT, TEV_INIT_OHEADBW);
         break;
 
     case SRTO_SENDER:
