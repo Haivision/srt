@@ -51,7 +51,7 @@ public:
 
     ThreadName(const char* name)
     {
-        if ( get(old_name) )
+        if ( (good = get(old_name)) )
         {
             snprintf(new_name, 127, "%s", name);
             new_name[127] = 0;
