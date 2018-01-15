@@ -49,7 +49,7 @@ public:
     }
 
 
-    ThreadName(const char* name)
+    ThreadName(const char* name): good()
     {
         if ( get(old_name) )
         {
