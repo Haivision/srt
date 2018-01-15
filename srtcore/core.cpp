@@ -3717,7 +3717,7 @@ void* CUDT::tsbpd(void* param)
 {
    CUDT* self = (CUDT*)param;
 
-   THREAD_STATE_INIT("SRT Packet Delivery");
+   THREAD_STATE_INIT("SRT:TsbPd");
 
    CGuard::enterCS(self->m_RecvLock);
    self->m_bTsbPdAckWakeup = true;
