@@ -1299,6 +1299,10 @@ protected:
             perror("UdpCommon:socket");
             throw std::runtime_error("UdpCommon: failed to create a socket");
         }
+
+        int yes = 1;
+        ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
+
         sadr = CreateAddrInet(host, port);
 
         bool is_multicast = false;
@@ -1322,6 +1326,7 @@ protected:
             sockaddr_in maddr;
             if ( adapter == "" )
             {
+                maddr.sin_family = AF_INET;
                 maddr.sin_addr.s_addr = htonl(INADDR_ANY);
                 maddr.sin_port = htons(port); // necessary for temporary use     
             }
