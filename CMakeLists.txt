@@ -141,7 +141,7 @@ if ( USE_GNUTLS )
 else()
 	set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 
-	if (LINUX)
+	if (USE_OPENSSL_PC)
 
 		pkg_check_modules(SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
