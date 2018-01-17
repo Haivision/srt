@@ -372,11 +372,6 @@ set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
 # Not sure why it's required, but somehow only on Linux
-if ( LINUX )
-	target_link_libraries(${TARGET_srt} PUBLIC rt)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
-endif()
-
 
 target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
 if (ENABLE_SHARED)
@@ -424,7 +419,7 @@ endif()
 # Some sensible solution for that is desired. Currently turned on only on demand.
 if (ENABLE_C_DEPS)
 if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
+	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
 endif()
 endif()
 
