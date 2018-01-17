@@ -517,7 +517,7 @@ void* CSndQueue::worker(void* param)
 {
     CSndQueue* self = (CSndQueue*)param;
 
-    THREAD_STATE_INIT("SRT Tx Queue");
+    THREAD_STATE_INIT("SRT:SndQ:worker");
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
@@ -1049,7 +1049,7 @@ void* CRcvQueue::worker(void* param)
    sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
    int32_t id;
 
-   THREAD_STATE_INIT("SRT Rx Queue");
+   THREAD_STATE_INIT("SRT:RcvQ:worker");
 
    CUnit* unit = 0;
    EConnectStatus cst = CONN_AGAIN;

@@ -275,6 +275,14 @@ if (ENABLE_LOGGING)
 	endif()
 endif()
 
+if (ENABLE_THREAD_CHECK)
+      add_definitions(
+               -DSRT_ENABLE_THREADCHECK=1
+               -DFUGU_PLATFORM=1
+               -I${WITH_THREAD_CHECK_INCLUDEDIR}
+        )
+endif()
+
 if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
     # They are actually cflags, not definitions, but CMake is stupid enough.
     add_definitions(-g -pg)

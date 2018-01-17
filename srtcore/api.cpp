@@ -1804,7 +1804,7 @@ void* CUDTUnited::garbageCollect(void* p)
 {
    CUDTUnited* self = (CUDTUnited*)p;
 
-   THREAD_STATE_INIT("SRT Collector");
+   THREAD_STATE_INIT("SRT:GC");
 
    CGuard gcguard(self->m_GCStopLock);
 
