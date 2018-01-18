@@ -217,6 +217,9 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
+if (WIN32)
+list(APPEND SRT_EXTRA_CFLAGS "-fpermissive")
+endif()
 
 if (NOT MINGW)
 # find pthread

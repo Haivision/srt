@@ -68,6 +68,13 @@ modified by
 #include <set>
 #include "udt.h"
 
+#if defined(WIN32)
+typedef struct _CEPollFD {
+  SYSSOCKET fd;
+  short events;
+  short revents;
+} CEPollFD;
+#endif
 
 struct CEPollDesc
 {
@@ -77,7 +84,11 @@ struct CEPollDesc
    std::set<UDTSOCKET> m_sUDTSocksEx;        // set of UDT sockets waiting for exceptions
 
    int m_iLocalID;                           // local system epoll ID
+#if defined(WIN32)
+   std::map<SYSSOCKET, CEPollFD> m_mLocals;   // map of local (non-UDT) descriptors
+#else
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
+#endif
 
    std::set<UDTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
    std::set<UDTSOCKET> m_sUDTReads;          // UDT sockets ready for read
