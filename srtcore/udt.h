@@ -272,6 +272,12 @@ enum UDT_SOCKOPT
 /* Binary backward compatibility obsolete options */
 #define SRT_NAKREPORT   SRT_RCVNAKREPORT
 
+typedef enum SRT_SOCKFDTYPE {
+    SRTF_RECEIVER = 0, 
+    SRTF_SENDER,
+    SRTF_UNKNOWN = -1,
+} SRT_SOCKFDTYPE;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 struct CPerfMon
@@ -670,6 +676,7 @@ UDT_API int listen(UDTSOCKET u, int backlog);
 UDT_API UDTSOCKET accept(UDTSOCKET u, struct sockaddr* addr, int* addrlen);
 UDT_API int connect(UDTSOCKET u, const struct sockaddr* name, int namelen);
 UDT_API int close(UDTSOCKET u);
+UDT_API int getfd(UDTSOCKET u, SRT_SOCKFDTYPE fdtype);
 UDT_API int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockname(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockopt(UDTSOCKET u, int level, SOCKOPT optname, void* optval, int* optlen);

@@ -184,6 +184,7 @@ public:
    UDTSOCKET accept(const UDTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(const UDTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int close(const UDTSOCKET u);
+   int getfd(const UDTSOCKET u, SRT_SOCKFDTYPE fdtype);
    int getpeername(const UDTSOCKET u, sockaddr* name, int* namelen);
    int getsockname(const UDTSOCKET u, sockaddr* name, int* namelen);
    int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);

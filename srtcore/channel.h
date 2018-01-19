@@ -164,6 +164,8 @@ public:
    int getIpToS() const;
 #endif
 
+   int getFD() const;
+
 private:
    void setUDPSockOpt();
 
