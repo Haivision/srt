@@ -943,6 +943,29 @@ int CUDTUnited::close(const UDTSOCKET u)
    return 0;
 }
 
+int CUDTUnited::getfd(const UDTSOCKET u, SRT_SOCKFDTYPE fdtype)
+{
+   if (UDT_CONNECTED != getStatus(u))
+      throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+
+   CUDTSocket* s = locate(u);
+
+   if (!s)
+      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+   switch (fdtype)
+   {
+      case SRTF_RECEIVER:
+         return s->m_pUDT->m_pRcvQueue->m_pChannel->getFD();
+      case SRTF_SENDER:
+         return s->m_pUDT->m_pSndQueue->m_pChannel->getFD();
+      case SRTF_UNKNOWN:
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+   }
+
+   return -1;
+}
+
 int CUDTUnited::getpeername(const UDTSOCKET u, sockaddr* name, int* namelen)
 {
    if (UDT_CONNECTED != getStatus(u))
@@ -1929,6 +1952,27 @@ int CUDT::close(UDTSOCKET u)
    }
 }
 
+int CUDT::getfd(UDTSOCKET u, SRT_SOCKFDTYPE fdtype)
+{
+   try
+   {
+      return s_UDTUnited.getfd(u, fdtype);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal)
+         << "getfd: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what();
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
 int CUDT::getpeername(UDTSOCKET u, sockaddr* name, int* namelen)
 {
    try
@@ -2632,6 +2676,11 @@ int connect(UDTSOCKET u, const struct sockaddr* name, int namelen)
 int close(UDTSOCKET u)
 {
    return CUDT::close(u);
+}
+
+int getfd(UDTSOCKET u, SRT_SOCKFDTYPE fdtype)
+{
+   return CUDT::getfd(u, fdtype);
 }
 
 int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen)

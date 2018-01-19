@@ -167,6 +167,7 @@ SRT_API extern int srt_cleanup(void);
 
 // socket operations
 SRT_API extern SRTSOCKET srt_socket(int af, int type, int protocol);
+SRT_API extern int srt_socket_get_fd(SRTSOCKET u, SRT_SOCKFDTYPE fdtype);
 SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API extern int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API extern int srt_listen(SRTSOCKET u, int backlog);

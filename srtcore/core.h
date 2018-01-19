@@ -177,6 +177,7 @@ public: //API
    static UDTSOCKET accept(UDTSOCKET u, sockaddr* addr, int* addrlen);
    static int connect(UDTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    static int close(UDTSOCKET u);
+   static int getfd(UDTSOCKET u, SRT_SOCKFDTYPE fdtype);
    static int getpeername(UDTSOCKET u, sockaddr* name, int* namelen);
    static int getsockname(UDTSOCKET u, sockaddr* name, int* namelen);
    static int getsockopt(UDTSOCKET u, int level, UDT_SOCKOPT optname, void* optval, int* optlen);

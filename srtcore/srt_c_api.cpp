@@ -35,6 +35,7 @@ extern "C" {
 int srt_startup() { return UDT::startup(); }
 int srt_cleanup() { return UDT::cleanup(); }
 UDTSOCKET srt_socket(int af, int type, int protocol) { return UDT::socket(af, type, protocol); }
+int srt_socket_get_fd(UDTSOCKET u, SRT_SOCKFDTYPE fdtype) { return UDT::getfd(u, fdtype); }
 int srt_bind(UDTSOCKET u, const struct sockaddr * name, int namelen) { return UDT::bind(u, name, namelen); }
 int srt_bind_peerof(UDTSOCKET u, UDPSOCKET udpsock) { return UDT::bind2(u, udpsock); }
 int srt_listen(UDTSOCKET u, int backlog) { return UDT::listen(u, backlog); }

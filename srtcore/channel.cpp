@@ -478,3 +478,8 @@ Return_error:
     packet.setLength(-1);
     return -1;
 }
+
+UDPSOCKET CChannel::getFD() const
+{
+  return m_iSocket;
+}
