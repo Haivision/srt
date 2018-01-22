@@ -119,6 +119,7 @@ proc preprocess {} {
 	if { [info exists ::optval(--with-target-path)] } {
 		set ::target_path $::optval(--with-target-path)
 		unset ::optval(--with-target-path)
+		puts "NOTE: Explicit target path: $::target_path"
 	} 
 
 #	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
@@ -302,10 +303,11 @@ proc postprocess {} {
 			return no
 		}
 
-		if { ![info exists ::target_path)] } {
+		if { ![info exists ::target_path] } {
 			# Try to autodetect the target path by having the basic 3 directories.
 			set target_path ""
 			set compiler_prefix [file dirname $compiler_path] ;# strip 'bin' directory
+			puts "NOTE: no --with-target-path found, will try to autodetect at $compiler_path"
 			foreach path [list $compiler_path $compiler_prefix/$target] {
 				if { [check-target-path $path] } {
 					set target_path $path
@@ -326,9 +328,6 @@ proc postprocess {} {
 				exit 1
 			}
 			puts "NOTE: Using explicit target path: $target_path"
-
-			# Prevent --with-target-path from being translated
-			unset ::optval(--with-target-path)
 		}
 
 		# Add this for cmake, should it need for something
@@ -337,9 +336,13 @@ proc postprocess {} {
 		# Add explicitly the path for pkg-config
 		# which lib
 		if { [file isdir $target_path/lib64/pkgconfig] } {
-			set env(PKG_CONFIG_PATH) $target_path/lib64/pkgconfig
+			set ::env(PKG_CONFIG_PATH) $target_path/lib64/pkgconfig
+			puts "PKG_CONFIG_PATH: Found pkgconfig in lib64 for '$target_path' - using it"
 		} elseif { [file isdir $target_path/lib/pkgconfig] } {
-			set env(PKG_CONFIG_PATH) $target_path/lib/pkgconfig
+			set ::env(PKG_CONFIG_PATH) $target_path/lib/pkgconfig
+			puts "PKG_CONFIG_PATH: Found pkgconfig in lib for '$target_path' - using it"
+		} else {
+			puts "PKG_CONFIG_PATH: NOT changed, no pkgconfig in '$target_path'"
 		}
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
