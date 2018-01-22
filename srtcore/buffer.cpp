@@ -158,19 +158,19 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     if ((len % m_iMSS) != 0)
         size ++;
 
-    LOGC(mglog.Debug, log << "addBuffer: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for " << len << " bytes");
+    HLOGC(mglog.Debug, log << "addBuffer: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
     while (size + m_iCount >= m_iSize)
     {
-        LOGC(mglog.Debug, log << "addBuffer: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
+        HLOGC(mglog.Debug, log << "addBuffer: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
     uint64_t time = CTimer::getTime();
     int32_t inorder = order ? MSGNO_PACKET_INORDER::mask : 0;
 
-    LOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
+    HLOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
         << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
         << (inorder ? "" : " NOT") << " in order");
 
@@ -182,7 +182,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         if (pktlen > m_iMSS)
             pktlen = m_iMSS;
 
-        LOGC(dlog.Debug, log << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+        HLOGC(dlog.Debug, log << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
         memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
         s->m_iLength = pktlen;
 
@@ -260,7 +260,7 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
          m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
          m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / (time - m_InRateStartTime));
 
-         LOGF(dlog.Debug, "updInputRate: pkts:%d bytes:%d avg=%d rate=%d kbps interval=%llu\n",
+         HLOGF(dlog.Debug, "updInputRate: pkts:%d bytes:%d avg=%d rate=%d kbps interval=%llu\n",
             m_iInRateBytesCount, m_iInRatePktsCount, m_iAvgPayloadSz, (m_iInRateBps*8)/1000,
             (unsigned long long)(time - m_InRateStartTime));
 
@@ -306,16 +306,16 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    if ((len % m_iMSS) != 0)
       size ++;
 
-   LOGC(mglog.Debug, log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for " << len << " bytes");
+   HLOGC(mglog.Debug, log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for " << len << " bytes");
 
    // dynamically increase sender buffer
    while (size + m_iCount >= m_iSize)
    {
-      LOGC(mglog.Debug, log << "addBufferFromFile: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
+      HLOGC(mglog.Debug, log << "addBufferFromFile: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
       increase();
    }
 
-   LOGC(dlog.Debug, log << CONID() << "addBufferFromFile: adding "
+   HLOGC(dlog.Debug, log << CONID() << "addBufferFromFile: adding "
        << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo);
 
    Block* s = m_pLastBlock;
@@ -329,7 +329,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
       if (pktlen > m_iMSS)
          pktlen = m_iMSS;
 
-      LOGC(dlog.Debug, log << "addBufferFromFile: reading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+      HLOGC(dlog.Debug, log << "addBufferFromFile: reading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
       ifs.read(s->m_pcData, pktlen);
       if ((pktlen = int(ifs.gcount())) <= 0)
          break;
@@ -406,7 +406,7 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
 
    m_pCurrBlock = m_pCurrBlock->m_pNext;
 
-   LOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+   HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
 
    return readlen;
 }
@@ -452,7 +452,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
          msglen ++;
       }
 
-      LOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno);
+      HLOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno);
 
       // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
       // This means that in this case it should be written by the message sequence value only
@@ -476,7 +476,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
       p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
       p->m_ullOriginTime_us;
 
-   LOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]");
+   HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]");
 
    return readlen;
 }
@@ -552,7 +552,7 @@ void CSndBuffer::updAvgBufSize(uint64_t now)
       int bytescount;
       int count = getCurrBufSize(Ref(bytescount), Ref(instspan));
 
-      LOGF(dlog.Debug, "updAvgBufSize: %6llu: %6d %6d %6d ms\n",
+      HLOGF(dlog.Debug, "updAvgBufSize: %6llu: %6d %6d %6d ms\n",
               (unsigned long long)elapsed, count, bytescount, instspan);
 
       m_iCountMAvg      = (int)(((count      * (1000 - elapsed)) + (count      * elapsed)) / 1000);
@@ -668,7 +668,7 @@ void CSndBuffer::increase()
 
    m_iSize += unitsize;
 
-   LOGC(dlog.Debug, log << "CSndBuffer: BUFFER FULL - adding " << (unitsize*m_iMSS) << " bytes spread to " << unitsize << " blocks"
+   HLOGC(dlog.Debug, log << "CSndBuffer: BUFFER FULL - adding " << (unitsize*m_iMSS) << " bytes spread to " << unitsize << " blocks"
        << " (total size: " << m_iSize << " bytes)");
 
 }
@@ -812,18 +812,18 @@ int CRcvBuffer::readBuffer(char* data, int len)
    int p = m_iStartPos;
    int lastack = m_iLastAckPos;
    int rs = len;
-#if ENABLE_LOGGING
+#if ENABLE_HEAVY_LOGGING
    char* begin = data;
 #endif
 
    uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : 0LL);
 
-   LOGC(dlog.Debug, log << CONID() << "readBuffer: start=" << p << " lastack=" << lastack);
+   HLOGC(dlog.Debug, log << CONID() << "readBuffer: start=" << p << " lastack=" << lastack);
    while ((p != lastack) && (rs > 0))
    {
       if (m_bTsbPdMode)
       {
-          LOGC(dlog.Debug, log << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()));
+          HLOGC(dlog.Debug, log << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()));
           if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
               break; /* too early for this unit, return whatever was copied */
       }
@@ -832,7 +832,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
       if (unitsize > rs)
          unitsize = rs;
 
-      LOGC(dlog.Debug, log << CONID() << "readBuffer: copying buffer #" << p
+      HLOGC(dlog.Debug, log << CONID() << "readBuffer: copying buffer #" << p
           << " targetpos=" << int(data-begin) << " sourcepos=" << m_iNotch << " size=" << unitsize << " left=" << (unitsize-rs));
       memcpy(data, m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
       data += unitsize;
@@ -1082,7 +1082,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             int64_t towait = (*tsbpdtime - CTimer::getTime());
             if (towait > 0)
             {
-                LOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
                 return false;
             }
 
@@ -1093,7 +1093,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             }
             else
             {
-                LOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
                 return true;
             }
         }
@@ -1112,7 +1112,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         }
     }
 
-    LOGC(mglog.Debug, log << "getRcvReadyMsg: nothing to deliver: " << reason);
+    HLOGC(mglog.Debug, log << "getRcvReadyMsg: nothing to deliver: " << reason);
     /* removed skipped, dropped, undecryptable bytes from rcv buffer */
     countBytes(-rmpkts, -rmbytes, true);
     return false;
@@ -1215,7 +1215,7 @@ void CRcvBuffer::updRcvAvgDataSize(uint64_t now)
       m_iCountMAvg = getRcvDataSize(m_iBytesCountMAvg, m_TimespanMAvg);
       m_LastSamplingTime = now;
 
-      LOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms elapsed:%5llu ms\n", m_iCountMAvg, m_iBytesCountMAvg, m_TimespanMAvg, (unsigned long long)elapsed);
+      HLOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms elapsed:%5llu ms\n", m_iCountMAvg, m_iBytesCountMAvg, m_TimespanMAvg, (unsigned long long)elapsed);
    }
    else if ((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 <= elapsed)
    {
@@ -1235,7 +1235,7 @@ void CRcvBuffer::updRcvAvgDataSize(uint64_t now)
       m_TimespanMAvg    = (int)(((instspan   * (1000 - elapsed)) + (instspan   * elapsed)) / 1000);
       m_LastSamplingTime = now;
 
-      LOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms elapsed: %5llu ms\n", count, bytescount, instspan, (unsigned long long)elapsed);
+      HLOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms elapsed: %5llu ms\n", count, bytescount, instspan, (unsigned long long)elapsed);
    }
 }
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
@@ -1311,7 +1311,7 @@ int CRcvBuffer::getRcvDataSize(int &bytes, int &timespan)
             timespan += 1;
       }
    }
-   LOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms\n", m_iAckedPktsCount, m_iAckedBytesCount, timespan);
+   HLOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms\n", m_iAckedPktsCount, m_iAckedBytesCount, timespan);
    bytes = m_iAckedBytesCount;
    return m_iAckedPktsCount;
 }
@@ -1593,7 +1593,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             countBytes(-1, -unitsize, true);
 
 
-#if ENABLE_LOGGING
+#if ENABLE_HEAVY_LOGGING
             {
                 static uint64_t prev_now;
                 static uint64_t prev_srctime;
@@ -1608,7 +1608,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                LOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
                     "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
 
                 prev_now = nowtime;
@@ -1646,7 +1646,7 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
     // empty buffer
     if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
     {
-        LOGC(mglog.Debug, log << "scanMsg: empty buffer");
+        HLOGC(mglog.Debug, log << "scanMsg: empty buffer");
         return false;
     }
 
@@ -1791,7 +1791,7 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
             // the msg has to be ack'ed or it is allowed to read out of order, and was not read before
             if (!*passack || !m_pUnit[q]->m_Packet.getMsgOrderFlag())
             {
-                LOGC(mglog.Debug, log << "scanMsg: found next-to-broken message, delivering OUT OF ORDER.");
+                HLOGC(mglog.Debug, log << "scanMsg: found next-to-broken message, delivering OUT OF ORDER.");
                 break;
             }
 
@@ -1817,17 +1817,17 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
         // if the message is larger than the receiver buffer, return part of the message
         if ((p != -1) && ((q + 1) % m_iSize == p))
         {
-            LOGC(mglog.Debug, log << "scanMsg: BUFFER FULL and message is INCOMPLETE. Returning PARTIAL MESSAGE.");
+            HLOGC(mglog.Debug, log << "scanMsg: BUFFER FULL and message is INCOMPLETE. Returning PARTIAL MESSAGE.");
             found = true;
         }
         else
         {
-            LOGC(mglog.Debug, log << "scanMsg: PARTIAL or NO MESSAGE found: p=" << p << " q=" << q);
+            HLOGC(mglog.Debug, log << "scanMsg: PARTIAL or NO MESSAGE found: p=" << p << " q=" << q);
         }
     }
     else
     {
-        LOGC(mglog.Debug, log << "scanMsg: extracted message p=" << p << " q=" << q << " (" << ((q-p+m_iSize+1)%m_iSize) << " packets)");
+        HLOGC(mglog.Debug, log << "scanMsg: extracted message p=" << p << " q=" << q << " (" << ((q-p+m_iSize+1)%m_iSize) << " packets)");
     }
 
     return found;

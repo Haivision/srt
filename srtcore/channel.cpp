@@ -180,7 +180,7 @@ void CChannel::open(const sockaddr* addr)
       ::freeaddrinfo(res);
    }
 
-   LOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
+   HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
 
    setUDPSockOpt();
 }
@@ -359,7 +359,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
             spec << " [REXMIT]";
     }
 
-    LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=%" << packet.m_iID
         << spec.str());
 #endif
@@ -475,7 +475,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         }
         else
         {
-            LOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
@@ -531,7 +531,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         int err = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            LOGC(mglog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(mglog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else
@@ -553,7 +553,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     if ( size_t(res) < CPacket::HDR_SIZE )
     {
         status = RST_AGAIN;
-        LOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes");
+        HLOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes");
         goto Return_error;
     }
 
@@ -576,7 +576,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     // packet was received, so the packet will be then retransmitted.
     if ( msg_flags != 0 )
     {
-        LOGC(mglog.Debug, log << CONID() << "NET ERROR: packet size=" << res
+        HLOGC(mglog.Debug, log << CONID() << "NET ERROR: packet size=" << res
             << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
         status = RST_AGAIN;
         goto Return_error;

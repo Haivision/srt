@@ -73,11 +73,29 @@ written by
 // Usage: LOGP(mglog.Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
 
+#if ENABLE_HEAVY_LOGGING
+
+#define HLOGC(...) LOGC(__VA_ARGS__)
+#define HLOGF(...) LOGF(__VA_ARGS__)
+#define HLOGP(...) LOGP(__VA_ARGS__)
+
+#else
+
+#define HLOGC(...)
+#define HLOGF(...)
+#define HLOGP(...)
+
+#endif
+
 #else
 
 #define LOGC(...)
 #define LOGF(...)
 #define LOGP(...)
+
+#define HLOGC(...)
+#define HLOGF(...)
+#define HLOGP(...)
 
 #endif
 
