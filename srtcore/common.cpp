@@ -829,7 +829,7 @@ std::string logging::FormatTime(uint64_t time)
     time_t usec = time%1000000;
 
     time_t tt = sec;
-    struct tm tm = LocalTime(tt);
+    struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
 #ifdef WIN32
@@ -872,7 +872,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         timeval tv;
         gettimeofday(&tv, 0);
         time_t t = tv.tv_sec;
-        struct tm tm = LocalTime(t);
+        struct tm tm = SysLocalTime(t);
 
         // Nice to have %T as "standard time format" for logs,
         // but it's Single Unix Specification and doesn't exist
