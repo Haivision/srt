@@ -449,7 +449,7 @@ EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
 {
    if (getMsgCryptoFlags() == EK_NOENC)
    {
-       //LOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
+       //HLOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
        return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
    }
 
