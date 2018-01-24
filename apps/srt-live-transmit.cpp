@@ -547,7 +547,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     time_t now;
     time(&now);
     char buf[1024];
-    struct tm local = LocalTime(now);
+    struct tm local = SysLocalTime(now);
     size_t pos = strftime(buf, 1024, "[%c ", &local);
 
 #ifdef _MSC_VER

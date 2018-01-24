@@ -490,10 +490,9 @@ target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
-# Not sure why librt is required, but somehow only on Linux
 if ( LINUX )
-	target_link_libraries(${TARGET_srt} PUBLIC rt)
-	target_link_libraries(${TARGET_srt} PUBLIC dl)
+	# Unsure why libdl was required, keeping for the time being.
+	#target_link_libraries(${TARGET_srt} PUBLIC dl)
 	set (IFNEEDED_SRT_LDFLAGS -pthread)
 endif()
 
