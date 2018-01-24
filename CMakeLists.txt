@@ -29,28 +29,47 @@ include(FindPkgConfig)
 set (SRT_VERSION 1.3.0)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
+# The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-	set (ENABLE_DEBUG ON)
-else()
-	set (ENABLE_DEBUG OFF)
-endif()
-elseif (ENABLE_DEBUG)
-	set (CMAKE_BUILD_TYPE "Debug")
+
+	if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+		set (ENABLE_DEBUG ON)
+	else()
+		set (ENABLE_DEBUG OFF)
+	endif()
 endif()
 
-# option defaults
-if (ENV{SRT_LOGGING_ENABLED})
-	set(ENABLE_LOGGING_DEFAULT ON)
+# Set CMAKE_BUILD_TYPE properly, now that you know
+# that ENABLE_DEBUG is set as it should.
+
+if (ENABLE_DEBUG EQUAL 1)
+	set (CMAKE_BUILD_TYPE "Debug")
+elseif (ENABLE_DEBUG EQUAL 2)
+	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
 else()
-	set(ENABLE_LOGGING_DEFAULT OFF)
+	set (CMAKE_BUILD_TYPE "Release")
 endif()
+
+message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
+
+# option defaults
+# XXX CHANGE: Logging is enabled now by default,
+# use ENABLE_LOGGING=NO in cmake or
+# --disable-logging in configure.
+set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
+
+# Always turn logging on if the build type is debug
+if (ENABLE_DEBUG)
+	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
+endif()
+
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
-option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
+option(ENABLE_LOGGING "Should logging be enabled" ON)
+option(ENABLE_HEAVY_LOGGING "Should logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
@@ -58,13 +77,19 @@ option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
-# Always turn logging on if the build type is debug
-if (ENABLE_DEBUG)
-	set(ENABLE_LOGGING ON)
-endif()
-
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 set(TARGET_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library, if compiled separately")
+
+if (NOT ENABLE_LOGGING)
+	set (ENABLE_HEAVY_LOGGING OFF)
+	message(STATUS "LOGGING: DISABLED")
+else()
+	if (ENABLE_HEAVY_LOGGING)
+		message(STATUS "LOGGING: HEAVY")
+	else()
+		message(STATUS "LOGGING: ENABLED")
+	endif()
+endif()
 
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
@@ -270,6 +295,9 @@ include_directories(${SRT_INCLUDE_DIR})
 
 if (ENABLE_LOGGING)
     list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
+	if (ENABLE_HEAVY_LOGGING)
+		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
+	endif()
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -492,6 +520,8 @@ endif()
 # ---
 # That's all for target definition
 # ---
+
+join_arguments(SRT_EXTRA_CFLAGS ${SRT_EXTRA_CFLAGS})
 
 message(STATUS "Target haicrypt: TYPE:${haicrypt_libspec} ACTUAL TARGET: ${TARGET_haicrypt} HEADERS: {${HEADERS_haicrypt}}")
 message(STATUS "Target srt: TYPE:${srt_libspec} SOURCES: {${SOURCES_srt}} DEPENDS: {${DEPENDS_srt}} HEADERS: {${HEADERS_srt}}")
