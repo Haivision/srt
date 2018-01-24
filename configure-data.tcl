@@ -34,9 +34,10 @@
 
 
 set options {
-	enable-shared "compile SRT parts as shared objects (dynamic libraries)"
+	enable-shared "compile SRT parts as shared libraries (default: ON)"
+	enable-static "compile SRT parts as static libraries (default: ON)"
 	disable-c++11 "turn off parts that require C++11 support"
-	enable-debug "turn on debug+nonoptimized build mode"
+	enable-debug "turn on debug+nonoptimized build mode (if =2, debug+optimized)"
 	enable-profile "turn on profile instrumentation"
 	enable-logging "turn on logging (not heavy debug logging) (default: ON)"
 	enable-heavy-logging "turn on heavy debug logging (default: OFF, ON in debug mode)"

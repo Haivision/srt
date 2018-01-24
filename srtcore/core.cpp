@@ -2935,7 +2935,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( m_SrtHsSide == HSD_DRAW )
         return CONN_REJECT;
 
-    UDTRequestType rsp_type;
+    UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
     bool needs_extension = m_ConnRes.m_iType != 0; // Initial value: received HS has extensions.
     bool needs_hsrsp = rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension));
 
