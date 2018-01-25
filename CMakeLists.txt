@@ -430,7 +430,11 @@ if (NOT haicrypt_libspec STREQUAL VIRTUAL)
 
 	if (haicrypt_libspec_static)
 		add_library(${TARGET_haicrypt}_static STATIC $<TARGET_OBJECTS:haicrypt_virtual>)
-		set_property(TARGET ${TARGET_haicrypt}_static PROPERTY OUTPUT_NAME ${TARGET_haicrypt})
+		if (WIN32 AND NOT CYGWIN)
+			set_property(TARGET ${TARGET_haicrypt}_static PROPERTY OUTPUT_NAME ${TARGET_haicrypt}_static)
+		else()
+			set_property(TARGET ${TARGET_haicrypt}_static PROPERTY OUTPUT_NAME ${TARGET_haicrypt})
+		endif()
 		list (APPEND INSTALL_TARGETS ${TARGET_srt}_static)
 	endif()
 
@@ -504,7 +508,21 @@ endif()
 if (srt_libspec_static)
 	message (STATUS "SRT: defining STATIC library: ${TARGET_srt} from: ${VIRTUAL_srt}")
 	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
-	set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt})
+
+	# For Windows, leave the name to be "srt_static.lib".
+	# Windows generates two different library files:
+	# - a usual static library for static linkage
+	# - a shared library exposer, which allows pre-resolution and later dynamic
+	#   linkage when running the executable
+	# Both having unfortunately the same names created by MSVC compiler.
+	# It's not the case of Cygwin - they are named there libsrt.a and libsrt.dll.a
+	if (WIN32 AND NOT CYGWIN)
+		# Keep _static suffix. By unknown reason, the name must still be set explicitly.
+		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt}_static)
+	else()
+		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt})
+	endif()
+
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_static)
 	target_link_libraries(${TARGET_haicrypt}_static PRIVATE ${SSL_LIBRARIES})
 	if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
@@ -537,9 +555,12 @@ endif()
 # So, back to target: srt. Setting the rest of the settings for srt target.
 # ---
 
-# Include directories may be applied to the virtual library,
-# they will be transitive through PUBLIC declaration.
-target_include_directories(srt_virtual PUBLIC ${PTHREAD_INCLUDE_DIR})
+# Applying this to public includes is not transitive enough.
+# On Windows, apps require this as well, so it's safer to
+# spread this to all targets.
+if (PTHREAD_INCLUDE_DIR)
+	include_directories(${PTHREAD_INCLUDE_DIR})
+endif()
 
 # Link libraries must be applied directly to the derivatives
 # as virtual libraries (OBJECT-type) cannot have linkage declarations
@@ -548,12 +569,12 @@ target_include_directories(srt_virtual PUBLIC ${PTHREAD_INCLUDE_DIR})
 foreach(tar ${srtpack_libspec_common})
 
 	if (DEPENDS_srt)
-	string(REGEX MATCH .*_shared is_shared ${tar})
-	if (DEFINED is_shared)
-		set(dep ${DEPENDS_srt}_shared)
-	else()
-		set (dep ${DEPENDS_srt}_static)
-	endif()
+		string(REGEX MATCH .*_shared is_shared ${tar})
+		if (DEFINED is_shared)
+			set(dep ${DEPENDS_srt}_shared)
+		else()
+			set (dep ${DEPENDS_srt}_static)
+		endif()
 	endif()
 
 	message(STATUS "ADDING TRANSITIVE LINK DEP to:${tar} : ${PTHREAD_LIBRARY} ${dep}")
@@ -710,8 +731,6 @@ if ( ENABLE_CXX11 )
 	add_executable(recvfile
 		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/recvfile.cpp
 	)
-
-message(WARNING "LINKING APPS AGAINST: ${srt_link_library} ${DEPENDS_srt}")
 
 	target_link_libraries(sendfile ${srt_link_library} ${DEPENDS_srt})
 	target_link_libraries(recvfile ${srt_link_library} ${DEPENDS_srt})

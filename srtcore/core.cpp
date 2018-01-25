@@ -104,7 +104,7 @@ struct AllFaOn
     }
 } logger_fa_all;
 
-logging::LogConfig srt_logger_config (logger_fa_all.allfa);
+SRT_API logging::LogConfig srt_logger_config (logger_fa_all.allfa);
 
 logging::Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
 logging::Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
