@@ -79,7 +79,11 @@ struct sockaddr_any
         sin.sin_port = htons(value);
     }
 
+    sockaddr* get() { return &sa; }
     sockaddr* operator&() { return &sa; }
+
+    const sockaddr* get() const { return &sa; }
+    const sockaddr* operator&() const { return &sa; }
 
     template <int> struct TypeMap;
 
