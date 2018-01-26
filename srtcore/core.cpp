@@ -3361,10 +3361,6 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
-    // XXX Probably redundant - processSrtMsg_HSRSP should do it in both
-    // HSv4 and HSv5 modes.
-    handshakeDone();
-
     CInfoBlock ib;
     ib.m_iIPversion = m_iIPversion;
     CInfoBlock::convert(m_pPeerAddr, m_iIPversion, ib.m_piIP);
