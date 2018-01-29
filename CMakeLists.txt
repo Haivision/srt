@@ -751,7 +751,7 @@ if ( ENABLE_CXX11 )
 		# XXX not sure about Mac.
 		# XXX This needs to be probably lib64 on 64-bit systems and 64-bit build.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
-		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,../lib BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../lib,-rpath,../lib64 BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
 	# Test programs
