@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+#include <stdexcept>
 
 typedef std::vector<char> bytevector;
 extern bool transmit_verbose;

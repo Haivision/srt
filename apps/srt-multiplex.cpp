@@ -6,6 +6,7 @@
 #include <chrono>
 #include <csignal>
 #include <iterator>
+#include <stdexcept>
 
 #define REQUIRE_CXX11 1
 
