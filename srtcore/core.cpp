@@ -3386,6 +3386,8 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
 
+    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_pPeerAddr));
+
     return CONN_ACCEPT;
 }
 
@@ -4585,6 +4587,8 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
             {
                 m_iSndCurrSeqNo = minlastack;
             }
+            LOGC(dlog.Error, log << "DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
+
             HLOGF(dlog.Debug, "drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
                     (unsigned long long)CTimer::getTime(),
                     realack, m_iSndCurrSeqNo,
@@ -7063,6 +7067,9 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
+#if ENABLE_LOGGING
+              static int nereport = 0;
+#endif
               /*
                * Could not decrypt
                * Keep packet in received buffer
@@ -7073,6 +7080,10 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
+#if ENABLE_LOGGING
+              if (nereport++%100 == 0)
+                  LOGC(dlog.Error, log << "DECRYPT ERROR - dropping a packet of " << packet.getLength() << " bytes");
+#endif
           }
       }
       else
