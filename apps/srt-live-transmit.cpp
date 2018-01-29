@@ -58,6 +58,7 @@
 
 #include <cctype>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <map>
 #include <set>
@@ -71,16 +72,17 @@
 #include <chrono>
 #include <thread>
 
-#include "../common/appcommon.hpp"  // CreateAddrInet
-#include "../common/uriparser.hpp"  // UriParser
-#include "../common/socketoptions.hpp"
-#include "../common/logsupport.hpp"
-#include "../common/transmitbase.hpp"
+#include "appcommon.hpp"  // CreateAddrInet
+#include "uriparser.hpp"  // UriParser
+#include "socketoptions.hpp"
+#include "logsupport.hpp"
+#include "transmitbase.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
+#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 
 using namespace std;

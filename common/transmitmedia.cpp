@@ -630,13 +630,13 @@ void SrtCommon::Close()
         cout << "SrtCommon: DESTROYING CONNECTION, closing sockets (rt%" << m_sock << " ls%" << m_bindsock << ")...\n";
 
     bool yes = true;
-    if ( m_sock != UDT::INVALID_SOCK )
+    if ( m_sock != SRT_INVALID_SOCK )
     {
         srt_setsockflag(m_sock, SRTO_SNDSYN, &yes, sizeof yes);
         srt_close(m_sock);
     }
 
-    if ( m_bindsock != UDT::INVALID_SOCK )
+    if ( m_bindsock != SRT_INVALID_SOCK )
     {
         // Set sndsynchro to the socket to synch-close it.
         srt_setsockflag(m_bindsock, SRTO_SNDSYN, &yes, sizeof yes);

@@ -104,7 +104,7 @@ struct AllFaOn
     }
 } logger_fa_all;
 
-logging::LogConfig srt_logger_config (logger_fa_all.allfa);
+SRT_API logging::LogConfig srt_logger_config (logger_fa_all.allfa);
 
 logging::Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
 logging::Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
@@ -2935,7 +2935,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( m_SrtHsSide == HSD_DRAW )
         return CONN_REJECT;
 
-    UDTRequestType rsp_type;
+    UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
     bool needs_extension = m_ConnRes.m_iType != 0; // Initial value: received HS has extensions.
     bool needs_hsrsp = rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension));
 
