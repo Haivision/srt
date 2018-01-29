@@ -2,6 +2,7 @@
 
 // Just for formality. This file should be used 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -22,9 +23,9 @@ using namespace std;
 bool transmit_verbose = false;
 std::ostream* transmit_cverb = nullptr;
 volatile bool transmit_throw_on_interrupt = false;
-int transmit_bw_report = 0;
-unsigned transmit_stats_report = 0;
-size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+unsigned long transmit_bw_report = 0;
+unsigned long transmit_stats_report = 0;
+unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
 class FileSource: public Source
 {
@@ -86,15 +87,15 @@ template <class PerfMonType>
 void PrintSrtStats(int sid, const PerfMonType& mon)
 {
     cout << "======= SRT STATS: sid=" << sid << endl;
-    cout << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv << endl;
-    cout << "LOST PKT SENT: " << mon.pktSndLoss << " RECEIVED: " << mon.pktRcvLoss << endl;
-    cout << "REXMIT SENT: " << mon.pktRetrans << " RECEIVED: " << mon.pktRcvRetrans << endl;
-    cout << "RATE SENDING: " << mon.mbpsSendRate << " RECEIVING: " << mon.mbpsRecvRate << endl;
-    cout << "BELATED RECEIVED: " << mon.pktRcvBelated << " AVG TIME: " << mon.pktRcvAvgBelatedTime << endl;
-    cout << "REORDER DISTANCE: " << mon.pktReorderDistance << endl;
-    cout << "WINDOW: FLOW: " << mon.pktFlowWindow << " CONGESTION: " << mon.pktCongestionWindow << " FLIGHT: " << mon.pktFlightSize << endl;
-    cout << "RTT: " << mon.msRTT << "ms  BANDWIDTH: " << mon.mbpsBandwidth << "Mb/s\n";
-    cout << "BUFFERLEFT: SND: " << mon.byteAvailSndBuf << " RCV: " << mon.byteAvailRcvBuf << endl;
+    cout << "PACKETS SENT:     " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
+    cout << "LOST PKT SENT:    " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
+    cout << "REXMIT SENT:      " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
+    cout << "RATE SENDING:     " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
+    cout << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+    cout << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+    cout << "WINDOW: FLOW:     " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+    cout << "RTT:              " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+    cout << "BUFFERLEFT: SND:  " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
 }
 
 
@@ -667,7 +668,7 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 
 bytevector SrtSource::Read(size_t chunk)
 {
-    static size_t counter = 1;
+    static unsigned long counter = 1;
 
     bytevector data(chunk);
     bool ready = true;
@@ -715,12 +716,12 @@ bytevector SrtSource::Read(size_t chunk)
 
     CBytePerfMon perf;
     srt_bstats(m_sock, &perf, true);
-    if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
+    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
         cout << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
     }
 
-    if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
+    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
         PrintSrtStats(m_sock, perf);
     }
@@ -750,6 +751,8 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
 
 void SrtTarget::Write(const bytevector& data) 
 {
+	static unsigned long counter = 1;
+
     ::transmit_throw_on_interrupt = true;
 
     // Check first if it's ready to write.
@@ -765,6 +768,21 @@ void SrtTarget::Write(const bytevector& data)
     int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "srt_sendmsg");
+
+    CBytePerfMon perf;
+    srt_bstats(m_sock, &perf, true);
+    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
+    {
+        cout << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+    }
+
+    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
+    {
+        PrintSrtStats(m_sock, perf);
+    }
+
+    ++counter;
+
     ::transmit_throw_on_interrupt = false;
 }
 

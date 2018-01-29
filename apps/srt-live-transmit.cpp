@@ -257,7 +257,7 @@ int main( int argc, char** argv )
     }
 
     int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
-    size_t chunk = stoul(Option("0", "c", "chunk"), 0, 0);
+    unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
     if ( chunk == 0 )
     {
         chunk = SRT_LIVE_DEF_PLSIZE;
@@ -276,14 +276,14 @@ int main( int argc, char** argv )
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
 
     // Options that require integer conversion
-    size_t bandwidth;
-    size_t stoptime;
+    unsigned long bandwidth;
+    unsigned long stoptime;
 
     try
     {
         bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
         transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
-        transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
+        transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
         stoptime = stoul(Option("0", "d", "stoptime"));
     }
     catch (std::invalid_argument)
