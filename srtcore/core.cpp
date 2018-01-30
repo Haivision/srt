@@ -3771,15 +3771,19 @@ void* CUDT::tsbpd(void* param)
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
-#if ENABLE_HEAVY_LOGGING
+#if ENABLE_LOGGING
                 uint64_t now = CTimer::getTime();
+
+#if ENABLE_HEAVY_LOGGING
                 int64_t timediff = 0;
                 if ( tsbpdtime )
                     timediff = int64_t(now) - int64_t(tsbpdtime);
 
-                LOGC(tslog.Note, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
+#endif
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << int64_t(now - tsbpdtime) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -4587,7 +4591,7 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
             {
                 m_iSndCurrSeqNo = minlastack;
             }
-            LOGC(dlog.Error, log << "DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
+            LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
             HLOGF(dlog.Debug, "drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
                     (unsigned long long)CTimer::getTime(),
@@ -6863,6 +6867,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
           // Encryption failed 
           //>>Add stats for crypto failure
           ts_tk = 0;
+          LOGC(dlog.Error, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
           return -1; //Encryption failed
       }
       payload = packet.getLength(); /* Cipher may change length */
