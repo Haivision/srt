@@ -253,6 +253,7 @@ int main( int argc, char** argv )
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
         cerr << "\t-k - crash on error (aka developer mode)\n";
         cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
+        cerr << "\t-f - full counters (prints total statistics without reset)\n";
         return 1;
     }
 
@@ -274,6 +275,7 @@ int main( int argc, char** argv )
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
+    total_stats = Option("no", "f", "full-stats") != "no";
 
     // Options that require integer conversion
     unsigned long bandwidth;

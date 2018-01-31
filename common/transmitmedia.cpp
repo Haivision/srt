@@ -21,6 +21,8 @@
 using namespace std;
 
 bool transmit_verbose = false;
+bool total_stats = false;
+bool clear_stats = false;
 std::ostream* transmit_cverb = nullptr;
 volatile bool transmit_throw_on_interrupt = false;
 unsigned long transmit_bw_report = 0;
@@ -715,15 +717,16 @@ bytevector SrtSource::Read(size_t chunk)
         data.resize(chunk);
 
     CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
+    srt_bstats(m_sock, &perf, clear_stats);
+    clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
         cout << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
     }
-
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
         PrintSrtStats(m_sock, perf);
+        clear_stats = !total_stats;
     }
 
     ++counter;
@@ -770,15 +773,16 @@ void SrtTarget::Write(const bytevector& data)
         Error(UDT::getlasterror(), "srt_sendmsg");
 
     CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
+    srt_bstats(m_sock, &perf, clear_stats);
+    clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
         cout << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
     }
-
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
         PrintSrtStats(m_sock, perf);
+        clear_stats = !total_stats;
     }
 
     ++counter;
