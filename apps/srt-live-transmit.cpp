@@ -275,7 +275,7 @@ int main( int argc, char** argv )
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
-    total_stats = Option("no", "f", "full-stats") != "no";
+    transmit_total_stats = Option("no", "f", "full-stats") != "no";
 
     // Options that require integer conversion
     unsigned long bandwidth;

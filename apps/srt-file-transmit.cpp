@@ -108,7 +108,7 @@ int main( int argc, char** argv )
 
     string sfull = Option<OutString>(params, "no", o_fullstats);
     if (sfull == "" || !false_names.count(sfull))
-        ::total_stats = true;
+        ::transmit_total_stats = true;
 
     string source = args[0];
     string target = args[1];

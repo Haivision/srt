@@ -21,7 +21,7 @@
 using namespace std;
 
 bool transmit_verbose = false;
-bool total_stats = false;
+bool transmit_total_stats = false;
 bool clear_stats = false;
 std::ostream* transmit_cverb = nullptr;
 volatile bool transmit_throw_on_interrupt = false;
@@ -726,7 +726,7 @@ bytevector SrtSource::Read(size_t chunk)
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
         PrintSrtStats(m_sock, perf);
-        clear_stats = !total_stats;
+        clear_stats = !transmit_total_stats;
     }
 
     ++counter;
@@ -754,7 +754,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
 
 void SrtTarget::Write(const bytevector& data) 
 {
-	static unsigned long counter = 1;
+    static unsigned long counter = 1;
 
     ::transmit_throw_on_interrupt = true;
 
@@ -782,7 +782,7 @@ void SrtTarget::Write(const bytevector& data)
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
         PrintSrtStats(m_sock, perf);
-        clear_stats = !total_stats;
+        clear_stats = !transmit_total_stats;
     }
 
     ++counter;

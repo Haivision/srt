@@ -9,7 +9,7 @@
 
 typedef std::vector<char> bytevector;
 extern bool transmit_verbose;
-extern bool total_stats;
+extern bool transmit_total_stats;
 extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
