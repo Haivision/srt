@@ -367,13 +367,6 @@ target_link_libraries (${TARGET_srt} PUBLIC ${DEPENDS_srt})
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 target_include_directories(${TARGET_srt} PUBLIC ${SRT_SRC_SRTCORE_DIR})
 
-# Not sure why it's required, but somehow only on Linux
-if ( LINUX )
-	target_link_libraries(${TARGET_srt} PUBLIC rt)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
-endif()
-
-
 target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
 if (ENABLE_SHARED)
 	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
