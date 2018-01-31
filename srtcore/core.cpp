@@ -5332,9 +5332,19 @@ void CUDT::sample(CPerfMon* perf, bool clear)
 
    if (clear)
    {
+      m_iTraceSndDrop        = 0;
+      m_iTraceRcvDrop        = 0;
+      m_ullTraceSndBytesDrop = 0;
+      m_ullTraceRcvBytesDrop = 0;
+      m_iTraceRcvUndecrypt        = 0;
+      m_ullTraceRcvBytesUndecrypt = 0;
+      //new>
+      m_ullTraceBytesSent = m_ullTraceBytesRecv = m_ullTraceBytesRetrans = 0;
+      //<
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
+      m_iTraceRcvBelated = 0;
       m_LastSampleTime = currtime;
    }
 }
@@ -5510,6 +5520,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
+	  m_iTraceRcvBelated = 0;
       m_LastSampleTime = currtime;
    }
 }
