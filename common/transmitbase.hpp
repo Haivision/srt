@@ -61,7 +61,7 @@ public:
 class Source: public Location
 {
 public:
-    virtual bytevector Read(size_t chunk) = 0;
+    virtual bool Read(size_t chunk, bytevector& data) = 0;
     virtual bool IsOpen() = 0;
     virtual bool End() = 0;
     static std::unique_ptr<Source> Create(const std::string& url);
@@ -75,18 +75,26 @@ public:
         {
         }
     };
+
+    virtual SRTSOCKET GetSRTSocket() { return SRT_INVALID_SOCK; };
+    virtual int GetSysSocket() { return -1; };
+    virtual bool AcceptNewClient() { return false; }
 };
 
 class Target: public Location
 {
 public:
-    virtual void Write(const bytevector& portion) = 0;
+    virtual bool Write(const bytevector& portion) = 0;
     virtual bool IsOpen() = 0;
     virtual bool Broken() = 0;
     virtual void Close() {}
     virtual size_t Still() { return 0; }
     static std::unique_ptr<Target> Create(const std::string& url);
     virtual ~Target() {}
+
+    virtual SRTSOCKET GetSRTSocket() { return SRT_INVALID_SOCK; }
+    virtual int GetSysSocket() { return -1; }
+    virtual bool AcceptNewClient() { return false; }
 };
 
 
