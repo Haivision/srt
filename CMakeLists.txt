@@ -52,9 +52,16 @@ option(ENABLE_CXX11 "Should the c++11 parts (stransmit) be enabled" ON)
 option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
+option(ENABLE_STATIC "Should libsrt be built as a static library" OFF)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
+option(ENABLE_BOTH "Should libsrt be built shared and static libraries" OFF)
+
+if (ENABLE_BOTH)
+	set(ENABLE_SHARED ON)
+	set(ENABLE_STATIC ON)
+endif()
 
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
@@ -160,16 +167,7 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
-
-if ( ENABLE_SHARED )
-    set (srt_libspec SHARED)
-else()
-    set (srt_libspec STATIC)
-endif()
-
-if (ENABLE_SEPARATE_HAICRYPT)
-	set (haicrypt_libspec ${srt_libspec})
-else()
+if (NOT ENABLE_SEPARATE_HAICRYPT)
 	set (haicrypt_libspec VIRTUAL)
 endif()
 
@@ -217,26 +215,8 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-
-if (NOT MINGW)
-# find pthread
-find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-if (PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-else()
-	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-endif()
-
-find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
-if (PTHREAD_LIBRARY)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-else()
-	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-endif()
-
-else()
-find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
-endif() # if (NOT MINGW)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -298,8 +278,12 @@ message(STATUS "SOURCES(haicrypt): ${SOURCES_haicrypt}")
 # library separation, however, there is no extra compat stuff on the
 # platform where it's being used.
 if (NOT haicrypt_libspec STREQUAL VIRTUAL)
-	message(STATUS "Making haicrypt as a ${haicrypt_libspec} library")
-	add_library(${TARGET_haicrypt} ${haicrypt_libspec} ${SOURCES_haicrypt})
+	if (ENABLE_SHARED)
+		add_library(${TARGET_haicrypt} SHARED ${SOURCES_haicrypt})
+	endif()
+	if (ENABLE_STATIC)
+		add_library(${TARGET_haicrypt}_static STATIC ${SOURCES_haicrypt})
+	endif()
 
 	# Note: POSIX specific; this is used in haisrt.pc.in
 	set (IFNEEDED_LINK_HAICRYPT -l${TARGET_haicrypt})
@@ -310,10 +294,17 @@ if (NOT haicrypt_libspec STREQUAL VIRTUAL)
 
 	if (ENABLE_SHARED)
 		target_compile_definitions(${TARGET_haicrypt} PUBLIC -DHAICRYPT_DYNAMIC)
+		target_compile_definitions(${TARGET_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
+		list(APPEND TARGETS_haicrypt ${TARGET_haicrypt})
 	endif()
-	target_compile_definitions(${TARGET_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
+	if (ENABLE_STATIC)
+		target_compile_definitions(${TARGET_haicrypt}_static PUBLIC -DHAICRYPT_DYNAMIC)
+		target_compile_definitions(${TARGET_haicrypt}_static PRIVATE -DHAICRYPT_EXPORTS)
+		list(APPEND TARGETS_haicrypt ${TARGET_haicrypt}_static)
+	endif()
 
-	install(TARGETS ${TARGET_haicrypt}
+
+	install(TARGETS ${TARGETS_haicrypt}
 		RUNTIME DESTINATION bin
 		ARCHIVE DESTINATION lib
 		LIBRARY DESTINATION lib
@@ -351,7 +342,13 @@ else()
 	set (DEPENDS_srt ${TARGET_haicrypt})
 endif()
 
-add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
+if (ENABLE_SHARED)
+	add_library(${TARGET_srt} SHARED ${SOURCES_srt} ${SOURCES_srt_extra})
+endif()
+if (ENABLE_STATIC)
+	add_library(${TARGET_srt}_static STATIC ${SOURCES_srt} ${SOURCES_srt_extra})
+endif()
+
 
 # ---
 # And back to target: haicrypt. Both targets must be defined
@@ -362,17 +359,30 @@ add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
 # Otherwise they apply to haicrypt.
 # ---
 
+if (ENABLE_SHARED)
+	set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	target_include_directories(${TARGET_haicrypt}
+		PRIVATE  ${SSL_INCLUDE_DIRS}
+		PUBLIC ${SRT_SRC_HAICRYPT_DIR})
 
-target_include_directories(${TARGET_haicrypt}
-	PRIVATE  ${SSL_INCLUDE_DIRS}
-	PUBLIC ${SRT_SRC_HAICRYPT_DIR}
-)
+	target_link_libraries(${TARGET_haicrypt} PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
+endif()
+if (ENABLE_STATIC)
+	target_include_directories(${TARGET_haicrypt}_static
+		PRIVATE  ${SSL_INCLUDE_DIRS}
+		PUBLIC ${SRT_SRC_HAICRYPT_DIR})
 
-set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries(${TARGET_haicrypt} PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
+	target_link_libraries(${TARGET_haicrypt}_static PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
+endif()
 
 if ( WIN32 AND NOT CYGWIN )
-	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
+	if (ENABLE_SHARED)
+		target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
+	endif()
+	if (ENABLE_STATIC)
+		target_link_libraries(${TARGET_haicrypt}_static PRIVATE ws2_32.lib)
+	endif()
+
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 endif()
 
@@ -380,17 +390,16 @@ endif()
 # So, back to target: srt. Setting the rest of the settings for srt target.
 # ---
 
-set_target_properties (${TARGET_srt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
-set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
-target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
-
-# Not sure why it's required, but somehow only on Linux
-if ( LINUX )
-	target_link_libraries(${TARGET_srt} PUBLIC rt)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
+if (ENABLE_SHARED)
+	set_target_properties (${TARGET_srt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	target_link_libraries (${TARGET_srt} PUBLIC ${DEPENDS_srt})
+	target_include_directories(${TARGET_srt} PUBLIC ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 endif()
-
+if (ENABLE_STATIC)
+	target_link_libraries (${TARGET_srt}_static PUBLIC ${DEPENDS_srt})
+	target_include_directories(${TARGET_srt}_static PUBLIC ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+endif()
+set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
 if (ENABLE_SHARED)
@@ -401,7 +410,15 @@ if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
     	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
 endif()
 
-install(TARGETS ${TARGET_srt}
+
+if (ENABLE_SHARED)
+list(APPEND TARGETS_srt ${TARGET_srt})
+endif()
+if (ENABLE_STATIC)
+list(APPEND TARGETS_srt ${TARGET_srt}_static)
+endif()
+
+install(TARGETS ${TARGETS_srt}
 		RUNTIME DESTINATION bin
 		ARCHIVE DESTINATION lib
 		LIBRARY DESTINATION lib
