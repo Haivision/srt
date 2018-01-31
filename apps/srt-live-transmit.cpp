@@ -347,29 +347,24 @@ int main( int argc, char** argv )
 
 
 #ifdef WIN32
-#define alarm(argument) (void)0
 
-    if (stoptime != 0)
+    if (timeout != 0)
     {
         cerr << "ERROR: The -stoptime option (-d) is not implemented on Windows\n";
         return 1;
     }
 
 #else
-    siginterrupt(SIGALRM, true);
-    signal(SIGALRM, OnAlarm_Interrupt);
-#endif
-    siginterrupt(SIGINT, true);
-    signal(SIGINT, OnINT_ForceExit);
-    siginterrupt(SIGINT, true);
-    signal(SIGTERM, OnINT_ForceExit);
-
     if (timeout != 0)
     {
+        signal(SIGALRM, OnAlarm_Interrupt);
         if (!quiet)
             cerr << "TIMEOUT: will interrupt after " << timeout << "s\n";
         alarm(timeout);
     }
+#endif
+    signal(SIGINT, OnINT_ForceExit);
+    signal(SIGTERM, OnINT_ForceExit);
 
 #if 0
         BandwidthGuard bw(bandwidth);
@@ -488,9 +483,9 @@ int main( int argc, char** argv )
             int sysrfdslen = 2;
             int sysrfds[2];
             if (srt_epoll_wait(pollid,
-                srtrfds, &srtrfdslen, 0, 0,
+                &srtrfds[0], &srtrfdslen, 0, 0,
                 100,
-                sysrfds, &sysrfdslen, 0, 0) >= 0)
+                &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
             {
                 if ((false))
                 {

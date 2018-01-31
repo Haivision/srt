@@ -9,7 +9,9 @@
 #include <iterator>
 #include <map>
 #include <srt.h>
+#if !defined(WIN32)
 #include <sys/ioctl.h>
+#endif
 
 #include "netinet_any.h"
 #include "appcommon.hpp"
@@ -837,7 +839,12 @@ protected:
         if ((true))
         {
             // set non-blocking mode
+#if defined(WIN32)
+            unsigned long ulyes = 1;
+            if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
+#else
             if (ioctl(m_sock, FIONBIO, (const char *)&yes) < 0)
+#endif
             {
                 Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
             }
