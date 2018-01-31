@@ -217,26 +217,8 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-
-if (NOT MINGW)
-# find pthread
-find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-if (PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-else()
-	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-endif()
-
-find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
-if (PTHREAD_LIBRARY)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-else()
-	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-endif()
-
-else()
-find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
-endif() # if (NOT MINGW)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -381,9 +363,9 @@ endif()
 # ---
 
 set_target_properties (${TARGET_srt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
-set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
-target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
+target_link_libraries (${TARGET_srt} PUBLIC ${DEPENDS_srt})
+set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
+target_include_directories(${TARGET_srt} PUBLIC ${SRT_SRC_SRTCORE_DIR})
 
 # Not sure why it's required, but somehow only on Linux
 if ( LINUX )
