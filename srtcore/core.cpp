@@ -5360,6 +5360,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->pktSndLoss = m_iTraceSndLoss;
    perf->pktRcvLoss = m_iTraceRcvLoss;
    perf->pktRetrans = m_iTraceRetrans;
+   perf->pktRcvRetrans = m_iTraceRcvRetrans;
    perf->pktSentACK = m_iSentACK;
    perf->pktRecvACK = m_iRecvACK;
    perf->pktSentNAK = m_iSentNAK;
@@ -5508,6 +5509,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
       //<
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
+      m_iTraceRcvRetrans = 0;
       m_LastSampleTime = currtime;
    }
 }
