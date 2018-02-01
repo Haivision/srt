@@ -247,13 +247,15 @@ int main( int argc, char** argv )
     {
         cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
         cerr << "\t-t:<timeout=0> - connection timeout\n";
+        cerr << "\t-d:<stoptime=0> - connection stop time\n";
         cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
+        cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
+        cerr << "\t-S - skip flushing\n";
         cerr << "\t-k - crash on error (aka developer mode)\n";
         cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
-        cerr << "\t-f - full counters (prints total statistics without reset)\n";
         return 1;
     }
 
@@ -275,7 +277,7 @@ int main( int argc, char** argv )
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
-    transmit_total_stats = Option("no", "f", "full-stats") != "no";
+    transmit_total_stats = Option("no", "f", "fullstats") != "no";
 
     // Options that require integer conversion
     unsigned long bandwidth;
