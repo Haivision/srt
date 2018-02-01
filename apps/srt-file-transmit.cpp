@@ -60,12 +60,15 @@ int main( int argc, char** argv )
         o_loglevel = { "ll", "loglevel" },
         o_buffer = {"b", "buffer" },
         o_verbose = {"v", "verbose" },
-        o_noflush = {"s", "skipflush" };
+        o_noflush = {"s", "skipflush" },
+        o_fullstats = {"f", "fullstats" };
 
     // Options that expect no arguments (ARG_NONE) need not be mentioned.
     vector<OptionScheme> optargs = {
         { o_loglevel, OptionScheme::ARG_ONE },
-        { o_buffer, OptionScheme::ARG_ONE }
+        { o_buffer, OptionScheme::ARG_ONE },
+        { o_noflush, OptionScheme::ARG_NONE },
+        { o_fullstats, OptionScheme::ARG_NONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
 
@@ -104,6 +107,10 @@ int main( int argc, char** argv )
     string sf = Option<OutString>(params, "no", o_noflush);
     if (sf == "" || !false_names.count(sf))
         ::g_skip_flushing = true;
+
+    string sfull = Option<OutString>(params, "no", o_fullstats);
+    if (sfull == "" || !false_names.count(sfull))
+        ::transmit_total_stats = true;
 
     string source = args[0];
     string target = args[1];
