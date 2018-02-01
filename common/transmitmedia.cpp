@@ -1,5 +1,3 @@
-// Medium concretizations
-
 // Just for formality. This file should be used 
 #include <iostream>
 #include <iomanip>
