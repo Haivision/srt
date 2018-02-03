@@ -495,13 +495,13 @@ int main( int argc, char** argv )
                     const char * dirstring = (issource)? "source" : "target";
 
                     SRT_SOCKSTATUS status = srt_getsockstate(s);
-                    if ((false) && status != CONNECTED)
+                    if ((false) && status != SRTS_CONNECTED)
                     {
                         cout << dirstring << " status " << status << endl;
                     }
                     switch (status)
                     {
-                        case LISTENING:
+                        case SRTS_LISTENING:
                         {
                             if ((false) && !quiet)
                                 cout << "New SRT client connection" << endl;
@@ -543,9 +543,9 @@ int main( int argc, char** argv )
                             }
                         }
                         break;
-                        case BROKEN:
-                        case NONEXIST:
-                        case CLOSED:
+                        case SRTS_BROKEN:
+                        case SRTS_NONEXIST:
+                        case SRTS_CLOSED:
                         {
                             if (issource)
                             {
@@ -581,7 +581,7 @@ int main( int argc, char** argv )
                             }
                         }
                         break;
-                        case CONNECTED:
+                        case SRTS_CONNECTED:
                         {
                             if (issource)
                             {
