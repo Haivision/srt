@@ -1,11 +1,11 @@
 # IMPORTANT!
 # 
 # This file contains information about ALL files existing in this directory
+# and belonging to the shared file between official applications
 # so that the build definition file can take them all to link against the app.
 # Applications in the 'apps' directory will use them all.
 # Appliecaions in the 'testing' directory may use some of them and they will
 # take selectively whichever parts they need.
-
 
 SOURCES
 logsupport.cpp

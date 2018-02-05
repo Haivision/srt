@@ -1,3 +1,18 @@
+SRT Core
+========
+
+These files are contents of the SRT library. Beside files that are used exclusively
+and internally by the library, this directory also contains:
+
+ - common files: usually header files, which can be used also by other projects,
+even if they don't link against SRT
+ - public and protected header files - header files for the library, which will
+be picked up from here
+
+Which header files are public, protected and private, it's defined in the manifest
+file together with all source files that the SRT library comprises of: `filelist.maf`.
+
+
 Common files
 ============
 
