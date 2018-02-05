@@ -703,12 +703,12 @@ macro(srt_make_application name)
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
 	# is added as is.
-    # set (CMAKE_SKIP_RPATH FALSE)
-    # set (CMAKE_SKIP_BUILD_RPATH FALSE)
-    # set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-    # set (CMAKE_INSTALL_RPATH "../lib")
-    # set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-    # set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+	# set (CMAKE_SKIP_RPATH FALSE)
+	# set (CMAKE_SKIP_BUILD_RPATH FALSE)
+	# set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+	# set (CMAKE_INSTALL_RPATH "../lib")
+	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 	if (LINUX)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
