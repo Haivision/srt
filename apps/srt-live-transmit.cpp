@@ -440,10 +440,10 @@ int main( int argc, char** argv )
                 alarm(timeout);
             }
             const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  ";
+            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
             if ( data.empty() && src->End() )
             {
-                Verb() << "EOS\n";
+                Verb() << "EOS";
                 break;
             }
             tar->Write(data);
@@ -453,10 +453,10 @@ int main( int argc, char** argv )
             }
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken\n";
+                Verb() << " OUTPUT broken";
                 break;
             }
-            Verb() << " sent\n";
+            Verb() << " sent";
             if ( int_state )
             {
                 cerr << "\n (interrupted on request)\n";
