@@ -786,6 +786,9 @@ if ( ENABLE_CXX11 )
 	if (ENABLE_TESTING)
 
 		macro(srt_add_testprogram name)
+			# Variables in macros are not local. Clear them forcefully.
+			set (SOURCES_app_indir "")
+			set (SOURCES_app "")
 			# Unlike Silvercat, in cmake you must know the full list
 			# of source files at the moment when defining the target
 			# and it can't be altered later.
@@ -799,8 +802,8 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(utility-test)
 		srt_add_testprogram(uriparser-test)
-		target_compile_options(uriparser-test -DTEST)
-		target_compile_options(uriparser-test ${CFLAGS_CXX_STANDARD})
+		target_compile_options(uriparser-test PRIVATE -DTEST)
+		target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
