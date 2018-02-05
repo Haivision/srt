@@ -572,6 +572,7 @@ foreach(tar ${srtpack_libspec_common})
 		string(REGEX MATCH .*_shared is_shared ${tar})
 		if (DEFINED is_shared)
 			set(dep ${DEPENDS_srt}_shared)
+			unset(is_shared)
 		else()
 			set (dep ${DEPENDS_srt}_static)
 		endif()
@@ -682,58 +683,22 @@ else()
 	set (DEPENDS_srt ${DEPENDS_srt_shared})
 endif()
 
-if ( ENABLE_CXX11 )
-
- if ( MINGW )
-	# FIXME: with MINGW, it fails to build stransmit
+if (ENABLE_CXX11 AND MINGW)
+	# FIXME: with MINGW, it fails to build apps that require C++11
 	# https://github.com/Haivision/srt/issues/177
 	message(WARNING "On MinGW, C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
- else()
-	set (SOURCES_transmit 
-		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/socketoptions.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/logsupport.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/transmitmedia.cpp
-		#${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c
-	)
-	# XXX This fix was never necessary, srt_compat.c is
-	# included in the SRT library. This was motivated by some error report
-	# from some CI system, so leaving the commented-out parts for historical reasons.
-	# Please remove it completely once 1.3.0 version is released.
+	set (ENABLE_CXX11 0)
+endif()
 
-	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
-	# This should result in exactly the same as when it was compiled as C, with the
-	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
-	#set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
+macro(srt_add_program name)
+	add_executable(${name} ${ARGN})
+	target_include_directories(${name} PRIVATE apps)
+	target_include_directories(${name} PRIVATE common)
+	install(TARGETS ${name} RUNTIME DESTINATION bin)
+endmacro()
 
-	add_executable(srt-live-transmit
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-live-transmit.cpp
-		${SOURCES_transmit}
-	)
-
-	add_executable(srt-multiplex
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-multiplex.cpp
-		${SOURCES_transmit}
-	)
-
-	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
-	if (NOT WIN32)
-	add_executable(srt-file-transmit
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-file-transmit.cpp
-		${SOURCES_transmit}
-	)
-	endif()
-
-	add_executable(sendfile
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/sendfile.cpp
-	)
-
-	add_executable(recvfile
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/recvfile.cpp
-	)
-
-	target_link_libraries(sendfile ${srt_link_library} ${DEPENDS_srt})
-	target_link_libraries(recvfile ${srt_link_library} ${DEPENDS_srt})
+macro(srt_make_application name)
+	target_compile_options(${name} PRIVATE ${CFLAGS_CXX_STANDARD})
 
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
@@ -754,16 +719,39 @@ if ( ENABLE_CXX11 )
 		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../lib,-rpath,../lib64 BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
-	# Test programs
-	add_executable(utility-test ${CMAKE_CURRENT_SOURCE_DIR}/apps/utility-test.cpp)
-
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-live-transmit ${srt_link_library} ${DEPENDS_srt})
-	install(TARGETS srt-live-transmit RUNTIME DESTINATION bin)
+	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+
+	target_link_libraries(${name} ${srt_link_library} ${DEPENDS_srt})
+endmacro()
+
+macro(srt_add_application name sources)
+	srt_add_program(${name} apps/${name}.cpp ${sources})
+	srt_make_application(${name})
+	install(TARGETS ${name} RUNTIME DESTINATION bin)
+endmacro()
+
+if ( ENABLE_CXX11 )
+
+	# Make a virtual library of all shared app files
+	MafRead(apps/support.maf
+		SOURCES SOURCES_support_indir
+	)
+	adddirname(apps "${SOURCES_support_indir}" SOURCES_support)
+
+	# A special trick that makes the shared application sources
+	# to be compiled once for all applications. Maybe this virtual
+	# library should be changed into a static one and made useful
+	# for users.
+	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
+	target_compile_options(srtsupport_virtual PUBLIC ${CFLAGS_CXX_STANDARD})
+	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
+
+	# Applications
+
+	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
+
 	# For backward compatibility with the old name
-
-
 	if (SYMLINKABLE)
 		set (REPLI_COMMAND create_symlink )
 	else()
@@ -789,22 +777,63 @@ if ( ENABLE_CXX11 )
 		install(PROGRAMS ${stransmit_path} DESTINATION bin)
 	endif()
 
-	set_target_properties(srt-multiplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-multiplex ${srt_link_library} ${DEPENDS_srt})
-	install(TARGETS srt-multiplex RUNTIME DESTINATION bin)
-
+	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
 	if (NOT WIN32)
-	set_target_properties(srt-file-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-file-transmit ${srt_link_library} ${DEPENDS_srt})
-	install(TARGETS srt-file-transmit RUNTIME DESTINATION bin)
+		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 	endif()
- endif() # ( MINGW )
+	srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 
-	install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+	if (ENABLE_TESTING)
 
-	target_link_libraries(utility-test ${srt_link_library})
+		macro(srt_add_testprogram name)
+			# Unlike Silvercat, in cmake you must know the full list
+			# of source files at the moment when defining the target
+			# and it can't be altered later.
+			#
+			# For testing applications, every application has its exclusive
+			# list of source files in its own Manifest file.
+			MafRead(testing/${name}.maf SOURCES SOURCES_app_indir)
+			adddirname(testing "${SOURCES_app_indir}" SOURCES_app)
+			srt_add_program(${name} ${SOURCES_app})
+		endmacro()
+
+		srt_add_testprogram(utility-test)
+		srt_add_testprogram(uriparser-test)
+		target_compile_options(uriparser-test -DTEST)
+		target_compile_options(uriparser-test ${CFLAGS_CXX_STANDARD})
+		
+		srt_add_testprogram(srt-test-live)
+		srt_make_application(srt-test-live)
+		if (NOT WIN32)
+			# Still portability problem on Windows
+			srt_add_testprogram(srt-test-file)
+			srt_make_application(srt-test-file)
+		endif()
+	endif()
 
 endif()
+
+if (ENABLE_EXAMPLES)
+
+	# No examples should need C++11
+	macro(srt_add_example mainsrc)
+		get_filename_component(name ${mainsrc} NAME_WE)
+		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+	endmacro()
+
+	srt_add_example(sendfile.cpp apps/logsupport.cpp)
+	srt_make_application(sendfile)
+
+	srt_add_example(recvfile.cpp apps/logsupport.cpp)
+	srt_make_application(recvfile)
+
+	srt_add_example(testcapi-connect.c)
+	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
+
+endif()
+
+install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+
 
 if (DEFINED SRT_EXTRA_APPS_INC)
 	include(${SRT_EXTRA_APPS_INC}.cmake)
@@ -817,10 +846,7 @@ if ( ENABLE_SUFLIP )
 		${CMAKE_CURRENT_SOURCE_DIR}/apps/suflip.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
 	)
-
-	set(LIBS_suflip ${TARGET_haicrypt} ${srt_link_library})
-
-	add_executable(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${LIBS_suflip})
+	srt_add_program(suflip ${SOURCES_suflip})
+	target_link_libraries(suflip ${srt_link_library} ${DEPENDS_srt})
 	install(TARGETS suflip RUNTIME DESTINATION bin)
 endif ()

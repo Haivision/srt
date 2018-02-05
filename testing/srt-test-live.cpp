@@ -76,7 +76,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "transmitbase.hpp"
+#include "testmediabase.hpp"
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -387,7 +387,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.\n";
+        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.";
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -405,8 +405,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'\n";
-
+    Verb() << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -436,10 +435,10 @@ int main( int argc, char** argv )
                 alarm(timeout);
             }
             const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  ";
+            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
             if ( data.empty() && src->End() )
             {
-                Verb() << "EOS\n";
+                Verb() << "EOS";
                 break;
             }
             tar->Write(data);
@@ -452,7 +451,8 @@ int main( int argc, char** argv )
                 Verb() << " OUTPUT broken\n";
                 break;
             }
-            Verb() << " sent\n";
+
+            Verb() << " sent";
             if ( int_state )
             {
                 cerr << "\n (interrupted on request)\n";

@@ -10,7 +10,7 @@
 
 #define REQUIRE_CXX11 1
 
-#include "appcommon.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddrInet
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -18,6 +18,7 @@
 #include "transmitmedia.hpp"
 #include "netinet_any.h"
 #include "threadname.h"
+#include "verbose.hpp"
 
 #include <srt.h>
 #include <logging.h>
@@ -542,7 +543,7 @@ int main( int argc, char** argv )
 
     string verbo = Option<OutString>(params, "no", "v", "verbose");
     if ( verbo == "" || !false_names.count(verbo) )
-        transmit_verbose = true;
+        Verbose::on = true;
 
 
     string srt_uri = params[""][0];

@@ -39,9 +39,8 @@ written by
 #include "uriparser.hpp"
 #include "logsupport.hpp"
 #include "socketoptions.hpp"
-#include "transmitmedia.hpp"
 #include "verbose.hpp"
-
+#include "testmedia.hpp"
 
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);

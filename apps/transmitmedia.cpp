@@ -11,11 +11,12 @@
 #include <srt.h>
 
 #include "netinet_any.h"
-#include "appcommon.hpp"
+#include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "transmitmedia.hpp"
 #include "srt_compat.h"
+#include "verbose.hpp"
 
 using namespace std;
 

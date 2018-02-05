@@ -1,29 +1,59 @@
 Common files
 ============
 
-This directory is meant to hold source files that may be reusable components.
+This directory holds the files that may be used separately by both SRT library
+itself and the internal applications.
 
-Initially they were thought of as common for multiple applications.
+Source files are added to SRT library, so apps don't have to use them. However
+these source files might be used by some internal applications that do not
+link against SRT library.
 
-The UriParser class is universal enough to parse and interpret URI.
-It's important for SRT to specify not only the medium address, but
-also some extra parameters.
-
-The SocketOption class is originally part of stransmit, but it was extracted
-so that you can do the same in your application. It's useful for having
-a text-specified option with value that you'd set to a socket, which is
-the form that has been extracted from the URI by UriParser. It's also
-responsible for a standard way of extracting the caller/listener/rendezvous
-mode.
-
-These things are not meant for the public API yet, but they are extracted
-the way that may allow you to use it in your application.
+Header files contained here might be required by internal applications no
+matter if they link against SRT or not. They are here because simultaneously
+they are used also by the SRT library.
 
 
-Compat
-======
+Utilities
+=========
+
+1. threadname.h
+
+This is a utility that is useful for debugging and it allows a thread to be given
+a name. This name is used in the logging messages, as well as you can see it also
+inside the debugger.
+
+This is currently supported only on Linux; some more portable and more reliable
+way is needed.
+
+2. utilities.h
+
+A set of various reusable components, all defined as C++ classes or C++ inline
+functions. 
+
+3. `netinet_any.h`
+
+This defines a `sockaddr_any` type, which simplifies dealing with the BSD socket API
+using `sockaddr`, `sockaddr_in` and `sockaddr_in6` structures.
+
+
+Compat and portability
+======================
+
+1. `srt_compat.h`
 
 This part contains some portability problem resolutions, including:
- - `clock_gettime`, a function that is unavailable on Mac
  - `strerror` in a version that is both portable and thread safe
+ - `localtime` in a version that is both portable and thread safe
+
+2. win directory
+
+This contains various header files that are used on Windows platform only.
+They provide various facilities available OOTB on POSIX systems.
+
+3. `platform_sys.h`
+
+This is a file that is responsible to include whatever system include
+files must be included for whatever system API must be provided for
+the needs of SRT library. This is a part of public headers.
+
 

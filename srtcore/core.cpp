@@ -78,7 +78,7 @@ modified by
 #include "core.h"
 #include "logging.h"
 #include "crypto.h"
-#include "../common/logsupport.hpp" // Required due to containing extern srt_logger_config
+#include "logging_api.h" // Required due to containing extern srt_logger_config
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min

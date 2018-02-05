@@ -422,25 +422,36 @@ public:
 
 #endif
 
-
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
     if ( size == 0 )
         return "";
 
-    char buf[256];
-    std::ostringstream os;
+    //char buf[256];
+    using namespace std;
+
+    ostringstream os;
 
     // I know, it's funny to use sprintf and ostringstream simultaneously,
     // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
     // Too noisy. OTOH ostringstream solves the problem of memory allocation
     // for a string of unpredictable size.
-    sprintf(buf, "%02X", int(bytes[0]));
-    os << buf;
+    //sprintf(buf, "%02X", int(bytes[0]));
+
+    os.fill('0');
+    os.width(2);
+    os.setf(ios::basefield, ios::hex);
+    os.setf(ios::uppercase);
+
+    //os << buf;
+    os << int(bytes[0]);
+
+
     for (size_t i = 1; i < size; ++i)
     {
-        sprintf(buf, " %02X", int(bytes[i]));
-        os << buf;
+        //sprintf(buf, " %02X", int(bytes[i]));
+        //os << buf;
+        os << int(bytes[i]);
     }
     return os.str();
 }
