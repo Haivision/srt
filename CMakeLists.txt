@@ -69,7 +69,7 @@ option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
-option(ENABLE_HEAVY_LOGGING "Should heaby debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
+option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
