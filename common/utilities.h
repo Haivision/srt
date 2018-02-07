@@ -266,16 +266,22 @@ class ref_t
 public:
     typedef Type type;
 
+#if HAVE_CXX11
     explicit ref_t(Type& __indata)
-        : m_data(&__indata)
+        : m_data(std::addressof(__indata))
         { }
+#else
+    explicit ref_t(Type& __indata)
+        : m_data((Type*)(&(char&)(__indata)))
+        { }
+#endif
 
     ref_t(const ref_t<Type>& inref)
         : m_data(inref.m_data)
     { }
 
 #if HAVE_CXX11
-    ref_t(const std::reference_wrapper<Type>& i): m_data(&i.get()) {}
+    ref_t(const std::reference_wrapper<Type>& i): m_data(std::addressof(i.get())) {}
 #endif
 
     Type& operator*() { return *m_data; }
