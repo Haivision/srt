@@ -71,6 +71,7 @@
 #include <csignal>
 #include <chrono>
 #include <thread>
+#include <list>
 
 #include "appcommon.hpp"  // CreateAddrInet
 #include "uriparser.hpp"  // UriParser
@@ -86,7 +87,6 @@
 #include <logging.h>
 
 using namespace std;
-
 
 map<string,string> g_options;
 
@@ -123,18 +123,28 @@ volatile bool int_state = false;
 volatile bool timer_state = false;
 void OnINT_ForceExit(int)
 {
-    cerr << "\n-------- REQUESTED INTERRUPT!\n";
+    if (transmit_verbose)
+    {
+        cerr << "\n-------- REQUESTED INTERRUPT!\n";
+    }
+
     int_state = true;
-    if ( transmit_throw_on_interrupt )
-        throw ForcedExit("Requested exception interrupt");
 }
 
 void OnAlarm_Interrupt(int)
 {
-    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
+    if (transmit_verbose)
+    {
+        cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
+    }
+
     int_state = false; // JIC
     timer_state = true;
-    throw AlarmExit("Watchdog bites hangup");
+
+    if ((false))
+    {
+        throw AlarmExit("Watchdog bites hangup");
+    }
 }
 
 struct BandwidthGuard
@@ -246,20 +256,19 @@ int main( int argc, char** argv )
     if ( params.size() != 2 )
     {
         cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
-        cerr << "\t-t:<timeout=0> - connection timeout\n";
-        cerr << "\t-d:<stoptime=0> - connection stop time\n";
+        cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
         cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
-        cerr << "\t-S - skip flushing\n";
-        cerr << "\t-k - crash on error (aka developer mode)\n";
-        cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
+        cerr << "\t-q - quiet mode, default no\n";
+        cerr << "\t-v - verbose mode, default no\n";
+        cerr << "\t-a - auto-reconnect mode, default yes, -a:no to disable\n";
         return 1;
     }
 
-    int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
+    int timeout = stoi(Option("0", "t", "to", "timeout"), 0, 0);
     unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
     if ( chunk == 0 )
     {
@@ -271,24 +280,18 @@ int main( int argc, char** argv )
     }
 
     transmit_verbose = Option("no", "v", "verbose") != "no";
-    bool crashonx = Option("no", "k", "crash") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
-    bool skip_flushing = Option("no", "S", "skipflush") != "no";
+    bool autoreconnect = Option("yes", "a", "auto") != "no";
+    bool quiet = Option("no", "q", "quiet") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
-
-    // Options that require integer conversion
-    unsigned long bandwidth;
-    unsigned long stoptime;
 
     try
     {
-        bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
         transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
         transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
-        stoptime = stoul(Option("0", "d", "stoptime"));
     }
     catch (std::invalid_argument)
     {
@@ -329,214 +332,340 @@ int main( int argc, char** argv )
 
 
 #ifdef WIN32
-#define alarm(argument) (void)0
 
-    if (stoptime != 0)
+    if (timeout != 0)
     {
-        cerr << "ERROR: The -stoptime option (-d) is not implemented on Windows\n";
+        cerr << "ERROR: The -timeout option (-t) is not implemented on Windows\n";
         return 1;
     }
 
 #else
-    signal(SIGALRM, OnAlarm_Interrupt);
+    if (timeout != 0)
+    {
+        signal(SIGALRM, OnAlarm_Interrupt);
+        if (!quiet)
+            cerr << "TIMEOUT: will interrupt after " << timeout << "s\n";
+        alarm(timeout);
+    }
 #endif
     signal(SIGINT, OnINT_ForceExit);
     signal(SIGTERM, OnINT_ForceExit);
 
-    time_t start_time { time(0) };
-    time_t end_time { -1 };
 
-    if (stoptime != 0)
+    if (!quiet)
     {
-        if (stoptime < 10)
-        {
-            cerr << "ERROR: -stoptime (-d) must be at least 10 seconds\n";
-            return 1;
-        }
-        alarm(stoptime);
-        cerr << "STOPTIME: will interrupt after " << stoptime << "s\n";
-        if (timeout != 30)
-        {
-            cerr << "WARNING: -timeout (-t) option ignored due to specified -stoptime (-d)\n";
-        }
+        cout << "Media path: '"
+            << params[0]
+            << "' --> '"
+            << params[1]
+            << "'\n";
     }
-
-    // XXX This could be also controlled by an option.
-    int final_delay = 5;
-
-    // In the beginning, set Alarm 
 
     unique_ptr<Source> src;
+    bool srcConnected = false;
     unique_ptr<Target> tar;
+    bool tarConnected = false;
 
-    try
+    int pollid = srt_epoll_create();
+    if ( pollid < 0 )
     {
-        src = Source::Create(params[0]);
-        tar = Target::Create(params[1]);
-    }
-    catch(std::exception& x)
-    {
-        if (::int_state)
-        {
-            // The application was terminated by SIGINT or SIGTERM.
-            // Don't print anything, just exit gently like ffmpeg.
-            cerr << "Exit on request.\n";
-            return 255;
-        }
-
-        if (stoptime != 0 && ::timer_state)
-        {
-            cerr << "Exit on timeout.\n";
-            return 0;
-        }
-
-        if ( transmit_verbose )
-        {
-            cout << "MEDIA CREATION FAILED: " << x.what() << " - exitting.\n";
-        }
-
-        // Don't speak anything when no -v option.
-        // (the "requested interrupt" will be printed anyway)
-        return 2;
-    }
-    catch (...)
-    {
-        cerr << "ERROR: UNKNOWN EXCEPTION\n";
-        return 2;
-    }
-
-    alarm(0);
-    end_time = time(0);
-
-    // Now loop until broken
-    BandwidthGuard bw(bandwidth);
-
-    if ( transmit_verbose )
-    {
-        cout << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'\n";
-    }
-
-    // After the time has been spent in the creation
-    // (including waiting for connection)
-    // rest of the time should be spent for transmission.
-    if (stoptime != 0)
-    {
-        int elapsed = end_time - start_time;
-        int remain = stoptime - elapsed;
-
-        if (remain <= final_delay)
-        {
-            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
-            return 0;
-        }
-
-        cerr << "NOTE: stoptime: remaining " << remain << " seconds (setting alarm to " << (remain - final_delay) << "s)\n";
-        alarm(remain - final_delay);
-    }
-
-    extern logging::Logger glog;
-    try
-    {
-        for (;;)
-        {
-            if (stoptime == 0 && timeout != -1 )
-            {
-                alarm(timeout);
-            }
-            const bytevector& data = src->Read(chunk);
-            if ( transmit_verbose )
-                cout << " << " << data.size() << "  ->  ";
-            if ( data.empty() && src->End() )
-            {
-                if ( transmit_verbose )
-                    cout << "EOS\n";
-                break;
-            }
-            tar->Write(data);
-            if (stoptime == 0 && timeout != -1 )
-            {
-                alarm(0);
-            }
-            if ( tar->Broken() )
-            {
-                if ( transmit_verbose )
-                    cout << " OUTPUT broken\n";
-                break;
-            }
-            if ( transmit_verbose )
-                cout << " sent\n";
-            if ( int_state )
-            {
-                cerr << "\n (interrupted on request)\n";
-                break;
-            }
-
-            bw.Checkpoint(chunk, transmit_bw_report);
-
-            if (stoptime != 0)
-            {
-                int elapsed = time(0) - end_time;
-                int remain = stoptime - final_delay - elapsed;
-                if (remain < 0)
-                {
-                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
-                    this_thread::sleep_for(chrono::seconds(final_delay));
-                    break;
-                }
-            }
-        }
-
-    } catch (Source::ReadEOF&) {
-        alarm(0);
-
-        if (!skip_flushing)
-        {
-            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
-            for (;;)
-            {
-                size_t still = tar->Still();
-                if (still == 0)
-                {
-                    cerr << "(DEBUG) DEPLETED. Done.\n";
-                    break;
-                }
-
-                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
-                this_thread::sleep_for(chrono::seconds(1));
-            }
-        }
-    } catch (std::exception& x) { // Catches TransmissionError and AlarmExit
-
-        if (stoptime != 0 && ::timer_state)
-        {
-            cerr << "Exit on timeout.\n";
-        }
-        else if (::int_state)
-        {
-            // Do nothing.
-        }
-        else
-        {
-            cerr << "STD EXCEPTION: " << x.what() << endl;
-        }
-
-        if (final_delay > 0)
-        {
-            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
-            this_thread::sleep_for(chrono::seconds(final_delay));
-        }
-        if (stoptime != 0 && ::timer_state)
-            return 0;
-
-        return 255;
-
-    } catch (...) {
-
-        cerr << "UNKNOWN type of EXCEPTION\n";
-        if ( crashonx )
-            throw;
-
+        cerr << "Can't initialize epoll";
         return 1;
+    }
+
+    size_t receivedBytes = 0;
+    size_t wroteBytes = 0;
+    size_t lostBytes = 0;
+    size_t lastReportedtLostBytes = 0;
+    std::time_t writeErrorLogTimer(std::time(nullptr));
+
+    try {
+        // Now loop until broken
+        while (!int_state && !timer_state)
+        {
+            if (!src.get())
+            {
+                src = Source::Create(params[0]);
+                if (!src.get())
+                {
+                    cerr << "Unsupported source type" << endl;
+                    return 1;
+                }
+                int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                switch(src->uri.type())
+                {
+                case UriParser::SRT:
+                    if (srt_epoll_add_usock(pollid,
+                            src->GetSRTSocket(), &events))
+                    {
+                        cerr << "Failed to add SRT source to poll, "
+                            << src->GetSRTSocket() << endl;
+                        return 1;
+                    }
+                    break;
+                case UriParser::UDP:
+                    if (srt_epoll_add_ssock(pollid,
+                            src->GetSysSocket(), &events))
+                    {
+                        cerr << "Failed to add UDP source to poll, "
+                            << src->GetSysSocket() << endl;
+                        return 1;
+                    }
+                    break;
+                case UriParser::FILE:
+                    if (srt_epoll_add_ssock(pollid,
+                            src->GetSysSocket(), &events))
+                    {
+                        cerr << "Failed to add FILE source to poll, "
+                            << src->GetSysSocket() << endl;
+                        return 1;
+                    }
+                    break;
+                default:
+                    break;
+                }
+
+                receivedBytes = 0;
+            }
+
+            if (!tar.get())
+            {
+                tar = Target::Create(params[1]);
+                if (!src.get())
+                {
+                    cerr << "Unsupported target type" << endl;
+                    return 1;
+                }
+
+                // IN because we care for state transitions only
+                int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                switch(tar->uri.type())
+                {
+                case UriParser::SRT:
+                    if (srt_epoll_add_usock(pollid,
+                            tar->GetSRTSocket(), &events))
+                    {
+                        cerr << "Failed to add SRT destination to poll, "
+                            << tar->GetSRTSocket() << endl;
+                        return 1;
+                    }
+                    break;
+                default:
+                    break;
+                }
+
+                wroteBytes = 0;
+                lostBytes = 0;
+                lastReportedtLostBytes = 0;
+            }
+
+            int srtrfdslen = 2;
+            SRTSOCKET srtrfds[2];
+            int sysrfdslen = 2;
+            SYSSOCKET sysrfds[2];
+            if (srt_epoll_wait(pollid,
+                &srtrfds[0], &srtrfdslen, 0, 0,
+                100,
+                &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
+            {
+                if ((false))
+                {
+                    cout << "Event:"
+                        << " srtrfdslen " << srtrfdslen
+                        << " sysrfdslen " << sysrfdslen
+                        << endl;
+                }
+
+                bool doabort = false;
+                for (int i = 0; i < srtrfdslen; i++)
+                {
+                    bool issource = false;
+                    SRTSOCKET s = srtrfds[i];
+                    if (src->GetSRTSocket() == s)
+                    {
+                        issource = true;
+                    }
+                    else if (tar->GetSRTSocket() != s)
+                    {
+                        cerr << "Unexpected socket poll: " << s;
+                        doabort = true;
+                        break;
+                    }
+
+                    const char * dirstring = (issource)? "source" : "target";
+
+                    SRT_SOCKSTATUS status = srt_getsockstate(s);
+                    if ((false) && status != SRTS_CONNECTED)
+                    {
+                        cout << dirstring << " status " << status << endl;
+                    }
+                    switch (status)
+                    {
+                        case SRTS_LISTENING:
+                        {
+                            if ((false) && !quiet)
+                                cout << "New SRT client connection" << endl;
+
+                            bool res = (issource) ?
+                                src->AcceptNewClient() : tar->AcceptNewClient();
+                            if (!res)
+                            {
+                                cerr << "Failed to accept SRT connection"
+                                    << endl;
+                                doabort = true;
+                                break;
+                            }
+
+                            srt_epoll_remove_usock(pollid, s);
+
+                            SRTSOCKET ns = (issource) ?
+                                src->GetSRTSocket() : tar->GetSRTSocket();
+                            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                            if (srt_epoll_add_usock(pollid, ns, &events))
+                            {
+                                cerr << "Failed to add SRT client to poll, "
+                                    << ns << endl;
+                                doabort = true;
+                            }
+                            else
+                            {
+                                if (!quiet)
+                                {
+                                    cout << "Accepted SRT "
+                                        << dirstring
+                                        <<  " connection"
+                                        << endl;
+                                }
+                                if (issource)
+                                    srcConnected = true;
+                                else
+                                    tarConnected = true;
+                            }
+                        }
+                        break;
+                        case SRTS_BROKEN:
+                        case SRTS_NONEXIST:
+                        case SRTS_CLOSED:
+                        {
+                            if (issource)
+                            {
+                                if (srcConnected)
+                                {
+                                    if (!quiet)
+                                    {
+                                        cout << "SRT source disconnected"
+                                            << endl;
+                                    }
+                                    srcConnected = false;
+                                }
+                            }
+                            else if (tarConnected)
+                            {
+                                if (!quiet)
+                                    cout << "SRT target disconnected" << endl;
+                                tarConnected = false;
+                            }
+
+                            if(!autoreconnect)
+                            {
+                                doabort = true;
+                            }
+                            else
+                            {
+                                // force re-connection
+                                srt_epoll_remove_usock(pollid, s);
+                                if (issource)
+                                    src.release();
+                                else
+                                    tar.release();
+                            }
+                        }
+                        break;
+                        case SRTS_CONNECTED:
+                        {
+                            if (issource)
+                            {
+                                if (!srcConnected)
+                                {
+                                    if (!quiet)
+                                        cout << "SRT source connected" << endl;
+                                    srcConnected = true;
+                                }
+                            }
+                            else if (!tarConnected)
+                            {
+                                if (!quiet)
+                                    cout << "SRT target connected" << endl;
+                                tarConnected = true;
+                            }
+                        }
+
+                        default:
+                        {
+                            // No-Op
+                        }
+                        break;
+                    }
+                }
+
+                if (doabort)
+                {
+                    break;
+                }
+
+                // read a few chunks at a time in attempt to deplete
+                // read buffers as much as possible on each read event
+                // note that this implies live streams and does not
+                // work for cached/file sources
+                std::list<std::shared_ptr<bytevector>> dataqueue;
+                if (src.get() && (srtrfdslen || sysrfdslen))
+                {
+                    while (dataqueue.size() < 10)
+                    {
+                        std::shared_ptr<bytevector> pdata(
+                            new bytevector(chunk));
+                        if (!src->Read(chunk, *pdata) || (*pdata).empty())
+                        {
+                            break;
+                        }
+                        dataqueue.push_back(pdata);
+                        receivedBytes += (*pdata).size();
+                    }
+                }
+
+                // if no target, let received data fall to the floor
+                while (tar.get() && !dataqueue.empty())
+                {
+                    std::shared_ptr<bytevector> pdata = dataqueue.front();
+                    if (!tar->IsOpen() || !tar->Write(*pdata))
+                        lostBytes += (*pdata).size();
+
+                    else
+                        wroteBytes += (*pdata).size();
+
+                    dataqueue.pop_front();
+                }
+
+                if (!quiet && (lastReportedtLostBytes != lostBytes))
+                {
+                    std::time_t now(std::time(nullptr));
+                    if (std::difftime(now, writeErrorLogTimer) >= 5.0)
+                    {
+                        cout << lostBytes << " bytes lost, "
+                            << wroteBytes << " bytes sent, "
+                            << receivedBytes << " bytes received"
+                            << endl;
+                        writeErrorLogTimer = now;
+                        lastReportedtLostBytes = lostBytes;
+                    }
+                }
+            }
+        }
+    }
+    catch (std::exception& x)
+    {
+        cerr << "ERROR: " << x.what() << endl;
+        return 255;
     }
 
     return 0;
