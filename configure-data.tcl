@@ -53,7 +53,7 @@ set cmake_options {
     enable-shared "Should libsrt be built as a shared library (default: ON)"
     enable-static "Should libsrt be built as a static library (default: ON)"
     enable-suflip "Shuld suflip tool be built (default: OFF)"
-	enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
+    enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
     openssl-crypto-library=<filepath> "Path to a library."
     openssl-include-dir=<path> "Path to a file."
     openssl-ssl-library=<filepath> "Path to a library."
