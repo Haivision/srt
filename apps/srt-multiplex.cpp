@@ -46,8 +46,6 @@ void OnINT_SetIntState(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     siplex_int_state = true;
-    if ( transmit_throw_on_interrupt )
-        throw std::runtime_error("Requested exception interrupt");
 }
 
 volatile bool alarm_state = false;
@@ -113,7 +111,8 @@ struct MediumPair
             {
                 ostringstream sout;
                 alarm(1);
-                const bytevector& data = src->Read(chunk);
+                bytevector data;
+                src->Read(chunk, data);
                 alarm(0);
                 if (alarm_state)
                 {
