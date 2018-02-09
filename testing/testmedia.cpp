@@ -9,6 +9,9 @@
 #include <iterator>
 #include <map>
 #include <srt.h>
+#if !defined(WIN32)
+#include <sys/ioctl.h>
+#endif
 
 #include "netinet_any.h"
 #include "apputil.hpp"
@@ -22,7 +25,6 @@ using namespace std;
 
 bool transmit_verbose = false;
 std::ostream* transmit_cverb = nullptr;
-volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -39,17 +41,22 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    bytevector Read(size_t chunk) override
+    bool Read(size_t chunk, bytevector& data) override
     {
-        bytevector data(chunk);
+        if (data.size() < chunk)
+            data.resize(chunk);
+
         ifile.read(data.data(), chunk);
         size_t nread = ifile.gcount();
         if ( nread < data.size() )
             data.resize(nread);
 
         if ( data.empty() )
-            throw ReadEOF(filename_copy);
-        return data;
+        {
+            return false;
+        }
+
+        return true;
     }
 
     bool IsOpen() override { return bool(ifile); }
@@ -64,9 +71,10 @@ public:
 
     FileTarget(const string& path): ofile(path, ios::out | ios::trunc | ios::binary) {}
 
-    void Write(const bytevector& data) override
+    bool Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+        return !(ofile.bad());
     }
 
     bool IsOpen() override { return !!ofile; }
@@ -135,7 +143,8 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     par.erase("mode");
 
-    if ( par.count("blocking") )
+    // no blocking mode support at the moment
+    if ( ((false)) && par.count("blocking") )
     {
         m_blocking_mode = !false_names.count(par.at("blocking"));
         par.erase("blocking");
@@ -198,11 +207,6 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "ConfigurePre");
 
-    if ( !m_blocking_mode )
-    {
-        srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
-    }
-
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     if ( transmit_verbose )
@@ -219,7 +223,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if ( transmit_verbose )
     {
-        cout << " listen... ";
+        cout << " listen..." << endl;
         cout.flush();
     }
     stat = srt_listen(m_bindsock, backlog);
@@ -227,29 +231,6 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     {
         srt_close(m_bindsock);
         Error(UDT::getlasterror(), "srt_listen");
-    }
-
-    if ( transmit_verbose )
-    {
-        cout << " accept... ";
-        cout.flush();
-    }
-    ::transmit_throw_on_interrupt = true;
-
-    if ( !m_blocking_mode )
-    {
-        if ( transmit_verbose )
-            cout << "[ASYNC] " << flush;
-
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
-
-        if ( transmit_verbose )
-        {
-            cout << "[EPOLL: " << len << " sockets] " << flush;
-        }
     }
 }
 
@@ -268,26 +249,43 @@ void SrtCommon::StealFrom(SrtCommon& src)
     src.m_sock = SRT_INVALID_SOCK; // STEALING
 }
 
-void SrtCommon::AcceptNewClient()
+bool SrtCommon::AcceptNewClient()
 {
     sockaddr_in scl;
     int sclen = sizeof scl;
+
+    if ( transmit_verbose )
+    {
+        cout << " accept... ";
+        cout.flush();
+    }
+
     m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
     if ( m_sock == SRT_INVALID_SOCK )
     {
         srt_close(m_bindsock);
+        m_bindsock = SRT_INVALID_SOCK;
         Error(UDT::getlasterror(), "srt_accept");
+    }
+
+    if ((true))
+    {
+        // we do one client connection at a time,
+        // so close the listener.
+        srt_close(m_bindsock);
+        m_bindsock = SRT_INVALID_SOCK;
     }
 
     if ( transmit_verbose )
         cout << " connected.\n";
-    ::transmit_throw_on_interrupt = false;
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
     int stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "ConfigurePost");
+
+    return true;
 }
 
 void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_output)
@@ -310,15 +308,6 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
     {
         throw std::invalid_argument("Invalid 'mode'. Use 'client' or 'server'");
     }
-}
-
-int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
-{
-    int pollid = srt_epoll_create();
-    if ( pollid == -1 )
-        throw std::runtime_error("Can't create epoll in nonblocking mode");
-    srt_epoll_add_usock(pollid, socket, &modes);
-    return pollid;
 }
 
 int SrtCommon::ConfigurePost(SRTSOCKET sock)
@@ -448,41 +437,8 @@ void SrtCommon::PrepareClient()
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "ConfigurePre");
-
-    if ( !m_blocking_mode )
-    {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
-    }
-
 }
 
-/*
- This may be used sometimes for testing, but it's nonportable.
-void SrtCommon::SpinWaitAsync()
-{
-    static string udt_status_names [] = {
-        "INIT" , "OPENED", "LISTENING", "CONNECTING", "CONNECTED", "BROKEN", "CLOSING", "CLOSED", "NONEXIST"
-    };
-
-    for (;;)
-    {
-        SRT_SOCKSTATUS state = srt_getsockstate(m_sock);
-        if ( int(state) < SRTS_CONNECTED )
-        {
-            if ( transmit_verbose )
-                cout << state << flush;
-            usleep(250000);
-            continue;
-        }
-        else if ( int(state) > SRTS_CONNECTED )
-        {
-            Error(UDT::getlasterror(), "UDT::connect status=" + udt_status_names[state]);
-        }
-
-        return;
-    }
-}
-*/
 
 void SrtCommon::ConnectClient(string host, int port)
 {
@@ -501,33 +457,14 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(UDT::getlasterror(), "UDT::connect");
     }
 
-    // Wait for REAL connected state if nonblocking mode
-    if ( !m_blocking_mode )
+    if (transmit_verbose)
     {
-        if ( transmit_verbose )
-            cout << "[ASYNC] " << flush;
-
-        // SPIN-WAITING version. Don't use it unless you know what you're doing.
-        // SpinWaitAsync();
-
-        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
-        {
-            if ( transmit_verbose )
-            {
-                cout << "[EPOLL: " << len << " sockets] " << flush;
-            }
-        }
+        if ( m_blocking_mode)
+            cout << " connected.\n";
         else
-        {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
-        }
+            cout << endl;
     }
 
-    if ( transmit_verbose )
-        cout << " connected.\n";
     stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "ConfigurePost");
@@ -559,11 +496,6 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "ConfigurePre");
 
-    if ( !m_blocking_mode )
-    {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
-    }
-
     sockaddr_in localsa = CreateAddrInet(adapter, port);
     sockaddr* plsa = (sockaddr*)&localsa;
     if ( transmit_verbose )
@@ -592,33 +524,13 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
         Error(UDT::getlasterror(), "srt_connect");
     }
 
-    // Wait for REAL connected state if nonblocking mode
-    if ( !m_blocking_mode )
+    if (transmit_verbose)
     {
-        if ( transmit_verbose )
-            cout << "[ASYNC] " << flush;
-
-        // SPIN-WAITING version. Don't use it unless you know what you're doing.
-        // SpinWaitAsync();
-
-        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
-        {
-            if ( transmit_verbose )
-            {
-                cout << "[EPOLL: " << len << " sockets] " << flush;
-            }
-        }
+        if ( m_blocking_mode && transmit_verbose )
+            cout << " connected." << endl;
         else
-        {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
-        }
+            cout << endl;
     }
-
-    if ( transmit_verbose )
-        cout << " connected.\n";
 
     stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
@@ -656,28 +568,23 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
 
-    if ( !m_blocking_mode )
-    {
-        srt_epoll = AddPoller(m_sock, SRT_EPOLL_IN);
-    }
-
     ostringstream os;
     os << host << ":" << port;
     hostport_copy = os.str();
 }
 
-bytevector SrtSource::Read(size_t chunk)
+bool SrtSource::Read(size_t chunk, bytevector& data)
 {
     static size_t counter = 1;
 
-    bytevector data(chunk);
+    if (data.size() < chunk)
+        data.resize(chunk);
+
     bool ready = true;
     int stat;
     do
     {
-        ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg(m_sock, data.data(), chunk);
-        ::transmit_throw_on_interrupt = false;
         if ( stat == SRT_ERROR )
         {
             if ( !m_blocking_mode )
@@ -685,19 +592,8 @@ bytevector SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
                 {
-                    Verb() << "AGAIN: - waiting for data by epoll...";
-                    // Poll on this descriptor until reading is available, indefinitely.
-                    int len = 2;
-                    SRTSOCKET sready[2];
-                    if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
-                    {
-                        if ( transmit_verbose )
-                        {
-                            cout << "... epoll reported ready " << len << " sockets\n";
-                        }
-                        continue;
-                    }
-                    // If was -1, then passthru.
+                    data.clear();
+                    return false;
                 }
             }
             Error(UDT::getlasterror(), "recvmsg");
@@ -728,7 +624,7 @@ bytevector SrtSource::Read(size_t chunk)
 
     ++counter;
 
-    return data;
+    return true;
 }
 
 int SrtTarget::ConfigurePre(SRTSOCKET sock)
@@ -749,24 +645,16 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
-void SrtTarget::Write(const bytevector& data) 
+bool SrtTarget::Write(const bytevector& data) 
 {
-    ::transmit_throw_on_interrupt = true;
-
-    // Check first if it's ready to write.
-    // If not, wait indefinitely.
-    if ( !m_blocking_mode )
-    {
-        int ready[2];
-        int len = 2;
-        if ( srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
-    }
-
     int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_sendmsg");
-    ::transmit_throw_on_interrupt = false;
+    {
+        if (m_blocking_mode)
+            Error(UDT::getlasterror(), "srt_sendmsg");
+        return false;
+    }
+    return true;
 }
 
 SrtModel::SrtModel(string host, int port, map<string,string> par)
@@ -780,7 +668,6 @@ SrtModel::SrtModel(string host, int port, map<string,string> par)
     m_host = host;
     m_port = port;
 }
-
 
 void SrtModel::Establish(ref_t<std::string> name)
 {
@@ -850,7 +737,6 @@ void SrtModel::Establish(ref_t<std::string> name)
 }
 
 
-
 template <class Iface> struct Srt;
 template <> struct Srt<Source> { typedef SrtSource type; };
 template <> struct Srt<Target> { typedef SrtTarget type; };
@@ -866,24 +752,30 @@ public:
     {
     }
 
-    bytevector Read(size_t chunk) override
+    bool Read(size_t chunk, bytevector& data) override
     {
-        bytevector data(chunk);
+        if (data.size() < chunk)
+            data.resize(chunk);
+
         bool st = cin.read(data.data(), chunk).good();
         chunk = cin.gcount();
         if ( chunk == 0 && !st )
-            return bytevector();
+        {
+            data.clear();
+            return false;
+        }
 
         if ( chunk < data.size() )
             data.resize(chunk);
         if ( data.empty() )
-            throw ReadEOF("CONSOLE device");
+            return false;
 
-        return data;
+        return true;
     }
 
     bool IsOpen() override { return cin.good(); }
     bool End() override { return cin.eof(); }
+    int GetSysSocket() { return 0; };
 };
 
 class ConsoleTarget: public Target
@@ -894,13 +786,15 @@ public:
     {
     }
 
-    void Write(const bytevector& data) override
+    bool Write(const bytevector& data) override
     {
         cout.write(data.data(), data.size());
+        return true;
     }
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
+    int GetSysSocket() { return 0; };
 };
 
 template <class Iface> struct Console;
@@ -942,6 +836,20 @@ protected:
 
         int yes = 1;
         ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
+
+        if ((true))
+        {
+            // set non-blocking mode
+#if defined(WIN32)
+            unsigned long ulyes = 1;
+            if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
+#else
+            if (ioctl(m_sock, FIONBIO, (const char *)&yes) < 0)
+#endif
+            {
+                Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
+            }
+        }
 
         sadr = CreateAddrInet(host, port);
 
@@ -1037,6 +945,7 @@ protected:
             if ( m_options.count(o.name) )
             {
                 string value = m_options.at(o.name);
+                cout << "set " << o.name;
                 bool ok = o.apply<SocketOption::SYSTEM>(m_sock, value);
                 if ( transmit_verbose && !ok )
                     cout << "WARNING: failed to set '" << o.name << "' to " << value << endl;
@@ -1087,30 +996,33 @@ public:
         eof = false;
     }
 
-    bytevector Read(size_t chunk) override
+    bool Read(size_t chunk, bytevector& data) override
     {
-        bytevector data(chunk);
+        if (data.size() < chunk)
+            data.resize(chunk);
+
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if ( stat == -1 )
-            Error(SysError(), "UDP Read/recvfrom");
-
         if ( stat < 1 )
         {
-            eof = true;
-            return bytevector();
+            if (SysError() != EWOULDBLOCK)
+                eof = true;
+            data.clear();
+            return false;
         }
 
         chunk = size_t(stat);
         if ( chunk < data.size() )
             data.resize(chunk);
 
-        return data;
+        return true;
     }
 
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
+
+    int GetSysSocket() { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1121,15 +1033,22 @@ public:
         Setup(host, port, attr);
     }
 
-    void Write(const bytevector& data) override
+    bool Write(const bytevector& data) override
     {
         int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
-            Error(SysError(), "UDP Write/sendto");
+        {
+            if ((false))
+                Error(SysError(), "UDP Write/sendto");
+            return false;
+        }
+        return true;
     }
 
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
+
+    int GetSysSocket() { return m_sock; };
 };
 
 template <class Iface> struct Udp;
@@ -1155,7 +1074,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     int iport = 0;
     switch ( u.type() )
     {
-    default: ; // do nothing, return nullptr
+    default:
+        break; // do nothing, return nullptr
     case UriParser::FILE:
         if ( u.host() == "con" || u.host() == "console" )
         {
@@ -1169,10 +1089,12 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
             }
             ptr.reset( CreateConsole<Base>() );
         }
+// Disable regular file support for the moment
+#if 0
         else
             ptr.reset( CreateFile<Base>(u.path()));
+#endif
         break;
-
 
     case UriParser::SRT:
         iport = atoi(u.port().c_str());
@@ -1197,7 +1119,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr.get())
+        ptr->uri = move(u);
+
     return ptr;
 }
 
