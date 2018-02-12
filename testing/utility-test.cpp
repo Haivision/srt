@@ -43,5 +43,9 @@ int main()
 
     cout << "SEQNO_CONTROL::mask: " << hex << SEQNO_CONTROL::mask << " SEQNO 0x80050000 has control = " << SEQNO_CONTROL::unwrap(0x80050000)
         << " type = " << SEQNO_MSGTYPE::unwrap(0x80050000) << endl;
+
+    cout << "Creating array of bytes: 10, 11, 20, 25 - FormatBinaryString: ";
+    uint8_t array[4] = { 10, 11, 20, 25 };
+    cout << FormatBinaryString(array, 4) << endl;
     return 0;
 }

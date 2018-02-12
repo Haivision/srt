@@ -396,6 +396,7 @@ UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true) SRT_ATR_DEP
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
+// This is a C++ SRT API extension. This is not a part of legacy UDT API.
 UDT_API void setloglevel(logging::LogLevel::type ll);
 UDT_API void addlogfa(logging::LogFA fa);
 UDT_API void dellogfa(logging::LogFA fa);
@@ -409,6 +410,15 @@ UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
 UDT_API std::string getstreamid(UDTSOCKET u);
 
 }  // namespace UDT
+
+// This is a log configuration used inside SRT.
+// Applications using SRT, if they want to use the logging mechanism
+// are free to create their own logger configuration objects for their
+// own logger FA objects, or create their own. The object of this type
+// is required to initialize the logger FA object.
+namespace logging { struct LogConfig; }
+UDT_API extern logging::LogConfig srt_logger_config;
+
 
 #endif /* __cplusplus */
 

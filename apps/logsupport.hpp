@@ -9,8 +9,5 @@ std::set<logging::LogFA> SrtParseLogFA(std::string fa);
 
 SRT_API extern std::map<std::string, int> srt_level_names;
 
-namespace logging { struct LogConfig;  }
-SRT_API extern logging::LogConfig srt_logger_config;
-
 
 #endif
