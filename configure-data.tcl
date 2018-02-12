@@ -32,26 +32,39 @@
 # - optval (array): contains all option names with their assigned values
 # - cmakeopt (scalar): a list of all options for "cmake" command line
 
-
-set options {
-	enable-shared "compile SRT parts as shared libraries (default: ON)"
-	enable-static "compile SRT parts as static libraries (default: ON)"
-	disable-c++11 "turn off parts that require C++11 support"
-	enable-debug "turn on debug+nonoptimized build mode (if =2, debug+optimized)"
-	enable-profile "turn on profile instrumentation"
-	enable-logging "turn on logging (not heavy debug logging) (default: ON)"
-	enable-heavy-logging "turn on heavy debug logging (default: OFF, ON in debug mode)"
+# Options processed here internally, not passed to cmake
+set internal_options {
 	with-compiler-prefix=<prefix> "set C/C++ toolchains <prefix>gcc and <prefix>g++"
 	with-compiler-type=<name> "compiler type: gcc(default), cc, others simply add ++ for C++"
-	with-openssl=<prefix> "Prefix for OpenSSL installation (adds include,lib)"
-	with-openssl-includedir=<incdir> "Use given path for OpenSSL header files"
-	with-openssl-libdir=<libdir> "Use given path  for OpenSSL library path"
-	with-openssl-libraries=<files> "Use given file list instead of standard -lcrypto"
-	with-openssl-ldflags=<ldflags> "Use given -lDIR values for OpenSSL or absolute library filename"
-	with-pthread-includedir=<incdir> "Use extra path for pthreads (usually for Windows)"
-	with-pthread-ldflags=<flags> "Use specific flags for pthreads (some platforms require -pthread)"
-	use-gnutls "Use GNUTLS library instead of OpenSSL for cryptographic features"
+	with-srt-name=<name> "Override srt library name"
+	with-haicrypt-name=<name> "Override haicrypt library name (if compiled separately)"
+	enable-debug "turn on debug+nonoptimized build mode (if =2, debug+optimized)"
 }
+
+# Options that refer directly to variables used in CMakeLists.txt
+set cmake_options {
+    cygwin-use-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
+    enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
+    enable-c-deps "Extra library dependencies in srt.pc for C language (default: OFF)"
+    enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
+    enable-logging "Should logging be enabled (default: ON)"
+    enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
+    enable-separate-haicrypt "Should haicrypt be built as a separate library file (default: OFF)"
+    enable-shared "Should libsrt be built as a shared library (default: ON)"
+    enable-static "Should libsrt be built as a static library (default: ON)"
+    enable-suflip "Shuld suflip tool be built (default: OFF)"
+    enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
+    openssl-crypto-library=<filepath> "Path to a library."
+    openssl-include-dir=<path> "Path to a file."
+    openssl-ssl-library=<filepath> "Path to a library."
+    pkg-config-executable=<filepath> "pkg-config executable"
+    pthread-include-dir=<path> "Path to a file."
+    pthread-library=<filepath> "Path to a library."
+    use-gnutls "Should use gnutls instead of openssl (default: OFF)"
+    use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
+}
+
+set options $internal_options$cmake_options
 
 # Just example. Available in the system.
 set alias {
@@ -69,6 +82,9 @@ proc flagval v {
 	}
 	return $out
 }
+
+set haicrypt_name ""
+set srt_name ""
 
 proc preprocess {} {
 
@@ -124,64 +140,17 @@ proc preprocess {} {
 		set ::target_path $::optval(--with-target-path)
 		unset ::optval(--with-target-path)
 		puts "NOTE: Explicit target path: $::target_path"
-	} 
+	}
 
-#	# Now finally turn --with-compiler-prefix into cmake-c-compiler etc.
-#	set enforce_compiler 0
-#	set compiler ""
-#	if { [info exists ::optval(--with-compiler-type)] } {
-#		set compiler $::optval(--with-compiler-type)
-#		set enforce_compiler 1
-#	
-#		switch -- $compiler {
-#			gcc {
-#				set xcompiler g++
-#			}
-#	
-#			cc {
-#				set xcompiler c++
-#			}
-#	
-#			default {
-#				set xcompiler ${compiler}++
-#			}
-#		}
-#	
-#	} else {
-#		set compiler gcc
-#		set xcompiler g++
-#	}
-#	
-#	set px ""
-#	if { [info exists ::optval(--with-compiler-prefix)] } {
-#		set enforce_compiler 1
-#		set px $::optval(--with-compiler-prefix)
-#		unset ::optval(--with-compiler-prefix)
-#	}
-#	
-#	if { $enforce_compiler } {
-#	
-#		# If prefix path was not 
-#		if { $px == "" } {
-#			set cmd [auto_execok $compiler]
-#			if { $cmd == "" } {
-#				puts "ERROR: --with-compiler-type: '$compiler' is not a command (add --with-compiler-prefix if not in PATH)"
-#				exit 1
-#			}
-#			set px [file dirname $cmd]/
-#			set cmd [auto_execok $xcompiler]
-#			if { $cmd == "" } {
-#				puts "ERROR: --with-compiler-type=$compiler, can't find correspoding C++ compiler '$xcompiler'"
-#				exit 1
-#			}
-#			set pxx [file dirname $cmd]/
-#		} else {
-#			set pxx $px
-#		}
-#	
-#		set ::optval(--cmake-c-compiler) ${px}${compiler}
-#		set ::optval(--cmake-c++-compiler) ${pxx}${xcompiler}
-#	}
+	if { "--with-srt-name" in $::optkeys } {
+		set ::srt_name $::optval(--with-srt-name)
+		unset ::optval(--with-srt-name)
+	}
+
+	if { "--with-haicrypt-name" in $::optkeys } {
+		set ::haicrypt_name $::optval(--with-haicrypt-name)
+		unset ::optval(--with-haicrypt-name)
+	}
 }
 
 proc GetCompilerCommand {} {
@@ -268,10 +237,16 @@ proc postprocess {} {
 		}
 	}
 
-	# Check if --with-openssl and the others are defined.
+	if { $::srt_name != "" } {
+		lappend ::cmakeopt "-DTARGET_srt=$::srt_name"
+	}
+
+	if { $::haicrypt_name != "" } {
+		lappend ::cmakeopt "-DTARGET_haicrypt=$::haicrypt_name"
+	}
 
 	set have_openssl 0
-	if { [lsearch -glob $::optkeys --with-openssl*] != -1 } {
+	if { [lsearch -glob $::optkeys --openssl*] != -1 } {
 		set have_openssl 1
 	}
 
@@ -287,11 +262,6 @@ proc postprocess {} {
 
 	if { $have_gnutls } {
 		lappend ::cmakeopt "-DUSE_GNUTLS=ON"
-	}
-
-	set have_pthread 0
-	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
-		set have_pthread 1
 	}
 
 	if {$iscross} {
@@ -349,29 +319,6 @@ proc postprocess {} {
 			puts "PKG_CONFIG_PATH: NOT changed, no pkgconfig in '$target_path'"
 		}
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
-	}
-
-	# Autodetect OpenSSL and pthreads
-	if { $::HAVE_WINDOWS } {
-
-		if { !$have_openssl || !$have_gnutls } {
-			puts "Letting cmake detect OpenSSL installation"
-		} elseif { $have_gnutls } {
-			puts "Letting cmake detect GnuTLS installation"
-		} else {
-			puts "HAVE_OPENSSL: [lsearch -inline $::optkeys --with-openssl*]"
-		}
-
-
-		if { !$have_pthread } {
-			puts "Letting cmake detect PThread installation"
-		} else {
-			puts "HAVE_PTHREADS: [lsearch -inline $::optkeys --with-pthread*]"
-		}
-	}
-
-	if { $::HAVE_LINUX || $cygwin_posix } {
-		# Let cmake find openssl and pthread
 	}
 
 	if { $::HAVE_DARWIN } {
