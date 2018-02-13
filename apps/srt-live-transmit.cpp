@@ -263,8 +263,8 @@ int main( int argc, char** argv )
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
-        cerr << "\t-q - quiet mode, default no\n";
-        cerr << "\t-v - verbose mode, default no\n";
+        cerr << "\t-q - quiet mode (default no)\n";
+        cerr << "\t-v - verbose mode (default no)\n";
         cerr << "\t-a - auto-reconnect mode, default yes, -a:no to disable\n";
         return 1;
     }
@@ -280,13 +280,13 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    Verbose::on = Option("no", "v", "verbose") != "no";
+    bool quiet = Option("no", "q", "quiet") != "no";
+    Verbose::on = !quiet && Option("no", "v", "verbose") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool autoreconnect = Option("yes", "a", "auto") != "no";
-    bool quiet = Option("no", "q", "quiet") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
 
     try
@@ -298,6 +298,13 @@ int main( int argc, char** argv )
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
+    }
+
+    if (params[1].rfind("file://con", 0) == 0)
+    {
+        // ensure we are quiet
+	quiet = true;
+	Verbose::on = false;
     }
 
     std::ofstream logfile_stream; // leave unused if not set
@@ -334,14 +341,14 @@ int main( int argc, char** argv )
 
 #ifdef WIN32
 
-    if (timeout != 0)
+    if (timeout > 0)
     {
         cerr << "ERROR: The -timeout option (-t) is not implemented on Windows\n";
         return 1;
     }
 
 #else
-    if (timeout != 0)
+    if (timeout > 0)
     {
         signal(SIGALRM, OnAlarm_Interrupt);
         if (!quiet)
@@ -432,7 +439,7 @@ int main( int argc, char** argv )
             if (!tar.get())
             {
                 tar = Target::Create(params[1]);
-                if (!src.get())
+                if (!tar.get())
                 {
                     cerr << "Unsupported target type" << endl;
                     return 1;
@@ -640,7 +647,6 @@ int main( int argc, char** argv )
                     std::shared_ptr<bytevector> pdata = dataqueue.front();
                     if (!tar->IsOpen() || !tar->Write(*pdata))
                         lostBytes += (*pdata).size();
-
                     else
                         wroteBytes += (*pdata).size();
 

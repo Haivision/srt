@@ -949,10 +949,10 @@ protected:
         {
             int ttl = stoi(attr.at("ttl"));
             int res = setsockopt(m_sock, IPPROTO_IP, IP_TTL, (const char*)&ttl, sizeof ttl);
-            if (res == -1)
+            if (transmit_verbose && res == -1)
                 cout << "WARNING: failed to set 'ttl' (IP_TTL) to " << ttl << endl;
             res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof ttl);
-            if (res == -1)
+            if (transmit_verbose && res == -1)
                 cout << "WARNING: failed to set 'ttl' (IP_MULTICAST_TTL) to " << ttl << endl;
 
             attr.erase("ttl");
@@ -966,7 +966,6 @@ protected:
             if ( m_options.count(o.name) )
             {
                 string value = m_options.at(o.name);
-                cout << "set " << o.name;
                 bool ok = o.apply<SocketOption::SYSTEM>(m_sock, value);
                 if ( transmit_verbose && !ok )
                     cout << "WARNING: failed to set '" << o.name << "' to " << value << endl;
