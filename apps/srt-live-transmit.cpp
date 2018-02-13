@@ -303,8 +303,8 @@ int main( int argc, char** argv )
     if (params[1].rfind("file://con", 0) == 0)
     {
         // ensure we are quiet
-	quiet = true;
-	Verbose::on = false;
+        quiet = true;
+        Verbose::on = false;
     }
 
     std::ofstream logfile_stream; // leave unused if not set
