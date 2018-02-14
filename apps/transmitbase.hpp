@@ -8,49 +8,12 @@
 #include <stdexcept>
 
 typedef std::vector<char> bytevector;
-extern bool transmit_verbose;
 extern bool transmit_total_stats;
 extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
-extern std::ostream* transmit_cverb;
 extern unsigned long transmit_chunk_size;
 
-static const struct VerboseLogNoEol { VerboseLogNoEol() {} } VerbNoEOL;
-
-class VerboseLog
-{
-    bool noeol;
-public:
-
-    VerboseLog(): noeol(false) {}
-
-    template <class V>
-    VerboseLog& operator<<(const V& arg)
-    {
-        std::ostream& os = transmit_cverb ? *transmit_cverb : std::cout;
-        if (transmit_verbose)
-            os << arg;
-        return *this;
-    }
-
-    VerboseLog& operator<<(VerboseLogNoEol)
-    {
-        noeol = true;
-        return *this;
-    }
-
-    ~VerboseLog()
-    {
-        if (transmit_verbose && !noeol)
-        {
-            std::ostream& os = transmit_cverb ? *transmit_cverb : std::cout;
-            os << std::endl;
-        }
-    }
-};
-
-inline VerboseLog Verb() { return VerboseLog(); }
 
 class Location
 {

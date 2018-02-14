@@ -17,14 +17,14 @@ queue.cpp
 smoother.cpp
 srt_c_api.cpp
 window.cpp
-../common/srt_compat.c
+srt_compat.c
 
 PUBLIC HEADERS
 srt.h
 logging_api.h
 
 PROTECTED HEADERS
-../common/platform_sys.h
+platform_sys.h
 udt.h
 srt4udt.h
 
@@ -41,12 +41,13 @@ handshake.h
 list.h
 logging.h
 md5.h
-../common/netinet_any.h
+netinet_any.h
 packet.h
 queue.h
 smoother.h
 srt4udt.h
-../common/threadname.h
-../common/utilities.h
+srt_compat.h
+threadname.h
+utilities.h
 window.h
 

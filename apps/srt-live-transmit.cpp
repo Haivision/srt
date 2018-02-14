@@ -73,11 +73,12 @@
 #include <thread>
 #include <list>
 
-#include "appcommon.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddrInet
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
 #include "transmitbase.hpp"
+#include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
@@ -123,7 +124,7 @@ volatile bool int_state = false;
 volatile bool timer_state = false;
 void OnINT_ForceExit(int)
 {
-    if (transmit_verbose)
+    if (Verbose::on)
     {
         cerr << "\n-------- REQUESTED INTERRUPT!\n";
     }
@@ -133,7 +134,7 @@ void OnINT_ForceExit(int)
 
 void OnAlarm_Interrupt(int)
 {
-    if (transmit_verbose)
+    if (Verbose::on)
     {
         cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
     }
@@ -279,7 +280,7 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    transmit_verbose = Option("no", "v", "verbose") != "no";
+    Verbose::on = Option("no", "v", "verbose") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");
     string logfile = Option("", "logfile");
