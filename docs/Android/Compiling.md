@@ -10,4 +10,4 @@ GNU compilers and gnustl will be removed from NDK starting Q3 2018, so we will u
 ## OpenSSL
 Google removed openssl from Android 7+. You must build openssl libs by yourself.
 # Build SRT for Android
-Run ```/bin/bash mkall```. Libraries will be installed to './<target-architecture>/lib'.
+Run ```/bin/bash mkall```. Libraries will be installed to ```./target-architecture/lib```.
