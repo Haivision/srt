@@ -65,6 +65,21 @@ make
 
 ## For Mac (Darwin, iOS):
 
+[Homebrew](https://brew.sh/) supports "srt" formula.
+
+```
+brew update
+brew install srt
+```
+
+If you prefer using a head commit of `master` branch, you should add `--HEAD` option
+to `brew` command.
+
+```
+brew install --HEAD srt
+```
+
+Also, SRT can be built with `cmake` and `make` on Mac.
 Install cmake and openssl with development files from "brew". Note that the
 system version of OpenSSL is inappropriate, although you should be able to
 use any newer version compiled from sources, if you prefer.
