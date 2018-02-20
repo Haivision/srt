@@ -27,6 +27,7 @@ written by
 #include <srt_compat.h>
 
 #include <string.h>
+#include <stdio.h>
 #include <errno.h>
 #if !defined(_WIN32) \
    && !defined(__MACH__)
@@ -38,6 +39,13 @@ written by
 #include <windows.h>
 #endif
 
+
+static inline const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
+{
+    snprintf(buf, buflen-1, "ERROR CODE %d", errnum);
+    buf[buflen-1] = 0;
+    return buf;
+}
 
 // This function is a portable and thread-safe version of `strerror`.
 // It requires a user-supplied buffer to store the message. The returned
@@ -79,11 +87,20 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
             // assigned. This buffer should be freed afterwards using LocalFree().
             (LPSTR)&lpMsgBuf,
             0, NULL);
-    strcpy(buf, "???");
-    char * result = lpMsgBuf ? strncpy(buf, lpMsgBuf, buflen-1) : buf;
-    buf[buflen-1] = 0;
-    LocalFree(lpMsgBuf);
-    return result;
+
+    if (lpMsgBuf)
+    {
+        strncpy(buf, lpMsgBuf, buflen-1);
+        buf[buflen-1] = 0;
+        LocalFree(lpMsgBuf);
+    }
+    else
+    {
+        SysStrError_Fallback(errnum, buf, buflen);
+    }
+
+    return buf;
+
 #elif (!defined(__GNU_LIBRARY__) && !defined(__GLIBC__) )  \
     || (( (_POSIX_C_SOURCE >= 200112L) || (_XOPEN_SOURCE >= 600)) && ! _GNU_SOURCE )
     // POSIX/XSI-compliant version.
@@ -95,8 +112,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
     // craft a fallback message in this case.
     if (strerror_r(errnum, buf, buflen) != 0)
     {
-        snprintf(buf, buflen-1, "Unknown error %d", errnum);
-        buf[buflen-1] = 0;
+        return SysStrError_Fallback(errnum, buf, buflen);
     }
     return buf;
 #else
@@ -109,18 +125,21 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
     // this buffer - so these cases should be distinguished
     // and the internal storage copied to the buffer.
 
-    strcpy(buf, "???"); // fallback for an impossible IPE
-    char * tBuffer = strerror_r(errnum, buf, buflen);
-    if (tBuffer != NULL
-            && tBuffer != buf)
+    char * gnu_buffer = strerror_r(errnum, buf, buflen);
+    if (!gnu_buffer)
     {
-        strncpy(buf, tBuffer, buflen-1);
+        // This should never happen, so just a paranoid check
+        return SysStrError_Fallback(errnum, buf, buflen);
+    }
+
+    // If they are the same, the message is already copied
+    // (and it's usually a "fallback message" for an error case).
+    if (gnu_buffer != buf)
+    {
+        strncpy(buf, gnu_buffer, buflen-1);
         buf[buflen-1] = 0; // guarantee what strncpy doesn't
-        return buf;
     }
-    else
-    {
-        return buf;
-    }
+
+    return buf;
 #endif
 }
