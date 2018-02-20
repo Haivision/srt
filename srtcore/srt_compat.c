@@ -49,71 +49,77 @@ written by
 // underlying function. 
 extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 {
-   if (buf == NULL || buflen <= 0)
-   {
-      errno = EFAULT;
-      return buf;
-   }
+    if (buf == NULL || buflen < 4) // Required to put ??? into it as a fallback
+    {
+        errno = EFAULT;
+        return buf;
+    }
 
-   buf[0] = '\0';
+    buf[0] = '\0';
 
 #if defined(_WIN32) || defined(WIN32)
-   const char* lpMsgBuf;
+    const char* lpMsgBuf;
 
-   // Note: Intentionally the "fixed char size" types are used despite using
-   // character size dependent FormatMessage (instead of FormatMessageA) so that
-   // your compilation fails when you use wide characters.
-   // The problem is that when TCHAR != char, then the buffer written this way
-   // would have to be converted to ASCII, not just copied by strncpy.
-   FormatMessage(0
+    // Note: Intentionally the "fixed char size" types are used despite using
+    // character size dependent FormatMessage (instead of FormatMessageA) so that
+    // your compilation fails when you use wide characters.
+    // The problem is that when TCHAR != char, then the buffer written this way
+    // would have to be converted to ASCII, not just copied by strncpy.
+    FormatMessage(0
             | FORMAT_MESSAGE_ALLOCATE_BUFFER
             | FORMAT_MESSAGE_FROM_SYSTEM
             | FORMAT_MESSAGE_IGNORE_INSERTS,
-         NULL, // no lpSource
-         errnum, // dwMessageId (as controlled by FORMAT_MESSAGE_FROM_SYSTEM)
-         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-	   // This below parameter normally should contain a pointer to an allocated buffer,
-	   // and this way it's LPTSTR. But when FORMAT_MESSAGE_ALLOCATE_BUFFER, then it is
-	   // expected to be a the value of LPTSTR* type, converted to LPTSTR, that designates
-	   // a pointer to a variable of type LPTSTR, to which the newly allocated buffer is
-	   // assigned. This buffer should be freed afterwards using LocalFree().
-         (LPSTR)&lpMsgBuf,
-	   0, NULL);
-   char * result = strncpy(buf, lpMsgBuf, buflen-1);
-   LocalFree(lpMsgBuf);
-   return result;
+            NULL, // no lpSource
+            errnum, // dwMessageId (as controlled by FORMAT_MESSAGE_FROM_SYSTEM)
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            // This below parameter normally should contain a pointer to an allocated buffer,
+            // and this way it's LPTSTR. But when FORMAT_MESSAGE_ALLOCATE_BUFFER, then it is
+            // expected to be a the value of LPTSTR* type, converted to LPTSTR, that designates
+            // a pointer to a variable of type LPTSTR, to which the newly allocated buffer is
+            // assigned. This buffer should be freed afterwards using LocalFree().
+            (LPSTR)&lpMsgBuf,
+            0, NULL);
+    strcpy(buf, "???");
+    char * result = lpMsgBuf ? strncpy(buf, lpMsgBuf, buflen-1) : buf;
+    buf[buflen-1] = 0;
+    LocalFree(lpMsgBuf);
+    return result;
 #elif (!defined(__GNU_LIBRARY__) && !defined(__GLIBC__) )  \
-   || (( (_POSIX_C_SOURCE >= 200112L) || (_XOPEN_SOURCE >= 600)) && ! _GNU_SOURCE )
-   // POSIX/XSI-compliant version.
-   // Overall general POSIX version: returns status.
-   // 0 for success, otherwise it's:
-   // - possibly -1 and the error code is in ::errno
-   // - possibly the error code itself
-   // The details of the errror are not interesting; simply
-   // craft a fallback message in this case.
-   if (strerror_r(errnum, buf, buflen) != 0)
-   {
-       snprintf(buf, buflen-1, "Unknown error %d", errnum);
-   }
-   return buf;
+    || (( (_POSIX_C_SOURCE >= 200112L) || (_XOPEN_SOURCE >= 600)) && ! _GNU_SOURCE )
+    // POSIX/XSI-compliant version.
+    // Overall general POSIX version: returns status.
+    // 0 for success, otherwise it's:
+    // - possibly -1 and the error code is in ::errno
+    // - possibly the error code itself
+    // The details of the errror are not interesting; simply
+    // craft a fallback message in this case.
+    if (strerror_r(errnum, buf, buflen) != 0)
+    {
+        snprintf(buf, buflen-1, "Unknown error %d", errnum);
+    }
+    return buf;
 #else
-   // GLIBC is non-standard under these conditions.
-   // GNU version: returns the pointer to the message.
-   // This is either equal to the local buffer (buf)
-   // or some system-wide (constant) storage. To maintain
-   // stability of the API, this overall function shall
-   // always return the local buffer and the message in
-   // this buffer - so these cases should be distinguished
-   // and the internal storage copied to the buffer.
-   char * tBuffer = strerror_r(errnum, buf, buflen);
-   if (tBuffer != NULL
-      && tBuffer != buf)
-   {
-      return strncpy(buf, tBuffer, buflen-1);
-   }
-   else
-   {
-      return buf;
-   }
+    // GLIBC is non-standard under these conditions.
+    // GNU version: returns the pointer to the message.
+    // This is either equal to the local buffer (buf)
+    // or some system-wide (constant) storage. To maintain
+    // stability of the API, this overall function shall
+    // always return the local buffer and the message in
+    // this buffer - so these cases should be distinguished
+    // and the internal storage copied to the buffer.
+
+    strcpy(buf, "???"); // fallback for an impossible IPE
+    char * tBuffer = strerror_r(errnum, buf, buflen);
+    if (tBuffer != NULL
+            && tBuffer != buf)
+    {
+        strncpy(buf, tBuffer, buflen-1);
+        buf[buflen-1] = 0; // guarantee what strncpy doesn't
+        return buf;
+    }
+    else
+    {
+        return buf;
+    }
 #endif
 }
