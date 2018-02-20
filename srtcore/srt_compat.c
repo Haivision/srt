@@ -42,8 +42,7 @@ written by
 
 static inline const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
 {
-    snprintf(buf, buflen-1, "ERROR CODE %d", errnum);
-    buf[buflen-1] = 0;
+    snprintf(buf, buflen, "ERROR CODE %d", errnum);
     return buf;
 }
 
