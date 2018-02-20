@@ -39,6 +39,14 @@ written by
 #endif
 
 
+// This function is a portable and thread-safe version of `strerror`.
+// It requires a user-supplied buffer to store the message. The returned
+// value is always equal to the given buffer pointer. If the system
+// error message is longer than the given buflen, it will be trimmed.
+// When the error code is incorrect for the given error message function,
+// a fallback message will be returned, either as returned by the underlying
+// function, or crafted by this function as a response to error in an
+// underlying function. 
 extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 {
    if (buf == NULL || buflen <= 0)
@@ -69,7 +77,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 	   // expected to be a the value of LPTSTR* type, converted to LPTSTR, that designates
 	   // a pointer to a variable of type LPTSTR, to which the newly allocated buffer is
 	   // assigned. This buffer should be freed afterwards using LocalFree().
-         (LPSTR)&lpMsgBuf, 
+         (LPSTR)&lpMsgBuf,
 	   0, NULL);
    char * result = strncpy(buf, lpMsgBuf, buflen-1);
    LocalFree(lpMsgBuf);
@@ -78,22 +86,30 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
    || (( (_POSIX_C_SOURCE >= 200112L) || (_XOPEN_SOURCE >= 600)) && ! _GNU_SOURCE )
    // POSIX/XSI-compliant version.
    // Overall general POSIX version: returns status.
-   // 0 for success, otherwise it's errno_value or -1 and errno_value is in '::errno'.
+   // 0 for success, otherwise it's:
+   // - possibly -1 and the error code is in ::errno
+   // - possibly the error code itself
+   // The details of the errror are not interesting; simply
+   // craft a fallback message in this case.
    if (strerror_r(errnum, buf, buflen) != 0)
    {
-      buf[0] = '\0';
+       snprintf(buf, buflen-1, "Unknown error %d", errnum);
    }
    return buf;
 #else
    // GLIBC is non-standard under these conditions.
    // GNU version: returns the pointer to the message.
-   // This is either equal to the local buffer (errmsg)
-   // or some system-wide storage, depending on kernel's caprice.
+   // This is either equal to the local buffer (buf)
+   // or some system-wide (constant) storage. To maintain
+   // stability of the API, this overall function shall
+   // always return the local buffer and the message in
+   // this buffer - so these cases should be distinguished
+   // and the internal storage copied to the buffer.
    char * tBuffer = strerror_r(errnum, buf, buflen);
    if (tBuffer != NULL
       && tBuffer != buf)
    {
-      return strncpy(buf, tBuffer, buflen);
+      return strncpy(buf, tBuffer, buflen-1);
    }
    else
    {
