@@ -321,7 +321,7 @@ proc postprocess {} {
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
 
-	if { $::HAVE_DARWIN } {
+	if { $::HAVE_DARWIN && !$toolchain_changed} {
 
 		if { $have_gnutls } {
 			# Use gnutls explicitly, as found in brew
