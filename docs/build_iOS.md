@@ -10,19 +10,18 @@ brew install pkg-config
 ```
 
 ## Building OpenSSL
-There is [OpenSSL for iPhone](https://github.com/x2on/OpenSSL-for-iPhone) project which have all necessary to build OpenSSL for our needs. It fetches OpenSSL code by itself, so you don't need to download it separately. So simply clone it and build with command (put actual SDK version):
+There is [OpenSSL for iPhone](https://github.com/x2on/OpenSSL-for-iPhone) project which have all necessary to build OpenSSL for our needs. It fetches OpenSSL code by itself, so you don't need to download it separately. So simply clone it and build with command:
 ```
-./build-libssl.sh  --ios-sdk=11.2 --archs="arm64"
+./build-libssl.sh --archs="arm64"
 ```
 
-Result will be placed in bin/&lt;SDK_VERSION&gt;-&lt;ARCH&gt;.sdk directory (e.g. for command above - *bin/iPhoneOS11.2-arm64.sdk*). We assume you set IOS_OPENSSL variable to this path. 
-
+Results (both libraries and headers) will be placed in bin/&lt;SDK_VERSION&gt;-&lt;ARCH&gt;.sdk directory (for example, *bin/iPhoneOS11.2-arm64.sdk*). We assume you set **IOS_OPENSSL** variable to this path (e.g. `export IOS_OPENSSL="/Users/johndoe/sources/OpenSSL-for-iPhone/bin/iPhoneOS11.2-arm64.sdk"`). 
 
 ## Building SRT code
 Now you can build SRT providing path to OpenSSL library and toolchain file for iOS
 
 ```
-./configure --cmake-prefix-path=$OS_OPENSSL --cmake-toolchain-file=scripts/iOS.cmake
+./configure --cmake-prefix-path=$IOS_OPENSSL --cmake-toolchain-file=scripts/iOS.cmake
 make
 ```
 
