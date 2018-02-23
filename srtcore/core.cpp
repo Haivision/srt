@@ -3361,10 +3361,6 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
-    // XXX Probably redundant - processSrtMsg_HSRSP should do it in both
-    // HSv4 and HSv5 modes.
-    handshakeDone();
-
     CInfoBlock ib;
     ib.m_iIPversion = m_iIPversion;
     CInfoBlock::convert(m_pPeerAddr, m_iIPversion, ib.m_piIP);
@@ -5343,7 +5339,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    }
 }
 
-void CUDT::bstats(CBytePerfMon* perf, bool clear)
+void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 {
    if (!m_bConnected)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -5364,6 +5360,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    perf->pktSndLoss = m_iTraceSndLoss;
    perf->pktRcvLoss = m_iTraceRcvLoss;
    perf->pktRetrans = m_iTraceRetrans;
+   perf->pktRcvRetrans = m_iTraceRcvRetrans;
    perf->pktSentACK = m_iSentACK;
    perf->pktRecvACK = m_iRecvACK;
    perf->pktSentNAK = m_iSentNAK;
@@ -5446,9 +5443,15 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
    {
       if (m_pSndBuffer)
       {
-         //new>
          #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
-         perf->pktSndBuf = m_pSndBuffer->getAvgBufSize(Ref(perf->byteSndBuf), Ref(perf->msSndBuf));
+         if (instantaneous 
+         ||  ((perf->pktSndBuf == 0x5AE) && (perf->msSndBuf ==0x5AE))){ //5AE: SRT Adapted Encoding: Preserve historical API to get instantaneous stats
+             /* Get instant SndBuf instead of moving average for application-based Algorithm
+                (such as NAE) in need of fast reaction to network condition changes. */
+             perf->pktSndBuf = m_pSndBuffer->getCurrBufSize(Ref(perf->byteSndBuf), Ref(perf->msSndBuf));
+         }else {
+             perf->pktSndBuf = m_pSndBuffer->getAvgBufSize(Ref(perf->byteSndBuf), Ref(perf->msSndBuf));
+         }
          #else
          perf->pktSndBuf = m_pSndBuffer->getCurrBufSize(Ref(perf->byteSndBuf), Ref(perf->msSndBuf));
          #endif
@@ -5469,7 +5472,13 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
          perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_iMSS;
          //new>
          #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-         perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
+         if (instantaneous) //no need for historical API for Rcv side
+         {
+             perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
+         }else
+         {
+             perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
+         }
          #else
          perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
          #endif
@@ -5512,6 +5521,8 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear)
       //<
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
+      m_iTraceRcvRetrans = 0;
+	  m_iTraceRcvBelated = 0;
       m_LastSampleTime = currtime;
    }
 }

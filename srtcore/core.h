@@ -206,7 +206,7 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
-    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
@@ -437,8 +437,13 @@ private:
 
     void sample(CPerfMon* perf, bool clear = true);
 
-    // XXX please document
-    void bstats(CBytePerfMon* perf, bool clear = true);
+    /// read the performance data with bytes counters since bstats() 
+    ///  
+    /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
+    /// @param clear [in] flag to decide if the local performance trace should be cleared. 
+    /// @param instantaneous [in] flag to request instantaneous data 
+    /// instead of moving averages. 
+    void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
     /// Mark sequence contained in the given packet as not lost. This
     /// removes the loss record from both current receiver loss list and
