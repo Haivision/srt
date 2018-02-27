@@ -40,7 +40,7 @@ written by
 #endif
 
 
-static inline const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
+static const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
 {
     snprintf(buf, buflen, "ERROR CODE %d", errnum);
     return buf;
