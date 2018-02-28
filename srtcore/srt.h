@@ -583,9 +583,12 @@ SRT_API extern const char* srt_strerror(int code, int errnoval);
 SRT_API extern void srt_clearlasterror(void);
 
 // performance track
-// srt_perfmon is deprecated - use srt_bstats, which provides the same stats plus more.
+// srt_perfmon is deprecated - use srt_bistats, which provides the same stats plus more.
 SRT_API extern int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
+// perfmon with Byte counters for better bitrate estimation.
 SRT_API extern int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
+// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+SRT_API extern int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
 SRT_API extern SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
