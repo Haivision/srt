@@ -78,7 +78,7 @@ modified by
 #include "core.h"
 #include "logging.h"
 #include "crypto.h"
-#include "../common/logsupport.hpp" // Required due to containing extern srt_logger_config
+#include "logging_api.h" // Required due to containing extern srt_logger_config
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
@@ -104,7 +104,7 @@ struct AllFaOn
     }
 } logger_fa_all;
 
-logging::LogConfig srt_logger_config (logger_fa_all.allfa);
+SRT_API logging::LogConfig srt_logger_config (logger_fa_all.allfa);
 
 logging::Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
 logging::Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
@@ -2935,7 +2935,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( m_SrtHsSide == HSD_DRAW )
         return CONN_REJECT;
 
-    UDTRequestType rsp_type;
+    UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
     bool needs_extension = m_ConnRes.m_iType != 0; // Initial value: received HS has extensions.
     bool needs_hsrsp = rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension));
 
@@ -3386,6 +3386,8 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
 
+    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_pPeerAddr));
+
     return CONN_ACCEPT;
 }
 
@@ -3769,15 +3771,19 @@ void* CUDT::tsbpd(void* param)
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
-#if ENABLE_HEAVY_LOGGING
+#if ENABLE_LOGGING
                 uint64_t now = CTimer::getTime();
+
+#if ENABLE_HEAVY_LOGGING
                 int64_t timediff = 0;
                 if ( tsbpdtime )
                     timediff = int64_t(now) - int64_t(tsbpdtime);
 
-                LOGC(tslog.Note, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
+#endif
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << int64_t(now - tsbpdtime) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -4585,6 +4591,8 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
             {
                 m_iSndCurrSeqNo = minlastack;
             }
+            LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
+
             HLOGF(dlog.Debug, "drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
                     (unsigned long long)CTimer::getTime(),
                     realack, m_iSndCurrSeqNo,
@@ -5332,9 +5340,19 @@ void CUDT::sample(CPerfMon* perf, bool clear)
 
    if (clear)
    {
+      m_iTraceSndDrop        = 0;
+      m_iTraceRcvDrop        = 0;
+      m_ullTraceSndBytesDrop = 0;
+      m_ullTraceRcvBytesDrop = 0;
+      m_iTraceRcvUndecrypt        = 0;
+      m_ullTraceRcvBytesUndecrypt = 0;
+      //new>
+      m_ullTraceBytesSent = m_ullTraceBytesRecv = m_ullTraceBytesRetrans = 0;
+      //<
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
+      m_iTraceRcvBelated = 0;
       m_LastSampleTime = currtime;
    }
 }
@@ -6881,6 +6899,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
           // Encryption failed 
           //>>Add stats for crypto failure
           ts_tk = 0;
+          LOGC(dlog.Error, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
           return -1; //Encryption failed
       }
       payload = packet.getLength(); /* Cipher may change length */
@@ -7085,6 +7104,9 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
+#if ENABLE_LOGGING
+              static int nereport = 0;
+#endif
               /*
                * Could not decrypt
                * Keep packet in received buffer
@@ -7095,6 +7117,10 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
+#if ENABLE_LOGGING
+              if (nereport++%100 == 0)
+                  LOGC(dlog.Error, log << "DECRYPT ERROR - dropping a packet of " << packet.getLength() << " bytes");
+#endif
           }
       }
       else

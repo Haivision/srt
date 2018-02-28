@@ -67,18 +67,17 @@ endif()
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
-option(ENABLE_PROFILE "Should the build contain profile information. Ignored if compiler isn't GNU compatable." env{HAI_BUILD_PROFILE})
+option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
-option(ENABLE_HEAVY_LOGGING "Should logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
+option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
-option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
-option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
+option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
-set(TARGET_haicrypt "haicrypt" CACHE STRING "The name for the haicrypt library, if compiled separately")
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -132,12 +131,9 @@ if (DEFINED WITH_SRT_TARGET)
 	set (TARGET_haisrt ${WITH_SRT_TARGET})
 endif()
 
-if (DEFINED WITH_HAICRYPT_TARGET)
-	set (TARGET_haicrypt ${WITH_HAICRYPT_TARGET})
-endif()
-
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(MICROSOFT WIN32 AND (NOT MINGW AND NOT CYGWIN))
 
 set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
 
@@ -245,21 +241,21 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# CMake has only discovered in 3.3 version that some set-finder is
+# necessary. Using variables for shortcut to a clumsy check syntax.
 
-if ( ENABLE_SHARED )
-    set (srt_libspec SHARED)
-else()
-    set (srt_libspec STATIC)
+set (srt_libspec_shared ${ENABLE_SHARED})
+set (srt_libspec_static ${ENABLE_STATIC})
+
+set (haicrypt_libspec VIRTUAL)
+
+set (srtpack_libspec_common)
+if (srt_libspec_shared)
+	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
 endif()
-
-if (ENABLE_SEPARATE_HAICRYPT)
-	set (haicrypt_libspec ${srt_libspec})
-else()
-	set (haicrypt_libspec VIRTUAL)
+if (srt_libspec_static)
+	list(APPEND srtpack_libspec_common ${TARGET_srt}_static)
 endif()
-
-
-set (SRT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
 set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
@@ -291,7 +287,7 @@ add_definitions(
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_INCLUDE_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 
 if (ENABLE_LOGGING)
     list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -330,7 +326,13 @@ else()
 	if (PTHREAD_LIBRARY)
 		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	else()
-		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+			message(STATUS "WARNING: cross-compiler pthread not found - fallback to POSIX default")
+			set (PTHREAD_LIBRARY -pthread)
+			set (PTHREAD_INCLUDE_DIR "")
+		else()
+			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		endif()
 	endif()
 endif() # if (NOT MINGW)
 
@@ -350,112 +352,110 @@ endif()
 # Completing sources and installable headers. Flag settings will follow.
 # ---
 if ( USE_GNUTLS )
-	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist-gnutls.maf")
+	set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
 else()
-	set (HAICRYPT_FILELIST_MAF "haicrypt/filelist.maf")
+	set (HAICRYPT_FILELIST_MAF "filelist.maf")
 endif()
 
-MafRead(${HAICRYPT_FILELIST_MAF}
-	SOURCES SOURCES_haicrypt_indir
-	PUBLIC_HEADERS HEADERS_haicrypt_indir
-	PROTECTED_HEADERS HEADERS_haicrypt_indir
+MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
+	SOURCES SOURCES_haicrypt
+	PUBLIC_HEADERS HEADERS_haicrypt
+	PROTECTED_HEADERS HEADERS_haicrypt
 )
 
-adddirname(haicrypt "${SOURCES_haicrypt_indir}" SOURCES_haicrypt)
-adddirname(haicrypt "${HEADERS_haicrypt_indir}" HEADERS_haicrypt)
-
 if (WIN32)
-	MafRead(common/filelist_win32.maf
-		SOURCES SOURCES_common_indir
-		PUBLIC_HEADERS HEADERS_common_indir
-		PROTECTED_HEADERS HEADERS_common_indir
+	MafReadDir(common filelist_win32.maf
+		SOURCES SOURCES_common
+		PUBLIC_HEADERS HEADERS_srt_win32
+		PROTECTED_HEADERS HEADERS_srt_win32
 	)
-	message(STATUS "WINDOWS detected: adding compat sources: ${SOURCES_common_indir}")
-	adddirname(common "${SOURCES_common_indir}" SOURCES_haicrypt)
-
-	# WARNING!
-	# The common headers are attached to haicrypt in case when
-	# the haicrypt library is a separate library. If this is a
-	# virtual library, the common headers will be attached to
-	# srt headers, and the haicrypt headers will not be published.
-	adddirname(common "${HEADERS_common_indir}" HEADERS_srt_win32)
+	message(STATUS "WINDOWS detected: adding compat sources: ${SOURCES_common}")
 endif()
 
-# Add extra sources to haicrypt (actually all base dep handling) if defined
-set (SOURCES_haicrypt ${SOURCES_haicrypt} ${SOURCES_haicrypt_dep})
 
-message(STATUS "SOURCES(haicrypt): ${SOURCES_haicrypt}")
+# Make the OBJECT library for haicrypt and srt. Then they'll be bound into
+# real libraries later, either one common, or separate.
+
+add_library(haicrypt_virtual OBJECT ${SOURCES_haicrypt} ${SOURCES_common})
 
 # NOTE: The "virtual library" is a library specification that cmake
-# doesn't support. It's a private-only dependency type, where the project
-# isn't compiled into any library file at all - instead, all of its source
-# files are incorporated directly to the source list of the project that
-# depends on it. In cmake this must be handled manually.
-
-# For a separate haicrypt library it's allowed that the common compat
-# things are attached to haicrypt library. In the known uses of the
-# library separation, however, there is no extra compat stuff on the
-# platform where it's being used.
-if (NOT haicrypt_libspec STREQUAL VIRTUAL)
-	message(STATUS "Making haicrypt as a ${haicrypt_libspec} library")
-	add_library(${TARGET_haicrypt} ${haicrypt_libspec} ${SOURCES_haicrypt})
-
-	# Note: POSIX specific; this is used in haisrt.pc.in
-	set (IFNEEDED_LINK_HAICRYPT -l${TARGET_haicrypt})
-
-	# Add these extra settings only in case when haicrypt is compiled
-	# as a separate library. They are public interface oriented, so for
-	# virtual library - which is always a private dependency - it's not needed.
-
-	if (ENABLE_SHARED)
-		target_compile_definitions(${TARGET_haicrypt} PUBLIC -DHAICRYPT_DYNAMIC)
-	endif()
-	target_compile_definitions(${TARGET_haicrypt} PRIVATE -DHAICRYPT_EXPORTS)
-
-	install(TARGETS ${TARGET_haicrypt}
-		RUNTIME DESTINATION bin
-		ARCHIVE DESTINATION lib
-		LIBRARY DESTINATION lib
-	)
-	install(FILES ${HEADERS_haicrypt} DESTINATION include/srt)
-	if (WIN32)
-		install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
-	endif()
-endif()
-# NOTE: rest of the settings for haicrypt follow.
+# doesn't support (the library of OBJECT type is something in kind of that,
+# but not fully supported - for example it doesn't support transitive flags,
+# so this can't be used desired way). It's a private-only dependency type,
+# where the project isn't compiled into any library file at all - instead, all
+# of its source files are incorporated directly to the source list of the
+# project that depends on it. In cmake this must be handled manually.
 
 
 # ---
 # Target: srt. DEFINITION ONLY. Haicrypt flag settings follow.
 # ---
-MafRead(srtcore/filelist.maf
-	SOURCES SOURCES_srt_indir
-	PUBLIC_HEADERS HEADERS_srt_indir
-	PROTECTED_HEADERS HEADERS_srt_indir
+MafReadDir(srtcore filelist.maf
+	SOURCES SOURCES_srt
+	PUBLIC_HEADERS HEADERS_srt
+	PROTECTED_HEADERS HEADERS_srt
 )
-
-adddirname(srtcore "${SOURCES_srt_indir}" SOURCES_srt)
-adddirname(srtcore "${HEADERS_srt_indir}" HEADERS_srt)
 
 # Auto generated version file and add it to the HEADERS_srt list.
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-# Manual handling of dependency on virtual library
-if (haicrypt_libspec STREQUAL VIRTUAL)
-	message(STATUS "Haicrypt attached to sources of srt")
-	# By setting the target, all settings applied to the haicrypt target
-	# will now apply to the dependent library.
-	set (TARGET_haicrypt ${TARGET_srt}) 
-	list(APPEND SOURCES_srt ${SOURCES_haicrypt})
-	set (DEPENDS_srt)
-	set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
-else()
-	set (DEPENDS_srt ${TARGET_haicrypt})
+add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra})
+
+if (ENABLE_SHARED)
+	# Set this to sources as well, as it won't be automatically handled
+	foreach (tar srt_virtual haicrypt_virtual)
+		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
+	endforeach()
 endif()
 
-add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
+# Manual handling of dependency on virtual library
+# By setting the target, all settings applied to the haicrypt target
+# will now apply to the dependent library.
+#list(APPEND SOURCES_srt ${SOURCES_haicrypt})
+set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
+set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
+
+if (srt_libspec_shared)
+	message (STATUS "SRT: defining SHARED library: ${TARGET_srt} from: ${VIRTUAL_srt}")
+	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
+	# shared libraries need PIC
+	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
+    set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
+	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
+	if (MICROSOFT)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
+	endif()
+endif()
+
+if (srt_libspec_static)
+	message (STATUS "SRT: defining STATIC library: ${TARGET_srt} from: ${VIRTUAL_srt}")
+	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
+
+	# For Windows, leave the name to be "srt_static.lib".
+	# Windows generates two different library files:
+	# - a usual static library for static linkage
+	# - a shared library exposer, which allows pre-resolution and later dynamic
+	#   linkage when running the executable
+	# Both having unfortunately the same names created by MSVC compiler.
+	# It's not the case of Cygwin - they are named there libsrt.a and libsrt.dll.a
+	if (WIN32 AND NOT CYGWIN)
+		# Keep _static suffix. By unknown reason, the name must still be set explicitly.
+		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt}_static)
+	else()
+		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt})
+	endif()
+
+	list (APPEND INSTALL_TARGETS ${TARGET_srt}_static)
+	target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
+	if (MICROSOFT)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
+	endif()
+endif()
+
+
 
 # ---
 # And back to target: haicrypt. Both targets must be defined
@@ -467,17 +467,11 @@ add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
 # ---
 
 
-target_include_directories(${TARGET_haicrypt}
-	PRIVATE  ${SSL_INCLUDE_DIRS}
-	PUBLIC ${SRT_SRC_HAICRYPT_DIR}
-)
+target_include_directories(haicrypt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries(${TARGET_haicrypt} PRIVATE ${SSL_LIBRARIES})
 set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
 
-if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
-	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
+if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 endif()
 
@@ -485,10 +479,24 @@ endif()
 # So, back to target: srt. Setting the rest of the settings for srt target.
 # ---
 
-set_target_properties (${TARGET_srt} PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
-target_link_libraries (${TARGET_srt} PUBLIC ${PTHREAD_LIBRARY} ${DEPENDS_srt})
+# Applying this to public includes is not transitive enough.
+# On Windows, apps require this as well, so it's safer to
+# spread this to all targets.
+if (PTHREAD_INCLUDE_DIR)
+	include_directories(${PTHREAD_INCLUDE_DIR})
+endif()
+
+# Link libraries must be applied directly to the derivatives
+# as virtual libraries (OBJECT-type) cannot have linkage declarations
+# transitive or not.
+
+foreach(tar ${srtpack_libspec_common})
+	message(STATUS "ADDING TRANSITIVE LINK DEP to:${tar} : ${PTHREAD_LIBRARY} ${dep}")
+	target_link_libraries (${tar} PUBLIC ${PTHREAD_LIBRARY} ${dep})
+endforeach()
+
+
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
-target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
 if ( LINUX )
 	# Unsure why libdl was required, keeping for the time being.
@@ -497,22 +505,32 @@ if ( LINUX )
 endif()
 
 
-target_compile_definitions(${TARGET_srt} PRIVATE -DSRT_EXPORTS )
+target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
+target_compile_definitions(haicrypt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
-	target_compile_definitions(${TARGET_srt} PUBLIC -DSRT_DYNAMIC) 
+	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC) 
+	target_compile_definitions(haicrypt_virtual PRIVATE -DHAICRYPT_EXPORTS)
 endif()
 
-if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
-    target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
+if (MICROSOFT)
+    target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
 endif()
 
-install(TARGETS ${TARGET_srt}
+# Cygwin installs the *.dll libraries in bin directory and uses PATH.
+
+set (INSTALL_SHARED_DIR lib)
+if (CYGWIN)
+	set (INSTALL_SHARED_DIR bin)
+endif()
+
+
+install(TARGETS ${INSTALL_TARGETS}
 		RUNTIME DESTINATION bin
 		ARCHIVE DESTINATION lib
-		LIBRARY DESTINATION lib
+		LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
 )
 install(FILES ${HEADERS_srt} DESTINATION include/srt)
-if (WIN32 AND TARGET_haicrypt STREQUAL TARGET_srt)
+if (WIN32)
 	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
 endif()
 
@@ -522,8 +540,7 @@ endif()
 
 join_arguments(SRT_EXTRA_CFLAGS ${SRT_EXTRA_CFLAGS})
 
-message(STATUS "Target haicrypt: TYPE:${haicrypt_libspec} ACTUAL TARGET: ${TARGET_haicrypt} HEADERS: {${HEADERS_haicrypt}}")
-message(STATUS "Target srt: TYPE:${srt_libspec} SOURCES: {${SOURCES_srt}} DEPENDS: {${DEPENDS_srt}} HEADERS: {${HEADERS_srt}}")
+#message(STATUS "Target srt: LIBSPEC: ${srtpack_libspec_common} SOURCES: {${SOURCES_srt}}  HEADERS: {${HEADERS_srt}}")
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
@@ -567,67 +584,41 @@ else()
 	set (CFLAGS_CXX_STANDARD "")
 endif()
 
-if ( ENABLE_CXX11 )
+# If static is available, link apps against static one.
+# Otherwise link against shared one.
 
- if ( MINGW )
-	# FIXME: with MINGW, it fails to build stransmit
+if (srt_libspec_static)
+	set (srt_link_library ${TARGET_srt}_static)
+else()
+	set (srt_link_library ${TARGET_srt}_shared)
+endif()
+
+if (ENABLE_CXX11 AND MINGW)
+	# FIXME: with MINGW, it fails to build apps that require C++11
 	# https://github.com/Haivision/srt/issues/177
 	message(WARNING "On MinGW, C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
- else()
-	set (SOURCES_transmit 
-		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/socketoptions.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/logsupport.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/transmitmedia.cpp
-		#${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c
-	)
-	# XXX This fix was never necessary, srt_compat.c is
-	# included in the SRT library. This was motivated by some error report
-	# from some CI system, so leaving the commented-out parts for historical reasons.
-	# Please remove it completely once 1.3.0 version is released.
+	set (ENABLE_CXX11 0)
+endif()
 
-	# Enforce interpreting this file as C++ so that C++ compiler is used to compile it.
-	# This should result in exactly the same as when it was compiled as C, with the
-	# exception that the compiler with accept any C++-only COMPILE_FLAGS (e.g. -std=c++11).
-	#set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/common/srt_compat.c PROPERTIES LANGUAGE CXX )
+macro(srt_add_program name)
+	add_executable(${name} ${ARGN})
+	target_include_directories(${name} PRIVATE apps)
+	target_include_directories(${name} PRIVATE common)
+	install(TARGETS ${name} RUNTIME DESTINATION bin)
+endmacro()
 
-	add_executable(srt-live-transmit
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-live-transmit.cpp
-		${SOURCES_transmit}
-	)
-
-	add_executable(srt-multiplex
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-multiplex.cpp
-		${SOURCES_transmit}
-	)
-
-	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
-	if (NOT WIN32)
-	add_executable(srt-file-transmit
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/srt-file-transmit.cpp
-		${SOURCES_transmit}
-	)
-	endif()
-
-	add_executable(sendfile
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/sendfile.cpp
-	)
-
-	add_executable(recvfile
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/legacy/recvfile.cpp
-	)
-	target_link_libraries(sendfile ${TARGET_srt} ${DEPENDS_srt})
-	target_link_libraries(recvfile ${TARGET_srt} ${DEPENDS_srt})
+macro(srt_make_application name)
+	target_compile_options(${name} PRIVATE ${CFLAGS_CXX_STANDARD})
 
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
 	# is added as is.
-    # set (CMAKE_SKIP_RPATH FALSE)
-    # set (CMAKE_SKIP_BUILD_RPATH FALSE)
-    # set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-    # set (CMAKE_INSTALL_RPATH "../lib")
-    # set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-    # set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+	# set (CMAKE_SKIP_RPATH FALSE)
+	# set (CMAKE_SKIP_BUILD_RPATH FALSE)
+	# set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+	# set (CMAKE_INSTALL_RPATH "../lib")
+	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 	if (LINUX)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
@@ -635,19 +626,42 @@ if ( ENABLE_CXX11 )
 		# XXX not sure about Mac.
 		# XXX This needs to be probably lib64 on 64-bit systems and 64-bit build.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
-		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,../lib BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../lib,-rpath,../lib64 BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
-	# Test programs
-	add_executable(utility-test ${CMAKE_CURRENT_SOURCE_DIR}/apps/utility-test.cpp)
-
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-live-transmit ${TARGET_srt} ${DEPENDS_srt})
-	install(TARGETS srt-live-transmit RUNTIME DESTINATION bin)
+	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+
+	target_link_libraries(${name} ${srt_link_library})
+endmacro()
+
+macro(srt_add_application name sources)
+	srt_add_program(${name} apps/${name}.cpp ${sources})
+	srt_make_application(${name})
+	install(TARGETS ${name} RUNTIME DESTINATION bin)
+endmacro()
+
+if ( ENABLE_CXX11 )
+
+	# Make a virtual library of all shared app files
+	MafRead(apps/support.maf
+		SOURCES SOURCES_support_indir
+	)
+	adddirname(apps "${SOURCES_support_indir}" SOURCES_support)
+
+	# A special trick that makes the shared application sources
+	# to be compiled once for all applications. Maybe this virtual
+	# library should be changed into a static one and made useful
+	# for users.
+	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
+	target_compile_options(srtsupport_virtual PUBLIC ${CFLAGS_CXX_STANDARD})
+	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
+
+	# Applications
+
+	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
+
 	# For backward compatibility with the old name
-
-
 	if (SYMLINKABLE)
 		set (REPLI_COMMAND create_symlink )
 	else()
@@ -673,22 +687,66 @@ if ( ENABLE_CXX11 )
 		install(PROGRAMS ${stransmit_path} DESTINATION bin)
 	endif()
 
-	set_target_properties(srt-multiplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-multiplex ${TARGET_srt} ${DEPENDS_srt})
-	install(TARGETS srt-multiplex RUNTIME DESTINATION bin)
-
+	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
 	if (NOT WIN32)
-	set_target_properties(srt-file-transmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
-	target_link_libraries(srt-file-transmit ${TARGET_srt} ${DEPENDS_srt})
-	install(TARGETS srt-file-transmit RUNTIME DESTINATION bin)
+		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 	endif()
- endif() # ( MINGW )
+	srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 
-	install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+	if (ENABLE_TESTING)
 
-	target_link_libraries(utility-test ${TARGET_srt})
+		macro(srt_add_testprogram name)
+			# Variables in macros are not local. Clear them forcefully.
+			set (SOURCES_app_indir "")
+			set (SOURCES_app "")
+			# Unlike Silvercat, in cmake you must know the full list
+			# of source files at the moment when defining the target
+			# and it can't be altered later.
+			#
+			# For testing applications, every application has its exclusive
+			# list of source files in its own Manifest file.
+			MafRead(testing/${name}.maf SOURCES SOURCES_app_indir)
+			adddirname(testing "${SOURCES_app_indir}" SOURCES_app)
+			srt_add_program(${name} ${SOURCES_app})
+		endmacro()
+
+		srt_add_testprogram(utility-test)
+		srt_add_testprogram(uriparser-test)
+		target_compile_options(uriparser-test PRIVATE -DTEST)
+		target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		
+		srt_add_testprogram(srt-test-live)
+		srt_make_application(srt-test-live)
+		if (NOT WIN32)
+			# Still portability problem on Windows
+			srt_add_testprogram(srt-test-file)
+			srt_make_application(srt-test-file)
+		endif()
+	endif()
 
 endif()
+
+if (ENABLE_EXAMPLES)
+
+	# No examples should need C++11
+	macro(srt_add_example mainsrc)
+		get_filename_component(name ${mainsrc} NAME_WE)
+		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+	endmacro()
+
+	srt_add_example(sendfile.cpp apps/logsupport.cpp)
+	srt_make_application(sendfile)
+
+	srt_add_example(recvfile.cpp apps/logsupport.cpp)
+	srt_make_application(recvfile)
+
+	srt_add_example(testcapi-connect.c)
+	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
+
+endif()
+
+install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+
 
 if (DEFINED SRT_EXTRA_APPS_INC)
 	include(${SRT_EXTRA_APPS_INC}.cmake)
@@ -701,10 +759,7 @@ if ( ENABLE_SUFLIP )
 		${CMAKE_CURRENT_SOURCE_DIR}/apps/suflip.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
 	)
-
-	set(LIBS_suflip ${TARGET_haicrypt} ${TARGET_srt})
-
-	add_executable(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${LIBS_suflip})
+	srt_add_program(suflip ${SOURCES_suflip})
+	target_link_libraries(suflip ${srt_link_library})
 	install(TARGETS suflip RUNTIME DESTINATION bin)
 endif ()
