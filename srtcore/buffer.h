@@ -223,7 +223,7 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
+   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536, bool use_fast_drift = false);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -341,6 +341,7 @@ public:
       /// @param [ref] lock Mutex that should be locked for the operation
 
    void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
+   void addRcvDataTsbPdDriftSample(const CPacket&, pthread_mutex_t& lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -365,6 +366,7 @@ public:
 
    void skipData(int len);
 
+   void reportBufferStats(); // Heavy logging Debug only
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
@@ -376,18 +378,22 @@ private:
 
    bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
 
+public:
+
+    // (This is exposed as used publicly in logs)
       /// Get packet delivery local time base (adjusted for wrap around)
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
-
    uint64_t getTsbPdTimeBase(uint32_t timestamp);
 
       /// Get packet local delivery time
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
 
-public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
+
+   int getMaxOffset() const;
+   bool empty() const;
 private:
 
    /// thread safe bytes counter
@@ -442,6 +448,16 @@ private:
    //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
    //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
+
+   static const int TSBPD_FASTDRIFT_SEGMENT_SIZE = 400;
+   static const int TSBPD_FASTDRIFT_SEGMENT_NUMBER = 3; // Together its 3*400 = 1200 [data packets]
+   FastDriftTracer<TSBPD_FASTDRIFT_SEGMENT_SIZE,
+                   TSBPD_FASTDRIFT_SEGMENT_NUMBER,
+                   TSBPD_DRIFT_MAX_VALUE>
+                       m_FastDriftTracer;
+
+   bool m_bUseFastDriftTracer;
+
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    uint64_t m_LastSamplingTime;
    int m_TimespanMAvg;

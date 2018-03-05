@@ -706,7 +706,7 @@ void CSndBuffer::increase()
 //const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
 #endif
 
-CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize):
+CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize, bool use_fast_drift):
 m_pUnit(NULL),
 m_iSize(bufsize),
 m_pUnitQueue(queue),
@@ -723,9 +723,7 @@ m_iNotch(0)
 ,m_uTsbPdDelay(0)
 ,m_ullTsbPdTimeBase(0)
 ,m_bTsbPdWrapCheck(false)
-//,m_iTsbPdDrift(0)
-//,m_TsbPdDriftSum(0)
-//,m_iTsbPdDriftNbSamples(0)
+,m_bUseFastDriftTracer(use_fast_drift)
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 ,m_LastSamplingTime(0)
 ,m_TimespanMAvg(0)
@@ -805,6 +803,15 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
    ++ m_pUnitQueue->m_iCount;
 
    return 0;
+}
+
+// This is a value to be compared to offset to know
+// if the offset designates a completely new packet or
+// an old packet. For old packets you should treat the
+// incoming time kinda "less seriously".
+int CRcvBuffer::getMaxOffset() const
+{
+   return m_iMaxPos;
 }
 
 int CRcvBuffer::readBuffer(char* data, int len)
@@ -1082,7 +1089,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             int64_t towait = (*tsbpdtime - CTimer::getTime());
             if (towait > 0)
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: NEXT PKT seq=" << curpktseq.get() << " NOT READY (only in " << (towait/1000.0) << "ms)");
                 return false;
             }
 
@@ -1093,7 +1100,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             }
             else
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: NEXT PKT seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
                 return true;
             }
         }
@@ -1169,6 +1176,61 @@ CPacket* CRcvBuffer::getRcvReadyPacket()
     return 0;
 }
 
+void CRcvBuffer::reportBufferStats()
+{
+    int nmissing = 0;
+    int32_t low_seq= -1, high_seq = -1;
+    int32_t low_ts = 0, high_ts = 0;
+
+    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
+    {
+        if ( m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD )
+        {
+            low_seq = m_pUnit[i]->m_Packet.m_iSeqNo;
+            low_ts = m_pUnit[i]->m_Packet.m_iTimeStamp;
+            break;
+        }
+        ++nmissing;
+    }
+
+    // Not sure if a packet MUST BE at the last ack pos position, so check, just in case.
+    int n = m_iLastAckPos;
+    if (m_pUnit[n] && m_pUnit[n]->m_iFlag == CUnit::GOOD)
+    {
+        high_ts = m_pUnit[n]->m_Packet.m_iTimeStamp;
+        high_seq = m_pUnit[n]->m_Packet.m_iSeqNo;
+    }
+    else
+    {
+        // Possibilities are:
+        // m_iStartPos == m_iLastAckPos, high_ts == low_ts, defined.
+        // No packet: low_ts == 0, so high_ts == 0, too.
+        high_ts = low_ts;
+    }
+    // The 32-bit timestamps are relative and roll over oftten; what
+    // we really need is the timestamp difference. The only place where
+    // we can ask for the time base is the upper time because when trying
+    // to receive the time base for the lower time we'd break the requirement
+    // for monotonic clock.
+
+    uint64_t upper_time = high_ts;
+    uint64_t lower_time = low_ts;
+
+    if (lower_time > upper_time)
+        upper_time += uint64_t(CPacket::MAX_TIMESTAMP)+1;
+
+    int32_t timespan = upper_time - lower_time;
+    int seqspan = 0;
+    if (low_seq != -1 && high_seq != -1)
+    {
+        seqspan = CSeqNo::seqoff(low_seq, high_seq);
+    }
+
+    LOGC(dlog.Debug, log << "RCV BUF STATS: missing=" << nmissing << " seq:" << low_seq << "-" << high_seq << "(" << seqspan << ") timespan="
+            << timespan << "(lo=" << logging::FormatTime(lower_time)
+            << " hi=" << logging::FormatTime(upper_time) << ")");
+}
+
 bool CRcvBuffer::isRcvDataReady()
 {
    uint64_t tsbpdtime;
@@ -1189,6 +1251,20 @@ int CRcvBuffer::getRcvDataSize() const
       return m_iLastAckPos - m_iStartPos;
 
    return m_iSize + m_iLastAckPos - m_iStartPos;
+}
+
+bool CRcvBuffer::empty() const
+{
+    // This is slick because these data are normally used by the
+    // application thread, whereas this function will be called
+    // from the RcvQ:worker thread. Fortunately, the only wrong
+    // result can be that this function returns "false", when
+    // the buffer is actually empty at the same time, but when
+    // the buffer is already "empty", the functions running in
+    // the user's thread can't change this state. So effectively
+    // here "true" means "surely empty", and "false" means
+    // "not necessarily empty". We don't need more precise information.
+    return m_iStartPos == m_iLastAckPos;
 }
 
 
@@ -1388,7 +1464,8 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
 
 uint64_t CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-   return(getTsbPdTimeBase(timestamp) + m_uTsbPdDelay + timestamp + m_DriftTracer.drift());
+    int64_t drift = m_bUseFastDriftTracer ? m_FastDriftTracer.drift() : m_DriftTracer.drift();
+    return getTsbPdTimeBase(timestamp) + m_uTsbPdDelay + timestamp + drift;
 }
 
 int CRcvBuffer::setRcvTsbPdMode(uint64_t timebase, uint32_t delay)
@@ -1509,8 +1586,97 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
         printDriftOffset(m_DriftTracer.overdrift(), m_DriftTracer.drift());
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
+#if ENABLE_HEAVY_LOGGING
+        uint64_t oldbase = m_ullTsbPdTimeBase;
+#endif
         m_ullTsbPdTimeBase += m_DriftTracer.overdrift();
+
+        HLOGC(dlog.Debug, log << "DRIFT=" << (iDrift/1000.0) << "ms AVG="
+                << (m_DriftTracer.drift()/1000.0) << "ms, TB: "
+                << logging::FormatTime(oldbase) << " UPDATED TO: " << logging::FormatTime(m_ullTsbPdTimeBase));
     }
+    else
+    {
+        HLOGC(dlog.Debug, log << "DRIFT=" << (iDrift/1000.0) << "ms TB REMAINS: " << logging::FormatTime(m_ullTsbPdTimeBase));
+    }
+
+    CGuard::leaveCS(mutex_to_lock);
+}
+
+void CRcvBuffer::addRcvDataTsbPdDriftSample(const CPacket& packet, pthread_mutex_t& mutex_to_lock)
+{
+    if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
+        return;
+
+    uint32_t timestamp = packet.getMsgTimeStamp();
+
+    // The FAST drift tracer.
+    // This should trace the difference between the current timebase
+    // and the timebase that results from the currently calculated
+    // difference between the arrival time (that is, NOW) and the timestamp.
+    // This should be more-less equal to the current time base.
+    //
+    // There has been several times experienced a case that by unknown
+    // reason, this difference increases rather rapidly. The ACKACK-based
+    // drift tracer is too slow to react. The reaction shall not be fast either,
+    // so this is also tracking this over longer time and measures a median.
+    //
+    // The drift is traced over a distance of 1200 packets, which are split
+    // into 3 segments. At least so many packets must be collected so that the
+    // median can be calculated. After every calculation, the oldest of 3 segments
+    // is dropped and the data are collected for a next 400-packet segement,
+    // after which the median will be calculated again.
+    //
+    // If the drift value exceeds the max drift (positive or negative), this value
+    // is taken out of drift and put into overdrift, which should be next added 
+    // to the timebase.
+    //
+    // Normally the difference between the timebase and the arrival time should remain
+    // the same, or just slightly differ, so the median calclulated from all these
+    // difference values shall remain close to 0. May happen, however, that the
+    // difference starts to constantly increase - in this case this must be traced
+    // and the timebase used to translate the timestamp into the delivery time must
+    // be corrected - otherwise the difference may grow up to the value where the
+    // app waits forever for get the packet delivered (and the buffer inflates up
+    // to the limit), or the "yesterday delivery time" starts to appear.
+
+    int64_t slip = CTimer::getTime() - (getTsbPdTimeBase(timestamp) + timestamp);
+
+    CGuard::enterCS(mutex_to_lock);
+
+    bool updated = m_FastDriftTracer.update(slip);
+
+#ifdef SRT_DEBUG_TSBPD_DRIFT
+    printDriftHistogram(slip);
+#endif /* SRT_DEBUG_TSBPD_DRIFT */
+
+    if ( updated )
+    {
+#ifdef SRT_DEBUG_TSBPD_DRIFT
+        printDriftOffset(m_FastDriftTracer.overdrift(), m_FastDriftTracer.drift());
+#endif /* SRT_DEBUG_TSBPD_DRIFT */
+
+#if ENABLE_HEAVY_LOGGING
+        uint64_t oldbase = m_ullTsbPdTimeBase;
+#endif
+        m_ullTsbPdTimeBase += m_FastDriftTracer.overdrift();
+
+        HLOGC(dlog.Debug, log << "DRIFT=" << (slip/1000.0) << "ms AVG="
+                << (m_FastDriftTracer.drift()/1000.0) << "ms, TB: "
+                << logging::FormatTime(oldbase) << " UPDATED TO: " << logging::FormatTime(m_ullTsbPdTimeBase));
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "DRIFT=" << (slip/1000.0)
+                << "ms TB REMAINS: " << logging::FormatTime(m_ullTsbPdTimeBase)
+                << "(" << m_FastDriftTracer.span() << "/" << m_FastDriftTracer.max() << ") to next update");
+    }
+
+    /* For testing drift tracer
+#if ENABLE_HEAVY_LOGGING
+    HLOGP(dlog.Debug, m_FastDriftTracer.stats());
+#endif
+*/
 
     CGuard::leaveCS(mutex_to_lock);
 }
@@ -1529,6 +1695,10 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     bool passack;
     bool empty = true;
     uint64_t& rplaytime = msgctl.srctime;
+
+#ifdef ENABLE_HEAVY_LOGGING
+    reportBufferStats();
+#endif
 
     if (m_bTsbPdMode)
     {
