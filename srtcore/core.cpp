@@ -1094,9 +1094,6 @@ void CUDT::open()
    m_ullLastRspAckTime = currtime;
    m_iReXmitCount = 1;
 #endif /* SRT_ENABLE_FASTREXMIT */
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   m_ullSndLastCbrTime = currtime;
-#endif
 #ifdef SRT_FIX_KEEPALIVE
    m_ullLastSndTime = currtime;
 #endif
@@ -2259,16 +2256,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    // insert the user buffer into the sending list
 #ifdef SRT_ENABLE_SRCTIMESTAMP
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   if (srctime == 0)
-   {
-      uint64_t currtime;
-      CTimer::rdtsc(currtime);
-
-      m_ullSndLastCbrTime = max(currtime, m_ullSndLastCbrTime + m_ullInterval);
-      srctime = m_ullSndLastCbrTime / m_ullCPUFrequency;
-   }
-#endif
    m_pSndBuffer->addBuffer(data, len, msttl, inorder, srctime);
    LOGC(dlog.Debug) << CONID() << "sock:SENDING srctime: " << srctime << " DATA SIZE: " << len;
 
