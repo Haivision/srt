@@ -212,11 +212,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     m_iCount += size;
 
     m_iBytesCount += len;
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-    m_ullLastOriginTime_us = srctime;
-#else
     m_ullLastOriginTime_us = time;
-#endif /* SRT_ENABLE_CBRTIMESTAMP */
 
     updInputRate(time, size, len);
 
@@ -572,11 +568,7 @@ int CSndBuffer::getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan)
    * Also, if there is only one pkt in buffer, the time difference will be 0.
    * Therefore, always add 1 ms if not empty.
    */
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   *timespan = 0 < m_iCount ? int((m_ullLastOriginTime_us - m_pFirstBlock->m_ullSourceTime_us) / 1000) + 1 : 0;
-#else
    *timespan = 0 < m_iCount ? int((m_ullLastOriginTime_us - m_pFirstBlock->m_ullOriginTime_us) / 1000) + 1 : 0;
-#endif
 
    return m_iCount;
 }
