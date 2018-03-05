@@ -459,9 +459,6 @@ private: // Sending related data
    int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
    int32_t m_iSndLastAck2;                      // Last ACK2 sent back
    uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   uint64_t m_ullSndLastCbrTime;                 // Last timestamp set in a data packet to send (usec)
-#endif
 
    int32_t m_iISN;                              // Initial Sequence Number
 #ifdef SRT_ENABLE_TSBPD
