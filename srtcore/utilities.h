@@ -80,6 +80,11 @@ written by
 #include <cerrno>
 #include <cstring>
 
+// Simply unbelievable, but macros like that still
+// happen to be found in some standard headers.
+#undef min
+#undef max
+
 // -------------- UTILITIES ------------------------
 
 // -- GENERAL PURPOSE.
