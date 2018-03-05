@@ -30,7 +30,6 @@ written by
 #endif
 
 //undef SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
-#define SRT_ENABLE_CBRTIMESTAMP 1       /* Set timestamp for Constant Bit Rate flow (requires SRCTIMESTAMP) */
 
 //undef SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
 //undef SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
