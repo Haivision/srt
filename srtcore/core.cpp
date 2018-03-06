@@ -7057,12 +7057,39 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-
           int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
-              LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset=" << offset << " avail=" << avail_bufsize);
-              return -1;
+              // Check if the buffer is empty. If so, then it shouldn't be a problem
+              // to store the packet anyway because there's no other packet blocking it.
+              // Kinda large packet drop will happen, that's all.
+              if (m_pRcvBuffer->empty())
+              {
+                  // Check if the offset isn't something completely out of mind.
+                  if (offset > MAX_INCOMING_SEQ_BUFFER_OVERRIDE_MULT*m_iRcvBufSize)
+                  {
+                      LOGC(mglog.Error, log << CONID() << "No room to store incoming packet, offset " << offset << " OOTB! ack.seq="
+                              << m_iRcvLastSkipAck << " vs. pkt.seq=" << packet.m_iSeqNo);
+                      return -1;
+                  }
+
+                  // As the buffer is empty, it doesn't matter how far the sequence is
+                  // from the last app-delivered one - with empty buffer we can deliver again.
+                  // Override the lastAckPos and fake the packets dropped.
+                  LOGC(mglog.Warn, log << CONID() << "BUFFER EMPTY with sequence ahead - LARGE DROP of " << offset << " packets");
+                  m_iRcvLastSkipAck = packet.m_iSeqNo;
+                  offset = 0;
+                  // And continue with the transmission.
+              }
+              else
+              {
+                  LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << packet.m_iSeqNo
+                          );
+                  return -1;
+              }
+
           }
 
           if (m_pRcvBuffer->addData(unit, offset) < 0)

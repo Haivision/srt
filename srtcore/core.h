@@ -236,6 +236,19 @@ public: // internal API
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
 
+    // This is a maximum value of incoming sequence difference
+    // multiplied by the size of the receiver buffer, for which
+    // it is still allowed to override the incoming sequence in
+    // case when the buffer is empty, and the sequence number
+    // asssigned to the lowest cell in the buffer (potential actually,
+    // if the buffer is empty) is distant to the incoming sequence
+    // number by more than the size of the buffer in packets.
+
+    // Simpler: if (incoming_sequence - lowest_buffer_sequence <= this value * buffer size),
+    // then lowest_buffer_sequence = incoming_sequence, and the packet is stored in the
+    // lowest cell in the buffer. Otherwise the packet is dropped.
+    static const int MAX_INCOMING_SEQ_BUFFER_OVERRIDE_MULT = 4;
+
     int handshakeVersion()
     {
         return m_ConnRes.m_iVersion;

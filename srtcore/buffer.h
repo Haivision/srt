@@ -388,6 +388,7 @@ private:
 
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
+   bool empty() const;
 private:
 
    /// thread safe bytes counter

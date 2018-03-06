@@ -1183,6 +1183,20 @@ int CRcvBuffer::getRcvDataSize() const
    return m_iSize + m_iLastAckPos - m_iStartPos;
 }
 
+bool CRcvBuffer::empty() const
+{
+    // This is slick because these data are normally used by the
+    // application thread, whereas this function will be called
+    // from the RcvQ:worker thread. Fortunately, the only wrong
+    // result can be that this function returns "false", when
+    // the buffer is actually empty at the same time, but when
+    // the buffer is already "empty", the functions running in
+    // the user's thread can't change this state. So effectively
+    // here "true" means "surely empty", and "false" means
+    // "not necessarily empty". We don't need more precise information.
+    return m_iStartPos == m_iLastAckPos;
+}
+
 
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
