@@ -7077,6 +7077,18 @@ int CUDT::processData(CUnit* unit)
                   // from the last app-delivered one - with empty buffer we can deliver again.
                   // Override the lastAckPos and fake the packets dropped.
                   LOGC(mglog.Warn, log << CONID() << "BUFFER EMPTY with sequence ahead - LARGE DROP of " << offset << " packets");
+
+                  /* Update drop/skip stats */
+                  m_iRcvDropTotal += offset;
+                  m_iTraceRcvDrop += offset;
+                  /* Estimate dropped/skipped bytes from average payload */
+                  int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+                  m_ullRcvBytesDropTotal += offset * avgpayloadsz;
+                  m_ullTraceRcvBytesDrop += offset * avgpayloadsz;
+
+                  unlose(m_iRcvLastSkipAck, CSeqNo::decseq(packet.m_iSeqNo)); //remove(from,to-inclusive)
+                  m_pRcvBuffer->skipData(offset);
+
                   m_iRcvLastSkipAck = packet.m_iSeqNo;
                   offset = 0;
                   // And continue with the transmission.
