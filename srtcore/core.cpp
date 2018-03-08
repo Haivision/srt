@@ -201,6 +201,7 @@ void CUDT::construct()
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
     m_bPeerTLPktDrop = false;
+    m_bOPT_UseFastDriftTracer = false;
 
     // Initilize mutex and condition variables
     initSynch();
@@ -733,6 +734,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       default:
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
       }
+      break;
+
+   case SRTO_FASTDRIFT:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      m_bOPT_UseFastDriftTracer = bool_int_value(optval, optlen);
       break;
 
     default:
@@ -3897,7 +3905,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
+        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize, m_bOPT_UseFastDriftTracer);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
@@ -4792,7 +4800,11 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     // insert the user buffer into the sending list
     m_pSndBuffer->addBuffer(data, size, mctrl.msgttl, mctrl.inorder, mctrl.srctime, Ref(mctrl.msgno));
-    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime: " << mctrl.srctime << "us DATA SIZE: " << size);
+    HLOGC(dlog.Debug, log << CONID() << "USER SENDING srctime=" << logging::FormatTime(mctrl.srctime)
+            << " size=" << size
+            << " datastamp=" << BufferStamp(data, size)
+            << " msgno=" << MSGNO_SEQ::unwrap(mctrl.msgno)
+            );
 
     // insert this socket to the snd list if it is not on the list yet
     m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
@@ -6344,6 +6356,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_iRTTVar = (m_iRTTVar * 3 + abs(rtt - m_iRTT)) >> 2;
       m_iRTT = (m_iRTT * 7 + rtt) >> 3;
 
+      HLOGC(mglog.Debug, log << "ACKACK: RTT[ms]: CUR=" << (rtt/1000.0)
+              << " AVG=" << (m_iRTT/1000.0)
+              << " VAR=" << (m_iRTTVar/1000.0));
+
       updateCC(TEV_ACKACK, ack);
 
       // This function will put a lock on m_RecvLock by itself, as needed.
@@ -6352,7 +6368,11 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // inaccurate. Additionally it won't lock if TSBPD mode is off, and
       // won't update anything. Note that if you set TSBPD mode and use
       // srt_recvfile (which doesn't make any sense), you'll have e deadlock.
-      m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
+
+      // Disabled if using FAST drift tracer. Only one drift tracer is allowed
+      // at a time.
+      if (!m_bOPT_UseFastDriftTracer)
+          m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
 
       // update last ACK that has been received by the sender
       if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
@@ -6641,9 +6661,9 @@ void CUDT::updateSrtRcvSettings()
         m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, m_iTsbPdDelay_ms * 1000);
         CGuard::leaveCS(m_RecvLock);
 
-        HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03u secs",
-                m_iTsbPdDelay_ms/1000,
-                m_iTsbPdDelay_ms%1000);
+        HLOGC(mglog.Debug, log << "AFTER HS: Set TsbPd mode delay="
+                << (m_iTsbPdDelay_ms/1000.0) << "s INITIAL TB: "
+                << logging::FormatTime(m_ullRcvPeerStartTime));
     }
     else
     {
@@ -6895,8 +6915,11 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
    HLOGC(mglog.Debug, log << CONID() << "packData: " << reason << " packet seq=" << packet.m_iSeqNo
-       << " (ACK=" << m_iSndLastAck << " ACKDATA=" << m_iSndLastDataAck
-       << " MSG/FLAGS: " << packet.MessageFlagStr() << ")");
+       << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
+       << " srctime=" << logging::FormatTime(origintime)
+       << " pkt.ts=" << logging::FormatTime(packet.m_iTimeStamp)
+       << " ACK=" << m_iSndLastAck << " ACKDATA=" << m_iSndLastDataAck
+       << " MSG/FLAGS: " << packet.MessageFlagStr() );
 #endif
 
    // Fix keepalive
@@ -6954,8 +6977,6 @@ int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
 
-   // XXX This should be called (exclusively) here:
-   //m_pRcvBuffer->addLocalTsbPdDriftSample(packet.getMsgTimeStamp());
    // Just heard from the peer, reset the expiration count.
    m_iEXPCount = 1;
    uint64_t currtime_tk;
@@ -6976,8 +6997,10 @@ int CUDT::processData(CUnit* unit)
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+#if ENABLE_HEAVY_LOGGING
    static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
+#endif
 
 
    if ( pktrexmitflag == 1 ) // rexmitted
@@ -7011,7 +7034,12 @@ int CUDT::processData(CUnit* unit)
    }
 
 
-   HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength() << " seq=" << packet.getSeqNo());
+   HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
+           << " seq=" << packet.getSeqNo()
+           << " pkt.ts=" << logging::FormatTime(packet.getMsgTimeStamp())
+           << " deli.ts=" << logging::FormatTime(m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp()))
+           << " tsbpd.tb=" << logging::FormatTime(m_pRcvBuffer->getTsbPdTimeBase(packet.getMsgTimeStamp()))
+           );
    //    << "(" << rexmitstat[pktrexmitflag] << rexmit_reason << ")";
 
    updateCC(TEV_RECEIVE, &packet);
@@ -7032,6 +7060,8 @@ int CUDT::processData(CUnit* unit)
    ++ m_llTraceRecv;
    ++ m_llRecvTotal;
 
+   bool need_drift_sample = false;
+
    {
       /*
       * Start of offset protected section
@@ -7043,10 +7073,15 @@ int CUDT::processData(CUnit* unit)
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
+      int avail_bufsize = -1;
+#ifdef ENABLE_HEAVY_LOGGING
       string exc_type = "EXPECTED";
-      if ((offset < 0))
+#endif
+      if (offset < 0)
       {
+#ifdef ENABLE_HEAVY_LOGGING
           exc_type = "BELATED";
+#endif
           excessive = true;
           m_iTraceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
@@ -7057,7 +7092,7 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // Check if the buffer is empty. If so, then it shouldn't be a problem
@@ -7108,12 +7143,42 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
+#ifdef ENABLE_HEAVY_LOGGING
               exc_type = "UNACKED";
+#endif
               excessive = true;
+          }
+
+          if (!excessive && m_bOPT_UseFastDriftTracer)
+          {
+              // For peers that do not regard the REXMIT flag (older SRT), rely only
+              // on the sequence number which is newer than any last delivered packet.
+              // This means that the packet is MOST LIKELY not retransmitted.
+              //
+              // It is rather impossible to have a "fresh" packet (a sequence not yet
+              // ever seen) being retransmitted because the loss recognition is only
+              // possible by having any next-to-lost packet received.
+              //
+              // The only risk for sequence-pos-recognition of the retransmission is
+              // that in case of UDP packet reordering a belated packet may be falsely
+              // identified as retransmitted. Worst thing that may happen due to that
+              // is that this packet's slip value will not be taken into account in
+              // the drift calculations.
+              if (pktrexmitflag == 2) // Unknown rexmit state
+              {
+                  if (offset+1 == m_pRcvBuffer->getMaxOffset())
+                      need_drift_sample = true;
+              }
+              else
+              {
+                  need_drift_sample = !pktrexmitflag;
+              }
+
           }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
+          << " BUFr=" << avail_bufsize
           << (excessive ? " EXCESSIVE" : " ACCEPTED")
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
@@ -7154,6 +7219,7 @@ int CUDT::processData(CUnit* unit)
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
       }
 
+      // END OF CRITSEC: m_AckLock
    }  /* End of offsetcg */
 
    if (m_bClosing) {
@@ -7166,6 +7232,16 @@ int CUDT::processData(CUnit* unit)
       * used by others (socket multiplexer).
       */
       return(-1);
+   }
+
+   if (need_drift_sample)
+   {
+       m_pRcvBuffer->addRcvDataTsbPdDriftSample(packet, m_RecvLock);
+   }
+   else
+   {
+       HLOGC(mglog.Debug, log << "DRIFT=0 NOT TRACED, the packet is considered retransmitted by "
+               << (pktrexmitflag == 2 ? "SEQUENCE" : "REXMIT FLAG"));
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request
