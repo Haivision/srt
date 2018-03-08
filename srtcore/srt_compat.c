@@ -40,9 +40,14 @@ written by
 #endif
 
 
-static inline const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
+static const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
 {
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    _snprintf(buf, buflen - 1, "ERROR CODE %d", errnum);
+    buf[buflen - 1] = '\0';
+#else
     snprintf(buf, buflen, "ERROR CODE %d", errnum);
+#endif
     return buf;
 }
 

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+source prepare_build
+
+./configure --CMAKE_PREFIX_PATH=$install_dir --CMAKE_INSTALL_PREFIX=$install_dir
+make
+make install

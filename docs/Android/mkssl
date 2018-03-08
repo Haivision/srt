@@ -1,0 +1,9 @@
+#!/bin/bash
+
+source prepare_build
+
+./Configure android --openssldir=$install_dir
+# OpenSSL (1.0.2) adds -mandroid to the compile flags. This flag is not recognized by clang.
+sed -i 's/-mandroid//g' Makefile
+make
+make install

@@ -2629,12 +2629,12 @@ int CUDT::perfmon(SRTSOCKET u, CPerfMon* perf, bool clear)
    }
 }
 
-int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
+int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      udt->bstats(perf, clear);
+      udt->bstats(perf, clear, instantaneous);
       return 0;
    }
    catch (CUDTException e)
