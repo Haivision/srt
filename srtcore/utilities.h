@@ -66,8 +66,6 @@ written by
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS
 
-#include "platform_sys.h"
-
 #include <string>
 #include <algorithm>
 #include <bitset>
@@ -80,8 +78,10 @@ written by
 #include <cerrno>
 #include <cstring>
 
-// Simply unbelievable, but macros like that still
-// happen to be found in some standard headers.
+#include "platform_sys.h"
+
+// These macros are sometimes defined in some header files,
+// this might cause compile error.
 #undef min
 #undef max
 
