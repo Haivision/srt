@@ -258,15 +258,17 @@ uint64_t CTimer::getTime()
     // XXX Do further study on that. Currently Cygwin is also using gettimeofday,
     // however Cygwin platform is supported only for testing purposes.
 
-    //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
-    //uint64_t x;
-    //rdtsc(x);
-    //return x / s_ullCPUFrequency;
+    //For other systems without microsecond level resolution, add to this conditional compile
+#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+    uint64_t x;
+    rdtsc(x);
+    return x / s_ullCPUFrequency;
     //Specific fix may be necessary if rdtsc is not available either.
-
+#else
     timeval t;
     gettimeofday(&t, 0);
     return t.tv_sec * 1000000ULL + t.tv_usec;
+#endif
 }
 
 void CTimer::triggerEvent()
