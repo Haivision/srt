@@ -259,7 +259,7 @@ uint64_t CTimer::getTime()
     // however Cygwin platform is supported only for testing purposes.
 
     //For other systems without microsecond level resolution, add to this conditional compile
-#if defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
     uint64_t x;
     rdtsc(x);
     return x / s_ullCPUFrequency;
