@@ -286,8 +286,10 @@ inline std::string SockaddrToString(const sockaddr* sadr)
     }
     else
     {
-        strcpy(hostbuf, "unknown");
-        inet_ntop(sadr->sa_family, addr, hostbuf, 1023);
+        if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
+        {
+            strcpy(hostbuf, "unknown");
+        }
         output << hostbuf;
     }
 
