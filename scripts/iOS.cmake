@@ -52,7 +52,7 @@ if (NOT DEFINED IOS_DISABLE_BITCODE)
 	set (EMBED_OPTIONS "-fembed-bitcode")
 endif(NOT DEFINED IOS_DISABLE_BITCODE)
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR ENABLE_DEBUG)
 	set(IOS_DEBUG_OPTIONS "-glldb -gmodules")
 else()
 	set(IOS_DEBUG_OPTIONS "-fvisibility=hidden -fvisibility-inlines-hidden")
