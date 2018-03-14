@@ -1417,7 +1417,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
     // too small to keep all the data. As this is "static const", declaring
     // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS__SIZE ? SRTDATA_MAXSIZE : -1;
+    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS__SIZE ? int(SRTDATA_MAXSIZE) : -1;
 
     // This will be effectively larger than SRT_HS__SIZE, but it will be also used
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
@@ -5722,11 +5722,11 @@ void CUDT::releaseSynch()
 }
 
 #if ENABLE_HEAVY_LOGGING
-static void DebugAck(string hdr, int prev, int ack)
+static void DebugAck(const char* hdr, SRTSOCKET sock, int prev, int ack)
 {
     if ( !prev )
     {
-        HLOGC(mglog.Debug, log << hdr << "ACK " << ack);
+        LOGC(mglog.Debug, log << hdr << ": %" << sock << ": ACK " << ack);
         return;
     }
 
@@ -5734,7 +5734,7 @@ static void DebugAck(string hdr, int prev, int ack)
     int diff = CSeqNo::seqcmp(ack, prev);
     if ( diff < 0 )
     {
-        HLOGC(mglog.Debug, log << hdr << "ACK ERROR: " << prev << "-" << ack << "(diff " << CSeqNo::seqcmp(ack, prev) << ")");
+        LOGC(mglog.Debug, log << hdr << ": %" << sock << ": ACK ERROR: " << prev << "-" << ack << "(diff " << CSeqNo::seqcmp(ack, prev) << ")");
         return;
     }
 
@@ -5747,10 +5747,10 @@ static void DebugAck(string hdr, int prev, int ack)
         ackv << prev << " ";
     if ( shorted )
         ackv << "...";
-    HLOGC(mglog.Debug, log << hdr << "ACK (" << (diff+1) << "): " << ackv.str() << ack);
+    LOGC(mglog.Debug, log << hdr << ": %" << sock << ": ACK (" << (diff+1) << "): " << ackv.str() << ack);
 }
 #else
-static inline void DebugAck(string, int, int) {}
+static inline void DebugAck(const char*, SRTSOCKET, int, int) {}
 #endif
 
 void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size)
@@ -5803,7 +5803,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.pack(pkttype, NULL, &ack, size);
          ctrlpkt.m_iID = m_PeerID;
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
+         DebugAck("sendCtrl(lite)", m_SocketID, local_prevack, ack);
          break;
       }
 
@@ -5933,7 +5933,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.m_iID = m_PeerID;
          ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
+         DebugAck("sendCtrl", m_SocketID, local_prevack, ack);
 
          m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 

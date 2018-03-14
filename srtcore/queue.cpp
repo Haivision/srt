@@ -1400,7 +1400,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
       {
-         packet.setLength(-1);
+         packet.setLength(0);
          return -1;
       }
    }
@@ -1410,7 +1410,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (packet.getLength() < newpkt->getLength())
    {
-      packet.setLength(-1);
+      packet.setLength(0);
       return -1;
    }
 

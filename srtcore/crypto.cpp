@@ -63,7 +63,13 @@ static std::string KmStateStr(SRT_KM_STATE state)
         TAKE(NOSECRET);
         TAKE(BADSECRET);
 #undef TAKE
-    default: return "???";
+
+    default: {
+                 char buf[100];
+                 sprintf(buf, "??\?(%d)", state);
+                 return buf;
+             }
+
     }
 }
 

@@ -606,6 +606,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     return RST_OK;
 
 Return_error:
-    packet.setLength(-1);
+    packet.setLength(0);
     return status;
 }
