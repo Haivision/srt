@@ -52,9 +52,14 @@ if (NOT DEFINED IOS_DISABLE_BITCODE)
 	set (EMBED_OPTIONS "-fembed-bitcode")
 endif(NOT DEFINED IOS_DISABLE_BITCODE)
 
-# Hidden visibilty is required for cxx on iOS 
-set (CMAKE_C_FLAGS_INIT "${EMBED_OPTIONS}")
-set (CMAKE_CXX_FLAGS_INIT "-fvisibility=hidden -fvisibility-inlines-hidden ${EMBED_OPTIONS}")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(IOS_DEBUG_OPTIONS "-glldb -gmodules")
+else()
+	set(IOS_DEBUG_OPTIONS "-fvisibility=hidden -fvisibility-inlines-hidden")
+endif()	
+
+set (CMAKE_C_FLAGS_INIT "${IOS_DEBUG_OPTIONS} ${EMBED_OPTIONS}")
+set (CMAKE_CXX_FLAGS_INIT "${IOS_DEBUG_OPTIONS} ${EMBED_OPTIONS}")
 
 set (CMAKE_C_LINK_FLAGS "-Wl,-search_paths_first ${EMBED_OPTIONS} ${CMAKE_C_LINK_FLAGS}")
 set (CMAKE_CXX_LINK_FLAGS "-Wl,-search_paths_first ${EMBED_OPTIONS} ${CMAKE_CXX_LINK_FLAGS}")
