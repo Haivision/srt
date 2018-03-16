@@ -78,6 +78,7 @@ modified by
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
+#include "logging.h"
 #include "smoother.h"
 #include "utilities.h"
 
@@ -282,10 +283,34 @@ public: // internal API
     // a different channel.
     void skipIncoming(int32_t seq);
 
-    void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
-    void DisconnectSignal(ETransmissionEvent tev);
+    template <ETransmissionEvent Et>
+    void ConnectSignal(EventSlot<typename EventMapping<Et>::type> sl)
+    {
+        slot_access<Et>(m_Slots).push_back(sl);
+    }
+
+    template <ETransmissionEvent Et>
+    void DisconnectSignal()
+    {
+        slot_access<Et>(m_Slots).clear();
+    }
 
 private:
+    // Attached tool function
+    template <ETransmissionEvent Et>
+    void EmitSignal(typename EventMapping<Et>::type value)
+    {
+        typedef typename SlotVector<Et>::svector_t Vec;
+        Vec& slots = slot_access<Et>(m_Slots);
+        // For Et == TEV_INIT it will be expanded by the compiler as:
+        // Vec& slots = m_Slots.next_.next_.next_.next_.next_.next_.next_.v_.slots;
+
+        for (typename Vec::iterator i = slots.begin(); i != slots.end(); ++i)
+        {
+            i->emit(Et, value);
+        }
+    }
+
     /// initialize a UDT entity and bind to a local address.
 
     void open();
@@ -563,11 +588,11 @@ private:
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
     // Congestion control
-    std::vector<EventSlot> m_Slots[TEV__SIZE];
+    //std::vector<EventSlot> m_Slots[TEV__SIZE];
+    SlotPack<TEV__SIZE> m_Slots;
+
     Smoother m_Smoother;
 
-    // Attached tool function
-    void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
     volatile bool m_bListening;                  // If the UDT entit is listening to connection
@@ -678,8 +703,20 @@ private: // synchronization: mutexes and conditions
 
 private: // Common connection Congestion Control setup
     void setupCC();
-    void updateCC(ETransmissionEvent, EventVariant arg);
     bool createCrypter(HandshakeSide side, bool bidi);
+
+    // NOTE: This function will be attached outside the
+    // class as inline.
+    template <ETransmissionEvent Ev>
+    void updateCC(typename EventMapping<Ev>::type arg);
+
+public:
+    // Parts. Made public due to being called from external structs.
+    bool updateCC_Checks();
+    void updateCC_INIT(EInitEvent istage);
+    void updateCC_GETRATE();
+    void updateCC_UPDATE();
+
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -786,6 +823,92 @@ private: // for epoll
     void addEPoll(const int eid);
     void removeEPoll(const int eid);
 };
+
+// Parts of CUDT::updateCC
+
+// INIT part - empty by default
+template <ETransmissionEvent Ev, class ArgType>
+struct updateCC_CallIf_INIT
+{
+    static void call(CUDT*, ArgType) {}
+};
+
+// ... only for TEV_INIT call CUDT::updateCC_Init().
+template<> struct updateCC_CallIf_INIT<TEV_INIT, EInitEvent>
+{
+    static void call(CUDT* u, EInitEvent arg)
+    {
+        u->updateCC_INIT(arg);
+    }
+};
+
+// GETRATE part - allow for 3 selected events, empty for others
+template <ETransmissionEvent Ev>
+struct updateCC_CallIf_GETRATE
+{ static void call(CUDT*) {} };
+
+#define ALLOW_GETRATE(event) \
+template<> struct updateCC_CallIf_GETRATE<event> \
+{ \
+    static void call(CUDT* u) \
+    { \
+        u->updateCC_GETRATE(); \
+    } \
+}
+
+ALLOW_GETRATE(TEV_ACK);
+ALLOW_GETRATE(TEV_LOSSREPORT);
+ALLOW_GETRATE(TEV_CHECKTIMER);
+#undef ALLOW_GETRATE
+
+// UPDATE part - allow for others, except given
+template <ETransmissionEvent Ev>
+struct updateCC_CallIf_UPDATE
+{
+    static void call(CUDT* u)
+    {
+        u->updateCC_UPDATE();
+    }
+};
+
+#define DENY_UPDATE(event) \
+template<> struct updateCC_CallIf_UPDATE<event> \
+{ static void call(CUDT*) {} }
+
+DENY_UPDATE(TEV_ACKACK);
+DENY_UPDATE(TEV_SEND);
+DENY_UPDATE(TEV_RECEIVE);
+#undef DENY_UPDATE
+
+
+template <ETransmissionEvent Ev> inline
+void CUDT::updateCC(typename EventMapping<Ev>::type arg)
+{
+    typedef typename EventMapping<Ev>::type arg_t;
+
+    HLOGC(mglog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(Ev));
+
+    if (!updateCC_Checks())
+    {
+        HLOGC(mglog.Error, log << "updateCC: EVENT FAILED:" << TransmissionEventStr(Ev));
+        return;
+    }
+
+    // --> Follow: updateCC_INIT(), only if Ev == TEV_INIT
+    updateCC_CallIf_INIT<Ev, arg_t>::call(this, arg);
+
+    // --> Follow: updateCC_GETRATE(), only if Ev is ACK, LOSSREPORT, CHECKTIMER
+    updateCC_CallIf_GETRATE<Ev>::call(this);
+    // This part is also required only by LiveSmoother, however not
+    // moved there due to that it needs access to CSndBuffer.
+
+    EmitSignal<Ev>(arg);
+
+    // --> Follow: updateCC_UPDATE(), for all except ACKACK, SEND and RECEIVE
+    updateCC_CallIf_UPDATE<Ev>::call(this);
+
+    HLOGC(mglog.Debug, log << "updateCC: finished handling for EVENT:" << TransmissionEventStr(Ev));
+}
 
 
 #endif

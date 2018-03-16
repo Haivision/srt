@@ -503,7 +503,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // When not connected, this will do nothing, however this
         // event will be repeated just after connecting anyway.
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_RESET);
+            updateCC<TEV_INIT>(TEV_INIT_RESET);
         break;
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -528,7 +528,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // (only if connected; if not, then the value
         // from m_iOverheadBW will be used initially)
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_INPUTBW);
+            updateCC<TEV_INIT>(TEV_INIT_INPUTBW);
         break;
 
     case SRTO_OHEADBW:
@@ -541,7 +541,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // (only if connected; if not, then the value
         // from m_iOverheadBW will be used initially)
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_OHEADBW);
+            updateCC<TEV_INIT>(TEV_INIT_OHEADBW);
         break;
 
     case SRTO_SENDER:
@@ -4122,7 +4122,7 @@ void CUDT::setupCC()
         << " rtt=" << m_iRTT
         << " bw=" << m_iBandwidth);
 
-    updateCC(TEV_INIT, TEV_INIT_RESET);
+    updateCC<TEV_INIT>(TEV_INIT_RESET);
 }
 
 void CUDT::considerLegacySrtHandshake(uint64_t timebase)
@@ -5539,12 +5539,8 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    }
 }
 
-void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
+bool CUDT::updateCC_Checks()
 {
-    // Special things that must be done HERE, not in Smoother,
-    // because it involves the input buffer in CUDT. It would be
-    // slightly dangerous to give Smoother access to it.
-
     // According to the rules, the smoother should be ready at the same
     // time when the sending buffer. For sanity check, check both first.
     if (!m_Smoother.ready() || !m_pSndBuffer)
@@ -5554,114 +5550,100 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             << "; sending buffer "
             << (m_pSndBuffer ? "NOT CREATED" : "created"));
 
-        return;
+        return false;
     }
 
-    HLOGC(mglog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(evt));
+    return true;
+}
 
-    if (evt == TEV_INIT)
+void CUDT::updateCC_INIT(EInitEvent only_input)
+{
+    // only_input uses:
+    // 0: in the beginning and when SRTO_MAXBW was changed
+    // 1: SRTO_INPUTBW was changed
+    // 2: SRTO_OHEADBW was changed
+
+    // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
+
+    if (only_input && m_llMaxBW)
     {
-        // only_input uses:
-        // 0: in the beginning and when SRTO_MAXBW was changed
-        // 1: SRTO_INPUTBW was changed
-        // 2: SRTO_OHEADBW was changed
-        EInitEvent only_input = arg.get<EventVariant::INIT>();
-        // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
+        HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
+        // Don't change
+    }
+    else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
+    {
+        // Use the values:
+        // - if SRTO_MAXBW is >0, use it.
+        // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
+        // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
+        // Bytes/s
+        int bw = m_llMaxBW != 0 ? m_llMaxBW : // When used SRTO_MAXBW
+            m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
+            0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
 
-        if (only_input && m_llMaxBW)
+        // Note: setting bw == 0 uses BW_INFINITE value in LiveSmoother
+        m_Smoother->updateBandwidth(m_llMaxBW, bw);
+
+        if (only_input == TEV_INIT_OHEADBW)
         {
-            HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
-            // Don't change
+            // On updated SRTO_OHEADBW don't change input rate.
+            // This only influences the call to withOverhead().
         }
-        else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
+        else
         {
-            // Use the values:
-            // - if SRTO_MAXBW is >0, use it.
-            // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
-            // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
-            // Bytes/s
-            int bw = m_llMaxBW != 0 ? m_llMaxBW : // When used SRTO_MAXBW
-                m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
-                0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
+            // XXX Use constant for this 500000
+            m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? 500000 : 0);
+        }
 
-            // Note: setting bw == 0 uses BW_INFINITE value in LiveSmoother
-            m_Smoother->updateBandwidth(m_llMaxBW, bw);
-
-            if (only_input == TEV_INIT_OHEADBW)
-            {
-                // On updated SRTO_OHEADBW don't change input rate.
-                // This only influences the call to withOverhead().
-            }
-            else
-            {
-                // XXX Use constant for this 500000
-                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? 500000 : 0);
-            }
-
-            HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
+        HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
                 << (only_input == TEV_INIT_RESET ? " (UNCHANGED)"
-                        : only_input == TEV_INIT_OHEADBW ? " (only Overhead)": " (updated sampling rate)"));
-        }
+                    : only_input == TEV_INIT_OHEADBW ? " (only Overhead)": " (updated sampling rate)"));
     }
+}
 
-    // This part is also required only by LiveSmoother, however not
-    // moved there due to that it needs access to CSndBuffer.
-    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER)
+// This part is also required only by LiveSmoother, however not
+// moved there due to that it needs access to CSndBuffer.
+void CUDT::updateCC_GETRATE()
+{
+    // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
+    // This requests internal input rate sampling.
+    if (m_llMaxBW == 0 && m_llInputBW == 0)
     {
-        // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
-        // This requests internal input rate sampling.
-        if (m_llMaxBW == 0 && m_llInputBW == 0)
-        {
-            int period;
-            int payloadsz; //CC will use its own average payload size
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
+        int period;
+        int payloadsz; //CC will use its own average payload size
+        int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
 
-            // NOTE:
-            // 'period' here is set to the value that was previously set by
-            // m_pSndBuffer->setInputRateSmpPeriod(). 
+        // NOTE:
+        // 'period' here is set to the value that was previously set by
+        // m_pSndBuffer->setInputRateSmpPeriod(). 
 
-            /*
-             * On blocked transmitter (tx full) and until connection closes,
-             * auto input rate falls to 0 but there may be still lot of packet to retransmit
-             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (30Mbps)
-             * and sendrate skyrockets for retransmission.
-             * Keep previously set maximum in that case (inputbw == 0).
-             */
-            if (inputbw != 0)
-                m_Smoother->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
+        /*
+         * On blocked transmitter (tx full) and until connection closes,
+         * auto input rate falls to 0 but there may be still lot of packet to retransmit
+         * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (30Mbps)
+         * and sendrate skyrockets for retransmission.
+         * Keep previously set maximum in that case (inputbw == 0).
+         */
+        if (inputbw != 0)
+            m_Smoother->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
 
-            if ((m_llSentTotal > 2000) && (period < 5000000))
-                m_pSndBuffer->setInputRateSmpPeriod(5000000); //5 sec period after fast start
-        }
+        if ((m_llSentTotal > 2000) && (period < 5000000))
+            m_pSndBuffer->setInputRateSmpPeriod(5000000); //5 sec period after fast start
     }
+}
 
-    HLOGC(mglog.Debug, log << "udpateCC: emitting signal for EVENT:" << TransmissionEventStr(evt));
-
-    // Now execute a smoother-defined action for that event.
-    EmitSignal(evt, arg);
-
-    // This should be done with every event except ACKACK and SEND/RECEIVE
-    // After any action was done by the smoother, update the congestion window and sending interval.
-    if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
-    {
-        // This part comes from original UDT.
-        // NOTE: THESE things come from CCC class:
-        // - m_dPktSndPeriod
-        // - m_dCWndSize
-        m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
-        m_dCongestionWindow = m_Smoother->cgWindowSize();
+void CUDT::updateCC_UPDATE()
+{
+    // This part comes from original UDT.
+    // NOTE: THESE things come from CCC class:
+    // - m_dPktSndPeriod
+    // - m_dCWndSize
+    m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
+    m_dCongestionWindow = m_Smoother->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
-        HLOGC(mglog.Debug, log << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
+    HLOGC(mglog.Debug, log << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
             << "tk (" << m_Smoother->pktSndPeriod_us() << "us) cgwindow="
             << std::setprecision(3) << m_dCongestionWindow);
-#endif
-    }
-
-    HLOGC(mglog.Debug, log << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
-
-#if 0//debug
-    static int callcnt = 0;
-    if (!(callcnt++ % 250)) fprintf(stderr, "SndPeriod=%llu\n", (unsigned long long)m_ullInterval_tk/m_ullCPUFrequency);
 #endif
 }
 
@@ -6315,7 +6297,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       }
 
       checkSndTimers(REGEN_KM);
-      updateCC(TEV_ACK, ack);
+      updateCC<TEV_ACK>(ack);
 
       ++ m_iRecvACK;
       ++ m_iRecvACKTotal;
@@ -6344,7 +6326,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_iRTTVar = (m_iRTTVar * 3 + abs(rtt - m_iRTT)) >> 2;
       m_iRTT = (m_iRTT * 7 + rtt) >> 3;
 
-      updateCC(TEV_ACKACK, ack);
+      updateCC<TEV_ACKACK>(ack);
 
       // This function will put a lock on m_RecvLock by itself, as needed.
       // It must be done inside because this function reads the current time
@@ -6365,7 +6347,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       {
       int32_t* losslist = (int32_t *)(ctrlpkt.m_pcData);
       size_t losslist_len = ctrlpkt.getLength() / 4;
-      updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
+      updateCC<TEV_LOSSREPORT>(make_pair(losslist, losslist_len));
 
       bool secure = true;
 
@@ -6622,7 +6604,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           }
           else
           {
-              updateCC(TEV_CUSTOM, &ctrlpkt);
+              updateCC<TEV_CUSTOM>(&ctrlpkt);
           }
       }
       break;
@@ -6908,7 +6890,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    // the CSndQueue::worker thread. All others are reported from
    // CRcvQueue::worker. If you connect to this signal, make sure
    // that you are aware of prospective simultaneous access.
-   updateCC(TEV_SEND, &packet);
+   updateCC<TEV_SEND>(&packet);
 
    // XXX This was a blocked code also originally in UDT. Probably not required.
    // Left untouched for historical reasons.
@@ -7014,7 +6996,7 @@ int CUDT::processData(CUnit* unit)
    HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength() << " seq=" << packet.getSeqNo());
    //    << "(" << rexmitstat[pktrexmitflag] << rexmit_reason << ")";
 
-   updateCC(TEV_RECEIVE, &packet);
+   updateCC<TEV_RECEIVE>(&packet);
    ++ m_iPktCount;
 
    int pktsz = packet.getLength();
@@ -7793,7 +7775,7 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
 void CUDT::checkTimers()
 {
     // update CC parameters
-    updateCC(TEV_CHECKTIMER, TEV_CHT_INIT);
+    updateCC<TEV_CHECKTIMER>(TEV_CHT_INIT);
     //uint64_t minint = (uint64_t)(m_ullCPUFrequency * m_pSndTimeWindow->getMinPktSndInt() * 0.9);
     //if (m_ullInterval_tk < minint)
     //   m_ullInterval_tk = minint;
@@ -7953,7 +7935,7 @@ void CUDT::checkTimers()
                 CGuard::leaveCS(m_AckLock);
 
                 checkSndTimers(DONT_REGEN_KM);
-                updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
+                updateCC<TEV_CHECKTIMER>(TEV_CHT_REXMIT);
 
                 // immediately restart transmission
                 m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
@@ -8020,7 +8002,7 @@ void CUDT::checkTimers()
             ++m_iReXmitCount;
 
             checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
+            updateCC<TEV_CHECKTIMER>(TEV_CHT_FASTREXMIT);
 
             // immediately restart transmission
             m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
@@ -8068,31 +8050,6 @@ void CUDT::removeEPoll(const int eid)
    CGuard::enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);
    CGuard::leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
-}
-
-void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
-{
-    if (evt >= TEV__SIZE)
-        return; // sanity check
-
-    m_Slots[evt].push_back(sl);
-}
-
-void CUDT::DisconnectSignal(ETransmissionEvent evt)
-{
-    if (evt >= TEV__SIZE)
-        return; // sanity check
-
-    m_Slots[evt].clear();
-}
-
-void CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
-{
-    for (std::vector<EventSlot>::iterator i = m_Slots[tev].begin();
-            i != m_Slots[tev].end(); ++i)
-    {
-        i->emit(tev, var);
-    }
 }
 
 int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
