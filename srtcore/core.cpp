@@ -5594,8 +5594,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             }
             else
             {
-                // XXX Use constant for this 500000
-                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? 500000 : 0);
+                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? SND_INPUTRATE_FAST_START_US: 0);
             }
 
             HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
@@ -5612,7 +5611,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // This requests internal input rate sampling.
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
-            int period;
+            uint64_t period;
             int payloadsz; //CC will use its own average payload size
             int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
 
@@ -5630,8 +5629,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             if (inputbw != 0)
                 m_Smoother->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
 
-            if ((m_llSentTotal > 2000) && (period < 5000000))
-                m_pSndBuffer->setInputRateSmpPeriod(5000000); //5 sec period after fast start
+            if ((m_llSentTotal > SND_INPUTRATE_MAX_PACKETS) && (period < SND_INPUTRATE_RUNNING_US))
+                m_pSndBuffer->setInputRateSmpPeriod(SND_INPUTRATE_RUNNING_US); //1 sec period after fast start
         }
     }
 

@@ -93,9 +93,9 @@ m_iCount(0)
 ,m_iInRatePktsCount(0)
 ,m_iInRateBytesCount(0)
 ,m_InRateStartTime(0)
-,m_InRatePeriod(500000)   // 0.5 sec (fast start)
-,m_iInRateBps(10000000/8) // 10 Mbps (1.25 MBps)
-,m_iAvgPayloadSz(7*188)
+,m_InRatePeriod(CUDT::SND_INPUTRATE_FAST_START_US)   // 0.5 sec (fast start)
+,m_iInRateBps(CUDT::SND_INPUTRATE_INITIAL_BPS)
+,m_iAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
    // initial physical buffer of "size"
    m_pBuffer = new Buffer;
@@ -267,10 +267,10 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
    }
 }
 
-int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<int> r_period)
+int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<uint64_t> r_period)
 {
     int& payloadsz = *r_payloadsz;
-    int& period = *r_period;
+    uint64_t& period = *r_period;
     uint64_t time = CTimer::getTime();
 
     if ((m_InRatePeriod != 0)
@@ -292,7 +292,7 @@ int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<int> r_period)
         m_InRateStartTime = time;
     }
     payloadsz = m_iAvgPayloadSz;
-    period = (int)m_InRatePeriod;
+    period = m_InRatePeriod;
     return(m_iInRateBps);
 }
 
