@@ -88,6 +88,8 @@ modified by
 #undef max
 #endif
 
+//#define DISABLE_SEQUENCE_HOLE_OVERRIDE 1
+
 using namespace std;
 
 struct AllFaOn
@@ -5840,7 +5842,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          // This, again, signals the condition, CTimer::m_EventCond.
          // This releases CTimer::waitForEvent() call used in CUDTUnited::selectEx().
          // Preventing to call this on zero size makes sense, if it prevents false alerts.
-         if (acksize)
+         if (acksize > 0)
              m_pRcvBuffer->ackData(acksize);
          CGuard::leaveCS(m_AckLock);
 
@@ -7098,7 +7100,11 @@ int CUDT::processData(CUnit* unit)
               // Check if the buffer is empty. If so, then it shouldn't be a problem
               // to store the packet anyway because there's no other packet blocking it.
               // Kinda large packet drop will happen, that's all.
+#ifndef DISABLE_SEQUENCE_HOLE_OVERRIDE
+              if (false)
+#else
               if (m_pRcvBuffer->empty())
+#endif
               {
                   // Check if the offset isn't something completely out of mind.
                   if (offset > MAX_INCOMING_SEQ_BUFFER_OVERRIDE_MULT*m_iRcvBufSize)
@@ -7107,6 +7113,8 @@ int CUDT::processData(CUnit* unit)
                               << m_iRcvLastSkipAck << " vs. pkt.seq=" << packet.m_iSeqNo);
                       return -1;
                   }
+
+                  CGuard lg(m_AckLock);
 
                   // As the buffer is empty, it doesn't matter how far the sequence is
                   // from the last app-delivered one - with empty buffer we can deliver again.
@@ -7124,7 +7132,7 @@ int CUDT::processData(CUnit* unit)
                   unlose(m_iRcvLastSkipAck, CSeqNo::decseq(packet.m_iSeqNo)); //remove(from,to-inclusive)
                   m_pRcvBuffer->skipData(offset);
 
-                  m_iRcvLastSkipAck = packet.m_iSeqNo;
+                  m_iRcvLastSkipAck = m_iRcvLastAck = packet.m_iSeqNo;
                   offset = 0;
                   // And continue with the transmission.
               }
