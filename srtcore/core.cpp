@@ -7133,6 +7133,7 @@ int CUDT::processData(CUnit* unit)
                   LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
                           << offset << " avail=" << avail_bufsize
                           << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << packet.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
                           );
                   return -1;
               }

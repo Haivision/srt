@@ -395,6 +395,7 @@ public:
 
    int getMaxOffset() const;
    bool empty() const;
+   int debugGetSize() const;
 private:
 
    /// thread safe bytes counter

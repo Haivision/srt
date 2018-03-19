@@ -1245,6 +1245,25 @@ int CRcvBuffer::getRcvDataSize() const
    return m_iSize + m_iLastAckPos - m_iStartPos;
 }
 
+int CRcvBuffer::debugGetSize() const
+{
+    // This is slick as being called in the worker thread.
+    // Use it only as informative, to display in the logs,
+    // never in any serious calculations.
+
+    // This is exactly the same code as getRcvDataSize,
+    // with the exception that it locks values in the beginning,
+    // so it reports the first caught value at this moment.
+    // Worst case scenario, this value might happen to be
+    // greater by 1 towards the value that is at this moment.
+    int from = m_iStartPos, to = m_iLastAckPos;
+    int size = to - from;
+    if (size < 0)
+        size += m_iSize;
+
+    return size;
+}
+
 bool CRcvBuffer::empty() const
 {
     // This is slick because these data are normally used by the
