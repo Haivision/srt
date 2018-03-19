@@ -700,6 +700,7 @@ private: // Generation and processing of packets
     void processCtrl(CPacket& ctrlpkt);
     int packData(CPacket& packet, uint64_t& ts);
     int processData(CUnit* unit);
+    void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);

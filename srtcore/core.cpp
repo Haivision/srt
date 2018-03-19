@@ -88,8 +88,6 @@ modified by
 #undef max
 #endif
 
-//#define DISABLE_SEQUENCE_HOLE_OVERRIDE 1
-
 using namespace std;
 
 struct AllFaOn
@@ -6975,6 +6973,25 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    return payload;
 }
 
+// This is a close request, but called from the 
+void CUDT::processClose()
+{
+    sendCtrl(UMSG_SHUTDOWN);
+
+    m_bShutdown = true;
+    m_bClosing = true;
+    m_bBroken = true;
+    m_iBrokenCounter = 60;
+
+    // Signal the sender and recver if they are waiting for data.
+    releaseSynch();
+    // Unblock any call so they learn the connection_broken error
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+
+    CTimer::triggerEvent();
+
+}
+
 int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
@@ -7100,41 +7117,21 @@ int CUDT::processData(CUnit* unit)
               // Check if the buffer is empty. If so, then it shouldn't be a problem
               // to store the packet anyway because there's no other packet blocking it.
               // Kinda large packet drop will happen, that's all.
-#ifndef DISABLE_SEQUENCE_HOLE_OVERRIDE
-              if (false)
-#else
-              if (m_pRcvBuffer->empty())
-#endif
+              if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
               {
-                  // Check if the offset isn't something completely out of mind.
-                  if (offset > MAX_INCOMING_SEQ_BUFFER_OVERRIDE_MULT*m_iRcvBufSize)
-                  {
-                      LOGC(mglog.Error, log << CONID() << "No room to store incoming packet, offset " << offset << " OOTB! ack.seq="
-                              << m_iRcvLastSkipAck << " vs. pkt.seq=" << packet.m_iSeqNo);
-                      return -1;
-                  }
+                  // Only in live mode. In File mode this shall not be possible
+                  // because the sender should stop sending in this situation.
+                  // In Live mode this means that there is a gap between the
+                  // lowest sequence in the empty buffer and the incoming sequence
+                  // that exceeds the buffer size. Receiving data in this situation
+                  // is no longer possible and this is a point of no return.
 
-                  CGuard lg(m_AckLock);
+                  LOGC(mglog.Error,
+                          log << CONID() <<
+                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
 
-                  // As the buffer is empty, it doesn't matter how far the sequence is
-                  // from the last app-delivered one - with empty buffer we can deliver again.
-                  // Override the lastAckPos and fake the packets dropped.
-                  LOGC(mglog.Warn, log << CONID() << "BUFFER EMPTY with sequence ahead - LARGE DROP of " << offset << " packets");
-
-                  /* Update drop/skip stats */
-                  m_iRcvDropTotal += offset;
-                  m_iTraceRcvDrop += offset;
-                  /* Estimate dropped/skipped bytes from average payload */
-                  int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-                  m_ullRcvBytesDropTotal += offset * avgpayloadsz;
-                  m_ullTraceRcvBytesDrop += offset * avgpayloadsz;
-
-                  unlose(m_iRcvLastSkipAck, CSeqNo::decseq(packet.m_iSeqNo)); //remove(from,to-inclusive)
-                  m_pRcvBuffer->skipData(offset);
-
-                  m_iRcvLastSkipAck = m_iRcvLastAck = packet.m_iSeqNo;
-                  offset = 0;
-                  // And continue with the transmission.
+                  processClose();
+                  return -1;
               }
               else
               {
