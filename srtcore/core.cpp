@@ -3824,6 +3824,7 @@ void* CUDT::tsbpd(void* param)
          * Set EPOLL_IN to wakeup any thread waiting on epoll
          */
          self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, UDT_EPOLL_IN, true);
+         CTimer::triggerEvent();
          tsbpdtime = 0;
       }
 
@@ -6983,11 +6984,21 @@ void CUDT::processClose()
     m_bBroken = true;
     m_iBrokenCounter = 60;
 
+    HLOGP(mglog.Debug, "processClose: sent message and set flags");
+
+    if (m_bTsbPd)
+    {
+        HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
+        CGuard rl(m_RecvLock);
+        pthread_cond_signal(&m_RcvTsbPdCond);
+    }
+
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
 
+    HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
     CTimer::triggerEvent();
 
 }
@@ -7246,8 +7257,13 @@ int CUDT::processData(CUnit* unit)
    }
    else
    {
-       HLOGC(mglog.Debug, log << "DRIFT=0 NOT TRACED, the packet is considered retransmitted by "
-               << (pktrexmitflag == 2 ? "SEQUENCE" : "REXMIT FLAG"));
+       if (pktrexmitflag)
+       {
+           // Do not show this log when 0 because if need_drift_sample isn't set in this case
+           // it means that this relies still on old ACK-ACKACK cycle for drift tracer, not data samples.
+           HLOGC(mglog.Debug, log << "DRIFT=0 NOT TRACED, the packet is considered retransmitted by "
+                   << (pktrexmitflag == 2 ? "SEQUENCE" : "REXMIT FLAG"));
+       }
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request
