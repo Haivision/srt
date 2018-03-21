@@ -1242,7 +1242,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         CGuard cg(m_LSLock);
         if (m_pListener)
         {
-            LOGC(mglog.Note, log << "... PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
+            LOGC(mglog.Note, log << "PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
             // XXX This returns some very significant return value, which
             // is completely ignored here.
@@ -1277,7 +1277,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
 
     if ( have_listener ) // That is, the above block with m_pListener->processConnectRequest was executed
     {
-        LOGC(mglog.Note, log << CONID() << "listener managed the connection request from: " << SockaddrToString(addr)
+        LOGC(mglog.Note, log << CONID() << "Listener managed the connection request from: " << SockaddrToString(addr)
             << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return (listener_ret >= URQ_FAILURE_TYPES ? CONN_REJECT : CONN_CONTINUE);
     }
