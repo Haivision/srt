@@ -7098,7 +7098,7 @@ int CUDT::processData(CUnit* unit)
       * Prevent TsbPd thread from modifying Ack position while adding data
       * offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
       */
-      CGuard offsetcg(m_AckLock);
+      CGuard recvbuf_acklock(m_AckLock);
 
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
@@ -7141,6 +7141,11 @@ int CUDT::processData(CUnit* unit)
                           log << CONID() <<
                           "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
 
+                  // This is a scoped lock with AckLock, but for the moment
+                  // when processClose() is called this lock must be taken out,
+                  // otherwise this will cause a deadlock. We don't need this
+                  // lock anymore, and at 'return' it will be unlocked anyway.
+                  recvbuf_acklock.forceUnlock();
                   processClose();
                   return -1;
               }
@@ -7237,7 +7242,7 @@ int CUDT::processData(CUnit* unit)
       }
 
       // END OF CRITSEC: m_AckLock
-   }  /* End of offsetcg */
+   }  /* End of recvbuf_acklock*/
 
    if (m_bClosing) {
       /*

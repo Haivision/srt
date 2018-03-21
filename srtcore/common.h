@@ -533,6 +533,8 @@ public:
    static void createCond(pthread_cond_t& cond);
    static void releaseCond(pthread_cond_t& cond);
 
+   void forceUnlock();
+
 private:
    pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
    int m_iLocked;                       // Locking status
