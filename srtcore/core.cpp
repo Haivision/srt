@@ -80,14 +80,6 @@ modified by
 #include "crypto.h"
 #include "logging_api.h" // Required due to containing extern srt_logger_config
 
-// Again, just in case when some "smart guy" provided such a global macro
-#ifdef min
-#undef min
-#endif
-#ifdef max
-#undef max
-#endif
-
 using namespace std;
 
 struct AllFaOn
