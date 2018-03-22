@@ -175,7 +175,6 @@ typedef enum SRT_SOCKOPT {
     SRTO_MESSAGEAPI,      // Message (not Stream) sending mode should be used
     SRTO_PAYLOADSIZE,     // Maximum size of a single sending or receiving operation
     SRTO_TRANSTYPE,       // Transmission type [live or file] (set of options required for given transmission type)
-    SRTO_FASTDRIFT,       // Use fast drift tracking (instead of steady, ACKACK-based drift tracking)
 
     SRTO__LAST
 } SRT_SOCKOPT;

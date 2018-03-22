@@ -193,7 +193,6 @@ void CUDT::construct()
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
     m_bPeerTLPktDrop = false;
-    m_bOPT_UseFastDriftTracer = false;
 
     // Initilize mutex and condition variables
     initSynch();
@@ -726,13 +725,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       default:
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
       }
-      break;
-
-   case SRTO_FASTDRIFT:
-      if (m_bConnected)
-          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-      m_bOPT_UseFastDriftTracer = bool_int_value(optval, optlen);
       break;
 
     default:
@@ -3898,7 +3890,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize, m_bOPT_UseFastDriftTracer);
+        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
@@ -6361,11 +6353,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // inaccurate. Additionally it won't lock if TSBPD mode is off, and
       // won't update anything. Note that if you set TSBPD mode and use
       // srt_recvfile (which doesn't make any sense), you'll have e deadlock.
-
-      // Disabled if using FAST drift tracer. Only one drift tracer is allowed
-      // at a time.
-      if (!m_bOPT_UseFastDriftTracer)
-          m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
+      m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
 
       // update last ACK that has been received by the sender
       if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
@@ -7162,33 +7150,6 @@ int CUDT::processData(CUnit* unit)
 #endif
               excessive = true;
           }
-
-          if (!excessive && m_bOPT_UseFastDriftTracer)
-          {
-              // For peers that do not regard the REXMIT flag (older SRT), rely only
-              // on the sequence number which is newer than any last delivered packet.
-              // This means that the packet is MOST LIKELY not retransmitted.
-              //
-              // It is rather impossible to have a "fresh" packet (a sequence not yet
-              // ever seen) being retransmitted because the loss recognition is only
-              // possible by having any next-to-lost packet received.
-              //
-              // The only risk for sequence-pos-recognition of the retransmission is
-              // that in case of UDP packet reordering a belated packet may be falsely
-              // identified as retransmitted. Worst thing that may happen due to that
-              // is that this packet's slip value will not be taken into account in
-              // the drift calculations.
-              if (pktrexmitflag == 2) // Unknown rexmit state
-              {
-                  if (offset+1 == m_pRcvBuffer->getMaxOffset())
-                      need_drift_sample = true;
-              }
-              else
-              {
-                  need_drift_sample = !pktrexmitflag;
-              }
-
-          }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
@@ -7246,21 +7207,6 @@ int CUDT::processData(CUnit* unit)
       * used by others (socket multiplexer).
       */
       return(-1);
-   }
-
-   if (need_drift_sample)
-   {
-       m_pRcvBuffer->addRcvDataTsbPdDriftSample(packet, m_RecvLock);
-   }
-   else
-   {
-       if (pktrexmitflag)
-       {
-           // Do not show this log when 0 because if need_drift_sample isn't set in this case
-           // it means that this relies still on old ACK-ACKACK cycle for drift tracer, not data samples.
-           HLOGC(mglog.Debug, log << "DRIFT=0 NOT TRACED, the packet is considered retransmitted by "
-                   << (pktrexmitflag == 2 ? "SEQUENCE" : "REXMIT FLAG"));
-       }
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request

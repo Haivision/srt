@@ -209,8 +209,7 @@ const SocketOption srt_options [] {
     { "smoother", 0, SRTO_SMOOTHER, SocketOption::PRE, SocketOption::STRING, nullptr},
     { "messageapi", 0, SRTO_MESSAGEAPI, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype },
-    { "fastdrift", 0, SRTO_FASTDRIFT, SocketOption::PRE, SocketOption::BOOL, nullptr }
+    { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype }
 };
 }
 

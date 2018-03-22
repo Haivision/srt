@@ -223,7 +223,7 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536, bool use_fast_drift = false);
+   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -341,7 +341,6 @@ public:
       /// @param [ref] lock Mutex that should be locked for the operation
 
    void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
-   void addRcvDataTsbPdDriftSample(const CPacket&, pthread_mutex_t& lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -450,16 +449,6 @@ private:
    //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
    //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
-
-   static const int TSBPD_FASTDRIFT_SEGMENT_SIZE = 400;
-   static const int TSBPD_FASTDRIFT_SEGMENT_NUMBER = 3; // Together its 3*400 = 1200 [data packets]
-   FastDriftTracer<TSBPD_FASTDRIFT_SEGMENT_SIZE,
-                   TSBPD_FASTDRIFT_SEGMENT_NUMBER,
-                   TSBPD_DRIFT_MAX_VALUE>
-                       m_FastDriftTracer;
-
-   bool m_bUseFastDriftTracer;
-
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    uint64_t m_LastSamplingTime;
    int m_TimespanMAvg;
