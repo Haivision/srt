@@ -432,7 +432,7 @@ int main( int argc, char** argv )
             if (!tar.get())
             {
                 tar = Target::Create(params[1]);
-                if (!src.get())
+                if (!tar.get())
                 {
                     cerr << "Unsupported target type" << endl;
                     return 1;
