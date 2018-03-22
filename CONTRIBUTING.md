@@ -1,6 +1,6 @@
 ## License
 
-By contributing code to the [SRT project](https://github.com/Haivision/srt/), you agree to license your contribution under the [LGPLv2.1 License](COPYING).
+By contributing code to the [SRT project](https://github.com/Haivision/srt/), you agree to license your contribution under the [MPLv2.0 License](LICENSE).
 
 ## Issues
 
