@@ -7091,9 +7091,9 @@ int CUDT::processData(CUnit* unit)
           int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
-              // Check if the buffer is empty. If so, then it shouldn't be a problem
-              // to store the packet anyway because there's no other packet blocking it.
-              // Kinda large packet drop will happen, that's all.
+              // This is already a sequence discrepancy. Probably there could be found
+              // some way to make it continue reception by overriding the sequence and
+              // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
               if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
               {
                   // Only in live mode. In File mode this shall not be possible
