@@ -375,8 +375,8 @@ set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVE
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
 
 if ( WIN32 AND NOT CYGWIN )
-	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
+	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-lws2_32")
 endif()
 
 # ---
