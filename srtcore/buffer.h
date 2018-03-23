@@ -388,7 +388,7 @@ private:
 
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
-
+   int debugGetSize() const;
    bool empty() const;
 private:
 
