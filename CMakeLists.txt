@@ -17,6 +17,7 @@ project(SRT C CXX)
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
+include(FindThreads)
 
 set (SRT_VERSION 1.2.2)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
@@ -226,8 +227,10 @@ else()
 	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 endif()
 
+elseif(THREADS_FOUND)
+	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
 else()
-find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
+	find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
 endif() # if (NOT MINGW)
 
 # This is required in some projects that add some other sources
@@ -364,8 +367,8 @@ set_target_properties (${TARGET_haicrypt} PROPERTIES VERSION ${SRT_VERSION} SOVE
 target_link_libraries(${TARGET_haicrypt} PRIVATE ${SRT_LIBS_PRIVATE} ${SSL_LIBRARIES})
 
 if ( WIN32 AND NOT CYGWIN )
-	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32.lib)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
+	target_link_libraries(${TARGET_haicrypt} PRIVATE ws2_32)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-lws2_32")
 endif()
 
 # ---
@@ -389,8 +392,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
 endif()
 
-if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
-    	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
+if ( WIN32 AND NOT CYGWIN )
+	target_link_libraries(${TARGET_srt} PUBLIC ws2_32)
 endif()
 
 install(TARGETS ${TARGET_srt}
