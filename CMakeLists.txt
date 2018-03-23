@@ -400,8 +400,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(${TARGET_srt} PUBLIC -DUDT_DYNAMIC) 
 endif()
 
-if ( WIN32 AND (NOT MINGW AND NOT CYGWIN) )
-    	target_link_libraries(${TARGET_srt} PUBLIC Ws2_32.lib)
+if ( WIN32 AND NOT CYGWIN )
+	target_link_libraries(${TARGET_srt} PUBLIC ws2_32)
 endif()
 
 install(TARGETS ${TARGET_srt}
