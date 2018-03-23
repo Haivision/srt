@@ -764,8 +764,10 @@ private: // Trace
     int m_iTraceRcvDrop;
     int m_iTraceRcvRetrans;
     int m_iTraceReorderDistance;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
     double m_fTraceBelatedTime;
     int64_t m_iTraceRcvBelated;
+#endif
     uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)

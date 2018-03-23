@@ -421,6 +421,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 {
     EReadStatus status = RST_OK;
 
+
 #ifndef WIN32
     msghdr mh;   
     mh.msg_name = addr;
@@ -430,6 +431,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     mh.msg_control = NULL;
     mh.msg_controllen = 0;
     mh.msg_flags = 0;
+    size_t& ref_data_len = mh.msg_iov[CPacket::PV_DATA].iov_len;
 
 #ifdef UNIX
     fd_set set;
@@ -582,7 +584,26 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         goto Return_error;
     }
 
+#ifndef WIN32
+
+    // What is actually happening here is that there are two buffers supplied for the recvmsg call:
+    // [ HEADER (size=CPacket::HDR_SIZE) ] [ DATA (size = CUDT::m_zMaxPayloadSize) ]
+    // Which returns with:
+    // [ HEADER (as above) ] [DATA (size can be shorter)]
+    // As we supply only 2 buffers, we know that [DATA] is the last one, and we know
+    // that if the received size exceeds CPacket::HDR_SIZE (there's a check above),
+    // then the DATA buffer effective size = returned data size - the size of the
+    // HEADER buffer, which is CPacket::HDR_SIZE.
+
+    // Theoretically you should walk through the buffers and subsequently decrease
+    // the returned size by the size of the iterated buffer, but the check of the
+    // header size and decrease by it here will result in the same.
+    ref_data_len = res - CPacket::HDR_SIZE;
+
+#else
+
     packet.setLength(res - CPacket::HDR_SIZE);
+#endif
 
     // convert back into local host order
     // XXX use NtoHLA().

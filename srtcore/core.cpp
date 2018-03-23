@@ -1073,8 +1073,10 @@ void CUDT::clearData()
    m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
    m_iTraceRcvRetrans = 0;
    m_iTraceReorderDistance = 0;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
    m_fTraceBelatedTime = 0.0;
    m_iTraceRcvBelated = 0;
+#endif
 
    m_iSndDropTotal          = 0;
    m_iTraceSndDrop          = 0;
@@ -5284,9 +5286,10 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->pktRecvNAK = m_iRecvNAK;
    perf->usSndDuration = m_llSndDuration;
    perf->pktReorderDistance = m_iTraceReorderDistance;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
    perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
    perf->pktRcvBelated = m_iTraceRcvBelated;
-
+#endif
    perf->pktSentTotal = m_llSentTotal;
    perf->pktRecvTotal = m_llRecvTotal;
    perf->pktSndLossTotal = m_iSndLossTotal;
@@ -5339,7 +5342,10 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
+      m_fTraceBelatedTime = 0;
       m_iTraceRcvBelated = 0;
+#endif
       m_LastSampleTime = currtime;
    }
 }
@@ -5372,8 +5378,10 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktRecvNAK = m_iRecvNAK;
    perf->usSndDuration = m_llSndDuration;
    perf->pktReorderDistance = m_iTraceReorderDistance;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
    perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
    perf->pktRcvBelated = m_iTraceRcvBelated;
+#endif
    //>new
    /* perf byte counters include all headers (SRT+UDP+IP) */
    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
@@ -5534,7 +5542,10 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
       m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
+      m_fTraceBelatedTime = 0;
       m_iTraceRcvBelated = 0;
+#endif
       m_LastSampleTime = currtime;
    }
 }
@@ -6958,8 +6969,10 @@ int CUDT::processData(CUnit* unit)
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+#if ENABLE_HEAVY_LOGGING
    static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
+#endif
 
 
    if ( pktrexmitflag == 1 ) // rexmitted
@@ -7025,21 +7038,26 @@ int CUDT::processData(CUnit* unit)
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
+#if ENABLE_HEAVY_LOGGING
       string exc_type = "EXPECTED";
+#endif
       if ((offset < 0))
       {
+#if ENABLE_HEAVY_LOGGING
           exc_type = "BELATED";
+#endif
           excessive = true;
+#ifdef SRT_ENABLE_BELATEDTIMECOUNT
           m_iTraceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
           uint64_t bltime = CountIIR(
                   uint64_t(m_fTraceBelatedTime)*1000,
                   CTimer::getTime() - tsbpdtime, 0.2);
           m_fTraceBelatedTime = double(bltime)/1000.0;
+#endif
       }
       else
       {
-
           int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
@@ -7051,7 +7069,9 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
+#if ENABLE_HEAVY_LOGGING
               exc_type = "UNACKED";
+#endif
               excessive = true;
           }
       }

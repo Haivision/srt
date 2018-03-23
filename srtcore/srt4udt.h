@@ -67,6 +67,9 @@ written by
 
 #define SRT_ENABLE_LOSTBYTESCOUNT 1
 
+// Counting stats for belated packets (received, but rejected by
+// the receiver)
+// #define SRT_ENABLE_BELATEDTIMECOUNT 1
 
 /*
 * SRT_ENABLE_IPOPTS
