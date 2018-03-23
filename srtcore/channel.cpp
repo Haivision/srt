@@ -342,25 +342,29 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
-#if ENABLE_LOGGING
+#if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
 
     if (packet.isControl())
     {
-        spec << " CONTROL size=" << packet.getLength()
+        spec << " type=CONTROL"
              << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
              << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
     }
     else
     {
-        spec << " DATA size=" << packet.getLength()
-             << " seq=" << packet.getSeqNo();
+        spec << " type=DATA"
+             << " seq=" << packet.getSeqNo()
+             << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
+             << " datastamp=" << BufferStamp(packet.m_pcData, packet.getLength());
         if (packet.getRexmitFlag())
             spec << " [REXMIT]";
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=%" << packet.m_iID
+        << " size=" << packet.getLength()
+        << " pkt.ts=" << logging::FormatTime(packet.m_iTimeStamp)
         << spec.str());
 #endif
 

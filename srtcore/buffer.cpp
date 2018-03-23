@@ -1074,7 +1074,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             int64_t towait = (*tsbpdtime - CTimer::getTime());
             if (towait > 0)
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: NEXT PKT seq=" << curpktseq.get() << " NOT READY (only in " << (towait/1000.0) << "ms)");
                 return false;
             }
 
@@ -1085,7 +1085,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             }
             else
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: NEXT PKT seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
                 return true;
             }
         }
@@ -1161,6 +1161,63 @@ CPacket* CRcvBuffer::getRcvReadyPacket()
     return 0;
 }
 
+// This function is for debug purposes only and it's called only
+// from within HLOG* macros.
+void CRcvBuffer::reportBufferStats()
+{
+    int nmissing = 0;
+    int32_t low_seq= -1, high_seq = -1;
+    int32_t low_ts = 0, high_ts = 0;
+
+    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
+    {
+        if ( m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD )
+        {
+            low_seq = m_pUnit[i]->m_Packet.m_iSeqNo;
+            low_ts = m_pUnit[i]->m_Packet.m_iTimeStamp;
+            break;
+        }
+        ++nmissing;
+    }
+
+    // Not sure if a packet MUST BE at the last ack pos position, so check, just in case.
+    int n = m_iLastAckPos;
+    if (m_pUnit[n] && m_pUnit[n]->m_iFlag == CUnit::GOOD)
+    {
+        high_ts = m_pUnit[n]->m_Packet.m_iTimeStamp;
+        high_seq = m_pUnit[n]->m_Packet.m_iSeqNo;
+    }
+    else
+    {
+        // Possibilities are:
+        // m_iStartPos == m_iLastAckPos, high_ts == low_ts, defined.
+        // No packet: low_ts == 0, so high_ts == 0, too.
+        high_ts = low_ts;
+    }
+    // The 32-bit timestamps are relative and roll over oftten; what
+    // we really need is the timestamp difference. The only place where
+    // we can ask for the time base is the upper time because when trying
+    // to receive the time base for the lower time we'd break the requirement
+    // for monotonic clock.
+
+    uint64_t upper_time = high_ts;
+    uint64_t lower_time = low_ts;
+
+    if (lower_time > upper_time)
+        upper_time += uint64_t(CPacket::MAX_TIMESTAMP)+1;
+
+    int32_t timespan = upper_time - lower_time;
+    int seqspan = 0;
+    if (low_seq != -1 && high_seq != -1)
+    {
+        seqspan = CSeqNo::seqoff(low_seq, high_seq);
+    }
+
+    LOGC(dlog.Debug, log << "RCV BUF STATS: missing=" << nmissing << " seq:" << low_seq << "-" << high_seq << "(" << seqspan << ") timespan="
+            << timespan << "(lo=" << logging::FormatTime(lower_time)
+            << " hi=" << logging::FormatTime(upper_time) << ")");
+}
+
 bool CRcvBuffer::isRcvDataReady()
 {
    uint64_t tsbpdtime;
@@ -1181,6 +1238,25 @@ int CRcvBuffer::getRcvDataSize() const
       return m_iLastAckPos - m_iStartPos;
 
    return m_iSize + m_iLastAckPos - m_iStartPos;
+}
+
+int CRcvBuffer::debugGetSize() const
+{
+    // This is slick as being called in the worker thread.
+    // Use it only as informative, to display in the logs,
+    // never in any serious calculations.
+
+    // This is exactly the same code as getRcvDataSize,
+    // with the exception that it locks values in the beginning,
+    // so it reports the first caught value at this moment.
+    // Worst case scenario, this value might happen to be
+    // greater by 1 towards the value that is at this moment.
+    int from = m_iStartPos, to = m_iLastAckPos;
+    int size = to - from;
+    if (size < 0)
+        size += m_iSize;
+
+    return size;
 }
 
 
@@ -1501,7 +1577,18 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
         printDriftOffset(m_DriftTracer.overdrift(), m_DriftTracer.drift());
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
+#if ENABLE_HEAVY_LOGGING
+        uint64_t oldbase = m_ullTsbPdTimeBase;
+#endif
         m_ullTsbPdTimeBase += m_DriftTracer.overdrift();
+
+        HLOGC(dlog.Debug, log << "DRIFT=" << (iDrift/1000.0) << "ms AVG="
+                << (m_DriftTracer.drift()/1000.0) << "ms, TB: "
+                << logging::FormatTime(oldbase) << " UPDATED TO: " << logging::FormatTime(m_ullTsbPdTimeBase));
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "DRIFT=" << (iDrift/1000.0) << "ms TB REMAINS: " << logging::FormatTime(m_ullTsbPdTimeBase));
     }
 
     CGuard::leaveCS(mutex_to_lock);
@@ -1521,6 +1608,10 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     bool passack;
     bool empty = true;
     uint64_t& rplaytime = msgctl.srctime;
+
+#ifdef ENABLE_HEAVY_LOGGING
+    reportBufferStats();
+#endif
 
     if (m_bTsbPdMode)
     {

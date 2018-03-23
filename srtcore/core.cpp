@@ -7043,10 +7043,15 @@ int CUDT::processData(CUnit* unit)
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
+      int avail_bufsize = -1;
+#ifdef ENABLE_HEAVY_LOGGING
       string exc_type = "EXPECTED";
-      if ((offset < 0))
+#endif
+      if (offset < 0)
       {
+#ifdef ENABLE_HEAVY_LOGGING
           exc_type = "BELATED";
+#endif
           excessive = true;
           m_iTraceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
@@ -7057,8 +7062,7 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset=" << offset << " avail=" << avail_bufsize);
@@ -7069,12 +7073,15 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
+#ifdef ENABLE_HEAVY_LOGGING
               exc_type = "UNACKED";
+#endif
               excessive = true;
           }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
+          << " BUFr=" << avail_bufsize
           << (excessive ? " EXCESSIVE" : " ACCEPTED")
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
