@@ -90,6 +90,9 @@ if ( USE_GNUTLS )
 	endif()
  
 	pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
+	if(NOT ENABLE_SHARED OR NOT BUILD_SHARED_LIBS)
+		set (SSL_LIBRARIES ${SSL_LIBRARIES} ${SSL_STATIC_LIBRARIES})
+	endif()
 
 	add_definitions(
 		-DUSE_GNUTLS=1
