@@ -80,6 +80,14 @@ modified by
 #include "crypto.h"
 #include "logging_api.h" // Required due to containing extern srt_logger_config
 
+// Again, just in case when some "smart guy" provided such a global macro
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 using namespace std;
 
 struct AllFaOn
@@ -4785,11 +4793,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     // insert the user buffer into the sending list
     m_pSndBuffer->addBuffer(data, size, mctrl.msgttl, mctrl.inorder, mctrl.srctime, Ref(mctrl.msgno));
-    HLOGC(dlog.Debug, log << CONID() << "USER SENDING srctime=" << logging::FormatTime(mctrl.srctime)
-            << " size=" << size
-            << " datastamp=" << BufferStamp(data, size)
-            << " msgno=" << MSGNO_SEQ::unwrap(mctrl.msgno)
-            );
+    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime: " << mctrl.srctime << "us DATA SIZE: " << size);
 
     // insert this socket to the snd list if it is not on the list yet
     m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
@@ -6341,10 +6345,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_iRTTVar = (m_iRTTVar * 3 + abs(rtt - m_iRTT)) >> 2;
       m_iRTT = (m_iRTT * 7 + rtt) >> 3;
 
-      HLOGC(mglog.Debug, log << "ACKACK: RTT[ms]: CUR=" << (rtt/1000.0)
-              << " AVG=" << (m_iRTT/1000.0)
-              << " VAR=" << (m_iRTTVar/1000.0));
-
       updateCC(TEV_ACKACK, ack);
 
       // This function will put a lock on m_RecvLock by itself, as needed.
@@ -6642,9 +6642,9 @@ void CUDT::updateSrtRcvSettings()
         m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, m_iTsbPdDelay_ms * 1000);
         CGuard::leaveCS(m_RecvLock);
 
-        HLOGC(mglog.Debug, log << "AFTER HS: Set TsbPd mode delay="
-                << (m_iTsbPdDelay_ms/1000.0) << "s INITIAL TB: "
-                << logging::FormatTime(m_ullRcvPeerStartTime));
+        HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03u secs",
+                m_iTsbPdDelay_ms/1000,
+                m_iTsbPdDelay_ms%1000);
     }
     else
     {
@@ -6896,11 +6896,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
    HLOGC(mglog.Debug, log << CONID() << "packData: " << reason << " packet seq=" << packet.m_iSeqNo
-       << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
-       << " srctime=" << logging::FormatTime(origintime)
-       << " pkt.ts=" << logging::FormatTime(packet.m_iTimeStamp)
-       << " ACK=" << m_iSndLastAck << " ACKDATA=" << m_iSndLastDataAck
-       << " MSG/FLAGS: " << packet.MessageFlagStr() );
+       << " (ACK=" << m_iSndLastAck << " ACKDATA=" << m_iSndLastDataAck
+       << " MSG/FLAGS: " << packet.MessageFlagStr() << ")");
 #endif
 
    // Fix keepalive
@@ -6987,6 +6984,8 @@ int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
 
+   // XXX This should be called (exclusively) here:
+   //m_pRcvBuffer->addLocalTsbPdDriftSample(packet.getMsgTimeStamp());
    // Just heard from the peer, reset the expiration count.
    m_iEXPCount = 1;
    uint64_t currtime_tk;
@@ -7007,10 +7006,8 @@ int CUDT::processData(CUnit* unit)
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
-#if ENABLE_HEAVY_LOGGING
    static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
-#endif
 
 
    if ( pktrexmitflag == 1 ) // rexmitted
@@ -7044,12 +7041,7 @@ int CUDT::processData(CUnit* unit)
    }
 
 
-   HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
-           << " seq=" << packet.getSeqNo()
-           << " pkt.ts=" << logging::FormatTime(packet.getMsgTimeStamp())
-           << " deli.ts=" << logging::FormatTime(m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp()))
-           << " tsbpd.tb=" << logging::FormatTime(m_pRcvBuffer->getTsbPdTimeBase(packet.getMsgTimeStamp()))
-           );
+   HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength() << " seq=" << packet.getSeqNo());
    //    << "(" << rexmitstat[pktrexmitflag] << rexmit_reason << ")";
 
    updateCC(TEV_RECEIVE, &packet);
@@ -7070,8 +7062,6 @@ int CUDT::processData(CUnit* unit)
    ++ m_llTraceRecv;
    ++ m_llRecvTotal;
 
-   bool need_drift_sample = false;
-
    {
       /*
       * Start of offset protected section
@@ -7083,15 +7073,10 @@ int CUDT::processData(CUnit* unit)
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
-      int avail_bufsize = -1;
-#ifdef ENABLE_HEAVY_LOGGING
       string exc_type = "EXPECTED";
-#endif
-      if (offset < 0)
+      if ((offset < 0))
       {
-#ifdef ENABLE_HEAVY_LOGGING
           exc_type = "BELATED";
-#endif
           excessive = true;
           m_iTraceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
@@ -7102,7 +7087,8 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-          avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+
+          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // Check if the buffer is empty. If so, then it shouldn't be a problem
@@ -7145,15 +7131,12 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
-#ifdef ENABLE_HEAVY_LOGGING
               exc_type = "UNACKED";
-#endif
               excessive = true;
           }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
-          << " BUFr=" << avail_bufsize
           << (excessive ? " EXCESSIVE" : " ACCEPTED")
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
@@ -7194,7 +7177,6 @@ int CUDT::processData(CUnit* unit)
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
       }
 
-      // END OF CRITSEC: m_AckLock
    }  /* End of recvbuf_acklock*/
 
    if (m_bClosing) {

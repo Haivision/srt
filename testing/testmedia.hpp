@@ -30,7 +30,7 @@ class SrtCommon
 protected:
 
     bool m_output_direction = false; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
-    bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_output_direction
+    bool m_blocking_mode = false; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_output_direction
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_output_direction
     bool m_tsbpdmode = true;
     int m_outgoing_port = 0;

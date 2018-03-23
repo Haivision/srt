@@ -170,13 +170,11 @@ typedef enum SRT_SOCKOPT {
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
     SRTO_PEERLATENCY,     // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
     SRTO_MINVERSION,      // Minimum SRT version needed for the peer (peers with less version will get connection reject)
-    SRTO_STREAMID,        // A string set to a socket and passed to the listener's accepted socket
-    SRTO_SMOOTHER,        // Smoother selection (congestion control algorithm)
-    SRTO_MESSAGEAPI,      // Message (not Stream) sending mode should be used
-    SRTO_PAYLOADSIZE,     // Maximum size of a single sending or receiving operation
-    SRTO_TRANSTYPE,       // Transmission type [live or file] (set of options required for given transmission type)
-
-    SRTO__LAST
+    SRTO_STREAMID,         // A string set to a socket and passed to the listener's accepted socket
+    SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
+    SRTO_MESSAGEAPI,
+    SRTO_PAYLOADSIZE,
+    SRTO_TRANSTYPE         // Transmission type (set of options required for given transmission type)
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:

@@ -79,7 +79,6 @@ written by
 #include <functional>
 #include <memory>
 #include <sstream>
-#include <iomanip>
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
@@ -587,46 +586,6 @@ struct MapProxy
         return find() != mp.end();
     }
 };
-
-inline std::string BufferStamp(const char* mem, size_t size)
-{
-    using namespace std;
-
-    union
-    {
-        char spread[16];
-        uint32_t testin[4];
-    };
-    int n = 16-size;
-    if (n > 0)
-        memset(spread+16-n, 0, n);
-    memcpy(spread, mem, min(size_t(16), size));
-
-    // Now prepare 4 cells for uint32_t.
-    union
-    {
-        uint32_t sum;
-        char cells[4];
-    };
-    memset(cells, 0, 4);
-
-    for (size_t x = 0; x < 4; ++x)
-        for (size_t y = 0; y < 4; ++y)
-        {
-            cells[x] += spread[x+4*y];
-        }
-
-    // Convert to hex string
-
-    ostringstream os;
-
-    //os << hex << uppercase << setfill('0') << setw(8) << testin[3] << testin[2] << testin[1] << testin[0];
-    //os << "|";
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
-}
-
 
 
 template <class OutputIterator>
