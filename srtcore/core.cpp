@@ -3024,8 +3024,8 @@ void CUDT::CCUpdate()
       if (maxbw != 0)
           m_pSRTCC->setMaxBW((maxbw * (100 + m_iOverheadBW))/100); //Bytes/sec
 
-      if ((m_llSentTotal > 2000) && (period < 5000000))
-         m_pSndBuffer->setInputRateSmpPeriod(5000000); //5 sec period after fast start
+      if ((m_llSentTotal > 2000) && (period < 1000000))
+         m_pSndBuffer->setInputRateSmpPeriod(1000000); //1 sec period after fast start
    }
    m_ullInterval = (uint64_t)(m_pCC->m_dPktSndPeriod * m_ullCPUFrequency);
    m_dCongestionWindow = m_pCC->m_dCWndSize;
