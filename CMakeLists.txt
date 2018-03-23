@@ -19,7 +19,7 @@ include(haiUtil)
 include(FindPkgConfig)
 include(FindThreads)
 
-set (SRT_VERSION 1.2.2)
+set (SRT_VERSION 1.2.3)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 if (NOT DEFINED ENABLE_DEBUG)
