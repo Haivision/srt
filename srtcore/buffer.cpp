@@ -360,7 +360,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    return total;
 }
 
-int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, unsigned kflgs)
+int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, int kflgs)
 {
    // No data to read
    if (m_pCurrBlock == m_pLastBlock)
@@ -393,7 +393,16 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
    // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
    // flags for PH_MSGNO will be applied directly there. Then here the value for setting
    // PH_MSGNO will be set as is.
-   m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+
+   if (kflgs == -1)
+   {
+       HLOGC(dlog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
+       readlen = 0;
+   }
+   else
+   {
+       m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+   }
    msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
 
    srctime =

@@ -105,7 +105,7 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(char** data, int32_t& msgno, uint64_t& origintime, unsigned kflgs);
+   int readData(char** data, int32_t& msgno, uint64_t& origintime, int kflgs);
 
 
       /// Find data position to pack a DATA packet for a retransmission.

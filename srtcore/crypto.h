@@ -176,7 +176,26 @@ public:
 
     int getSndCryptoFlags() const
     {
-        return(m_hSndCrypto ? HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) : 0);
+        return(m_hSndCrypto ?
+                HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) :
+                // When encryption isn't on, check if it was required
+                // If it was, return -1 as flags, which means that
+                // encryption was requested and not possible.
+                m_iSndKmKeyLen > 0 ? -1 :
+                0);
+    }
+
+    bool isSndEncryptionOK() const
+    {
+        // Similar to this above, just quickly check if the encryption
+        // is required and possible, or not possible
+        if (m_iSndKmKeyLen == 0)
+            return true; // no encryption required
+
+        if (m_hSndCrypto)
+            return true; // encryption is required and possible
+
+        return false;
     }
 
     /// Encrypts the packet. If encryption is not turned on, it
