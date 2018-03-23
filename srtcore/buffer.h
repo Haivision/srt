@@ -391,7 +391,7 @@ public:
 
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
-   bool empty() const;
+   int debugGetSize() const;
 private:
 
    /// thread safe bytes counter
