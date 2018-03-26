@@ -109,6 +109,14 @@ void CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
     }
 }
 
+void CCryptoControl::createFakeSndContext()
+{
+    if (!createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX))
+    {
+        HLOGC(mglog.Debug, log << "Error: Can't create fake crypto context for sending - sending will return ERROR!");
+        m_hSndCrypto = 0;
+    }
+}
 
 int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv)
 {

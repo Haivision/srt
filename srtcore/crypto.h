@@ -112,6 +112,7 @@ public:
     // Detailed processing
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
     int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int hsv);
+    void createFakeSndContext();
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }

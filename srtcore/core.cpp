@@ -2447,6 +2447,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     if ( !encrypted && m_iSndCryptoKeyLen > 0 )
     {
         LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets from Peer).");
+
+        // This is required so that the sender is still allowed to send data, when encryption is required,
+        // just this will be for waste because the receiver won't decrypt them anyway.
+        m_pCryptoControl->createFakeSndContext();
         return true;
     }
 
