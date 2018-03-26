@@ -158,6 +158,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     if ( bytelen <= HCRYPT_MSG_KM_OFS_SALT )  //Sanity on message
     {
         LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too small, must be >" << HCRYPT_MSG_KM_OFS_SALT);
+        m_iRcvKmState = SRT_KM_S_BADSECRET;
         KMREQ_RESULT_REJECTION();
     }
 
@@ -166,6 +167,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     if (m_KmSecret.len == 0)  //We have a shared secret <==> encryption is on
     {
         LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Agent does not declare encryption - REJECTING!");
+        m_iRcvKmState = SRT_KM_S_NOSECRET;
         KMREQ_RESULT_REJECTION();
     }
 
@@ -174,6 +176,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     if ( sek_len == 0 )
     {
         LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Received SEK is empty - REJECTING!");
+        m_iRcvKmState = SRT_KM_S_BADSECRET;
         KMREQ_RESULT_REJECTION();
     }
 
@@ -181,6 +184,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     if (!createCryptoCtx(Ref(m_hRcvCrypto), m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX))
     {
         LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create RCV CRYPTO CTX - must reject...");
+        m_iRcvKmState = SRT_KM_S_NOSECRET;
         KMREQ_RESULT_REJECTION();
     }
 
@@ -190,6 +194,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         if (!createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX))
         {
             LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create SND CRYPTO CTX - must reject...");
+            m_iRcvKmState = SRT_KM_S_NOSECRET;
             KMREQ_RESULT_REJECTION();
         }
     }
