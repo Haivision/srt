@@ -36,6 +36,9 @@ written by
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
 
+#if ENABLE_LOGGING
+std::string KmStateStr(SRT_KM_STATE state);
+#endif
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;

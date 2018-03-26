@@ -52,7 +52,7 @@ extern logging::Logger mglog, dlog;
 const int SRT_CRYPT_KM_PRE_ANNOUNCE = 0x10000;
 
 #if ENABLE_LOGGING
-static std::string KmStateStr(SRT_KM_STATE state)
+std::string KmStateStr(SRT_KM_STATE state)
 {
     switch (state)
     {
@@ -63,7 +63,12 @@ static std::string KmStateStr(SRT_KM_STATE state)
         TAKE(NOSECRET);
         TAKE(BADSECRET);
 #undef TAKE
-    default: return "???";
+    default:
+        {
+            char buf[256];
+            sprintf(buf, "??? (%d)", state);
+            return buf;
+        }
     }
 }
 
@@ -217,6 +222,9 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     }
 
     LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMREQ", true, SRT_CMD_KMREQ, bytelen, m_iRcvKmState, m_iRcvPeerKmState));
+
+    if (srtlen == 1)
+        goto HSv4_ErrorReport;
 
     if (m_iRcvKmState == SRT_KM_S_SECURED && bidirectional )
     {

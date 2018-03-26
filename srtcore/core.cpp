@@ -1809,7 +1809,14 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, srtdata_out, Ref(len_out), CUDT::HS_VERSION_UDT4);
             if ( res == SRT_CMD_KMRSP )
             {
-                HLOGC(mglog.Debug, log << "KMREQ -> requested to send KMRSP length=" << len_out);
+                if (len_out == 1)
+                {
+                    HLOGC(mglog.Debug, log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "KMREQ -> requested to send KMRSP length=" << len_out);
+                }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
             else
