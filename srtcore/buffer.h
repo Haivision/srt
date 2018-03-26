@@ -136,7 +136,7 @@ public:
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   int getInputRate(ref_t<int> payloadtsz, ref_t<int> period);
+   int getInputRate(ref_t<int> payloadtsz, ref_t<uint64_t> period);
    void updInputRate(uint64_t time, int pkts, int bytes);
    void setInputRateSmpPeriod(int period);
 
