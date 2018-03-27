@@ -545,6 +545,7 @@ private: // Identification
 
     // XXX Consider removing them. The m_bDataSender may stay here
     // in order to maintain the HS side selection in HSv4.
+    // m_bTwoWayData is unused.
     bool m_bDataSender;
     bool m_bTwoWayData;
 

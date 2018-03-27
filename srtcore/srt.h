@@ -164,7 +164,7 @@ typedef enum SRT_SOCKOPT {
     // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
     _DEPRECATED_SRTO_SNDPBKEYLEN = 38, // (needed to use inside the code without generating -Wswitch)
     //
-    SRTO_SNDPEERKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
+    SRTO_SNDKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
     SRTO_RCVKMSTATE,      // (GET) the current state of the encryption at the agent side
     SRTO_LOSSMAXTTL,      // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission

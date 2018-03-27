@@ -919,6 +919,15 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int32_t);
       break;
 
+   case SRTO_KMSTATE:
+      if (!m_pCryptoControl)
+          *(int32_t*)optval = SRT_KM_S_UNSECURED;
+      else if (m_bDataSender)
+          *(int32_t*)optval = m_pCryptoControl->m_SndKmState;
+      else
+          *(int32_t*)optval = m_pCryptoControl->m_RcvKmState;
+      break;
+
       /*
          XXX This was an experimental bidirectional implementation using HSv4,
          which was using two separate KMX processes per direction. HSv4 bidirectional
@@ -944,22 +953,17 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       break;
       */
 
-   case SRTO_SNDPEERKMSTATE: /* Sender's peer decryption state */
-      /*
-      * Was SRT_KMSTATE (receiver's decryption state) before TWOWAY support,
-      * where sender reports peer (receiver) state and the receiver reports local state when connected.
-      * Maintain binary compatibility and return what SRT_RCVKMSTATE returns for receive-only connected peer.
-      */
+   case SRTO_SNDKMSTATE: // State imposed by Agent depending on PW and KMX
       if (m_pCryptoControl)
-         *(int32_t*)optval = (m_bDataSender || m_bTwoWayData) ? m_pCryptoControl->m_iSndPeerKmState : m_pCryptoControl->m_iRcvKmState;
+         *(int32_t*)optval = m_pCryptoControl->m_SndKmState;
       else
          *(int32_t*)optval = SRT_KM_S_UNSECURED;
       optlen = sizeof(int32_t);
       break;
 
-   case SRTO_RCVKMSTATE: /* Receiver decryption state */
+   case SRTO_RCVKMSTATE: // State returned by Peer as informed during KMX
       if (m_pCryptoControl)
-         *(int32_t*)optval = (m_bDataSender || m_bTwoWayData) ? m_pCryptoControl->m_iSndPeerKmState : m_pCryptoControl->m_iRcvKmState;
+         *(int32_t*)optval = m_pCryptoControl->m_RcvKmState;
       else
          *(int32_t*)optval = SRT_KM_S_UNSECURED;
       optlen = sizeof(int32_t);
@@ -1528,22 +1532,17 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         logext += ",SMOOTHER";
     }
 
-    if (m_iSndCryptoKeyLen > 0)
+    // Prevent adding KMRSP only in case when BOTH:
+    // - Agent has set no password
+    // - no KMREQ has arrived from Peer
+    // KMRSP must be always sent when:
+    // - Agent set a password, Peer did not send KMREQ: Agent sets snd=NOSECRET.
+    // - Agent set no password, but Peer sent KMREQ: Ageng sets rcv=NOSECRET.
+    if (m_iSndCryptoKeyLen > 0 || kmdata_wordsize > 0)
     {
-        if (srtkm_cmd == SRT_CMD_KMRSP && kmdata_wordsize == 0)
-        {
-            // It means that Agent is responder and it expected to receive KMREQ
-            // from the peer, but no such thing happened. In result, also don't
-            // send any KMRSP. The connection will be unable to handle any sending
-            // from Agent to Peer, but still sending Peer to Agent should work.
-            LOGC(mglog.Error, log << "createSrtHandshake: Agent/responder declares encryption, but Peer/initiator did not. NOT SENDING KMRSP.");
-        }
-        else
-        {
-            have_kmreq = true;
-            hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-            logext += ",KMREQ";
-        }
+        have_kmreq = true;
+        hs.m_iType |= CHandShake::HS_EXT_KMREQ;
+        logext += ",KMREQ";
     }
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext << ") data: " << hs.show());
@@ -1685,23 +1684,39 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         }
         else if ( srtkm_cmd == SRT_CMD_KMRSP )
         {
-            if ( !kmdata || kmdata_wordsize == 0 )
-            {
-                LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
-                return false;
-            }
+            uint32_t failure_kmrsp[] = { SRT_KM_S_UNSECURED };
+            const uint32_t* keydata = 0;
 
             // Shift the starting point with the value of previously added block,
             // to start with the new one.
             offset += ra_size;
 
-            ra_size = kmdata_wordsize;
-            *(p + offset) = HS_CMDSPEC_CMD::wrap(srtkm_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
-            ++offset;
-            HLOGC(mglog.Debug, log << "createSrtHandshake: KMRSP: applying returned key length="
-                << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata, kmdata_wordsize*sizeof(uint32_t)) << "]";
+            if (kmdata_wordsize == 0)
+            {
+                HLOGC(mglog.Debug, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+                ra_size = 1;
+                keydata = failure_kmrsp;
 
-            const uint32_t* keydata = reinterpret_cast<const uint32_t*>(kmdata);
+                // Update the KM state as well
+                m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET; // Agent has PW, but Peer won't decrypt
+                m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Peer won't encrypt as well.
+            }
+            else
+            {
+                if (!kmdata)
+                {
+                    LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
+                    return false;
+                }
+                ra_size = kmdata_wordsize;
+                keydata = reinterpret_cast<const uint32_t*>(kmdata);
+            }
+
+            *(p + offset) = HS_CMDSPEC_CMD::wrap(srtkm_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+            ++offset; // Once cell, containting CMD spec and size
+            HLOGC(mglog.Debug, log << "createSrtHandshake: KMRSP: applying returned key length="
+                    << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata, kmdata_wordsize*sizeof(uint32_t)) << "]";
+
             NtoHLA(p + offset, keydata, ra_size);
         }
         else
@@ -2451,6 +2466,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         // This is required so that the sender is still allowed to send data, when encryption is required,
         // just this will be for waste because the receiver won't decrypt them anyway.
         m_pCryptoControl->createFakeSndContext();
+        m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET; // Because Peer did not send KMX, though Agent has pw
+        m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Because Peer has no PW, as has sent no KMREQ.
         return true;
     }
 
@@ -2730,15 +2747,6 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW, should resend request quickly.");
             m_llLastReqTime = 0;
 
-            // (if security needed, set the SECURING state)
-            if (m_iSndCryptoKeyLen > 0)
-            {
-                m_pCryptoControl->m_iSndKmState = SRT_KM_S_SECURING;
-                m_pCryptoControl->m_iSndPeerKmState = SRT_KM_S_SECURING;
-                m_pCryptoControl->m_iRcvKmState = SRT_KM_S_SECURING;
-                m_pCryptoControl->m_iRcvPeerKmState = SRT_KM_S_SECURING;
-            }
-
             // Now serialize the handshake again to the existing buffer so that it's
             // then sent later in this loop.
 
@@ -2969,16 +2977,6 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
         return CONN_REJECT;
-    }
-
-    // (if security needed, set the SECURING state)
-    // (don't change it if already in FINE or INITIATED state).
-    if ((m_RdvState == CHandShake::RDV_WAVING || m_RdvState == CHandShake::RDV_ATTENTION) && m_iSndCryptoKeyLen > 0)
-    {
-        m_pCryptoControl->m_iSndKmState = SRT_KM_S_SECURING;
-        m_pCryptoControl->m_iSndPeerKmState = SRT_KM_S_SECURING;
-        m_pCryptoControl->m_iRcvKmState = SRT_KM_S_SECURING;
-        m_pCryptoControl->m_iRcvPeerKmState = SRT_KM_S_SECURING;
     }
 
     // Case 2.
@@ -3897,7 +3895,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
     {
         if ( bidirectional )
         {
-            hsd = HSD_RESPONDER;   // In HSv5, listener is always acceptor and caller always donor.
+            hsd = HSD_RESPONDER;   // In HSv5, listener is always RESPONDER and caller always INITIATOR.
         }
         else
         {
