@@ -315,6 +315,17 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
         m_sock = m_bindsock = SRT_INVALID_SOCK;
         throw;
     }
+
+    int pbkeylen = 0;
+    SRT_KM_STATE kmstate = SRT_KM_S_UNSECURED;
+    int len = sizeof (int);
+    srt_getsockflag(m_sock, SRTO_PBKEYLEN, &pbkeylen, &len);
+    srt_getsockflag(m_sock, SRTO_KMSTATE, &kmstate, &len);
+
+    // Bring this declaration temporarily, this is only for testing
+    std::string KmStateStr(SRT_KM_STATE state);
+
+    Verb() << "ENCRYPTION status: " << KmStateStr(kmstate) << " KeyLen=" << pbkeylen;
 }
 
 int SrtCommon::AddPoller(SRTSOCKET socket, int modes)

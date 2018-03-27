@@ -37,7 +37,12 @@ written by
 #include <hcrypt_msg.h>
 
 #if ENABLE_LOGGING
+#include "logging.h"
+
 std::string KmStateStr(SRT_KM_STATE state);
+
+extern logging::Logger mglog;
+
 #endif
 
 // For KMREQ/KMRSP. Only one field is used.
@@ -94,6 +99,11 @@ public:
         return false;
     }
 
+    bool hasPassphrase()
+    {
+        return m_KmSecret.len > 0;
+    }
+
 private:
 
     void regenCryptoKm(bool sendit, bool bidirectional);
@@ -121,6 +131,7 @@ public:
     {
         m_SndKmMsg[ki].iPeerRetry--;
         m_SndKmLastTime = CTimer::getTime();
+        HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
     }
 
     bool getKmMsg_acceptResponse(size_t ki, const uint32_t* srtmsg, size_t bytesize)

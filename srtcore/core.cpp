@@ -2317,12 +2317,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     {
         HLOGC(mglog.Debug, log << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
 
-        if (m_iSndCryptoKeyLen <= 0)
+        if (!m_pCryptoControl->hasPassphrase())
         {
             LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
-            return true;
+            // Also normally allow the key to be processed; worst case it will send the failure response.
         }
 
         uint32_t* begin = p;

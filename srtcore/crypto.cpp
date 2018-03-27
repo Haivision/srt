@@ -92,11 +92,11 @@ void CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
         {
             m_SndKmState = SRT_KM_S_SECURING;
         }
-        LOGP(mglog.Note, FormatKmMessage("sndSrtMsg", cmd, srtlen));
+        LOGP(mglog.Note, FormatKmMessage("sendSrtMsg", cmd, srtlen));
     }
     else
     {
-        LOGP(mglog.Note, FormatKmMessage("sndSrtMsg", cmd, srtlen));
+        LOGP(mglog.Note, FormatKmMessage("sendSrtMsg", cmd, srtlen));
     }
 }
 
@@ -303,6 +303,8 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
 
             m_SndKmState = m_RcvKmState = SRT_KM_S_BADSECRET;
         }
+        HLOGC(mglog.Debug, log << "processSrtMsg_KMRSP: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
+            << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
     }
 
     LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMRSP", SRT_CMD_KMRSP, len));
@@ -333,6 +335,8 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen)
             if (m_SndKmMsg[ki].iPeerRetry > 0 && m_SndKmMsg[ki].MsgLen > 0)
             {
                 m_SndKmMsg[ki].iPeerRetry--;
+                HLOGC(mglog.Debug, log << "sendKeysToPeer: SENDING ki=" << ki << " len=" << m_SndKmMsg[ki].MsgLen
+                        << " retry(updated)=" << m_SndKmMsg[ki].iPeerRetry);
                 m_SndKmLastTime = now;
                 m_parent->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen/sizeof(uint32_t));
             }
@@ -353,7 +357,8 @@ void CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
     int nbo = HaiCrypt_Tx_ManageKeys(m_hSndCrypto, out_p, out_len_p, 2);
     int sent = 0;
 
-    HLOGC(mglog.Debug, log << "regenCryptoKm: regenerating crypto keys nbo=" << nbo);
+    HLOGC(mglog.Debug, log << "regenCryptoKm: regenerating crypto keys nbo=" << nbo <<
+            " THEN=" << (sendit ? "SEND" : "KEEP") << " DIR=" << (bidirectional ? "BOTH" : "SENDER"));
 
     for (int i = 0; i < nbo && i < 2; i++)
     {
@@ -398,6 +403,10 @@ void CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
             }
         }
     }
+
+    HLOGC(mglog.Debug, log << "regenCryptoKm: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
+            << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
+
     if (sent)
         m_SndKmLastTime = CTimer::getTime();
 }
