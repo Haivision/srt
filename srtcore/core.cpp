@@ -4094,6 +4094,7 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
 
     if ( bidirectional || m_bDataSender )
     {
+        HLOGC(mglog.Debug, log << "createCrypter: setting RCV/SND KeyLen=" << m_iSndCryptoKeyLen);
         m_pCryptoControl->setCryptoKeylen(m_iSndCryptoKeyLen);
     }
 

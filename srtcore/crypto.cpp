@@ -177,6 +177,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         KMREQ_RESULT_REJECTION();
     }
 
+    HLOGC(mglog.Debug, log << "processSrtMsg_KMREQ: created also RX ENC with KeyLen=" << m_iRcvKmKeyLen);
     if (bidirectional)
     {
         m_iSndKmKeyLen = m_iRcvKmKeyLen;
@@ -186,6 +187,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
             m_RcvKmState = SRT_KM_S_NOSECRET;
             KMREQ_RESULT_REJECTION();
         }
+        HLOGC(mglog.Debug, log << "processSrtMsg_KMREQ: created also TX ENC with KeyLen=" << m_iSndKmKeyLen);
     }
 
     // We have both sides set with password, so both are pending for security
@@ -230,7 +232,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
             m_SndKmState = SRT_KM_S_NOSECRET;
         }
 
-        LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen));
+        LOGC(mglog.Note, log << FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen) << " SndKeyLen=" << m_iSndKmKeyLen);
     }
 
     return SRT_CMD_KMRSP;

@@ -155,11 +155,6 @@ public:
         //memcpy(&m_KmSecret, &secret, sizeof(m_KmSecret));
     }
 
-    void setSndCryptoKeylen(size_t keylen)
-    {
-        m_iSndKmKeyLen = keylen;
-    }
-
     void setCryptoKeylen(size_t keylen)
     {
         m_iSndKmKeyLen = keylen;
