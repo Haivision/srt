@@ -271,8 +271,25 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
             // Default embraces two cases:
             // NOSECRET: this KMRSP was sent by secured Peer, but Agent supplied no password.
             // UNSECURED: this KMRSP was sent by unsecure Peer because Agent sent KMREQ.
+
+        case SRT_KM_S_NOSECRET:
+            // This means that the peer did not set the password, while Agent did.
+            m_RcvKmState = SRT_KM_S_UNSECURED;
+            m_SndKmState = SRT_KM_S_NOSECRET;
+            break;
+
+        case SRT_KM_S_UNSECURED:
+            // This means that KMRSP was sent without KMREQ, to inform the Agent,
+            // that the Peer, unlike Agent, does use password. Agent can send then,
+            // but can't decrypt what Peer would send.
+            m_RcvKmState = SRT_KM_S_NOSECRET;
+            m_SndKmState = SRT_KM_S_UNSECURED;
+
         default:
-            m_RcvKmState = peerstate;
+            LOGC(mglog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer error state: "
+                    << KmStateStr(peerstate) << " (" << int(peerstate) << ")");
+            m_RcvKmState = SRT_KM_S_NOSECRET;
+            m_SndKmState = SRT_KM_S_NOSECRET;
             break;
         }
 
