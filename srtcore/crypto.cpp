@@ -284,6 +284,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
             // but can't decrypt what Peer would send.
             m_RcvKmState = SRT_KM_S_NOSECRET;
             m_SndKmState = SRT_KM_S_UNSECURED;
+            break;
 
         default:
             LOGC(mglog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer error state: "
