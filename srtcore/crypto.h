@@ -99,7 +99,7 @@ public:
         return false;
     }
 
-    bool hasPassphrase()
+    bool hasPassphrase() const
     {
         return m_KmSecret.len > 0;
     }
@@ -189,7 +189,7 @@ public:
     {
         // Similar to this above, just quickly check if the encryption
         // is required and possible, or not possible
-        if (m_iSndKmKeyLen == 0)
+        if (!hasPassphrase())
             return true; // no encryption required
 
         if (m_hSndCrypto)

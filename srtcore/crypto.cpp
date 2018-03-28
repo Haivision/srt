@@ -153,13 +153,6 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         KMREQ_RESULT_REJECTION();
     }
 
-    if (m_KmSecret.len == 0)  //We have a shared secret <==> encryption is on
-    {
-        LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Agent does not declare encryption - won't decrypt incoming packets!");
-        m_RcvKmState = SRT_KM_S_NOSECRET;
-        KMREQ_RESULT_REJECTION();
-    }
-
     HLOGC(mglog.Debug, log << "KMREQ: getting SEK and creating receiver crypto");
     sek_len = hcryptMsg_KM_GetSekLen(kmdata);
     if ( sek_len == 0 )
@@ -169,7 +162,29 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         KMREQ_RESULT_REJECTION();
     }
 
+    // Write the key length
     m_iRcvKmKeyLen = sek_len;
+    // Overwrite the key length anyway - it doesn't make sense to somehow
+    // keep the original setting because it will only make KMX impossible.
+#if ENABLE_HEAVY_LOGGING
+    if (m_iSndKmKeyLen != m_iRcvKmKeyLen)
+    {
+        LOGC(mglog.Debug, log << "processSrtMsg_KMREQ: Agent's PBKEYLEN=" << m_iSndKmKeyLen
+                << " overwritten by Peer's PBKEYLEN=" << m_iRcvKmKeyLen);
+    }
+#endif
+    m_iSndKmKeyLen = m_iRcvKmKeyLen;
+
+    // This is checked only now so that the SRTO_PBKEYLEN return always the correct value,
+    // even if encryption is not possible because Agent didn't set a password, or supplied
+    // a wrong password.
+    if (m_KmSecret.len == 0)  //We have a shared secret <==> encryption is on
+    {
+        LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Agent does not declare encryption - won't decrypt incoming packets!");
+        m_RcvKmState = SRT_KM_S_NOSECRET;
+        KMREQ_RESULT_REJECTION();
+    }
+
     if (!createCryptoCtx(Ref(m_hRcvCrypto), m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX))
     {
         LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create RCV CRYPTO CTX - must reject...");
@@ -180,7 +195,6 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     HLOGC(mglog.Debug, log << "processSrtMsg_KMREQ: created also RX ENC with KeyLen=" << m_iRcvKmKeyLen);
     if (bidirectional)
     {
-        m_iSndKmKeyLen = m_iRcvKmKeyLen;
         if (!createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX))
         {
             LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create SND CRYPTO CTX - must reject...");
