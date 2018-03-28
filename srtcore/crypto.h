@@ -32,12 +32,12 @@ written by
 #include "udt.h"
 #include "packet.h"
 #include "utilities.h"
+#include "logging.h"
 
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
 
 #if ENABLE_LOGGING
-#include "logging.h"
 
 std::string KmStateStr(SRT_KM_STATE state);
 
