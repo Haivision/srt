@@ -969,31 +969,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
           *(int32_t*)optval = m_pCryptoControl->m_RcvKmState;
       break;
 
-      /*
-         XXX This was an experimental bidirectional implementation using HSv4,
-         which was using two separate KMX processes per direction. HSv4 bidirectional
-         implementation has been completely abandoned for the sake of HSv5, in
-         which there's only one KMX process performed as a part of handshake this
-         time and therefore there's still one key, one key length and the encryption
-         uses the same SEK for both directions (in result, the same password).
-
-   case SRTO_SNDPBKEYLEN:
-      if (m_pCryptoControl)
-         *(int32_t*)optval = m_pCryptoControl->m_iSndKmKeyLen;
-      else
-         *(int32_t*)optval = m_iSndCryptoKeyLen;
-      optlen = sizeof(int32_t);
-      break;
-
-   case SRTO_RCVPBKEYLEN:
-      if (m_pCryptoControl)
-         *(int32_t*)optval = m_pCryptoControl->m_iRcvKmKeyLen;
-      else
-         *(int32_t*)optval = 0; //Defined on sender's side only
-      optlen = sizeof(int32_t);
-      break;
-      */
-
    case SRTO_SNDKMSTATE: // State imposed by Agent depending on PW and KMX
       if (m_pCryptoControl)
          *(int32_t*)optval = m_pCryptoControl->m_SndKmState;
@@ -1539,6 +1514,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
             // in the SRT_HSTYPE_ENCFLAGS field.
             hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+            bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+            HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
 
             // Note: This is required only when sending a HS message without SRT extensions.
             // When this is to be sent with SRT extensions, then KMREQ will be attached here
@@ -7767,6 +7744,8 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
       // by HSv4 client, HSv5 client can use it to additionally verify that this is a HSv5 listener.
       // In this field we also advertise the PBKEYLEN value. When 0, it's considered not advertised.
       hs.m_iType = SrtHSRequest::wrapFlags(true /*put SRT_MAGIC_CODE in HSFLAGS*/, m_iSndCryptoKeyLen);
+      bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+      HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));

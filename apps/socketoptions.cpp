@@ -19,11 +19,13 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
 
     if ( options.count("passphrase") )
     {
+        /*
         // Insert default
         if ( options.count("pbkeylen") == 0 )
         {
             options["pbkeylen"] = "16"; // m_output_direction ? "16" : "0";
         }
+        */
     }
 
     SocketOption::Mode mode;
