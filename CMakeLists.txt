@@ -210,28 +210,19 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-
-if (NOT MINGW)
-# find pthread
-find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-if (PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-else()
-	message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-endif()
-
-find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
 if (PTHREAD_LIBRARY)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	if (PTHREAD_INCLUDE_DIR)
+		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+	endif()
+elseif (WIN32 AND NOT MINGW)
+	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
 else()
-	message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	set(THREADS_PREFER_PTHREAD_FLAG ON)
+	find_package(Threads REQUIRED)
+	set(PTHREAD_LIBRARY Threads::Threads)
 endif()
-
-elseif(THREADS_FOUND)
-	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
-else()
-	find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
-endif() # if (NOT MINGW)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -381,11 +372,6 @@ set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_include_directories(${TARGET_srt} PUBLIC ${PTHREAD_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR})
 
 # Not sure why it's required, but somehow only on Linux
-if ( LINUX )
-	target_link_libraries(${TARGET_srt} PUBLIC rt)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
-endif()
-
 
 target_compile_definitions(${TARGET_srt} PRIVATE -DUDT_EXPORTS )
 if (ENABLE_SHARED)
@@ -433,7 +419,7 @@ endif()
 # Some sensible solution for that is desired. Currently turned on only on demand.
 if (ENABLE_C_DEPS)
 if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
+	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
 endif()
 endif()
 
