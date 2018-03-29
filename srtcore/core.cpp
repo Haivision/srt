@@ -1665,7 +1665,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // When encryption turned on
     if (have_kmreq)
     {
-        HLOGC(mglog.Debug, log << "createSrtHandshake: Agent uses ENCRYPTION");
+        HLOGC(mglog.Debug, log << "createSrtHandshake: "
+                << (m_CryptoSecret.len > 0 ? "Agent uses ENCRYPTION" : "Peer requires ENCRYPTION"));
         if ( srtkm_cmd == SRT_CMD_KMREQ )
         {
             bool have_any_keys = false;
@@ -2569,6 +2570,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         // This will be also passed to a HSv4 rendezvous, but fortunately the old
         // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
         m_ConnReq.m_iType = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_iSndCryptoKeyLen);
+        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        HLOGC(mglog.Debug, log << "startConnect (rnd): " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
         m_RdvState = CHandShake::RDV_WAVING;
         m_SrtHsSide = HSD_DRAW; // initially not resolved.
     }

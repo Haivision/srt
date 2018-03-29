@@ -181,7 +181,7 @@ public:
                 // When encryption isn't on, check if it was required
                 // If it was, return -1 as flags, which means that
                 // encryption was requested and not possible.
-                m_iSndKmKeyLen > 0 ? -1 :
+                hasPassphrase() ? -1 :
                 0);
     }
 
