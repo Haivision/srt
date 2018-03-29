@@ -102,6 +102,9 @@ void CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
 
 void CCryptoControl::createFakeSndContext()
 {
+    if (m_iSndKmKeyLen)
+        m_iSndKmKeyLen = 16;
+
     if (!createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX))
     {
         HLOGC(mglog.Debug, log << "Error: Can't create fake crypto context for sending - sending will return ERROR!");
@@ -483,8 +486,14 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional)
 
     if ( side == HSD_INITIATOR )
     {
-        if (m_iSndKmKeyLen > 0) // "has set password"
+        if (hasPassphrase())
         {
+            if (m_iSndKmKeyLen == 0)
+            {
+                HLOGC(mglog.Debug, log << "CCryptoControl::init: PBKEYLEN still 0, setting default 16");
+                m_iSndKmKeyLen = 16;
+            }
+
             bool ok = createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX);
             HLOGC(mglog.Debug, log << "CCryptoControl::init: creating SND crypto context: " << ok);
 

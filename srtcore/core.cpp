@@ -600,14 +600,55 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case _DEPRECATED_SRTO_SNDPBKEYLEN:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        {
+            int v = *(int*)optval;
+            int allowed [4] = {
+                0,   // Default value, if this results for initiator, defaults to 16. See below.
+                16, // AES-128
+                24, // AES-192
+                32  // AES-256
+            };
+            int* allowed_end = allowed+4;
+            if (find(allowed, allowed_end, v) == allowed_end)
+            {
+                LOGC(mglog.Error, log << "Invalid value for option SRTO_PBKEYLEN: " << v
+                        << "; allowed are: 0, 16, 24, 32");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
 
-        if ((*(int*)optval != 0)     //Encoder: No encryption, Decoder: get key from Keyint Material
-                &&  (*(int*)optval != 16)
-                &&  (*(int*)optval != 24)
-                &&  (*(int*)optval != 32))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            // Note: This works a little different in HSv4 and HSv5.
 
-        m_iSndCryptoKeyLen = *(int*)optval;
+            // HSv4:
+            // The party that is set SRTO_SENDER will send KMREQ, and it will
+            // use default value 16, if SRTO_PBKEYLEN is the default value 0.
+            // The responder that receives KMRSP has nothing to say about
+            // PBKEYLEN anyway and it will take the length of the key from
+            // the initiator (sender) as a good deal.
+            //
+            // HSv5:
+            // The initiator (independently on the sender) will send KMREQ,
+            // and as it should be the sender to decide about the PBKEYLEN.
+            // Your application should do the following then:
+            // 1. The sender should set PBKEYLEN to the required value.
+            // 2. If the sender is initiator, it will create the key using
+            //    its preset PBKEYLEN (or default 16, if not set) and the
+            //    receiver-responder will take it as a good deal.
+            // 3. Leave the PBKEYLEN value on the receiver as default 0.
+            // 4. If sender is responder, it should then advertise the PBKEYLEN
+            //    value in the initial handshake messages (URQ_INDUCTION if
+            //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case
+            //    of rendezvous, as it is the matter of luck who of them will
+            //    eventually become the initiator). This way the receiver
+            //    being an initiator will set m_iSndCryptoKeyLen before setting
+            //    up KMREQ for sending to the sender-responder.
+            //
+            // Note that in HSv5 if both sides set PBKEYLEN, the responder
+            // wins, unless the initiator is a sender (the effective PBKEYLEN
+            // will be the one advertised by the responder). If none sets,
+            // PBKEYLEN will default to 16.
+
+            m_iSndCryptoKeyLen = v;
+        }
         break;
 
     case SRTO_NAKREPORT:
@@ -1494,7 +1535,16 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
             // In this case for version 5 just clear the m_iType field, as it has
             // different meaning in HSv5 and contains extension flags.
-            hs.m_iType = 0;
+            //
+            // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
+            // in the SRT_HSTYPE_ENCFLAGS field.
+            hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+
+            // Note: This is required only when sending a HS message without SRT extensions.
+            // When this is to be sent with SRT extensions, then KMREQ will be attached here
+            // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
+            // here, it's already too late (it should've been advertised before getting the first
+            // handshake message with KMREQ).
         }
 
         size_t hs_size = pkt.getLength();
@@ -1538,7 +1588,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // KMRSP must be always sent when:
     // - Agent set a password, Peer did not send KMREQ: Agent sets snd=NOSECRET.
     // - Agent set no password, but Peer sent KMREQ: Ageng sets rcv=NOSECRET.
-    if (m_iSndCryptoKeyLen > 0 || kmdata_wordsize > 0)
+    if (m_CryptoSecret.len > 0 || kmdata_wordsize > 0)
     {
         have_kmreq = true;
         hs.m_iType |= CHandShake::HS_EXT_KMREQ;
@@ -2214,8 +2264,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     }
 
     // We still believe it should work, let's check the flags.
-    int ext_flags = hs.m_iType;
-
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if ( ext_flags == 0 )
     {
         LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension flags are set!");
@@ -2459,7 +2508,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
     // Post-checks
     // Check if peer declared encryption
-    if ( !encrypted && m_iSndCryptoKeyLen > 0 )
+    if (!encrypted && m_CryptoSecret.len > 0)
     {
         LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets from Peer).");
 
@@ -2952,8 +3001,15 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         return CONN_REJECT;
 
     UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
-    bool needs_extension = m_ConnRes.m_iType != 0; // Initial value: received HS has extensions.
+
+    // We can assume that the Handshake packet received here as 'response'
+    // is already serialized in m_ConnRes. Check extra flags that are meaningful
+    // for further processing here.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+    bool needs_extension = ext_flags != 0; // Initial value: received HS has extensions.
     bool needs_hsrsp = rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension));
+    checkUpdateCryptoKeyLen("processRendezvous", m_ConnRes.m_iType);
 
     // We have three possibilities here as it comes to HSREQ extensions:
 
@@ -3267,6 +3323,15 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
          // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
          if ( m_ConnRes.m_iVersion > HS_VERSION_UDT4 )
          {
+             int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+
+             if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
+             {
+                 LOGC(mglog.Warn, log << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE");
+             }
+
+             checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
+
              // This will catch HS_VERSION_SRT1 and any newer.
              // Set your highest version.
              m_ConnReq.m_iVersion = HS_VERSION_SRT1;
@@ -3395,6 +3460,44 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_pPeerAddr));
 
     return CONN_ACCEPT;
+}
+
+void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
+{
+    int enc_flags = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(typefield);
+
+    // potentially 0-7 values are possible.
+    // When 0, don't change anything - it should rely on the value 0.
+    // When 1, 5, 6, 7, this is kinda internal error - ignore.
+    if (enc_flags >= 2 && enc_flags <= 4) // 2 = 128, 3 = 192, 4 = 256
+    {
+        int rcv_pbkeylen = SrtHSRequest::SRT_PBKEYLEN_BITS::wrap(enc_flags);
+        if (m_iSndCryptoKeyLen == 0)
+        {
+            m_iSndCryptoKeyLen = rcv_pbkeylen;
+            HLOGC(mglog.Debug, log << loghdr << ": PBKEYLEN adopted from advertised value: " << m_iSndCryptoKeyLen);
+        }
+        else if (m_iSndCryptoKeyLen != rcv_pbkeylen)
+        {
+            // Conflict. Use SRTO_SENDER flag to check if this side should accept
+            // the enforcement, otherwise simply let it win.
+            if (!m_bDataSender)
+            {
+                m_iSndCryptoKeyLen = rcv_pbkeylen;
+                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - OVERRIDDEN by " << m_iSndCryptoKeyLen
+                        << " from PEER (as not set SRTO_SENDER)");
+            }
+            else
+            {
+                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - advertised PBKEYLEN "
+                        << rcv_pbkeylen << " rejected because Agent is SRTO_SENDER");
+            }
+        }
+    }
+    else if (enc_flags != 0)
+    {
+        LOGC(mglog.Error, log << loghdr << ": IPE: enc_flags outside allowed 2, 3, 4: " << enc_flags);
+    }
 }
 
 // Rendezvous
@@ -7662,8 +7765,8 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
 
       // Additionally, set this field to a MAGIC value. This field isn't used during INDUCTION
       // by HSv4 client, HSv5 client can use it to additionally verify that this is a HSv5 listener.
-
-      hs.m_iType = SrtHSRequest::SRT_MAGIC_CODE;
+      // In this field we also advertise the PBKEYLEN value. When 0, it's considered not advertised.
+      hs.m_iType = SrtHSRequest::wrapFlags(true /*put SRT_MAGIC_CODE in HSFLAGS*/, m_iSndCryptoKeyLen);
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));

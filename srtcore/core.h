@@ -334,6 +334,7 @@ private:
     EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     bool processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr);
 
+    void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
     size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen, int hs_version);
     size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
