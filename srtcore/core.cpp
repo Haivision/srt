@@ -2543,6 +2543,13 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     ttl += CTimer::getTime();
     m_pRcvQueue->registerConnector(m_SocketID, this, m_iIPversion, serv_addr, ttl);
 
+    // The m_iType is used in the INDUCTION for nothing. This value is only regarded
+    // in CONCLUSION handshake, however this must be created after the handshake version
+    // is already known. UDT_DGRAM is the value that was the only valid in the old SRT 
+    // with HSv4 (it supported only live transmission), for HSv5 it will be changed to
+    // handle handshake extension flags.
+    m_ConnReq.m_iType = UDT_DGRAM;
+
     // This is my current configuration
     if (m_bRendezvous)
     {
@@ -2558,6 +2565,10 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         //m_ConnReq.m_iVersion = HS_VERSION_UDT4; // <--- Change in order to do regression test.
         m_ConnReq.m_iReqType = URQ_WAVEAHAND;
         m_ConnReq.m_iCookie = bake(serv_addr);
+
+        // This will be also passed to a HSv4 rendezvous, but fortunately the old
+        // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
+        m_ConnReq.m_iType = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_iSndCryptoKeyLen);
         m_RdvState = CHandShake::RDV_WAVING;
         m_SrtHsSide = HSD_DRAW; // initially not resolved.
     }
@@ -2578,12 +2589,6 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         m_RdvState = CHandShake::RDV_INVALID;
     }
 
-    // The m_iType is used in the INDUCTION for nothing. This value is only regarded
-    // in CONCLUSION handshake, however this must be created after the handshake version
-    // is already known. UDT_DGRAM is the value that was the only valid in the old SRT 
-    // with HSv4 (it supported only live transmission), for HSv5 it will be changed to
-    // handle handshake extension flags.
-    m_ConnReq.m_iType = UDT_DGRAM;
     m_ConnReq.m_iMSS = m_iMSS;
     m_ConnReq.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize)? m_iRcvBufSize : m_iFlightFlagSize;
     m_ConnReq.m_iID = m_SocketID;
@@ -3460,13 +3465,13 @@ void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
             // the enforcement, otherwise simply let it win.
             if (!m_bDataSender)
             {
+                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - OVERRIDDEN " << m_iSndCryptoKeyLen
+                       << " by " << rcv_pbkeylen << " from PEER (as AGENT is not SRTO_SENDER)");
                 m_iSndCryptoKeyLen = rcv_pbkeylen;
-                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - OVERRIDDEN by " << m_iSndCryptoKeyLen
-                        << " from PEER (as not set SRTO_SENDER)");
             }
             else
             {
-                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - advertised PBKEYLEN "
+                LOGC(mglog.Warn, log << loghdr << ": PBKEYLEN conflict - keep " << m_iSndCryptoKeyLen << "; peer-advertised PBKEYLEN "
                         << rcv_pbkeylen << " rejected because Agent is SRTO_SENDER");
             }
         }
@@ -3474,6 +3479,10 @@ void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
     else if (enc_flags != 0)
     {
         LOGC(mglog.Error, log << loghdr << ": IPE: enc_flags outside allowed 2, 3, 4: " << enc_flags);
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << loghdr << ": No encryption flags found in type field: " << typefield);
     }
 }
 
@@ -7745,7 +7754,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
       // In this field we also advertise the PBKEYLEN value. When 0, it's considered not advertised.
       hs.m_iType = SrtHSRequest::wrapFlags(true /*put SRT_MAGIC_CODE in HSFLAGS*/, m_iSndCryptoKeyLen);
       bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
-      HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+      HLOGC(mglog.Debug, log << "processConnectRequest: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
