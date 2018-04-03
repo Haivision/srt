@@ -28,7 +28,7 @@ written by
 #ifdef WIN32
 #include "win/syslog_defs.h"
 #else
-#include <sys/syslog.h>
+#include <syslog.h>
 #endif
 
 // Syslog is included so that it provides log level names.

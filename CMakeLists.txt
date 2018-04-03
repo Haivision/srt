@@ -307,10 +307,12 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-
 if (MINGW)
 	set (PTHREAD_LIBRARY -lpthreadGC2)
-else()
+elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+elseif (WIN32)
 	# find pthread
 	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 	if (PTHREAD_INCLUDE_DIR)
@@ -323,15 +325,13 @@ else()
 	if (PTHREAD_LIBRARY)
 		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	else()
-		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-			message(STATUS "WARNING: cross-compiler pthread not found - fallback to POSIX default")
-			set (PTHREAD_LIBRARY -pthread)
-			set (PTHREAD_INCLUDE_DIR "")
-		else()
-			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-		endif()
+		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 	endif()
-endif() # if (NOT MINGW)
+else ()
+	set(THREADS_PREFER_PTHREAD_FLAG ON)
+	find_package(Threads REQUIRED)
+	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+endif()
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -495,13 +495,6 @@ endforeach()
 
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
-if ( LINUX )
-	# Unsure why libdl was required, keeping for the time being.
-	#target_link_libraries(${TARGET_srt} PUBLIC dl)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
-endif()
-
-
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 target_compile_definitions(haicrypt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
@@ -559,7 +552,7 @@ endif()
 # Some sensible solution for that is desired. Currently turned on only on demand.
 if (ENABLE_C_DEPS)
 if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
+	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
 endif()
 endif()
 
