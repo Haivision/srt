@@ -201,6 +201,7 @@ void srt_clearlasterror()
 
 int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
+int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
 
 SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
 
@@ -307,9 +308,7 @@ void srt_dellogfa(int fa)
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    std::set<logging::LogFA> fas;
-    std::copy(fara, fara + fara_size, std::inserter(fas, fas.begin()));
-    UDT::resetlogfa(fas);
+    UDT::resetlogfa(fara, fara_size);
 }
 
 void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)

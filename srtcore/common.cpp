@@ -258,15 +258,17 @@ uint64_t CTimer::getTime()
     // XXX Do further study on that. Currently Cygwin is also using gettimeofday,
     // however Cygwin platform is supported only for testing purposes.
 
-    //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
-    //uint64_t x;
-    //rdtsc(x);
-    //return x / s_ullCPUFrequency;
+    //For other systems without microsecond level resolution, add to this conditional compile
+#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+    uint64_t x;
+    rdtsc(x);
+    return x / s_ullCPUFrequency;
     //Specific fix may be necessary if rdtsc is not available either.
-
+#else
     timeval t;
     gettimeofday(&t, 0);
     return t.tv_sec * 1000000ULL + t.tv_usec;
+#endif
 }
 
 void CTimer::triggerEvent()
@@ -306,7 +308,6 @@ void CTimer::sleep()
 }
 
 
-//
 // Automatically lock in constructor
 CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
     m_Mutex(lock),
@@ -830,7 +831,7 @@ std::string logging::FormatTime(uint64_t time)
     time_t usec = time%1000000;
 
     time_t tt = sec;
-    struct tm tm = LocalTime(tt);
+    struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
 #ifdef WIN32
@@ -847,11 +848,11 @@ std::string logging::FormatTime(uint64_t time)
 
 logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	i_file = "";
-	i_line = 0;
-	flags = that.flags;
 	if (that_enabled)
 	{
+        i_file = "";
+        i_line = 0;
+        flags = that.src_config->flags;
 		// Create logger prefix
 		that.CreateLogLinePrefix(os);
 	}
@@ -867,16 +868,21 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     using namespace std;
 
     char tmp_buf[512];
-    if ( (flags & SRT_LOGF_DISABLE_TIME) == 0 )
+    if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, 0);
         time_t t = tv.tv_sec;
-        struct tm tm = LocalTime(t);
+        struct tm tm = SysLocalTime(t);
 
-        // Looxlike The %T is nonstandard and Windows
-        // uses %X here. And "excepts" when using %T.
+        // Nice to have %T as "standard time format" for logs,
+        // but it's Single Unix Specification and doesn't exist
+        // on Windows. Use %X on Windows (it's described as
+        // current time without date according to locale spec).
+        //
+        // XXX Consider using %X everywhere, as it should work
+        // on both systems.
 #ifdef WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
 #else
@@ -886,14 +892,14 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     string out_prefix;
-    if ( (flags & SRT_LOGF_DISABLE_SEVERITY) == 0 )
+    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
     {
         out_prefix = prefix;
     }
 
-    if ( (flags & SRT_LOGF_DISABLE_THREADNAME) == 0 && ThreadName::get(tmp_buf) )
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
     {
         serr << "/" << tmp_buf << out_prefix << ": ";
     }

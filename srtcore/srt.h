@@ -25,6 +25,8 @@ written by
 #ifndef INC__SRTC_H
 #define INC__SRTC_H
 
+#include "version.h"
+
 #include "platform_sys.h"
 
 #include <string.h>
@@ -76,10 +78,6 @@ written by
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
-
-
-// To construct version value
-#define SRT_MAKE_VERSION(major, minor, patch) ((patch)+((minor)*0x100)+((major)*0x10000))
 
 #ifdef __GNUG__
 #define SRT_ATR_UNUSED __attribute__((unused))
@@ -380,8 +378,8 @@ enum CodeMinor
     MN_CONGESTION = 4
 };
 
-static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = CodeMinor(9);
-static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = CodeMinor(10);
+static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
+static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
 
 // Stupid, but effective. This will be #undefined, so don't worry.
 #define MJ(major) (1000*MJ_##major)
@@ -437,8 +435,8 @@ typedef enum SRT_ERRNO
     SRT_EPEERERR = MJ(PEERERROR)
 } SRT_ERRNO;
 
-static const SRT_ERRNO SRT_EISSTREAM SRT_ATR_DEPRECATED = SRT_ERRNO MN(NOTSUP, INVALMSGAPI);
-static const SRT_ERRNO SRT_EISDGRAM = SRT_ERRNO MN(NOTSUP, INVALBUFFERAPI);
+static const SRT_ERRNO SRT_EISSTREAM SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALMSGAPI);
+static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALBUFFERAPI);
 
 #undef MJ
 #undef MN
@@ -460,7 +458,9 @@ static const SRT_ERRNO SRT_EISDGRAM = SRT_ERRNO MN(NOTSUP, INVALBUFFERAPI);
 #define SRT_LOGFA_TSBPD 4
 #define SRT_LOGFA_REXMIT 5
 
-#define SRT_LOGFA_LASTNONE 99
+// To make a typical int32_t size, although still use std::bitset.
+// C API will carry it over.
+#define SRT_LOGFA_LASTNONE 31
 
 enum SRT_KM_STATE
 {
@@ -583,9 +583,12 @@ SRT_API extern const char* srt_strerror(int code, int errnoval);
 SRT_API extern void srt_clearlasterror(void);
 
 // performance track
-// srt_perfmon is deprecated - use srt_bstats, which provides the same stats plus more.
+// srt_perfmon is deprecated - use srt_bistats, which provides the same stats plus more.
 SRT_API extern int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
+// perfmon with Byte counters for better bitrate estimation.
 SRT_API extern int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
+// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+SRT_API extern int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
 SRT_API extern SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);

@@ -164,12 +164,12 @@ typedef std::set<SRTSOCKET> ud_set;
 #define SRT_OHEADBW SRTO_OHEADBW
 #define SRT_PASSPHRASE SRTO_PASSPHRASE
 #define SRT_PBKEYLEN SRTO_PBKEYLEN
-#define SRT_KMSTATE SRTO_KMSTATE
+#define SRT_KMSTATE SRTO_RCVKMSTATE // FIXME: SRTO_KMSTATE is not implemented?
 #define SRT_IPTTL SRTO_IPTTL
 #define SRT_IPTOS SRTO_IPTOS
 #define SRT_TLPKTDROP SRTO_TLPKTDROP
 #define SRT_TSBPDMAXLAG SRTO_TSBPDMAXLAG
-#define SRT_RCVNAKREPORT SRTO_RCVNAKREPORT
+#define SRT_RCVNAKREPORT SRTO_NAKREPORT
 #define SRT_CONNTIMEO SRTO_CONNTIMEO
 #define SRT_SNDPBKEYLEN SRTO_SNDPBKEYLEN
 #define SRT_RCVPBKEYLEN SRTO_RCVPBKEYLEN
@@ -184,7 +184,18 @@ typedef std::set<SRTSOCKET> ud_set;
 /* Binary backward compatibility obsolete options */
 #define SRT_NAKREPORT   SRT_RCVNAKREPORT
 
-
+#if !defined(SRT_DISABLE_LEGACY_UDTSTATUS)
+#define UDTSTATUS    SRT_SOCKSTATUS
+#define INIT         SRTS_INIT
+#define OPENED       SRTS_OPENED
+#define LISTENING    SRTS_LISTENING
+#define CONNECTING   SRTS_CONNECTING
+#define CONNECTED    SRTS_CONNECTED
+#define BROKEN       SRTS_BROKEN
+#define CLOSING      SRTS_CLOSING
+#define CLOSED       SRTS_CLOSED
+#define NONEXIST     SRTS_NONEXIST
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -232,6 +243,8 @@ struct CPerfMon
    int byteAvailSndBuf;                 // available UDT sender buffer size
    int byteAvailRcvBuf;                 // available UDT receiver buffer size
 };
+
+typedef SRTSOCKET UDTSOCKET; //legacy alias
 
 #ifdef __cplusplus
 
@@ -303,6 +316,8 @@ public: // Legacy Error Code
     static const int EINVPARAM = SRT_EINVPARAM;
     static const int EINVSOCK = SRT_EINVSOCK;
     static const int EUNBOUNDSOCK = SRT_EUNBOUNDSOCK;
+    static const int ESTREAMILL = SRT_EINVALMSGAPI;
+    static const int EDGRAMILL = SRT_EINVALBUFFERAPI;
     static const int ENOLISTEN = SRT_ENOLISTEN;
     static const int ERDVNOSERV = SRT_ERDVNOSERV;
     static const int ERDVUNBOUND = SRT_ERDVUNBOUND;
@@ -318,10 +333,6 @@ public: // Legacy Error Code
     static const int ECONGEST = SRT_ECONGEST;
     static const int EPEERERR = SRT_EPEERERR;
 };
-
-
-
-typedef SRTSOCKET UDTSOCKET; //legacy alias
 
 namespace UDT
 {
@@ -385,10 +396,12 @@ UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true) SRT_ATR_DEP
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
+// This is a C++ SRT API extension. This is not a part of legacy UDT API.
 UDT_API void setloglevel(logging::LogLevel::type ll);
 UDT_API void addlogfa(logging::LogFA fa);
 UDT_API void dellogfa(logging::LogFA fa);
 UDT_API void resetlogfa(std::set<logging::LogFA> fas);
+UDT_API void resetlogfa(const int* fara, size_t fara_size);
 UDT_API void setlogstream(std::ostream& stream);
 UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 UDT_API void setlogflags(int flags);
@@ -397,6 +410,15 @@ UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
 UDT_API std::string getstreamid(UDTSOCKET u);
 
 }  // namespace UDT
+
+// This is a log configuration used inside SRT.
+// Applications using SRT, if they want to use the logging mechanism
+// are free to create their own logger configuration objects for their
+// own logger FA objects, or create their own. The object of this type
+// is required to initialize the logger FA object.
+namespace logging { struct LogConfig; }
+UDT_API extern logging::LogConfig srt_logger_config;
+
 
 #endif /* __cplusplus */
 

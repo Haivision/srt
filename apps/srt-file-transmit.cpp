@@ -1,3 +1,27 @@
+/*****************************************************************************
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2017 Haivision Systems Inc.
+ * 
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; If not, see <http://www.gnu.org/licenses/>
+ * 
+ *****************************************************************************/
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
 
 #include <iostream>
 #include <iterator>
@@ -11,12 +35,12 @@
 #include <srt.h>
 #include <udt.h>
 
-#include "appcommon.hpp"
+#include "apputil.hpp"
 #include "uriparser.hpp"
 #include "logsupport.hpp"
 #include "socketoptions.hpp"
-#include "transmitbase.hpp"
 #include "transmitmedia.hpp"
+#include "verbose.hpp"
 
 
 bool Upload(UriParser& srt, UriParser& file);
@@ -36,12 +60,15 @@ int main( int argc, char** argv )
         o_loglevel = { "ll", "loglevel" },
         o_buffer = {"b", "buffer" },
         o_verbose = {"v", "verbose" },
-        o_noflush = {"s", "skipflush" };
+        o_noflush = {"s", "skipflush" },
+        o_fullstats = {"f", "fullstats" };
 
     // Options that expect no arguments (ARG_NONE) need not be mentioned.
     vector<OptionScheme> optargs = {
         { o_loglevel, OptionScheme::ARG_ONE },
-        { o_buffer, OptionScheme::ARG_ONE }
+        { o_buffer, OptionScheme::ARG_ONE },
+        { o_noflush, OptionScheme::ARG_NONE },
+        { o_fullstats, OptionScheme::ARG_NONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
 
@@ -67,9 +94,9 @@ int main( int argc, char** argv )
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 
-    string verbo = Option<OutString>(params, "no", o_verbose);
-    if ( verbo == "" || !false_names.count(verbo) )
-        ::transmit_verbose = true;
+   string verbo = Option<OutString>(params, "no", o_verbose);
+   if ( verbo == "" || !false_names.count(verbo) )
+       Verbose::on = true;
 
     string bs = Option<OutString>(params, "", o_buffer);
     if ( bs != "" )
@@ -80,6 +107,10 @@ int main( int argc, char** argv )
     string sf = Option<OutString>(params, "no", o_noflush);
     if (sf == "" || !false_names.count(sf))
         ::g_skip_flushing = true;
+
+    string sfull = Option<OutString>(params, "no", o_fullstats);
+    if (sfull == "" || !false_names.count(sfull))
+        ::transmit_total_stats = true;
 
     string source = args[0];
     string target = args[1];
@@ -168,8 +199,8 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         directory = wd + "/" + directory;
     }
 
-    dir = directory;
-    fname = filename;
+    *dir = directory;
+    *fname = filename;
 }
 
 bool DoUpload(UriParser& ut, string path, string filename)

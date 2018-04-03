@@ -340,4 +340,9 @@ HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void)
 	return(HaiCryptCipher_OpenSSL_EVP_CTR());
 }
 
+HaiCrypt_Cipher HaiCryptCipher_Get_Instance(void) 
+{
+	return(HaiCryptCipher_OpenSSL_EVP_CTR());
+}
+
 #endif /* HAICRYPT_USE_OPENSSL_EVP_CTR */

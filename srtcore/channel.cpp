@@ -76,6 +76,7 @@ modified by
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
+   #include <mswsock.h>
 #endif
 
 #include <iostream>
@@ -179,7 +180,7 @@ void CChannel::open(const sockaddr* addr)
       ::freeaddrinfo(res);
    }
 
-   LOGC(mglog.Debug) << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr);
+   HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
 
    setUDPSockOpt();
 }
@@ -358,9 +359,9 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
             spec << " [REXMIT]";
     }
 
-    LOGC(mglog.Debug) << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=%" << packet.m_iID
-        << spec.str();
+        << spec.str());
 #endif
 
    // convert control information into network order
@@ -474,7 +475,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         }
         else
         {
-            LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
+            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
@@ -482,14 +483,16 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     }
 
 #else
-    // XXX This procedure uses the WSARecvFrom function that just reads
+    // XXX REFACTORING NEEDED!
+    // This procedure uses the WSARecvFrom function that just reads
     // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
     // uses the equivalent of msghdr - WSAMSG, which has different field
     // names and also uses the equivalet of iovec - WSABUF, which has different
     // field names and layout. It is important that this code be translated
     // to the "proper" solution, however this requires that CPacket::m_PacketVector
     // also uses the "platform independent" (or, better, platform-suitable) type
-    // which can be appropriate for the appropriate system function, not just iovec.
+    // which can be appropriate for the appropriate system function, not just iovec
+    // (see a specifically provided definition for iovec for windows in packet.h).
     //
     // For the time being, the msg_flags variable is defined in both cases
     // so that it can be checked independently, however it won't have any other
@@ -528,7 +531,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         int err = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            LOGC(mglog.Debug) << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]";
+            HLOGC(mglog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else
@@ -550,29 +553,31 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     if ( size_t(res) < CPacket::HDR_SIZE )
     {
         status = RST_AGAIN;
-        LOGC(mglog.Debug) << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes";
+        HLOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes");
         goto Return_error;
     }
 
-    // Fix for an issue found at Tenecent.
-    // By some not well known reason, Linux kernel happens to copy only 20 bytes of
-    // UDP payload and set the MSG_TRUNC flag, whereas pcap shows that full UDP
-    // packet arrived at the network device, and the free space in a buffer is
-    // always the same and >1332 bytes. Nice of it to set this flag, though.
+    // Fix for an issue with Linux Kernel found during tests at Tencent.
     //
-    // In normal conditions, no flags should be set. This shouldn't use any
-    // other flags, but OTOH this situation also theoretically shouldn't happen
-    // and it does. As a safe precaution, simply treat any flag set on the
-    // message as "some problem".
+    // There was a bug in older Linux Kernel which caused that when the internal
+    // buffer was depleted during reading from the network, not the whole buffer
+    // was copied from the packet, EVEN THOUGH THE GIVEN BUFFER WAS OF ENOUGH SIZE.
+    // It was still very kind of the buggy procedure, though, that at least
+    // they inform the caller about that this has happened by setting MSG_TRUNC
+    // flag.
     //
-    // As a response for this situation, fake that you received no package. This will be
-    // then a "fake drop", which will result in reXmission. This isn't even much of a fake
-    // because the packet is partially lost and this loss is irrecoverable.
-
+    // Normally this flag should be set only if there was too small buffer given
+    // by the caller, so as this code knows that the size is enough, it never
+    // predicted this to happen. Just for a case then when you run this on a buggy
+    // system that suffers of this problem, the fix for this case is left here.
+    //
+    // When this happens, then you have at best a fragment of the buffer and it's
+    // useless anyway. This is solved by dropping the packet and fake that no
+    // packet was received, so the packet will be then retransmitted.
     if ( msg_flags != 0 )
     {
-        LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
-            << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
+        HLOGC(mglog.Debug, log << CONID() << "NET ERROR: packet size=" << res
+            << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
         status = RST_AGAIN;
         goto Return_error;
     }

@@ -29,7 +29,11 @@ build_script:
   
 after_build:
 - cmd: >-
+<<<<<<< HEAD
     gather-package.bat
+=======
+    scripts/gather-package.bat
+>>>>>>> upstream/dev
         7z a SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-%APPVEYOR_BUILD_VERSION%.zip %APPVEYOR_BUILD_FOLDER%\package\*
         appveyor PushArtifact SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-%APPVEYOR_BUILD_VERSION%.zip
 
