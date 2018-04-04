@@ -23,10 +23,18 @@ written by
 #include "udt.h"
 #include "packet.h"
 #include "utilities.h"
+#include "logging.h"
 
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
 
+#if ENABLE_LOGGING
+
+std::string KmStateStr(SRT_KM_STATE state);
+
+extern logging::Logger mglog;
+
+#endif
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
@@ -47,14 +55,10 @@ class CCryptoControl
 
     // Temporarily allow these to be accessed.
 public:
-    SRT_KM_STATE m_iSndKmState;         //Sender Km State
-    SRT_KM_STATE m_iSndPeerKmState;     //Sender's peer (receiver) Km State
-    SRT_KM_STATE m_iRcvKmState;         //Receiver Km State
-    SRT_KM_STATE m_iRcvPeerKmState;     //Receiver's peer (sender) Km State
+    SRT_KM_STATE m_SndKmState;         //Sender Km State (imposed by agent)
+    SRT_KM_STATE m_RcvKmState;         //Receiver Km State (informed by peer)
 
 private:
-    bool     m_bDataSender;         //Sender side (for crypto, TsbPD handshake)
-
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
     uint64_t        m_SndKmLastTime;
@@ -78,12 +82,17 @@ public:
         if (m_KmSecret.len == 0)
             return true;
         // - when Agent did set a password and the crypto state is SECURED.
-        if (m_KmSecret.len > 0 && m_iSndKmState == SRT_KM_S_SECURED
+        if (m_KmSecret.len > 0 && m_SndKmState == SRT_KM_S_SECURED
                 // && m_iRcvPeerKmState == SRT_KM_S_SECURED ?
            )
             return true;
 
         return false;
+    }
+
+    bool hasPassphrase() const
+    {
+        return m_KmSecret.len > 0;
     }
 
 private:
@@ -100,6 +109,7 @@ public:
     // Detailed processing
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
     int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int hsv);
+    void createFakeSndContext();
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }
@@ -112,6 +122,7 @@ public:
     {
         m_SndKmMsg[ki].iPeerRetry--;
         m_SndKmLastTime = CTimer::getTime();
+        HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
     }
 
     bool getKmMsg_acceptResponse(size_t ki, const uint32_t* srtmsg, size_t bytesize)
@@ -127,7 +138,9 @@ public:
 
     CCryptoControl(CUDT* parent, SRTSOCKET id);
 
+    // DEBUG PURPOSES:
     std::string CONID() const;
+    std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
 
     bool init(HandshakeSide, bool);
     void close();
@@ -144,12 +157,6 @@ public:
         //memcpy(&m_KmSecret, &secret, sizeof(m_KmSecret));
     }
 
-    void setSndCryptoKeylen(size_t keylen)
-    {
-        m_iSndKmKeyLen = keylen;
-        m_bDataSender = true;
-    }
-
     void setCryptoKeylen(size_t keylen)
     {
         m_iSndKmKeyLen = keylen;
@@ -158,16 +165,28 @@ public:
 
     bool createCryptoCtx(ref_t<HaiCrypt_Handle> rh, size_t keylen, HaiCrypt_CryptoDir tx);
 
-    HaiCrypt_Handle getSndCryptoCtx() const
-    {
-        return(m_hSndCrypto);
-    }
-
-    HaiCrypt_Handle getRcvCryptoCtx();
-
     int getSndCryptoFlags() const
     {
-        return(m_hSndCrypto ? HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) : 0);
+        return(m_hSndCrypto ?
+                HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) :
+                // When encryption isn't on, check if it was required
+                // If it was, return -1 as flags, which means that
+                // encryption was requested and not possible.
+                hasPassphrase() ? -1 :
+                0);
+    }
+
+    bool isSndEncryptionOK() const
+    {
+        // Similar to this above, just quickly check if the encryption
+        // is required and possible, or not possible
+        if (!hasPassphrase())
+            return true; // no encryption required
+
+        if (m_hSndCrypto)
+            return true; // encryption is required and possible
+
+        return false;
     }
 
     /// Encrypts the packet. If encryption is not turned on, it
