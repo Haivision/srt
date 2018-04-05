@@ -3,7 +3,7 @@
 namespace Verbose
 {
     bool on = false;
-    std::ostream* cverb = &std::cout;
+    std::ostream* cverb = &std::cerr;
 
     Log& Log::operator<<(LogNoEol)
     {
