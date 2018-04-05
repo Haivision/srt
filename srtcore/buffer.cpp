@@ -1182,6 +1182,33 @@ int CRcvBuffer::getRcvDataSize() const
    return m_iSize + m_iLastAckPos - m_iStartPos;
 }
 
+int CRcvBuffer::debugGetSize() const
+{
+    // Does exactly the same as getRcvDataSize, but
+    // it should be used FOR INFORMATIONAL PURPOSES ONLY.
+    // The source values might be changed in another thread
+    // during the calculation, although worst case the
+    // resulting value may differ to the real buffer size by 1.
+    int from = m_iStartPos, to = m_iLastAckPos;
+    int size = to - from;
+    if (size < 0)
+        size += m_iSize;
+
+    return size;
+}
+
+
+bool CRcvBuffer::empty() const
+{
+    // This will not always return the intended value,
+    // that is, it may return false when the buffer really is
+    // empty - but it will return true then in one of next calls.
+    // This function will be always called again at some point
+    // if it returned false, and on true the connection
+    // is going to be broken - so this behavior is acceptable.
+    return m_iStartPos == m_iLastAckPos;
+}
+
 
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

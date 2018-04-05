@@ -314,6 +314,18 @@ CGuard::~CGuard()
         pthread_mutex_unlock(&m_Mutex);
 }
 
+// After calling this on a scoped lock wrapper (CGuard),
+// the mutex will be unlocked right now, and no longer
+// in destructor
+void CGuard::forceUnlock()
+{
+    if (m_iLocked == 0)
+    {
+        pthread_mutex_unlock(&m_Mutex);
+        m_iLocked = -1;
+    }
+}
+
 int CGuard::enterCS(pthread_mutex_t& lock)
 {
     return pthread_mutex_lock(&lock);

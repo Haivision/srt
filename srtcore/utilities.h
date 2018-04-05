@@ -59,6 +59,10 @@ written by
 
 #include "platform_sys.h"
 
+// Happens that these are defined, undefine them in advance
+#undef min
+#undef max
+
 #include <string>
 #include <algorithm>
 #include <bitset>

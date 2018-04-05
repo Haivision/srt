@@ -3907,6 +3907,7 @@ void* CUDT::tsbpd(void* param)
          * Set EPOLL_IN to wakeup any thread waiting on epoll
          */
          self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, UDT_EPOLL_IN, true);
+         CTimer::triggerEvent();
          tsbpdtime = 0;
       }
 
@@ -5931,7 +5932,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          // This, again, signals the condition, CTimer::m_EventCond.
          // This releases CTimer::waitForEvent() call used in CUDTUnited::selectEx().
          // Preventing to call this on zero size makes sense, if it prevents false alerts.
-         if (acksize)
+         if (acksize > 0)
              m_pRcvBuffer->ackData(acksize);
          CGuard::leaveCS(m_AckLock);
 
@@ -7053,6 +7054,35 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    return payload;
 }
 
+// This is a close request, but called from the 
+void CUDT::processClose()
+{
+    sendCtrl(UMSG_SHUTDOWN);
+
+    m_bShutdown = true;
+    m_bClosing = true;
+    m_bBroken = true;
+    m_iBrokenCounter = 60;
+
+    HLOGP(mglog.Debug, "processClose: sent message and set flags");
+
+    if (m_bTsbPd)
+    {
+        HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
+        CGuard rl(m_RecvLock);
+        pthread_cond_signal(&m_RcvTsbPdCond);
+    }
+
+    // Signal the sender and recver if they are waiting for data.
+    releaseSynch();
+    // Unblock any call so they learn the connection_broken error
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+
+    HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
+    CTimer::triggerEvent();
+
+}
+
 int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
@@ -7141,7 +7171,7 @@ int CUDT::processData(CUnit* unit)
       * Prevent TsbPd thread from modifying Ack position while adding data
       * offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
       */
-      CGuard offsetcg(m_AckLock);
+      CGuard recvbuf_acklock(m_AckLock);
 
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
@@ -7164,8 +7194,40 @@ int CUDT::processData(CUnit* unit)
           int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
-              LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset=" << offset << " avail=" << avail_bufsize);
-              return -1;
+              // This is already a sequence discrepancy. Probably there could be found
+              // some way to make it continue reception by overriding the sequence and
+              // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+              if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+              {
+                  // Only in live mode. In File mode this shall not be possible
+                  // because the sender should stop sending in this situation.
+                  // In Live mode this means that there is a gap between the
+                  // lowest sequence in the empty buffer and the incoming sequence
+                  // that exceeds the buffer size. Receiving data in this situation
+                  // is no longer possible and this is a point of no return.
+
+                  LOGC(mglog.Error,
+                          log << CONID() <<
+                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+
+                  // This is a scoped lock with AckLock, but for the moment
+                  // when processClose() is called this lock must be taken out,
+                  // otherwise this will cause a deadlock. We don't need this
+                  // lock anymore, and at 'return' it will be unlocked anyway.
+                  recvbuf_acklock.forceUnlock();
+                  processClose();
+                  return -1;
+              }
+              else
+              {
+                  LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << packet.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                          );
+                  return -1;
+              }
+
           }
 
           if (m_pRcvBuffer->addData(unit, offset) < 0)
@@ -7218,7 +7280,7 @@ int CUDT::processData(CUnit* unit)
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
       }
 
-   }  /* End of offsetcg */
+   }  /* End of recvbuf_acklock*/
 
    if (m_bClosing) {
       /*
