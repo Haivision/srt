@@ -1490,7 +1490,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
-    if (!hs.m_extension)
+    if (!hs.m_extension || hs.m_iReqType != URQ_CONCLUSION)
     {
         // Serialize only the basic handshake, if this is predicted for
         // Hsv4 peer or this is URQ_INDUCTION or URQ_WAVEAHAND.
@@ -2221,6 +2221,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
     if ( hs.m_iVersion < HS_VERSION_SRT1 )
         return true; // do nothing
+
+    if ( hs.m_iReqType != URQ_CONCLUSION )
+    {
+        LOGC(mglog.Warn, log << "UNEXPECTED: interpretSrtHandshake called on handshake type " << RequestTypeStr(hs.m_iReqType) << " -- extensions ignored");
+        return true;
+    }
 
     // Anyway, check if the handshake contains any extra data.
     if ( hspkt.getLength() <= CHandShake::m_iContentSize )
@@ -2992,7 +2998,9 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // 2. The agent is loser in initiated state, it interprets incoming HSREQ and creates HSRSP
     // 3. The agent is winner in attention or fine state, it sends HSREQ extension
     m_ConnReq.m_iReqType = rsp_type;
-    m_ConnReq.m_extension = needs_extension;
+    // Require extensions only if the response type is CONCLUSION,
+    // not when AGREEMENT.
+    m_ConnReq.m_extension = needs_extension && rsp_type == URQ_CONCLUSION;
 
     if (rsp_type > URQ_FAILURE_TYPES)
     {
@@ -3025,7 +3033,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
 
         // No matter the value of needs_extension, the extension is always needed
         // when HSREQ was interpreted (to store HSRSP extension).
-        m_ConnReq.m_extension = true;
+        m_ConnReq.m_extension = (rsp_type == URQ_CONCLUSION);
 
         HLOGC(mglog.Debug, log << "processConnectResponse: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
