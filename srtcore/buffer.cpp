@@ -1185,15 +1185,11 @@ int CRcvBuffer::getRcvDataSize() const
 
 int CRcvBuffer::debugGetSize() const
 {
-    // This is slick as being called in the worker thread.
-    // Use it only as informative, to display in the logs,
-    // never in any serious calculations.
-
-    // This is exactly the same code as getRcvDataSize,
-    // with the exception that it locks values in the beginning,
-    // so it reports the first caught value at this moment.
-    // Worst case scenario, this value might happen to be
-    // greater by 1 towards the value that is at this moment.
+    // Does exactly the same as getRcvDataSize, but
+    // it should be used FOR INFORMATIONAL PURPOSES ONLY.
+    // The source values might be changed in another thread
+    // during the calculation, although worst case the
+    // resulting value may differ to the real buffer size by 1.
     int from = m_iStartPos, to = m_iLastAckPos;
     int size = to - from;
     if (size < 0)
@@ -1205,15 +1201,12 @@ int CRcvBuffer::debugGetSize() const
 
 bool CRcvBuffer::empty() const
 {
-    // This is slick because these data are normally used by the
-    // application thread, whereas this function will be called
-    // from the RcvQ:worker thread. Fortunately, the only wrong
-    // result can be that this function returns "false", when
-    // the buffer is actually empty at the same time, but when
-    // the buffer is already "empty", the functions running in
-    // the user's thread can't change this state. So effectively
-    // here "true" means "surely empty", and "false" means
-    // "not necessarily empty". We don't need more precise information.
+    // This will not always return the intended value,
+    // that is, it may return false when the buffer really is
+    // empty - but it will return true then in one of next calls.
+    // This function will be always called again at some point
+    // if it returned false, and on true the connection
+    // is going to be broken - so this behavior is acceptable.
     return m_iStartPos == m_iLastAckPos;
 }
 
