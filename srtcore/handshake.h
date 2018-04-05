@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
 All rights reserved.
@@ -106,8 +116,25 @@ public:
 
 struct SrtHSRequest: public SrtHandshakeExtension
 {
+
+    typedef Bits<31, 16> SRT_HSTYPE_ENCFLAGS;
+    typedef Bits<15, 0> SRT_HSTYPE_HSFLAGS;
+
+    // For translating PBKEYLEN into crypto flags
+    // This value is 16, 24, 32; after cutting off
+    // the leftmost 3 bits, it is 2, 3, 4.
+    typedef Bits<5, 3> SRT_PBKEYLEN_BITS;
+
+    // This value fits ins SRT_HSTYPE_HSFLAGS.
     //  ....                                HAIVISIOn
-    static const int32_t SRT_MAGIC_CODE = 0x4A171510;
+    static const int32_t SRT_MAGIC_CODE = 0x4A17;
+
+    static int32_t wrapFlags(bool withmagic, int crypto_keylen)
+    {
+        int32_t base = withmagic ? SRT_MAGIC_CODE : 0;
+        return base | SRT_HSTYPE_ENCFLAGS::wrap( SRT_PBKEYLEN_BITS::unwrap(crypto_keylen) );
+    }
+
 private:
     friend class CHandShake;
 

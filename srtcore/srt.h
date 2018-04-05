@@ -1,21 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
@@ -164,7 +155,7 @@ typedef enum SRT_SOCKOPT {
     // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
     _DEPRECATED_SRTO_SNDPBKEYLEN = 38, // (needed to use inside the code without generating -Wswitch)
     //
-    SRTO_SNDPEERKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
+    SRTO_SNDKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
     SRTO_RCVKMSTATE,      // (GET) the current state of the encryption at the agent side
     SRTO_LOSSMAXTTL,      // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
@@ -583,9 +574,12 @@ SRT_API extern const char* srt_strerror(int code, int errnoval);
 SRT_API extern void srt_clearlasterror(void);
 
 // performance track
-// srt_perfmon is deprecated - use srt_bstats, which provides the same stats plus more.
+// srt_perfmon is deprecated - use srt_bistats, which provides the same stats plus more.
 SRT_API extern int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
+// perfmon with Byte counters for better bitrate estimation.
 SRT_API extern int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
+// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+SRT_API extern int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
 SRT_API extern SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);

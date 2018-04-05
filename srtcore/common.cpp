@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2016, The Board of Trustees of the University of Illinois.
@@ -258,15 +248,17 @@ uint64_t CTimer::getTime()
     // XXX Do further study on that. Currently Cygwin is also using gettimeofday,
     // however Cygwin platform is supported only for testing purposes.
 
-    //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
-    //uint64_t x;
-    //rdtsc(x);
-    //return x / s_ullCPUFrequency;
+    //For other systems without microsecond level resolution, add to this conditional compile
+#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+    uint64_t x;
+    rdtsc(x);
+    return x / s_ullCPUFrequency;
     //Specific fix may be necessary if rdtsc is not available either.
-
+#else
     timeval t;
     gettimeofday(&t, 0);
     return t.tv_sec * 1000000ULL + t.tv_usec;
+#endif
 }
 
 void CTimer::triggerEvent()
@@ -320,6 +312,18 @@ CGuard::~CGuard()
 {
     if (m_iLocked == 0)
         pthread_mutex_unlock(&m_Mutex);
+}
+
+// After calling this on a scoped lock wrapper (CGuard),
+// the mutex will be unlocked right now, and no longer
+// in destructor
+void CGuard::forceUnlock()
+{
+    if (m_iLocked == 0)
+    {
+        pthread_mutex_unlock(&m_Mutex);
+        m_iLocked = -1;
+    }
 }
 
 int CGuard::enterCS(pthread_mutex_t& lock)

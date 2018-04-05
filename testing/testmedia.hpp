@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 #ifndef INC__COMMON_TRANSMITMEDIA_HPP
 #define INC__COMMON_TRANSMITMEDIA_HPP
 
@@ -23,6 +33,10 @@ struct TransmissionError: public std::runtime_error
 
 class SrtCommon
 {
+    int srt_conn_epoll = -1;
+
+    void SpinWaitAsync();
+
 protected:
 
     bool m_output_direction = false; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
@@ -42,7 +56,7 @@ public:
     void InitParameters(string host, map<string,string> par);
     void PrepareListener(string host, int port, int backlog);
     void StealFrom(SrtCommon& src);
-    bool AcceptNewClient();
+    void AcceptNewClient();
 
     SRTSOCKET Socket() { return m_sock; }
     SRTSOCKET Listener() { return m_bindsock; }
@@ -53,7 +67,7 @@ protected:
 
     void Error(UDT::ERRORINFO& udtError, string src);
     void Init(string host, int port, map<string,string> par, bool dir_output);
-
+    int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);
     virtual int ConfigurePre(SRTSOCKET sock);
 
@@ -65,10 +79,7 @@ protected:
     void OpenServer(string host, int port)
     {
         PrepareListener(host, port, 1);
-        if (m_blocking_mode)
-        {
-            AcceptNewClient();
-        }
+        AcceptNewClient();
     }
 
     void OpenRendezvous(string adapter, string host, int port);
@@ -89,7 +100,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bool Read(size_t chunk, bytevector& data) override;
+    bytevector Read(size_t chunk) override;
 
     /*
        In this form this isn't needed.
@@ -106,30 +117,28 @@ public:
     bool IsOpen() override { return IsUsable(); }
     bool End() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
-
-    SRTSOCKET GetSRTSocket()
-    { 
-        SRTSOCKET socket = SrtCommon::Socket();
-        if (socket == SRT_INVALID_SOCK)
-            socket = SrtCommon::Listener();
-        return socket;
-    }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
 };
 
 class SrtTarget: public Target, public SrtCommon
 {
+    int srt_epoll = -1;
 public:
 
     SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
     {
         Init(host, port, par, true);
+
+        if ( !m_blocking_mode )
+        {
+            srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        }
+
     }
 
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    bool Write(const bytevector& data) override;
+    void Write(const bytevector& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
@@ -143,14 +152,6 @@ public:
         return bytes;
     }
 
-    SRTSOCKET GetSRTSocket()
-    { 
-        SRTSOCKET socket = SrtCommon::Socket();
-        if (socket == SRT_INVALID_SOCK)
-            socket = SrtCommon::Listener();
-        return socket;
-    }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
 };
 
 

@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2010, The Board of Trustees of the University of Illinois.
@@ -267,30 +257,37 @@ private:
 // Debug support
 inline std::string SockaddrToString(const sockaddr* sadr)
 {
-	void* addr =
+    void* addr =
         sadr->sa_family == AF_INET ?
-            (void*)&((sockaddr_in*)sadr)->sin_addr
+        (void*)&((sockaddr_in*)sadr)->sin_addr
         : sadr->sa_family == AF_INET6 ?
-            (void*)&((sockaddr_in6*)sadr)->sin6_addr
+        (void*)&((sockaddr_in6*)sadr)->sin6_addr
         : 0;
-	// (cast to (void*) is required because otherwise the 2-3 arguments
-	// of ?: operator would have different types, which isn't allowed in C++.
+    // (cast to (void*) is required because otherwise the 2-3 arguments
+    // of ?: operator would have different types, which isn't allowed in C++.
     if ( !addr )
         return "unknown:0";
 
-	std::ostringstream output;
-	char hostbuf[1024];
-	if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
-	{
-		output << hostbuf;
-	}
-	else
-	{
-		output << "unknown";
-	}
+    std::ostringstream output;
+    char hostbuf[1024];
 
-	output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
-	return output.str();
+#if ENABLE_GETNAMEINFO
+    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
+    {
+        output << hostbuf;
+    }
+    else
+#endif
+    {
+        if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
+        {
+            strcpy(hostbuf, "unknown");
+        }
+        output << hostbuf;
+    }
+
+    output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
+    return output.str();
 }
 
 
