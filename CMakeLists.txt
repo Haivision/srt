@@ -18,6 +18,21 @@ set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
 
+# Platform shortcuts
+set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
+set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+
+# Not sure what to do in case of compiling by MSVC.
+# This will make installdir in C:\Program Files\SRT then
+# inside "bin" and "lib64" directories. At least this maintains
+# the current status. Shall this be not desired, override values
+# of CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR and CMAKE_INSTALL_INCLUDEDIR.
+if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
+	include(GNUInstallDirs)
+endif()
+
 set (SRT_VERSION 1.3.0)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
@@ -124,12 +139,6 @@ if (DEFINED WITH_SRT_TARGET)
 	set (TARGET_haisrt ${WITH_SRT_TARGET})
 endif()
 
-set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-set_if(MICROSOFT WIN32 AND (NOT MINGW AND NOT CYGWIN))
-
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
-
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
@@ -168,7 +177,7 @@ else()
 		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
 		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
 			message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-			set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/lib)
+			set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
 			set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
 		endif()
 		endif()
@@ -256,19 +265,20 @@ set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 
 if(WIN32)
+	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
     add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB)
 elseif(DARWIN)
-    message(STATUS "DARWIN detected")
+    message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=11; MACOSX_RPATH=OFF")
     add_definitions(-DOSX=1)
 	set(MACOSX_RPATH OFF)
 elseif(LINUX)
     add_definitions(-DLINUX=1)
-    message(STATUS "LINUX detected" )
+    message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
 elseif(CYGWIN)
     add_definitions(-DCYGWIN=1)
-	message(STATUS "CYGWIN (posix mode) detected")
+	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
 else()
-    message(FATAL_ERROR "Unsupported system")
+    message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 add_definitions(
@@ -415,7 +425,6 @@ set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual
 set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
 
 if (srt_libspec_shared)
-	message (STATUS "SRT: defining SHARED library: ${TARGET_srt} from: ${VIRTUAL_srt}")
 	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
@@ -428,7 +437,6 @@ if (srt_libspec_shared)
 endif()
 
 if (srt_libspec_static)
-	message (STATUS "SRT: defining STATIC library: ${TARGET_srt} from: ${VIRTUAL_srt}")
 	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
 
 	# For Windows, leave the name to be "srt_static.lib".
@@ -508,20 +516,21 @@ endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
 
-set (INSTALL_SHARED_DIR lib)
+set (INSTALL_SHARED_DIR ${CMAKE_INSTALL_LIBDIR})
 if (CYGWIN)
-	set (INSTALL_SHARED_DIR bin)
+	set (INSTALL_SHARED_DIR ${CMAKE_INSTALL_BINDIR})
 endif()
 
+message(STATUS "INSTALL DIRS: bin=${CMAKE_INSTALL_BINDIR} lib=${CMAKE_INSTALL_LIBDIR} shlib=${INSTALL_SHARED_DIR} include=${CMAKE_INSTALL_INCLUDEDIR}")
 
 install(TARGETS ${INSTALL_TARGETS}
-		RUNTIME DESTINATION bin
-		ARCHIVE DESTINATION lib
+		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+		ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 		LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
 )
-install(FILES ${HEADERS_srt} DESTINATION include/srt)
+install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
 if (WIN32)
-	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+	install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
 endif()
 
 # ---
@@ -560,9 +569,9 @@ join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 # haisrt.pc left temporarily for backward compatibility. To be removed in future!
 configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 configure_file(scripts/srt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 # Applications
 
@@ -594,7 +603,7 @@ macro(srt_add_program name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
-	install(TARGETS ${name} RUNTIME DESTINATION bin)
+	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
 macro(srt_make_application name)
@@ -606,7 +615,7 @@ macro(srt_make_application name)
 	# set (CMAKE_SKIP_RPATH FALSE)
 	# set (CMAKE_SKIP_BUILD_RPATH FALSE)
 	# set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-	# set (CMAKE_INSTALL_RPATH "../lib")
+	# set (CMAKE_INSTALL_RPATH "../${CMAKE_INSTALL_LIBDIR}")
 	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
@@ -614,9 +623,8 @@ macro(srt_make_application name)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
 		# be placed into the binrary directory anyway.
 		# XXX not sure about Mac.
-		# XXX This needs to be probably lib64 on 64-bit systems and 64-bit build.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
-		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../lib,-rpath,../lib64 BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
@@ -628,7 +636,7 @@ endmacro()
 macro(srt_add_application name sources)
 	srt_add_program(${name} apps/${name}.cpp ${sources})
 	srt_make_application(${name})
-	install(TARGETS ${name} RUNTIME DESTINATION bin)
+	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
 if ( ENABLE_CXX11 )
@@ -666,7 +674,7 @@ if ( ENABLE_CXX11 )
 
 	if (SYMLINKABLE)
 		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use symbolic link")
-		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/bin/stransmit)
+		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/stransmit)
 	elseif(${CMAKE_MAJOR_VERSION} LESS 3)
 		message(FATAL_ERROR "Your system can't install symbolic link to 'stransmit', copy-on-install requires cmake at least 3.0.2")
 	else()
@@ -674,7 +682,7 @@ if ( ENABLE_CXX11 )
 		# (looxlike cmake 2.8 somehow doesn't have a problem with resolving the $<TARGET_FILE_DIR:...>
 		# inside the generated makefile, but does have problem with its own generated cmake_install.cmake :D)
 		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use copying")
-		install(PROGRAMS ${stransmit_path} DESTINATION bin)
+		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 
 	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
@@ -735,7 +743,7 @@ if (ENABLE_EXAMPLES)
 
 endif()
 
-install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 
 if (DEFINED SRT_EXTRA_APPS_INC)
@@ -751,5 +759,5 @@ if ( ENABLE_SUFLIP )
 	)
 	srt_add_program(suflip ${SOURCES_suflip})
 	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION bin)
+	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif ()
