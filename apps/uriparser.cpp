@@ -218,6 +218,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     }
 
     m_uriType = types[m_proto]; // default-constructed UNKNOWN will be used if not found (although also inserted)
+    m_origUri = strUrl;
 }
 
 #ifdef TEST
