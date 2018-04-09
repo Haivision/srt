@@ -55,6 +55,7 @@ modified by
       #include "TargetConditionals.h"
    #endif
    #include <sys/socket.h>
+   #include <sys/ioctl.h>
    #include <netdb.h>
    #include <arpa/inet.h>
    #include <unistd.h>
@@ -71,10 +72,13 @@ modified by
 #include <iostream>
 #include <iomanip> // Logging 
 #include <srt_compat.h>
+#include <csignal>
 
 #include "channel.h"
 #include "packet.h"
+#include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
+#include "utilities.h"
 
 #ifdef WIN32
     typedef int socklen_t;
@@ -112,7 +116,8 @@ m_iIpTTL(-1),
 m_iIpToS(-1),
 #endif
 m_iSndBufSize(65536),
-m_iRcvBufSize(65536)
+m_iRcvBufSize(65536),
+m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 }
@@ -139,6 +144,8 @@ void CChannel::open(const sockaddr* addr)
 
       if (0 != ::bind(m_iSocket, addr, namelen))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      memcpy(&m_BindAddr, addr, namelen);
+      m_BindAddr.len = namelen;
    }
    else
    {
@@ -157,14 +164,18 @@ void CChannel::open(const sockaddr* addr)
 
       if (0 != ::bind(m_iSocket, res->ai_addr, res->ai_addrlen))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
+      m_BindAddr.len = res->ai_addrlen;
 
       ::freeaddrinfo(res);
    }
 
+   HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
+
    setUDPSockOpt();
 }
 
-void CChannel::open(UDPSOCKET udpsock)
+void CChannel::attach(UDPSOCKET udpsock)
 {
    m_iSocket = udpsock;
    setUDPSockOpt();
@@ -283,6 +294,29 @@ void CChannel::setIpToS(int tos)
 
 #endif
 
+int CChannel::ioctlQuery(int type) const
+{
+#ifdef unix
+    int value = 0;
+    int res = ::ioctl(m_iSocket, type, &value);
+    if ( res != -1 )
+        return value;
+#endif
+    return -1;
+}
+
+int CChannel::sockoptQuery(int level, int option) const
+{
+#ifdef unix
+    int value = 0;
+    socklen_t len = sizeof (int);
+    int res = ::getsockopt(m_iSocket, level, option, &value, &len);
+    if ( res != -1 )
+        return value;
+#endif
+    return -1;
+}
+
 void CChannel::getSockAddr(sockaddr* addr) const
 {
    socklen_t namelen = m_iSockAddrSize;
@@ -298,7 +332,30 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
+#if ENABLE_LOGGING
+    std::ostringstream spec;
+
+    if (packet.isControl())
+    {
+        spec << " CONTROL size=" << packet.getLength()
+             << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
+             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
+    }
+    else
+    {
+        spec << " DATA size=" << packet.getLength()
+             << " seq=" << packet.getSeqNo();
+        if (packet.getRexmitFlag())
+            spec << " [REXMIT]";
+    }
+
+    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+        << " target=%" << packet.m_iID
+        << spec.str());
+#endif
+
    // convert control information into network order
+   // XXX USE HtoNLA!
    if (packet.isControl())
       for (int i = 0, n = packet.getLength() / 4; i < n; ++ i)
          *((uint32_t *)packet.m_pcData + i) = htonl(*((uint32_t *)packet.m_pcData + i));
@@ -350,8 +407,10 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
    return res;
 }
 
-int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
+EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 {
+    EReadStatus status = RST_OK;
+
 #ifndef WIN32
     msghdr mh;   
     mh.msg_name = addr;
@@ -374,15 +433,56 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 
     int res = ::recvmsg(m_iSocket, &mh, 0);
     int msg_flags = mh.msg_flags;
+
+
+    // Note that there are exactly four groups of possible errors
+    // reported by recvmsg():
+
+    // 1. Temporary error, can't get the data, but you can try again.
+    // Codes: EAGAIN/EWOULDBLOCK, EINTR
+    // Return: RST_AGAIN.
+    //
+    // 2. Problems that should never happen due to unused configurations.
+    // Codes: ECONNREFUSED, ENOTCONN
+    // Return: RST_ERROR, just formally treat this as IPE.
+    //
+    // 3. Unexpected runtime errors:
+    // Codes: EINVAL, EFAULT, ENOMEM, ENOTSOCK
+    // Return: RST_ERROR. Except ENOMEM, this can only be an IPE. ENOMEM
+    // should make the program stop as lacking memory will kill the program anyway soon.
+    //
+    // 4. Expected socket closed in the meantime by another thread.
+    // Codes: EBADF
+    // Return: RST_ERROR. This will simply make the worker thread exit, which is
+    // expected to happen after CChannel::close() is called by another thread.
+
+    if (res == -1)
+    {
+        int err = NET_ERROR;
+        if (err == EAGAIN || err == EINTR) // For EAGAIN, this isn't an error, just a useless call.
+        {
+            status = RST_AGAIN;
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            status = RST_ERROR;
+        }
+
+        goto Return_error;
+    }
+
 #else
-    // XXX This procedure uses the WSARecvFrom function that just reads
+    // XXX REFACTORING NEEDED!
+    // This procedure uses the WSARecvFrom function that just reads
     // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
     // uses the equivalent of msghdr - WSAMSG, which has different field
     // names and also uses the equivalet of iovec - WSABUF, which has different
     // field names and layout. It is important that this code be translated
     // to the "proper" solution, however this requires that CPacket::m_PacketVector
     // also uses the "platform independent" (or, better, platform-suitable) type
-    // which can be appropriate for the appropriate system function, not just iovec.
+    // which can be appropriate for the appropriate system function, not just iovec
+    // (see a specifically provided definition for iovec for windows in packet.h).
     //
     // For the time being, the msg_flags variable is defined in both cases
     // so that it can be checked independently, however it won't have any other
@@ -393,58 +493,89 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     DWORD flag = 0;
     int addrsize = m_iSockAddrSize;
 
-    int res = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-    res = (0 == res) ? size : -1;
-    int msg_flags = 0;
-#endif
-
-    // These logs are theoretically errors, but this isn't anything problematic
-    // for the application, and in certain conditions they can be spit out very
-    // often and therefore influence the processing time.
-    if ( res == -1 )
+    int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
+    int res;
+    if (sockerror == 0)
     {
-#if ENABLE_LOGGING
-        int err = NET_ERROR;
-        if ( err != EAGAIN ) // For EAGAIN, this isn't an error, just a useless call.
+        res = size;
+    }
+    else // == SOCKET_ERROR
+    {
+        res = -1;
+        // On Windows this is a little bit more complicated, so simply treat every error
+        // as an "again" situation. This should still be probably fixed, but it needs more
+        // thorough research. For example, the problem usually reported from here is
+        // WSAETIMEDOUT, which isn't mentioned in the documentation of WSARecvFrom at all.
+        //
+        // These below errors are treated as "fatal", all others are treated as "again".
+        static const int fatals [] =
         {
-            LOGC(mglog.Debug) << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]";
+            WSAECONNRESET,
+            WSAEFAULT,
+            WSAEINVAL,
+            WSAENETDOWN,
+            WSANOTINITIALISED,
+            WSA_OPERATION_ABORTED
+        };
+        static const int* fatals_end = fatals + Size(fatals);
+        int err = NET_ERROR;
+        if (std::find(fatals, fatals_end, err) != fatals_end)
+        {
+            HLOGC(mglog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            status = RST_ERROR;
         }
-#endif
+        else
+        {
+            status = RST_AGAIN;
+        }
+
         goto Return_error;
     }
+
+    // Not sure if this problem has ever occurred on Windows, just a sanity check.
+    int msg_flags = 0;
+    if (flag & MSG_PARTIAL)
+        msg_flags = 1;
+#endif
+
 
     // Sanity check for a case when it didn't fill in even the header
     if ( size_t(res) < CPacket::HDR_SIZE )
     {
-        LOGC(mglog.Debug) << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes";
+        status = RST_AGAIN;
+        HLOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes");
         goto Return_error;
     }
 
-    // Fix for an issue found at Tenecent.
-    // By some not well known reason, Linux kernel happens to copy only 20 bytes of
-    // UDP payload and set the MSG_TRUNC flag, whereas pcap shows that full UDP
-    // packet arrived at the network device, and the free space in a buffer is
-    // always the same and >1332 bytes. Nice of it to set this flag, though.
+    // Fix for an issue with Linux Kernel found during tests at Tencent.
     //
-    // In normal conditions, no flags should be set. This shouldn't use any
-    // other flags, but OTOH this situation also theoretically shouldn't happen
-    // and it does. As a safe precaution, simply treat any flag set on the
-    // messate as "some problem".
+    // There was a bug in older Linux Kernel which caused that when the internal
+    // buffer was depleted during reading from the network, not the whole buffer
+    // was copied from the packet, EVEN THOUGH THE GIVEN BUFFER WAS OF ENOUGH SIZE.
+    // It was still very kind of the buggy procedure, though, that at least
+    // they inform the caller about that this has happened by setting MSG_TRUNC
+    // flag.
     //
-    // As a response for this situation, fake that you received no package. This will be
-    // then a "fake drop", which will result in reXmission. This isn't even much of a fake
-    // because the packet is partially lost and this loss is irrecoverable.
-
+    // Normally this flag should be set only if there was too small buffer given
+    // by the caller, so as this code knows that the size is enough, it never
+    // predicted this to happen. Just for a case then when you run this on a buggy
+    // system that suffers of this problem, the fix for this case is left here.
+    //
+    // When this happens, then you have at best a fragment of the buffer and it's
+    // useless anyway. This is solved by dropping the packet and fake that no
+    // packet was received, so the packet will be then retransmitted.
     if ( msg_flags != 0 )
     {
-        LOGC(mglog.Debug) << CONID() << "NET ERROR: packet size=" << res
-            << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")";
+        HLOGC(mglog.Debug, log << CONID() << "NET ERROR: packet size=" << res
+            << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
+        status = RST_AGAIN;
         goto Return_error;
     }
 
     packet.setLength(res - CPacket::HDR_SIZE);
 
     // convert back into local host order
+    // XXX use NtoHLA().
     //for (int i = 0; i < 4; ++ i)
     //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
     {
@@ -462,9 +593,9 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
             *((uint32_t *)packet.m_pcData + j) = ntohl(*((uint32_t *)packet.m_pcData + j));
     }
 
-    return packet.getLength();
+    return RST_OK;
 
 Return_error:
     packet.setLength(-1);
-    return -1;
+    return status;
 }

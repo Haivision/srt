@@ -29,7 +29,7 @@ written by
 #endif
 #include "hcrypt.h"
 
-int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg)
+int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
 	ctx->cfg.key_len = cfg->key_len;
 
@@ -325,7 +325,7 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 }
 
 int hcryptCtx_Tx_InjectKM(hcrypt_Session *crypto,
-	void *out_p[], size_t out_len_p[], int maxout)
+	void *out_p[], size_t out_len_p[], int maxout ATR_UNUSED)
 {
 	int i, nbout = 0;
 

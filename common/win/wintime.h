@@ -32,7 +32,6 @@ struct timezone
 #endif
 
 void timeradd(struct timeval *a, struct timeval *b, struct timeval *result);
-
 int gettimeofday(struct timeval* tp, struct timezone* tz);
 
 #ifdef __cplusplus

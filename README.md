@@ -26,10 +26,12 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * [Why SRT Was Created](docs/why-srt-was-created.md)
 * [Using the `stransmit` App](docs/stransmit.md)
 * [SRT Encryption](docs/encryption.md)
+* [API](docs/API.md)
 
 # Requirements
 
 * cmake (as build system)
+* Tcl 8.5 (optional for user-friendly build system)
 * OpenSSL
 * Pthreads (for POSIX systems it's builtin, for Windows there's a library)
 

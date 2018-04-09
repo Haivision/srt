@@ -1,0 +1,9 @@
+
+SOURCES
+srt-test-file.cpp
+testmedia.cpp
+../apps/verbose.cpp
+../apps/socketoptions.cpp
+../apps/uriparser.cpp
+../apps/logsupport.cpp
+
