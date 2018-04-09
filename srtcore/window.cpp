@@ -148,7 +148,7 @@ void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeW
       r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
 
    for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = (1500 - SRT_DATA_PKTHDR_SIZE); //based on 1 pkt/sec set in r_pktWindow[i]
+      r_bytesWindow[i] = CPacket::SRT_MAX_PAYLOAD_SIZE; //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 
@@ -176,7 +176,6 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
       {
          ++ count;  //packet counter
          sum += *p; //usec counter
-////#ifdef SRT_ENABLE_BSTATS
          bytes += (unsigned long)*bp;   //byte counter
       }
       ++ p;     //advance packet pointer
@@ -186,7 +185,7 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
    // claculate speed, or return 0 if not enough valid value
    if (count > (asize >> 1))
    {
-      bytes += (SRT_DATA_PKTHDR_SIZE * count); //Add protocol headers to bytes received
+      bytes += (CPacket::SRT_DATA_HDR_SIZE * count); //Add protocol headers to bytes received
       bytesps = (unsigned long)ceil(1000000.0 / (double(sum) / double(bytes)));
       return (int)ceil(1000000.0 / (sum / count));
    }
@@ -195,26 +194,37 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
       bytesps = 0;
       return 0;
    }
-/* #else
-      }
-      ++ p;
-   }
-
-   // claculate speed, or return 0 if not enough valid value
-   if (count > (ASIZE >> 1))
-      return (int)ceil(1000000.0 / (sum / count));
-   else
-      return 0;
-#endif
-*/
 }
 
 int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
+    // This calculation does more-less the following:
+    //
+    // 1. Having example window:
+    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+    // 2. This window is now sorted, but we only know the value in the middle:
+    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+    // 3. Now calculate:
+    //   - lower: 90/8 = 11.25
+    //   - upper: 90*8 = 720
+    // 4. Now calculate the arithmetic median from all these values,
+    //    but drop those from outside the <lower, upper> range:
+    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
+    // 5. Calculate the median from the extracted range,
+    //    NOTE: the median is actually repeated once, so size is +1.
+    //
+    //    values = { 50, 51, 55, 80, 90, 100, 600 };
+    //    sum = 90 + accumulate(values); ==> 1026
+    //    median = sum/(1 + values.size()); ==> 147
+    //
+    // For comparison: the overall arithmetic median from this window == 430
+    //
+    // 6. Returned value = 1M/median
+
    // get median value, but cannot change the original value order in the window
    std::copy(window, window + psize - 1, replica);
    std::nth_element(replica, replica + (psize / 2), replica + psize - 1);
-   //std::sort(replica, replica + psize);
+   //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
    int median = replica[psize / 2];
 
    int count = 1;

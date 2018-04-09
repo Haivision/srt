@@ -63,6 +63,7 @@ modified by
 #include "queue.h"
 #include "cache.h"
 #include "epoll.h"
+#include "handshake.h"
 
 class CUDT;
 
@@ -72,7 +73,7 @@ public:
    CUDTSocket();
    ~CUDTSocket();
 
-   UDTSTATUS m_Status;                       //< current socket state
+   SRT_SOCKSTATUS m_Status;                       //< current socket state
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
@@ -80,16 +81,16 @@ public:
    sockaddr* m_pSelfAddr;                    //< pointer to the local address of the socket
    sockaddr* m_pPeerAddr;                    //< pointer to the peer address of the socket
 
-   UDTSOCKET m_SocketID;                     //< socket ID
-   UDTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
+   SRTSOCKET m_SocketID;                     //< socket ID
+   SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
-   UDTSOCKET m_PeerID;                       //< peer socket ID
+   SRTSOCKET m_PeerID;                       //< peer socket ID
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<UDTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
-   std::set<UDTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
+   std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
+   std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
 
    pthread_cond_t m_AcceptCond;              //< used to block "accept" call
    pthread_mutex_t m_AcceptLock;             //< mutex associated to m_AcceptCond
@@ -100,7 +101,7 @@ public:
 
    pthread_mutex_t m_ControlLock;            //< lock this socket exclusively for control APIs: bind/listen/connect
 
-   static int64_t getPeerSpec(UDTSOCKET id, int32_t isn)
+   static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
        return (id << 30) + isn;
    }
@@ -127,7 +128,7 @@ public:
 
 public:
 
-   std::string CONID(UDTSOCKET sock) const;
+   std::string CONID(SRTSOCKET sock) const;
 
       /// initialize the UDT library.
       /// @return 0 if success, otherwise -1 is returned.
@@ -141,10 +142,10 @@ public:
 
       /// Create a new UDT socket.
       /// @param [in] af IP version, IPv4 (AF_INET) or IPv6 (AF_INET6).
-      /// @param [in] type socket type, SOCK_STREAM or SOCK_DGRAM
+      /// @param [in] type (ignored)
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   UDTSOCKET newSocket(int af, int type);
+   SRTSOCKET newSocket(int af, int );
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;
@@ -152,42 +153,40 @@ public:
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
-   int newConnection(const UDTSOCKET listen, const sockaddr* peer, CHandShake* hs);
+   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
 
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.
       /// @return Pointer to the UDT entity.
 
-   CUDT* lookup(const UDTSOCKET u);
+   CUDT* lookup(const SRTSOCKET u);
 
       /// Check the status of the UDT socket.
       /// @param [in] u the UDT socket ID.
       /// @return UDT socket status, or NONEXIST if not found.
 
-   UDTSTATUS getStatus(const UDTSOCKET u);
+   SRT_SOCKSTATUS getStatus(const SRTSOCKET u);
 
       // socket APIs
 
-   int bind(const UDTSOCKET u, const sockaddr* name, int namelen);
-   int bind(const UDTSOCKET u, UDPSOCKET udpsock);
-   int listen(const UDTSOCKET u, int backlog);
-   UDTSOCKET accept(const UDTSOCKET listen, sockaddr* addr, int* addrlen);
-   int connect(const UDTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-   int close(const UDTSOCKET u);
-   int getpeername(const UDTSOCKET u, sockaddr* name, int* namelen);
-   int getsockname(const UDTSOCKET u, sockaddr* name, int* namelen);
+   int bind(const SRTSOCKET u, const sockaddr* name, int namelen);
+   int bind(const SRTSOCKET u, UDPSOCKET udpsock);
+   int listen(const SRTSOCKET u, int backlog);
+   SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
+   int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+   int close(const SRTSOCKET u);
+   int getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
+   int getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
    int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
-   int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
+   int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
    int epoll_create();
-   int epoll_add_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
+   int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-   int epoll_remove_usock(const int eid, const UDTSOCKET u);
+   int epoll_remove_usock(const int eid, const SRTSOCKET u);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-#ifdef HAI_PATCH
-   int epoll_update_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
+   int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-#endif /* HAI_PATCH */
-   int epoll_wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
+   int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
    int epoll_release(const int eid);
 
       /// record the UDT exception.
@@ -204,25 +203,25 @@ private:
 //   void init();
 
 private:
-   std::map<UDTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
+   std::map<SRTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
 
    pthread_mutex_t m_ControlLock;                    // used to synchronize UDT API
 
    pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
-   UDTSOCKET m_SocketIDGenerator;                             // seed to generate a new unique socket ID
+   SRTSOCKET m_SocketIDGenerator;                             // seed to generate a new unique socket ID
 
-   std::map<int64_t, std::set<UDTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
+   std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
    pthread_key_t m_TLSError;                         // thread local error record (last error)
    static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
 
 private:
-   void connect_complete(const UDTSOCKET u);
-   CUDTSocket* locate(const UDTSOCKET u);
-   CUDTSocket* locate(const sockaddr* peer, const UDTSOCKET id, int32_t isn);
+   void connect_complete(const SRTSOCKET u);
+   CUDTSocket* locate(const SRTSOCKET u);
+   CUDTSocket* locate(const sockaddr* peer, const SRTSOCKET id, int32_t isn);
    void updateMux(CUDTSocket* s, const sockaddr* addr = NULL, const UDPSOCKET* = NULL);
-   void updateMux(CUDTSocket* s, const CUDTSocket* ls);
+   void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
@@ -243,12 +242,11 @@ private:
    pthread_t m_GCThread;
    static void* garbageCollect(void*);
 
-   std::map<UDTSOCKET, CUDTSocket*> m_ClosedSockets;   // temporarily store closed sockets
+   std::map<SRTSOCKET, CUDTSocket*> m_ClosedSockets;   // temporarily store closed sockets
 
    void checkBrokenSockets();
-   void removeSocket(const UDTSOCKET u);
+   void removeSocket(const SRTSOCKET u);
 
-private:
    CEPoll m_EPoll;                                     // handling epoll data structures and events
 
 private:
@@ -259,30 +257,37 @@ private:
 // Debug support
 inline std::string SockaddrToString(const sockaddr* sadr)
 {
-	void* addr =
+    void* addr =
         sadr->sa_family == AF_INET ?
-            (void*)&((sockaddr_in*)sadr)->sin_addr
+        (void*)&((sockaddr_in*)sadr)->sin_addr
         : sadr->sa_family == AF_INET6 ?
-            (void*)&((sockaddr_in6*)sadr)->sin6_addr
+        (void*)&((sockaddr_in6*)sadr)->sin6_addr
         : 0;
-	// (cast to (void*) is required because otherwise the 2-3 arguments
-	// of ?: operator would have different types, which isn't allowed in C++.
-        if ( !addr )
-            return "unknown:0";
+    // (cast to (void*) is required because otherwise the 2-3 arguments
+    // of ?: operator would have different types, which isn't allowed in C++.
+    if ( !addr )
+        return "unknown:0";
 
-	std::ostringstream output;
-	char hostbuf[1024];
-	if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
-	{
-		output << hostbuf;
-	}
-	else
-	{
-		output << "unknown";
-	}
+    std::ostringstream output;
+    char hostbuf[1024];
 
-	output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
-	return output.str();
+#if ENABLE_GETNAMEINFO
+    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
+    {
+        output << hostbuf;
+    }
+    else
+#endif
+    {
+        if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
+        {
+            strcpy(hostbuf, "unknown");
+        }
+        output << hostbuf;
+    }
+
+    output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
+    return output.str();
 }
 
 

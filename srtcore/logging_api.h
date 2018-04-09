@@ -28,11 +28,7 @@ written by
 #ifdef WIN32
 #include "win/syslog_defs.h"
 #else
-#ifdef ANDROID
 #include <syslog.h>
-#else
-#include <sys/syslog.h>
-#endif
 #endif
 
 // Syslog is included so that it provides log level names.

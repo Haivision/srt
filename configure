@@ -10,16 +10,36 @@
 #
 
 # This is a general-purpose configure script, which is a user-friendly
-# wrapper to call the cmake. Note that --help shows you only the options
-# that are explicitly defined, but which exactly options are really
-# supported, depends on what is defined in CMakeLists.txt. Just every
-# case of --long-option is changed into LONG_OPTION cmake variable.
-# However some of options MENTIONED IN THE HELP TEXT may be handled
-# by the configure script before passing to cmake (and maybe turned
-# into something else).
+# wrapper to call the "cmake" command.
+
+# There are two options that are handled specifically:
 #
-# The build-specific option processing is done in configure-data.tcl file.
+# --help: show the list of official options
+# --prefix: alias to --cmake-install-prefix
+
+# The processing done automatically on all options by default is:
+# Every option like:
+#    --long-c++-option
+#    --cmake-special-option=ON
+# Turns into:
+#    -DLONG_CXX_OPTION=1
+#    -DCMAKE_SPECIAL_OPTION=ON
 #
+# In the configuration file, "configure-data.tcl", you can add
+# special processing for options and define explicit options
+# in the "::options" dictionary. Explicit options (in contrast
+# to "blind" options) have additional properties:
+#
+# - only those options are mentioned with --help
+# - you can pass a value for this option without = character
+# - you can specify --disable-option instead of --enable-option=0
+#
+# In "configure-data.tcl", beside ::options, you can define "preprocess" and
+# "postprocess" procedures. In "preprocess", use ::optval array to modify the
+# list of options to be processed further. Additionally in "postprocess"
+# procedure you can influence directly the options for "cmake" command in
+# ::cmakeopt variable (modifying ::optval in "postprocess" is useless).
+
 # The idea is that CMakeLists.txt contains things that are highly
 # customizable, but no system or option autodetection AWA "sensible
 # defaults" are provided. This is done by this script.
@@ -50,6 +70,31 @@ proc resolve opt {
 	return [list --$opt $var $type $mark]
 }
 
+# Check if a --disable option has its --enable counterpart. If so,
+# then just invert the option.
+proc resolve_disablers {} {
+	set enablers ""
+	set optkeys_len [llength $::optkeys]
+	for {set pos 0} {$pos < $optkeys_len} {incr pos} {
+		set opt [lindex $::optkeys $pos]
+		if { [string match --disable-* $opt] } {
+			set inverted enable-[string range $opt 10 end]
+			if { $inverted in [dict keys $::options] } {
+				lset ::optkeys $pos --$inverted
+				set val $::optval($opt)
+				unset ::optval($opt)
+				if { $val == "" || ![string is boolean $val] } {
+					set ::optval(--$inverted) 0
+				} else {
+					set ::optval(--$inverted) [expr {!$val}]
+				}
+
+				puts "NOTE: $opt changed into --$inverted=$::optval(--$inverted)"
+			}
+		}
+	}
+}
+
 foreach {o desc} $options {
 	lassign [resolve $o] optname optvar opttype optmark
 	set opt($optname) [list $optvar $opttype $optmark]
@@ -68,6 +113,10 @@ if { $argv == "--help" } {
 		}
 		puts stderr "\t$o$imark - $info($o)"
 	}
+
+	puts stderr "NOTE1: Option list may be incomplete. Refer to variables in CMakeLists.txt"
+	puts stderr "NOTE2: Non-internal options turn e.g. --enable-c++11 into cmake -DENABLE_CXX11=1"
+	puts stderr "NOTE3: You can use --disable-x instead of --enable-x=0 for the above options."
 	
 	exit 1
 }
@@ -146,6 +195,8 @@ if { $saveopt != "" } {
 }
 
 set cmakeopt ""
+
+resolve_disablers
 
 if { [info proc preprocess] != "" } {
 	preprocess

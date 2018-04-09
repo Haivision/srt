@@ -228,7 +228,7 @@ hcNettle_AES_Encrypt (hcrypt_CipherData * cipher_data,
 
         /* Encrypt packet payload in output message buffer */
         ctr_crypt (aes_key,        /* ctx */
-                   aes_encrypt, /* nettle_cipher_func */
+                   (nettle_crypt_func*)aes_encrypt, /* nettle_cipher_func */
                    AES_BLOCK_SIZE, /* cipher blocksize */
                    iv,             /* iv */
                    in_data[0].len, /* length */
@@ -371,7 +371,7 @@ hcNettle_AES_Decrypt (hcrypt_CipherData * cipher_data, hcrypt_Ctx * ctx,
 
         /* Decrypt message (same as encrypt for CTR mode) */
         ctr_crypt (aes_key,        /* ctx */
-                   aes_encrypt, /* nettle_cipher_func */
+                   (nettle_crypt_func*)aes_encrypt, /* nettle_cipher_func */
                    AES_BLOCK_SIZE, /* cipher blocksize */
                    iv,             /* iv */
                    in_data[0].len, /* length */

@@ -62,16 +62,16 @@ modified by
 struct CEPollDesc
 {
    int m_iID;                                // epoll ID
-   std::set<UDTSOCKET> m_sUDTSocksOut;       // set of UDT sockets waiting for write events
-   std::set<UDTSOCKET> m_sUDTSocksIn;        // set of UDT sockets waiting for read events
-   std::set<UDTSOCKET> m_sUDTSocksEx;        // set of UDT sockets waiting for exceptions
+   std::set<SRTSOCKET> m_sUDTSocksOut;       // set of UDT sockets waiting for write events
+   std::set<SRTSOCKET> m_sUDTSocksIn;        // set of UDT sockets waiting for read events
+   std::set<SRTSOCKET> m_sUDTSocksEx;        // set of UDT sockets waiting for exceptions
 
    int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
-   std::set<UDTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
-   std::set<UDTSOCKET> m_sUDTReads;          // UDT sockets ready for read
-   std::set<UDTSOCKET> m_sUDTExcepts;        // UDT sockets with exceptions (connection broken, etc.)
+   std::set<SRTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
+   std::set<SRTSOCKET> m_sUDTReads;          // UDT sockets ready for read
+   std::set<SRTSOCKET> m_sUDTExcepts;        // UDT sockets with exceptions (connection broken, etc.)
 };
 
 class CEPoll
@@ -96,7 +96,7 @@ public: // for CUDTUnited API
       /// @param [in] events events to watch.
       /// @return 0 if success, otherwise an error number.
 
-   int add_usock(const int eid, const UDTSOCKET& u, const int* events = NULL);
+   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL);
 
       /// add a system socket to an EPoll.
       /// @param [in] eid EPoll ID.
@@ -111,7 +111,7 @@ public: // for CUDTUnited API
       /// @param [in] u UDT socket ID.
       /// @return 0 if success, otherwise an error number.
 
-   int remove_usock(const int eid, const UDTSOCKET& u);
+   int remove_usock(const int eid, const SRTSOCKET& u);
 
       /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
       /// @param [in] eid EPoll ID.
@@ -119,14 +119,13 @@ public: // for CUDTUnited API
       /// @return 0 if success, otherwise an error number.
 
    int remove_ssock(const int eid, const SYSSOCKET& s);
-#ifdef HAI_PATCH
       /// update a UDT socket events from an EPoll.
       /// @param [in] eid EPoll ID.
       /// @param [in] u UDT socket ID.
       /// @param [in] events events to watch.
       /// @return 0 if success, otherwise an error number.
 
-   int update_usock(const int eid, const UDTSOCKET& u, const int* events = NULL);
+   int update_usock(const int eid, const SRTSOCKET& u, const int* events = NULL);
 
       /// update a system socket events from an EPoll.
       /// @param [in] eid EPoll ID.
@@ -135,7 +134,6 @@ public: // for CUDTUnited API
       /// @return 0 if success, otherwise an error number.
 
    int update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
-#endif /* HAI_PATCH */
 
       /// wait for EPoll events or timeout.
       /// @param [in] eid EPoll ID.
@@ -146,7 +144,7 @@ public: // for CUDTUnited API
       /// @param [out] lwfds system file descriptors for writing.
       /// @return number of sockets available for IO.
 
-   int wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
+   int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
       /// close and release an EPoll.
       /// @param [in] eid EPoll ID.
@@ -163,7 +161,7 @@ public: // for CUDT to acknowledge IO status
       /// @param [in] enable true -> enable, otherwise disable
       /// @return 0 if success, otherwise an error number
 
-   int update_events(const UDTSOCKET& uid, std::set<int>& eids, int events, bool enable);
+   int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID

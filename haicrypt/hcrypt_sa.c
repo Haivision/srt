@@ -26,7 +26,7 @@ written by
 #include <string.h>				/* memcpy */
 #include "hcrypt.h"
 
-int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Secret *secret)
+int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Secret *secret)
 {
 	int iret;
 	(void)crypto;

@@ -57,6 +57,8 @@ modified by
 #include "channel.h"
 #include "common.h"
 #include "packet.h"
+#include "netinet_any.h"
+#include "utilities.h"
 #include <list>
 #include <map>
 #include <queue>
@@ -134,7 +136,7 @@ private:
 struct CSNode
 {
    CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp;      // Time Stamp
+   uint64_t m_llTimeStamp_tk;      // Time Stamp
 
    int m_iHeapLoc;		// location on the heap, -1 means not on the heap
 };
@@ -149,6 +151,10 @@ public:
 
 public:
 
+   enum EReschedule { DONT_RESCHEDULE = 0, DO_RESCHEDULE = 1 };
+
+   static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+
       /// Insert a new UDT instance into the list.
       /// @param [in] ts time stamp: next processing time
       /// @param [in] u pointer to the UDT instance
@@ -159,7 +165,7 @@ public:
       /// @param [in] u pointer to the UDT instance
       /// @param [in] resechedule if the timestampe shoudl be rescheduled
 
-   void update(const CUDT* u, bool reschedule = true);
+   void update(const CUDT* u, EReschedule reschedule);
 
       /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
       /// @param [out] addr destination address of the next packet
@@ -202,7 +208,7 @@ private:
 struct CRNode
 {
    CUDT* m_pUDT;                // Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp;      // Time Stamp
+   uint64_t m_llTimeStamp_tk;      // Time Stamp
 
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link
@@ -297,16 +303,21 @@ public:
    ~CRendezvousQueue();
 
 public:
-   void insert(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
-   void remove(const UDTSOCKET& id);
-   CUDT* retrieve(const sockaddr* addr, UDTSOCKET& id);
+   void insert(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
 
-   void updateConnStatus();
+   // The should_lock parameter is given here to state as to whether
+   // the lock should be applied here. If called from some internals
+   // and the lock IS ALREADY APPLIED, use false here to prevent
+   // double locking and deadlock in result.
+   void remove(const SRTSOCKET& id, bool should_lock);
+   CUDT* retrieve(const sockaddr* addr, ref_t<SRTSOCKET> id);
+
+   void updateConnStatus(EConnectStatus, const CPacket& response);
 
 private:
    struct CRL
    {
-      UDTSOCKET m_iID;			// UDT socket ID (self)
+      SRTSOCKET m_iID;			// UDT socket ID (self)
       CUDT* m_pUDT;			// UDT instance
       int m_iIPversion;                 // IP version
       sockaddr* m_pPeerAddr;		// UDT sonnection peer address
@@ -360,6 +371,9 @@ public:
    int getIpToS() const;
 #endif
 
+   int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
+   int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -406,7 +420,7 @@ public:
 public:
 
    // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working for. Required to find
+   // whatever the queue is currently working. Required to find
    // some way to do this, possibly by having a "reverse pointer".
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
@@ -426,16 +440,16 @@ public:
       /// @param [out] packet received packet
       /// @return Data size of the packet
 
-   int recvfrom(int32_t id, CPacket& packet);
+   int recvfrom(int32_t id, ref_t<CPacket> packet);
 
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
    // Subroutines of worker
-   bool worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr* sa);
-   void worker_ProcessConnectionRequest(CUnit* unit, const sockaddr* sa);
-   void worker_TryConnectRendezvous(int32_t id, CUnit* unit, const sockaddr* sa);
-   void worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr* sa);
+   EReadStatus worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr* sa);
+   EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr* sa);
+   EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr* sa);
+   EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr* sa);
 
 private:
    CUnitQueue m_UnitQueue;		// The received packet queue
@@ -454,8 +468,8 @@ private:
    int setListener(CUDT* u);
    void removeListener(const CUDT* u);
 
-   void registerConnector(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
-   void removeConnector(const UDTSOCKET& id);
+   void registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
+   void removeConnector(const SRTSOCKET& id, bool should_lock = true);
 
    void setNewEntry(CUDT* u);
    bool ifNewEntry();
