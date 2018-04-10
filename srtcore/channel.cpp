@@ -493,6 +493,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     DWORD flag = 0;
     int addrsize = m_iSockAddrSize;
 
+    int msg_flags = 0;
     int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
     int res;
     if (sockerror == 0)
@@ -533,7 +534,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     }
 
     // Not sure if this problem has ever occurred on Windows, just a sanity check.
-    int msg_flags = 0;
     if (flag & MSG_PARTIAL)
         msg_flags = 1;
 #endif
