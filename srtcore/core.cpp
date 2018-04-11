@@ -1911,13 +1911,18 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     if (len < SRT_CMD_HSREQ_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error,  "HSREQ/rcv: cmd=%d(HSREQ) len=%zu invalid", SRT_CMD_HSREQ, len);
+        LOGC(mglog.Error,  log << "HSREQ/rcv: cmd=HSREQ len=" << len << " invalid");
         return SRT_CMD_NONE;
     }
 
-    LOGF(mglog.Note,  "HSREQ/rcv: cmd=%d(HSREQ) len=%zu vers=0x%x opts=0x%x delay=%d", 
-            SRT_CMD_HSREQ, len, srtdata[SRT_HS_VERSION], srtdata[SRT_HS_FLAGS],
-            SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
+    LOGC(mglog.Note, log << "HSREQ/rcv: cmd=HSREQ len=" << len
+            << " vers=0x" << hex << srtdata[SRT_HS_VERSION]
+            << " opts=0x" << hex << srtdata[SRT_HS_FLAGS]
+            << "[" << SrtFlagString(srtdata[SRT_HS_FLAGS]) << "]"
+            << dec
+            << " latency: rcv=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY])
+            << " snd=" << SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]));
+
 
     m_lPeerSrtVersion = srtdata[SRT_HS_VERSION];
     uint32_t peer_srt_options = srtdata[SRT_HS_FLAGS];
@@ -2089,7 +2094,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
     if (len < SRT_CMD_HSRSP_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error,  "HSRSP/rcv: cmd=%d(HSRSP) len=%zu invalid", SRT_CMD_HSRSP, len);
+        LOGC(mglog.Error,  log << "HSRSP/rcv: cmd=HSRSP len=" << len << " invalid");
         return SRT_CMD_NONE;
     }
 
@@ -7410,9 +7415,13 @@ int CUDT::processData(CUnit* unit)
            }
            else
            {
-               HLOGF(mglog.Debug, "STILL %zu FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
-                       i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
-                       i->ttl);
+               HLOGC(mglog.Debug, log << "STILL " << m_FreshLoss.size()
+                       << " FRESH LOSS RECORDS, FIRST: "
+                       << i->seq[0] << "-" << i->seq[1]
+                       << " (" << (1+CSeqNo::seqcmp(i->seq[1], i->seq[0]))
+                       << ") TTL: " << i->ttl);
+
+
            }
 
            // Phase 2: rest of the records should have TTL decreased.
