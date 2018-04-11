@@ -9,16 +9,26 @@
 extern "C" {
 #endif
 
+#if !defined(_MSC_VER)
+   #define SRTCOMPAT_WINTIME_STATIC_INLINE_DECL static inline
+#else
+   // NOTE: MVC Does not like static inline for C functions in some versions.
+   //    so just use static for MVC.
+   #define SRTCOMPAT_WINTIME_STATIC_INLINE_DECL static
+#endif
+
 #if !defined(_POSIX_TIMERS) || (_POSIX_TIMERS <= 0)
-// NOTE: The availability of clock_gettime() is indicated that _POSIX_TIMERS
-// is defined and is greater than 0.
+// NOTE: The clock_gettime() availability is indicated by _POSIX_TIMERS
+// being defined and greater than 0.
 
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 1
 #endif
 
-int SRTCompat_clock_gettime(int X, struct timespec *ts);
-static inline int clock_gettime(int X, struct timespec *ts)
+int SRTCompat_clock_gettime(
+      int X, struct timespec *ts);
+SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int clock_gettime(
+      int X, struct timespec *ts)
 {
    return SRTCompat_clock_gettime(X, ts);
 }
@@ -42,17 +52,21 @@ struct timezone
 
 void SRTCompat_timeradd(
       struct timeval *a, struct timeval *b, struct timeval *result);
-static inline void timeradd(
+SRTCOMPAT_WINTIME_STATIC_INLINE_DECL void timeradd(
       struct timeval *a, struct timeval *b, struct timeval *result)
 {
    SRTCompat_timeradd(a, b, result);
 }
 
-int SRTCompat_gettimeofday(struct timeval* tp, struct timezone* tz);
-static inline int gettimeofday(struct timeval* tp, struct timezone* tz)
+int SRTCompat_gettimeofday(
+      struct timeval* tp, struct timezone* tz);
+SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int gettimeofday(
+      struct timeval* tp, struct timezone* tz)
 {
    return SRTCompat_gettimeofday(tp, tz);
 }
+
+#undef SRTCOMPAT_WINTIME_STATIC_INLINE_DECL
 
 #ifdef __cplusplus
 }
