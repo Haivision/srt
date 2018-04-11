@@ -10,7 +10,8 @@ extern "C" {
 #endif
 
 #if !defined(_POSIX_TIMERS) || (_POSIX_TIMERS <= 0)
-// NOTE: These are defined in WinPThread and should not be redefined.
+// NOTE: The availability of clock_gettime() is indicated that _POSIX_TIMERS
+// is defined and is greater than 0.
 
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 1
