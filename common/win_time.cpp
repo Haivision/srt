@@ -13,13 +13,13 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#include <win/wintime.h>
+#include "win/wintime.h"
 #include <sys/timeb.h>
 
 #if 0
 // Temporarily blocked. Needs to be fixed.
 // Currently unused, but may be useful in future.
-int clock_gettime(int X, struct timespec *ts)
+int SRTCompat_clock_gettime(int X, struct timespec *ts)
 {
     LARGE_INTEGER           t;
     FILETIME            f;
@@ -58,7 +58,7 @@ int clock_gettime(int X, struct timespec *ts)
 }
 #endif
 
-void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
+void SRTCompat_timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
 {
     result->tv_sec  = a->tv_sec + b->tv_sec;
     result->tv_usec = a->tv_usec + b->tv_usec;
@@ -69,7 +69,7 @@ void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
     }
 }
 
-int gettimeofday(struct timeval* tp, struct timezone* tz)
+int SRTCompat_gettimeofday(struct timeval* tp, struct timezone* tz)
 {
     static LARGE_INTEGER tickFrequency, epochOffset;
 
@@ -105,4 +105,3 @@ int gettimeofday(struct timeval* tp, struct timezone* tz)
     }
     return 0;
 }
-
