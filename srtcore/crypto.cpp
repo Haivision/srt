@@ -400,8 +400,8 @@ void CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
         {
 
             uint8_t* oldkey SRT_ATR_UNUSED = m_SndKmMsg[ki].Msg;
-            HLOGF(mglog.Debug, "new key[%d] len=%zd,%zd msg=%0x,%0x\n", 
-                    ki, out_len_p[i], m_SndKmMsg[ki].MsgLen,
+            HLOGF(mglog.Debug, "new key[%d] len=%d,%d msg=%0x,%0x\n", 
+                    ki, (int)out_len_p[i], (int)m_SndKmMsg[ki].MsgLen,
                     *(int32_t *)out_p[i],
                     *(int32_t *)oldkey);
             /* New Keying material, send to peer */
