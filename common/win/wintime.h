@@ -38,6 +38,7 @@ SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int clock_gettime(
 #else
     #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
 #endif
+
 #endif
 
 #ifndef _TIMEZONE_DEFINED /* also in sys/time.h */
@@ -47,7 +48,6 @@ struct timezone
     int tz_minuteswest; /* minutes W of Greenwich */
     int tz_dsttime;     /* type of dst correction */
 };
-
 #endif
 
 void SRTCompat_timeradd(
