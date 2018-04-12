@@ -17,30 +17,6 @@ extern "C" {
    #define SRTCOMPAT_WINTIME_STATIC_INLINE_DECL static
 #endif
 
-#if !defined(_POSIX_TIMERS) || (_POSIX_TIMERS <= 0)
-// NOTE: The clock_gettime() availability is indicated by _POSIX_TIMERS
-// being defined and greater than 0.
-
-#ifndef CLOCK_REALTIME
-#define CLOCK_REALTIME 1
-#endif
-
-int SRTCompat_clock_gettime(
-      int X, struct timespec *ts);
-SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int clock_gettime(
-      int X, struct timespec *ts)
-{
-   return SRTCompat_clock_gettime(X, ts);
-}
-
-#if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
-    #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
-#else
-    #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
-#endif
-
-#endif
-
 #ifndef _TIMEZONE_DEFINED /* also in sys/time.h */
 #define _TIMEZONE_DEFINED
 struct timezone 
