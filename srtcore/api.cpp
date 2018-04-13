@@ -63,6 +63,10 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 
+#ifdef WIN32
+   #include <win/wintime.h>
+#endif
+
 using namespace std;
 
 extern logging::LogConfig srt_logger_config;

@@ -1,6 +1,5 @@
 
 PUBLIC HEADERS
-win/wintime.h
 win/syslog_defs.h
 #
 # These are included by platform_sys.h header contained in ../srtcore/filelist.maf

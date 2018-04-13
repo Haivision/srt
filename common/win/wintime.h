@@ -9,18 +9,13 @@
 extern "C" {
 #endif
 
-#ifndef CLOCK_REALTIME
-#define CLOCK_REALTIME 1
-#endif
-
-int clock_gettime(int X, struct timespec *ts);
-
-#if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
-    #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
+#if !defined(_MSC_VER)
+   #define SRTCOMPAT_WINTIME_STATIC_INLINE_DECL static inline
 #else
-    #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
+   // NOTE: MVC Does not like static inline for C functions in some versions.
+   //    so just use static for MVC.
+   #define SRTCOMPAT_WINTIME_STATIC_INLINE_DECL static
 #endif
- 
 
 #ifndef _TIMEZONE_DEFINED /* also in sys/time.h */
 #define _TIMEZONE_DEFINED
@@ -31,11 +26,26 @@ struct timezone
 };
 #endif
 
-void timeradd(struct timeval *a, struct timeval *b, struct timeval *result);
-int gettimeofday(struct timeval* tp, struct timezone* tz);
+void SRTCompat_timeradd(
+      struct timeval *a, struct timeval *b, struct timeval *result);
+SRTCOMPAT_WINTIME_STATIC_INLINE_DECL void timeradd(
+      struct timeval *a, struct timeval *b, struct timeval *result)
+{
+   SRTCompat_timeradd(a, b, result);
+}
+
+int SRTCompat_gettimeofday(
+      struct timeval* tp, struct timezone* tz);
+SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int gettimeofday(
+      struct timeval* tp, struct timezone* tz)
+{
+   return SRTCompat_gettimeofday(tp, tz);
+}
+
+#undef SRTCOMPAT_WINTIME_STATIC_INLINE_DECL
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif // INC__WIN_WINTIME
