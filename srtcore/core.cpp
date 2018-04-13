@@ -1911,11 +1911,11 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     if (len < SRT_CMD_HSREQ_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error,  "HSREQ/rcv: cmd=%d(HSREQ) len=%zu invalid", SRT_CMD_HSREQ, len);
+        LOGF(mglog.Error,  "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " invalid", SRT_CMD_HSREQ, len);
         return SRT_CMD_NONE;
     }
 
-    LOGF(mglog.Note,  "HSREQ/rcv: cmd=%d(HSREQ) len=%zu vers=0x%x opts=0x%x delay=%d", 
+    LOGF(mglog.Note,  "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " vers=0x%x opts=0x%x delay=%d", 
             SRT_CMD_HSREQ, len, srtdata[SRT_HS_VERSION], srtdata[SRT_HS_FLAGS],
             SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
@@ -2089,7 +2089,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
     if (len < SRT_CMD_HSRSP_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error,  "HSRSP/rcv: cmd=%d(HSRSP) len=%zu invalid", SRT_CMD_HSRSP, len);
+        LOGF(mglog.Error,  "HSRSP/rcv: cmd=%d(HSRSP) len=%" PRIzu " invalid", SRT_CMD_HSRSP, len);
         return SRT_CMD_NONE;
     }
 
@@ -7410,7 +7410,7 @@ int CUDT::processData(CUnit* unit)
            }
            else
            {
-               HLOGF(mglog.Debug, "STILL %zu FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
+               HLOGF(mglog.Debug, "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
                        i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
                        i->ttl);
            }
