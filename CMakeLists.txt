@@ -455,8 +455,8 @@ if (srt_libspec_static)
 	# - a shared library exposer, which allows pre-resolution and later dynamic
 	#   linkage when running the executable
 	# Both having unfortunately the same names created by MSVC compiler.
-	# It's not the case of Cygwin - they are named there libsrt.a and libsrt.dll.a
-	if (WIN32 AND NOT CYGWIN)
+	# It's not the case of Cygwin/MINGW - they are named there libsrt.a and libsrt.dll.a
+	if (MICROSOFT)
 		# Keep _static suffix. By unknown reason, the name must still be set explicitly.
 		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt}_static)
 	else()
