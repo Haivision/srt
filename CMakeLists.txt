@@ -520,8 +520,10 @@ if (ENABLE_SHARED)
 	target_compile_definitions(haicrypt_virtual PRIVATE -DHAICRYPT_EXPORTS)
 endif()
 
+if (srt_libspec_shared)
 if (MICROSOFT)
     target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
+endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
