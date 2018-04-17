@@ -400,7 +400,7 @@ This option list is sorted alphabetically. Note that some options can be
 either only a retrieved (r) or set (w) value.
 
 | OptName         | Since | Binding | Type            | Units | Default | Range | Description |
-| --- |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `SRTO_CONNTIMEO` | 1.1.2 | pre  | `int` | msec | 3000 | tbd | Connect timeout. SRT cannot connect for RTT > 1500 msec (2 handshake exchanges) with the default connect timeout of 3 seconds. This option applies to the caller and rendezvous connection modes. The connect timeout is 10 times the value set for the rendezvous mode (which can be used as a workaround for this connection problem with earlier versions). |
 | --- |
 | `SRTO_EVENT` (r) |   | n/a  | `int32_t` |   | n/a | n/a | Connection epoll flags (see [epoll\_ctl](http://man7.org/linux/man-pages/man2/epoll_ctl.2.html)). One or more of the following flags: EPOLLIN | EPOLLOUT | EPOLLERR |
