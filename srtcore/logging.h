@@ -316,11 +316,18 @@ struct LogDispatcher::Proxy
         if ( !fmts || fmts[0] == '\0' )
             return *this;
 
-        char buf[512];
         va_list ap;
         va_start(ap, fmts);
-        vsprintf(buf, fmts, ap);
+        vform(fmts, ap);
         va_end(ap);
+        return *this;
+    }
+
+    Proxy& vform(const char* fmts, va_list ap)
+    {
+        char buf[512];
+
+        vsprintf(buf, fmts, ap);
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {
@@ -351,6 +358,9 @@ public:
     LogDispatcher Error;
     LogDispatcher Fatal;
 
+    template <int LEVEL>
+    LogDispatcher& get();
+
     Logger(int functional_area, LogConfig& config, std::string globprefix = std::string()):
         m_prefix( globprefix == "" ? globprefix : ": " + globprefix),
         m_fa(functional_area),
@@ -362,8 +372,16 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!" + m_prefix, m_config )
     {
     }
-
 };
+
+template <> inline LogDispatcher& Logger::get<LOG_DEBUG>() { return Debug; }
+template <> inline LogDispatcher& Logger::get<LOG_NOTICE>() { return Note; }
+template <> inline LogDispatcher& Logger::get<LOG_INFO>() { return Note; }
+template <> inline LogDispatcher& Logger::get<LOG_WARNING>() { return Warn; }
+template <> inline LogDispatcher& Logger::get<LOG_ERR>() { return Error; }
+template <> inline LogDispatcher& Logger::get<LOG_CRIT>() { return Fatal; }
+template <> inline LogDispatcher& Logger::get<LOG_ALERT>() { return Fatal; }
+template <> inline LogDispatcher& Logger::get<LOG_EMERG>() { return Fatal; }
 
 inline bool LogDispatcher::CheckEnabled()
 {
