@@ -10,6 +10,7 @@ hcrypt_msg.h
 PRIVATE HEADERS
 hcrypt.h
 hcrypt-gnutls.h
+haicrypt_log.h
 
 SOURCES
 hc_nettle_aes.c
