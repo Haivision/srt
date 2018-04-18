@@ -2813,9 +2813,9 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
         if (CTimer::getTime() > ttl)
         {
-			//Remove the connector from the RcvQueue for TTL on blocking connect.
-			//All other breaks from this loop have already done this through CUDT::processConnectResponse
-			m_pRcvQueue->removeConnector(m_SocketID, true);
+            //Remove the connector from the RcvQueue for TTL on blocking connect.
+            //All other breaks from this loop have already done this through CUDT::processConnectResponse
+            m_pRcvQueue->removeConnector(m_SocketID, true);
 
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
@@ -3165,198 +3165,198 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_ACCEPT: the handshake is done and finished correctly
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
-	if (!m_bConnecting)
-	{
-		m_pRcvQueue->removeConnector(m_SocketID, synchro);
-		return CONN_REJECT;
-	}
+    if (!m_bConnecting)
+    {
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
-   // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
-   // the peer, however switch to connected state. 
-   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << MessageTypeStr(response.getType(), response.getExtendedType()));
-   //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
+    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
+    // the peer, however switch to connected state. 
+    HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << MessageTypeStr(response.getType(), response.getExtendedType()));
+    //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
 
-   // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
-   // regardless of the connecting side affiliation. This will be changed for HSv5.
-   bool bidirectional = false;
-   HandshakeSide hsd = m_bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-   // (defined here due to 'goto' below).
+    // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
+    // regardless of the connecting side affiliation. This will be changed for HSv5.
+    bool bidirectional = false;
+    HandshakeSide hsd = m_bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
+    // (defined here due to 'goto' below).
 
-   // SRT peer may send the SRT handshake private message (type 0x7fff) before a keep-alive.
+    // SRT peer may send the SRT handshake private message (type 0x7fff) before a keep-alive.
 
-   // This condition is checked when the current agent is trying to do connect() in rendezvous mode,
-   // but the peer was faster to send a handshake packet earlier. This makes it continue with connecting
-   // process if the peer is already behaving as if the connection was already established.
-   
-   // This value will check either the initial value, which is less than SRT1, or
-   // the value previously loaded to m_ConnReq during the previous handshake response.
-   // For the initial form this value should not be checked.
-   bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
+    // This condition is checked when the current agent is trying to do connect() in rendezvous mode,
+    // but the peer was faster to send a handshake packet earlier. This makes it continue with connecting
+    // process if the peer is already behaving as if the connection was already established.
 
-   if (m_bRendezvous
-           && (
-               m_RdvState == CHandShake::RDV_CONNECTED // somehow Rendezvous-v5 switched it to CONNECTED.
-               || !response.isControl()                         // WAS A PAYLOAD PACKET.
-               || (response.getType() == UMSG_KEEPALIVE)    // OR WAS A UMSG_KEEPALIVE message.
-               || (response.getType() == UMSG_EXT)          // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
-              )
-           // This may happen if this is an initial state in which the socket type was not yet set.
-           // If this is a field that holds the response handshake record from the peer, this means that it wasn't received yet.
-           // HSv5: added version check because in HSv5 the m_iType field has different meaning
-           // and it may be 0 in case when the handshake does not carry SRT extensions.
-           && ( hsv5 || m_ConnRes.m_iType != UDT_UNDEFINED))
-   {
-       //a data packet or a keep-alive packet comes, which means the peer side is already connected
-       // in this situation, the previously recorded response will be used
-       // In HSv5 this situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
-       HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: already connected - pinning in");
-       if (hsv5)
-       {
-           m_RdvState = CHandShake::RDV_CONNECTED;
-       }
+    // This value will check either the initial value, which is less than SRT1, or
+    // the value previously loaded to m_ConnReq during the previous handshake response.
+    // For the initial form this value should not be checked.
+    bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
 
-       return postConnect(response, hsv5, eout, synchro);
-   }
+    if (m_bRendezvous
+            && (
+                m_RdvState == CHandShake::RDV_CONNECTED // somehow Rendezvous-v5 switched it to CONNECTED.
+                || !response.isControl()                         // WAS A PAYLOAD PACKET.
+                || (response.getType() == UMSG_KEEPALIVE)    // OR WAS A UMSG_KEEPALIVE message.
+                || (response.getType() == UMSG_EXT)          // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
+               )
+            // This may happen if this is an initial state in which the socket type was not yet set.
+            // If this is a field that holds the response handshake record from the peer, this means that it wasn't received yet.
+            // HSv5: added version check because in HSv5 the m_iType field has different meaning
+            // and it may be 0 in case when the handshake does not carry SRT extensions.
+            && ( hsv5 || m_ConnRes.m_iType != UDT_UNDEFINED))
+    {
+        //a data packet or a keep-alive packet comes, which means the peer side is already connected
+        // in this situation, the previously recorded response will be used
+        // In HSv5 this situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
+        HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: already connected - pinning in");
+        if (hsv5)
+        {
+            m_RdvState = CHandShake::RDV_CONNECTED;
+        }
 
-   if ( !response.isControl(UMSG_HANDSHAKE) )
-   {
-       LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
-           << MessageTypeStr(response.getType(), response.getExtendedType()));
-	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
-       return CONN_REJECT;
-   }
+        return postConnect(response, hsv5, eout, synchro);
+    }
 
-   if ( m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1 )
-   {
-       // Handshake data were too small to reach the Handshake structure. Reject.
-       LOGC(mglog.Error, log << CONID() << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
-	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
-       return CONN_REJECT;
-   }
+    if ( !response.isControl(UMSG_HANDSHAKE) )
+    {
+        LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
+                << MessageTypeStr(response.getType(), response.getExtendedType()));
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
-   HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-   if ( m_ConnRes.m_iReqType > URQ_FAILURE_TYPES )
-   {
-	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
-       return CONN_REJECT;
-   }
+    if ( m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1 )
+    {
+        // Handshake data were too small to reach the Handshake structure. Reject.
+        LOGC(mglog.Error, log << CONID() << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
-   if ( size_t(m_ConnRes.m_iMSS) > CPacket::ETH_MAX_MTU_SIZE )
-   {
-       // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
-       // and you'll avoid problems.
-       LOGC(mglog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
-	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
-       return CONN_REJECT;
-   }
+    HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
+    if ( m_ConnRes.m_iReqType > URQ_FAILURE_TYPES )
+    {
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
-   // (see createCrypter() call below)
-   //
-   // The CCryptoControl attached object must be created early
-   // because it will be required to create a conclusion handshake in HSv5
-   // 
-   if (m_bRendezvous)
-   {
-       // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
-       if (m_ConnRes.m_iReqType == URQ_INDUCTION)
-       {
-           LOGC(mglog.Error, log << CONID() << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
-		   m_pRcvQueue->removeConnector(m_SocketID, synchro);
-           return CONN_REJECT;
-       }
+    if ( size_t(m_ConnRes.m_iMSS) > CPacket::ETH_MAX_MTU_SIZE )
+    {
+        // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
+        // and you'll avoid problems.
+        LOGC(mglog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
-       // The procedure for version 5 is completely different and changes the states
-       // differently, so the old code will still maintain HSv4 the old way.
+    // (see createCrypter() call below)
+    //
+    // The CCryptoControl attached object must be created early
+    // because it will be required to create a conclusion handshake in HSv5
+    // 
+    if (m_bRendezvous)
+    {
+        // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
+        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
+        {
+            LOGC(mglog.Error, log << CONID() << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
+            m_pRcvQueue->removeConnector(m_SocketID, synchro);
+            return CONN_REJECT;
+        }
 
-       if ( m_ConnRes.m_iVersion > HS_VERSION_UDT4 )
-       {
-           HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv5 DETECTED.");
-           return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
-       }
+        // The procedure for version 5 is completely different and changes the states
+        // differently, so the old code will still maintain HSv4 the old way.
 
-       HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendsezvous HSv4 DETECTED.");
-       // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
-       // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the peer,
-       // and DID NOT send the URQ_CONCLUSION yet.
+        if ( m_ConnRes.m_iVersion > HS_VERSION_UDT4 )
+        {
+            HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv5 DETECTED.");
+            return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
+        }
 
-       if ( m_ConnReq.m_iReqType == URQ_WAVEAHAND
-               || m_ConnRes.m_iReqType == URQ_WAVEAHAND )
-       {
-           HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: REQ-TIME LOW. got HS RDV. Agent state:" << RequestTypeStr(m_ConnReq.m_iReqType)
-               << " Peer HS:" << m_ConnRes.show());
+        HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendsezvous HSv4 DETECTED.");
+        // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
+        // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the peer,
+        // and DID NOT send the URQ_CONCLUSION yet.
 
-           // Here we could have received WAVEAHAND or CONCLUSION.
-           // For HSv4 simply switch to CONCLUSION for the sake of further handshake rolling.
-           // For HSv5, make the cookie contest and basing on this decide, which party
-           // should provide the HSREQ/KMREQ attachment.
+        if ( m_ConnReq.m_iReqType == URQ_WAVEAHAND
+                || m_ConnRes.m_iReqType == URQ_WAVEAHAND )
+        {
+            HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: REQ-TIME LOW. got HS RDV. Agent state:" << RequestTypeStr(m_ConnReq.m_iReqType)
+                    << " Peer HS:" << m_ConnRes.show());
 
-           createCrypter(hsd, false /* unidirectional */);
+            // Here we could have received WAVEAHAND or CONCLUSION.
+            // For HSv4 simply switch to CONCLUSION for the sake of further handshake rolling.
+            // For HSv5, make the cookie contest and basing on this decide, which party
+            // should provide the HSREQ/KMREQ attachment.
 
-           m_ConnReq.m_iReqType = URQ_CONCLUSION;
-           // the request time must be updated so that the next handshake can be sent out immediately.
-           m_llLastReqTime = 0;
-           return CONN_CONTINUE;
-       }
-       else
-       {
-           HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 PAST waveahand");
-       }
-   }
-   else
-   {
-      // set cookie
-      if (m_ConnRes.m_iReqType == URQ_INDUCTION)
-      {
-         HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
-             << hex << m_ConnRes.m_iCookie << " version:" << dec << m_ConnRes.m_iVersion << "), sending CONCLUSION HS with this cookie");
+            createCrypter(hsd, false /* unidirectional */);
 
-         m_ConnReq.m_iCookie = m_ConnRes.m_iCookie;
-         m_ConnReq.m_iReqType = URQ_CONCLUSION;
+            m_ConnReq.m_iReqType = URQ_CONCLUSION;
+            // the request time must be updated so that the next handshake can be sent out immediately.
+            m_llLastReqTime = 0;
+            return CONN_CONTINUE;
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 PAST waveahand");
+        }
+    }
+    else
+    {
+        // set cookie
+        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
+        {
+            HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
+                    << hex << m_ConnRes.m_iCookie << " version:" << dec << m_ConnRes.m_iVersion << "), sending CONCLUSION HS with this cookie");
 
-         // Here test if the LISTENER has responded with version HS_VERSION_SRT1,
-         // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
-         if ( m_ConnRes.m_iVersion > HS_VERSION_UDT4 )
-         {
-             int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            m_ConnReq.m_iCookie = m_ConnRes.m_iCookie;
+            m_ConnReq.m_iReqType = URQ_CONCLUSION;
 
-             if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
-             {
-                 LOGC(mglog.Warn, log << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE");
-             }
+            // Here test if the LISTENER has responded with version HS_VERSION_SRT1,
+            // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
+            if ( m_ConnRes.m_iVersion > HS_VERSION_UDT4 )
+            {
+                int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
 
-             checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
+                if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
+                {
+                    LOGC(mglog.Warn, log << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE");
+                }
 
-             // This will catch HS_VERSION_SRT1 and any newer.
-             // Set your highest version.
-             m_ConnReq.m_iVersion = HS_VERSION_SRT1;
-             // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
-             // The HSv4 client might not understand it, which means that agent
-             // must switch itself to HSv4 rendezvous, and this time iType sould
-             // be set to UDT_DGRAM value.
-             m_ConnReq.m_iType = 0;
+                checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
 
-             // This marks the information for the serializer that
-             // the SRT handshake extension is required.
-             // Rest of the data will be filled together with
-             // serialization.
-             m_ConnReq.m_extension = true;
+                // This will catch HS_VERSION_SRT1 and any newer.
+                // Set your highest version.
+                m_ConnReq.m_iVersion = HS_VERSION_SRT1;
+                // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
+                // The HSv4 client might not understand it, which means that agent
+                // must switch itself to HSv4 rendezvous, and this time iType sould
+                // be set to UDT_DGRAM value.
+                m_ConnReq.m_iType = 0;
 
-             // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
-             // The m_bDataSender value should be completely ignored and the
-             // connection is always bidirectional.
-             bidirectional = true;
-             hsd = HSD_INITIATOR;
-         }
-         m_llLastReqTime = 0;
-         createCrypter(hsd, bidirectional);
+                // This marks the information for the serializer that
+                // the SRT handshake extension is required.
+                // Rest of the data will be filled together with
+                // serialization.
+                m_ConnReq.m_extension = true;
 
-         // NOTE: This setup sets URQ_CONCLUSION and appropriate data in the handshake structure.
-         // The full handshake to be sent will be filled back in the caller function -- CUDT::startConnect().
-         return CONN_CONTINUE;
-      }
-   }
+                // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
+                // The m_bDataSender value should be completely ignored and the
+                // connection is always bidirectional.
+                bidirectional = true;
+                hsd = HSD_INITIATOR;
+            }
+            m_llLastReqTime = 0;
+            createCrypter(hsd, bidirectional);
 
-   return postConnect(response, false, eout, synchro);
+            // NOTE: This setup sets URQ_CONCLUSION and appropriate data in the handshake structure.
+            // The full handshake to be sent will be filled back in the caller function -- CUDT::startConnect().
+            return CONN_CONTINUE;
+        }
+    }
+
+    return postConnect(response, false, eout, synchro);
 }
 
 void CUDT::applyResponseSettings()
