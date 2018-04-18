@@ -165,7 +165,9 @@ typedef enum SRT_SOCKOPT {
     SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
     SRTO_MESSAGEAPI,
     SRTO_PAYLOADSIZE,
-    SRTO_TRANSTYPE         // Transmission type (set of options required for given transmission type)
+    SRTO_TRANSTYPE,         // Transmission type (set of options required for given transmission type)
+    SRTO_KMREFRESHRATE,
+    SRTO_KMPREANNOUNCE
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
