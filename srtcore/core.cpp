@@ -2813,6 +2813,10 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
         if (CTimer::getTime() > ttl)
         {
+			//Remove the connector from the RcvQueue for TTL on blocking connect.
+			//All other breaks from this loop have already done this through CUDT::processConnectResponse
+			m_pRcvQueue->removeConnector(m_SocketID, true);
+
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             break;
@@ -2972,8 +2976,11 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // We know that the other side was contacted and the other side has sent
     // the handshake message - we know then both cookies. If it's a draw, it's
     // a very rare case of creating identical cookies.
-    if ( m_SrtHsSide == HSD_DRAW )
-        return CONN_REJECT;
+	if (m_SrtHsSide == HSD_DRAW)
+	{
+		m_pRcvQueue->removeConnector(m_SocketID, synchro);
+		return CONN_REJECT;
+	}
 
     UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
 
@@ -2997,6 +3004,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
+		m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3007,6 +3015,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( !prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
+		m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3020,6 +3029,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake.");
+			m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
@@ -3033,6 +3043,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake.");
+			m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
@@ -3154,8 +3165,11 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_ACCEPT: the handshake is done and finished correctly
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
-   if (!m_bConnecting)
-      return CONN_REJECT;
+	if (!m_bConnecting)
+	{
+		m_pRcvQueue->removeConnector(m_SocketID, synchro);
+		return CONN_REJECT;
+	}
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
@@ -3208,6 +3222,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
            << MessageTypeStr(response.getType(), response.getExtendedType()));
+	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3215,12 +3230,14 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        // Handshake data were too small to reach the Handshake structure. Reject.
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
+	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
    HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
    if ( m_ConnRes.m_iReqType > URQ_FAILURE_TYPES )
    {
+	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3229,6 +3246,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
        // and you'll avoid problems.
        LOGC(mglog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
+	   m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3243,6 +3261,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
        {
            LOGC(mglog.Error, log << CONID() << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
+		   m_pRcvQueue->removeConnector(m_SocketID, synchro);
            return CONN_REJECT;
        }
 
