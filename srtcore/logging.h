@@ -358,9 +358,6 @@ public:
     LogDispatcher Error;
     LogDispatcher Fatal;
 
-    template <int LEVEL>
-    LogDispatcher& get();
-
     Logger(int functional_area, LogConfig& config, std::string globprefix = std::string()):
         m_prefix( globprefix == "" ? globprefix : ": " + globprefix),
         m_fa(functional_area),
@@ -372,16 +369,8 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!" + m_prefix, m_config )
     {
     }
-};
 
-template <> inline LogDispatcher& Logger::get<LOG_DEBUG>() { return Debug; }
-template <> inline LogDispatcher& Logger::get<LOG_NOTICE>() { return Note; }
-template <> inline LogDispatcher& Logger::get<LOG_INFO>() { return Note; }
-template <> inline LogDispatcher& Logger::get<LOG_WARNING>() { return Warn; }
-template <> inline LogDispatcher& Logger::get<LOG_ERR>() { return Error; }
-template <> inline LogDispatcher& Logger::get<LOG_CRIT>() { return Fatal; }
-template <> inline LogDispatcher& Logger::get<LOG_ALERT>() { return Fatal; }
-template <> inline LogDispatcher& Logger::get<LOG_EMERG>() { return Fatal; }
+};
 
 inline bool LogDispatcher::CheckEnabled()
 {

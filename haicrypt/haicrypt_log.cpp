@@ -38,12 +38,12 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 // exact signature that is needed here, the problem is though that this would expand the LOGLEVEL
 // parameter, which is also a macro, into the value that the macro designates, which would generate
 // the HaiCrypt_LogF_0 instead of HaiCrypt_LogF_LOG_DEBUG, for example.
-#define HAICRYPT_DEFINE_LOG_DISPATCHER(LOGLEVEL) \
+#define HAICRYPT_DEFINE_LOG_DISPATCHER(LOGLEVEL, dispatcher) \
     int HaiCrypt_LogF_##LOGLEVEL ( const char* file, int line, const char* function, const char* format, ...) \
 { \
     va_list ap; \
     va_start(ap, format); \
-    logging::LogDispatcher& lg = hclog.get<LOGLEVEL>(); \
+    logging::LogDispatcher& lg = hclog.dispatcher; \
     if (!lg.CheckEnabled()) return -1; \
     lg().setloc(file, line, function).vform(format, ap); \
     va_end(ap); \
@@ -51,14 +51,14 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 }
 
 
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_DEBUG);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_NOTICE);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_INFO);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_WARNING);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_ERR);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_CRIT);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_ALERT);
-HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_EMERG);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_DEBUG, Debug);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_NOTICE, Note);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_INFO, Note);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_WARNING, Warn);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_ERR, Error);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_CRIT, Fatal);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_ALERT, Fatal);
+HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_EMERG, Fatal);
 
 
 } // extern "C"
