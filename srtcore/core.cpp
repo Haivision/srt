@@ -2877,7 +2877,21 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: HIGH. Should prevent too quick responses.");
     m_llLastReqTime = now;
     // ID = 0, connection request
-    request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
+    request.m_iID = 0;
+
+    if (m_bRendezvous)
+    {
+        request.m_iID = m_ConnRes.m_iID;
+
+        // If Rendezvous flag is set, assume the request was rendezvous.
+        // There's no mark in the handshake structure to recognize that it's a
+        // rendezvous request, at least when m_iReqType == URQ_CONCLUSION, but
+        // it can be so assumed.
+        if (cst == CONN_CONTINUE)
+            cst = CONN_RENDEZVOUS;
+        // Don't change the state in case of other values that may happen here:
+        // - CONN_REJECT
+    }
 
     if ( cst == CONN_RENDEZVOUS )
     {
@@ -2894,6 +2908,11 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
             LOGC(mglog.Error, log << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
             return false;
         }
+    }
+    else if (cst == CONN_REJECT)
+    {
+            LOGC(mglog.Error, log << "processAsyncConnectRequest: REJECT reported from HS processing, not processing further.");
+            return false;
     }
     else
     {
