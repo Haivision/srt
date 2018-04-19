@@ -1486,7 +1486,22 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     CPacket& pkt = *r_pkt;
     CHandShake& hs = *r_hs;
 
-    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize);
+    // This function might be called before the opposite version was recognized.
+    // Check if the version is exactly 4 because this means that the peer has already
+    // sent something - asynchronously, and usually in rendezvous - and we already know
+    // that the peer is version 4. In this case, agent must behave as HSv4, til the end.
+    if (m_ConnRes.m_iVersion == HS_VERSION_UDT4)
+    {
+        hs.m_iVersion = HS_VERSION_UDT4;
+        if (hs.m_extension)
+        {
+            // Should be impossible
+            LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
+            hs.m_extension = false;
+        }
+    }
+
+    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
@@ -1512,6 +1527,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
             // here, it's already too late (it should've been advertised before getting the first
             // handshake message with KMREQ).
+        }
+        else
+        {
+            hs.m_iType = UDT_DGRAM;
         }
 
         size_t hs_size = pkt.getLength();
@@ -2874,24 +2893,10 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - this->m_StartTime);
 
-    HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: HIGH. Should prevent too quick responses.");
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
     m_llLastReqTime = now;
     // ID = 0, connection request
-    request.m_iID = 0;
-
-    if (m_bRendezvous)
-    {
-        request.m_iID = m_ConnRes.m_iID;
-
-        // If Rendezvous flag is set, assume the request was rendezvous.
-        // There's no mark in the handshake structure to recognize that it's a
-        // rendezvous request, at least when m_iReqType == URQ_CONCLUSION, but
-        // it can be so assumed.
-        if (cst == CONN_CONTINUE)
-            cst = CONN_RENDEZVOUS;
-        // Don't change the state in case of other values that may happen here:
-        // - CONN_REJECT
-    }
+    request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
 
     if ( cst == CONN_RENDEZVOUS )
     {
@@ -7790,6 +7795,15 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
 
    CHandShake hs;
    hs.load_from(packet.m_pcData, packet.getLength());
+
+   // XXX MOST LIKELY this hs should be now copied into m_ConnRes field, which holds
+   // the handshake structure sent from the peer (no matter the role or mode).
+   // This should simplify the createSrtHandshake() function which can this time
+   // simply write the crafted handshake structure into m_ConnReq, which needs no
+   // participation of the local handshake and passing it as a parameter through
+   // newConnection() -> acceptAndRespond() -> createSrtHandshake(). This is also
+   // required as a source of the peer's information used in processing in other
+   // structures.
 
    int32_t cookie_val = bake(addr);
 
