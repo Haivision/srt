@@ -2976,11 +2976,11 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // We know that the other side was contacted and the other side has sent
     // the handshake message - we know then both cookies. If it's a draw, it's
     // a very rare case of creating identical cookies.
-	if (m_SrtHsSide == HSD_DRAW)
-	{
-		m_pRcvQueue->removeConnector(m_SocketID, synchro);
-		return CONN_REJECT;
-	}
+    if (m_SrtHsSide == HSD_DRAW)
+    {
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        return CONN_REJECT;
+    }
 
     UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
 
