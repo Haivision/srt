@@ -3004,7 +3004,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
-		m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3015,7 +3015,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( !prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
-		m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3029,7 +3029,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake.");
-			m_pRcvQueue->removeConnector(m_SocketID, synchro);
+            m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
@@ -3043,7 +3043,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake.");
-			m_pRcvQueue->removeConnector(m_SocketID, synchro);
+            m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
