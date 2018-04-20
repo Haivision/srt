@@ -464,6 +464,7 @@ enum SRT_KM_STATE
 
 enum SRT_EPOLL_OPT
 {
+   SRT_EPOLL_OPT_NONE = 0, // fallback
    // this values are defined same as linux epoll.h
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN = 0x1,
@@ -477,6 +478,14 @@ enum SRT_EPOLL_OPT
 inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
 {
     return SRT_EPOLL_OPT( (int)a1 | (int)a2 );
+}
+
+inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
+{
+    // Using an enum prevents treating int automatically as enum,
+    // requires explicit enum to be passed here, and minimizes the
+    // risk that the right side value will contain multiple flags.
+    return flags & int(eflg);
 }
 #endif
 
