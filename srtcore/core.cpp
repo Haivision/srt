@@ -179,6 +179,7 @@ void CUDT::construct()
     m_bBroken = false;
     m_bPeerHealth = true;
     m_ullLingerExpiration = 0;
+    m_llLastReqTime = 0;
 
     m_lSrtVersion = SRT_DEF_VERSION;
     m_lPeerSrtVersion = 0; // not defined until connected.
@@ -191,6 +192,9 @@ void CUDT::construct()
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
     m_bPeerTLPktDrop = false;
+
+    m_uKmRefreshRatePkt = 0;
+    m_uKmPreAnnouncePkt = 0;
 
     // Initilize mutex and condition variables
     initSynch();
@@ -304,6 +308,9 @@ CUDT::CUDT(const CUDT& ancestor)
 
    m_CryptoSecret = ancestor.m_CryptoSecret;
    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
+
+   m_uKmRefreshRatePkt = ancestor.m_uKmRefreshRatePkt;
+   m_uKmPreAnnouncePkt = ancestor.m_uKmPreAnnouncePkt;
 
    m_pCache = ancestor.m_pCache;
 
@@ -763,6 +770,39 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
       default:
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+      }
+      break;
+
+   case SRTO_KMREFRESHRATE:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      // If you first change the KMREFRESHRATE, KMPREANNOUNCE
+      // will be set to the maximum allowed value
+      m_uKmRefreshRatePkt = *(int*)optval;
+      if (m_uKmPreAnnouncePkt == 0 || m_uKmPreAnnouncePkt > (m_uKmRefreshRatePkt-1)/2)
+      {
+          m_uKmPreAnnouncePkt = (m_uKmRefreshRatePkt-1)/2;
+          LOGC(mglog.Warn, log << "SRTO_KMREFRESHRATE=0x"
+                  << hex << m_uKmRefreshRatePkt << ": setting SRTO_KMPREANNOUNCE=0x"
+                  << hex << m_uKmPreAnnouncePkt);
+      }
+      break;
+
+   case SRTO_KMPREANNOUNCE:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+      {
+          int val = *(int*)optval;
+          int kmref = m_uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_uKmRefreshRatePkt;
+          if (val > (kmref-1)/2)
+          {
+              LOGC(mglog.Error, log << "SRTO_KMPREANNOUNCE=0x" << hex << val
+                      << " exceeds KmRefresh/2, 0x" << ((kmref-1)/2) << " - OPTION REJECTED.");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          m_uKmPreAnnouncePkt = val;
       }
       break;
 

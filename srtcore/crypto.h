@@ -59,6 +59,11 @@ public:
     SRT_KM_STATE m_RcvKmState;         //Receiver Km State (informed by peer)
 
 private:
+    // Partial haicrypt configuration, consider
+    // putting the whole HaiCrypt_Cfg object here.
+    int m_KmRefreshRatePkt;
+    int m_KmPreAnnouncePkt;
+
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
     uint64_t        m_SndKmLastTime;
