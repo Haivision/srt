@@ -31,13 +31,87 @@ written by
 
 #include "hcrypt.h"
 
-int HaiCrypt_SetLogLevel(int level, int logfa)
+#if ENABLE_HAICRYPT_LOGGING
+
+static const char* DumpCfgFlags(int flags)
 {
-    // Oh well. Implement some day.
-    (void)logfa;
-    (void)level;
-    return 0;
+    static char buf[4096];
+
+    static struct { int flg; const char* desc; } flgtable [] = {
+#define HCRYPTF(name) { HAICRYPT_CFG_F_##name, #name }
+        HCRYPTF(TX),
+        HCRYPTF(CRYPTO),
+        HCRYPTF(FEC)
+#undef HCRYPTF
+    };
+    size_t flgtable_size = sizeof(flgtable)/sizeof(flgtable[0]);
+    size_t i;
+
+    buf[0] = 0;
+    char* pbuf = stpcpy(buf, "{");
+    const char* sep = "";
+    const char* sep_bar = " | ";
+    for (i = 0; i < flgtable_size; ++i)
+    {
+        if ( (flgtable[i].flg & flags) != 0 )
+        {
+            pbuf = stpcpy(pbuf, sep);
+            pbuf = stpcpy(pbuf, flgtable[i].desc);
+            sep = sep_bar;
+        }
+    }
+    strcpy(pbuf, "}");
+
+    return buf;
 }
+
+void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg)
+{
+    char buf_secret[1024];
+    char* pbuf = buf_secret + snprintf(buf_secret, 1024, "{tp=%s len=%d pwd=",
+            (cfg->secret.typ == 1 ? "PSK" : cfg->secret.typ == 2 ? "PWD" : "???"),
+            (int)cfg->secret.len);
+    size_t maxlen = 1024 - (pbuf - buf_secret) - 5;
+    if (cfg->secret.len > maxlen)
+    {
+        memcpy(pbuf, (char*)cfg->secret.str, maxlen);
+        strcpy(pbuf+maxlen, "...");
+        pbuf = pbuf + maxlen + 3;
+    }
+    else
+    {
+        memcpy(pbuf, cfg->secret.str, cfg->secret.len);
+        pbuf += cfg->secret.len;
+    }
+    strcpy(pbuf, "}");
+
+    HCRYPT_LOG(LOG_DEBUG, "CFG DUMP: flags=%s xport=%s cipher=%s key_len=%d data_max_len=%d\n",
+            // flags
+            DumpCfgFlags(cfg->flags),
+            // xport
+            (cfg->xport == HAICRYPT_XPT_SRT ? "SRT" : "INVALID"),
+            // cipher
+            (cfg->cipher == HaiCryptCipher_OpenSSL_EVP_CTR() ? "OSSL-EVP-CTR":
+             cfg->cipher == HaiCryptCipher_OpenSSL_AES() ? "OSSL-AES":
+             // This below is used as the only one when Nettle is used. When OpenSSL
+             // is used, one of the above will trigger, and the one below will then never trigger.
+             cfg->cipher == HaiCryptCipher_Get_Instance() ? "Nettle-AES":
+             "UNKNOWN"),
+            // key_len
+            cfg->key_len,
+            // data_max_len
+            cfg->data_max_len
+            );
+    HCRYPT_LOG(LOG_DEBUG, "CFG DUMP: txperiod=%dms kmrefresh=%d kmpreannounce=%d secret %s\n",
+            cfg->km_tx_period_ms,
+            cfg->km_refresh_rate_pkt,
+            cfg->km_pre_announce_pkt,
+            buf_secret);
+
+}
+#else
+#define HaiCrypt_DumpConfig(x) (void)0
+#endif
 
 
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
@@ -62,22 +136,22 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
     } else if ((16 != cfg->key_len)	/* SEK length */
             &&  (24 != cfg->key_len)
             &&  (32 != cfg->key_len)) {
-        HCRYPT_LOG(LOG_ERR, "invalid key length (%zd)\n", cfg->key_len);
+        HCRYPT_LOG(LOG_ERR, "invalid key length (%d). Expected: 16, 24, 32\n", (int)cfg->key_len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PASSPHRASE == cfg->secret.typ)
             &&  ((0 == cfg->secret.len) || (sizeof(cfg->secret.str) < cfg->secret.len))) { /* KEK length */
-        HCRYPT_LOG(LOG_ERR, "invalid secret passphrase length (%zd)\n", cfg->secret.len);
+        HCRYPT_LOG(LOG_ERR, "invalid secret passphrase length (%d)\n", (int)cfg->secret.len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
             &&  (16 != cfg->key_len)	/* SEK length */
             &&  (24 != cfg->key_len)
             &&  (32 != cfg->key_len)) {
-        HCRYPT_LOG(LOG_ERR, "invalid pre-shared secret length (%zd)\n", cfg->secret.len);
+        HCRYPT_LOG(LOG_ERR, "invalid pre-shared secret length (%d)\n", (int)cfg->secret.len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
             &&  (cfg->key_len > cfg->secret.len)) {
-        HCRYPT_LOG(LOG_ERR, "preshared secret length (%zd) smaller than key length (%zd)\n", 
-                cfg->secret.len, cfg->key_len);
+        HCRYPT_LOG(LOG_ERR, "preshared secret length (%d) smaller than key length (%d)\n", 
+                (int)cfg->secret.len, (int)cfg->key_len);
         return(-1);
     } else if (NULL == cfg->cipher) {
         HCRYPT_LOG(LOG_ERR, "%s\n", "no cipher specified");
@@ -86,6 +160,8 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
         HCRYPT_LOG(LOG_ERR, "%s\n", "no data_max_len specified");
         return(-1);
     }
+
+    HaiCrypt_DumpConfig(cfg);
 
     cipher = (hcrypt_Cipher *)cfg->cipher;
     tx = HAICRYPT_CFG_F_TX & cfg->flags;
