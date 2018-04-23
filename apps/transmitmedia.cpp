@@ -37,6 +37,8 @@ bool clear_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+bool printformat_json = false;
+bool printformat_default = false;
 
 class FileSource: public Source
 {
@@ -103,17 +105,57 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 template <class PerfMonType>
 void PrintSrtStats(int sid, const PerfMonType& mon)
 {
-    cerr << "======= SRT STATS: sid=" << sid << endl;
-    cerr << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
-    cerr << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
-    cerr << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
-    cerr << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
-    cerr << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
-    cerr << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
-    cerr << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
-    cerr << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-    cerr << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
-    cerr << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+    if (printformat_json)
+    {
+        cerr << "{";
+        cerr << "\"sid\":" << sid << ",";
+        cerr << "\"time\":" << mon.msTimeStamp << ",";
+        cerr << "\"window\":{";
+        cerr << "\"flow\":" << mon.pktFlowWindow << ",";
+        cerr << "\"congestion\":" << mon.pktCongestionWindow << ",";    
+        cerr << "\"flight\":" << mon.pktFlightSize;    
+        cerr << "},";
+        cerr << "\"link\":{";
+        cerr << "\"rtt\":" << mon.msRTT << ",";
+        cerr << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
+        cerr << "\"maxBandwidth\":" << mon.mbpsMaxBW;
+        cerr << "},";
+        cerr << "\"send\":{";
+        cerr << "\"packets\":" << mon.pktSent << ",";
+        cerr << "\"packetsLost\":" << mon.pktSndLoss << ",";
+        cerr << "\"packetsDropped\":" << mon.pktSndDrop << ",";
+        cerr << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
+        cerr << "\"bytes\":" << mon.byteSent << ",";
+        cerr << "\"bytesDropped\":" << mon.byteSndDrop << ",";
+        cerr << "\"mbitRate\":" << mon.mbpsSendRate;
+        cerr << "},";
+        cerr << "\"recv\": {";
+        cerr << "\"packets\":" << mon.pktRecv << ",";
+        cerr << "\"packetsLost\":" << mon.pktRcvLoss << ",";
+        cerr << "\"packetsDopped\":" << mon.pktRcvDrop << ",";
+        cerr << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
+        cerr << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        cerr << "\"bytes\":" << mon.byteRecv << ",";
+        cerr << "\"bytesLost\":" << mon.byteRcvLoss << ",";
+        cerr << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
+        cerr << "\"mbitRate\":" << mon.mbpsRecvRate;
+        cerr << "}";
+        cerr << "}" << endl;
+    }
+    else
+    {
+        cerr << "======= SRT STATS: sid=" << sid << endl;
+        cerr << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
+        cerr << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
+        cerr << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
+        cerr << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        cerr << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
+        cerr << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+        cerr << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+        cerr << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+        cerr << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+        cerr << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+    }
 }
 
 
@@ -602,7 +644,11 @@ bool SrtTarget::Write(const bytevector& data)
     clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
-        cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+        if (printformat_json) {
+            cerr << "{\"bandwidth\":" << perf.mbpsBandwidth << '}' << endl;
+        } else {
+            cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+        }
     }
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {

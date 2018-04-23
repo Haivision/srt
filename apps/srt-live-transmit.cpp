@@ -207,6 +207,22 @@ int main( int argc, char** argv )
     bool internal_log = Option("no", "loginternal") != "no";
     bool autoreconnect = Option("yes", "a", "auto") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
+    
+    // Print format
+    string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        printformat_json = true;
+    }
+    else if (pf == "default")
+    {
+        printformat_default = true;
+    }
+    else
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
 
     try
     {
