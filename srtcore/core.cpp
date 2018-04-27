@@ -1526,7 +1526,60 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     CPacket& pkt = *r_pkt;
     CHandShake& hs = *r_hs;
 
-    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize);
+    // This function might be called before the opposite version was recognized.
+    // Check if the version is exactly 4 because this means that the peer has already
+    // sent something - asynchronously, and usually in rendezvous - and we already know
+    // that the peer is version 4. In this case, agent must behave as HSv4, til the end.
+    if (m_ConnRes.m_iVersion == HS_VERSION_UDT4)
+    {
+        hs.m_iVersion = HS_VERSION_UDT4;
+        hs.m_iType = UDT_DGRAM;
+        if (hs.m_extension)
+        {
+            // Should be impossible
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
+            hs.m_extension = false;
+        }
+    }
+    else
+    {
+        hs.m_iType = 0; // Prepare it for flags
+    }
+
+    HLOGC(mglog.Debug, log << "createSrtHandshake: buf size=" << pkt.getLength()
+            << " hsx=" << MessageTypeStr(UMSG_EXT, srths_cmd)
+            << " kmx=" << MessageTypeStr(UMSG_EXT, srtkm_cmd)
+            << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
+
+    // Once you are certain that the version is HSv5, set the enc type flags
+    // to advertise pbkeylen. Otherwise make sure that the old interpretation
+    // will correctly pick up the type field. PBKEYLEN should be advertized
+    // regardless of what URQ stage the handshake is (note that in case of rendezvous
+    // CONCLUSION might be the FIRST MESSAGE EVER RECEIVED by a party).
+    if (hs.m_iVersion > HS_VERSION_UDT4)
+    {
+        // The situation when this function is called without requested extensions
+        // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
+        // In this case for version 5 just clear the m_iType field, as it has
+        // different meaning in HSv5 and contains extension flags.
+        //
+        // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
+        // in the SRT_HSTYPE_ENCFLAGS field.
+        hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+
+        // Note: This is required only when sending a HS message without SRT extensions.
+        // When this is to be sent with SRT extensions, then KMREQ will be attached here
+        // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
+        // here, it's already too late (it should've been advertised before getting the first
+        // handshake message with KMREQ).
+    }
+    else
+    {
+        hs.m_iType = UDT_DGRAM;
+    }
+
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
@@ -1534,41 +1587,28 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         // Serialize only the basic handshake, if this is predicted for
         // Hsv4 peer or this is URQ_INDUCTION or URQ_WAVEAHAND.
-        if (hs.m_iVersion > HS_VERSION_UDT4)
-        {
-            // The situation when this function is called without requested extensions
-            // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
-            // In this case for version 5 just clear the m_iType field, as it has
-            // different meaning in HSv5 and contains extension flags.
-            //
-            // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
-            // in the SRT_HSTYPE_ENCFLAGS field.
-            hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
-            bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
-            HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
-
-            // Note: This is required only when sending a HS message without SRT extensions.
-            // When this is to be sent with SRT extensions, then KMREQ will be attached here
-            // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
-            // here, it's already too late (it should've been advertised before getting the first
-            // handshake message with KMREQ).
-        }
-
         size_t hs_size = pkt.getLength();
         hs.store_to(pkt.m_pcData, Ref(hs_size));
         pkt.setLength(hs_size);
-        HLOGC(mglog.Debug, log << "createSrtHandshake: (no HSREQ/KMREQ ext) data: " << hs.show());
+        HLOGC(mglog.Debug, log << "createSrtHandshake: (no ext) size=" << hs_size << " data: " << hs.show());
         return true;
     }
 
-    string logext = "HSREQ";
+    // Sanity check, applies to HSv5 only cases.
+    if (srths_cmd == SRT_CMD_HSREQ && m_SrtHsSide == HSD_RESPONDER)
+    {
+        LOGC(mglog.Fatal, log << "IPE: SRT_CMD_HSREQ was requested to be sent in HSv5 by an INITIATOR side!");
+        return false; // should cause rejection
+    }
+
+    string logext = "HSX";
 
     bool have_kmreq = false;
     bool have_sid = false;
     bool have_smoother = false;
 
     // Install the SRT extensions
-    hs.m_iType = CHandShake::HS_EXT_HSREQ;
+    hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
     if ( srths_cmd == SRT_CMD_HSREQ )
     {
@@ -1599,7 +1639,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         have_kmreq = true;
         hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-        logext += ",KMREQ";
+        logext += ",KMX";
     }
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext << ") data: " << hs.show());
@@ -1789,7 +1829,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     pkt.setLength((ra_size + offset) * sizeof(int32_t));
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: filled HSv5 handshake flags: "
-        << hs.m_iType << " length: " << pkt.getLength() << " bytes");
+        << CHandShake::ExtensionFlagStr(hs.m_iType) << " length: " << pkt.getLength() << " bytes");
 
     return true;
 }
@@ -2700,6 +2740,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // asynchronous connect, return immediately
     if (!m_bSynRecving)
     {
+        HLOGC(mglog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Deferring the process to RcvQ:worker");
         return;
     }
 
@@ -3542,7 +3583,8 @@ void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
 bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> needs_extension)
 {
     UDTRequestType req = m_ConnRes.m_iReqType;
-    bool has_extension = !!m_ConnRes.m_iType; // it holds flags, if no flags, there are no extensions.
+    int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+    bool has_extension = !!hs_flags; // it holds flags, if no flags, there are no extensions.
 
     const HandshakeSide& hsd = m_SrtHsSide;
     // Note important possibilities that are considered here:
@@ -3664,7 +3706,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 {
                     // WINNER should get a response with HSRSP, otherwise this is kinda empty conclusion.
                     // If no HSRSP attached, stay in this state.
-                    if (m_ConnRes.m_iType == 0)
+                    if (hs_flags == 0)
                     {
                         HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
                             "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
@@ -3820,7 +3862,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // the agent exchanges empty conclusion messages with the peer, simultaneously
                 // exchanging HSREQ-HSRSP conclusion messages. Check if THIS message contained
                 // HSREQ, and set responding HSRSP in that case.
-                if ( m_ConnRes.m_iType == 0 )
+                if ( hs_flags == 0 )
                 {
                     HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
                         "{INITIATOR}[INITIATED] awaits AGREEMENT, "
@@ -6664,7 +6706,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          if ( req.m_iVersion > HS_VERSION_UDT4 )
          {
              initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-             if ( req.m_iType != 0 ) // has SRT extensions
+             int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+             if ( hs_flags != 0 ) // has SRT extensions
              {
                  HLOGC(mglog.Debug, log << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType) << " WITH SRT ext");
                  have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
