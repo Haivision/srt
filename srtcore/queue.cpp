@@ -1128,7 +1128,8 @@ void* CRcvQueue::worker(void* param)
 
        if ( have_received )
        {
-           HLOGC(mglog.Debug, log << "worker: updateConnStatus (after received packet from the party)");
+           HLOGC(mglog.Debug, log << "worker: RECEIVED PACKET --> updateConnStatus. cst=" << ConnectStatusStr(cst)
+                   << " id=" << id << " pkt-payload-size=" << unit->m_Packet.getLength());
        }
 
        // Check connection requests status for all sockets in the RendezvousQueue.
@@ -1390,6 +1391,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
       {
+         //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: nothing to be received for id=" << id << " -- setting size=-1");
          packet.setLength(-1);
          return -1;
       }
@@ -1400,6 +1402,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (packet.getLength() < newpkt->getLength())
    {
+      //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: IPE: spare packet for id=" << id << " size="
+      //         << newpkt->getLength() << " TOO SMALL for incoming size=" << packet.getLength() << " -- SETTING -1 size");
       packet.setLength(-1);
       return -1;
    }
@@ -1449,6 +1453,7 @@ void CRcvQueue::removeListener(const CUDT* u)
 
 void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
+   HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << ttl);
    m_pRendezvousQueue->insert(id, u, ipv, addr, ttl);
 }
 
