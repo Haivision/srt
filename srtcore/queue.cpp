@@ -868,10 +868,10 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
 
 void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& response)
 {
+   CGuard vg(m_RIDVectorLock);
+
    if (m_lRendezvousID.empty())
       return;
-
-   CGuard vg(m_RIDVectorLock);
 
    int debug_nupd = 0;
    int debug_nrun = 0;
@@ -886,15 +886,29 @@ void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& respo
        // REMOVE the currently processed element. When the element was removed,
        // the iterator value for the next iteration will be taken from erase()'s result.
 
-       ++debug_nrun;
-      // avoid sending too many requests, at most 1 request per 250ms
-      uint64_t now = CTimer::getTime();
+      // CONN_AGAIN happens in case when the last attempt to read a packet from the UDP
+      // socket has read nothing. In this case it would be a repeated update, while
+      // still waiting for a response from the peer. When we have any other state here
+      // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
+      // just arrived in this iteration), send the response immediately.
       uint64_t then = i->m_pUDT->m_llLastReqTime;
-      bool nowstime = (now - then) > 250000;
+      uint64_t now = CTimer::getTime();
+      bool nowstime = true;
+      if (cst == CONN_AGAIN)
+      {
+          // If no packet has been received from the peer,
+          // avoid sending too many requests, at most 1 request per 250ms
+          HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+                  <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+          nowstime = (now - then) > 250000;
+      }
+      else
+      {
+          HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+      }
 
-      HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-          << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
 
+       ++debug_nrun;
       if (nowstime)
       {
           // XXX This guy... has created a loop that rolls in infinity without any
@@ -926,15 +940,25 @@ void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& respo
 
          // This queue is used only in case of Rendezvous or Async mode caller-listener.
          // Synchronous connection requests are handled in startConnect() completely.
-         // XXX Most likely this is just an ASYNC ONLY procedure, not even needed for
-         // rendezvous (blocking rendezvous is also managed in startConnect).
-         // Don't run this when CONN_AGAIN because this means that no unit has been read
-         // from the peer ever.
-         if (cst != CONN_AGAIN && (i->m_pUDT->m_bRendezvous || !i->m_pUDT->m_bSynRecving))
+         //if (cst != CONN_AGAIN && (i->m_pUDT->m_bRendezvous || !i->m_pUDT->m_bSynRecving))
+         if (!i->m_pUDT->m_bSynRecving)
          {
              ++debug_nupd;
              list<CRL>::iterator i_next = i;
              ++i_next;
+
+             // IMPORTANT INFORMATION.
+             // In the legacy UDT code there was no attempt to interpret any incoming data.
+             // All data from the incoming packet were considered to be already deployed into
+             // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
+             // Therefore this procedure did only one thing: craft a new handshake packet and send it.
+             // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
+             // and the `response` packet may sometimes contain no data, which can be recognized by
+             // `response.getLength() == -1u` condition.
+             //
+             // In the below call, only the underlying `processRendezvous` function will be attempting
+             // to interpret these data (for caller-listener this was already done by `processConnectRequest`
+             // before calling this function), and it checks for the data presence.
              if (i->m_pUDT->processAsyncConnectRequest(cst, response, i->m_pPeerAddr))
              {
                  // This has been processed and most likely removed.
@@ -1037,7 +1061,7 @@ void* CRcvQueue::worker(void* param)
 {
    CRcvQueue* self = (CRcvQueue*)param;
    sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
-   int32_t id;
+   int32_t id = 0;
 
    THREAD_STATE_INIT("SRT:RcvQ:worker");
 
