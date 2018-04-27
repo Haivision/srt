@@ -23,6 +23,9 @@ HAICRYPT_DECLARE_LOG_DISPATCHER(LOG_EMERG);
 #define HCRYPT_LOG_EXIT()
 #define HCRYPT_LOG(lvl, fmt, ...) HaiCrypt_LogF_##lvl (__FILE__, __LINE__, __FUNCTION__, fmt, __VA_ARGS__)
 
+#if ENABLE_HAICRYPT_LOGGING == 2
+#define HCRYPT_DEV 1
+#endif
 
 #ifdef __cplusplus
 }
