@@ -443,7 +443,9 @@ m_SocketID(id),
 m_iSndKmKeyLen(0),
 m_iRcvKmKeyLen(0),
 m_SndKmState(SRT_KM_S_UNSECURED),
-m_RcvKmState(SRT_KM_S_UNSECURED)
+m_RcvKmState(SRT_KM_S_UNSECURED),
+m_KmRefreshRatePkt(0),
+m_KmPreAnnouncePkt(0)
 {
 
     m_KmSecret.len = 0;
@@ -474,6 +476,9 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional)
 
     // Set security-pending state, if a password was set.
     m_SndKmState = (m_iSndKmKeyLen > 0) ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
+
+    m_KmPreAnnouncePkt = m_parent->m_uKmPreAnnouncePkt;
+    m_KmRefreshRatePkt = m_parent->m_uKmRefreshRatePkt;
 
     if ( side == HSD_INITIATOR )
     {
@@ -585,8 +590,8 @@ bool CCryptoControl::createCryptoCtx(ref_t<HaiCrypt_Handle> hCrypto, size_t keyl
     crypto_cfg.key_len = (size_t)keylen;
     crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
     crypto_cfg.km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;
-    crypto_cfg.km_refresh_rate_pkt = HAICRYPT_DEF_KM_REFRESH_RATE;
-    crypto_cfg.km_pre_announce_pkt = SRT_CRYPT_KM_PRE_ANNOUNCE;
+    crypto_cfg.km_refresh_rate_pkt = m_KmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_KmRefreshRatePkt;
+    crypto_cfg.km_pre_announce_pkt = m_KmPreAnnouncePkt == 0 ? SRT_CRYPT_KM_PRE_ANNOUNCE : m_KmPreAnnouncePkt;
     crypto_cfg.secret = m_KmSecret;
     //memcpy(&crypto_cfg.secret, &m_KmSecret, sizeof(crypto_cfg.secret));
 

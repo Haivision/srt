@@ -769,6 +769,12 @@ private: // Timers
 
     void checkTimers();
 
+public: // For the use of CCryptoControl
+    // HaiCrypt configuration
+    unsigned int m_uKmRefreshRatePkt;
+    unsigned int m_uKmPreAnnouncePkt;
+
+
 private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;			// packet sending queue
     CRcvQueue* m_pRcvQueue;			// packet receiving queue

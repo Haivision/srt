@@ -736,6 +736,10 @@ if ( ENABLE_CXX11 )
 			srt_add_testprogram(srt-test-file)
 			srt_make_application(srt-test-file)
 		endif()
+
+		srt_add_testprogram(srt-test-relay)
+		srt_make_application(srt-test-relay)
+		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 endif()
