@@ -91,7 +91,6 @@ protected:
         ConnectClient(host, port);
     }
 
-
     virtual ~SrtCommon();
 };
 
