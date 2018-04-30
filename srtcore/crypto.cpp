@@ -363,7 +363,7 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen)
         return;
     }
 
-    uint64_t now;
+    uint64_t now = 0;
     /*
      * Crypto Key Distribution to peer:
      * If...
@@ -387,6 +387,12 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen)
                 m_parent->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen/sizeof(uint32_t));
             }
         }
+    }
+
+    if (now == 0)
+    {
+        HLOGC(mglog.Debug, log << "sendKeysToPeer: NO KEYS RESENT, will " <<
+                (regen ? "" : "NOT ") << "regenerate.");
     }
 
     if (regen)
@@ -511,7 +517,7 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional)
     m_RcvKmState = SRT_KM_S_UNSECURED;
 
     // Set security-pending state, if a password was set.
-    m_SndKmState = (m_iSndKmKeyLen > 0) ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
+    m_SndKmState = hasPassphrase() ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
 
     m_KmPreAnnouncePkt = m_parent->m_uKmPreAnnouncePkt;
     m_KmRefreshRatePkt = m_parent->m_uKmRefreshRatePkt;
