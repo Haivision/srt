@@ -249,17 +249,7 @@ public:
     static const int32_t HS_EXT_KMREQ = BIT(1);
     static const int32_t HS_EXT_CONFIG  = BIT(2);
 
-    static std::string ExtensionFlagStr(int32_t fl)
-    {
-        std::string output = "";
-        if ( fl & HS_EXT_HSREQ )
-            output += " hsreq";
-        if ( fl & HS_EXT_KMREQ )
-            output += " kmreq";
-        if ( fl & HS_EXT_CONFIG )
-            output += " config";
-        return output;
-    }
+    static std::string ExtensionFlagStr(int32_t fl);
 
     // Applicable only when m_iVersion == HS_VERSION_SRT1
     int32_t flags() { return m_iType; }
