@@ -4404,11 +4404,22 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
 
 void CUDT::checkSndTimers(Whether2RegenKm regen)
 {
-    if (m_SrtHsSide == HSD_RESPONDER)
-        return;
+    if (m_SrtHsSide == HSD_INITIATOR)
+    {
+        // Legacy method for HSREQ, only if initiator.
+        considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
+    }
 
-    considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
-    m_pCryptoControl->sendKeysToPeer(regen);
+    // This must be done always on sender, regardless of HS side.
+    // When regen == DONT_REGEN_KM, it's a handshake call, so do
+    // it only for initiator.
+    if (regen || m_SrtHsSide == HSD_INITIATOR)
+    {
+        // Don't call this function in "non-regen mode" (sending only),
+        // if this side is RESPONDER. This shall be called only with
+        // regeneration request, which is required by the sender.
+        m_pCryptoControl->sendKeysToPeer(regen);
+    }
 }
 
 void CUDT::addressAndSend(CPacket& pkt)
