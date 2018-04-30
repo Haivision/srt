@@ -335,9 +335,9 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 
 	ASSERT(NULL != ctx);
 
-    HCRYPT_LOG(LOG_DEBUG, "KM[%d] KEY STATUS: pkt_cnt=%u against ref.rate=%u and pre.announce=%u\n",
-                              (ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2,
-                              ctx->pkt_cnt, crypto->km.refresh_rate, crypto->km.pre_announce);
+	HCRYPT_LOG(LOG_DEBUG, "KM[%d] KEY STATUS: pkt_cnt=%u against ref.rate=%u and pre.announce=%u\n",
+			(ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2,
+			ctx->pkt_cnt, crypto->km.refresh_rate, crypto->km.pre_announce);
 
 	if ((ctx->pkt_cnt > crypto->km.refresh_rate)
 	||  (ctx->pkt_cnt == 0)) {	//rolled over
@@ -387,7 +387,7 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 			if (crypto->ctx_pair[0].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[0].flags |= HCRYPT_CTX_F_TTSEND;
 			if (crypto->ctx_pair[1].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[1].flags |= HCRYPT_CTX_F_TTSEND;
 		}
-    }
+	}
 
 	return(0);
 }
