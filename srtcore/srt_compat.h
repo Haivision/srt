@@ -20,23 +20,7 @@ written by
 #include <stddef.h>
 #include <time.h>
 
-#ifdef WIN32
-   #ifndef __MINGW__
-      #ifdef SRT_DYNAMIC
-         #ifdef SRT_EXPORTS
-            #define SRT_API __declspec(dllexport)
-         #else
-            #define SRT_API __declspec(dllimport)
-         #endif
-      #else
-         #define SRT_API
-      #endif
-   #else
-      #define SRT_API
-   #endif
-#else
-   #define SRT_API __attribute__ ((visibility("default")))
-#endif
+#include "srt.h"
 
 #ifdef WIN32
    // https://msdn.microsoft.com/en-us/library/tcxf1dw6.aspx

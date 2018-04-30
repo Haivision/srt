@@ -36,7 +36,14 @@ written by
 
 
 #ifdef WIN32
-   #ifndef __MINGW__
+
+      /* Obsolete way to define MINGW */
+      #ifndef __MINGW__
+        #if defined(__MINGW32__) || defined(__MINGW64__)
+          #define __MINGW__ 1
+        #endif
+      #endif
+
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
       typedef __int64 int64_t;
@@ -48,18 +55,15 @@ written by
          typedef __int64 uint64_t;
       #endif
 
-	#ifdef SRT_DYNAMIC
-      #ifdef SRT_EXPORTS
-         #define SRT_API __declspec(dllexport)
+      #ifdef SRT_DYNAMIC
+        #ifdef SRT_EXPORTS
+          #define SRT_API __declspec(dllexport)
+        #elif !defined(__MINGW__)
+          #define SRT_API __declspec(dllimport)
+        #endif
       #else
-         #define SRT_API __declspec(dllimport)
+        #define SRT_API
       #endif
-	#else
-		#define SRT_API
-	#endif
-   #else
-      #define SRT_API
-   #endif
 #else
    #define SRT_API __attribute__ ((visibility("default")))
 #endif
