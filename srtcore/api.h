@@ -271,13 +271,16 @@ inline std::string SockaddrToString(const sockaddr* sadr)
     std::ostringstream output;
     char hostbuf[1024];
 
-#if ENABLE_GETNAMEINFO
+#if ENABLE_GETNAMEINFO || defined(WIN32)
     if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
     {
         output << hostbuf;
     }
+#ifndef WIN32
     else
 #endif
+#endif
+#ifndef WIN32
     {
         if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
         {
@@ -285,6 +288,7 @@ inline std::string SockaddrToString(const sockaddr* sadr)
         }
         output << hostbuf;
     }
+#endif
 
     output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
     return output.str();
