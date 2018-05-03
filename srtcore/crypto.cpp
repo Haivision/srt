@@ -93,7 +93,7 @@ void CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
 
 void CCryptoControl::createFakeSndContext()
 {
-    if (m_iSndKmKeyLen)
+    if (!m_iSndKmKeyLen)
         m_iSndKmKeyLen = 16;
 
     if (!createCryptoCtx(Ref(m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX))
