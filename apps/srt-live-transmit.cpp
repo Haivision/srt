@@ -181,6 +181,7 @@ int main( int argc, char** argv )
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
+        cerr << "\t-pf:<format> - printformat (json or default)\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
         cerr << "\t-q - quiet mode (default no)\n";
         cerr << "\t-v - verbose mode (default no)\n";
@@ -214,11 +215,7 @@ int main( int argc, char** argv )
     {
         printformat_json = true;
     }
-    else if (pf == "default")
-    {
-        printformat_default = true;
-    }
-    else
+    else if (pf != "default")
     {
         cerr << "ERROR: Unsupported print format: " << pf << endl;
         return 1;

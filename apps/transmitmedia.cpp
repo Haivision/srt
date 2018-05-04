@@ -38,7 +38,6 @@ unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 bool printformat_json = false;
-bool printformat_default = false;
 
 class FileSource: public Source
 {
