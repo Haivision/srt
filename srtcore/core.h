@@ -305,7 +305,7 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
 
 
     // This function works in case of HSv5 rendezvous. It changes the state
@@ -317,28 +317,28 @@ private:
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
     void rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> needs_extension, ref_t<bool> needs_hsrsp);
     void cookieContest();
-    EConnectStatus processRendezvous(ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr* serv_addr, bool synchro);
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
-    EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro);
+    SRT_ATR_NODISCARD EConnectStatus processRendezvous(ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr* serv_addr, bool synchro);
+    SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro);
     void applyResponseSettings();
-    EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
-    bool processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr);
+    SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
-    size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen, int hs_version);
-    size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
-    size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int hs_version);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen, int hs_version);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int hs_version);
 
-    bool createSrtHandshake(ref_t<CPacket> reqpkt, ref_t<CHandShake> hs,
+    SRT_ATR_NODISCARD bool createSrtHandshake(ref_t<CPacket> reqpkt, ref_t<CHandShake> hs,
             int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen);
 
-    size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
+    SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
-    bool processSrtMsg(const CPacket *ctrlpkt);
-    int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
-    int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
-    bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
+    SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -362,7 +362,7 @@ private:
     /// @param len [in] The size of the data block.
     /// @return Actual size of data sent.
 
-    int send(const char* data, int len)
+    SRT_ATR_NODISCARD int send(const char* data, int len)
     {
         return sendmsg(data, len, -1, false, 0);
     }
@@ -372,7 +372,7 @@ private:
     /// @param len [in] The desired size of data to be received.
     /// @return Actual size of data received.
 
-    int recv(char* data, int len);
+    SRT_ATR_NODISCARD int recv(char* data, int len);
 
     /// send a message of a memory block "data" with size of "len".
     /// @param data [out] data received.
@@ -382,20 +382,20 @@ private:
     /// @param srctime [in] Time when the data were ready to send.
     /// @return Actual size of data sent.
 
-    int sendmsg(const char* data, int len, int ttl, bool inorder, uint64_t srctime);
+    SRT_ATR_NODISCARD int sendmsg(const char* data, int len, int ttl, bool inorder, uint64_t srctime);
     /// Receive a message to buffer "data".
     /// @param data [out] data received.
     /// @param len [in] size of the buffer.
     /// @return Actual size of data received.
 
-    int sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> m);
 
-    int recvmsg(char* data, int len, uint64_t& srctime);
+    SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
 
-    int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
 
-    int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m);
-    int receiveBuffer(char* data, int len);
+    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
     /// @param ifs [in] The input file stream.
@@ -404,7 +404,7 @@ private:
     /// @param block [in] size of block per read from disk
     /// @return Actual size of data sent.
 
-    int64_t sendfile(std::fstream& ifs, int64_t& offset, int64_t size, int block = 366000);
+    SRT_ATR_NODISCARD int64_t sendfile(std::fstream& ifs, int64_t& offset, int64_t size, int block = 366000);
 
     /// Request UDT to receive data into a file described as "fd", starting from "offset", with expected size of "size".
     /// @param ofs [out] The output file stream.
@@ -413,7 +413,7 @@ private:
     /// @param block [in] size of block per write to disk
     /// @return Actual size of data received.
 
-    int64_t recvfile(std::fstream& ofs, int64_t& offset, int64_t size, int block = 7320000);
+    SRT_ATR_NODISCARD int64_t recvfile(std::fstream& ofs, int64_t& offset, int64_t size, int block = 7320000);
 
     /// Configure UDT options.
     /// @param optName [in] The enum name of a UDT option.
