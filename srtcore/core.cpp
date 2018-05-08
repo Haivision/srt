@@ -1703,10 +1703,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             for (size_t ki = 0; ki < 2; ++ki)
             {
                 // Skip those that have expired
-                if ( !m_pCryptoControl->getKmMsg_needSend(ki) )
+                if ( !m_pCryptoControl->getKmMsg_needSend(ki, false) )
                     continue;
 
-                m_pCryptoControl->getKmMsg_markSent(ki);
+                m_pCryptoControl->getKmMsg_markSent(ki, false);
 
                 offset += ra_size;
 
