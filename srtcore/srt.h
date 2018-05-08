@@ -70,12 +70,23 @@ written by
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
 
-#ifdef __GNUG__
+// When compiling in C++17 mode, use the standard C++17 attributes
+// (out of these, only [[deprecated]] is supported in C++14, so
+// for all lesser standard use compiler-specific attributes).
+#if defined(__cplusplus) && __cplusplus > 201406
+#define SRT_ATR_UNUSED [[maybe_unused]]
+#define SRT_ATR_DEPRECATED [[deprecated]]
+#define SRT_ATR_NODISCARD [[nodiscard]]
+
+// GNUG is GNU C++; this syntax is also supported by Clang
+#elif defined( __GNUG__)
 #define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #else
 #define SRT_ATR_UNUSED
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_NODISCARD
 #endif
 
 #ifdef __cplusplus
