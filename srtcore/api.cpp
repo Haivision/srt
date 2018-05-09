@@ -849,7 +849,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
            // Bound to INADDR_ANY, so matching with any local IP address is invalid.
            vector<sockaddr_any> locals;
 #ifdef WIN32
-           ULONG family = s->m_pSeflAddr->sa_family;
+           ULONG family = s->m_pSelfAddr->sa_family;
            ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
            ULONG outBufLen = 0;
 
