@@ -482,6 +482,9 @@ public:
       /// sleep for a short interval. exact sleep time does not matter
 
    static void sleep();
+   
+      /// Wait for condition with timeout 
+   static int condTimedWait(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
 
 private:
    uint64_t getTimeInMicroSec();
