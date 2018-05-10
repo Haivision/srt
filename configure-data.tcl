@@ -1,20 +1,11 @@
-# 
+#
 # SRT - Secure, Reliable, Transport
-# Copyright (c) 2017 Haivision Systems Inc.
-# 
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Lesser General Public
-# License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
-# 
-# This library is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Lesser General Public License for more details.
-# 
-# You should have received a copy of the GNU Lesser General Public
-# License along with this library; If not, see <http://www.gnu.org/licenses/>
-# 
+# Copyright (c) 2018 Haivision Systems Inc.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
 
 # API description:
 
@@ -53,6 +44,7 @@ set cmake_options {
     enable-shared "Should libsrt be built as a shared library (default: ON)"
     enable-static "Should libsrt be built as a static library (default: ON)"
     enable-suflip "Shuld suflip tool be built (default: OFF)"
+    enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
     openssl-crypto-library=<filepath> "Path to a library."
     openssl-include-dir=<path> "Path to a file."
@@ -321,7 +313,7 @@ proc postprocess {} {
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
 
-	if { $::HAVE_DARWIN } {
+	if { $::HAVE_DARWIN && !$toolchain_changed} {
 
 		if { $have_gnutls } {
 			# Use gnutls explicitly, as found in brew

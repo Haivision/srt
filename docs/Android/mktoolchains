@@ -1,0 +1,9 @@
+#!/bin/bash
+
+BASE_DIR=$(readlink -f $0 | xargs dirname)
+
+export PATH=$PATH:/opt/android-ndk-r16b/build/tools
+
+for arch in arm arm64 x86 x86_64; do
+ make_standalone_toolchain.py -v --arch $arch --api 21 --stl=libc++ --install-dir=$BASE_DIR/android-toolchain-$arch
+done

@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -206,7 +196,7 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
-    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
@@ -235,6 +225,13 @@ public: // internal API
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
+
+    // Input rate constants
+    static const uint64_t
+        SND_INPUTRATE_FAST_START_US = 500*1000,
+        SND_INPUTRATE_RUNNING_US = 1*1000*1000;
+    static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
+    static const int SND_INPUTRATE_INITIAL_BPS = 10000000/8;  // 10 Mbps (1.25 MBps)
 
     int handshakeVersion()
     {
@@ -327,6 +324,7 @@ private:
     EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     bool processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr);
 
+    void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
     size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen, int hs_version);
     size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
@@ -437,8 +435,13 @@ private:
 
     void sample(CPerfMon* perf, bool clear = true);
 
-    // XXX please document
-    void bstats(CBytePerfMon* perf, bool clear = true);
+    /// read the performance data with bytes counters since bstats() 
+    ///  
+    /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
+    /// @param clear [in] flag to decide if the local performance trace should be cleared. 
+    /// @param instantaneous [in] flag to request instantaneous data 
+    /// instead of moving averages. 
+    void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
     /// Mark sequence contained in the given packet as not lost. This
     /// removes the loss record from both current receiver loss list and
@@ -533,6 +536,7 @@ private: // Identification
 
     // XXX Consider removing them. The m_bDataSender may stay here
     // in order to maintain the HS side selection in HSv4.
+    // m_bTwoWayData is unused.
     bool m_bDataSender;
     bool m_bTwoWayData;
 
@@ -608,10 +612,6 @@ private: // Sending related data
     int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-    uint64_t m_ullSndLastCbrTime_tk;                 // Last timestamp set in a data packet to send (usec)
-#endif
-
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
@@ -685,6 +685,7 @@ private: // Generation and processing of packets
     void processCtrl(CPacket& ctrlpkt);
     int packData(CPacket& packet, uint64_t& ts);
     int processData(CUnit* unit);
+    void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);

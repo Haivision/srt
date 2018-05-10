@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2009, The Board of Trustees of the University of Illinois.
@@ -105,7 +95,7 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(char** data, int32_t& msgno, uint64_t& origintime, unsigned kflgs);
+   int readData(char** data, int32_t& msgno, uint64_t& origintime, int kflgs);
 
 
       /// Find data position to pack a DATA packet for a retransmission.
@@ -136,7 +126,7 @@ public:
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   int getInputRate(ref_t<int> payloadtsz, ref_t<int> period);
+   int getInputRate(ref_t<int> payloadtsz, ref_t<uint64_t> period);
    void updInputRate(uint64_t time, int pkts, int bytes);
    void setInputRateSmpPeriod(int period);
 
@@ -388,6 +378,8 @@ private:
 
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
+   int debugGetSize() const;
+   bool empty() const;
 private:
 
    /// thread safe bytes counter
