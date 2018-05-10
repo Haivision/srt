@@ -297,6 +297,17 @@ void CTimer::sleep()
    #endif
 }
 
+int CTimer::condTimedWait(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+    timeval now;
+    gettimeofday(&now, 0);
+    uint64_t time_us = now.tv_sec * 1000000 + now.tv_usec + delay;
+    timespec timeout;
+    timeout.tv_sec = time_us / 1000000;
+    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    
+    return pthread_cond_timedwait(cond, mutex, &timeout);
+}
+
 
 // Automatically lock in constructor
 CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
