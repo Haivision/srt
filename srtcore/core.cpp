@@ -3723,6 +3723,7 @@ void* CUDT::tsbpd(void* param)
    {
       int32_t current_pkt_seq = 0;
       uint64_t tsbpdtime = 0;
+      int64_t timediff = 0;
       bool rxready = false;
 
       CGuard::enterCS(self->m_AckLock);
@@ -3771,14 +3772,12 @@ void* CUDT::tsbpd(void* param)
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
+                 uint64_t now = CTimer::getTime();
+                 if ( tsbpdtime )
+                     timediff = int64_t(now) - int64_t(tsbpdtime);
 #if ENABLE_LOGGING
-                uint64_t now = CTimer::getTime();
-
 #if ENABLE_HEAVY_LOGGING
-                int64_t timediff = 0;
-                if ( tsbpdtime )
-                    timediff = int64_t(now) - int64_t(tsbpdtime);
-
+             
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
@@ -3830,11 +3829,16 @@ void* CUDT::tsbpd(void* param)
          */
           self->m_bTsbPdAckWakeup = false;
           THREAD_PAUSED();
+
+          timeval tv_now;
+          gettimeofday(&tv_now, 0);
+          uint64_t locktime_us = tv_now.tv_sec * 1000000 + tv_now.tv_usec + timediff;
           timespec locktime;
-          locktime.tv_sec = tsbpdtime / 1000000;
-          locktime.tv_nsec = (tsbpdtime % 1000000) * 1000;
+        
+          locktime.tv_sec = locktime_us / 1000000;
+          locktime.tv_nsec = (locktime_us % 1000000) * 1000;
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << ((tsbpdtime - CTimer::getTime())/1000.0) << "ms");
+              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
           pthread_cond_timedwait(&self->m_RcvTsbPdCond, &self->m_RecvLock, &locktime);
           THREAD_RESUMED();
       }
