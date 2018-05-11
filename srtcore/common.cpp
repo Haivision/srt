@@ -297,7 +297,7 @@ void CTimer::sleep()
    #endif
 }
 
-int CTimer::condTimedWait(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);
     uint64_t time_us = now.tv_sec * 1000000 + now.tv_usec + delay;

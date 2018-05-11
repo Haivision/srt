@@ -3978,7 +3978,7 @@ void* CUDT::tsbpd(void* param)
           THREAD_PAUSED();
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
               << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
-          CTimer::condTimedWait(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
+          CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
       }
       else
@@ -4619,7 +4619,7 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, 1000000ULL);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000ULL);
                 }
             }
             else
@@ -4627,7 +4627,7 @@ int CUDT::receiveBuffer(char* data, int len)
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
                     if (CTimer::getTime() >= exptime)
                         break;
                 }
@@ -4869,7 +4869,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        CTimer::condTimedWait(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * 1000ULL);
+                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * 1000ULL);
                 }
             }
 
@@ -5111,7 +5111,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
-                if (CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
+                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
