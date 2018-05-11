@@ -484,6 +484,12 @@ public:
    static void sleep();
    
       /// Wait for condition with timeout 
+      /// @param [in] cond Condition variable to wait for
+      /// @param [in] mutex locked mutex associated with the condition variable
+      /// @param [in] delay timeout in microseconds
+      /// @retval 0 Wait was successfull
+      /// @retval ETIMEDOUT The wait timed out
+
    static int condTimedWait(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
 
 private:
