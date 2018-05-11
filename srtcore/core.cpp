@@ -3870,6 +3870,7 @@ void* CUDT::tsbpd(void* param)
    {
       int32_t current_pkt_seq = 0;
       uint64_t tsbpdtime = 0;
+      int64_t timediff = 0;
       bool rxready = false;
 
       CGuard::enterCS(self->m_AckLock);
@@ -3918,14 +3919,12 @@ void* CUDT::tsbpd(void* param)
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
+                 uint64_t now = CTimer::getTime();
+                 if ( tsbpdtime )
+                     timediff = int64_t(now) - int64_t(tsbpdtime);
 #if ENABLE_LOGGING
-                uint64_t now = CTimer::getTime();
-
 #if ENABLE_HEAVY_LOGGING
-                int64_t timediff = 0;
-                if ( tsbpdtime )
-                    timediff = int64_t(now) - int64_t(tsbpdtime);
-
+             
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
@@ -3978,12 +3977,9 @@ void* CUDT::tsbpd(void* param)
          */
           self->m_bTsbPdAckWakeup = false;
           THREAD_PAUSED();
-          timespec locktime;
-          locktime.tv_sec = tsbpdtime / 1000000;
-          locktime.tv_nsec = (tsbpdtime % 1000000) * 1000;
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << ((tsbpdtime - CTimer::getTime())/1000.0) << "ms");
-          pthread_cond_timedwait(&self->m_RcvTsbPdCond, &self->m_RecvLock, &locktime);
+              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
+          CTimer::condTimedWait(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
       }
       else
@@ -4624,24 +4620,15 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    uint64_t exptime = CTimer::getTime() + 1000000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, 1000000ULL);
                 }
             }
             else
             {
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
-                timespec locktime;
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
                     if (CTimer::getTime() >= exptime)
                         break;
                 }
@@ -4878,16 +4865,12 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 else
                 {
                     uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
 
                     while (stillConnected()
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                        CTimer::condTimedWait(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * 1000ULL);
                 }
             }
 
@@ -5129,12 +5112,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
-                uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
-                timespec locktime;
-
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-                if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime) == ETIMEDOUT)
+                if (CTimer::condTimedWait(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
