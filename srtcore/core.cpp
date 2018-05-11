@@ -3870,7 +3870,6 @@ void* CUDT::tsbpd(void* param)
    {
       int32_t current_pkt_seq = 0;
       uint64_t tsbpdtime = 0;
-      int64_t timediff = 0;
       bool rxready = false;
 
       CGuard::enterCS(self->m_AckLock);
@@ -3919,17 +3918,16 @@ void* CUDT::tsbpd(void* param)
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
-                 uint64_t now = CTimer::getTime();
-                 if ( tsbpdtime )
-                     timediff = int64_t(now) - int64_t(tsbpdtime);
 #if ENABLE_LOGGING
+                int64_t timediff = 0;
+                if ( tsbpdtime )
+                     timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
 #if ENABLE_HEAVY_LOGGING
-             
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << int64_t(now - tsbpdtime) << "ms");
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff%1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -3971,6 +3969,7 @@ void* CUDT::tsbpd(void* param)
 
       if (tsbpdtime != 0)
       {
+         int64_t timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
          /*
          * Buffer at head of queue is not ready to play.
          * Schedule wakeup when it will be.
