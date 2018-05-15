@@ -195,14 +195,16 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
 
     // We have both sides set with password, so both are pending for security
     m_RcvKmState = SRT_KM_S_SECURING;
-    m_SndKmState = SRT_KM_S_SECURING;
+    // m_SndKmState is set to SECURING or UNSECURED in init(),
+    // or it might have been set to SECURED, NOSECRET or BADSECRET in the previous
+    // handshake iteration (handshakes may be sent multiple times for the same connection).
 
     rc = HaiCrypt_Rx_Process(m_hRcvCrypto, kmdata, bytelen, NULL, NULL, 0);
     switch(rc >= 0 ? HAICRYPT_OK : rc)
     {
     case HAICRYPT_OK:
-        m_RcvKmState = m_SndKmState = SRT_KM_S_SECURED;
-        HLOGC(mglog.Debug, log << "KMREQ/rcv: (snd) Rx process successful - SECURED");
+        m_RcvKmState = SRT_KM_S_SECURED;
+        HLOGC(mglog.Debug, log << "KMREQ/rcv: (snd) Rx process successful - SECURED.");
         //Send back the whole message to confirm
         break;
     case HAICRYPT_ERROR_WRONG_SECRET: //Unmatched shared secret to decrypt wrapped key
@@ -232,22 +234,34 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
         // which happens only and exclusively with HSv5 handshake - not when the
         // usual key update through UMSG_EXT+SRT_CMD_KMREQ was done (which is used
         // in HSv4 versions also to initialize the first key, unlike HSv5).
-        if (m_RcvKmState == SRT_KM_S_SECURED )
+        if (m_RcvKmState == SRT_KM_S_SECURED)
         {
-            m_iSndKmKeyLen = m_iRcvKmKeyLen;
-            if (HaiCrypt_Clone(m_hRcvCrypto, HAICRYPT_CRYPTO_DIR_TX, &m_hSndCrypto))
+            if (m_SndKmState == SRT_KM_S_SECURING && !m_hSndCrypto)
             {
-                LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create SND CRYPTO CTX - WILL NOT SEND-ENCRYPT correctly!");
-                if (hasPassphrase())
-                    m_SndKmState = SRT_KM_S_BADSECRET;
+                m_iSndKmKeyLen = m_iRcvKmKeyLen;
+                if (HaiCrypt_Clone(m_hRcvCrypto, HAICRYPT_CRYPTO_DIR_TX, &m_hSndCrypto) != HAICRYPT_OK)
+                {
+                    LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Can't create SND CRYPTO CTX - WILL NOT SEND-ENCRYPT correctly!");
+                    if (hasPassphrase())
+                        m_SndKmState = SRT_KM_S_BADSECRET;
+                    else
+                        m_SndKmState = SRT_KM_S_NOSECRET;
+                }
                 else
-                    m_SndKmState = SRT_KM_S_NOSECRET;
-            }
+                {
+                    m_SndKmState = SRT_KM_S_SECURED;
+                }
 
-            LOGC(mglog.Note, log << FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen)
-                    << " SndKeyLen=" << m_iSndKmKeyLen
-                    << " TX CRYPTO CTX CLONED FROM RX"
+                LOGC(mglog.Note, log << FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen)
+                        << " SndKeyLen=" << m_iSndKmKeyLen
+                        << " TX CRYPTO CTX CLONED FROM RX"
                     );
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "processSrtMsg_KMREQ: NOT cloning RX to TX crypto: already in "
+                        << KmStateStr(m_SndKmState) << " state");
+            }
         }
         else
         {
