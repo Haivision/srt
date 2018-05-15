@@ -3308,7 +3308,9 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
-   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << MessageTypeStr(response.getType(), response.getExtendedType()));
+   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" <<
+           (response.isControl() ?  MessageTypeStr(response.getType(), response.getExtendedType())
+            : string("DATA")));
    //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
 
    // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
@@ -3544,7 +3546,9 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         // however in this case the HSREQ extension will not be attached,
         // so it will simply go the "old way".
         bool ok = prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
-        if ( ok )
+        // May happen that 'response' contains a data packet that was sent in rendezvous mode.
+        // In this situation the interpretation of handshake was already done earlier.
+        if (ok && response.isControl())
         {
             ok = interpretSrtHandshake(m_ConnRes, response, 0, 0);
             if (!ok && eout)
