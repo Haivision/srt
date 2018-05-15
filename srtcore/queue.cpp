@@ -1151,6 +1151,7 @@ void* CRcvQueue::worker(void* param)
            }
            else
            {
+               HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
                // the socket must be removed from Hash table first, then RcvUList
                self->m_pHash->remove(u->m_SocketID);
                self->m_pRcvUList->remove(u);
@@ -1217,6 +1218,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         CUDT* ne = getNewEntry();
         if (ne)
         {
+            HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
             m_pRcvUList->insert(ne);
             m_pHash->insert(ne->m_SocketID, ne);
         }
@@ -1397,7 +1399,61 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // appropriate mutex lock - which can't be done here because it's intentionally private.
         // OTOH it can't be applied to processConnectResponse because the synchronous
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
-        return u->processAsyncConnectResponse(unit->m_Packet);
+        EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+
+        // It might be that this is a data packet, which has turned the connection
+        // into "connected" state, removed the connector (so since now every next packet
+        // will land directly in the queue), but this data packet shall still be delivered.
+        if (cst == CONN_ACCEPT && !unit->m_Packet.isControl())
+        {
+            // The process as called through processAsyncConnectResponse() should have put the
+            // socket into the pending queue for pending connection (don't ask me, this is so).
+            // This pending queue is being purged every time in the beginning of this loop, so
+            // currently the socket is in the pending queue, but not yet in the connection queue.
+            // It will be done at the next iteration of the reading loop, but it will be too late,
+            // we have a pending data packet now and we must either dispatch it to an already connected
+            // socket or disregard it, and rather prefer the former. So do this transformation now
+            // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
+            // into the pending anteroom.
+
+            CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
+            // This **should** now always return a non-null value, but check it first
+            // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
+            // result in redirecting it to here and so on until the call stack overflow. In case of
+            // this "accident" simply disregard the packet from any further processing, it will be later
+            // loss-recovered.
+            // XXX (Probably the old contents of UDT's CRcvQueue::worker should be shaped a little bit
+            // differently throughout the functions).
+            if (ne)
+            {
+                HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
+                m_pRcvUList->insert(ne);
+                m_pHash->insert(ne->m_SocketID, ne);
+
+                // The current situation is that this has passed processAsyncConnectResponse, but actually
+                // this packet *SHOULD HAVE BEEN* handled by worker_ProcessAddressedPacket, however the
+                // connection state wasn't completed at the moment when dispatching this packet. This has
+                // been now completed inside the call to processAsyncConnectResponse, but this is still a
+                // data packet that should have expected the connection to be already established. Therefore
+                // redirect it once again into worker_ProcessAddressedPacket here.
+
+                HLOGC(mglog.Debug, log << "AsyncOrRND: packet SWITCHED TO CONNECTED with ID=" << id
+                        << " -- passing to worker_ProcessAddressedPacket");
+
+                // Theoretically we should check if m_pHash->lookup(ne->m_SocketID) returns 'ne', but this
+                // has been just added to m_pHash, so the check would be extremely paranoid here.
+                cst = worker_ProcessAddressedPacket(id, unit, addr);
+                if (cst == CONN_REJECT)
+                    return cst;
+                return CONN_ACCEPT; // this function usually will return CONN_CONTINUE, which doesn't represent current situation.
+            }
+            else
+            {
+                LOGC(mglog.Error, log << "IPE: AsyncOrRND: packet SWITCHED TO CONNECTED, but ID=" << id
+                        << " is still not present in the socket ID dispatch hash - DISREGARDING");
+            }
+        }
+        return cst;
     }
     HLOGC(mglog.Debug, log << "AsyncOrRND: packet RESOLVED TO ID=" << id << " -- continuing through CENTRAL PACKET QUEUE");
     // This is where also the packets for rendezvous connection will be landing,
@@ -1514,6 +1570,7 @@ void CRcvQueue::removeConnector(const SRTSOCKET& id, bool should_lock)
 
 void CRcvQueue::setNewEntry(CUDT* u)
 {
+   HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
    CGuard listguard(m_IDLock);
    m_vNewEntry.push_back(u);
 }
