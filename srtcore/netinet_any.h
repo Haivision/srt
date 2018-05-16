@@ -142,7 +142,7 @@ struct sockaddr_any
     {
         if (sa.sa_family == AF_INET)
             return sin.sin_addr.s_addr == INADDR_ANY;
-        return 0 == memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any);
+        return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
     }
 };
 
