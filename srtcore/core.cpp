@@ -4188,6 +4188,9 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }
 
+   // Set target socket ID to the value from received handshake's source ID.
+   response.m_iID = m_PeerID;
+
 #if ENABLE_HEAVY_LOGGING
    {
        // To make sure what REALLY is being sent, parse back the handshake
