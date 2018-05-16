@@ -131,7 +131,7 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
         cerr << "\"recv\": {";
         cerr << "\"packets\":" << mon.pktRecv << ",";
         cerr << "\"packetsLost\":" << mon.pktRcvLoss << ",";
-        cerr << "\"packetsDopped\":" << mon.pktRcvDrop << ",";
+        cerr << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
         cerr << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
         cerr << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
         cerr << "\"bytes\":" << mon.byteRecv << ",";
