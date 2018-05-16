@@ -46,11 +46,16 @@ struct sockaddr_any
     {
         // It's not safe to copy it directly, so check.
         if (src->sa_family == AF_INET)
+        {
             memcpy(&sin, src, sizeof sin);
-
-        // Note: this isn't too safe, may crash for stupid values
-        // in the source structure, so make sure it's correct first.
-        memcpy(&sin6, src, sizeof sin6);
+        }
+        else // assume AF_INET6
+        {
+            // Note: this isn't too safe, may crash for stupid values
+            // of src->sa_family or any other data
+            // in the source structure, so make sure it's correct first.
+            memcpy(&sin6, src, sizeof sin6);
+        }
     }
 
     socklen_t size() const
