@@ -184,6 +184,49 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
     return(0);
 }
 
+int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
+{
+    hcrypt_Session *crypto = (hcrypt_Session *)hhcSrc;
+    hcrypt_Ctx* ctx = crypto->ctx;
+    if (!ctx)
+    {
+        // Fall  back to the first of the pair;
+        // Should this be not initialized, ignore it.
+        ctx = &crypto->ctx_pair[0];
+
+        // We assume that when ctx != NULL, it is active or keyed anyway.
+        if (ctx->status != HCRYPT_CTX_S_KEYED && ctx->status != HCRYPT_CTX_S_ACTIVE)
+            return -1;
+    }
+
+    pcfg->flags = HAICRYPT_CFG_F_CRYPTO;
+    if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT) == HCRYPT_CTX_F_ENCRYPT)
+        pcfg->flags |= HAICRYPT_CFG_F_TX;
+
+    // Set this explicitly - this use of this library is SRT only.
+    pcfg->xport = HAICRYPT_XPT_SRT;
+    pcfg->cipher = crypto->cipher;
+    pcfg->key_len = ctx->cfg.key_len;
+    if (pcfg->key_len == 0) // not initialized - usual in RX
+    {
+        pcfg->key_len = ctx->sek_len;
+    }
+    pcfg->data_max_len = crypto->cfg.data_max_len;
+    pcfg->km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;
+
+    pcfg->km_refresh_rate_pkt = crypto->km.refresh_rate;
+    pcfg->km_pre_announce_pkt = crypto->km.pre_announce;
+
+    // As SRT is using only the PASSPHRASE type, never PRESHARED,
+    // this is so assumed here, although there are completely no
+    // premises as to which is currently used by the hhcSrc.
+    pcfg->secret.typ = HAICRYPT_SECTYP_PASSPHRASE;
+    pcfg->secret.len = ctx->cfg.pwd_len;
+    memcpy(pcfg->secret.str, ctx->cfg.pwd, pcfg->secret.len);
+
+    return 0;
+}
+
 int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handle *phhc)
 {
     hcrypt_Session *cryptoSrc = (hcrypt_Session *)hhcSrc;
@@ -195,18 +238,31 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 
     ASSERT(NULL != hhcSrc);
 
+    HCRYPT_LOG(LOG_INFO, "%s\n", "creating CLONED crypto context");
+
+    if (tx)
+    {
+        HaiCrypt_Cfg crypto_config;
+        HaiCrypt_ExtractConfig(hhcSrc, &crypto_config);
+
+        // Just invert the direction written in flags and use the
+        // standard way of creating the context, as you already have a config.
+        crypto_config.flags |= HAICRYPT_CFG_F_TX;
+        return HaiCrypt_Create(&crypto_config, phhc);
+    }
+
     /* 
      * If cipher has no special input buffer alignment requirement,
      * handle it in the crypto session.
      */
-    inbuf_siz = cryptoSrc->inbuf_siz ;	
+    inbuf_siz = cryptoSrc->inbuf_siz ;
 
     /* Allocate crypto session control struct */
     mem_siz = sizeof(hcrypt_Session)	// structure
         + inbuf_siz;
 
     cryptoClone = malloc(mem_siz);
-    if (NULL == cryptoClone){	
+    if (NULL == cryptoClone) {
         HCRYPT_LOG(LOG_ERR, "%s\n", "malloc failed");
         return(-1);
     }
@@ -233,34 +289,21 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         free(cryptoClone);
         return(-1);
     }
-    if (tx) { /* Sender */
-        hcrypt_Ctx *ctx = cryptoClone->ctx = &cryptoClone->ctx_pair[0];
 
-        cryptoClone->ctx_pair[0].flags |= HCRYPT_CTX_F_ENCRYPT;
-        cryptoClone->ctx_pair[1].flags |= HCRYPT_CTX_F_ENCRYPT;
 
-        /* Set SEK in cipher */
-        if (cryptoClone->cipher->setkey(cryptoClone->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
-            HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
-            return(-1);
-        }
-        ctx->status = HCRYPT_CTX_S_ACTIVE;
-    } else { /* Receiver */
-
-        /* Configure contexts */
-        if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
-                ||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
-            free(cryptoClone);
-            return(-1);
-        }
-
-        /* Clear salt to force later regeneration of KEK as AES decrypting key,
-           copyed one is encrypting key */
-        cryptoClone->ctx_pair[0].flags &= ~HCRYPT_CTX_F_ENCRYPT;
-        cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
-        memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
-        cryptoClone->ctx_pair[0].salt_len = 0;
+    /* Configure contexts */
+    if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
+            ||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
+        free(cryptoClone);
+        return(-1);
     }
+
+    /* Clear salt to force later regeneration of KEK as AES decrypting key,
+       copyed one is encrypting key */
+    cryptoClone->ctx_pair[0].flags &= ~HCRYPT_CTX_F_ENCRYPT;
+    cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
+    memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
+    cryptoClone->ctx_pair[0].salt_len = 0;
 
     *phhc = (void *)cryptoClone;
     return(0);
