@@ -644,7 +644,7 @@ macro(srt_make_application name)
 	target_link_libraries(${name} ${srt_link_library})
 
 	if (MICROSOFT)
-		target_link_libraries(${target} PRIVATE Iphlpapi.lib)
+		target_link_libraries(${name} PRIVATE Iphlpapi.lib)
 	endif()
 endmacro()
 
