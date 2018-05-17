@@ -644,7 +644,7 @@ macro(srt_make_application name)
 	target_link_libraries(${name} ${srt_link_library})
 
 	if (MICROSOFT)
-		target_link_libraries(${name} PRIVATE Iphlpapi.lib)
+		target_link_libraries(${name} Iphlpapi)
 	endif()
 endmacro()
 
@@ -724,9 +724,12 @@ if ( ENABLE_CXX11 )
 		endmacro()
 
 		srt_add_testprogram(utility-test)
-		srt_add_testprogram(uriparser-test)
-		target_compile_options(uriparser-test PRIVATE -DTEST)
-		target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		if (NOT WIN32)
+			# Block this for Windows because this causes weird GPF and symlink problems.
+			srt_add_testprogram(uriparser-test)
+			target_compile_options(uriparser-test PRIVATE -DTEST)
+			target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		endif()
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)

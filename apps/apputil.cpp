@@ -9,9 +9,9 @@
  */
 
 #include <cstring>
-// For Options
 #include <iostream>
 #include <sstream>
+#include <utility>
 
 #include "apputil.hpp"
 #include "netinet_any.h"
@@ -197,20 +197,24 @@ static vector<sockaddr_any> GetLocalInterfaces()
 {
     vector<sockaddr_any> locals;
 #ifdef WIN32
-    ULONG family = s->m_pSelfAddr->sa_family;
     ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
-    ULONG outBufLen = 0;
+	ULONG outBufLen4 = 0, outBufLen6 = 0, outBufLen = 0;
 
     // This function doesn't allocate memory by itself, you have to do it
     // yourself, worst case when it's too small, the size will be corrected
     // and the function will do nothing. So, simply, call the function with
     // always too little 0 size and make it show the correct one.
-    GetAdaptersAddresses(family, flags, NULL, NULL, &outBufLen);
+    GetAdaptersAddresses(AF_INET, flags, NULL, NULL, &outBufLen4);
+	GetAdaptersAddresses(AF_INET, flags, NULL, NULL, &outBufLen6);
     // Ignore errors. Check errors on the real call.
+	// (Have doubts about this "max" here, as VC reports errors when
+	// using std::max, so it will likely resolve to a macro - hope this
+	// won't cause portability problems, this code is Windows only.
+	outBufLen = max(outBufLen4, outBufLen6);
 
     // Good, now we can allocate memory
     PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
-    ULONG st = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
+    ULONG st = GetAdaptersAddresses(AF_INET, flags, NULL, pAddresses, &outBufLen);
     if (st == ERROR_SUCCESS)
     {
         PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
@@ -220,6 +224,16 @@ static vector<sockaddr_any> GetLocalInterfaces()
             pUnicast = pUnicast->Next;
         }
     }
+	st = GetAdaptersAddresses(AF_INET6, flags, NULL, pAddresses, &outBufLen);
+	if (st == ERROR_SUCCESS)
+	{
+		PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+		while (pUnicast)
+		{
+			locals.push_back(pUnicast->Address.lpSockaddr);
+			pUnicast = pUnicast->Next;
+		}
+	}
 
     ::operator delete(pAddresses);
 
