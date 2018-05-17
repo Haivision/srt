@@ -300,7 +300,7 @@ void CTimer::sleep()
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * 1000000 + now.tv_usec + delay;
+    uint64_t time_us = now.tv_sec * 1000000ULL + now.tv_usec + delay;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
