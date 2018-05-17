@@ -115,5 +115,6 @@ struct OptionScheme
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 
+bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr);
 
 #endif // INC__APPCOMMON_H

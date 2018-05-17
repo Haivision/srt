@@ -14,6 +14,16 @@
 #include <sstream>
 
 #include "apputil.hpp"
+#include "netinet_any.h"
+
+#ifdef WIN32
+   #include <iphlpapi.h> // getting local interfaces
+#else
+   #include <ifaddrs.h> // getting local interfaces
+#endif
+
+using namespace std;
+
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
 //    http://mingw.5.n7.nabble.com/Win32API-request-for-new-functions-td22029.html
@@ -68,7 +78,7 @@ static int inet_pton(int af, const char * src, void * dst)
 }
 #endif // __MINGW__
 
-sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
+sockaddr_in CreateAddrInet(const string& name, unsigned short port)
 {
     sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
@@ -86,7 +96,7 @@ sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
         //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
         hostent* he = gethostbyname(name.c_str());
         if ( !he || he->h_addrtype != AF_INET )
-            throw std::invalid_argument("SrtSource: host not found: " + name);
+            throw invalid_argument("SrtSource: host not found: " + name);
 
         sa.sin_addr = *(in_addr*)he->h_addr_list[0];
     }
@@ -94,12 +104,12 @@ sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
     return sa;
 }
 
-std::string Join(const std::vector<std::string>& in, std::string sep)
+string Join(const vector<string>& in, string sep)
 {
     if ( in.empty() )
         return "";
 
-    std::ostringstream os;
+    ostringstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)
@@ -108,7 +118,7 @@ std::string Join(const std::vector<std::string>& in, std::string sep)
 }
 
 
-options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
+options_t ProcessOptions(char* const* argv, int argc, vector<OptionScheme> scheme)
 {
     using namespace std;
 
@@ -181,5 +191,88 @@ Found:
     }
 
     return params;
+}
+
+static vector<sockaddr_any> GetLocalInterfaces()
+{
+    vector<sockaddr_any> locals;
+#ifdef WIN32
+    ULONG family = s->m_pSelfAddr->sa_family;
+    ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
+    ULONG outBufLen = 0;
+
+    // This function doesn't allocate memory by itself, you have to do it
+    // yourself, worst case when it's too small, the size will be corrected
+    // and the function will do nothing. So, simply, call the function with
+    // always too little 0 size and make it show the correct one.
+    GetAdaptersAddresses(family, flags, NULL, NULL, &outBufLen);
+    // Ignore errors. Check errors on the real call.
+
+    // Good, now we can allocate memory
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
+    ULONG st = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
+    if (st == ERROR_SUCCESS)
+    {
+        PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+        while (pUnicast)
+        {
+            locals.push_back(pUnicast->Address.lpSockaddr);
+            pUnicast = pUnicast->Next;
+        }
+    }
+
+    ::operator delete(pAddresses);
+
+#else
+    // Use POSIX method: getifaddrs
+    struct ifaddrs* pif, * pifa;
+    int st = getifaddrs(&pifa);
+    if (st == 0)
+    {
+        for (pif = pifa; pif; pif = pif->ifa_next)
+        {
+            locals.push_back(pif->ifa_addr);
+        }
+    }
+
+    freeifaddrs(pifa);
+#endif
+    return locals;
+}
+
+bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
+{
+    sockaddr_any bound = boundaddr;
+    sockaddr_any target = targetaddr;
+
+    if (!bound.isany())
+    {
+        // Bound to a specific local address, so only check if
+        // this isn't the same address as 'target'.
+        if (target.equal_address(bound))
+        {
+            return true;
+        }
+    }
+    else
+    {
+        // Bound to INADDR_ANY, so check matching with any local IP address
+        vector<sockaddr_any> locals = GetLocalInterfaces();
+
+        // If any of the above function fails, it will collect
+        // no local interfaces, so it's impossible to check anything.
+        // OTOH it should also mean that the network isn't working,
+        // so it's unlikely, as well as no address should match the
+        // local address anyway.
+        for (size_t i = 0; i < locals.size(); ++i)
+        {
+            if (locals[i].equal_address(target))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 

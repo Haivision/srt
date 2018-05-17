@@ -65,9 +65,6 @@ modified by
 
 #ifdef WIN32
    #include <win/wintime.h>
-   #include <iphlpapi.h> // getting local interfaces
-#else
-   #include <ifaddrs.h> // getting local interfaces
 #endif
 
 using namespace std;
@@ -826,87 +823,6 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    }
    else if (s->m_Status != SRTS_OPENED)
       throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-   if (s->m_pUDT->m_bRendezvous)
-   {
-       sockaddr_any bound = s->m_pSelfAddr;
-       sockaddr_any target = name;
-
-       if (!bound.isany())
-       {
-           // Bound to a specific local address, so only check if
-           // this isn't the same address as 'target'.
-           if (target.equal_address(bound))
-           {
-               LOGC(mglog.Error, log << "connect: Rendezvous attempt to self on addr: "
-                       << SockaddrToString(&target.sa) << " - rejected");
-               throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-           }
-       }
-       else
-       {
-           // Bound to INADDR_ANY, so matching with any local IP address is invalid.
-           vector<sockaddr_any> locals;
-#ifdef WIN32
-           ULONG family = s->m_pSelfAddr->sa_family;
-           ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
-           ULONG outBufLen = 0;
-
-           // This function doesn't allocate memory by itself, you have to do it
-           // yourself, worst case when it's too small, the size will be corrected
-           // and the function will do nothing. So, simply, call the function with
-           // always too little 0 size and make it show the correct one.
-           GetAdaptersAddresses(family, flags, NULL, NULL, &outBufLen);
-           // Ignore errors. Check errors on the real call.
-
-           // Good, now we can allocate memory
-           PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
-           ULONG st = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
-           if (st == ERROR_SUCCESS)
-           {
-               PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
-               while (pUnicast)
-               {
-                   locals.push_back(pUnicast->Address.lpSockaddr);
-                   pUnicast = pUnicast->Next;
-               }
-           }
-
-           ::operator delete(pAddresses);
-
-#else
-           // Use POSIX method: getifaddrs
-           struct ifaddrs* pif, * pifa;
-           int st = getifaddrs(&pifa);
-           if (st == 0)
-           {
-               for (pif = pifa; pif; pif = pif->ifa_next)
-               {
-                   locals.push_back(pif->ifa_addr);
-               }
-           }
-
-           freeifaddrs(pifa);
-#endif
-
-           // If any of the above function fails, it will collect
-           // no local interfaces, so it's impossible to check anything.
-           // OTOH it should also mean that the network isn't working,
-           // so it's unlikely, as well as no address should match the
-           // local address anyway.
-           for (size_t i = 0; i < locals.size(); ++i)
-           {
-               if (locals[i].equal_address(target))
-               {
-                   LOGC(mglog.Error, log << "connect: Rendezvous bound to any, but target ("
-                           << SockaddrToString(&target.sa) << ") matches one of local interfaces");
-                   throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-               }
-           }
-
-       }
-   }
 
    // connect_complete() may be called before connect() returns.
    // So we need to update the status before connect() is called,

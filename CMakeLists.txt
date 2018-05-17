@@ -438,7 +438,7 @@ macro(srt_update_library_deps target)
 	list (APPEND INSTALL_TARGETS ${target})
 	target_link_libraries(${target} PRIVATE ${SSL_LIBRARIES})
 	if (MICROSOFT)
-		target_link_libraries(${target} PRIVATE ws2_32.lib Iphlpapi.lib)
+		target_link_libraries(${target} PRIVATE ws2_32.lib)
 	endif()
 endmacro()
 
@@ -642,6 +642,10 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+
+	if (MICROSOFT)
+		target_link_libraries(${target} PRIVATE Iphlpapi.lib)
+	endif()
 endmacro()
 
 macro(srt_add_application name sources)
