@@ -866,7 +866,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
    return NULL;
 }
 
-void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& response)
+void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& response)
 {
     CGuard vg(m_RIDVectorLock);
 
@@ -896,23 +896,12 @@ void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& respo
         // just arrived in this iteration), send the response immediately.
         uint64_t then = i->m_pUDT->m_llLastReqTime;
         uint64_t now = CTimer::getTime();
-        bool nowstime = true;
 
-        // Use "slow" cyclic responding in case when
-        // - CONN_AGAIN (no packet was received for whichever socket)
-        // - a packet was received, but not for THIS socket
-        if (cst == CONN_AGAIN || i->m_iID != response.m_iID)
-        {
-            // If no packet has been received from the peer,
-            // avoid sending too many requests, at most 1 request per 250ms
-            nowstime = (now - then) > 250000;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
-        }
-        else
-        {
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
-        }
+        // If no packet has been received from the peer,
+        // avoid sending too many requests, at most 1 request per 250ms
+        bool nowstime = (now - then) > 250000;
+        HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+                <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
 
 #if ENABLE_HEAVY_LOGGING
         ++debug_nrun;
@@ -969,7 +958,7 @@ void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& respo
                 // In the below call, only the underlying `processRendezvous` function will be attempting
                 // to interpret these data (for caller-listener this was already done by `processConnectRequest`
                 // before calling this function), and it checks for the data presence.
-                if (!i->m_pUDT->processAsyncConnectRequest(cst, response, i->m_pPeerAddr))
+                if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
                 {
                     LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
@@ -1173,7 +1162,7 @@ void* CRcvQueue::worker(void* param)
        // worker_TryAsyncRend_OrStore --->
        // CUDT::processAsyncConnectResponse --->
        // CUDT::processConnectResponse 
-       self->m_pRendezvousQueue->updateConnStatus(cst, unit->m_Packet);
+       self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit->m_Packet);
 
        // XXX updateConnStatus may have removed the connector from the list,
        // however there's still m_mBuffer in CRcvQueue for that socket to care about.

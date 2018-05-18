@@ -2676,7 +2676,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     uint64_t now = CTimer::getTime();
     reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
 
-    HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME HIGH. SENDING HS: " << m_ConnReq.show());
+    HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (" << now << "). SENDING HS: " << m_ConnReq.show());
 
     /*
      * Race condition if non-block connect response thread scheduled before we set m_bConnecting to true?
@@ -2734,15 +2734,15 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             if (m_bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
 
+            now = CTimer::getTime();
 #if ENABLE_HEAVY_LOGGING
             {
                 CHandShake debughs;
                 debughs.load_from(reqpkt.m_pcData, reqpkt.getLength());
-                HLOGC(mglog.Debug, log << CONID() << "startConnect: REQ-TIME HIGH. cont/sending HS to peer: " << debughs.show());
+                HLOGC(mglog.Debug, log << CONID() << "startConnect: REQ-TIME HIGH (" << now << "). cont/sending HS to peer: " << debughs.show());
             }
 #endif
 
-            now = CTimer::getTime();
             m_llLastReqTime = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
             m_pSndQueue->sendto(serv_addr, reqpkt);
@@ -2790,7 +2790,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                 // it means that it has done all that was required, however none of the below
                 // things has to be done (this function will do it by itself if needed).
                 // Otherwise the handshake rolling can be interrupted and considered complete.
-                cst = processRendezvous(Ref(reqpkt), response, serv_addr, true /*synchro*/);
+                cst = processRendezvous(Ref(reqpkt), response, serv_addr, true /*synchro*/, RST_OK);
                 if (cst == CONN_CONTINUE)
                     continue;
                 break;
@@ -2916,7 +2916,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
     return cst;
 }
 
-bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr)
+bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr)
 {
     // IMPORTANT!
 
@@ -2931,7 +2931,7 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - this->m_StartTime);
 
-    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH (" << now << "). Should prevent too quick responses.");
     m_llLastReqTime = now;
     // ID = 0, connection request
     request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
@@ -2941,7 +2941,7 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     if ( cst == CONN_RENDEZVOUS )
     {
         HLOGC(mglog.Debug, log << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(Ref(request), response, serv_addr, false /*asynchro*/);
+        cst = processRendezvous(Ref(request), response, serv_addr, false /*asynchro*/, rst);
         if (cst == CONN_ACCEPT)
         {
             HLOGC(mglog.Debug, log << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. Done.");
@@ -3033,7 +3033,7 @@ void CUDT::cookieContest()
     m_SrtHsSide = HSD_DRAW;
 }
 
-EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& response, const sockaddr* serv_addr, bool synchro)
+EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& response, const sockaddr* serv_addr, bool synchro, EReadStatus rst)
 {
     if ( m_RdvState == CHandShake::RDV_CONNECTED )
     {
@@ -3099,18 +3099,40 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // Case 2.
     if ( needs_hsrsp )
     {
-        HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
-        m_llLastReqTime = 0;
         // This means that we have received HSREQ extension with the handshake, so we need to interpret
         // it and craft the response.
-        if (response.getLength() == -1u)
+        if (rst == RST_OK)
         {
-            HLOGC(mglog.Debug, log << "processRendezvous: no INCOMING packet, NOT interpreting extension (relying on exising data)");
+            // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
+            // Sanity check
+            m_llLastReqTime = 0;
+            if (response.getLength() == -1u)
+            {
+                LOGC(mglog.Fatal, log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
+                return CONN_REJECT;
+            }
+
+            if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
+            {
+                HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
+                return CONN_REJECT;
+            }
+
+            // Pass on, inform about the shortened response-waiting period.
+            HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
         }
-        else if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
+        else
         {
-            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake.");
-            return CONN_REJECT;
+            // This is a periodic handshake update, so you need to extract the KM data from the
+            // first message, provided that it is there.
+            kmdatasize = m_pCryptoControl->getKmMsg_size(0);
+            if (kmdatasize == 0)
+            {
+                LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED.");
+                return CONN_REJECT;
+            }
+            HLOGC(mglog.Debug, log << "processRendezvous: getting KMDATA from the fore-recorded KMX from KMREQ");
+            memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), kmdatasize);
         }
 
         // No matter the value of needs_extension, the extension is always needed
@@ -3122,7 +3144,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
-            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake.");
+            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
+            m_llLastReqTime = 0;
             return CONN_REJECT;
         }
 
@@ -3140,8 +3163,9 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
 
-        if (response.getLength() == -1u)
+        if (rst != RST_OK || response.getLength() == -1u)
         {
+            // Actually the -1 length would be an IPE, but it's likely that this was reported already.
             HLOGC(mglog.Debug, log << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
         }
         else
@@ -3233,8 +3257,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // catalyzer here and may turn the entity on the right track faster. When
         // AGREEMENT is missed, it may have kinda initial tearing.
 
-        HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
         uint64_t now = CTimer::getTime();
+        HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
         m_llLastReqTime = now;
         rpkt.m_iTimeStamp = int32_t(now - m_StartTime);
         m_pSndQueue->sendto(serv_addr, rpkt);
@@ -3242,10 +3266,17 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         return CONN_ACCEPT;
     }
 
-    // the request time must be updated so that the next handshake can be sent out immediately.
-    HLOGC(mglog.Debug, log << "processRendezvous: REQ-TIME: set LOW to force to respond immediately.");
-    m_llLastReqTime = 0;
-    HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType) << " SENDING response, but consider yourself conencted");
+    if (rst == RST_OK)
+    {
+        // the request time must be updated so that the next handshake can be sent out immediately
+        HLOGC(mglog.Debug, log << "processRendezvous: REQ-TIME: set LOW to force to respond immediately.");
+        m_llLastReqTime = 0;
+        HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType) << " SENDING response, but consider yourself conencted");
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "processRendezvous: REQ-TIME: remains previous value, consider yourself connected");
+    }
     return CONN_CONTINUE;
 }
 
@@ -3477,10 +3508,6 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1 )
         m_ullRcvPeerStartTime = 0; // will be set correctly in SRT HS.
 
-    // Remove from rendezvous queue (in this particular case it's
-    // actually removing the socket that undergoes asynchronous HS processing).
-    m_pRcvQueue->removeConnector(m_SocketID, synchro);
-
     // This procedure isn't being executed in rendezvous because
     // in rendezvous it's completed before calling this function.
     if ( !rendezvous )
@@ -3534,6 +3561,18 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
+
+    // Remove from rendezvous queue (in this particular case it's
+    // actually removing the socket that undergoes asynchronous HS processing).
+    // Removing at THIS point because since when setNewEntry is called,
+    // the next iteration in the CRcvQueue::worker loop will be dispatching
+    // packets normally, as within-connection, so the "connector" won't
+    // play any role since this time.
+    // The connector, however, must stay alive until the setNewEntry is called
+    // because otherwise the packets that are coming for this socket before the
+    // connection process is complete will be rejected as "attack", instead of
+    // being enqueued for later pickup from the queue.
+    m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
     s_UDTUnited.connect_complete(m_SocketID);
