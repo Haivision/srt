@@ -2937,7 +2937,7 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - this->m_StartTime);
 
-    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
+    HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: HIGH. Should prevent too quick responses.");
     m_llLastReqTime = now;
     // ID = 0, connection request
     request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
