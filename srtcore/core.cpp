@@ -3050,11 +3050,11 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // We know that the other side was contacted and the other side has sent
     // the handshake message - we know then both cookies. If it's a draw, it's
     // a very rare case of creating identical cookies.
-	if (m_SrtHsSide == HSD_DRAW)
-	{
+    if (m_SrtHsSide == HSD_DRAW)
+    {
         LOGC(mglog.Error, log << "COOKIE CONTEST UNRESOLVED: can't assign connection roles, please wait another minute.");
-		return CONN_REJECT;
-	}
+        return CONN_REJECT;
+    }
 
     UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
 
@@ -3237,7 +3237,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // then createSrtHandshake below will create only empty AGREEMENT message.
     if ( !createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
     {
-        LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected");
+        LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        m_llLastReqTime = 0;
         return CONN_REJECT;
     }
 
@@ -3269,9 +3270,9 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if (rst == RST_OK)
     {
         // the request time must be updated so that the next handshake can be sent out immediately
-        HLOGC(mglog.Debug, log << "processRendezvous: REQ-TIME: set LOW to force to respond immediately.");
+        HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType)
+                << " REQ-TIME: LOW to send immediately, consider yourself conencted");
         m_llLastReqTime = 0;
-        HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType) << " SENDING response, but consider yourself conencted");
     }
     else
     {
@@ -4226,9 +4227,8 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        // If the SRT Handshake extension was provided and wasn't interpreted
        // correctly, the connection should be rejected.
        //
-       // Respond with the rejection message and return false from
-       // this function so that the caller will know that this new
-       // socket should be deleted.
+       // Respond with the rejection message and exit with exception
+       // so that the caller will know that this new socket should be deleted.
        hs->m_iReqType = URQ_ERROR_REJECT;
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }

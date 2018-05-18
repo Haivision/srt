@@ -885,15 +885,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     {
         ++i_next;
         // NOTE: This is a SAFE LOOP.
-        // Incrementation will be done at the end, after the processing did not
-        // REMOVE the currently processed element. When the element was removed,
-        // the iterator value for the next iteration will be taken from erase()'s result.
-
-        // CONN_AGAIN happens in case when the last attempt to read a packet from the UDP
-        // socket has read nothing. In this case it would be a repeated update, while
-        // still waiting for a response from the peer. When we have any other state here
-        // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
-        // just arrived in this iteration), send the response immediately.
+        // The next iterator is preincremented so that it points to the valid element,
+        // even if the processing inside deleted the node at `i`.
         uint64_t then = i->m_pUDT->m_llLastReqTime;
         uint64_t now = CTimer::getTime();
 
@@ -908,13 +901,16 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 #endif
         if (nowstime)
         {
-            // XXX This guy... has created a loop that rolls in infinity without any
-            // sleeps inside and makes it once per about 50 calls send a hs conclusion
+            // XXX This looks like a loop that rolls in infinity without any sleeps
+            // inside and makes it once per about 50 calls send a hs conclusion
             // for a randomly sampled rendezvous ID of a socket out of the list.
             // Ok, probably the rendezvous ID should be just one so not much to
             // sample from, but if so, why the container?
             //
             // This must be somehow fixed!
+            //
+            // Maybe the time should be simply checked once and the whole loop not
+            // done when "it's not the time"?
             if (CTimer::getTime() >= i->m_ullTTL)
             {
                 HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED. removing from queue");
@@ -937,23 +933,22 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 continue;
             }
 
-            // This queue is used only in case of Async mode Rendezvous or caller-listener.
+            // This queue is used only in case of Async mode (rendezvous or caller-listener).
             // Synchronous connection requests are handled in startConnect() completely.
-            //if (cst != CONN_AGAIN && (i->m_pUDT->m_bRendezvous || !i->m_pUDT->m_bSynRecving))
             if (!i->m_pUDT->m_bSynRecving)
             {
 #if ENABLE_HEAVY_LOGGING
                 ++debug_nupd;
 #endif
-
-                // IMPORTANT INFORMATION.
-                // In the legacy UDT code there was no attempt to interpret any incoming data.
+                // IMPORTANT INFORMATION concerning changes towards UDT legacy.
+                // In the UDT code there was no attempt to interpret any incoming data.
                 // All data from the incoming packet were considered to be already deployed into
                 // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
                 // Therefore this procedure did only one thing: craft a new handshake packet and send it.
                 // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
-                // and the `response` packet may sometimes contain no data, which can be recognized by
-                // `response.getLength() == -1u` condition.
+                // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
+                // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
+                // due to have received the packet (RST_OK).
                 //
                 // In the below call, only the underlying `processRendezvous` function will be attempting
                 // to interpret these data (for caller-listener this was already done by `processConnectRequest`
