@@ -885,16 +885,35 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     {
         ++i_next;
         // NOTE: This is a SAFE LOOP.
-        // The next iterator is preincremented so that it points to the valid element,
-        // even if the processing inside deleted the node at `i`.
+        // Incrementation will be done at the end, after the processing did not
+        // REMOVE the currently processed element. When the element was removed,
+        // the iterator value for the next iteration will be taken from erase()'s result.
+
+        // RST_AGAIN happens in case when the last attempt to read a packet from the UDP
+        // socket has read nothing. In this case it would be a repeated update, while
+        // still waiting for a response from the peer. When we have any other state here
+        // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
+        // just arrived in this iteration), do the update immetiately (in SRT this also
+        // involves additional incoming data interpretation, which wasn't the case in UDT).
         uint64_t then = i->m_pUDT->m_llLastReqTime;
         uint64_t now = CTimer::getTime();
+        bool nowstime = true;
 
-        // If no packet has been received from the peer,
-        // avoid sending too many requests, at most 1 request per 250ms
-        bool nowstime = (now - then) > 250000;
-        HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+        // Use "slow" cyclic responding in case when
+        // - RST_AGAIN (no packet was received for whichever socket)
+        // - a packet was received, but not for THIS socket
+        if (rst == RST_AGAIN || i->m_iID != response.m_iID)
+        {
+            // If no packet has been received from the peer,
+            // avoid sending too many requests, at most 1 request per 250ms
+            nowstime = (now - then) > 250000;
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+        }
 
 #if ENABLE_HEAVY_LOGGING
         ++debug_nrun;
