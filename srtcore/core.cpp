@@ -1561,6 +1561,16 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // CONCLUSION might be the FIRST MESSAGE EVER RECEIVED by a party).
     if (hs.m_iVersion > HS_VERSION_UDT4)
     {
+        // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
+        // If fillSrtHandshake_HSRSP catches the condition of m_ullRcvPeerStartTime == 0,
+        // it will return size 0, which will mess up with further extension procedures;
+        // PREVENT THIS HERE.
+        if (hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && m_ullRcvPeerStartTime == 0)
+        {
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. BLOCKING extensions.");
+            hs.m_extension = false;
+        }
+
         // The situation when this function is called without requested extensions
         // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
         // In this case for version 5 just clear the m_iType field, as it has
@@ -1582,7 +1592,6 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         hs.m_iType = UDT_DGRAM;
     }
-
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
@@ -1794,7 +1803,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
             if (kmdata_wordsize == 0)
             {
-                HLOGC(mglog.Debug, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+                LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
                 ra_size = 1;
                 keydata = failure_kmrsp;
 
