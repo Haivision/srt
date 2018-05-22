@@ -3684,6 +3684,16 @@ void CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
                 if ( hsd == HSD_RESPONDER )
                 {
+                    // If no HSREQ attached, stay in this state.
+                    // (Although this seems completely impossible).
+                    if (hs_flags == 0)
+                    {
+                        LOGC(mglog.Warn, log << "rendezvousSwitchState: (IPE!)"
+                            "{RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
+                        *rsptype = URQ_CONCLUSION;
+                        *needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait for the right message)
+                        return;
+                    }
                     m_RdvState = CHandShake::RDV_INITIATED;
                     *rsptype = URQ_CONCLUSION;
                     *needs_extension = true;
