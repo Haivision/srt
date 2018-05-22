@@ -104,57 +104,61 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 template <class PerfMonType>
 void PrintSrtStats(int sid, const PerfMonType& mon)
 {
+    std::ostringstream output;
+
     if (printformat_json)
     {
-        cerr << "{";
-        cerr << "\"sid\":" << sid << ",";
-        cerr << "\"time\":" << mon.msTimeStamp << ",";
-        cerr << "\"window\":{";
-        cerr << "\"flow\":" << mon.pktFlowWindow << ",";
-        cerr << "\"congestion\":" << mon.pktCongestionWindow << ",";    
-        cerr << "\"flight\":" << mon.pktFlightSize;    
-        cerr << "},";
-        cerr << "\"link\":{";
-        cerr << "\"rtt\":" << mon.msRTT << ",";
-        cerr << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
-        cerr << "\"maxBandwidth\":" << mon.mbpsMaxBW;
-        cerr << "},";
-        cerr << "\"send\":{";
-        cerr << "\"packets\":" << mon.pktSent << ",";
-        cerr << "\"packetsLost\":" << mon.pktSndLoss << ",";
-        cerr << "\"packetsDropped\":" << mon.pktSndDrop << ",";
-        cerr << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
-        cerr << "\"bytes\":" << mon.byteSent << ",";
-        cerr << "\"bytesDropped\":" << mon.byteSndDrop << ",";
-        cerr << "\"mbitRate\":" << mon.mbpsSendRate;
-        cerr << "},";
-        cerr << "\"recv\": {";
-        cerr << "\"packets\":" << mon.pktRecv << ",";
-        cerr << "\"packetsLost\":" << mon.pktRcvLoss << ",";
-        cerr << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
-        cerr << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
-        cerr << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
-        cerr << "\"bytes\":" << mon.byteRecv << ",";
-        cerr << "\"bytesLost\":" << mon.byteRcvLoss << ",";
-        cerr << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
-        cerr << "\"mbitRate\":" << mon.mbpsRecvRate;
-        cerr << "}";
-        cerr << "}" << endl;
+        output << "{";
+        output << "\"sid\":" << sid << ",";
+        output << "\"time\":" << mon.msTimeStamp << ",";
+        output << "\"window\":{";
+        output << "\"flow\":" << mon.pktFlowWindow << ",";
+        output << "\"congestion\":" << mon.pktCongestionWindow << ",";    
+        output << "\"flight\":" << mon.pktFlightSize;    
+        output << "},";
+        output << "\"link\":{";
+        output << "\"rtt\":" << mon.msRTT << ",";
+        output << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
+        output << "\"maxBandwidth\":" << mon.mbpsMaxBW;
+        output << "},";
+        output << "\"send\":{";
+        output << "\"packets\":" << mon.pktSent << ",";
+        output << "\"packetsLost\":" << mon.pktSndLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
+        output << "\"bytes\":" << mon.byteSent << ",";
+        output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsSendRate;
+        output << "},";
+        output << "\"recv\": {";
+        output << "\"packets\":" << mon.pktRecv << ",";
+        output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
+        output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        output << "\"bytes\":" << mon.byteRecv << ",";
+        output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
+        output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsRecvRate;
+        output << "}";
+        output << "}" << endl;
     }
     else
     {
-        cerr << "======= SRT STATS: sid=" << sid << endl;
-        cerr << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
-        cerr << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
-        cerr << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
-        cerr << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
-        cerr << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
-        cerr << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
-        cerr << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
-        cerr << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-        cerr << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
-        cerr << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+        output << "======= SRT STATS: sid=" << sid << endl;
+        output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
+        output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
+        output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
+        output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
+        output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+        output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+        output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+        output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+        output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
     }
+
+    cerr << output.str() << std::flush;
 }
 
 
