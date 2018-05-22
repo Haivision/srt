@@ -517,6 +517,20 @@ message was lost, this side will still turn into *connected* state once
 it receives anything else from the peer, or when the application request
 it to send any data.
 
+### Rendezvous process between clients of two different versions
+
+When one of the parties is version that supports HSv5 and the other only
+HSv4, the handshake is generally conducted according to the rules described
+under HSv4 rendezvous process.
+
+Note though that the first phase - `URQ_WAVEAHAND` request type - when sent
+by the HSv5 client contains the `m_iVersion` and `m_iType` fields filled as
+required for version 5. This happens only for the "waving" phase, and fortunately
+the HSv4 clients do not try to recognize these fields. When switching to the
+conclusion phase, the HSv5 client is already aware of that the peer is HSv4
+and fills the fields of the conclusion handshake message correctly according
+to the rules of HSv4.
+
 
 
 The SRT extended handshake
