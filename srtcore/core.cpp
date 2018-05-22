@@ -3176,16 +3176,27 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         }
         else
         {
-            // This is a periodic handshake update, so you need to extract the KM data from the
-            // first message, provided that it is there.
-            kmdatasize = m_pCryptoControl->getKmMsg_size(0);
-            if (kmdatasize == 0)
+            // If the last CONCLUSION message didn't contain the KMX extension, there's
+            // no key recorded yet, so it can't be extracted. Mark this kmdatasize empty though.
+            int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
             {
-                LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED.");
-                return CONN_REJECT;
+                // This is a periodic handshake update, so you need to extract the KM data from the
+                // first message, provided that it is there.
+                kmdatasize = m_pCryptoControl->getKmMsg_size(0);
+                if (kmdatasize == 0)
+                {
+                    LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED.");
+                    return CONN_REJECT;
+                }
+                HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ");
+                memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), kmdatasize);
             }
-            HLOGC(mglog.Debug, log << "processRendezvous: getting KMDATA from the fore-recorded KMX from KMREQ");
-            memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), kmdatasize);
+            else
+            {
+                HLOGC(mglog.Debug, log << "processRendezvous: no KMX flag - not extracting KM data for KMRSP");
+                kmdatasize = 0;
+            }
         }
 
         // No matter the value of needs_extension, the extension is always needed
@@ -6875,7 +6886,22 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
                  }
                  else
                  {
-                     initdata.m_extension = true;
+                     // Extensions are added only in case of CONCLUSION (not AGREEMENT).
+                     // Actually what is expected here is that this may either process the
+                     // belated-repeated handshake from a caller (and then it's CONCLUSION,
+                     // and should be added with HSRSP/KMRSP), or it's a belated handshake
+                     // of Rendezvous when it has already considered itself connected.
+                     // Sanity check - according to the rules, there should be no such situation
+                     if (m_bRendezvous && m_SrtHsSide == HSD_RESPONDER)
+                     {
+                         LOGC(mglog.Error, log << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in handshake phase.");
+                     }
+
+                     // The 'extension' flag will be set from this variable; set it to false
+                     // in case when the AGREEMENT response is to be sent.
+                     have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                     HLOGC(mglog.Debug, log << "processCtrl/HS: processing ok, reqtype="
+                             << RequestTypeStr(initdata.m_iReqType) << " kmdatasize=" << kmdatasize);
                  }
              }
              else
