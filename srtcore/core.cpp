@@ -4038,6 +4038,9 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
         {
             hsd = m_bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
         }
+
+        // Record the just resolved HS Side in the field
+        m_SrtHsSide = hsd;
     }
 
     try
