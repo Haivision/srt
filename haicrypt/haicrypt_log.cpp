@@ -11,6 +11,7 @@
 #if ENABLE_HAICRYPT_LOGGING
 
 #include "hcrypt.h"
+#include "haicrypt.h"
 #include "../srtcore/srt.h"
 #include "../srtcore/logging.h"
 
@@ -60,6 +61,59 @@ HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_CRIT, Fatal);
 HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_ALERT, Fatal);
 HAICRYPT_DEFINE_LOG_DISPATCHER(LOG_EMERG, Fatal);
 
+
+static void DumpCfgFlags(int flags, std::ostream& out)
+{
+    static struct { int flg; const char* desc; } flgtable [] = {
+#define HCRYPTF(name) { HAICRYPT_CFG_F_##name, #name }
+        HCRYPTF(TX),
+        HCRYPTF(CRYPTO),
+        HCRYPTF(FEC)
+#undef HCRYPTF
+    };
+    size_t flgtable_size = sizeof(flgtable)/sizeof(flgtable[0]);
+    size_t i;
+
+    out << "{";
+    const char* sep = "";
+    const char* sep_bar = " | ";
+    for (i = 0; i < flgtable_size; ++i)
+    {
+        if ( (flgtable[i].flg & flags) != 0 )
+        {
+            out << sep << flgtable[i].desc;
+            sep = sep_bar;
+        }
+    }
+    out << "}";
+}
+
+void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg)
+{
+    std::ostringstream cfg_flags;
+
+    DumpCfgFlags(cfg->flags, cfg_flags);
+
+    LOGC(hclog.Debug, log << "CFG DUMP: flags=" << cfg_flags.str()
+            << " xport=" << (cfg->xport == HAICRYPT_XPT_SRT ? "SRT" : "INVALID")
+            << " cipher="
+            << (cfg->cipher == HaiCryptCipher_OpenSSL_EVP_CTR() ? "OSSL-EVP-CTR":
+                cfg->cipher == HaiCryptCipher_OpenSSL_AES() ? "OSSL-AES":
+                // This below is used as the only one when Nettle is used. When OpenSSL
+                // is used, one of the above will trigger, and the one below will then never trigger.
+                cfg->cipher == HaiCryptCipher_Get_Instance() ? "Nettle-AES":
+                "UNKNOWN")
+            << " key_len=" << cfg->key_len << " data_max_len=" << cfg->data_max_len);
+
+
+    LOGC(hclog.Debug, log << "CFG DUMP: txperiod="
+            << cfg->km_tx_period_ms << "ms kmrefresh=" << cfg->km_refresh_rate_pkt
+            << " kmpreannounce=" << cfg->km_pre_announce_pkt
+            << " secret "
+            << "{tp=" << (cfg->secret.typ == 1 ? "PSK" : cfg->secret.typ == 2 ? "PWD" : "???")
+            << " len=" << cfg->secret.len << " pwd=" << cfg->secret.str << "}");
+
+}
 
 } // extern "C"
 
