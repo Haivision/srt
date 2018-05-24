@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -212,11 +202,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
 
 #ifdef SRT_ENABLE_BSTATS
    m_iBytesCount += len;
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   m_LastOriginTime = srctime;
-#else
    m_LastOriginTime = time;
-#endif /* SRT_ENABLE_CBRTIMESTAMP */
 #endif /* SRT_ENABLE_BSTATS */
 
 #ifdef SRT_ENABLE_INPUTRATE
@@ -544,11 +530,7 @@ int CSndBuffer::getCurrBufSize(int &bytes, int &timespan)
    * Also, if there is only one pkt in buffer, the time difference will be 0.
    * Therefore, always add 1 ms if not empty.
    */
-#ifdef SRT_ENABLE_CBRTIMESTAMP
-   timespan = 0 < m_iCount ? int((m_LastOriginTime - m_pFirstBlock->m_SourceTime) / 1000) + 1 : 0;
-#else
    timespan = 0 < m_iCount ? int((m_LastOriginTime - m_pFirstBlock->m_OriginTime) / 1000) + 1 : 0;
-#endif
 
    return m_iCount;
 }

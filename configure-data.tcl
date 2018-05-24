@@ -1,20 +1,11 @@
-# 
+#
 # SRT - Secure, Reliable, Transport
-# Copyright (c) 2017 Haivision Systems Inc.
-# 
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Lesser General Public
-# License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
-# 
-# This library is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Lesser General Public License for more details.
-# 
-# You should have received a copy of the GNU Lesser General Public
-# License along with this library; If not, see <http://www.gnu.org/licenses/>
-# 
+# Copyright (c) 2018 Haivision Systems Inc.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
 
 # API description:
 
@@ -46,6 +37,7 @@ set options {
 	with-openssl-ldflags=<ldflags> "Use given -lDIR values for OpenSSL or absolute library filename"
 	with-pthread-includedir=<incdir> "Use extra path for pthreads (usually for Windows)"
 	with-pthread-ldflags=<flags> "Use specific flags for pthreads (some platforms require -pthread)"
+	with-gnutls "Use GnuTLS"
 }
 
 # Just example. Available in the system.
@@ -199,6 +191,20 @@ proc postprocess {} {
 		set have_openssl 1
 	}
 
+	set have_gnutls 0
+	if { [lsearch -glob $::optkeys --with-gnutls] != -1 } {
+		set have_gnutls 1
+	}
+
+	if { $have_openssl && $have_gnutls } {
+		puts "NOTE: SSL library is exclusively selectable. Thus, --with-gnutls option will be ignored"
+		set have_gnutls 0
+	}
+
+	if { $have_gnutls } {
+		lappend ::cmakeopt "-DUSE_GNUTLS=ON"
+	}
+
 	set have_pthread 0
 	if { [lsearch -glob $::optkeys --with-pthread*] != -1 } {
 		set have_pthread 1
@@ -207,8 +213,10 @@ proc postprocess {} {
 	# Autodetect OpenSSL and pthreads
 	if { $::HAVE_WINDOWS } {
 
-		if { !$have_openssl } {
-    		puts "Letting cmake detect OpenSSL installation"
+		if { !$have_openssl || !$have_gnutls } {
+			puts "Letting cmake detect OpenSSL installation"
+		} elseif { $have_gnutls } {
+			puts "Letting cmake detect GnuTLS installation"
 		} else {
 			puts "HAVE_OPENSSL: [lsearch -inline $::optkeys --with-openssl*]"
 		}
@@ -226,18 +234,26 @@ proc postprocess {} {
 	}
 
 	if { $::HAVE_DARWIN } {
-		# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
-		# This must use brew-provided OpenSSL.
-		#
-		if { !$have_openssl } {
-		
-			set er [catch {exec brew info openssl} res]
-			if { $er } {
-				error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
-			}
 
-			lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
-			lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
+		if { $have_gnutls } {
+			set er [catch {exec brew info gnutls} res]
+			if { $er } {
+				error "Cannot find gnutls in brew"
+			}
+		} else {
+			# ON Darwin there's a problem with linking against the Mac-provided OpenSSL.
+			# This must use brew-provided OpenSSL.
+			#
+			if { !$have_openssl } {
+		
+				set er [catch {exec brew info openssl} res]
+				if { $er } {
+					error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
+				}
+
+				lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"
+				lappend ::cmakeopt "-DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib/libcrypto.a"
+			}
 		}
 	}
 
