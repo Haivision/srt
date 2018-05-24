@@ -37,7 +37,7 @@ written by
 #endif
 #include "hcrypt.h"
 
-int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
+int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg)
 {
 	ctx->cfg.key_len = cfg->key_len;
 

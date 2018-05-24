@@ -1,5 +1,7 @@
-# HaiCrypt library contents
-
+# This file is currently reserved for future refactoring, when all headers
+# are going to be moved here. This is the list of headers considered to be
+# attached to the installation package. Once possible, please move the below
+# header files from ../include back to this directory.
 PUBLIC HEADERS
 haicrypt.h
 hcrypt_ctx.h
@@ -7,7 +9,6 @@ hcrypt_msg.h
 
 PRIVATE HEADERS
 hcrypt.h
-hcrypt-openssl.h
 
 SOURCES
 hc_openssl_aes.c

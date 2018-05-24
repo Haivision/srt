@@ -1,6 +1,3 @@
-
-
-SOURCES
 api.cpp
 buffer.cpp
 cache.cpp
@@ -17,17 +14,6 @@ queue.cpp
 srt_c_api.cpp
 window.cpp
 ../common/srt_compat.c
-
-PUBLIC HEADERS
-srt.h
-logging_api.h
-
-PROTECTED HEADERS
-platform_sys.h
-udt.h
-srt4udt.h
-
-PRIVATE HEADERS
 api.h
 buffer.h
 cache.h
@@ -48,4 +34,3 @@ srt4udt.h
 threadname.h
 utilities.h
 window.h
-

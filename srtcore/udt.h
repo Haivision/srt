@@ -234,10 +234,14 @@ enum UDT_SOCKOPT
    UDT_SNDDATA,         // size of data in the sending buffer
    UDT_RCVDATA,         // size of data available for recv
    SRT_SENDER = 21,     // Set sender mode, independent of connection mode
+#ifdef SRT_ENABLE_TSBPD
    SRT_TSBPDMODE = 22,  // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
    SRT_TSBPDDELAY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
+#endif
+#ifdef SRT_ENABLE_INPUTRATE
    SRT_INPUTBW = 24,
    SRT_OHEADBW,
+#endif
    SRT_PASSPHRASE = 26, // PBKDF2 passphrase size[0,10..80] 0:disable crypto
    SRT_PBKEYLEN,        // PBKDF2 generated key len in bytes {16,24,32} Default: 16 (128-bit)
    SRT_KMSTATE,         // Key Material exchange status (SRT_KM_STATE)
@@ -257,16 +261,12 @@ enum UDT_SOCKOPT
 #ifdef SRT_ENABLE_CONNTIMEO
    SRT_CONNTIMEO = 36,
 #endif
-   //SRT_TWOWAYDATA = 37,
+   SRT_TWOWAYDATA = 37,
    SRT_SNDPBKEYLEN = 38,
    SRT_RCVPBKEYLEN,
    SRT_SNDPEERKMSTATE,
    SRT_RCVKMSTATE,
    SRT_LOSSMAXTTL,
-   SRT_RCVLATENCY,
-   SRT_PEERLATENCY,
-   SRT_MINVERSION,
-   SRT_STREAMID
 };
 
 /* Binary backward compatibility obsolete options */
@@ -319,6 +319,7 @@ struct CPerfMon
    int byteAvailRcvBuf;                 // available UDT receiver buffer size
 };
 
+#ifdef SRT_ENABLE_BSTATS
 struct CBytePerfMon
 {
    // global measurements
@@ -404,6 +405,7 @@ struct CBytePerfMon
    int     msRcvTsbPdDelay;             // Timestamp-based Packet Delivery Delay
    //<
 };
+#endif /* SRT_ENABLE_BSTATS */
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -491,10 +493,12 @@ public:
 
    int getErrorCode() const;
 
+#ifdef HAI_PATCH
       /// Get the system network errno for the exception.
       /// @return errno.
 
    int getErrno() const;
+#endif /* HAI_PATCH */
       /// Clear the error code.
 
    void clear();
@@ -648,7 +652,9 @@ namespace UDT
 typedef CUDTException ERRORINFO;
 typedef UDT_SOCKOPT SOCKOPT;
 typedef CPerfMon TRACEINFO;
+#ifdef SRT_ENABLE_BSTATS
 typedef CBytePerfMon TRACEBSTATS;
+#endif
 typedef ud_set UDSET;
 
 UDT_API extern const UDTSOCKET INVALID_SOCK;
@@ -685,6 +691,12 @@ UDT_API int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_
 UDT_API int64_t sendfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 364000);
 UDT_API int64_t recvfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 7280000);
 
+#ifdef SRT_ENABLE_SRTCC_API
+UDT_API int setsrtcc(UDTSOCKET u);
+UDT_API int setsrtcc_maxbitrate(UDTSOCKET u, int maxbitrate);
+UDT_API int setsrtcc_windowsize(UDTSOCKET u, int windowsize);
+#endif /* SRT_ENABLE_SRTCC_API */
+
 // select and selectEX are DEPRECATED; please use epoll. 
 UDT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, const struct timeval* timeout);
 UDT_API int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds,
@@ -695,8 +707,10 @@ UDT_API int epoll_add_usock(int eid, UDTSOCKET u, const int* events = NULL);
 UDT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
 UDT_API int epoll_remove_usock(int eid, UDTSOCKET u);
 UDT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
+#ifdef HAI_PATCH
 UDT_API int epoll_update_usock(int eid, UDTSOCKET u, const int* events = NULL);
 UDT_API int epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
+#endif /* HAI_PATCH */
 UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut,
                        std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
 UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
@@ -706,7 +720,9 @@ UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();
 UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true);
+#ifdef SRT_ENABLE_BSTATS
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
+#endif
 UDT_API UDTSTATUS getsockstate(UDTSOCKET u);
 
 UDT_API void setloglevel(logging::LogLevel::type ll);
@@ -716,9 +732,6 @@ UDT_API void resetlogfa(std::set<logging::LogFA> fas);
 UDT_API void setlogstream(std::ostream& stream);
 UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 UDT_API void setlogflags(int flags);
-
-UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
-UDT_API std::string getstreamid(UDTSOCKET u);
 
 }  // namespace UDT
 

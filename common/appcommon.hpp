@@ -64,7 +64,6 @@ inline void SysCleanupNetwork() {}
 #endif
 
 #include <string>
-#include <cstring>
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
 //    http://mingw.5.n7.nabble.com/Win32API-request-for-new-functions-td22029.html

@@ -59,31 +59,6 @@ proc resolve opt {
 	return [list --$opt $var $type $mark]
 }
 
-# Check if a --disable option has its --enable counterpart. If so,
-# then just invert the option.
-proc resolve_disablers {} {
-	set enablers ""
-	set optkeys_len [llength $::optkeys]
-	for {set pos 0} {$pos < $optkeys_len} {incr pos} {
-		set opt [lindex $::optkeys $pos]
-		if { [string match --disable-* $opt] } {
-			set inverted enable-[string range $opt 10 end]
-			if { $inverted in [dict keys $::options] } {
-				lset ::optkeys $pos --$inverted
-				set val $::optval($opt)
-				unset ::optval($opt)
-				if { $val == "" || ![string is boolean $val] } {
-					set ::optval(--$inverted) 0
-				} else {
-					set ::optval(--$inverted) [expr {!$val}]
-				}
-
-				puts "NOTE: $opt changed into --$inverted=$::optval(--$inverted)"
-			}
-		}
-	}
-}
-
 foreach {o desc} $options {
 	lassign [resolve $o] optname optvar opttype optmark
 	set opt($optname) [list $optvar $opttype $optmark]
@@ -180,8 +155,6 @@ if { $saveopt != "" } {
 }
 
 set cmakeopt ""
-
-resolve_disablers
 
 if { [info proc preprocess] != "" } {
 	preprocess

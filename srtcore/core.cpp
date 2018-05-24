@@ -7639,7 +7639,7 @@ void CUDT::checkTimers()
 
          ++m_iReXmitCount;
 
-         checkSndTimers(DONT_REGEN_KM);
+         m_pCC->onTimeout();
          CCUpdate();
 
          // immediately restart transmission
@@ -7649,7 +7649,7 @@ void CUDT::checkTimers()
 #endif /* SRT_ENABLE_FASTREXMIT */
 
 #ifdef SRT_FIX_KEEPALIVE
-//   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + CPacket::SYN_INTERVAL) * m_ullCPUFrequency;
+//   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + m_iSYNInterval) * m_ullCPUFrequency;
    if (currtime > m_ullLastSndTime + (1000000 * m_ullCPUFrequency))
    {
       sendCtrl(UMSG_KEEPALIVE);
@@ -7667,20 +7667,20 @@ void CUDT::addEPoll(const int eid)
    if (!m_bConnected || m_bBroken || m_bClosing)
       return;
 
-/* new code */
+#ifdef SRT_ENABLE_TSBPD
    CGuard::enterCS(m_RecvLock);
    if (m_pRcvBuffer->isRcvDataReady())
    {
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
    }
    CGuard::leaveCS(m_RecvLock);
-/* (OLD CODE)
+#else /* SRT_ENABLE_TSBPD */
    if (((m_iSockType == UDT_DGRAM) && (m_pRcvBuffer->getRcvMsgNum() > 0))
            ||  ((m_iSockType == UDT_STREAM) &&  m_pRcvBuffer->isRcvDataReady()))
    {
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
    }
-*/
+#endif /* SRT_ENABLE_TSBPD */
    if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
    {
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);

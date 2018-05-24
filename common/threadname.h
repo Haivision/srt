@@ -50,14 +50,12 @@ public:
 
 
     ThreadName(const char* name)
-        : good(false)
     {
         if ( get(old_name) )
         {
             snprintf(new_name, 127, "%s", name);
             new_name[127] = 0;
             prctl(PR_SET_NAME, (unsigned long)new_name, 0, 0);
-            good = true;
         }
     }
 
@@ -80,7 +78,6 @@ class ThreadName
 public:
 
     static bool get(char*) { return false; }
-    static bool set(const char*) { return false; }
 
     ThreadName(const char*)
     {
@@ -89,7 +86,6 @@ public:
     ~ThreadName() // just to make it "non-trivially-destructible" for compatibility with normal version
     {
     }
-
 };
 
 

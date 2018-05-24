@@ -82,6 +82,7 @@ m_iNextMsgNo(1),
 m_iSize(size),
 m_iMSS(mss),
 m_iCount(0)
+#ifdef SRT_ENABLE_BSTATS
 ,m_iBytesCount(0)
 ,m_LastOriginTime(0)
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
@@ -90,12 +91,15 @@ m_iCount(0)
 ,m_iBytesCountMAvg(0)
 ,m_TimespanMAvg(0)
 #endif
+#endif /* SRT_ENABLE_BSTATS */
+#ifdef SRT_ENABLE_INPUTRATE
 ,m_iInRatePktsCount(0)
 ,m_iInRateBytesCount(0)
 ,m_InRateStartTime(0)
 ,m_InRatePeriod(500000)   // 0.5 sec (fast start)
 ,m_iInRateBps(10000000/8) // 10 Mbps (1.25 MBps)
 ,m_iAvgPayloadSz(7*188)
+#endif /* SRT_ENABLE_INPUTRATE */ 
 {
    // initial physical buffer of "size"
    m_pBuffer = new Buffer;
@@ -206,14 +210,18 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
    CGuard::enterCS(m_BufLock);
    m_iCount += size;
 
+#ifdef SRT_ENABLE_BSTATS
    m_iBytesCount += len;
 #ifdef SRT_ENABLE_CBRTIMESTAMP
    m_LastOriginTime = srctime;
 #else
    m_LastOriginTime = time;
 #endif /* SRT_ENABLE_CBRTIMESTAMP */
+#endif /* SRT_ENABLE_BSTATS */
 
+#ifdef SRT_ENABLE_INPUTRATE
    updInputRate(time, size, len);
+#endif /* SRT_ENABLE_INRATE */
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    updAvgBufSize(time);
@@ -232,6 +240,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
       m_iNextMsgNo = 1;
 }
 
+#ifdef SRT_ENABLE_INPUTRATE
 void CSndBuffer::setInputRateSmpPeriod(int period)
 {
    m_InRatePeriod = (uint64_t)period; //(usec) 0=no input rate calculation
@@ -251,7 +260,7 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
          //Payload average size
          m_iAvgPayloadSz = m_iInRateBytesCount / m_iInRatePktsCount;
          //Required Byte/sec rate (payload + headers)
-         m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
+         m_iInRateBytesCount += (m_iInRatePktsCount * SRT_DATA_PKTHDR_SIZE);
          m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / (time - m_InRateStartTime));
 
          LOGC(dlog.Debug).form("updInputRate: pkts:%d bytes:%d avg=%d rate=%d kbps interval=%llu\n",
@@ -291,6 +300,7 @@ int CSndBuffer::getInputRate(int& payloadsz, int& period)
    period = (int)m_InRatePeriod;
    return(m_iInRateBps);
 }
+#endif /* SRT_ENABLE_INPUTRATE */
 
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 {
@@ -336,7 +346,9 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 
    CGuard::enterCS(m_BufLock);
    m_iCount += size;
+#ifdef SRT_ENABLE_BSTATS
    m_iBytesCount += total;
+#endif
 
    CGuard::leaveCS(m_BufLock);
 
@@ -347,47 +359,29 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    return total;
 }
 
+#if defined(SRT_ENABLE_TSBPD)
 int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, unsigned kflgs)
+#else
+int CSndBuffer::readData(char** data, int32_t& msgno_bitset, unsigned kflgs)
+#endif
 {
    // No data to read
    if (m_pCurrBlock == m_pLastBlock)
       return 0;
 
-   // Make the packet REFLECT the data stored in the buffer.
    *data = m_pCurrBlock->m_pcData;
    int readlen = m_pCurrBlock->m_iLength;
 
-   // XXX This is probably done because the encryption should happen
-   // just once, and so this sets the encryption flags to both msgno bitset
-   // IN THE PACKET and IN THE BLOCK. This is probably to make the encryption
-   // happen at the time when scheduling a new packet to send, but the packet
-   // must remain in the send buffer until it's ACKed. For the case of rexmit
-   // the packet will be taken "as is" (that is, already encrypted).
-   //
-   // The problem is in the order of things:
-   // 0. When the application stores the data, some of the flags for PH_MSGNO are set.
-   // 1. The readData() is called to get the original data sent by the application.
-   // 2. The data are original and must be encrypted. They WILL BE encrypted, later.
-   // 3. So far we are in readData() so the encryption flags must be updated NOW because
-   //    later we won't have access to the block's data.
-   // 4. After exiting from readData(), the packet is being encrypted. It's immediately
-   //    sent, however the data must remain in the sending buffer until they are ACKed.
-   // 5. In case when rexmission is needed, the second overloaded version of readData
-   //    is being called, and the buffer + PH_MSGNO value is extracted. All interesting
-   //    flags must be present and correct at that time.
-   //
-   // The only sensible way to fix this problem is to encrypt the packet not after
-   // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
-   // flags for PH_MSGNO will be applied directly there. Then here the value for setting
-   // PH_MSGNO will be set as is.
    m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
-   msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
 
+   msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
+#ifdef SRT_ENABLE_TSBPD
    srctime = 
 #ifdef SRT_ENABLE_SRCTIMESTAMP
       m_pCurrBlock->m_SourceTime ? m_pCurrBlock->m_SourceTime :
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
       m_pCurrBlock->m_OriginTime;
+#endif /* SRT_ENABLE_TSBPD */
 
    m_pCurrBlock = m_pCurrBlock->m_pNext;
 
@@ -396,14 +390,16 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
    return readlen;
 }
 
+#ifdef SRT_ENABLE_TSBPD
 int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, uint64_t& srctime, int& msglen)
+#else  /* SRT_ENABLE_TSBPD */
+int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, int& msglen)
+#endif /* SRT_ENABLE_TSBPD */
 {
    CGuard bufferguard(m_BufLock);
 
    Block* p = m_pFirstBlock;
 
-   // XXX Suboptimal procedure to keep the blocks identifiable
-   // by sequence number. Consider using some circular buffer.
    for (int i = 0; i < offset; ++ i)
       p = p->m_pNext;
 
@@ -444,20 +440,15 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
 
    *data = p->m_pcData;
    int readlen = p->m_iLength;
-
-   // XXX Here the value predicted to be applied to PH_MSGNO field is extracted.
-   // As this function is predicted to extract the data to send as a rexmited packet,
-   // the packet must be in the form ready to send - so, in case of encryption,
-   // encrypted, and with all ENC flags already set. So, the first call to send
-   // the packet originally (the other overload of this function) must set these
-   // flags.
    msgno_bitset = p->m_iMsgNoBitset;
 
+#ifdef SRT_ENABLE_TSBPD
    srctime = 
 #ifdef SRT_ENABLE_SRCTIMESTAMP
       p->m_SourceTime ? p->m_SourceTime :
 #endif /* SRT_ENABLE_SRCTIMESTAMP */
       p->m_OriginTime;
+#endif /* SRT_ENABLE_TSBPD */
 
    return readlen;
 }
@@ -466,16 +457,18 @@ void CSndBuffer::ackData(int offset)
 {
    CGuard bufferguard(m_BufLock);
 
+#ifdef SRT_ENABLE_BSTATS
    bool move = false;
-   for (int i = 0; i < offset; ++ i)
-   {
+   for (int i = 0; i < offset; ++ i) {
       m_iBytesCount -= m_pFirstBlock->m_iLength;
-      if (m_pFirstBlock == m_pCurrBlock)
-          move = true;
+      if (m_pFirstBlock == m_pCurrBlock) move = true;
       m_pFirstBlock = m_pFirstBlock->m_pNext;
    }
-   if (move)
-       m_pCurrBlock = m_pFirstBlock;
+   if (move) m_pCurrBlock = m_pFirstBlock;
+#else
+   for (int i = 0; i < offset; ++ i)
+      m_pFirstBlock = m_pFirstBlock->m_pNext;
+#endif
 
    m_iCount -= offset;
 
@@ -491,6 +484,7 @@ int CSndBuffer::getCurrBufSize() const
    return m_iCount;
 }
 
+#ifdef SRT_ENABLE_BSTATS
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
 
 int CSndBuffer::getAvgBufSize(int &bytes, int &timespan)
@@ -589,6 +583,7 @@ int CSndBuffer::dropLateData(int &bytes, uint64_t latetime)
    return(dpkts);
 }
 #endif /* SRT_ENABLE_TLPKTDROP */
+#endif /* SRT_ENABLE_BSTATS */
 
 void CSndBuffer::increase()
 {
@@ -675,11 +670,13 @@ void CSndBuffer::increase()
 
 
 // XXX Init values moved to in-class.
+#ifdef SRT_ENABLE_TSBPD
 //const uint32_t CRcvBuffer::TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
 //const int CRcvBuffer::TSBPD_DRIFT_MAX_VALUE   = 5000;  // usec
 //const int CRcvBuffer::TSBPD_DRIFT_MAX_SAMPLES = 1000;  // ACK-ACK packets
 #ifdef SRT_DEBUG_TSBPD_DRIFT
 //const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
+#endif
 #endif
 
 CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize):
@@ -690,11 +687,14 @@ m_iStartPos(0),
 m_iLastAckPos(0),
 m_iMaxPos(0),
 m_iNotch(0)
+#ifdef SRT_ENABLE_BSTATS
 ,m_BytesCountLock()
 ,m_iBytesCount(0)
 ,m_iAckedPktsCount(0)
 ,m_iAckedBytesCount(0)
 ,m_iAvgPayloadSz(7*188)
+#endif
+#ifdef SRT_ENABLE_TSBPD
 ,m_bTsbPdMode(false)
 ,m_uTsbPdDelay(0)
 ,m_ullTsbPdTimeBase(0)
@@ -708,6 +708,7 @@ m_iNotch(0)
 ,m_iCountMAvg(0)
 ,m_iBytesCountMAvg(0)
 #endif
+#endif
 {
    m_pUnit = new CUnit* [m_iSize];
    for (int i = 0; i < m_iSize; ++ i)
@@ -718,7 +719,9 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
 
+#ifdef SRT_ENABLE_BSTATS
    pthread_mutex_init(&m_BytesCountLock, NULL);
+#endif /* SRT_ENABLE_BSTATS */
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -734,9 +737,12 @@ CRcvBuffer::~CRcvBuffer()
 
    delete [] m_pUnit;
 
+#ifdef SRT_ENABLE_BSTATS
    pthread_mutex_destroy(&m_BytesCountLock);
+#endif /* SRT_ENABLE_BSTATS */
 }
 
+#ifdef SRT_ENABLE_BSTATS
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
 {
    /*
@@ -764,18 +770,26 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
        if (bytes < 0) m_iBytesCount += bytes; /* removed bytes from rcv buffer */
    }
 }
+#endif /* SRT_ENABLE_BSTATS */
 
 int CRcvBuffer::addData(CUnit* unit, int offset)
 {
    int pos = (m_iLastAckPos + offset) % m_iSize;
+#ifdef HAI_PATCH
    if (offset >= m_iMaxPos)
       m_iMaxPos = offset + 1;
+#else
+   if (offset > m_iMaxPos)
+      m_iMaxPos = offset;
+#endif
 
    if (m_pUnit[pos] != NULL) {
       return -1;
    }
    m_pUnit[pos] = unit;
+#ifdef SRT_ENABLE_BSTATS
    countBytes(1, unit->m_Packet.getLength());
+#endif /* SRT_ENABLE_BSTATS */
 
    unit->m_iFlag = CUnit::GOOD;
    ++ m_pUnitQueue->m_iCount;
@@ -789,14 +803,18 @@ int CRcvBuffer::readBuffer(char* data, int len)
    int lastack = m_iLastAckPos;
    int rs = len;
 
+#ifdef SRT_ENABLE_TSBPD
    uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : 0LL);
+#endif /* SRT_ENABLE_TSBPD */
 
    LOGC(mglog.Debug) << CONID() << "readBuffer: start=" << p << " lastack=" << lastack;
    while ((p != lastack) && (rs > 0))
    {
+#ifdef SRT_ENABLE_TSBPD
       LOGC(mglog.Debug) << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
       if (m_bTsbPdMode && (getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
          break; /* too early for this unit, return whatever was copied */
+#endif /* SRT_ENABLE_TSBPD */
 
       int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
@@ -805,7 +823,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
       memcpy(data, m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
       data += unitsize;
 
-      if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+      if ((rs > unitsize) || (rs == m_pUnit[p]->m_Packet.getLength() - m_iNotch))
       {
          CUnit* tmp = m_pUnit[p];
          m_pUnit[p] = NULL;
@@ -823,8 +841,10 @@ int CRcvBuffer::readBuffer(char* data, int len)
       rs -= unitsize;
    }
 
+#ifdef SRT_ENABLE_BSTATS
    /* we removed acked bytes form receive buffer */
    countBytes(-1, -(len - rs), true);
+#endif /* SRT_ENABLE_BSTATS */
    m_iStartPos = p;
 
    return len - rs;
@@ -846,7 +866,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
       if (ofs.fail())
          break;
 
-      if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+      if ((rs > unitsize) || (rs == m_pUnit[p]->m_Packet.getLength() - m_iNotch))
       {
          CUnit* tmp = m_pUnit[p];
          m_pUnit[p] = NULL;
@@ -864,8 +884,10 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
       rs -= unitsize;
    }
 
+#ifdef SRT_ENABLE_BSTATS
    /* we removed acked bytes form receive buffer */
    countBytes(-1, -(len - rs), true);
+#endif /* SRT_ENABLE_BSTATS */
    m_iStartPos = p;
 
    return len - rs;
@@ -873,6 +895,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 
 void CRcvBuffer::ackData(int len)
 {
+#ifdef SRT_ENABLE_BSTATS
    {
       int pkts = 0;
       int bytes = 0;
@@ -886,6 +909,7 @@ void CRcvBuffer::ackData(int len)
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
+#endif
    m_iLastAckPos = (m_iLastAckPos + len) % m_iSize;
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
@@ -894,6 +918,7 @@ void CRcvBuffer::ackData(int len)
    CTimer::triggerEvent();
 }
 
+#ifdef SRT_ENABLE_TSBPD
 #ifdef SRT_ENABLE_TLPKTDROP
 
 void CRcvBuffer::skipData(int len)
@@ -970,8 +995,10 @@ bool CRcvBuffer::getRcvFirstMsg(uint64_t& tsbpdtime, bool& passack, int32_t& ski
 bool CRcvBuffer::getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt)
 {
    tsbpdtime = 0;
+#ifdef SRT_ENABLE_BSTATS
    int rmpkts = 0; 
    int rmbytes = 0;
+#endif   /* SRT_ENABLE_BSTATS */
    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
    {
       bool freeunit = false;
@@ -997,7 +1024,7 @@ bool CRcvBuffer::getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt)
         if (tsbpdtime > CTimer::getTime())
             return false;
 
-        if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+        if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != 0)
             freeunit = true; /* packet not decrypted */
         else
             return true;
@@ -1007,8 +1034,10 @@ bool CRcvBuffer::getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt)
       {
          CUnit* tmp = m_pUnit[i];
          m_pUnit[i] = NULL;
+#ifdef   SRT_ENABLE_BSTATS
          rmpkts++;
          rmbytes += tmp->m_Packet.getLength();
+#endif   /* SRT_ENABLE_BSTATS */
          tmp->m_iFlag = CUnit::FREE;
          --m_pUnitQueue->m_iCount;
 
@@ -1016,8 +1045,10 @@ bool CRcvBuffer::getRcvReadyMsg(uint64_t& tsbpdtime, CPacket** pppkt)
             m_iStartPos = 0;
       }
    }
-   /* removed skipped, dropped, undecryptable bytes from rcv buffer */
-   countBytes(-rmpkts, -rmbytes, true);
+#ifdef SRT_ENABLE_BSTATS
+   /* removed skipped, dropped, undecryptable bytes from rcv buffer */        
+   countBytes(-rmpkts, -rmbytes, true); 
+#endif
    return false;
 }
 
@@ -1081,6 +1112,20 @@ bool CRcvBuffer::isRcvDataReady()
    return isRcvDataReady(tsbpdtime);
 }
 
+#else
+bool CRcvBuffer::isRcvDataReady() const
+{
+    return(getRcvDataSize() > 0);
+    /*
+   int p, q;
+   bool passack;
+
+   return scanMsg(p, q, passack) ? 1 : 0;
+   */
+}
+
+#endif /* SRT_ENABLE_TSBPD */ 
+
 int CRcvBuffer::getAvailBufSize() const
 {
    // One slot must be empty in order to tell the difference between "empty buffer" and "full buffer"
@@ -1095,6 +1140,9 @@ int CRcvBuffer::getRcvDataSize() const
    return m_iSize + m_iLastAckPos - m_iStartPos;
 }
 
+
+#ifdef SRT_ENABLE_BSTATS
+#ifdef SRT_ENABLE_TSBPD
 
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
@@ -1220,10 +1268,14 @@ int CRcvBuffer::getRcvDataSize(int &bytes, int &timespan)
    return m_iAckedPktsCount;
 }
 
+#endif /* SRT_ENABLE_TSBPD */
+
 int CRcvBuffer::getRcvAvgPayloadSize() const
 {
    return m_iAvgPayloadSz;
 }
+
+#endif /* SRT_ENABLE_BSTATS */
 
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
 {
@@ -1233,6 +1285,7 @@ void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
          m_pUnit[i]->m_iFlag = CUnit::DROPPED;
 }
 
+#ifdef SRT_ENABLE_TSBPD
 uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
 {
    /* 
@@ -1421,13 +1474,19 @@ int CRcvBuffer::readMsg(char* data, int len)
     return readMsg(data, len, tsbpdtime);
 }
 
+#endif
 
+#ifdef SRT_ENABLE_TSBPD
 int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
+#else  /* SRT_ENABLE_TSBPD */
+int CRcvBuffer::readMsg(char* data, int len)
+#endif
 {
    int p, q;
    bool passack;
    bool empty = true;
 
+#ifdef SRT_ENABLE_TSBPD
    if (m_bTsbPdMode)
    {
       passack = false;
@@ -1451,6 +1510,7 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
       }
    }
    else
+#endif
    {
       tsbpdtime = 0;
       if (scanMsg(p, q, passack))
@@ -1473,8 +1533,10 @@ int CRcvBuffer::readMsg(char* data, int len, uint64_t& tsbpdtime)
          memcpy(data, m_pUnit[p]->m_Packet.m_pcData, unitsize);
          data += unitsize;
          rs -= unitsize;
+#ifdef SRT_ENABLE_BSTATS
          /* we removed bytes form receive buffer */
          countBytes(-1, -unitsize, true);
+#endif /* SRT_ENABLE_BSTATS */
 
 
 #if ENABLE_LOGGING
@@ -1528,8 +1590,10 @@ bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
    if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
       return false;
 
+#ifdef SRT_ENABLE_BSTATS
    int rmpkts = 0;
    int rmbytes = 0;
+#endif /* SRT_ENABLE_BSTATS */
    //skip all bad msgs at the beginning
    while (m_iStartPos != m_iLastAckPos)
    {
@@ -1570,16 +1634,20 @@ bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
 
       CUnit* tmp = m_pUnit[m_iStartPos];
       m_pUnit[m_iStartPos] = NULL;
+#ifdef SRT_ENABLE_BSTATS
       rmpkts++;
       rmbytes += tmp->m_Packet.getLength();
+#endif /* SRT_ENABLE_BSTATS */
       tmp->m_iFlag = CUnit::FREE;
       -- m_pUnitQueue->m_iCount;
 
       if (++ m_iStartPos == m_iSize)
          m_iStartPos = 0;
    }
+#ifdef SRT_ENABLE_BSTATS
    /* we removed bytes form receive buffer */
    countBytes(-rmpkts, -rmbytes, true);
+#endif /* SRT_ENABLE_BSTATS */
 
    p = -1;                  // message head
    q = m_iStartPos;         // message tail
@@ -1587,8 +1655,11 @@ bool CRcvBuffer::scanMsg(int& p, int& q, bool& passack)
    bool found = false;
 
    // looking for the first message
-   //>>m_pUnit[size + m_iMaxPos] is not valid 
+#if defined(HAI_PATCH) //>>m_pUnit[size + m_iMaxPos] is not valid 
    for (int i = 0, n = m_iMaxPos + getRcvDataSize(); i < n; ++ i)
+#else
+   for (int i = 0, n = m_iMaxPos + getRcvDataSize(); i <= n; ++ i)
+#endif
    {
       if ((NULL != m_pUnit[q]) && (CUnit::GOOD == m_pUnit[q]->m_iFlag))
       {

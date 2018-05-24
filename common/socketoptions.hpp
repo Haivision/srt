@@ -150,7 +150,7 @@ inline bool SocketOption::apply(int socket, std::string value) const
 
 namespace {
 SocketOption srt_options [] {
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT64, SocketOption::PRE },
+    { "maxbw", 0, SRTO_MAXBW, SocketOption::INT, SocketOption::PRE },
     { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::INT, SocketOption::PRE },
     { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::STRING, SocketOption::PRE },
 
@@ -166,12 +166,7 @@ SocketOption srt_options [] {
     { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::INT, SocketOption::PRE },
     { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::BOOL, SocketOption::PRE },
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::BOOL, SocketOption::PRE },
-    { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::INT, SocketOption::PRE },
-    { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::INT, SocketOption::PRE },
-    { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::INT, SocketOption::PRE },
-    { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::INT, SocketOption::PRE },
-    { "minversion", 0, SRTO_MINVERSION, SocketOption::INT, SocketOption::PRE },
-    { "streamid", 0, SRTO_STREAMID, SocketOption::STRING, SocketOption::PRE }
+    { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::INT, SocketOption::PRE }
 };
 }
 

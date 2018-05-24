@@ -231,7 +231,7 @@ int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
    p->second.m_sUDTSocksIn.erase(u);
    p->second.m_sUDTSocksOut.erase(u);
    p->second.m_sUDTSocksEx.erase(u);
-
+#ifdef HAI_PATCH
    /*
    * We are no longer interested in signals from this socket
    * If some are up, they will unblock EPoll forever.
@@ -240,6 +240,7 @@ int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
    p->second.m_sUDTReads.erase(u);
    p->second.m_sUDTWrites.erase(u);
    p->second.m_sUDTExcepts.erase(u);
+#endif /* HAI_PATCH */
 
    return 0;
 }
@@ -273,8 +274,8 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 
    return 0;
 }
+#ifdef HAI_PATCH // Need this to atomically modify polled events (ex: remove write/keep read)
 
-// Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const UDTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);
@@ -378,6 +379,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
    return 0;
 }
+#endif /* HAI_PATCH */
 
 int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
@@ -481,7 +483,7 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          //faster approaches can be applied for specific systems in the future.
 
          //"select" has a limitation on the number of sockets
-         int max_fd = 0;
+         SYSSOCKET max_fd = 0;
          
          fd_set readfds;
          fd_set writefds;

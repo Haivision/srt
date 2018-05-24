@@ -34,30 +34,28 @@ class UriParser
 public:
 
     enum DefaultExpect { EXPECT_FILE, EXPECT_HOST };
+
+    UriParser(const std::string& strUrl, DefaultExpect exp = EXPECT_FILE);
+    virtual ~UriParser(void);
+
+    // Some predefined types
     enum Type
     {
         UNKNOWN, FILE, UDP, TCP, SRT, RTMP, HTTP
     };
-
-    UriParser(const std::string& strUrl, DefaultExpect exp = EXPECT_FILE);
-    UriParser(): m_uriType(UNKNOWN) {}
-    virtual ~UriParser(void);
-
-    // Some predefined types
     Type type();
 
 // Operations
 public:
     std::string uri() { return m_origUri; }
-    std::string proto();
+    std::string proto(void);
     std::string scheme() { return proto(); }
-    std::string host();
-    std::string port();
+    std::string host(void);
+    std::string port(void);
     unsigned short int portno();
     std::string hostport() { return host() + ":" + port(); }
-    std::string path();
+    std::string path(void);
     std::string queryValue(const std::string& strKey);
-    std::string operator[](const std::string& key) { return queryValue(key); }
     const std::map<std::string, std::string>& parameters() { return m_mapQuery; }
 
 private:

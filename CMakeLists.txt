@@ -19,14 +19,14 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.0")
+#project(SRT VERSION "1.2.1")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
 
-set (SRT_VERSION 1.3.0)
+set (SRT_VERSION 1.2.0)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 if (NOT DEFINED ENABLE_DEBUG)
@@ -54,8 +54,6 @@ option(ENABLE_LOGGING "Should logging be enabled" ${ENABLE_LOGGING_DEFAULT})
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_SEPARATE_HAICRYPT "Should haicrypt be built as a separate library file" OFF)
 option(ENABLE_SUFLIP "Shuld suflip tool be built" OFF)
-option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
-option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
 # Always turn logging on if the build type is debug
 if (ENABLE_DEBUG)
@@ -78,11 +76,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 if (DEFINED WITH_SRT_NAME)
-	set (TARGET_haisrt ${WITH_SRT_NAME})
+	set (TARGET_haisrt ${WITH_SRT_TARGET})
 endif()
 
 if (DEFINED WITH_HAICRYPT_NAME)
-	set (TARGET_haicrypt ${WITH_HAICRYPT_NAME})
+	set (TARGET_haicrypt ${WITH_HAICRYPT_TARGET})
 endif()
 
 set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -160,7 +158,6 @@ if(WIN32)
 elseif(DARWIN)
     message(STATUS "DARWIN detected")
     add_definitions(-DOSX=1)
-	set(MACOSX_RPATH OFF)
 elseif(LINUX)
     add_definitions(-DLINUX=1)
     message(STATUS "LINUX detected" )
@@ -213,9 +210,9 @@ endif()
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
 if (DEFINED SRT_EXTRA_LIB_INC)
-	message (STATUS "--- Extra injection: ${SRT_EXTRA_LIB_INC}")
 	include(${SRT_EXTRA_LIB_INC}.cmake)
 	# Expected to provide variables:
+	# - SOURCES_srt_extra
 	# - EXTRA_stransmit
 endif()
 
@@ -250,9 +247,6 @@ if (WIN32)
 	# srt headers, and the haicrypt headers will not be published.
 	adddirname(common "${HEADERS_common_indir}" HEADERS_srt_win32)
 endif()
-
-# Add extra sources to haicrypt (actually all base dep handling) if defined
-set (SOURCES_haicrypt ${SOURCES_haicrypt} ${SOURCES_haicrypt_dep})
 
 message(STATUS "SOURCES(haicrypt): ${SOURCES_haicrypt}")
 
@@ -320,7 +314,7 @@ else()
 	set (DEPENDS_srt ${TARGET_haicrypt})
 endif()
 
-add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt})
+add_library(${TARGET_srt} ${srt_libspec} ${SOURCES_srt} ${SOURCES_srt_extra})
 
 # ---
 # And back to target: haicrypt. Both targets must be defined
@@ -433,21 +427,10 @@ endif()
 
 if ( ENABLE_CXX11 )
 
-	set (SOURCES_transmit 
-		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
-		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
-		${CMAKE_SOURCE_DIR}/common/logsupport.cpp
-		${CMAKE_SOURCE_DIR}/common/transmitmedia.cpp
-	)
-
 	add_executable(stransmit
 		${CMAKE_SOURCE_DIR}/apps/stransmit.cpp
-		${SOURCES_transmit}
-	)
-
-	add_executable(siplex
-		${CMAKE_SOURCE_DIR}/apps/siplex.cpp
-		${SOURCES_transmit}
+		${CMAKE_SOURCE_DIR}/common/uriparser.cpp
+		${CMAKE_SOURCE_DIR}/common/socketoptions.cpp
 	)
 
 	# Test programs
@@ -456,20 +439,13 @@ if ( ENABLE_CXX11 )
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(stransmit PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
 	target_link_libraries(stransmit ${TARGET_srt} ${TARGET_haicrypt})
-	install(TARGETS stransmit RUNTIME DESTINATION bin)
-
-	set_target_properties(siplex PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}")
-	target_link_libraries(siplex ${TARGET_srt} ${TARGET_haicrypt})
-	install(TARGETS siplex RUNTIME DESTINATION bin)
-
-	install(PROGRAMS scripts/sfplay DESTINATION bin)
-
 	target_link_libraries(utility-test ${TARGET_srt})
+	install(TARGETS stransmit RUNTIME DESTINATION bin)
+	install(PROGRAMS scripts/sfplay DESTINATION bin)
 
 endif()
 
 if (DEFINED SRT_EXTRA_APPS_INC)
-	message (STATUS "--- Extra injection: ${SRT_EXTRA_APPS_INC}")
 	include(${SRT_EXTRA_APPS_INC}.cmake)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
