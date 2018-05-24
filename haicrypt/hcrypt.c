@@ -41,10 +41,8 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 
 #if ENABLE_HAICRYPT_LOGGING
 
-static const char* DumpCfgFlags(int flags)
+static const char* DumpCfgFlags(int flags, char* buf)
 {
-    static char buf[4096];
-
     static struct { int flg; const char* desc; } flgtable [] = {
 #define HCRYPTF(name) { HAICRYPT_CFG_F_##name, #name }
         HCRYPTF(TX),
@@ -52,7 +50,7 @@ static const char* DumpCfgFlags(int flags)
         HCRYPTF(FEC)
 #undef HCRYPTF
     };
-    size_t flgtable_size = sizeof(flgtable)/sizeof(flgtable[0]);
+    const size_t flgtable_size = sizeof(flgtable)/sizeof(flgtable[0]);
     size_t i;
 
     buf[0] = 0;
@@ -76,6 +74,7 @@ static const char* DumpCfgFlags(int flags)
 void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg)
 {
     char buf_secret[1024];
+    char buf_config[4096];
     char* pbuf = buf_secret + snprintf(buf_secret, 1024, "{tp=%s len=%d pwd=",
             (cfg->secret.typ == 1 ? "PSK" : cfg->secret.typ == 2 ? "PWD" : "???"),
             (int)cfg->secret.len);
@@ -95,7 +94,7 @@ void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg)
 
     HCRYPT_LOG(LOG_DEBUG, "CFG DUMP: flags=%s xport=%s cipher=%s key_len=%d data_max_len=%d\n",
             // flags
-            DumpCfgFlags(cfg->flags),
+            DumpCfgFlags(cfg->flags, buf_config),
             // xport
             (cfg->xport == HAICRYPT_XPT_SRT ? "SRT" : "INVALID"),
             // cipher
