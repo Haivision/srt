@@ -12,10 +12,16 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 
-#include <haisrt/srt.h>
+#include "srt.h"
 
 int main( int argc, char** argv )
 {
+    if (argc < 3)
+    {
+        fprintf(stderr, "Usage: %s <remote host> <remote port>\n", argv[0]);
+        return 1;
+    }
+
     int ss, st;
     struct sockaddr_in sa;
     int yes = 1;
@@ -23,7 +29,7 @@ int main( int argc, char** argv )
 
     srt_startup();
 
-    ss = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    ss = srt_create_socket();
     if ( ss == SRT_ERROR )
     {
         fprintf(stderr, "srt_socket: %s\n", srt_getlasterror_str());
@@ -36,7 +42,23 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
+    // This is obligatory only in live mode, if you predict to connect
+    // to a peer with SRT version 1.2.0 or older. Not required since
+    // 1.3.0, and all older versions support only live mode.
+    //srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
+    //
+    // In order to make sure that the client supports non-live message
+    // mode, let's require this.
+    int minversion = SRT_VERSION_FEAT_HSv5;
+    srt_setsockflag(ss, SRTO_MINVERSION, &minversion, sizeof minversion);
+
+    // Require also non-live message mode.
+    int file_mode = SRTT_FILE;
+    srt_setsockflag(ss, SRTO_TRANSTYPE, &file_mode, sizeof file_mode);
+    srt_setsockflag(ss, SRTO_MESSAGEAPI, &yes, sizeof yes);
+
+    // Note that the other side will reject the connection if the
+    // listener didn't set the same mode.
 
     st = srt_connect(ss, (struct sockaddr*)&sa, sizeof sa);
     if ( st == SRT_ERROR )
@@ -45,7 +67,7 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    st = srt_sendmsg2(ss, message, sizeof message, NULL);
+    st = srt_send(ss, message, sizeof message);
     if ( st == SRT_ERROR )
     {
         fprintf(stderr, "srt_sendmsg: %s\n", srt_getlasterror_str());

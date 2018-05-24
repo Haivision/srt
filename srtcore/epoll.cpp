@@ -57,7 +57,7 @@ modified by
 #if __APPLE__
    #include "TargetConditionals.h"
 #endif
-#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    #include <sys/types.h>
    #include <sys/event.h>
    #include <sys/time.h>
@@ -103,7 +103,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
        */
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    localid = kqueue();
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
@@ -123,7 +123,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return desc.m_iID;
 }
 
-int CEPoll::add_usock(const int eid, const UDTSOCKET& u, const int* events)
+int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);
 
@@ -170,7 +170,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_ADD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -210,7 +210,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
+int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
 {
    CGuard pg(m_EPollLock);
 
@@ -221,7 +221,7 @@ int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
    p->second.m_sUDTSocksIn.erase(u);
    p->second.m_sUDTSocksOut.erase(u);
    p->second.m_sUDTSocksEx.erase(u);
-#ifdef HAI_PATCH
+
    /*
    * We are no longer interested in signals from this socket
    * If some are up, they will unblock EPoll forever.
@@ -230,7 +230,6 @@ int CEPoll::remove_usock(const int eid, const UDTSOCKET& u)
    p->second.m_sUDTReads.erase(u);
    p->second.m_sUDTWrites.erase(u);
    p->second.m_sUDTExcepts.erase(u);
-#endif /* HAI_PATCH */
 
    return 0;
 }
@@ -247,7 +246,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
    epoll_event ev;  // ev is ignored, for compatibility with old Linux kernel only.
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_DEL, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke;
 
    //
@@ -264,9 +263,9 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 
    return 0;
 }
-#ifdef HAI_PATCH // Need this to atomically modify polled events (ex: remove write/keep read)
 
-int CEPoll::update_usock(const int eid, const UDTSOCKET& u, const int* events)
+// Need this to atomically modify polled events (ex: remove write/keep read)
+int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);
 
@@ -333,7 +332,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_MOD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -369,9 +368,8 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
    return 0;
 }
-#endif /* HAI_PATCH */
 
-int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
+int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
    if (!readfds && !writefds && !lrfds && lwfds && (msTimeOut < 0))
@@ -408,14 +406,14 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
       if ((NULL != readfds) && (!p->second.m_sUDTReads.empty() || !p->second.m_sUDTExcepts.empty()))
       {
          *readfds = p->second.m_sUDTReads;
-         for (set<UDTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
+         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
             readfds->insert(*i);
          total += p->second.m_sUDTReads.size() + p->second.m_sUDTExcepts.size();
       }
       if ((NULL != writefds) && (!p->second.m_sUDTWrites.empty() || !p->second.m_sUDTExcepts.empty()))
       {
          *writefds = p->second.m_sUDTWrites;
-         for (set<UDTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
+         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
             writefds->insert(*i);
          total += p->second.m_sUDTWrites.size() + p->second.m_sUDTExcepts.size();
       }
@@ -440,8 +438,8 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
                ++ total;
             }
          }
-         #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
-         #if defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+         #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+         #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
          // 
          // for iOS setting a timeout of 1ms for kevent and not doing CTimer::waitForEvent(); in the code below
          // gives us a 10% cpu boost.
@@ -473,7 +471,7 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          //faster approaches can be applied for specific systems in the future.
 
          //"select" has a limitation on the number of sockets
-         SYSSOCKET max_fd = 0;
+         int max_fd = 0;
          
          fd_set readfds;
          fd_set writefds;
@@ -520,7 +518,7 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
       if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * 1000LL))
          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-      #if defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+      #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #else
       CTimer::waitForEvent();
       #endif
@@ -540,7 +538,7 @@ int CEPoll::release(const int eid)
    #ifdef LINUX
    // release local/system epoll descriptor
    ::close(i->second.m_iLocalID);
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    ::close(i->second.m_iLocalID);
    #endif
 
@@ -552,7 +550,7 @@ int CEPoll::release(const int eid)
 namespace
 {
 
-void update_epoll_sets(const UDTSOCKET& uid, const set<UDTSOCKET>& watch, set<UDTSOCKET>& result, bool enable)
+void update_epoll_sets(const SRTSOCKET& uid, const set<SRTSOCKET>& watch, set<SRTSOCKET>& result, bool enable)
 {
    if (enable && (watch.find(uid) != watch.end()))
    {
@@ -566,7 +564,7 @@ void update_epoll_sets(const UDTSOCKET& uid, const set<UDTSOCKET>& watch, set<UD
 
 }  // namespace
 
-int CEPoll::update_events(const UDTSOCKET& uid, std::set<int>& eids, int events, bool enable)
+int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
 {
    CGuard pg(m_EPollLock);
 

@@ -41,34 +41,9 @@ struct UriParserInit
 } g_uriparser_init;
 
 
-//++
-// UriParser
-//--
-#ifdef TEST1
-
-static void pf(string name, string value)
-{
-    if ( name.substr(0,2) == "m_" )
-        name = name.substr(2);
-    cerr << name << ": " << value << endl;
-}
-
-#define PF(field) pf(#field, field)
-#endif
-
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
 {
     Parse(strUrl, exp);
-#ifdef TEST1
-
-    cerr << "PARSED URI: " << m_origUri << endl;
-    PF(m_proto);
-    PF(m_host);
-    PF(m_port);
-    PF(m_path);
-
-    cerr << "SCHEME INDEX: " << int(m_uriType) << endl;
-#endif
 }
 
 UriParser::~UriParser(void)
@@ -243,18 +218,21 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     }
 
     m_uriType = types[m_proto]; // default-constructed UNKNOWN will be used if not found (although also inserted)
+    m_origUri = strUrl;
 }
 
 #ifdef TEST
+
 
 using namespace std;
 
 int main( int argc, char** argv )
 {
     UriParser parser (argv[1]);
+    (void)argc;
 
     cout << "PARSING URL: " << argv[1] << endl;
-
+    cerr << "SCHEME INDEX: " << int(parser.type()) << endl;
     cout << "PROTOCOL: " << parser.proto() << endl;
     cout << "HOST: " << parser.host() << endl;
     cout << "PORT: " << parser.portno() << endl;

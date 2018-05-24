@@ -17,7 +17,6 @@
    #include <windows.h>
    #include <inttypes.h>
    #include <stdint.h>
-   #include "win/wintime.h"
    #if defined(_MSC_VER)
       #pragma warning(disable:4251)
    #endif
@@ -29,6 +28,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <netdb.h>
 #endif
 
 #endif

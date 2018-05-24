@@ -201,9 +201,9 @@ static int hcOpenSSL_AES_SetKey(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx,
 }
 
 static int hcOpenSSL_AES_Encrypt(
-	hcrypt_CipherData *cipher_data, 
+	hcrypt_CipherData *cipher_data,
 	hcrypt_Ctx *ctx,
-	hcrypt_DataDesc *in_data, int nbin, 
+	hcrypt_DataDesc *in_data, int nbin ATR_UNUSED,
 	void *out_p[], size_t out_len_p[], int *nbout_p)
 {
 	hcOpenSSL_AES_data *aes_data = (hcOpenSSL_AES_data *)cipher_data;
@@ -348,7 +348,7 @@ static int hcOpenSSL_AES_Encrypt(
 
 
 static int hcOpenSSL_AES_Decrypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx,
-	hcrypt_DataDesc *in_data, int nbin, void *out_p[], size_t out_len_p[], int *nbout_p)
+	hcrypt_DataDesc *in_data, int nbin ATR_UNUSED, void *out_p[], size_t out_len_p[], int *nbout_p)
 {
 	hcOpenSSL_AES_data *aes_data = (hcOpenSSL_AES_data *)cipher_data;
 	unsigned char *out_txt;

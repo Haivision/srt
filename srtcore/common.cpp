@@ -58,7 +58,7 @@ modified by
    #if __APPLE__
       #include "TargetConditionals.h"
    #endif
-   #if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #include <mach/mach_time.h>
    #endif
 #else
@@ -70,8 +70,13 @@ modified by
 #include <string>
 #include <sstream>
 #include <cmath>
+#include <iostream>
+#include <iomanip>
+#include "srt.h"
 #include "md5.h"
 #include "common.h"
+#include "logging.h"
+#include "threadname.h"
 
 #include <srt_compat.h> // SysStrError
 
@@ -126,7 +131,7 @@ void CTimer::rdtsc(uint64_t &x)
       //SetThreadAffinityMask(hCurThread, dwOldMask);
       if (!ret)
          x = getTime() * s_ullCPUFrequency;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
       // use system call to read time clock for other archs
@@ -154,7 +159,7 @@ uint64_t CTimer::readCPUFrequency()
       int64_t ccf;
       if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
          frequency = ccf / 1000000;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       mach_timebase_info_data_t info;
       mach_timebase_info(&info);
       frequency = info.denom * 1000ULL / info.numer;
@@ -240,15 +245,20 @@ void CTimer::tick()
 
 uint64_t CTimer::getTime()
 {
-   //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
-   //uint64_t x;
-   //rdtsc(x);
-   //return x / s_ullCPUFrequency;
-   //Specific fix may be necessary if rdtsc is not available either.
+    // XXX Do further study on that. Currently Cygwin is also using gettimeofday,
+    // however Cygwin platform is supported only for testing purposes.
 
-	timeval t;
-	gettimeofday(&t, 0);
-	return t.tv_sec * 1000000ULL + t.tv_usec;
+    //For other systems without microsecond level resolution, add to this conditional compile
+#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+    uint64_t x;
+    rdtsc(x);
+    return x / s_ullCPUFrequency;
+    //Specific fix may be necessary if rdtsc is not available either.
+#else
+    timeval t;
+    gettimeofday(&t, 0);
+    return t.tv_sec * 1000000ULL + t.tv_usec;
+#endif
 }
 
 void CTimer::triggerEvent()
@@ -256,7 +266,7 @@ void CTimer::triggerEvent()
     pthread_cond_signal(&m_EventCond);
 }
 
-void CTimer::waitForEvent()
+CTimer::EWait CTimer::waitForEvent()
 {
     timeval now;
     timespec timeout;
@@ -272,8 +282,10 @@ void CTimer::waitForEvent()
         timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
     }
     pthread_mutex_lock(&m_EventLock);
-    pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
+    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
     pthread_mutex_unlock(&m_EventLock);
+
+    return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
 }
 
 void CTimer::sleep()
@@ -285,21 +297,44 @@ void CTimer::sleep()
    #endif
 }
 
+int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+    timeval now;
+    gettimeofday(&now, 0);
+    uint64_t time_us = now.tv_sec * 1000000ULL + now.tv_usec + delay;
+    timespec timeout;
+    timeout.tv_sec = time_us / 1000000;
+    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    
+    return pthread_cond_timedwait(cond, mutex, &timeout);
+}
 
-//
+
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock):
-m_Mutex(lock),
-m_iLocked()
+CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
+    m_Mutex(lock),
+    m_iLocked(-1)
 {
-    m_iLocked = pthread_mutex_lock(&m_Mutex);
+    if (shouldwork)
+        m_iLocked = pthread_mutex_lock(&m_Mutex);
 }
 
 // Automatically unlock in destructor
 CGuard::~CGuard()
 {
-    if (0 == m_iLocked)
+    if (m_iLocked == 0)
         pthread_mutex_unlock(&m_Mutex);
+}
+
+// After calling this on a scoped lock wrapper (CGuard),
+// the mutex will be unlocked right now, and no longer
+// in destructor
+void CGuard::forceUnlock()
+{
+    if (m_iLocked == 0)
+    {
+        pthread_mutex_unlock(&m_Mutex);
+        m_iLocked = -1;
+    }
 }
 
 int CGuard::enterCS(pthread_mutex_t& lock)
@@ -337,7 +372,7 @@ CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
-   if (-1 == err)
+   if (err == -1)
       #ifndef WIN32
          m_iErrno = errno;
       #else
@@ -383,11 +418,7 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_NORES:
-#ifdef HAI_PATCH
            m_strMsg += ": unable to create/configure SRT socket";
-#else  /* HAI_PATCH */
-           m_strMsg += ": unable to create/configure UDP socket";
-#endif /* HAI_PATCH */
            break;
 
         case MN_SECURITY:
@@ -500,12 +531,12 @@ const char* CUDTException::getErrorMessage()
            m_strMsg += ": Cannot call connect on UNBOUND socket in rendezvous connection setup";
            break;
 
-        case MN_ISSTREAM:
-           m_strMsg += ": This operation is not supported in SOCK_STREAM mode";
+        case MN_INVALMSGAPI:
+           m_strMsg += ": Incorrect use of Message API (sendmsg/recvmsg).";
            break;
 
-        case MN_ISDGRAM:
-           m_strMsg += ": This operation is not supported in SOCK_DGRAM mode";
+        case MN_INVALBUFFERAPI:
+           m_strMsg += ": Incorrect use of Buffer API (send/recv) or File API (sendfile/recvfile).";
            break;
 
         case MN_BUSY:
@@ -513,11 +544,7 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_XSIZE:
-#ifdef HAI_PATCH
            m_strMsg += ": Message is too large to send (it must be less than the SRT send buffer size)";
-#else  /* HAI_PATCH */
-           m_strMsg += ": Message is too large to send (it must be less than the UDT send buffer size)";
-#endif /* HAI_PATCH */
            break;
 
         case MN_EIDINVAL:
@@ -600,48 +627,6 @@ void CUDTException::clear()
    m_iMinor = MN_NONE;
    m_iErrno = 0;
 }
-
-// XXX Move these into udt.h
-const int CUDTException::SUCCESS = 0;
-const int CUDTException::ECONNSETUP = UDT_XCODE(MJ_SETUP, 0);
-const int CUDTException::ENOSERVER =  UDT_XCODE(MJ_SETUP, MN_TIMEOUT);
-const int CUDTException::ECONNREJ =   UDT_XCODE(MJ_SETUP, MN_REJECTED);
-const int CUDTException::ESOCKFAIL =  UDT_XCODE(MJ_SETUP, MN_NORES);
-const int CUDTException::ESECFAIL =   UDT_XCODE(MJ_SETUP, MN_SECURITY);
-const int CUDTException::ECONNFAIL = 2000;
-const int CUDTException::ECONNLOST = 2001;
-const int CUDTException::ENOCONN = 2002;
-const int CUDTException::ERESOURCE = 3000;
-const int CUDTException::ETHREAD = 3001;
-const int CUDTException::ENOBUF = 3002;
-const int CUDTException::EFILE = 4000;
-const int CUDTException::EINVRDOFF = 4001;
-const int CUDTException::ERDPERM = 4002;
-const int CUDTException::EINVWROFF = 4003;
-const int CUDTException::EWRPERM = 4004;
-const int CUDTException::EINVOP = 5000;
-const int CUDTException::EBOUNDSOCK = 5001;
-const int CUDTException::ECONNSOCK = 5002;
-const int CUDTException::EINVPARAM = 5003;
-const int CUDTException::EINVSOCK = 5004;
-const int CUDTException::EUNBOUNDSOCK = 5005;
-const int CUDTException::ENOLISTEN = 5006;
-const int CUDTException::ERDVNOSERV = 5007;
-const int CUDTException::ERDVUNBOUND = 5008;
-const int CUDTException::ESTREAMILL = 5009;
-const int CUDTException::EDGRAMILL = 5010;
-const int CUDTException::EDUPLISTEN = 5011;
-const int CUDTException::ELARGEMSG = 5012;
-const int CUDTException::EINVPOLLID = 5013;
-const int CUDTException::EASYNCFAIL = 6000;
-const int CUDTException::EASYNCSND = 6001;
-const int CUDTException::EASYNCRCV = 6002;
-const int CUDTException::ETIMEOUT = 6003;
-#ifdef SRT_ENABLE_ECN
-const int CUDTException::ECONGEST = 6004;
-#endif /* SRT_ENABLE_ECN */ 
-const int CUDTException::EPEERERR = 7000;
-const int CUDTException::EUNKNOWN = -1;
 
 #undef UDT_XCODE
 
@@ -780,7 +765,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
 
-    static string udt_types [] = {
+    static const char* const udt_types [] = {
         "handshake",
         "keepalive",
         "ack",
@@ -792,30 +777,211 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "peererror", //8
     };
 
-    static string srt_types [] = {
-        "",
-        "hsreq",
-        "hsrsp",
-        "kmreq",
-        "kmrsp",
+    static const char* const srt_types [] = {
+        "EXT:none",
+        "EXT:hsreq",
+        "EXT:hsrsp",
+        "EXT:kmreq",
+        "EXT:kmrsp",
+        "EXT:sid",
+        "EXT:smoother"
     };
 
-#define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
     if ( mt == UMSG_EXT )
     {
-        // Returrn "EXT:" with srt message name
-        string val = "SRT:";
-        if ( extt <= 0 || extt > LEN(srt_types) )
+        if ( extt >= Size(srt_types) )
             return "EXT:unknown";
 
-        return val + srt_types[extt];
+        return srt_types[extt];
     }
 
-    if ( size_t(mt) > LEN(udt_types) )
+    if ( size_t(mt) > Size(udt_types) )
         return "unknown";
-
-#undef LEN
 
     return udt_types[mt];
 }
+
+std::string ConnectStatusStr(EConnectStatus cst)
+{
+    return (cst == CONN_CONTINUE
+        ? "INDUCED/CONCLUDING"
+        : cst == CONN_ACCEPT
+        ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS
+        ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN
+        ? "AGAIN"
+        : "REJECTED");
+}
+
+std::string TransmissionEventStr(ETransmissionEvent ev)
+{
+    static const std::string vals [] =
+    {
+        "init",
+        "ack",
+        "ackack",
+        "lossreport",
+        "checktimer",
+        "send",
+        "receive",
+        "custom"
+    };
+
+    size_t vals_size = Size(vals);
+
+    if (size_t(ev) >= vals_size)
+        return "UNKNOWN";
+    return vals[ev];
+}
+
+std::string logging::FormatTime(uint64_t time)
+{
+    using namespace std;
+
+    time_t sec = time/1000000;
+    time_t usec = time%1000000;
+
+    time_t tt = sec;
+    struct tm tm = SysLocalTime(tt);
+
+    char tmp_buf[512];
+#ifdef WIN32
+    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+#else
+    strftime(tmp_buf, 512, "%T.", &tm);
+#endif
+    ostringstream out;
+    out << tmp_buf << setfill('0') << setw(6) << usec;
+    return out.str();
+}
+// Some logging imps
+#if ENABLE_LOGGING
+
+logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+{
+	if (that_enabled)
+	{
+        i_file = "";
+        i_line = 0;
+        flags = that.src_config->flags;
+		// Create logger prefix
+		that.CreateLogLinePrefix(os);
+	}
+}
+
+logging::LogDispatcher::Proxy logging::LogDispatcher::operator()()
+{
+	return Proxy(*this);
+}
+
+void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+{
+    using namespace std;
+
+    char tmp_buf[512];
+    if ( !isset(SRT_LOGF_DISABLE_TIME) )
+    {
+        // Not necessary if sending through the queue.
+        timeval tv;
+        gettimeofday(&tv, 0);
+        time_t t = tv.tv_sec;
+        struct tm tm = SysLocalTime(t);
+
+        // Nice to have %T as "standard time format" for logs,
+        // but it's Single Unix Specification and doesn't exist
+        // on Windows. Use %X on Windows (it's described as
+        // current time without date according to locale spec).
+        //
+        // XXX Consider using %X everywhere, as it should work
+        // on both systems.
+#ifdef WIN32
+        strftime(tmp_buf, 512, "%X.", &tm);
+#else
+        strftime(tmp_buf, 512, "%T.", &tm);
+#endif
+
+        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+    }
+
+    string out_prefix;
+    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
+    {
+        out_prefix = prefix;
+    }
+
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
+    {
+        serr << "/" << tmp_buf << out_prefix << ": ";
+    }
+    else
+    {
+        serr << out_prefix << ": ";
+    }
+}
+
+std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+{
+    if ( pretty_function == "" )
+        return "";
+    size_t pos = pretty_function.find('(');
+    if ( pos == std::string::npos )
+        return pretty_function; // return unchanged.
+
+    pretty_function = pretty_function.substr(0, pos);
+
+    // There are also template instantiations where the instantiating
+    // parameters are encrypted inside. Therefore, search for the first
+    // open < and if found, search for symmetric >.
+
+    int depth = 1;
+    pos = pretty_function.find('<');
+    if ( pos != std::string::npos )
+    {
+        size_t end = pos+1;
+        for(;;)
+        {
+            ++pos;
+            if ( pos == pretty_function.size() )
+            {
+                --pos;
+                break;
+            }
+            if ( pretty_function[pos] == '<' )
+            {
+                ++depth;
+                continue;
+            }
+
+            if ( pretty_function[pos] == '>' )
+            {
+                --depth;
+                if ( depth <= 0 )
+                    break;
+                continue;
+            }
+        }
+
+        std::string afterpart = pretty_function.substr(pos+1);
+        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
+    }
+
+    // Now see how many :: can be found in the name.
+    // If this occurs more than once, take the last two.
+    pos = pretty_function.rfind("::");
+
+    if ( pos == std::string::npos || pos < 2 )
+        return pretty_function; // return whatever this is. No scope name.
+
+    // Find the next occurrence of :: - if found, copy up to it. If not,
+    // return whatever is found.
+    pos -= 2;
+    pos = pretty_function.rfind("::", pos);
+    if ( pos == std::string::npos )
+        return pretty_function; // nothing to cut
+
+    return pretty_function.substr(pos+2);
+}
+#endif

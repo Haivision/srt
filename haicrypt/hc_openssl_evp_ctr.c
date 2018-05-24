@@ -227,7 +227,7 @@ static int hcOpenSSL_EVP_CTR_SetKey(hcrypt_CipherData *cipher_data, hcrypt_Ctx *
 }
 
 static int hcOpenSSL_EVP_CTR_Crypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx,
-	hcrypt_DataDesc *in_data, int nbin, void *out_p[], size_t out_len_p[], int *nbout_p)
+	hcrypt_DataDesc *in_data, int nbin ATR_UNUSED, void *out_p[], size_t out_len_p[], int *nbout_p)
 {
 	hcOpenSSL_EVP_CTR_data *evp_data = (hcOpenSSL_EVP_CTR_data *)cipher_data;
 	unsigned char iv[HCRYPT_EVP_CTR_BLK_SZ];

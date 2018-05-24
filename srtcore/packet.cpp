@@ -162,52 +162,72 @@ modified by
 
 #include <cstring>
 #include "packet.h"
+#include "logging.h"
 
-
-const int CHandShake::m_iContentSize = 48;
-
+extern logging::Logger mglog;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():
 __pad(),
+m_data_owned(false),
 m_iSeqNo((int32_t&)(m_nHeader[PH_SEQNO])),
 m_iMsgNo((int32_t&)(m_nHeader[PH_MSGNO])),
 m_iTimeStamp((int32_t&)(m_nHeader[PH_TIMESTAMP])),
 m_iID((int32_t&)(m_nHeader[PH_ID])),
 m_pcData((char*&)(m_PacketVector[PV_DATA].iov_base))
 {
-   m_nHeader.clear();
+    m_nHeader.clear();
 
-   // The part at PV_HEADER will be always set to a builtin buffer
-   // containing SRT header.
-   m_PacketVector[PV_HEADER].iov_base = m_nHeader.raw();
-   m_PacketVector[PV_HEADER].iov_len = HDR_SIZE;
+    // The part at PV_HEADER will be always set to a builtin buffer
+    // containing SRT header.
+    m_PacketVector[PV_HEADER].iov_base = m_nHeader.raw();
+    m_PacketVector[PV_HEADER].iov_len = HDR_SIZE;
 
-   // The part at PV_DATA is zero-initialized. It should be
-   // set (through m_pcData and setLength()) to some externally
-   // provided buffer before calling CChannel::sendto().
-   m_PacketVector[PV_DATA].iov_base = NULL;
-   m_PacketVector[PV_DATA].iov_len = 0;
+    // The part at PV_DATA is zero-initialized. It should be
+    // set (through m_pcData and setLength()) to some externally
+    // provided buffer before calling CChannel::sendto().
+    m_PacketVector[PV_DATA].iov_base = NULL;
+    m_PacketVector[PV_DATA].iov_len = 0;
+}
+
+void CPacket::allocate(size_t alloc_buffer_size)
+{
+    m_PacketVector[PV_DATA].iov_base = new char[alloc_buffer_size];
+    m_PacketVector[PV_DATA].iov_len = alloc_buffer_size;
+    m_data_owned = true;
+}
+
+void CPacket::deallocate()
+{
+    if (m_data_owned)
+        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
+    m_PacketVector[PV_DATA].iov_base = 0;
+    m_PacketVector[PV_DATA].iov_len = 0;
 }
 
 CPacket::~CPacket()
 {
+    // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
+    // Delete the internal buffer only if it was declared as owned.
+    if (m_data_owned)
+        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
 }
 
-int CPacket::getLength() const
+
+size_t CPacket::getLength() const
 {
    return m_PacketVector[PV_DATA].iov_len;
 }
 
-void CPacket::setLength(int len)
+void CPacket::setLength(size_t len)
 {
    m_PacketVector[PV_DATA].iov_len = len;
 }
 
 void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 {
-   // Set (bit-0 = 1) and (bit-1~15 = type)
-   m_nHeader[PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(pkttype);
+    // Set (bit-0 = 1) and (bit-1~15 = type)
+    setControl(pkttype);
 
    // Set additional information and control information field
    switch (pkttype)
@@ -384,10 +404,24 @@ EncryptionKeySpec CPacket::getMsgCryptoFlags() const
     return EncryptionKeySpec(MSGNO_ENCKEYSPEC::unwrap(m_nHeader[PH_MSGNO]));
 }
 
+// This is required as the encryption/decryption happens in place.
+// This is required to clear off the flags after decryption or set
+// crypto flags after encrypting a packet.
+void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
+{
+    int32_t clr_msgno = m_nHeader[PH_MSGNO] & ~MSGNO_ENCKEYSPEC::mask;
+    m_nHeader[PH_MSGNO] = clr_msgno | EncryptionKeyBits(spec);
+}
+
+/*
+   Leaving old code for historical reasons. This is moved to CSRTCC.
 EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
 {
     if ( !hcrypto )
+    {
+        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
         return ENCS_FAILED;
+    }
 
    int rc = HaiCrypt_Tx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
    if ( rc < 0 )
@@ -404,10 +438,16 @@ EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
 EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
 {
    if (getMsgCryptoFlags() == EK_NOENC)
+   {
+       //HLOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
        return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
+   }
 
    if (!hcrypto)
-       return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
+   {
+        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
+        return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
+   }
 
    int rc = HaiCrypt_Rx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
    if ( rc <= 0 )
@@ -417,7 +457,7 @@ EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
        return ENCS_FAILED;
    }
    // Otherwise: rc == decrypted text length.
-   m_PacketVector[PV_DATA].iov_len = rc; /* In case clr txt size is different from cipher txt */
+   m_PacketVector[PV_DATA].iov_len = rc; // In case clr txt size is different from cipher txt
 
    // Decryption succeeded. Update flags.
    m_nHeader[PH_MSGNO] &= ~MSGNO_ENCKEYSPEC::mask; // sets EK_NOENC to ENCKEYSPEC bits.
@@ -425,13 +465,13 @@ EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
    return ENCS_CLEAR;
 }
 
-#ifdef SRT_ENABLE_TSBPD
+*/
+
 uint32_t CPacket::getMsgTimeStamp() const
 {
    // SRT_DEBUG_TSBPD_WRAP may enable smaller timestamp for faster wraparoud handling tests
    return (uint32_t)m_nHeader[PH_TIMESTAMP] & TIMESTAMP_MASK;
 }
-#endif /* SRT_ENABLE_TSBPD */
 
 CPacket* CPacket::clone() const
 {
@@ -464,59 +504,3 @@ std::string CPacket::MessageFlagStr()
     return out.str();
 }
 #endif
-
-CHandShake::CHandShake():
-m_iVersion(AF_UNSPEC),
-m_iType(UDT_UNDEFINED),
-m_iISN(0),
-m_iMSS(0),
-m_iFlightFlagSize(0),
-m_iReqType(0),
-m_iID(0),
-m_iCookie(0)
-{
-   for (int i = 0; i < 4; ++ i)
-      m_piPeerIP[i] = 0;
-}
-
-int CHandShake::serialize(char* buf, int& size)
-{
-   if (size < m_iContentSize)
-      return -1;
-
-   int32_t* p = (int32_t*)buf;
-   *p++ = m_iVersion;
-   *p++ = m_iType;
-   *p++ = m_iISN;
-   *p++ = m_iMSS;
-   *p++ = m_iFlightFlagSize;
-   *p++ = m_iReqType;
-   *p++ = m_iID;
-   *p++ = m_iCookie;
-   for (int i = 0; i < 4; ++ i)
-      *p++ = m_piPeerIP[i];
-
-   size = m_iContentSize;
-
-   return 0;
-}
-
-int CHandShake::deserialize(const char* buf, int size)
-{
-   if (size < m_iContentSize)
-      return -1;
-
-   int32_t* p = (int32_t*)buf;
-   m_iVersion = *p++;
-   m_iType = *p++;
-   m_iISN = *p++;
-   m_iMSS = *p++;
-   m_iFlightFlagSize = *p++;
-   m_iReqType = *p++;
-   m_iID = *p++;
-   m_iCookie = *p++;
-   for (int i = 0; i < 4; ++ i)
-      m_piPeerIP[i] = *p++;
-
-   return 0;
-}

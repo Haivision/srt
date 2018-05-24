@@ -13,9 +13,13 @@
 using namespace std;
 
 
-set<string> true_names = { "1", "yes", "on", "true" };
-set<string> false_names = { "0", "no", "off", "false" };
+extern const set<string> true_names = { "1", "yes", "on", "true" };
+extern const set<string> false_names = { "0", "no", "off", "false" };
 
+extern const std::map<std::string, int> enummap_transtype = {
+    { "live", SRTT_LIVE },
+    { "file", SRTT_FILE }
+};
 
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
 {
@@ -24,11 +28,13 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
 
     if ( options.count("passphrase") )
     {
+        /*
         // Insert default
         if ( options.count("pbkeylen") == 0 )
         {
             options["pbkeylen"] = "16"; // m_output_direction ? "16" : "0";
         }
+        */
     }
 
     SocketOption::Mode mode;

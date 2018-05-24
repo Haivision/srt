@@ -19,8 +19,11 @@ written by
 #include <cstring>
 #include "platform_sys.h"
 
-// This is a smart structure that this moron who has designed BSD sockets
-// should have defined in the first place.
+// This structure should replace every use of sockaddr and its currently
+// used specializations, sockaddr_in and sockaddr_in6. This is to simplify
+// the use of the original BSD API that relies on type-violating type casts.
+// You can use the instances of sockaddr_any in every place where sockaddr is
+// required.
 
 struct sockaddr_any
 {
@@ -43,8 +46,8 @@ struct sockaddr_any
     {
         switch (sa.sa_family)
         {
-        case AF_INET: return static_cast<socklen_t>(sizeof sin);
-        case AF_INET6: return static_cast<socklen_t>(sizeof sin6);
+        case AF_INET: return socklen_t(sizeof sin);
+        case AF_INET6: return socklen_t(sizeof sin6);
 
         default: return 0; // fallback, impossible
         }
@@ -67,7 +70,11 @@ struct sockaddr_any
         sin.sin_port = htons(value);
     }
 
+    sockaddr* get() { return &sa; }
     sockaddr* operator&() { return &sa; }
+
+    const sockaddr* get() const { return &sa; }
+    const sockaddr* operator&() const { return &sa; }
 
     template <int> struct TypeMap;
 
@@ -113,7 +120,6 @@ struct sockaddr_any
             return memcmp(&c1, &c2, sizeof(c1)) < 0;
         }
     };
-    
 };
 
 template<> struct sockaddr_any::TypeMap<AF_INET> { typedef sockaddr_in type; };

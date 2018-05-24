@@ -16,8 +16,8 @@ if [[ $FFPLAY == "none" ]]; then
 fi
 
 DIRNAME=`dirname $0`
-if [[ ! -x $DIRNAME/stransmit ]]; then
-	echo >&2 "ERROR: you need 'stransmit' tool from SRT package in the same directory as this script."
+if [[ ! -x $DIRNAME/srt-live-transmit ]]; then
+	echo >&2 "ERROR: you need 'srt-live-transmit' tool from SRT package in the same directory as this script."
 	exit 1
 fi
 

@@ -15,14 +15,14 @@
 #include <udt.h>
 #include <utilities.h>
 #include <packet.h>
-#include <csrtcc.h>
+#include <crypto.h>
 
 int main()
 {
     using namespace std;
 
     cout << "PacketBoundary: " << hex << MSGNO_PACKET_BOUNDARY::mask << endl;
-    
+
     cout << "PB_FIRST: " << hex << PacketBoundaryBits(PB_FIRST) << endl;
     cout << "PB_LAST: " << hex << PacketBoundaryBits(PB_LAST) << endl;
     cout << "PB_SOLO: " << hex << PacketBoundaryBits(PB_SOLO) << endl;
@@ -35,5 +35,9 @@ int main()
 
     cout << "SEQNO_CONTROL::mask: " << hex << SEQNO_CONTROL::mask << " SEQNO 0x80050000 has control = " << SEQNO_CONTROL::unwrap(0x80050000)
         << " type = " << SEQNO_MSGTYPE::unwrap(0x80050000) << endl;
+
+    cout << "Creating array of bytes: 10, 11, 20, 25 - FormatBinaryString: ";
+    uint8_t array[4] = { 10, 11, 20, 25 };
+    cout << FormatBinaryString(array, 4) << endl;
     return 0;
 }

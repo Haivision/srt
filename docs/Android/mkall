@@ -1,0 +1,38 @@
+#!/bin/bash
+
+openssl_ver=1.0.2n
+srt_branch=dev
+
+BASE_DIR=$(readlink -f $0 | xargs dirname)
+
+wget -N https://www.openssl.org/source/openssl-$openssl_ver.tar.gz
+
+if [ ! -d $BASE_DIR/srt ]; then
+ git clone https://github.com/Haivision/srt srt
+ git -C $BASE_DIR/srt checkout -b $srt_branch origin/$srt_branch
+fi
+
+declare -A target_hosts
+target_hosts=(
+ [arm]=arm-linux-androideabi
+ [arm64]=aarch64-linux-android
+ [x86]=i686-linux-android
+ [x86_64]=x86_64-linux-android
+)
+
+declare -A sysroots
+sysroots=(
+ [arm]=$BASE_DIR/armeabi-v7a
+ [arm64]=$BASE_DIR/arm64-v8a
+ [x86]=$BASE_DIR/x86
+ [x86_64]=$BASE_DIR/x86_64
+)
+
+for arch in arm arm64 x86 x86_64; do
+ rm -rf $BASE_DIR/openssl-$openssl_ver
+ tar xf $BASE_DIR/openssl-$openssl_ver.tar.gz
+ $BASE_DIR/mkssl -t $BASE_DIR/android-toolchain-$arch -h ${target_hosts[$arch]} -s $BASE_DIR/openssl-$openssl_ver -i ${sysroots[$arch]}
+
+ git -C $BASE_DIR/srt clean -fd
+ $BASE_DIR/mksrt -t $BASE_DIR/android-toolchain-$arch -h ${target_hosts[$arch]} -s $BASE_DIR/srt -i ${sysroots[$arch]}
+done
