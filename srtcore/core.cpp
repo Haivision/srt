@@ -91,6 +91,9 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+#if ENABLE_HAICRYPT_LOGGING
+        allfa.set(SRT_LOGFA_HAICRYPT, true);
+#endif
     }
 } logger_fa_all;
 

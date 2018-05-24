@@ -181,7 +181,7 @@ static int hcOpenSSL_EVP_CBC_SetKey(hcrypt_CipherData *cipher_data, hcrypt_Ctx *
 		cipher = EVP_aes_256_cbc();
 		break;
 	default:
-		HCRYPT_LOG(LOG_ERR, "%s", "invalid key length\n");
+		HCRYPT_LOG(LOG_ERR, "invalid key length (%d). Expected: 16, 24, 32\n", (int)key_len);
 		return(-1);
 	}
 	EVP_CipherInit_ex(evp_ctx, cipher, hcOpenSSL_Engine, key, NULL, enc);
