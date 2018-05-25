@@ -121,7 +121,7 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
 
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 {
-    ASSERT(NULL != cfg);
+    ASSERT(cfg != NULL);
     ASSERT(phhc != NULL);
 
     hcrypt_Session *crypto;
