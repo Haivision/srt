@@ -316,11 +316,18 @@ struct LogDispatcher::Proxy
         if ( !fmts || fmts[0] == '\0' )
             return *this;
 
-        char buf[512];
         va_list ap;
         va_start(ap, fmts);
-        vsprintf(buf, fmts, ap);
+        vform(fmts, ap);
         va_end(ap);
+        return *this;
+    }
+
+    Proxy& vform(const char* fmts, va_list ap)
+    {
+        char buf[512];
+
+        vsprintf(buf, fmts, ap);
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {

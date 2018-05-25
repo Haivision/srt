@@ -31,19 +31,12 @@ written by
 
 #include "hcrypt.h"
 
-int HaiCrypt_SetLogLevel(int level, int logfa)
-{
-    // Oh well. Implement some day.
-    (void)logfa;
-    (void)level;
-    return 0;
-}
-
 #if ENABLE_HAICRYPT_LOGGING
-void DumpCfgFlags(int flags, std::ostream& out);
+void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg);
 #else
 #define HaiCrypt_DumpConfig(x) (void)0
 #endif
+
 
 static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt_CryptoDir tx)
 {

@@ -65,7 +65,7 @@ written by
 #include "crypto_api.h"
 #endif /* HAICRYPT_SUPPORT_CRYPTO_API */
 
-typedef struct {
+typedef struct hcrypt_Session_str {
 #ifdef HAICRYPT_SUPPORT_CRYPTO_API
         /* 
          * Resv matches internal upper layer handle (crypto_api)
@@ -101,10 +101,15 @@ typedef struct {
         }km;
 } hcrypt_Session;
 
+#if ENABLE_HAICRYPT_LOGGING
+#include "haicrypt_log.h"
+#else
 
 #define HCRYPT_LOG_INIT()
 #define HCRYPT_LOG_EXIT()
 #define HCRYPT_LOG(lvl, fmt, ...)
+
+#endif
 
 #ifdef  HCRYPT_DEV
 #define HCRYPT_PRINTKEY(key, len, tag) HCRYPT_LOG(LOG_DEBUG, \

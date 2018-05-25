@@ -260,7 +260,34 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    Verbose::on = Option("no", "v", "verbose") != "no";
+    string verbose_val = Option("no", "v", "verbose");
+    int verbch = 1; // default cerr
+    if (verbose_val != "no")
+    {
+        Verbose::on = true;
+        try
+        {
+            verbch = stoi(verbose_val);
+        }
+        catch (...)
+        {
+            verbch = 1;
+        }
+        if (verbch != 1)
+        {
+            if (verbch != 2)
+            {
+                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                return 1;
+            }
+            Verbose::cverb = &std::cerr;
+        }
+        else
+        {
+            Verbose::cverb = &std::cout;
+        }
+    }
+
     bool crashonx = Option("no", "k", "crash") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");

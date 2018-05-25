@@ -387,7 +387,7 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 			if (crypto->ctx_pair[0].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[0].flags |= HCRYPT_CTX_F_TTSEND;
 			if (crypto->ctx_pair[1].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[1].flags |= HCRYPT_CTX_F_TTSEND;
 		}
-    }
+	}
 
 	return(0);
 }
