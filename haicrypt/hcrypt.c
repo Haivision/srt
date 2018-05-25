@@ -121,12 +121,13 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
 
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 {
+    ASSERT(NULL != cfg);
+    ASSERT(phhc != NULL);
+
     hcrypt_Session *crypto;
     HaiCrypt_CryptoDir tx = (HaiCrypt_CryptoDir)(HAICRYPT_CFG_F_TX & cfg->flags);
 
     *phhc = NULL;
-
-    ASSERT(NULL != cfg);
 
     HCRYPT_LOG_INIT();
     //Test log
@@ -143,12 +144,6 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
     } else if ((HAICRYPT_SECTYP_PASSPHRASE == cfg->secret.typ)
             &&  ((0 == cfg->secret.len) || (sizeof(cfg->secret.str) < cfg->secret.len))) { /* KEK length */
         HCRYPT_LOG(LOG_ERR, "invalid secret passphrase length (%d)\n", (int)cfg->secret.len);
-        return(-1);
-    } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
-            &&  (16 != cfg->key_len)	/* SEK length */
-            &&  (24 != cfg->key_len)
-            &&  (32 != cfg->key_len)) {
-        HCRYPT_LOG(LOG_ERR, "invalid pre-shared secret length (%d)\n", (int)cfg->secret.len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
             &&  (cfg->key_len > cfg->secret.len)) {
@@ -299,7 +294,6 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         }
         mem_buf = (unsigned char *)cryptoClone;
         mem_buf += sizeof(*cryptoClone);
-        memset(cryptoClone, 0, sizeof(*cryptoClone));
         memcpy(cryptoClone, cryptoSrc, sizeof(*cryptoClone));
 
         if (inbuf_siz) {
