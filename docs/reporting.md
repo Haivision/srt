@@ -43,15 +43,17 @@ even if you feel the information is incomplete. We have some tricks up our sleev
 Debug Logs
 ==========
 
-The debug logs that can be generated with SRT provide very detailed descriptions of its internal behaviour. In
-fact, they can sometimes approach the equivalent of "record and
-replay" for a testing session. Having the debug logs collected is
-in most cases essential to start researching a potential problem.
+The debug logs that can be generated with SRT provide very detailed
+descriptions of its internal behaviour. In fact, they can sometimes approach
+the equivalent of "record and replay" for a testing session. Having the debug
+logs collected is in most cases essential to start researching a potential
+problem. This is because, as SRT is very highly time-based software, the
+usability of a debugger is very limited.
 
-As SRT is very highly time-based software, however, the
-usability of a debugger is very limited. Debug logs put a great burden on the performance, and for this reason have been
-shifted to the "heavy logging" category. They are not enabled by default,
-neither in the library itself, nor at compile time. You can only manually enable them at compile time:
+Mind though, that debug logs put a great burden on the performance, and for
+this reason have been shifted to the "heavy logging" category, which is not
+enabled by default, neither in the library itself, nor at compile time. You can
+only manually enable them at compile time:
 
     ./configure [...] --enable-heavy-logging
 
@@ -60,8 +62,8 @@ or directly in `cmake`:
     cmake [...] -DENABLE_HEAVY_LOGGING=1
 
 Note that in the *Debug mode* (`--enable-debug`) heavy logging is enabled by
-default. Keep in mind that enabling *Debug mode* creates a less optimized version of SRT,
-more suitable for the debugger.
+default. Keep in mind that enabling *Debug mode* creates a less optimized
+version of SRT, more suitable for the debugger.
 
 Enabling heavy logging at compile time is required, but the debug logging level
 must be also set at runtime. For the `srt-live-transmit` application use the
@@ -79,21 +81,22 @@ remember that the SRT API call to set the debug log level is:
 POSIX-based systems, and there is a drop-in replacement for it for Windows
 in `common/win/syslog_defs.h`.)
 
-Some applications may use the (not really recommended) C extended API:
+Some applications may use the (not really recommended) an extended C++ API:
 
     UDT::setloglevel(logging::Loglevel::debug);
 
-When running an application with debug logs, please remember that they will put a burden on the program's performance. Always stream the log into
-a file; it may be necessary in some cases  to send it over the network
-to another machine for collection, if the filesystem is so slow that the
-performance burden changes the rules. It has been observed on several platform
-types that the burden may make the application unusable. Turning on the logs
-may prevent the problem you are trying to debug from occurring ("heisenbug") or decrease its
+When running an application with debug logs, please remember that they will put
+a burden on the program's performance. Always stream the log into a file; it
+may be necessary in some cases to send it over the network to another machine
+for collection, if the filesystem is so slow that the performance burden
+changes the rules. It has been observed on several platform types that the
+burden may make the application unusable. Turning on the logs may prevent the
+problem you are trying to debug from occurring ("heisenbug") or decrease its
 probability ("schroedingbug").
 
 
 `pcap` Files
-=========
+============
 
 Recording a pcap file may be very useful in researching an issue with SRT.
 
@@ -101,9 +104,8 @@ For tracing a pcap, you need to have administrator privileges on the machine whe
 application instance is using a predictable port number, that is:
  - With a **Rendezvous** connection, on any of the machines
  - On the **Listener** machine, where you use the listening port
- - On the **Caller** machine, if you explicitly request the Caller's outgoing port
-    - To see the Caller's outgoing port explicitly, use the `port=<number>` parameter
-in the SRT URI.
+ - On the **Caller** machine, if you explicitly set the Caller's outgoing port
+    - To set the Caller's outgoing port explicitly, use the `port=<number>` parameter in the SRT URI.
 
 To record the PCAP file on POSIX-based systems, use the following command (replacing `eth0` with your device name and `9000` with the connection port):
 
