@@ -62,8 +62,10 @@ specify the local port, e.g.:
 
     udp://:5555
 
-UDP handles two parameters: **iptos** and **ipttl**. See IP protocol
-documentation for details.
+UDP handles two parameters: **iptos** and **ttl**.
+**iptos** will set the value of Type-Of-Service (TOS) field for outgoing packets via IP_TOS socket option.
+**ttl** parameter will set time-to-live value for outgoing packets via IP_TTL or IP_MULTICAST_TTL socket options.
+See IP protocol documentation for details.
 
 For a single host IP address (unicast):
 * **reading**: The *host* part or **adapter** parameter can specify the adapter. The *port* part is mandatory.

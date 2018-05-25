@@ -218,7 +218,7 @@ static int hcOpenSSL_EVP_CTR_SetKey(hcrypt_CipherData *cipher_data, hcrypt_Ctx *
 		break;
 #endif /* HAICRYPT_USE_OPENSSL_EVP_ECB4CTR */
 	default:
-		HCRYPT_LOG(LOG_ERR, "%s", "invalid key length\n");
+		HCRYPT_LOG(LOG_ERR, "invalid key length (%d). Expected: 16, 24, 32\n", (int)key_len);
 		return(-1);
 	}
 
@@ -328,6 +328,11 @@ HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void)
 
 /* Backward compatible call when only CTR was available */
 HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void) 
+{
+	return(HaiCryptCipher_OpenSSL_EVP_CTR());
+}
+
+HaiCrypt_Cipher HaiCryptCipher_Get_Instance(void) 
 {
 	return(HaiCryptCipher_OpenSSL_EVP_CTR());
 }

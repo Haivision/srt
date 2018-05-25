@@ -50,6 +50,8 @@ extern "C" {
 
 typedef void *HaiCrypt_Cipher;
 
+HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_Get_Instance (void);     /* Return a efault cipher instance */
+
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
 HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
@@ -113,7 +115,7 @@ typedef enum HaiCrypt_CryptoDir { HAICRYPT_CRYPTO_DIR_RX, HAICRYPT_CRYPTO_DIR_TX
 // internally it will be correctly interpreted,
 // for the outsider it's just some kinda incomplete type
 // but still if you use any kinda pointer instead, you'll get complaints
-typedef struct hcrypt_Session* HaiCrypt_Handle;
+typedef struct hcrypt_Session_str* HaiCrypt_Handle;
 
 
 

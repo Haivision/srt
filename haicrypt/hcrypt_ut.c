@@ -18,6 +18,7 @@ written by
 *****************************************************************************/
 
 #include <string.h>				/* memcpy */
+#include <stdio.h>
 #include <haicrypt.h>
 #include "hcrypt.h"
 
@@ -119,7 +120,7 @@ static int hc_ut_pbkdf2(unsigned verbose)
 			gettimeofday(&tstart, NULL);
 		}	
 
-		PKCS5_PBKDF2_HMAC_SHA1(tv[i].pwd, tv[i].pwd_len, 
+		hcrypt_pbkdf2_hmac_sha1(tv[i].pwd, tv[i].pwd_len, 
 			tv[i].salt, tv[i].salt_len, 
 			tv[i].cnt, tv[i].dk_len, dk);
 
@@ -166,7 +167,7 @@ int hc_ut_encrypt_ctr_speed(void)
 #ifdef HAICRYPT_USE_OPENSSL_EVP_CBC
 	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP_CBC();
 #else
-	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP();
+	crypto_cfg.cipher = HaiCryptCipher_Get_Instance();
 #endif
 	crypto_cfg.key_len = (size_t)128/8;
 	crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
