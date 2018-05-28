@@ -11,6 +11,7 @@ crypto.cpp
 epoll.cpp
 handshake.cpp
 list.cpp
+logging.cpp
 md5.cpp
 packet.cpp
 queue.cpp

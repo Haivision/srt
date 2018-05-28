@@ -20,6 +20,7 @@ written by
 #include <iostream>
 #include <iomanip>
 #include <set>
+#include <vector>
 #include <sstream>
 #include <cstdarg>
 #ifdef WIN32
@@ -93,6 +94,8 @@ written by
 namespace logging
 {
 
+class LogDispatcher;
+
 struct LogConfig
 {
     typedef std::bitset<SRT_LOGFA_LASTNONE+1> fa_bitset_t;
@@ -103,6 +106,7 @@ struct LogConfig
     void* loghandler_opaque;
     pthread_mutex_t mutex;
     int flags;
+    std::vector<LogDispatcher*> loggers;
 
     LogConfig(const fa_bitset_t& initial_fa):
         enabled_fa(initial_fa),
@@ -124,6 +128,10 @@ struct LogConfig
 
     void lock() { pthread_mutex_lock(&mutex); }
     void unlock() { pthread_mutex_unlock(&mutex); }
+
+    void advise(LogDispatcher*);
+    void prevent(LogDispatcher*);
+    void announce();
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -134,6 +142,7 @@ private:
     int fa;
     LogLevel::type level;
     std::string prefix;
+    bool enabled;
     LogConfig* src_config;
     pthread_mutex_t mutex;
 
@@ -145,18 +154,23 @@ public:
         fa(functional_area),
         level(log_level),
         prefix(pfx),
-        //enabled(false),
+        enabled(false),
         src_config(&config)
     {
         pthread_mutex_init(&mutex, 0);
+        config.advise(this);
+        Update();
     }
 
     ~LogDispatcher()
     {
+        src_config->prevent(this);
         pthread_mutex_destroy(&mutex);
     }
 
-    bool CheckEnabled();
+    void Update();
+
+    bool CheckEnabled() { return enabled; }
 
     void CreateLogLinePrefix(std::ostringstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
@@ -369,24 +383,7 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!" + m_prefix, m_config )
     {
     }
-
 };
-
-inline bool LogDispatcher::CheckEnabled()
-{
-    // Don't use enabler caching. Check enabled state every time.
-
-    // These assume to be atomically read, so the lock is not needed
-    // (note that writing to this field is still mutex-protected).
-    // It's also no problem if the level was changed at the moment
-    // when the enabler check is tested here. Worst case, the log
-    // will be printed just a moment after it was turned off.
-    const LogConfig* config = src_config; // to enforce using const operator[]
-    int configured_enabled_fa = config->enabled_fa[fa];
-    int configured_maxlevel = config->max_level;
-
-    return configured_enabled_fa && level <= configured_maxlevel;
-}
 
 SRT_API std::string FormatTime(uint64_t time);
 
@@ -438,23 +435,6 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 }
 
 #endif
-
-// SendLogLine can be compiled normally. It's intermediately used by:
-// - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
-// - PrintLogLine, which has empty body when !ENABLE_LOGGING
-inline void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
-{
-    src_config->lock();
-    if ( src_config->loghandler_fn )
-    {
-        (*src_config->loghandler_fn)(src_config->loghandler_opaque, int(level), file, line, area.c_str(), msg.c_str());
-    }
-    else if ( src_config->log_stream )
-    {
-        (*src_config->log_stream) << msg;
-    }
-    src_config->unlock();
-}
 
 }
 
