@@ -511,7 +511,7 @@ void* CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = 5000000LL * CTimer::getCPUFrequency();
+    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
     self->m_ullDbgTime += self->m_ullDbgPeriod;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
