@@ -1,20 +1,12 @@
 #
 # SRT - Secure, Reliable, Transport
-# Copyright (c) 2017 Haivision Systems Inc.
+# Copyright (c) 2018 Haivision Systems Inc.
 #
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Lesser General Public
-# License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-# This library is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Lesser General Public License for more details.
-#
-# You should have received a copy of the GNU Lesser General Public
-# License along with this library; If not, see <http://www.gnu.org/licenses/>
-#
+
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
@@ -25,6 +17,23 @@ project(SRT C CXX)
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
+# XXX See 'if (MINGW)' condition below, may need fixing.
+include(FindThreads)
+
+# Platform shortcuts
+set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
+set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+
+# Not sure what to do in case of compiling by MSVC.
+# This will make installdir in C:\Program Files\SRT then
+# inside "bin" and "lib64" directories. At least this maintains
+# the current status. Shall this be not desired, override values
+# of CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR and CMAKE_INSTALL_INCLUDEDIR.
+if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
+	include(GNUInstallDirs)
+endif()
 
 set (SRT_VERSION 1.3.0)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
@@ -70,9 +79,11 @@ option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
+option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
+option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -134,12 +145,6 @@ if (DEFINED WITH_SRT_TARGET)
 	set (TARGET_haisrt ${WITH_SRT_TARGET})
 endif()
 
-set_if(DARWIN ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-set_if(LINUX ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-set_if(MICROSOFT WIN32 AND (NOT MINGW AND NOT CYGWIN))
-
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
-
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
@@ -178,7 +183,7 @@ else()
 		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
 		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
 			message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-			set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/lib)
+			set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
 			set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
 		endif()
 		endif()
@@ -244,6 +249,15 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# This options is necessary on some systems; on a cross-ARM compiler it
+# has been detected, for example, that -lrt is necessary for some applications
+# because clock_gettime is needed by some functions and it is alternatively
+# provided by libc, but only in newer versions. This options is rarely necessary,
+# but may help in several corner cases in unusual platforms.
+if (WITH_EXTRALIBS)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
+endif()
+
 # CMake has only discovered in 3.3 version that some set-finder is
 # necessary. Using variables for shortcut to a clumsy check syntax.
 
@@ -266,19 +280,20 @@ set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 
 if(WIN32)
+	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
     add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB)
 elseif(DARWIN)
-    message(STATUS "DARWIN detected")
+    message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=11; MACOSX_RPATH=OFF")
     add_definitions(-DOSX=1)
 	set(MACOSX_RPATH OFF)
 elseif(LINUX)
     add_definitions(-DLINUX=1)
-    message(STATUS "LINUX detected" )
+    message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
 elseif(CYGWIN)
     add_definitions(-DCYGWIN=1)
-	message(STATUS "CYGWIN (posix mode) detected")
+	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
 else()
-    message(FATAL_ERROR "Unsupported system")
+    message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 add_definitions(
@@ -297,6 +312,18 @@ if (ENABLE_LOGGING)
 	if (ENABLE_HEAVY_LOGGING)
 		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
 	endif()
+	if (ENABLE_HAICRYPT_LOGGING)
+		if (ENABLE_HAICRYPT_LOGGING STREQUAL 2) # Allow value 2 for INSECURE DEBUG logging
+			message(WARNING " *** ENABLED INSECURE HAICRYPT LOGGING - USE FOR TESTING ONLY!!! ***")
+			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=2")
+		else()
+			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=1")
+		endif()
+	endif()
+endif()
+
+if (ENABLE_GETNAMEINFO)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -313,10 +340,20 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-
 if (MINGW)
 	set (PTHREAD_LIBRARY -lpthreadGC2)
-else()
+	# XXX CONSIDER THIS. It came from a merged previous master version
+	# and was under an if(NOT MINGW)...elseif(THREADS_FOUND) condition.
+	# Might be that the current form still suffices; resolve this and remove comment.
+	#if(THREADS_FOUND)
+	#set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+	#else()
+	find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
+	#endif() 
+elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+elseif (WIN32)
 	# find pthread
 	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 	if (PTHREAD_INCLUDE_DIR)
@@ -329,15 +366,13 @@ else()
 	if (PTHREAD_LIBRARY)
 		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	else()
-		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-			message(STATUS "WARNING: cross-compiler pthread not found - fallback to POSIX default")
-			set (PTHREAD_LIBRARY -pthread)
-			set (PTHREAD_INCLUDE_DIR "")
-		else()
-			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-		endif()
+		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 	endif()
-endif() # if (NOT MINGW)
+else ()
+	set(THREADS_PREFER_PTHREAD_FLAG ON)
+	find_package(Threads REQUIRED)
+	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+endif()
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -421,7 +456,6 @@ set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual
 set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
 
 if (srt_libspec_shared)
-	message (STATUS "SRT: defining SHARED library: ${TARGET_srt} from: ${VIRTUAL_srt}")
 	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
@@ -434,7 +468,6 @@ if (srt_libspec_shared)
 endif()
 
 if (srt_libspec_static)
-	message (STATUS "SRT: defining STATIC library: ${TARGET_srt} from: ${VIRTUAL_srt}")
 	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
 
 	# For Windows, leave the name to be "srt_static.lib".
@@ -443,8 +476,8 @@ if (srt_libspec_static)
 	# - a shared library exposer, which allows pre-resolution and later dynamic
 	#   linkage when running the executable
 	# Both having unfortunately the same names created by MSVC compiler.
-	# It's not the case of Cygwin - they are named there libsrt.a and libsrt.dll.a
-	if (WIN32 AND NOT CYGWIN)
+	# It's not the case of Cygwin/MINGW - they are named there libsrt.a and libsrt.dll.a
+	if (MICROSOFT)
 		# Keep _static suffix. By unknown reason, the name must still be set explicitly.
 		set_property(TARGET ${TARGET_srt}_static PROPERTY OUTPUT_NAME ${TARGET_srt}_static)
 	else()
@@ -501,13 +534,6 @@ endforeach()
 
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
-if ( LINUX )
-	# Unsure why libdl was required, keeping for the time being.
-	#target_link_libraries(${TARGET_srt} PUBLIC dl)
-	set (IFNEEDED_SRT_LDFLAGS -pthread)
-endif()
-
-
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 target_compile_definitions(haicrypt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
@@ -515,26 +541,29 @@ if (ENABLE_SHARED)
 	target_compile_definitions(haicrypt_virtual PRIVATE -DHAICRYPT_EXPORTS)
 endif()
 
+if (srt_libspec_shared)
 if (MICROSOFT)
     target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
+endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
 
-set (INSTALL_SHARED_DIR lib)
+set (INSTALL_SHARED_DIR ${CMAKE_INSTALL_LIBDIR})
 if (CYGWIN)
-	set (INSTALL_SHARED_DIR bin)
+	set (INSTALL_SHARED_DIR ${CMAKE_INSTALL_BINDIR})
 endif()
 
+message(STATUS "INSTALL DIRS: bin=${CMAKE_INSTALL_BINDIR} lib=${CMAKE_INSTALL_LIBDIR} shlib=${INSTALL_SHARED_DIR} include=${CMAKE_INSTALL_INCLUDEDIR}")
 
 install(TARGETS ${INSTALL_TARGETS}
-		RUNTIME DESTINATION bin
-		ARCHIVE DESTINATION lib
+		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+		ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 		LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
 )
-install(FILES ${HEADERS_srt} DESTINATION include/srt)
+install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
 if (WIN32)
-	install(FILES ${HEADERS_srt_win32} DESTINATION include/srt/win)
+	install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
 endif()
 
 # ---
@@ -565,7 +594,7 @@ endif()
 # Some sensible solution for that is desired. Currently turned on only on demand.
 if (ENABLE_C_DEPS)
 if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "${IFNEEDED_SRT_LDFLAGS} -lstdc++ -lm")
+	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
 endif()
 endif()
 
@@ -573,9 +602,9 @@ join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 # haisrt.pc left temporarily for backward compatibility. To be removed in future!
 configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION lib/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 configure_file(scripts/srt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION lib/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 # Applications
 
@@ -607,7 +636,7 @@ macro(srt_add_program name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
-	install(TARGETS ${name} RUNTIME DESTINATION bin)
+	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
 macro(srt_make_application name)
@@ -619,7 +648,7 @@ macro(srt_make_application name)
 	# set (CMAKE_SKIP_RPATH FALSE)
 	# set (CMAKE_SKIP_BUILD_RPATH FALSE)
 	# set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-	# set (CMAKE_INSTALL_RPATH "../lib")
+	# set (CMAKE_INSTALL_RPATH "../${CMAKE_INSTALL_LIBDIR}")
 	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
@@ -627,9 +656,8 @@ macro(srt_make_application name)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
 		# be placed into the binrary directory anyway.
 		# XXX not sure about Mac.
-		# XXX This needs to be probably lib64 on 64-bit systems and 64-bit build.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
-		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../lib,-rpath,../lib64 BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
+		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 	endif()
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
@@ -641,7 +669,7 @@ endmacro()
 macro(srt_add_application name sources)
 	srt_add_program(${name} apps/${name}.cpp ${sources})
 	srt_make_application(${name})
-	install(TARGETS ${name} RUNTIME DESTINATION bin)
+	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
 if ( ENABLE_CXX11 )
@@ -679,7 +707,7 @@ if ( ENABLE_CXX11 )
 
 	if (SYMLINKABLE)
 		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use symbolic link")
-		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/bin/stransmit)
+		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/stransmit)
 	elseif(${CMAKE_MAJOR_VERSION} LESS 3)
 		message(FATAL_ERROR "Your system can't install symbolic link to 'stransmit', copy-on-install requires cmake at least 3.0.2")
 	else()
@@ -687,7 +715,7 @@ if ( ENABLE_CXX11 )
 		# (looxlike cmake 2.8 somehow doesn't have a problem with resolving the $<TARGET_FILE_DIR:...>
 		# inside the generated makefile, but does have problem with its own generated cmake_install.cmake :D)
 		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use copying")
-		install(PROGRAMS ${stransmit_path} DESTINATION bin)
+		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 
 	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
@@ -725,6 +753,10 @@ if ( ENABLE_CXX11 )
 			srt_add_testprogram(srt-test-file)
 			srt_make_application(srt-test-file)
 		endif()
+
+		srt_add_testprogram(srt-test-relay)
+		srt_make_application(srt-test-relay)
+		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 endif()
@@ -748,7 +780,7 @@ if (ENABLE_EXAMPLES)
 
 endif()
 
-install(PROGRAMS scripts/srt-ffplay DESTINATION bin)
+install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 
 if (DEFINED SRT_EXTRA_APPS_INC)
@@ -764,5 +796,5 @@ if ( ENABLE_SUFLIP )
 	)
 	srt_add_program(suflip ${SOURCES_suflip})
 	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION bin)
+	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif ()

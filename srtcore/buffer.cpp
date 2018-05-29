@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -93,9 +83,9 @@ m_iCount(0)
 ,m_iInRatePktsCount(0)
 ,m_iInRateBytesCount(0)
 ,m_InRateStartTime(0)
-,m_InRatePeriod(500000)   // 0.5 sec (fast start)
-,m_iInRateBps(10000000/8) // 10 Mbps (1.25 MBps)
-,m_iAvgPayloadSz(7*188)
+,m_InRatePeriod(CUDT::SND_INPUTRATE_FAST_START_US)   // 0.5 sec (fast start)
+,m_iInRateBps(CUDT::SND_INPUTRATE_INITIAL_BPS)
+,m_iAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
    // initial physical buffer of "size"
    m_pBuffer = new Buffer;
@@ -267,10 +257,10 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
    }
 }
 
-int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<int> r_period)
+int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<uint64_t> r_period)
 {
     int& payloadsz = *r_payloadsz;
-    int& period = *r_period;
+    uint64_t& period = *r_period;
     uint64_t time = CTimer::getTime();
 
     if ((m_InRatePeriod != 0)
@@ -292,7 +282,7 @@ int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<int> r_period)
         m_InRateStartTime = time;
     }
     payloadsz = m_iAvgPayloadSz;
-    period = (int)m_InRatePeriod;
+    period = m_InRatePeriod;
     return(m_iInRateBps);
 }
 
@@ -360,7 +350,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    return total;
 }
 
-int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, unsigned kflgs)
+int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, int kflgs)
 {
    // No data to read
    if (m_pCurrBlock == m_pLastBlock)
@@ -393,7 +383,16 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
    // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
    // flags for PH_MSGNO will be applied directly there. Then here the value for setting
    // PH_MSGNO will be set as is.
-   m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+
+   if (kflgs == -1)
+   {
+       HLOGC(dlog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
+       readlen = 0;
+   }
+   else
+   {
+       m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+   }
    msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
 
    srctime =
@@ -1186,6 +1185,33 @@ int CRcvBuffer::getRcvDataSize() const
       return m_iLastAckPos - m_iStartPos;
 
    return m_iSize + m_iLastAckPos - m_iStartPos;
+}
+
+int CRcvBuffer::debugGetSize() const
+{
+    // Does exactly the same as getRcvDataSize, but
+    // it should be used FOR INFORMATIONAL PURPOSES ONLY.
+    // The source values might be changed in another thread
+    // during the calculation, although worst case the
+    // resulting value may differ to the real buffer size by 1.
+    int from = m_iStartPos, to = m_iLastAckPos;
+    int size = to - from;
+    if (size < 0)
+        size += m_iSize;
+
+    return size;
+}
+
+
+bool CRcvBuffer::empty() const
+{
+    // This will not always return the intended value,
+    // that is, it may return false when the buffer really is
+    // empty - but it will return true then in one of next calls.
+    // This function will be always called again at some point
+    // if it returned false, and on true the connection
+    // is going to be broken - so this behavior is acceptable.
+    return m_iStartPos == m_iLastAckPos;
 }
 
 

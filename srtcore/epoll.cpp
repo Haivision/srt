@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -67,7 +57,7 @@ modified by
 #if __APPLE__
    #include "TargetConditionals.h"
 #endif
-#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    #include <sys/types.h>
    #include <sys/event.h>
    #include <sys/time.h>
@@ -113,7 +103,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
        */
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    localid = kqueue();
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
@@ -180,7 +170,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_ADD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -256,7 +246,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
    epoll_event ev;  // ev is ignored, for compatibility with old Linux kernel only.
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_DEL, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke;
 
    //
@@ -342,7 +332,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_MOD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -448,8 +438,8 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                ++ total;
             }
          }
-         #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
-         #if defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+         #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+         #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
          // 
          // for iOS setting a timeout of 1ms for kevent and not doing CTimer::waitForEvent(); in the code below
          // gives us a 10% cpu boost.
@@ -528,7 +518,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * 1000LL))
          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-      #if defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+      #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #else
       CTimer::waitForEvent();
       #endif
@@ -548,7 +538,7 @@ int CEPoll::release(const int eid)
    #ifdef LINUX
    // release local/system epoll descriptor
    ::close(i->second.m_iLocalID);
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    ::close(i->second.m_iLocalID);
    #endif
 

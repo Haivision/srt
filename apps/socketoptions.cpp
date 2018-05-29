@@ -1,3 +1,12 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
 
 #include "socketoptions.hpp"
 
@@ -19,11 +28,13 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
 
     if ( options.count("passphrase") )
     {
+        /*
         // Insert default
         if ( options.count("pbkeylen") == 0 )
         {
             options["pbkeylen"] = "16"; // m_output_direction ? "16" : "0";
         }
+        */
     }
 
     SocketOption::Mode mode;

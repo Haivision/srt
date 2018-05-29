@@ -156,7 +156,7 @@ SRT Usage - rendezvous
         sockaddr_in lsa = { ... }; // set local listening IP/port
         sockaddr_in rsa = { ... }; // set remote IP/port 
 
-        srt_setsockopt(m_sock, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+        srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
         int stb = srt_bind(sock, (sockaddr*)&lsa, sizeof lsa);
         int stc = srt_connect(sock, (sockaddr*)&rsa, sizeof rsa);
         HandleConnection(sock); 
@@ -400,7 +400,7 @@ This option list is sorted alphabetically. Note that some options can be
 either only a retrieved (r) or set (w) value.
 
 | OptName         | Since | Binding | Type            | Units | Default | Range | Description |
-| --- |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `SRTO_CONNTIMEO` | 1.1.2 | pre  | `int` | msec | 3000 | tbd | Connect timeout. SRT cannot connect for RTT > 1500 msec (2 handshake exchanges) with the default connect timeout of 3 seconds. This option applies to the caller and rendezvous connection modes. The connect timeout is 10 times the value set for the rendezvous mode (which can be used as a workaround for this connection problem with earlier versions). |
 | --- |
 | `SRTO_EVENT` (r) |   | n/a  | `int32_t` |   | n/a | n/a | Connection epoll flags (see [epoll\_ctl](http://man7.org/linux/man-pages/man2/epoll_ctl.2.html)). One or more of the following flags: EPOLLIN | EPOLLOUT | EPOLLERR |
@@ -428,7 +428,7 @@ either only a retrieved (r) or set (w) value.
 | --- |
 | `SRTO_LOSSMAXTTL` (writeonly) | 1.2.0 | pre | `int` | packets | 0 | reasonable | The value up to which the *Reorder Tolerance* may grow. When *Reorder Tolerance* is > 0, then packet loss report is delayed until that number of packets come in. *Reorder Tolerance* increases every time a "belated" packet has come, but it wasn't due to retransmission (that is, when UDP packets tend to come out of order), with the difference between the latest sequence and this packet's sequence, and not more than the value of this option. By default it's 0, which means that this mechanism is turned off, and the loss report is always sent immediately upon experiencing a "gap" in sequences.
 | --- |
-| `SRTO_MAXBW`  | 1.0.5 | pre  | `int64_t` | bytes/sec | -1 | -1 | 0 | 1.. | Maximum send bandwidth. -1: infinite (CSRTCC limit is 30mbps) =0: relative to input rate (SRT 1.0.5 addition, see `SRT_INPUTBW`) >0: absolute limit *SRT recommended value: 0 (relative)* |
+| `SRTO_MAXBW`  | 1.0.5 | pre  | `int64_t` | bytes/sec | -1 | -1 | 0 | 1.. | Maximum send bandwidth. -1: infinite (CSRTCC limit is 30mbps) =0: relative to input rate (SRT 1.0.5 addition, see `SRTO_INPUTBW`) >0: absolute limit *SRT recommended value: 0 (relative)* |
 | --- |
 | `SRTO_MESSAGEAPI` (w) | 1.3.0 | pre | bool | boolean | true |  | When set, this socket uses the Message API[\*], otherwise it uses Buffer API |
 | --- |
@@ -438,7 +438,7 @@ either only a retrieved (r) or set (w) value.
 | --- |
 | `SRTO_NAKREPORT` | 1.1.0 | pre  | `bool` |   | true | true|false | Receiver will send `UMSG_LOSSREPORT` messages periodically until the lost packet is retransmitted or intentionally dropped |
 | --- |
-| `SRTO_OHEADBW`   | 1.0.5 | post  | `int` | % | 25 | 5..100 | Recovery bandwidth overhead above input rate (see `SRT_INPUTBW`). *Sender: user configurable, default: 25%.* ***To do: set-only. get should be supported.*** |
+| `SRTO_OHEADBW`   | 1.0.5 | post  | `int` | % | 25 | 5..100 | Recovery bandwidth overhead above input rate (see `SRTO_INPUTBW`). *Sender: user configurable, default: 25%.* ***To do: set-only. get should be supported.*** |
 | --- |
 | `SRTO_PASSPHRASE` (w) | 0.0.0 | pre | string |   | [0] | [10..79] | HaiCrypt Encryption/Decryption Passphrase.  The passphrase is the shared secret between the sender and the receiver. It is used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2) (Password-Based Key Derivation Function 2). It is used on the sender if PBKEYLEN is non zero. It is used on the receiver only if the received data is encrypted.  The configured passphrase cannot be get back (write-only). *Sender and receiver: user configurable.* |
 | --- |
@@ -491,7 +491,7 @@ either only a retrieved (r) or set (w) value.
 | --- |
 | `SRTO_UDP_RCVBUF` |   | pre  | `int` | bytes | 8192 * 1500 | MSS.. | UDP Socket Receive Buffer Size.  Configured in bytes, maintained in packets based on MSS value. Receive buffer must not be greater than FC size. |
 | --- |
-| `SRTO_UDP_SNDBUF` |   | pre  | `int` | bytes | 65536 | MSS.. | UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based on `UDT_MSS` value. *SRT recommended value:* `1024*1024` |
+| `SRTO_UDP_SNDBUF` |   | pre  | `int` | bytes | 65536 | MSS.. | UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based on `SRTO_MSS` value. *SRT recommended value:* `1024*1024` |
 | --- |
 | `SRTO_VERSION` (r) | 1.1.0 | n/a  | `int32_t` |   | n/a | n/a | Local SRT version. This is the highest local version supported if not connected, or the highest version supported by the peer if connected. The version format in hex is 0xXXYYZZ for x.y.z in human readable form, where x = ("%d", (version>>16) & 0xff), etc... Set could eventually be supported to test |
 | --- |

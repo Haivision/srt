@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 // NOTE: This application uses C++11.
@@ -268,7 +260,34 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    Verbose::on = Option("no", "v", "verbose") != "no";
+    string verbose_val = Option("no", "v", "verbose");
+    int verbch = 1; // default cerr
+    if (verbose_val != "no")
+    {
+        Verbose::on = true;
+        try
+        {
+            verbch = stoi(verbose_val);
+        }
+        catch (...)
+        {
+            verbch = 1;
+        }
+        if (verbch != 1)
+        {
+            if (verbch != 2)
+            {
+                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                return 1;
+            }
+            Verbose::cverb = &std::cerr;
+        }
+        else
+        {
+            Verbose::cverb = &std::cout;
+        }
+    }
+
     bool crashonx = Option("no", "k", "crash") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");

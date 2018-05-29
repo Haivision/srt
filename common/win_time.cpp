@@ -1,74 +1,22 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#include <win/wintime.h>
+#include "win/wintime.h"
 #include <sys/timeb.h>
 
-#if 0
-// Temporarily blocked. Needs to be fixed.
-// Currently unused, but may be useful in future.
-int clock_gettime(int X, struct timespec *ts)
-{
-    LARGE_INTEGER           t;
-    FILETIME            f;
-    double                  microseconds;
-    static LARGE_INTEGER    offset;
-    static double           frequencyToMicroseconds;
-    static int              initialized = 0;
-    static BOOL             usePerformanceCounter = 0;
-
-    if (!initialized) {
-        LARGE_INTEGER performanceFrequency;
-        initialized = 1;
-        usePerformanceCounter = QueryPerformanceFrequency(&performanceFrequency);
-        if (usePerformanceCounter) {
-            QueryPerformanceCounter(&offset);
-            frequencyToMicroseconds = (double)performanceFrequency.QuadPart / 1000000.;
-        } else {
-            offset = getFILETIMEoffset();
-            frequencyToMicroseconds = 10.;
-        }
-    }
-    if (usePerformanceCounter) QueryPerformanceCounter(&t);
-    else {
-        GetSystemTimeAsFileTime(&f);
-        t.QuadPart = f.dwHighDateTime;
-        t.QuadPart <<= 32;
-        t.QuadPart |= f.dwLowDateTime;
-    }
-
-    t.QuadPart -= offset.QuadPart;
-    microseconds = (double)t.QuadPart / frequencyToMicroseconds;
-    t.QuadPart = microseconds;
-    tv->tv_sec = t.QuadPart / 1000000;
-    tv->tv_usec = t.QuadPart % 1000000;
-    return (0);
-}
-#endif
-
-void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
+void SRTCompat_timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
 {
     result->tv_sec  = a->tv_sec + b->tv_sec;
     result->tv_usec = a->tv_usec + b->tv_usec;
@@ -79,7 +27,7 @@ void timeradd(struct timeval *a, struct timeval *b, struct timeval *result)
     }
 }
 
-int gettimeofday(struct timeval* tp, struct timezone* tz)
+int SRTCompat_gettimeofday(struct timeval* tp, struct timezone* tz)
 {
     static LARGE_INTEGER tickFrequency, epochOffset;
 
@@ -115,4 +63,3 @@ int gettimeofday(struct timeval* tp, struct timezone* tz)
     }
     return 0;
 }
-

@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -193,7 +183,7 @@ void CChannel::attach(UDPSOCKET udpsock)
 
 void CChannel::setUDPSockOpt()
 {
-   #if defined(BSD) || defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #if defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
       int maxsize = 64000;
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_iRcvBufSize, sizeof(int)))
@@ -219,7 +209,7 @@ void CChannel::setUDPSockOpt()
 
    timeval tv;
    tv.tv_sec = 0;
-   #if defined (BSD) || defined (OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #if defined (BSD) || defined (OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       // Known BSD bug as the day I wrote this code.
       // A small time out value will cause the socket to block forever.
       tv.tv_usec = 10000;
@@ -505,6 +495,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     DWORD flag = 0;
     int addrsize = m_iSockAddrSize;
 
+    int msg_flags = 0;
     int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
     int res;
     if (sockerror == 0)
@@ -545,7 +536,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     }
 
     // Not sure if this problem has ever occurred on Windows, just a sanity check.
-    int msg_flags = 0;
     if (flag & MSG_PARTIAL)
         msg_flags = 1;
 #endif
