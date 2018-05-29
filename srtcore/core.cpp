@@ -1938,8 +1938,9 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
         uint64_t oldPeerStartTime = m_ullRcvPeerStartTime;
         m_ullRcvPeerStartTime = CTimer::getTime() - (uint64_t)((uint32_t)ts);
         if (oldPeerStartTime) {
-            LOGF(mglog.Note,  "rcvSrtMsg: 2nd PeerStartTime diff=%lld usec", 
-                    (long long)(m_ullRcvPeerStartTime - oldPeerStartTime));
+            LOGC(mglog.Note, log << "rcvSrtMsg: 2nd PeerStartTime diff=" <<  
+                    (m_ullRcvPeerStartTime - oldPeerStartTime) << " usec");
+
         }
     }
 #else
@@ -2150,8 +2151,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         uint64_t oldPeerStartTime = m_ullRcvPeerStartTime;
         m_ullRcvPeerStartTime = CTimer::getTime() - (uint64_t)((uint32_t)ts);
         if (oldPeerStartTime) {
-            LOGF(mglog.Note,  "rcvSrtMsg: 2nd PeerStartTime diff=%lld usec", 
-                    (long long)(m_ullRcvPeerStartTime - oldPeerStartTime));
+            LOGC(mglog.Note, log << "rcvSrtMsg: 2nd PeerStartTime diff=" <<  
+                    (m_ullRcvPeerStartTime - oldPeerStartTime) << " usec");
+
         }
     }
 #else
@@ -4731,17 +4733,19 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
             }
             LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
-            HLOGF(dlog.Debug, "drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
-                    (unsigned long long)CTimer::getTime(),
-                    realack, m_iSndCurrSeqNo,
-                    dpkts, dbytes, timespan_ms);
+            HLOGC(dlog.Debug, log << "drop,now " <<
+                    CTimer::getTime() << "us," <<
+                    realack << "-" <<  m_iSndCurrSeqNo << " seqs," <<
+                    dpkts << " pkts," <<  dbytes << " bytes," <<  timespan_ms << " ms");
+
         }
         *bCongestion = true;
         CGuard::leaveCS(m_AckLock);
     }
     else if (timespan_ms > (m_iPeerTsbPdDelay_ms/2))
     {
-        HLOGF(mglog.Debug, "cong, NOW: %lluus, BYTES %d, TMSPAN %dms", (unsigned long long)CTimer::getTime(), bytes, timespan_ms);
+        HLOGC(mglog.Debug, log << "cong, NOW: " << CTimer::getTime() << "us, BYTES " <<  bytes << ", TMSPAN " <<  timespan_ms << "ms");
+
         *bCongestion = true;
     }
 }
@@ -5804,7 +5808,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 #if 0//debug
     static int callcnt = 0;
-    if (!(callcnt++ % 250)) fprintf(stderr, "SndPeriod=%llu\n", (unsigned long long)m_ullInterval_tk/m_ullCPUFrequency);
+    if (!(callcnt++ % 250)) cerr << "SndPeriod=" << (m_ullInterval_tk/m_ullCPUFrequency) << "\n");
+
 #endif
 }
 
@@ -8213,8 +8218,10 @@ void CUDT::checkTimers()
                 HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
                     << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)");
 
-                HLOGF(mglog.Debug,  "timeout lost: pkts=%d rtt+4*var=%d cnt=%d diff=%llu", num,
-                        m_iRTT + 4 * m_iRTTVar, m_iReXmitCount, (unsigned long long)(currtime_tk - (m_ullLastRspAckTime_tk + exp_int)));
+                HLOGC(mglog.Debug, log << "timeout lost: pkts=" <<  num << " rtt+4*var=" <<
+                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " diff="
+                        << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
+
                 if (num > 0) {
                     m_iTraceSndLoss += 1; // num;
                     m_iSndLossTotal += 1; // num;

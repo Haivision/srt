@@ -246,9 +246,9 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
          m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
          m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / (time - m_InRateStartTime));
 
-         HLOGF(dlog.Debug, "updInputRate: pkts:%d bytes:%d avg=%d rate=%d kbps interval=%llu\n",
-            m_iInRateBytesCount, m_iInRatePktsCount, m_iAvgPayloadSz, (m_iInRateBps*8)/1000,
-            (unsigned long long)(time - m_InRateStartTime));
+         HLOGC(dlog.Debug, log << "updInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
+                 << " avg=" << m_iAvgPayloadSz << " rate=" << (m_iInRateBps*8)/1000
+                 << "kbps interval=" << (time - m_InRateStartTime));
 
          m_iInRatePktsCount = 0;
          m_iInRateBytesCount = 0;
