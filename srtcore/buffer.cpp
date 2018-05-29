@@ -547,7 +547,7 @@ void CSndBuffer::updAvgBufSize(uint64_t now)
       int bytescount;
       int count = getCurrBufSize(Ref(bytescount), Ref(instspan));
 
-      HLOGC(dlog.Debug, log << "updAvgBufSize: " << elapesed
+      HLOGC(dlog.Debug, log << "updAvgBufSize: " << elapsed
               << ": " << count << " " << bytescount
               << " " << instspan << "ms");
 
@@ -1234,7 +1234,7 @@ void CRcvBuffer::updRcvAvgDataSize(uint64_t now)
       m_iCountMAvg = getRcvDataSize(m_iBytesCountMAvg, m_TimespanMAvg);
       m_LastSamplingTime = now;
 
-      HLOGC(dlog.Debug, "getRcvDataSize: " << m_iCountMAvg << " " << m_iBytesCountMAvg
+      HLOGC(dlog.Debug, log << "getRcvDataSize: " << m_iCountMAvg << " " << m_iBytesCountMAvg
               << " " << m_TimespanMAvg << " ms elapsed: " << elapsed << " ms");
    }
    else if ((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 <= elapsed)
@@ -1255,7 +1255,7 @@ void CRcvBuffer::updRcvAvgDataSize(uint64_t now)
       m_TimespanMAvg    = (int)(((instspan   * (1000 - elapsed)) + (instspan   * elapsed)) / 1000);
       m_LastSamplingTime = now;
 
-      HLOGC(dlog.Debug, "getRcvDataSize: " << count << " " << bytescount << " " << instspan
+      HLOGC(dlog.Debug, log << "getRcvDataSize: " << count << " " << bytescount << " " << instspan
               << " ms elapsed: " << elapsed << " ms");
    }
 }
