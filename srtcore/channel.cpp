@@ -617,6 +617,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     return RST_OK;
 
 Return_error:
-    packet.setLength(0);
+    packet.setLength(0); // XXX This probably isn't correctly checked in other parts of code, FIX IT.
     return status;
 }

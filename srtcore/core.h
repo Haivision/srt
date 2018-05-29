@@ -587,7 +587,6 @@ private:
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
     // Congestion control
-    //std::vector<EventSlot> m_Slots[TEV__SIZE];
     SlotPack<TEV__SIZE> m_Slots;
 
     Smoother m_Smoother;
