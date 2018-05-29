@@ -642,11 +642,8 @@ only used by the Responder party.
 
 (2) `SRT_OPT_HAICRYPT` : The party includes haicrypt (legacy flag).
 
-This is a legacy flag used to recognize very early SRT versions without
-haicrypt that incorporate encryption bits as part of the
-message number. Since SRT version 1.2.0 (the oldest public version) it must 
-always be set. Note that it has nothing to do with using the encryption in the 
-connection).  <-- This description is a bit hard to follow???
+This flag should be always set. Legacy compatibility flag, see below
+for more details.
 
 (3) `SRT_OPT_TLPKTDROP`: The party will do TLPKTDROP.
 
@@ -663,13 +660,8 @@ message when the sender seems to linger with retransmission).
 
 (5) `SRT_OPT_REXMITFLG`: The party uses the REXMIT flag.
 
-Declares that the client understands and handles the REXMIT flag,
-which is contained in the SRT header. Without it, this bit
-is a part of the message number. The REXMIT flag is clear when
-the packet is sent originally and set when the packet is retransmitted.
-The party that sends payloads must know this flag of its peer
-in order to know whether the format that includes this flag should
-be used or not.
+This flag should be always set. Legacy compatibility flag, see below
+for more details.
 
 (6) `SRT_OPT_STREAM`   : The party uses stream type transmission
 
@@ -678,48 +670,121 @@ type transmission (file transmission with no boundaries). In HSv4 this
 flag does not exist and therefore it's always clear, which coincides
 with the fact that HSv4 supports the Live mode only.
 
-**Sender/Receiver Latency**
-
-The latency specification is split into two 16-bit fields:
- - Higher: Peer/receiver latency (HSv5 only)
- - Lower: Agent/sender latency <-- Not sure of the use of agent and peer here???
-
-The characteristics of Sender and Receiver latency are the following:
-
-1. **Sender latency** is the value that the sender proposes for the latency with 
-which it will send data to the Receiver.
-
-2. **Receiver latency** is the value that the Receiver proposes for the latency 
-with which it would like to receive data from the Sender.
-
-3. No matter the direction, the Initiator sets both of these values, then the
-Responder "fixes" them (chooses the maximum between the received value
-and its own) and sends them back, in reverse order.
-
-4. In HSv4 there's only one direction, and the Initiator is Sender
-simultaneously, so it only declares the proposed latency for the
-Receiver, and the Receiver responds with the possibly fixed value.
-
-The same layout is used in `SRT_CMD_HSRSP` and it's sent by Responder
-back to the Initiator.
+**Special legacy compatibility flags**
 
 `SRT_OPT_HAICRYPT` and `SRT_OPT_REXMITFLG` define special cases of
 interpretation of the contents in the SRT header for payload packets.
-The second field contains the Message number as well as special bit fields, 
-among which there are two introduced in SRT towards the UDT legacy:  
-<-- towards???
- - Encryption (2 bits)
- - Retransmission (1 bit)
 
-Their presence is controlled by these two above flags, at least in
-theory.  <-- the presence of what is controlled by which flags??? 
+The SRT header for payload packet consists of 4 32-bit fields:
+ - Sequence number
+ - Message Number and Flags
+ - Timestamp
+ - Target socket ID
+
+This second field, "Message Number and Flags", contains, beside the
+Message Number, also extra flags. Some of these flags were defined
+already in the UDT legacy (2 bits for "Packet Boundary" and 1 bit
+for "In order"), and SRT has added some more - by stealing some more
+bits from the "Message Number" subfield:
+
+1. Encryption Key flags (2 bits). Controlled by `SRT_OPT_HAICRYPT`,
+this flag declares as to whether the payload is encrypted and with
+which key.
+
+2. Retransmission flag (1 bit). Controlled by `SRT_OPT_REXMITFLG`,
+this flag is clear when the payload was sent originally and set,
+when the payload was retransmitted.
+
+Note that, as of 1.2.0 version, both these fields are in use, and therefore
+both these flags must be always set. At least in theory there might still exist
+some SRT versions older than 1.2.0 where these flags are not used, and these
+extra bits are part of the "Message Number" subfield.
+
 In practice there are no versions around that do not include
-encryption bits, although versions of SRT may continue to be in use
-that do not include the Retransmission field, which was introduced
+encryption bits, although there might be some old SRT versions still
+in use that do not include the Retransmission field, which was introduced
 in version 1.2.0. In practice both these flags must be set in the
-version that has them defined.
+version that has them defined. This is considered the default value
+for the future, as they might be potentially reused in future for
+something else, once all versions below 1.2.0 are decommissioned.
 
 
+**Sender/Receiver Latency** (`SRT_HS_LATENCY` field)
+
+The latency specification is split into two 16-bit fields. The usage
+differs in HSv4 and HSv5. In HSv4 only the Lower part is used (the
+Higher part is always 0), and the meaning is:
+ - On the Receiver party: Receiver latency
+ - On the Sender party: Sender latency
+
+In HSv5 both fields are used:
+ - Higher: Receiver latency
+ - Lower: Sender latency
+
+The same layout is used in `SRT_CMD_HSRSP` and it's sent by Responder
+back to the Initiator (both in HSv4, where responder is receiver and
+the information is sent by a command packet with `UMSG_EXT`, and in
+HSv5, where it is attached as a handshake extension to the handshake
+command packet).
+
+The characteristics of Sender and Receiver latency are the following:
+
+1. **Sender latency** is the value that the Sender proposes for the Receiver
+to apply on the stream that the Sender will be sending (or, better said,
+the minimum latency that the receiver should set).
+
+2. **Receiver latency** is the value that the Receiver wishes to apply to
+the stream that it will be receiving.
+
+As this can be really confusing, here is the detailed explanation how
+it works in particular handshake version:
+
+1. HSv4. There's only one direction, and the party that set `SRTO_SENDER`
+is declared a sender, the party that did not set it is the receiver. There's
+only one option, `SRTO_LATENCY`, which sets the "sender latency" on the sender
+and "receiver latency" on the receiver. Only the lower field is used in this
+exchange, that is, the meaning of this field in HSv4 is "sender latency" for
+the sender party and "receiver latency" for the receiver party.
+
+2. HSv5. This is bidirectional-capable, so the latency setting is
+per direction. Let's imagine two boxes, A and B:
+
+ - when A sends a stream to B, then A sets `SRTO_PEERLATENCY` and B sets
+   `SRTO_RCVLATENCY`; this value on A is then placed into the Lower field
+   and the value set on B is placed to the Higher field
+ - what is placed by A in the Higher field is the value from `SRTO_RCVLATENCY`,
+   and so the value placed by B into Lower field is from `SRTO_PEERLATENCY`,
+   and this latency touches upon, this time, the stream that is sent from
+   B to A
+
+(Note that `SRTO_LATENCY` option on HSv5 sets both `SRTO_RCVLATENCY` and
+`SRTO_PEERLATENCY` to the same value, although when reading, `SRTO_LATENCY`
+is an alias to `SRTO_RCVLATENCY`).
+
+No matter the direction, the Initiator sets both of these values, then the
+Responder "fixes" them (chooses the maximum between the received value
+and its own) and sends them back (in HSv5 in reverse order). It can be
+symbolically shown as:
+
+Filling the handshake:
+
+On HSv4
+    a.hsreq.latency = { a[peerlatency], 0 };
+    b.hsreq.latency = { b[rcvlatency], 0 };
+
+On HSv5 (both A and B do the same):
+
+    a.hsreq.latency = { a[peerlatency], a[rcvlatency] };
+
+Fixing the latency value (note that it is simplified by assigning to two
+variables in one expression, but obviously both assignments happen separately
+on every endpoint):
+
+    a[peerlatency] = b[rcvlatency] = max(a[peerlatency], b[rcvlatency]);
+
+(On Hsv5 also):
+
+    a[rcvlatency] = b[peerlatency] = max(a[rcvlatency], b[peerlatency]);
 
 #### KMREQ and KMRSP
 
@@ -790,26 +855,37 @@ the cryptos in the opposite direction. This is accomplished by "reverse KMX":
 
 1. The Initiator initializes its Sender Crypto (TXC), and **clones it** to the
 Receiver Crypto.
-2. The Initiator sends KMX message to the Receiver.
-3. The Receiver deploys the KMX message into its Receiver Crypto (RXC), and
-**clones it** to the Sender Crypto.
+2. The Initiator sends KMX message to the Responder.
+3. The Responder deploys the KMX message into its Receiver Crypto (RXC), and
+**clones it** to its Sender Crypto.
 
 This way the Sender (being a Responder) has the Sender Crypto initialized in a 
-manner very similar to what it would have if it was Initiator, but based on values
-extracted from the Receiver Crypto, to which configuration was deployed from
-the KMX message. <-- not sure about this last phrase???
+manner very similar to that of Initiator. The only difference is that the SEK
+and SALT parameters in the crypto:
+ - In Initiator, they are taken from Random Number Generator
+ - In Responder, they are extracted from the Receiver Crypto, which was
+configured by the incoming KMX message
 
 The extra operations defined as "reverse KMX" happen exclusively
 in the HSv5 handshake.
 
-The key is refreshed after an appropriate number of packets have been sent
-based on the occurrence of three events, which are considered to have happened
-when the number of sent packets exceeds a given limit taken from the
-`SRTO_KMREFRESHRATE` and `SRTO_KMPREANNOUNCE` settings:
+After some predefined number of packets have been sent, the key is refreshed.
+This is done this time only in one direction, it's always a "forward KMX",
+and the KMX message is sent using `UMSG_EXT` control packet with
+`SRT_CMD_KMREQ` extended type (responded by `SRT_CMD_KMRSP`).
+
+The decision for key refreshing is based on the occurrence of three events,
+which are considered to have happened when the number of sent packets exceeds a
+given limit taken from the `SRTO_KMREFRESHRATE` and `SRTO_KMPREANNOUNCE`
+settings:
 
 1. Pre-announce: when reaches `SRTO_KMREFRESHRATE - SRTO_KMPREANNOUNCE`
 2. Key switch: when reaches `SRTO_KMREFRESHRATE`
-3. Decommission: when reaches `SRTO_KMREFRESHRATE  SRTO_KMPREANNOUNCE`
+3. Decommission: when reaches `SRTO_KMREFRESHRATE + SRTO_KMPREANNOUNCE`
+
+(In other words, `SRTO_KMREFRESHRATE` is the exact number of transmitted packets
+for which Key-switch happens, the Pre-announce happens `SRTO_KMPREANNOUNCE`
+packets earlier, and Decommission happens `SRTO_KMPREANNOUNCE` packets later.)
 
 The following actions are then undertaken:
 
@@ -818,11 +894,11 @@ the `UMSG_EXT`-based command packet with `SRT_CMD_KMREQ`, that is, the
 same way in both HSv4 and HSv5 clients. The receiver should deploy this
 key to its Receiver Crypto.
 2. **Key Switch:** The bits in the data packet header concerning encryption,
-which should be `EK_EVEN` or `EK_ODD`, now change in value to the
-opposite of what they had been so far. From there on the opposite key is used
-(the newly generated one).
+gets toggled from `EK_EVEN` to `EK_ODD` or vice versa. From there on the
+opposite key is used (the newly generated one).
 3. **Decommission:** the old key (the key that was used with the previous flag
-state) is decommissioned on both the Sender and Receiver sides.
+state) is decommissioned on both the Sender and Receiver sides. The place
+for the key remains open for future key refreshing.
 
 **NOTE** In the implementation the handlers for KMREQ and KMRSP are
 the same for `UMSG_EXT`-based messages and the extension blocks in the
@@ -833,19 +909,17 @@ happen exclusively for one direction and exclusively on the premise that the
 number of sent packets exceeded a given value.
 
 
-
 #### Smoother
 
 This is a feature supported by HSv5 only. This value contains a string
 with the name of the SRT Smoother type.
 
-The versions that support HSv5 contain an additional block, similar to
+The versions that support HSv5 contain an additional functionality, similar to
 the "congestion control" class from UDT, which is called "Smoother". The
-default Smoother is called "live" and the 1.3.0 version contains an
-additional optional smoother type caller "file". Within the "file" smoother
-there's also a possible transmission of stream mode and message mode (the
-"live" smoother may only use the message mode and with one message per
-packet).
+default Smoother is called "live" and the 1.3.0 version contains an additional
+optional smoother type caller "file". Within the "file" smoother there's also a
+possible transmission of stream mode and message mode (the "live" smoother may
+only use the message mode and with one message per packet).
 
 The smoother part is not obligatory when not present. The "live" Smoother
 is used by default. For an HSv4 client, which doesn't contain this feature, the
@@ -865,10 +939,10 @@ This feature is supported by HSv5 only. This value contains a string of
 the user's choice that can be passed from the Caller to the Listener.
 
 The Stream ID is a string up to 512 characters that an Initiator can pass to
-a Responder. An application can use this feature to
-set  a socket flag on a Caller socket. The accepted socket will have
-this string also set, and it can be retrieved using the same flag,
-`SRTO_STREAMID`. This gives the listener a chance to decide
+a Responder. To use this feature, an application should set it on a Caller
+socket using `SRTO_STREAMID` option. Upon connection, the accepted socket
+on the listener side will have the exactly same value set and it can be
+retrieved using the same option. This gives the listener a chance to decide
 what to do with this connection - such as to decide which stream to send
 in the case where the Listener is the stream Sender.
 
