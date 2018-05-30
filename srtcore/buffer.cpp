@@ -1160,6 +1160,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket()
     return 0;
 }
 
+#if ENABLE_HEAVY_LOGGING
 // This function is for debug purposes only and it's called only
 // from within HLOG* macros.
 void CRcvBuffer::reportBufferStats()
@@ -1216,6 +1217,8 @@ void CRcvBuffer::reportBufferStats()
             << timespan << "(lo=" << logging::FormatTime(lower_time)
             << " hi=" << logging::FormatTime(upper_time) << ")");
 }
+
+#endif // ENABLE_HEAVY_LOGGING
 
 bool CRcvBuffer::isRcvDataReady()
 {
@@ -1284,7 +1287,6 @@ int CRcvBuffer::debugGetSize() const
 
     return size;
 }
-
 
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

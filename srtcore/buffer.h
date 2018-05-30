@@ -355,7 +355,9 @@ public:
 
    void skipData(int len);
 
+#if ENABLE_HEAVY_LOGGING
    void reportBufferStats(); // Heavy logging Debug only
+#endif
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
