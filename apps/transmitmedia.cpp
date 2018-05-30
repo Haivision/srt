@@ -161,6 +161,19 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
     cerr << output.str() << std::flush;
 }
 
+static void PrintSrtBandwidth(double mbpsBandwidth)
+{
+    std::ostringstream output;
+
+    if (printformat_json) {
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+    } else {
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+    }
+
+    cerr << output.str() << std::flush;
+}
+
 
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
@@ -601,7 +614,7 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
     clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
-        cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+        PrintSrtBandwidth(perf.mbpsBandwidth);
     }
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
@@ -647,11 +660,7 @@ bool SrtTarget::Write(const bytevector& data)
     clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
-        if (printformat_json) {
-            cerr << "{\"bandwidth\":" << perf.mbpsBandwidth << '}' << endl;
-        } else {
-            cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
-        }
+        PrintSrtBandwidth(perf.mbpsBandwidth);
     }
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
