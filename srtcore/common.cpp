@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2016, The Board of Trustees of the University of Illinois.
@@ -68,7 +58,7 @@ modified by
    #if __APPLE__
       #include "TargetConditionals.h"
    #endif
-   #if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #include <mach/mach_time.h>
    #endif
 #else
@@ -141,7 +131,7 @@ void CTimer::rdtsc(uint64_t &x)
       //SetThreadAffinityMask(hCurThread, dwOldMask);
       if (!ret)
          x = getTime() * s_ullCPUFrequency;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
       // use system call to read time clock for other archs
@@ -169,7 +159,7 @@ uint64_t CTimer::readCPUFrequency()
       int64_t ccf;
       if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
          frequency = ccf / 1000000;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       mach_timebase_info_data_t info;
       mach_timebase_info(&info);
       frequency = info.denom * 1000ULL / info.numer;
@@ -259,7 +249,7 @@ uint64_t CTimer::getTime()
     // however Cygwin platform is supported only for testing purposes.
 
     //For other systems without microsecond level resolution, add to this conditional compile
-#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     uint64_t x;
     rdtsc(x);
     return x / s_ullCPUFrequency;
@@ -307,6 +297,17 @@ void CTimer::sleep()
    #endif
 }
 
+int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+    timeval now;
+    gettimeofday(&now, 0);
+    uint64_t time_us = now.tv_sec * 1000000ULL + now.tv_usec + delay;
+    timespec timeout;
+    timeout.tv_sec = time_us / 1000000;
+    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    
+    return pthread_cond_timedwait(cond, mutex, &timeout);
+}
+
 
 // Automatically lock in constructor
 CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
@@ -322,6 +323,18 @@ CGuard::~CGuard()
 {
     if (m_iLocked == 0)
         pthread_mutex_unlock(&m_Mutex);
+}
+
+// After calling this on a scoped lock wrapper (CGuard),
+// the mutex will be unlocked right now, and no longer
+// in destructor
+void CGuard::forceUnlock()
+{
+    if (m_iLocked == 0)
+    {
+        pthread_mutex_unlock(&m_Mutex);
+        m_iLocked = -1;
+    }
 }
 
 int CGuard::enterCS(pthread_mutex_t& lock)

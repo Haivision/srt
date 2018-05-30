@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 // Medium concretizations
 
 // Just for formality. This file should be used 
@@ -29,7 +39,50 @@ int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
-class FileSource: public Source
+
+string DirectionName(SRT_EPOLL_OPT direction)
+{
+    string dir_name;
+    if (direction)
+    {
+        if (direction & SRT_EPOLL_IN)
+        {
+            dir_name = "source";
+        }
+
+        if (direction & SRT_EPOLL_OUT)
+        {
+            if (!dir_name.empty())
+                dir_name = "relay";
+            else
+                dir_name = "target";
+        }
+    }
+    else
+    {
+        // stupid name for a case of IPE
+        dir_name = "stone";
+    }
+
+    return dir_name;
+}
+
+template<class FileBase> inline
+bytevector FileRead(FileBase& ifile, size_t chunk, const string& filename)
+{
+    bytevector data(chunk);
+    ifile.read(data.data(), chunk);
+    size_t nread = ifile.gcount();
+    if ( nread < data.size() )
+        data.resize(nread);
+
+    if ( data.empty() )
+        throw Source::ReadEOF(filename);
+    return data;
+}
+
+
+class FileSource: public virtual Source
 {
     ifstream ifile;
     string filename_copy;
@@ -41,25 +94,14 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    bytevector Read(size_t chunk) override
-    {
-        bytevector data(chunk);
-        ifile.read(data.data(), chunk);
-        size_t nread = ifile.gcount();
-        if ( nread < data.size() )
-            data.resize(nread);
-
-        if ( data.empty() )
-            throw ReadEOF(filename_copy);
-        return data;
-    }
+    bytevector Read(size_t chunk) override { return FileRead(ifile, chunk, filename_copy); }
 
     bool IsOpen() override { return bool(ifile); }
     bool End() override { return ifile.eof(); }
     //~FileSource() { ifile.close(); }
 };
 
-class FileTarget: public Target
+class FileTarget: public virtual Target
 {
     ofstream ofile;
 public:
@@ -77,9 +119,39 @@ public:
     void Close() override { ofile.close(); }
 };
 
+// Can't base this class on FileSource and FileTarget classes because they use two
+// separate fields, which makes it unable to reliably define IsOpen(). This would
+// require to use 'fstream' type field in some kind of FileCommon first. Not worth
+// a shot.
+class FileRelay: public Relay
+{
+    fstream iofile;
+    string filename_copy;
+public:
+
+    FileRelay(const string& path):
+        iofile(path, ios::in | ios::out | ios::binary), filename_copy(path)
+    {
+        if ( !iofile )
+            throw std::runtime_error(path + ": Can't open file for reading");
+    }
+    bytevector Read(size_t chunk) override { return FileRead(iofile, chunk, filename_copy); }
+
+    void Write(const bytevector& data) override
+    {
+        iofile.write(data.data(), data.size());
+    }
+
+    bool IsOpen() override { return !!iofile; }
+    bool End() override { return iofile.eof(); }
+    bool Broken() override { return !iofile.good(); }
+    void Close() override { iofile.close(); }
+};
+
 template <class Iface> struct File;
 template <> struct File<Source> { typedef FileSource type; };
 template <> struct File<Target> { typedef FileTarget type; };
+template <> struct File<Relay> { typedef FileRelay type; };
 
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
@@ -244,7 +316,7 @@ void SrtCommon::StealFrom(SrtCommon& src)
     // This is used when SrtCommon class designates a listener
     // object that is doing Accept in appropriate direction class.
     // The new object should get the accepted socket.
-    m_output_direction = src.m_output_direction;
+    m_direction = src.m_direction;
     m_blocking_mode = src.m_blocking_mode;
     m_timeout = src.m_timeout;
     m_tsbpdmode = src.m_tsbpdmode;
@@ -279,12 +351,12 @@ void SrtCommon::AcceptNewClient()
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_output)
+void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir)
 {
-    m_output_direction = dir_output;
+    m_direction = dir;
     InitParameters(host, par);
 
-    Verb() << "Opening SRT " << (dir_output ? "target" : "source") << " " << m_mode
+    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
         << "(" << (m_blocking_mode ? "" : "non-") << "blocking)"
         << " on " << host << ":" << port;
 
@@ -315,6 +387,26 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
         m_sock = m_bindsock = SRT_INVALID_SOCK;
         throw;
     }
+
+    int pbkeylen = 0;
+    SRT_KM_STATE kmstate, snd_kmstate, rcv_kmstate;
+    int len = sizeof (int);
+    srt_getsockflag(m_sock, SRTO_PBKEYLEN, &pbkeylen, &len);
+    srt_getsockflag(m_sock, SRTO_KMSTATE, &kmstate, &len);
+    srt_getsockflag(m_sock, SRTO_SNDKMSTATE, &snd_kmstate, &len);
+    srt_getsockflag(m_sock, SRTO_RCVKMSTATE, &rcv_kmstate, &len);
+
+    // Bring this declaration temporarily, this is only for testing
+    std::string KmStateStr(SRT_KM_STATE state);
+
+    Verb() << "ENCRYPTION status: " << KmStateStr(kmstate)
+        << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
+        << ") PBKEYLEN=" << pbkeylen;
+
+    if ( !m_blocking_mode )
+    {
+        srt_epoll = AddPoller(m_sock, dir);
+    }
 }
 
 int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
@@ -330,7 +422,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 {
     bool yes = m_blocking_mode;
     int result = 0;
-    if ( m_output_direction )
+    if ( m_direction & SRT_EPOLL_OUT )
     {
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
         if ( result == -1 )
@@ -339,7 +431,8 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if ( m_timeout )
             return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
     }
-    else
+
+    if ( m_direction & SRT_EPOLL_IN )
     {
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
         if ( result == -1 )
@@ -357,10 +450,15 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         {
             string value = m_options.at(o.name);
             bool ok = o.apply<SocketOption::SRT>(sock, value);
-            if ( !ok )
-                Verb() << "WARNING: failed to set '" << o.name << "' (post, " << (m_output_direction? "target":"source") << ") to " << value;
-            else
-                Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
+            if (Verbose::on)
+            {
+                string dir_name = DirectionName(m_direction);
+
+                if ( !ok )
+                    Verb() << "WARNING: failed to set '" << o.name << "' (post, " << dir_name << ") to " << value;
+                else
+                    Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
+            }
         }
     }
 
@@ -385,16 +483,6 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &maybe, sizeof maybe);
     if ( result == -1 )
         return result;
-
-    //if ( m_timeout )
-    //    result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
-    //if ( result == -1 )
-    //    return result;
-
-    //if ( Verbose::on )
-    //{
-    //    Verb() << "PRE: blocking mode set: " << yes << " timeout " << m_timeout;
-    //}
 
     // host is only checked for emptiness and depending on that the connection mode is selected.
     // Here we are not exactly interested with that information.
@@ -539,93 +627,45 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
-void SrtCommon::OpenRendezvous(string adapter, string host, int port)
+void SrtCommon::SetupRendezvous(string adapter, int port)
 {
-    m_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
-    if ( m_sock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
-
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
-
-    int stat = ConfigurePre(m_sock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePre");
-
-    if ( !m_blocking_mode )
-    {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
-    }
 
     sockaddr_in localsa = CreateAddrInet(adapter, port);
     sockaddr* plsa = (sockaddr*)&localsa;
     Verb() << "Binding a server on " << adapter << ":" << port << " ...";
-    stat = srt_bind(m_sock, plsa, sizeof localsa);
+    int stat = srt_bind(m_sock, plsa, sizeof localsa);
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
         Error(UDT::getlasterror(), "srt_bind");
     }
-
-    sockaddr_in sa = CreateAddrInet(host, port);
-    sockaddr* psa = (sockaddr*)&sa;
-    Verb() << "Connecting to " << host << ":" << port << " ... ";
-    stat = srt_connect(m_sock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
-    {
-        srt_close(m_sock);
-        Error(UDT::getlasterror(), "srt_connect");
-    }
-
-    // Wait for REAL connected state if nonblocking mode
-    if ( !m_blocking_mode )
-    {
-        Verb() << "[ASYNC] ";
-
-        // SPIN-WAITING version. Don't use it unless you know what you're doing.
-        // SpinWaitAsync();
-
-        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
-        {
-            if ( Verbose::on )
-            {
-                Verb() << "[EPOLL: " << len << " sockets] ";
-            }
-        }
-        else
-        {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
-        }
-    }
-
-    Verb() << " connected.";
-
-    stat = ConfigurePost(m_sock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePost");
 }
 
 void SrtCommon::Close()
 {
-    Verb() << "SrtCommon: DESTROYING CONNECTION, closing sockets (rt%" << m_sock << " ls%" << m_bindsock << ")...";
-
+    bool any = false;
     bool yes = true;
     if ( m_sock != SRT_INVALID_SOCK )
     {
+        Verb() << "SrtCommon: DESTROYING CONNECTION, closing socket (rt%" << m_sock << ")...";
         srt_setsockflag(m_sock, SRTO_SNDSYN, &yes, sizeof yes);
         srt_close(m_sock);
+        any = true;
     }
 
     if ( m_bindsock != SRT_INVALID_SOCK )
     {
+        Verb() << "SrtCommon: DESTROYING SERVER, closing socket (ls%" << m_bindsock << ")...";
         // Set sndsynchro to the socket to synch-close it.
         srt_setsockflag(m_bindsock, SRTO_SNDSYN, &yes, sizeof yes);
         srt_close(m_bindsock);
+        any = true;
     }
-    Verb() << "SrtCommon: ... done.";
+
+    if (any)
+        Verb() << "SrtCommon: ... done.";
 }
 
 SrtCommon::~SrtCommon()
@@ -635,13 +675,7 @@ SrtCommon::~SrtCommon()
 
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
-    Init(host, port, par, false);
-
-    if ( !m_blocking_mode )
-    {
-        srt_epoll = AddPoller(m_sock, SRT_EPOLL_IN);
-    }
-
+    Init(host, port, par, SRT_EPOLL_IN);
     ostringstream os;
     os << host << ":" << port;
     hostport_copy = os.str();
@@ -712,6 +746,12 @@ bytevector SrtSource::Read(size_t chunk)
     return data;
 }
 
+SrtTarget::SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
+{
+    Init(host, port, par, SRT_EPOLL_OUT);
+}
+
+
 int SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
     int result = SrtCommon::ConfigurePre(sock);
@@ -730,7 +770,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
-void SrtTarget::Write(const bytevector& data) 
+void SrtTarget::Write(const bytevector& data)
 {
     ::transmit_throw_on_interrupt = true;
 
@@ -750,13 +790,20 @@ void SrtTarget::Write(const bytevector& data)
     ::transmit_throw_on_interrupt = false;
 }
 
+SrtRelay::SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par)
+{
+    Init(host, port, par, SRT_EPOLL_IN | SRT_EPOLL_OUT);
+}
+
 SrtModel::SrtModel(string host, int port, map<string,string> par)
 {
     InitParameters(host, par);
     if (m_mode == "caller")
         is_caller = true;
-    else if (m_mode != "listener")
-        throw std::invalid_argument("Only caller and listener modes supported");
+    else if (m_mode == "rendezvous")
+        is_rend = true;
+    else
+        throw std::invalid_argument("Wrong 'mode' attribute; expected: caller, listener, rendezvous");
 
     m_host = host;
     m_port = port;
@@ -772,7 +819,11 @@ void SrtModel::Establish(ref_t<std::string> name)
     // medium, it should send back a single byte with value 0. This means
     // that agent should stop connecting.
 
-    if (is_caller)
+    if (is_rend)
+    {
+        OpenRendezvous(m_adapter, m_host, m_port);
+    }
+    else if (is_caller)
     {
         // Establish a connection
 
@@ -833,11 +884,28 @@ void SrtModel::Establish(ref_t<std::string> name)
 template <class Iface> struct Srt;
 template <> struct Srt<Source> { typedef SrtSource type; };
 template <> struct Srt<Target> { typedef SrtTarget type; };
+template <> struct Srt<Relay> { typedef SrtRelay type; };
 
 template <class Iface>
 Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
 
-class ConsoleSource: public Source
+bytevector ConsoleRead(size_t chunk)
+{
+    bytevector data(chunk);
+    bool st = cin.read(data.data(), chunk).good();
+    chunk = cin.gcount();
+    if ( chunk == 0 && !st )
+        return bytevector();
+
+    if ( chunk < data.size() )
+        data.resize(chunk);
+    if ( data.empty() )
+        throw Source::ReadEOF("CONSOLE device");
+
+    return data;
+}
+
+class ConsoleSource: public virtual Source
 {
 public:
 
@@ -847,25 +915,14 @@ public:
 
     bytevector Read(size_t chunk) override
     {
-        bytevector data(chunk);
-        bool st = cin.read(data.data(), chunk).good();
-        chunk = cin.gcount();
-        if ( chunk == 0 && !st )
-            return bytevector();
-
-        if ( chunk < data.size() )
-            data.resize(chunk);
-        if ( data.empty() )
-            throw ReadEOF("CONSOLE device");
-
-        return data;
+        return ConsoleRead(chunk);
     }
 
     bool IsOpen() override { return cin.good(); }
     bool End() override { return cin.eof(); }
 };
 
-class ConsoleTarget: public Target
+class ConsoleTarget: public virtual Target
 {
 public:
 
@@ -882,9 +939,18 @@ public:
     bool Broken() override { return cout.eof(); }
 };
 
+class ConsoleRelay: public Relay, public ConsoleSource, public ConsoleTarget
+{
+public:
+    ConsoleRelay() = default;
+
+    bool IsOpen() override { return cin.good() && cout.good(); }
+};
+
 template <class Iface> struct Console;
 template <> struct Console<Source> { typedef ConsoleSource type; };
 template <> struct Console<Target> { typedef ConsoleTarget type; };
+template <> struct Console<Relay> { typedef ConsoleRelay type; };
 
 template <class Iface>
 Iface* CreateConsole() { return new typename Console<Iface>::type (); }
@@ -1052,7 +1118,7 @@ protected:
 };
 
 
-class UdpSource: public Source, public UdpCommon
+class UdpSource: public virtual Source, public virtual UdpCommon
 {
     bool eof = true;
 public:
@@ -1092,7 +1158,7 @@ public:
     bool End() override { return eof; }
 };
 
-class UdpTarget: public Target, public UdpCommon
+class UdpTarget: public virtual Target, public virtual UdpCommon
 {
 public:
     UdpTarget(string host, int port, const map<string,string>& attr )
@@ -1111,9 +1177,22 @@ public:
     bool Broken() override { return false; }
 };
 
+class UdpRelay: public Relay, public UdpSource, public UdpTarget
+{
+public:
+    UdpRelay(string host, int port, const map<string,string>& attr):
+        UdpSource(host, port, attr),
+        UdpTarget(host, port, attr)
+    {
+    }
+
+    bool IsOpen() override { return m_sock != -1; }
+};
+
 template <class Iface> struct Udp;
 template <> struct Udp<Source> { typedef UdpSource type; };
 template <> struct Udp<Target> { typedef UdpTarget type; };
+template <> struct Udp<Relay> { typedef UdpRelay type; };
 
 template <class Iface>
 Iface* CreateUdp(const string& host, int port, const map<string,string>& par) { return new typename Udp<Iface>::type (host, port, par); }

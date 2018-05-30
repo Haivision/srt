@@ -1,21 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
@@ -222,7 +213,7 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -262,7 +253,7 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {

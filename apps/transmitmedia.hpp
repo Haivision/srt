@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 #ifndef INC__COMMON_TRANSMITMEDIA_HPP
 #define INC__COMMON_TRANSMITMEDIA_HPP
 
@@ -26,7 +36,6 @@ class SrtCommon
 protected:
 
     bool m_output_direction = false; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
-    bool m_blocking_mode = false; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_output_direction
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_output_direction
     bool m_tsbpdmode = true;
     int m_outgoing_port = 0;
@@ -65,10 +74,6 @@ protected:
     void OpenServer(string host, int port)
     {
         PrepareListener(host, port, 1);
-        if (m_blocking_mode)
-        {
-            AcceptNewClient();
-        }
     }
 
     void OpenRendezvous(string adapter, string host, int port);

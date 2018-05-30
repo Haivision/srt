@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 // NOTE: This application uses C++11.
@@ -102,8 +94,6 @@ string Option(string deflt, string key, Args... further_keys)
     return i->second;
 }
 
-ostream* cverb = &cout;
-
 struct ForcedExit: public std::runtime_error
 {
     ForcedExit(const std::string& arg):
@@ -124,20 +114,13 @@ volatile bool int_state = false;
 volatile bool timer_state = false;
 void OnINT_ForceExit(int)
 {
-    if (Verbose::on)
-    {
-        cerr << "\n-------- REQUESTED INTERRUPT!\n";
-    }
-
+    Verb() << "\n-------- REQUESTED INTERRUPT!\n";
     int_state = true;
 }
 
 void OnAlarm_Interrupt(int)
 {
-    if (Verbose::on)
-    {
-        cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
-    }
+    Verb() << "\n---------- INTERRUPT ON TIMEOUT!\n";
 
     int_state = false; // JIC
     timer_state = true;
@@ -147,70 +130,6 @@ void OnAlarm_Interrupt(int)
         throw AlarmExit("Watchdog bites hangup");
     }
 }
-
-struct BandwidthGuard
-{
-    typedef std::chrono::steady_clock::time_point time_point;
-    size_t conf_bw;
-    time_point start_time, prev_time;
-    size_t report_count = 0;
-    double average_bw = 0;
-    size_t transfer_size = 0;
-
-    BandwidthGuard(size_t band): conf_bw(band), start_time(std::chrono::steady_clock::now()), prev_time(start_time) {}
-
-    void Checkpoint(size_t size, size_t toreport )
-    {
-        using namespace std::chrono;
-
-        time_point eop = steady_clock::now();
-        auto dur = duration_cast<microseconds>(eop - start_time);
-        //auto this_dur = duration_cast<microseconds>(eop - prev_time);
-
-        transfer_size += size;
-        average_bw = transfer_size*1000000.0/dur.count();
-        //double this_bw = size*1000000.0/this_dur.count();
-
-        if ( toreport )
-        {
-            // Show current bandwidth
-            ++report_count;
-            if ( report_count % toreport == toreport - 1 )
-            {
-                cout.precision(10);
-                int abw = int(average_bw);
-                int abw_trunc = abw/1024;
-                int abw_frac = abw%1024;
-                char bufbw[64];
-                sprintf(bufbw, "%d.%03d", abw_trunc, abw_frac);
-                cout << "+++/+++SRT TRANSFER: " << transfer_size << "B "
-                    "DURATION: "  << duration_cast<milliseconds>(dur).count() << "ms SPEED: " << bufbw << "kB/s\n";
-            }
-        }
-
-        prev_time = eop;
-
-        if ( transfer_size > SIZE_MAX/2 )
-        {
-            transfer_size -= SIZE_MAX/2;
-            start_time = eop;
-        }
-
-        if ( conf_bw == 0 )
-            return; // don't guard anything
-
-        // Calculate expected duration for the given size of bytes (in [ms])
-        double expdur_ms = double(transfer_size)/conf_bw*1000;
-
-        auto expdur = milliseconds(size_t(expdur_ms));
-        // Now compare which is more
-
-        if ( dur >= expdur ) // too slow, but there's nothing we can do. Exit now.
-            return;
-
-        std::this_thread::sleep_for(expdur-dur);
-    }
-};
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
@@ -262,9 +181,10 @@ int main( int argc, char** argv )
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
+        cerr << "\t-pf:<format> - printformat (json or default)\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
-        cerr << "\t-q - quiet mode, default no\n";
-        cerr << "\t-v - verbose mode, default no\n";
+        cerr << "\t-q - quiet mode (default no)\n";
+        cerr << "\t-v - verbose mode (default no)\n";
         cerr << "\t-a - auto-reconnect mode, default yes, -a:no to disable\n";
         return 1;
     }
@@ -280,14 +200,26 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    Verbose::on = Option("no", "v", "verbose") != "no";
+    bool quiet = Option("no", "q", "quiet") != "no";
+    Verbose::on = !quiet && Option("no", "v", "verbose") != "no";
     string loglevel = Option("error", "loglevel");
     string logfa = Option("general", "logfa");
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool autoreconnect = Option("yes", "a", "auto") != "no";
-    bool quiet = Option("no", "q", "quiet") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
+    
+    // Print format
+    string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        printformat_json = true;
+    }
+    else if (pf != "default")
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
 
     try
     {
@@ -334,14 +266,14 @@ int main( int argc, char** argv )
 
 #ifdef WIN32
 
-    if (timeout != 0)
+    if (timeout > 0)
     {
         cerr << "ERROR: The -timeout option (-t) is not implemented on Windows\n";
         return 1;
     }
 
 #else
-    if (timeout != 0)
+    if (timeout > 0)
     {
         signal(SIGALRM, OnAlarm_Interrupt);
         if (!quiet)
@@ -355,7 +287,7 @@ int main( int argc, char** argv )
 
     if (!quiet)
     {
-        cout << "Media path: '"
+        cerr << "Media path: '"
             << params[0]
             << "' --> '"
             << params[1]
@@ -432,7 +364,7 @@ int main( int argc, char** argv )
             if (!tar.get())
             {
                 tar = Target::Create(params[1]);
-                if (!src.get())
+                if (!tar.get())
                 {
                     cerr << "Unsupported target type" << endl;
                     return 1;
@@ -471,7 +403,7 @@ int main( int argc, char** argv )
             {
                 if ((false))
                 {
-                    cout << "Event:"
+                    cerr << "Event:"
                         << " srtrfdslen " << srtrfdslen
                         << " sysrfdslen " << sysrfdslen
                         << endl;
@@ -498,14 +430,14 @@ int main( int argc, char** argv )
                     SRT_SOCKSTATUS status = srt_getsockstate(s);
                     if ((false) && status != SRTS_CONNECTED)
                     {
-                        cout << dirstring << " status " << status << endl;
+                        cerr << dirstring << " status " << status << endl;
                     }
                     switch (status)
                     {
                         case SRTS_LISTENING:
                         {
                             if ((false) && !quiet)
-                                cout << "New SRT client connection" << endl;
+                                cerr << "New SRT client connection" << endl;
 
                             bool res = (issource) ?
                                 src->AcceptNewClient() : tar->AcceptNewClient();
@@ -532,7 +464,7 @@ int main( int argc, char** argv )
                             {
                                 if (!quiet)
                                 {
-                                    cout << "Accepted SRT "
+                                    cerr << "Accepted SRT "
                                         << dirstring
                                         <<  " connection"
                                         << endl;
@@ -554,7 +486,7 @@ int main( int argc, char** argv )
                                 {
                                     if (!quiet)
                                     {
-                                        cout << "SRT source disconnected"
+                                        cerr << "SRT source disconnected"
                                             << endl;
                                     }
                                     srcConnected = false;
@@ -563,7 +495,7 @@ int main( int argc, char** argv )
                             else if (tarConnected)
                             {
                                 if (!quiet)
-                                    cout << "SRT target disconnected" << endl;
+                                    cerr << "SRT target disconnected" << endl;
                                 tarConnected = false;
                             }
 
@@ -589,14 +521,14 @@ int main( int argc, char** argv )
                                 if (!srcConnected)
                                 {
                                     if (!quiet)
-                                        cout << "SRT source connected" << endl;
+                                        cerr << "SRT source connected" << endl;
                                     srcConnected = true;
                                 }
                             }
                             else if (!tarConnected)
                             {
                                 if (!quiet)
-                                    cout << "SRT target connected" << endl;
+                                    cerr << "SRT target connected" << endl;
                                 tarConnected = true;
                             }
                         }
@@ -635,13 +567,14 @@ int main( int argc, char** argv )
                 }
 
                 // if no target, let received data fall to the floor
-                while (tar.get() && !dataqueue.empty())
+                while (!dataqueue.empty())
                 {
                     std::shared_ptr<bytevector> pdata = dataqueue.front();
-                    if (!tar->IsOpen() || !tar->Write(*pdata))
+                    if (!tar.get() || !tar->IsOpen()) {
                         lostBytes += (*pdata).size();
-
-                    else
+                    } else if (!tar->Write(*pdata)) {
+                        lostBytes += (*pdata).size();
+                    } else
                         wroteBytes += (*pdata).size();
 
                     dataqueue.pop_front();
@@ -652,7 +585,7 @@ int main( int argc, char** argv )
                     std::time_t now(std::time(nullptr));
                     if (std::difftime(now, writeErrorLogTimer) >= 5.0)
                     {
-                        cout << lostBytes << " bytes lost, "
+                        cerr << lostBytes << " bytes lost, "
                             << wroteBytes << " bytes sent, "
                             << receivedBytes << " bytes received"
                             << endl;

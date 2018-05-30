@@ -1,21 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
@@ -164,7 +155,7 @@ typedef enum SRT_SOCKOPT {
     // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
     _DEPRECATED_SRTO_SNDPBKEYLEN = 38, // (needed to use inside the code without generating -Wswitch)
     //
-    SRTO_SNDPEERKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
+    SRTO_SNDKMSTATE = 40,  // (GET) the current state of the encryption at the peer side
     SRTO_RCVKMSTATE,      // (GET) the current state of the encryption at the agent side
     SRTO_LOSSMAXTTL,      // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
@@ -174,7 +165,9 @@ typedef enum SRT_SOCKOPT {
     SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
     SRTO_MESSAGEAPI,
     SRTO_PAYLOADSIZE,
-    SRTO_TRANSTYPE         // Transmission type (set of options required for given transmission type)
+    SRTO_TRANSTYPE,         // Transmission type (set of options required for given transmission type)
+    SRTO_KMREFRESHRATE,
+    SRTO_KMPREANNOUNCE
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -457,6 +450,7 @@ static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP,
 #define SRT_LOGFA_DATA 3
 #define SRT_LOGFA_TSBPD 4
 #define SRT_LOGFA_REXMIT 5
+#define SRT_LOGFA_HAICRYPT 6
 
 // To make a typical int32_t size, although still use std::bitset.
 // C API will carry it over.
@@ -473,6 +467,7 @@ enum SRT_KM_STATE
 
 enum SRT_EPOLL_OPT
 {
+   SRT_EPOLL_OPT_NONE = 0, // fallback
    // this values are defined same as linux epoll.h
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN = 0x1,
@@ -486,6 +481,14 @@ enum SRT_EPOLL_OPT
 inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
 {
     return SRT_EPOLL_OPT( (int)a1 | (int)a2 );
+}
+
+inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
+{
+    // Using an enum prevents treating int automatically as enum,
+    // requires explicit enum to be passed here, and minimizes the
+    // risk that the right side value will contain multiple flags.
+    return flags & int(eflg);
 }
 #endif
 
