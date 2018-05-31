@@ -1476,13 +1476,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (i == m_mBuffer.end())
    {
-       uint64_t now = CTimer::getTime();
-       timespec timeout;
-
-       timeout.tv_sec = now / 1000000 + 1;
-       timeout.tv_nsec = (now % 1000000) * 1000;
-
-       pthread_cond_timedwait(&m_PassCond, &m_PassLock, &timeout);
+      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000ULL);
 
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())

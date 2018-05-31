@@ -66,9 +66,9 @@ written by
 
 #if ENABLE_HEAVY_LOGGING
 
-#define HLOGC(...) LOGC(__VA_ARGS__)
-#define HLOGF(...) LOGF(__VA_ARGS__)
-#define HLOGP(...) LOGP(__VA_ARGS__)
+#define HLOGC LOGC
+#define HLOGP LOGP
+#define HLOGF LOGF
 
 #else
 

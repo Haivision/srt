@@ -246,6 +246,15 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# This options is necessary on some systems; on a cross-ARM compiler it
+# has been detected, for example, that -lrt is necessary for some applications
+# because clock_gettime is needed by some functions and it is alternatively
+# provided by libc, but only in newer versions. This options is rarely necessary,
+# but may help in several corner cases in unusual platforms.
+if (WITH_EXTRALIBS)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
+endif()
+
 # CMake has only discovered in 3.3 version that some set-finder is
 # necessary. Using variables for shortcut to a clumsy check syntax.
 

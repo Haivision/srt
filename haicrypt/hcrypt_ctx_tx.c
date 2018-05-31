@@ -191,7 +191,7 @@ int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto)
 	/* Generate new SEK */
 	new_ctx->sek_len = new_ctx->cfg.key_len;
 
-    HCRYPT_LOG(LOG_DEBUG, "refresh/generate SEK. salt_len=%d sek_len=%d\n", (int)new_ctx->salt_len, (int)new_ctx->sek_len);
+	HCRYPT_LOG(LOG_DEBUG, "refresh/generate SEK. salt_len=%d sek_len=%d\n", (int)new_ctx->salt_len, (int)new_ctx->sek_len);
 
 	if (0 > hcrypt_Prng(new_ctx->sek, new_ctx->sek_len)) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(sek[%zd] failed\n", new_ctx->sek_len);
