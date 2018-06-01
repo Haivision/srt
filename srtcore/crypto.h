@@ -118,16 +118,26 @@ public:
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }
-    bool getKmMsg_needSend(size_t ki) const
+    bool getKmMsg_needSend(size_t ki, bool runtime) const
     {
-        return (m_SndKmMsg[ki].iPeerRetry > 0 && m_SndKmMsg[ki].MsgLen > 0);
+        if (runtime)
+            return (m_SndKmMsg[ki].iPeerRetry > 0 && m_SndKmMsg[ki].MsgLen > 0);
+        else
+            return m_SndKmMsg[ki].MsgLen > 0;
     }
 
-    void getKmMsg_markSent(size_t ki)
+    void getKmMsg_markSent(size_t ki, bool runtime)
     {
-        m_SndKmMsg[ki].iPeerRetry--;
         m_SndKmLastTime = CTimer::getTime();
-        HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+        if (runtime)
+        {
+            m_SndKmMsg[ki].iPeerRetry--;
+            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
+        }
     }
 
     bool getKmMsg_acceptResponse(size_t ki, const uint32_t* srtmsg, size_t bytesize)

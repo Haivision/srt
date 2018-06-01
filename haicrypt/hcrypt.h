@@ -160,6 +160,7 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
 
 int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg);
 int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
+int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_Session* cryptoSrc);
 int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto);
 int hcryptCtx_Tx_PreSwitch(hcrypt_Session *crypto);
 int hcryptCtx_Tx_Switch(hcrypt_Session *crypto);
