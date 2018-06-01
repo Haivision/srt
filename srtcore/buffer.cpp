@@ -1242,22 +1242,6 @@ int CRcvBuffer::getRcvDataSize() const
    return m_iSize + m_iLastAckPos - m_iStartPos;
 }
 
-int CRcvBuffer::debugGetSize() const
-{
-    // Does exactly the same as getRcvDataSize, but
-    // it should be used FOR INFORMATIONAL PURPOSES ONLY.
-    // The source values might be changed in another thread
-    // during the calculation, although worst case the
-    // resulting value may differ to the real buffer size by 1.
-    int from = m_iStartPos, to = m_iLastAckPos;
-    int size = to - from;
-    if (size < 0)
-        size += m_iSize;
-
-    return size;
-}
-
-
 bool CRcvBuffer::empty() const
 {
     // This will not always return the intended value,
