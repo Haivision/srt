@@ -66,7 +66,7 @@ Short introduction to SRT packet structure
 ------------------------------------------
 
 Every UDP packet carrying the SRT traffic contains the SRT header, which
-consists of 4 following 32-bit major fields:
+consists of the 4 following 32-bit major fields:
 
  - `PH_SEQNO`
  - `PH_MSGNO`
