@@ -102,7 +102,7 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 
 
 template <class PerfMonType>
-void PrintSrtStats(int sid, const PerfMonType& mon)
+static void PrintSrtStats(int sid, const PerfMonType& mon)
 {
     std::ostringstream output;
 
