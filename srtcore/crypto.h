@@ -76,6 +76,8 @@ private:
     // Receiver
     HaiCrypt_Handle m_hRcvCrypto;
 
+    bool m_bErrorReported;
+
 public:
 
     bool sendingAllowed()

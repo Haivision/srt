@@ -102,9 +102,9 @@ int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 
 int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_Session* cryptoSrc)
 {
-    int iret;
+	int iret;
 
-    ASSERT(HCRYPT_CTX_S_SARDY <= ctx->status);
+	ASSERT(HCRYPT_CTX_S_SARDY <= ctx->status);
 
     const hcrypt_Ctx* ctxSrc = cryptoSrc->ctx;
     if (!ctxSrc)
@@ -123,42 +123,42 @@ int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_
     ctx->sek_len = ctxSrc->sek_len;
     memcpy(ctx->sek, ctxSrc->sek, ctx->sek_len);
 
-    /* Set SEK in cipher */
-    if (crypto->cipher->setkey(crypto->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
-        HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
-        return(-1);
-    }
+	/* Set SEK in cipher */
+	if (crypto->cipher->setkey(crypto->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
+		HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
+		return(-1);
+	}
 
-    HCRYPT_LOG(LOG_NOTICE, "clone-keyed crypto context[%d]\n", (ctx->flags & HCRYPT_CTX_F_xSEK)/2);
-    HCRYPT_PRINTKEY(ctx->sek, ctx->sek_len, "sek");
+	HCRYPT_LOG(LOG_NOTICE, "clone-keyed crypto context[%d]\n", (ctx->flags & HCRYPT_CTX_F_xSEK)/2);
+	HCRYPT_PRINTKEY(ctx->sek, ctx->sek_len, "sek");
 
-    /* Regenerate KEK if Password-based (uses newly generated salt and sek_len) */
+	/* Regenerate KEK if Password-based (uses newly generated salt and sek_len) */
     /* (note for CloneKey imp: it's expected that the same passphrase-salt pair
        shall generate the same KEK. GenSecret also prints the KEK */
-    if ((0 < ctx->cfg.pwd_len)
-            &&	(0 > (iret = hcryptCtx_GenSecret(crypto, ctx)))) {
-        return(iret);
-    }
+	if ((0 < ctx->cfg.pwd_len)
+    &&	(0 > (iret = hcryptCtx_GenSecret(crypto, ctx)))) {
+		return(iret);
+	}
 
-    /* Assemble the new Keying Material message */
-    if (0 != (iret = hcryptCtx_Tx_AsmKM(crypto, ctx, NULL))) {
-        return(iret);
-    }
-    if ((HCRYPT_CTX_S_KEYED <= ctx->alt->status)
-            &&  hcryptMsg_KM_HasBothSek(ctx->alt->KMmsg_cache)) {
-        /* 
-         * previous context KM announced in alternate (odd/even) KM, 
-         * reassemble it without our KM
-         */
-        hcryptCtx_Tx_AsmKM(crypto, ctx->alt, NULL);
-    }
+	/* Assemble the new Keying Material message */
+	if (0 != (iret = hcryptCtx_Tx_AsmKM(crypto, ctx, NULL))) {
+		return(iret);
+	}
+	if ((HCRYPT_CTX_S_KEYED <= ctx->alt->status)
+	&&  hcryptMsg_KM_HasBothSek(ctx->alt->KMmsg_cache)) {
+		/* 
+		 * previous context KM announced in alternate (odd/even) KM, 
+		 * reassemble it without our KM
+		*/
+		hcryptCtx_Tx_AsmKM(crypto, ctx->alt, NULL);
+	}
 
-    /* Initialize the Media Stream message prefix cache */
-    ctx->msg_info->resetCache(ctx->MSpfx_cache, HCRYPT_MSG_PT_MS, ctx->flags & HCRYPT_CTX_F_xSEK);
-    ctx->pkt_cnt = 1;
+	/* Initialize the Media Stream message prefix cache */
+	ctx->msg_info->resetCache(ctx->MSpfx_cache, HCRYPT_MSG_PT_MS, ctx->flags & HCRYPT_CTX_F_xSEK);
+	ctx->pkt_cnt = 1;
 
-    ctx->status = HCRYPT_CTX_S_KEYED;
-    return(0);
+	ctx->status = HCRYPT_CTX_S_KEYED;
+	return(0);
 }
 
 /* 
