@@ -5024,11 +5024,15 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
+    /* XXX
+       This might be worth preserving for several occasions, but it
+       must be at least conditional because it breaks backward compat.
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
     {
         LOGC(dlog.Error, log << "Encryption is required, but the peer did not supply correct credentials. Sending rejected.");
         throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
+    */
 
     CGuard sendguard(m_SendLock);
 
