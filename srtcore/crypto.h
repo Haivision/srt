@@ -76,6 +76,8 @@ private:
     // Receiver
     HaiCrypt_Handle m_hRcvCrypto;
 
+    bool m_bErrorReported;
+
 public:
 
     bool sendingAllowed()
@@ -118,6 +120,15 @@ public:
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }
+
+    /// Check if the key stored at @c ki shall be sent. When during the handshake,
+    /// it only matters if the KM message for that index is recorded at all.
+    /// Otherwise returns true only if also the retry counter didn't expire.
+    ///
+    /// @param ki Key index (0 or 1)
+    /// @param runtime True, if this happens as a key update
+    ///                during transmission (otherwise it's during the handshake)
+    /// @return Whether the KM message at given index needs to be sent.
     bool getKmMsg_needSend(size_t ki, bool runtime) const
     {
         if (runtime)
@@ -126,6 +137,14 @@ public:
             return m_SndKmMsg[ki].MsgLen > 0;
     }
 
+    /// Mark the key as already sent. When no 'runtime' (during the handshake)
+    /// it actually does nothing so that this will be retried as long as the handshake
+    /// itself is being retried. Otherwise this is during transmission and will expire
+    /// after several retries.
+    ///
+    /// @param ki Key index (0 or 1)
+    /// @param runtime True, if this happens as a key update
+    ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
         m_SndKmLastTime = CTimer::getTime();
@@ -140,6 +159,13 @@ public:
         }
     }
 
+    /// Check if the response returned by KMRSP matches the recorded KM message.
+    /// When it is, set also the retry counter to 0 to prevent further retries.
+    ///
+    /// @param ki KM message index (0 or 1)
+    /// @param srtmsg Message received through KMRSP
+    /// @param bytesize Size of the message
+    /// @return True if the message is identical to the recorded KM message at given index.
     bool getKmMsg_acceptResponse(size_t ki, const uint32_t* srtmsg, size_t bytesize)
     {
         if ( m_SndKmMsg[ki].MsgLen == bytesize

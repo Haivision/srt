@@ -4116,7 +4116,7 @@ void* CUDT::tsbpd(void* param)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff%1000) << "ms");
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -7518,9 +7518,6 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
-#if ENABLE_LOGGING
-              static int nereport = 0;
-#endif
               /*
                * Could not decrypt
                * Keep packet in received buffer
@@ -7531,10 +7528,6 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
-#if ENABLE_LOGGING
-              if (nereport++%100 == 0)
-                  LOGC(dlog.Error, log << "DECRYPT ERROR - dropping a packet of " << packet.getLength() << " bytes");
-#endif
           }
       }
       else

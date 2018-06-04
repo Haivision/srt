@@ -223,6 +223,11 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
 
     LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen));
 
+    // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
+    // until the next KMREQ is received as a key regeneration.
+    m_bErrorReported = false;
+
+
     if (srtlen == 1)
         goto HSv4_ErrorReport;
 
@@ -298,6 +303,10 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
 
     // Unused?
     //bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
+
+    // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
+    // until the next KMREQ is received as a key regeneration.
+    m_bErrorReported = false;
 
     if (srtlen == 1) // Error report. Set accordingly.
     {
@@ -506,7 +515,8 @@ m_iRcvKmKeyLen(0),
 m_SndKmState(SRT_KM_S_UNSECURED),
 m_RcvKmState(SRT_KM_S_UNSECURED),
 m_KmRefreshRatePkt(0),
-m_KmPreAnnouncePkt(0)
+m_KmPreAnnouncePkt(0),
+m_bErrorReported(false)
 {
 
     m_KmSecret.len = 0;
@@ -713,7 +723,9 @@ EncryptionStatus CCryptoControl::decrypt(ref_t<CPacket> r_packet)
             // We were unaware that the peer has set password,
             // but now here we are.
             m_RcvKmState = SRT_KM_S_SECURING;
-            LOGP(mglog.Note, "SECURITY UPDATE: Peer has surprised Agent with encryption, but KMX is pending - waiting");
+            LOGC(mglog.Note, log << "SECURITY UPDATE: Peer has surprised Agent with encryption, but KMX is pending - current packet size="
+                    << packet.getLength() << " dropped");
+            return ENCS_FAILED;
         }
         else
         {
@@ -722,15 +734,37 @@ EncryptionStatus CCryptoControl::decrypt(ref_t<CPacket> r_packet)
             // sent payloads anyway.
             m_RcvKmState = SRT_KM_S_NOSECRET;
             LOGP(mglog.Error, "SECURITY FAILURE: Agent has no PW, but Peer sender has declared one, can't decrypt");
+            // This only informs about the state change; it will be also caught by the condition below
         }
+    }
 
+    if (m_RcvKmState != SRT_KM_S_SECURED)
+    {
+        // If not "secured", it means that it won't be able to decrypt packets,
+        // so there's no point to even try to send them to HaiCrypt_Rx_Data.
+        // Actually the current conditions concerning m_hRcvCrypto are such that this object
+        // is cretaed in case of SRT_KM_S_BADSECRET, so it will simply fail to decrypt,
+        // but with SRT_KM_S_NOSECRET m_hRcvCrypto is not even created (is NULL), which
+        // will then cause an error to be reported, misleadingly. Simply don't try to
+        // decrypt anything as long as you are not sure that the connection is secured.
+
+        // This problem will occur every time a packet comes in, it's worth reporting,
+        // but not with every single packet arriving. Print it once and turn off the flag;
+        // it will be restored at the next attempt of KMX.
+        if (!m_bErrorReported)
+        {
+            m_bErrorReported = true;
+            LOGC(mglog.Error, log << "SECURITY STATUS: " << KmStateStr(m_RcvKmState) << " - can't decrypt packet.");
+        }
+        HLOGC(mglog.Debug, log << "Packet still not decrypted, status=" << KmStateStr(m_RcvKmState)
+                << " - dropping size=" << packet.getLength());
         return ENCS_FAILED;
     }
 
     int rc = HaiCrypt_Rx_Data(m_hRcvCrypto, (uint8_t *)packet.getHeader(), (uint8_t *)packet.m_pcData, packet.getLength());
     if ( rc <= 0 )
     {
-        HLOGC(mglog.Debug, log << "decrypt ERROR: HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
+        LOGC(mglog.Error, log << "decrypt ERROR (IPE): HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
         // -1: decryption failure
         // 0: key not received yet
         return ENCS_FAILED;

@@ -121,12 +121,13 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
 
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
 {
+    ASSERT(cfg != NULL);
+    ASSERT(phhc != NULL);
+
     hcrypt_Session *crypto;
     HaiCrypt_CryptoDir tx = (HaiCrypt_CryptoDir)(HAICRYPT_CFG_F_TX & cfg->flags);
 
     *phhc = NULL;
-
-    ASSERT(NULL != cfg);
 
     HCRYPT_LOG_INIT();
     //Test log
@@ -293,7 +294,6 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         }
         mem_buf = (unsigned char *)cryptoClone;
         mem_buf += sizeof(*cryptoClone);
-        memset(cryptoClone, 0, sizeof(*cryptoClone));
         memcpy(cryptoClone, cryptoSrc, sizeof(*cryptoClone));
 
         if (inbuf_siz) {
