@@ -2567,7 +2567,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this function
 #ifdef SRT_ENABLE_CONNTIMEO
-    uint64_t ttl = m_iConnTimeOut * 1000ULL;
+    uint64_t ttl = m_iConnTimeOut * uint64_t(1000);
 #else
     uint64_t ttl = 3000000;
 #endif
@@ -4349,7 +4349,8 @@ void CUDT::close()
       uint64_t entertime = CTimer::getTime();
 
       HLOGC(mglog.Debug, log << CONID() << " ... (linger)");
-      while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) && (CTimer::getTime() - entertime < m_Linger.l_linger * 1000000ULL))
+      while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0)
+              && (CTimer::getTime() - entertime < m_Linger.l_linger * uint64_t(1000000)))
       {
          // linger has been checked by previous close() call and has expired
          if (m_ullLingerExpiration >= entertime)
@@ -4359,7 +4360,7 @@ void CUDT::close()
          {
             // if this socket enables asynchronous sending, return immediately and let GC to close it later
             if (m_ullLingerExpiration == 0)
-               m_ullLingerExpiration = entertime + m_Linger.l_linger * 1000000ULL;
+               m_ullLingerExpiration = entertime + m_Linger.l_linger * uint64_t(1000000);
 
             return;
          }
@@ -4520,7 +4521,7 @@ int CUDT::send(const char* data, int len)
               }
               else
               {
-                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * uint64_t(1000);
                   timespec locktime;
 
                   locktime.tv_sec = exptime / 1000000;
@@ -4624,7 +4625,7 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000ULL);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000);
                 }
             }
             else
@@ -4870,13 +4871,13 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 }
                 else
                 {
-                    uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                    uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * uint64_t(1000);
 
                     while (stillConnected()
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * 1000ULL);
+                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * uint64_t(1000));
                 }
             }
 
@@ -5118,7 +5119,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
-                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
+                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;

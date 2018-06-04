@@ -1379,7 +1379,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (i == m_mBuffer.end())
    {
-      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000ULL);
+      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000);
 
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())

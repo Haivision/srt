@@ -191,7 +191,7 @@ public:
     virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
     {
         if (rcv_speed > 0)
-            nakint_tk += (loss_length * 1000000ULL / rcv_speed) * CTimer::getCPUFrequency();
+            nakint_tk += (loss_length * uint64_t(1000000) / rcv_speed) * CTimer::getCPUFrequency();
 
         return nakint_tk;
     }
