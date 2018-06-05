@@ -37,6 +37,7 @@ bool clear_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+bool printformat_json = false;
 
 class FileSource: public Source
 {
@@ -101,19 +102,76 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 
 
 template <class PerfMonType>
-void PrintSrtStats(int sid, const PerfMonType& mon)
+static void PrintSrtStats(int sid, const PerfMonType& mon)
 {
-    cerr << "======= SRT STATS: sid=" << sid << endl;
-    cerr << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
-    cerr << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
-    cerr << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
-    cerr << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
-    cerr << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
-    cerr << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
-    cerr << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
-    cerr << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-    cerr << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
-    cerr << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+    std::ostringstream output;
+
+    if (printformat_json)
+    {
+        output << "{";
+        output << "\"sid\":" << sid << ",";
+        output << "\"time\":" << mon.msTimeStamp << ",";
+        output << "\"window\":{";
+        output << "\"flow\":" << mon.pktFlowWindow << ",";
+        output << "\"congestion\":" << mon.pktCongestionWindow << ",";    
+        output << "\"flight\":" << mon.pktFlightSize;    
+        output << "},";
+        output << "\"link\":{";
+        output << "\"rtt\":" << mon.msRTT << ",";
+        output << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
+        output << "\"maxBandwidth\":" << mon.mbpsMaxBW;
+        output << "},";
+        output << "\"send\":{";
+        output << "\"packets\":" << mon.pktSent << ",";
+        output << "\"packetsLost\":" << mon.pktSndLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
+        output << "\"bytes\":" << mon.byteSent << ",";
+        output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsSendRate;
+        output << "},";
+        output << "\"recv\": {";
+        output << "\"packets\":" << mon.pktRecv << ",";
+        output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
+        output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        output << "\"bytes\":" << mon.byteRecv << ",";
+        output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
+        output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsRecvRate;
+        output << "}";
+        output << "}" << endl;
+    }
+    else
+    {
+        output << "======= SRT STATS: sid=" << sid << endl;
+        output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
+        output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
+        output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
+        output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
+        output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+        output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+        output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+        output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+        output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+    }
+
+    cerr << output.str() << std::flush;
+}
+
+static void PrintSrtBandwidth(double mbpsBandwidth)
+{
+    std::ostringstream output;
+
+    if (printformat_json) {
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+    } else {
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+    }
+
+    cerr << output.str() << std::flush;
 }
 
 
@@ -556,7 +614,7 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
     clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
-        cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+        PrintSrtBandwidth(perf.mbpsBandwidth);
     }
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
@@ -602,7 +660,7 @@ bool SrtTarget::Write(const bytevector& data)
     clear_stats = false;
     if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
     {
-        cerr << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth << endl;
+        PrintSrtBandwidth(perf.mbpsBandwidth);
     }
     if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
     {
@@ -825,8 +883,14 @@ protected:
 
         if (is_multicast)
         {
-            adapter = attr.count("adapter") ? attr.at("adapter") : string();
+            ip_mreq_source mreq_ssm;
+            ip_mreq mreq;
             sockaddr_in maddr;
+            int opt_name;
+            void* mreq_arg_ptr;
+            socklen_t mreq_arg_size;
+
+            adapter = attr.count("adapter") ? attr.at("adapter") : string();
             if ( adapter == "" )
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
@@ -840,14 +904,30 @@ protected:
                 maddr = CreateAddrInet(adapter, port);
             }
 
-            ip_mreq mreq;
-            mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
-            mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+            if (attr.count("source"))
+            {
+                /* this is an ssm.  we need to use the right struct and opt */
+                opt_name = IP_ADD_SOURCE_MEMBERSHIP;
+                mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
+                mreq_arg_size = sizeof(mreq_ssm);
+                mreq_arg_ptr = &mreq_ssm;
+            }
+            else
+            {
+                opt_name = IP_ADD_MEMBERSHIP;
+                mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                mreq_arg_size = sizeof(mreq);
+                mreq_arg_ptr = &mreq;
+            }
+
 #ifdef WIN32
-            const char* mreq_arg = (const char*)&mreq;
+            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = &mreq;
+            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
 
@@ -867,7 +947,7 @@ protected:
 #else
             Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
 #endif
-            int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
+            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
 
             if ( res == status_error )
             {

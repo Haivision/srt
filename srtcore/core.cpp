@@ -91,6 +91,9 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+#if ENABLE_HAICRYPT_LOGGING
+        allfa.set(SRT_LOGFA_HAICRYPT, true);
+#endif
     }
 } logger_fa_all;
 
@@ -179,6 +182,7 @@ void CUDT::construct()
     m_bBroken = false;
     m_bPeerHealth = true;
     m_ullLingerExpiration = 0;
+    m_llLastReqTime = 0;
 
     m_lSrtVersion = SRT_DEF_VERSION;
     m_lPeerSrtVersion = 0; // not defined until connected.
@@ -191,6 +195,9 @@ void CUDT::construct()
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
     m_bPeerTLPktDrop = false;
+
+    m_uKmRefreshRatePkt = 0;
+    m_uKmPreAnnouncePkt = 0;
 
     // Initilize mutex and condition variables
     initSynch();
@@ -304,6 +311,9 @@ CUDT::CUDT(const CUDT& ancestor)
 
    m_CryptoSecret = ancestor.m_CryptoSecret;
    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
+
+   m_uKmRefreshRatePkt = ancestor.m_uKmRefreshRatePkt;
+   m_uKmPreAnnouncePkt = ancestor.m_uKmPreAnnouncePkt;
 
    m_pCache = ancestor.m_pCache;
 
@@ -763,6 +773,39 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
       default:
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+      }
+      break;
+
+   case SRTO_KMREFRESHRATE:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      // If you first change the KMREFRESHRATE, KMPREANNOUNCE
+      // will be set to the maximum allowed value
+      m_uKmRefreshRatePkt = *(int*)optval;
+      if (m_uKmPreAnnouncePkt == 0 || m_uKmPreAnnouncePkt > (m_uKmRefreshRatePkt-1)/2)
+      {
+          m_uKmPreAnnouncePkt = (m_uKmRefreshRatePkt-1)/2;
+          LOGC(mglog.Warn, log << "SRTO_KMREFRESHRATE=0x"
+                  << hex << m_uKmRefreshRatePkt << ": setting SRTO_KMPREANNOUNCE=0x"
+                  << hex << m_uKmPreAnnouncePkt);
+      }
+      break;
+
+   case SRTO_KMPREANNOUNCE:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+      {
+          int val = *(int*)optval;
+          int kmref = m_uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_uKmRefreshRatePkt;
+          if (val > (kmref-1)/2)
+          {
+              LOGC(mglog.Error, log << "SRTO_KMPREANNOUNCE=0x" << hex << val
+                      << " exceeds KmRefresh/2, 0x" << ((kmref-1)/2) << " - OPTION REJECTED.");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          m_uKmPreAnnouncePkt = val;
       }
       break;
 
@@ -2813,6 +2856,10 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
         if (CTimer::getTime() > ttl)
         {
+            //Remove the connector from the RcvQueue for TTL on blocking connect.
+            //All other breaks from this loop have already done this through CUDT::processConnectResponse
+            m_pRcvQueue->removeConnector(m_SocketID, true);
+
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             break;
@@ -2972,8 +3019,11 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // We know that the other side was contacted and the other side has sent
     // the handshake message - we know then both cookies. If it's a draw, it's
     // a very rare case of creating identical cookies.
-    if ( m_SrtHsSide == HSD_DRAW )
+    if (m_SrtHsSide == HSD_DRAW)
+    {
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
+    }
 
     UDTRequestType rsp_type = URQ_ERROR_INVALID; // just to track uninitialized errors
 
@@ -2997,6 +3047,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3007,6 +3058,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( !prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
+        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3020,6 +3072,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake.");
+            m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
@@ -3033,6 +3086,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake.");
+            m_pRcvQueue->removeConnector(m_SocketID, synchro);
             return CONN_REJECT;
         }
 
@@ -3155,7 +3209,10 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
    if (!m_bConnecting)
-      return CONN_REJECT;
+   {
+       m_pRcvQueue->removeConnector(m_SocketID, synchro);
+       return CONN_REJECT;
+   }
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
@@ -3208,6 +3265,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
            << MessageTypeStr(response.getType(), response.getExtendedType()));
+       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3215,12 +3273,14 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        // Handshake data were too small to reach the Handshake structure. Reject.
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
+       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
    HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
    if ( m_ConnRes.m_iReqType > URQ_FAILURE_TYPES )
    {
+       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3229,6 +3289,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
        // and you'll avoid problems.
        LOGC(mglog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
+       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3243,6 +3304,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
        {
            LOGC(mglog.Error, log << CONID() << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
+           m_pRcvQueue->removeConnector(m_SocketID, synchro);
            return CONN_REJECT;
        }
 
@@ -3860,18 +3922,15 @@ void* CUDT::tsbpd(void* param)
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
 #if ENABLE_LOGGING
-                uint64_t now = CTimer::getTime();
-
-#if ENABLE_HEAVY_LOGGING
                 int64_t timediff = 0;
                 if ( tsbpdtime )
-                    timediff = int64_t(now) - int64_t(tsbpdtime);
-
+                     timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
+#if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << int64_t(now - tsbpdtime) << "ms");
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff%1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -3913,18 +3972,16 @@ void* CUDT::tsbpd(void* param)
 
       if (tsbpdtime != 0)
       {
+         int64_t timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
          /*
          * Buffer at head of queue is not ready to play.
          * Schedule wakeup when it will be.
          */
           self->m_bTsbPdAckWakeup = false;
           THREAD_PAUSED();
-          timespec locktime;
-          locktime.tv_sec = tsbpdtime / 1000000;
-          locktime.tv_nsec = (tsbpdtime % 1000000) * 1000;
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << ((tsbpdtime - CTimer::getTime())/1000.0) << "ms");
-          pthread_cond_timedwait(&self->m_RcvTsbPdCond, &self->m_RecvLock, &locktime);
+              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
+          CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
       }
       else
@@ -4565,24 +4622,15 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    uint64_t exptime = CTimer::getTime() + 1000000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000ULL);
                 }
             }
             else
             {
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
-                timespec locktime;
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
                     if (CTimer::getTime() >= exptime)
                         break;
                 }
@@ -4819,16 +4867,12 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 else
                 {
                     uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
 
                     while (stillConnected()
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * 1000ULL);
                 }
             }
 
@@ -5070,12 +5114,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
-                uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
-                timespec locktime;
-
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-                if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime) == ETIMEDOUT)
+                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;

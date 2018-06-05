@@ -39,9 +39,10 @@ class SrtCommon
 
 protected:
 
-    bool m_output_direction = false; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
-    bool m_blocking_mode = false; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_output_direction
-    int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_output_direction
+    int srt_epoll = -1;
+    SRT_EPOLL_OPT m_direction = SRT_EPOLL_OPT_NONE; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
+    bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_direction
+    int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_direction
     bool m_tsbpdmode = true;
     int m_outgoing_port = 0;
     string m_mode;
@@ -66,7 +67,7 @@ public:
 protected:
 
     void Error(UDT::ERRORINFO& udtError, string src);
-    void Init(string host, int port, map<string,string> par, bool dir_output);
+    void Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);
     virtual int ConfigurePre(SRTSOCKET sock);
@@ -75,6 +76,7 @@ protected:
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(string host, int port);
+    void SetupRendezvous(string adapter, int port);
 
     void OpenServer(string host, int port)
     {
@@ -82,15 +84,19 @@ protected:
         AcceptNewClient();
     }
 
-    void OpenRendezvous(string adapter, string host, int port);
+    void OpenRendezvous(string adapter, string host, int port)
+    {
+        PrepareClient();
+        SetupRendezvous(adapter, port);
+        ConnectClient(host, port);
+    }
 
     virtual ~SrtCommon();
 };
 
 
-class SrtSource: public Source, public SrtCommon
+class SrtSource: public virtual Source, public virtual SrtCommon
 {
-    int srt_epoll = -1;
     std::string hostport_copy;
 public:
 
@@ -119,22 +125,11 @@ public:
     void Close() override { return SrtCommon::Close(); }
 };
 
-class SrtTarget: public Target, public SrtCommon
+class SrtTarget: public virtual Target, public virtual SrtCommon
 {
-    int srt_epoll = -1;
 public:
 
-    SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
-    {
-        Init(host, port, par, true);
-
-        if ( !m_blocking_mode )
-        {
-            srt_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
-        }
-
-    }
-
+    SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par);
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
@@ -152,6 +147,26 @@ public:
         return bytes;
     }
 
+};
+
+class SrtRelay: public Relay, public SrtSource, public SrtTarget
+{
+public:
+    SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par);
+    SrtRelay() {}
+
+    int ConfigurePre(SRTSOCKET sock) override
+    {
+        // This overrides the change introduced in SrtTarget,
+        // which sets the SRTO_SENDER flag. For a bidirectional transmission
+        // this flag should not be set, as the connection should be checked
+        // for being 1.3.0 clients only.
+        return SrtCommon::ConfigurePre(sock);
+    }
+
+    // Override separately overridden methods by SrtSource and SrtTarget
+    bool IsOpen() override { return IsUsable(); }
+    void Close() override { return SrtCommon::Close(); }
 };
 
 
@@ -174,6 +189,7 @@ class SrtModel: public SrtCommon
 {
 public:
     bool is_caller = false;
+    bool is_rend = false;
     string m_host;
     int m_port = 0;
 
