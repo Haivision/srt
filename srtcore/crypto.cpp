@@ -286,6 +286,16 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     return SRT_CMD_KMRSP;
 
 HSv4_ErrorReport:
+
+    if (bidirectional && hasPassphrase())
+    {
+        // If the Forward KMX process has failed, the reverse-KMX process was not done at all.
+        // This will lead to incorrect object configuration and will fail to properly declare
+        // the transmission state.
+        // Create the "fake crypto" with the passphrsae you currently have.
+        createFakeSndContext();
+    }
+
     srtdata_out[SRT_KMR_KMSTATE] = m_RcvKmState;
     return SRT_CMD_KMRSP;
 #undef KMREQ_RESULT_REJECTION
