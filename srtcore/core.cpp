@@ -2983,6 +2983,8 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
         */
     }
 
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
+    m_llLastReqTime = CTimer::getTime();
     m_pSndQueue->sendto(serv_addr, request);
     return status;
 }
