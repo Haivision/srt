@@ -3130,14 +3130,24 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
             {
                 // This is a periodic handshake update, so you need to extract the KM data from the
                 // first message, provided that it is there.
-                kmdatasize = m_pCryptoControl->getKmMsg_size(0);
-                if (kmdatasize == 0)
+                size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
+                if (msgsize == 0)
                 {
                     LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED.");
                     return CONN_REJECT;
                 }
-                HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ");
-                memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), kmdatasize);
+
+                kmdatasize = msgsize/4;
+                if (msgsize > kmdatasize*4)
+                {
+                    // Sanity check
+                    LOGC(mglog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
+                    memset(kmdata+(kmdatasize*4), 0, msgsize - (kmdatasize*4));
+                    ++kmdatasize;
+                }
+
+                HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size=" << kmdatasize);
+                memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), msgsize);
             }
             else
             {
