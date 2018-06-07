@@ -4429,6 +4429,9 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     if ( m_pCryptoControl )
         return true;
 
+    // Write back this value, when it was just determined.
+    m_SrtHsSide = side;
+
     m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
 
     // XXX These below are a little bit controversial.
@@ -4488,8 +4491,14 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
     // Do a fast pre-check first - this simply declares that agent uses HSv5
     // and the legacy SRT Handshake is not to be done. Second check is whether
     // agent is sender (=initiator in HSv4).
-    if ( m_iSndHsRetryCnt == 0 || !m_bDataSender )
+    if ( !isTsbPd() || !m_bDataSender )
         return;
+
+    if (m_iSndHsRetryCnt <= 0)
+    {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        return;
+    }
 
     uint64_t now = CTimer::getTime();
     if (timebase != 0)
@@ -4505,18 +4514,21 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
          * - last sent handshake req should have been replied (RTT*1.5 elapsed); and
          * then (re-)send handshake request.
          */
-        if ( !isTsbPd() // tsbpd off = no HSREQ required
-                || m_iSndHsRetryCnt <= 0 // expired (actually sanity check, theoretically impossible to be <0)
-                || timebase > now ) // too early
+        if ( timebase > now ) // too early
+        {
+            HLOGC(mglog.Debug, log << "Legacy HSREQ: TOO EARLY, will still retry " << m_iSndHsRetryCnt << " times");
             return;
+        }
     }
     // If 0 timebase, it means that this is the initial sending with the very first
     // payload packet sent. Send only if this is still set to maximum+1 value.
     else if (m_iSndHsRetryCnt < SRT_MAX_HSRETRY+1)
     {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: INITIAL, REPEATED, so not to be done. Will repeat on sending " << m_iSndHsRetryCnt << " times");
         return;
     }
 
+    HLOGC(mglog.Debug, log << "Legacy HSREQ: SENDING, will repeat " << m_iSndHsRetryCnt << " times if no response");
     m_iSndHsRetryCnt--;
     m_ullSndHsLastTime_us = now;
     sendSrtMsg(SRT_CMD_HSREQ);
@@ -4526,8 +4538,14 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 {
     if (m_SrtHsSide == HSD_INITIATOR)
     {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
         // Legacy method for HSREQ, only if initiator.
         considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: " << (m_SrtHsSide == HSD_RESPONDER ? "RESPONDER" : "DRAW (IPE?)")
+                << " - not considering legacy handshake");
     }
 
     // This must be done always on sender, regardless of HS side.
