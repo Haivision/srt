@@ -1725,10 +1725,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             for (size_t ki = 0; ki < 2; ++ki)
             {
                 // Skip those that have expired
-                if ( !m_pCryptoControl->getKmMsg_needSend(ki) )
+                if ( !m_pCryptoControl->getKmMsg_needSend(ki, false) )
                     continue;
 
-                m_pCryptoControl->getKmMsg_markSent(ki);
+                m_pCryptoControl->getKmMsg_markSent(ki, false);
 
                 offset += ra_size;
 
@@ -3990,7 +3990,7 @@ void* CUDT::tsbpd(void* param)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff%1000) << "ms");
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -4281,6 +4281,9 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     if ( m_pCryptoControl )
         return true;
 
+    // Write back this value, when it was just determined.
+    m_SrtHsSide = side;
+
     m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
 
     // XXX These below are a little bit controversial.
@@ -4340,8 +4343,14 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
     // Do a fast pre-check first - this simply declares that agent uses HSv5
     // and the legacy SRT Handshake is not to be done. Second check is whether
     // agent is sender (=initiator in HSv4).
-    if ( m_iSndHsRetryCnt == 0 || !m_bDataSender )
+    if ( !isTsbPd() || !m_bDataSender )
         return;
+
+    if (m_iSndHsRetryCnt <= 0)
+    {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        return;
+    }
 
     uint64_t now = CTimer::getTime();
     if (timebase != 0)
@@ -4357,18 +4366,21 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
          * - last sent handshake req should have been replied (RTT*1.5 elapsed); and
          * then (re-)send handshake request.
          */
-        if ( !isTsbPd() // tsbpd off = no HSREQ required
-                || m_iSndHsRetryCnt <= 0 // expired (actually sanity check, theoretically impossible to be <0)
-                || timebase > now ) // too early
+        if ( timebase > now ) // too early
+        {
+            HLOGC(mglog.Debug, log << "Legacy HSREQ: TOO EARLY, will still retry " << m_iSndHsRetryCnt << " times");
             return;
+        }
     }
     // If 0 timebase, it means that this is the initial sending with the very first
     // payload packet sent. Send only if this is still set to maximum+1 value.
     else if (m_iSndHsRetryCnt < SRT_MAX_HSRETRY+1)
     {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: INITIAL, REPEATED, so not to be done. Will repeat on sending " << m_iSndHsRetryCnt << " times");
         return;
     }
 
+    HLOGC(mglog.Debug, log << "Legacy HSREQ: SENDING, will repeat " << m_iSndHsRetryCnt << " times if no response");
     m_iSndHsRetryCnt--;
     m_ullSndHsLastTime_us = now;
     sendSrtMsg(SRT_CMD_HSREQ);
@@ -4376,11 +4388,28 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
 
 void CUDT::checkSndTimers(Whether2RegenKm regen)
 {
-    if (m_SrtHsSide == HSD_RESPONDER)
-        return;
+    if (m_SrtHsSide == HSD_INITIATOR)
+    {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
+        // Legacy method for HSREQ, only if initiator.
+        considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: " << (m_SrtHsSide == HSD_RESPONDER ? "RESPONDER" : "DRAW (IPE?)")
+                << " - not considering legacy handshake");
+    }
 
-    considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
-    m_pCryptoControl->sendKeysToPeer(regen);
+    // This must be done always on sender, regardless of HS side.
+    // When regen == DONT_REGEN_KM, it's a handshake call, so do
+    // it only for initiator.
+    if (regen || m_SrtHsSide == HSD_INITIATOR)
+    {
+        // Don't call this function in "non-regen mode" (sending only),
+        // if this side is RESPONDER. This shall be called only with
+        // regeneration request, which is required by the sender.
+        m_pCryptoControl->sendKeysToPeer(regen);
+    }
 }
 
 void CUDT::addressAndSend(CPacket& pkt)
@@ -4877,11 +4906,15 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
+    /* XXX
+       This might be worth preserving for several occasions, but it
+       must be at least conditional because it breaks backward compat.
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
     {
         LOGC(dlog.Error, log << "Encryption is required, but the peer did not supply correct credentials. Sending rejected.");
         throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
+    */
 
     CGuard sendguard(m_SendLock);
 
@@ -7355,9 +7388,6 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
-#if ENABLE_LOGGING
-              static int nereport = 0;
-#endif
               /*
                * Could not decrypt
                * Keep packet in received buffer
@@ -7368,10 +7398,6 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
-#if ENABLE_LOGGING
-              if (nereport++%100 == 0)
-                  LOGC(dlog.Error, log << "DECRYPT ERROR - dropping a packet of " << packet.getLength() << " bytes");
-#endif
           }
       }
       else
