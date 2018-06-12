@@ -1536,17 +1536,6 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     if (m_ConnRes.m_iVersion == HS_VERSION_UDT4)
     {
         hs.m_iVersion = HS_VERSION_UDT4;
-        if (hs.m_extension)
-        {
-            // Should be impossible
-            LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
-            hs.m_extension = false;
-        }
-    }
-
-    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
-    {
-        hs.m_iVersion = HS_VERSION_UDT4;
         hs.m_iType = UDT_DGRAM;
         if (hs.m_extension)
         {
