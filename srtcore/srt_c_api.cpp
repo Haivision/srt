@@ -213,7 +213,7 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -253,7 +253,7 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
