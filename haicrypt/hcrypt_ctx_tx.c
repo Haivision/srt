@@ -336,8 +336,8 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 	ASSERT(NULL != ctx);
 
 	HCRYPT_LOG(LOG_DEBUG, "KM[%d] KEY STATUS: pkt_cnt=%u against ref.rate=%u and pre.announce=%u\n",
-			(ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2,
-			ctx->pkt_cnt, crypto->km.refresh_rate, crypto->km.pre_announce);
+                          (ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2,
+                          ctx->pkt_cnt, crypto->km.refresh_rate, crypto->km.pre_announce);
 
 	if ((ctx->pkt_cnt > crypto->km.refresh_rate)
 	||  (ctx->pkt_cnt == 0)) {	//rolled over
