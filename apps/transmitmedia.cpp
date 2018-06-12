@@ -825,8 +825,14 @@ protected:
 
         if (is_multicast)
         {
-            adapter = attr.count("adapter") ? attr.at("adapter") : string();
+            ip_mreq_source mreq_ssm;
+            ip_mreq mreq;
             sockaddr_in maddr;
+            int opt_name;
+            void* mreq_arg_ptr;
+            socklen_t mreq_arg_size;
+
+            adapter = attr.count("adapter") ? attr.at("adapter") : string();
             if ( adapter == "" )
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
@@ -840,14 +846,30 @@ protected:
                 maddr = CreateAddrInet(adapter, port);
             }
 
-            ip_mreq mreq;
-            mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
-            mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+            if (attr.count("source"))
+            {
+                /* this is an ssm.  we need to use the right struct and opt */
+                opt_name = IP_ADD_SOURCE_MEMBERSHIP;
+                mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
+                mreq_arg_size = sizeof(mreq_ssm);
+                mreq_arg_ptr = &mreq_ssm;
+            }
+            else
+            {
+                opt_name = IP_ADD_MEMBERSHIP;
+                mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                mreq_arg_size = sizeof(mreq);
+                mreq_arg_ptr = &mreq;
+            }
+
 #ifdef WIN32
-            const char* mreq_arg = (const char*)&mreq;
+            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = &mreq;
+            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
 
@@ -867,7 +889,7 @@ protected:
 #else
             Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
 #endif
-            int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
+            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
 
             if ( res == status_error )
             {

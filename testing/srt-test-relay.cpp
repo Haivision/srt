@@ -333,7 +333,28 @@ int main( int argc, char** argv )
 
    string verbo = Option<OutString>(params, "no", o_verbose);
    if ( verbo == "" || !false_names.count(verbo) )
+   {
        Verbose::on = true;
+       int verboch = atoi(verbo.c_str());
+       if (verboch <= 0)
+       {
+           verboch = 1;
+       }
+       else if (verboch > 2)
+       {
+           cerr << "ERROR: -v option accepts value 1 (stdout, default) or 2 (stderr)\n";
+           return 1;
+       }
+
+       if (verboch == 1)
+       {
+           Verbose::cverb = &std::cout;
+       }
+       else
+       {
+           Verbose::cverb = &std::cerr;
+       }
+   }
 
     string srt_endpoint = args[0];
 
