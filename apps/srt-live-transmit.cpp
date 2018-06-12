@@ -181,6 +181,7 @@ int main( int argc, char** argv )
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
+        cerr << "\t-pf:<format> - printformat (json or default)\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
         cerr << "\t-q - quiet mode (default no)\n";
         cerr << "\t-v - verbose mode (default no)\n";
@@ -207,6 +208,18 @@ int main( int argc, char** argv )
     bool internal_log = Option("no", "loginternal") != "no";
     bool autoreconnect = Option("yes", "a", "auto") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
+    
+    // Print format
+    string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        printformat_json = true;
+    }
+    else if (pf != "default")
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
 
     try
     {
