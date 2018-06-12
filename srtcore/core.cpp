@@ -1536,15 +1536,62 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     if (m_ConnRes.m_iVersion == HS_VERSION_UDT4)
     {
         hs.m_iVersion = HS_VERSION_UDT4;
+        hs.m_iType = UDT_DGRAM;
         if (hs.m_extension)
         {
             // Should be impossible
-            LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
             hs.m_extension = false;
         }
     }
+    else
+    {
+        hs.m_iType = 0; // Prepare it for flags
+    }
 
-    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
+    HLOGC(mglog.Debug, log << "createSrtHandshake: buf size=" << pkt.getLength()
+            << " hsx=" << MessageTypeStr(UMSG_EXT, srths_cmd)
+            << " kmx=" << MessageTypeStr(UMSG_EXT, srtkm_cmd)
+            << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
+
+    // Once you are certain that the version is HSv5, set the enc type flags
+    // to advertise pbkeylen. Otherwise make sure that the old interpretation
+    // will correctly pick up the type field. PBKEYLEN should be advertized
+    // regardless of what URQ stage the handshake is (note that in case of rendezvous
+    // CONCLUSION might be the FIRST MESSAGE EVER RECEIVED by a party).
+    if (hs.m_iVersion > HS_VERSION_UDT4)
+    {
+        // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
+        // If fillSrtHandshake_HSRSP catches the condition of m_ullRcvPeerStartTime == 0,
+        // it will return size 0, which will mess up with further extension procedures;
+        // PREVENT THIS HERE.
+        if (hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && m_ullRcvPeerStartTime == 0)
+        {
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. BLOCKING extensions.");
+            hs.m_extension = false;
+        }
+
+        // The situation when this function is called without requested extensions
+        // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
+        // In this case for version 5 just clear the m_iType field, as it has
+        // different meaning in HSv5 and contains extension flags.
+        //
+        // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
+        // in the SRT_HSTYPE_ENCFLAGS field.
+        hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+
+        // Note: This is required only when sending a HS message without SRT extensions.
+        // When this is to be sent with SRT extensions, then KMREQ will be attached here
+        // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
+        // here, it's already too late (it should've been advertised before getting the first
+        // handshake message with KMREQ).
+    }
+    else
+    {
+        hs.m_iType = UDT_DGRAM;
+    }
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
@@ -1552,45 +1599,28 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         // Serialize only the basic handshake, if this is predicted for
         // Hsv4 peer or this is URQ_INDUCTION or URQ_WAVEAHAND.
-        if (hs.m_iVersion > HS_VERSION_UDT4)
-        {
-            // The situation when this function is called without requested extensions
-            // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
-            // In this case for version 5 just clear the m_iType field, as it has
-            // different meaning in HSv5 and contains extension flags.
-            //
-            // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
-            // in the SRT_HSTYPE_ENCFLAGS field.
-            hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
-            bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
-            HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
-
-            // Note: This is required only when sending a HS message without SRT extensions.
-            // When this is to be sent with SRT extensions, then KMREQ will be attached here
-            // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
-            // here, it's already too late (it should've been advertised before getting the first
-            // handshake message with KMREQ).
-        }
-        else
-        {
-            hs.m_iType = UDT_DGRAM;
-        }
-
         size_t hs_size = pkt.getLength();
         hs.store_to(pkt.m_pcData, Ref(hs_size));
         pkt.setLength(hs_size);
-        HLOGC(mglog.Debug, log << "createSrtHandshake: (no HSREQ/KMREQ ext) data: " << hs.show());
+        HLOGC(mglog.Debug, log << "createSrtHandshake: (no ext) size=" << hs_size << " data: " << hs.show());
         return true;
     }
 
-    string logext = "HSREQ";
+    // Sanity check, applies to HSv5 only cases.
+    if (srths_cmd == SRT_CMD_HSREQ && m_SrtHsSide == HSD_RESPONDER)
+    {
+        LOGC(mglog.Fatal, log << "IPE: SRT_CMD_HSREQ was requested to be sent in HSv5 by an INITIATOR side!");
+        return false; // should cause rejection
+    }
+
+    string logext = "HSX";
 
     bool have_kmreq = false;
     bool have_sid = false;
     bool have_smoother = false;
 
     // Install the SRT extensions
-    hs.m_iType = CHandShake::HS_EXT_HSREQ;
+    hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
     if ( srths_cmd == SRT_CMD_HSREQ )
     {
@@ -1621,7 +1651,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         have_kmreq = true;
         hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-        logext += ",KMREQ";
+        logext += ",KMX";
     }
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext << ") data: " << hs.show());
@@ -1773,7 +1803,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
             if (kmdata_wordsize == 0)
             {
-                HLOGC(mglog.Debug, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+                LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
                 ra_size = 1;
                 keydata = failure_kmrsp;
 
@@ -1811,7 +1841,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     pkt.setLength((ra_size + offset) * sizeof(int32_t));
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: filled HSv5 handshake flags: "
-        << hs.m_iType << " length: " << pkt.getLength() << " bytes");
+        << CHandShake::ExtensionFlagStr(hs.m_iType) << " length: " << pkt.getLength() << " bytes");
 
     return true;
 }
@@ -6863,7 +6893,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          if ( req.m_iVersion > HS_VERSION_UDT4 )
          {
              initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-             if ( req.m_iType != 0 ) // has SRT extensions
+             int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+             if ( hs_flags != 0 ) // has SRT extensions
              {
                  HLOGC(mglog.Debug, log << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType) << " WITH SRT ext");
                  have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
