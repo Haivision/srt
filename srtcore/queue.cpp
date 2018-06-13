@@ -932,7 +932,9 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // done when "it's not the time"?
             if (CTimer::getTime() >= i->m_ullTTL)
             {
-                HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED. removing from queue");
+                HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
+                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
+                        << ". removing from queue");
                 // connection timer expired, acknowledge app via epoll
                 i->m_pUDT->m_bConnecting = false;
                 CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
@@ -1114,6 +1116,11 @@ void* CRcvQueue::worker(void* param)
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
            }
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
+           if (cst == CONN_AGAIN)
+           {
+               HLOGC(mglog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
+               continue;
+           }
            have_received = true;
        }
        else if (rst == RST_ERROR)
@@ -1338,7 +1345,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
             << " received from " << SockaddrToString(addr) << " (CONSIDERED ATTACK ATTEMPT)");
         // This came not from the address that is the peer associated
         // with the socket. Reject.
-        return CONN_REJECT;
+        return CONN_AGAIN;
     }
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
@@ -1378,19 +1385,29 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     CUDT* u = m_pRendezvousQueue->retrieve(addr, Ref(id));
     if ( !u )
     {
-        // XXX this socket is then completely unknown to the system.
-        // May be nice to send some rejection info to the peer.
+        // this socket is then completely unknown to the system.
+        // Note that this situation may also happen at a very unfortunate
+        // coincidence that the socket is already bound, but the registerConnector()
+        // has not yet started. In case of rendezvous this may mean that the other
+        // side just started sending its handshake packets, the local side has already
+        // run the CRcvQueue::worker thread, and this worker thread is trying to dispatch
+        // the handshake packet too early, before the dispatcher has a chance to see
+        // this socket registerred in the RendezvousQueue, which causes the packet unable
+        // to be dispatched. Therefore simply treat every "out of band" packet (with socket
+        // not belonging to the connection and not registered as rendezvous) as "possible
+        // attach" and ignore it. This also should better protect the rendezvous socket
+        // against a rogue connector.
         if ( id == 0 )
         {
             HLOGC(mglog.Debug, log << CONID() << "AsyncOrRND: no sockets expect connection from "
-                << SockaddrToString(addr) << " - POSSIBLE ATTACK");
+                << SockaddrToString(addr) << " - POSSIBLE ATTACK, ignore packet");
         }
         else
         {
             HLOGC(mglog.Debug, log << CONID() << "AsyncOrRND: no sockets expect socket " << id << " from "
-                << SockaddrToString(addr) << " - POSSIBLE ATTACK");
+                << SockaddrToString(addr) << " - POSSIBLE ATTACK, ignore packet");
         }
-        return CONN_REJECT;
+        return CONN_AGAIN; // This means that the packet should be ignored.
     }
 
     // asynchronous connect: call connect here
@@ -1481,6 +1498,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
       {
+         //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: nothing to be received for id=" << id << " -- setting size=-1");
          packet.setLength(-1);
          return -1;
       }
@@ -1491,6 +1509,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (packet.getLength() < newpkt->getLength())
    {
+      //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: IPE: spare packet for id=" << id << " size="
+      //         << newpkt->getLength() << " TOO SMALL for incoming size=" << packet.getLength() << " -- SETTING -1 size");
       packet.setLength(-1);
       return -1;
    }
