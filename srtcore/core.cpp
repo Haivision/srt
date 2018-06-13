@@ -2963,7 +2963,8 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
     cst = processConnectResponse(pkt, &e, false);
 
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
-        << ConnectStatusStr(cst));
+        << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
+    m_llLastReqTime = 0;
 
     return cst;
 }
@@ -3193,21 +3194,52 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
                 size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
                 if (msgsize == 0)
                 {
-                    LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED.");
-                    return CONN_REJECT;
-                }
+                    switch (m_pCryptoControl->m_RcvKmState)
+                    {
+                        // If the KMX process ended up with a failure, the KMX is not recorded.
+                        // In this case as the KMRSP answer the "failure status" should be crafted.
+                    case SRT_KM_S_NOSECRET:
+                    case SRT_KM_S_BADSECRET:
+                        {
+                            HLOGC(mglog.Debug, log << "processRendezvous: No KMX recorded, status = NOSECRET. Respond with NOSECRET.");
 
-                kmdatasize = msgsize/4;
-                if (msgsize > kmdatasize*4)
+                            // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
+                            // that is, copy the NOSECRET code into KMX message.
+                            memcpy(kmdata, &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
+                            kmdatasize = 1;
+                        }
+                        break;
+
+                    default:
+                        // Remaining values:
+                        // UNSECURED: should not fall here at alll
+                        // SECURING: should not happen in HSv5
+                        // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
+                        {
+                            // Remaining situations:
+                            // - password only on this site: shouldn't be considered to be sent to a no-password site
+                            LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
+                                    << KmStateStr(m_pCryptoControl->m_RcvKmState) << " SND="
+                                    << KmStateStr(m_pCryptoControl->m_SndKmState));
+                            return CONN_REJECT;
+                        }
+                        break;
+                    }
+                }
+                else
                 {
-                    // Sanity check
-                    LOGC(mglog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
-                    memset(kmdata+(kmdatasize*4), 0, msgsize - (kmdatasize*4));
-                    ++kmdatasize;
-                }
+                    kmdatasize = msgsize/4;
+                    if (msgsize > kmdatasize*4)
+                    {
+                        // Sanity check
+                        LOGC(mglog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
+                        memset(kmdata+(kmdatasize*4), 0, msgsize - (kmdatasize*4));
+                        ++kmdatasize;
+                    }
 
-                HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size=" << kmdatasize);
-                memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), msgsize);
+                    HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size=" << kmdatasize);
+                    memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), msgsize);
+                }
             }
             else
             {
