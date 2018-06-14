@@ -312,7 +312,7 @@ public:
    void remove(const SRTSOCKET& id, bool should_lock);
    CUDT* retrieve(const sockaddr* addr, ref_t<SRTSOCKET> id);
 
-   void updateConnStatus(EConnectStatus, const CPacket& response);
+   void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
 
 private:
    struct CRL

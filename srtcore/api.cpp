@@ -172,7 +172,7 @@ CUDTUnited::~CUDTUnited()
     delete m_pCache;
 }
 
-std::string CUDTUnited::CONID(SRTSOCKET sock) const
+std::string CUDTUnited::CONID(SRTSOCKET sock)
 {
     if ( sock == 0 )
         return "";
