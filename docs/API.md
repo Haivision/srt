@@ -411,7 +411,7 @@ either only a retrieved (r) or set (w) value.
 | --- |
 | `SRTO_IPTOS`       | 1.0.5 | pre  | `int32_t` |   | (platform default) | 0..255 | IP Type of Service. Applies to sender only. *Sender: user configurable, default: 0xB8* |
 | --- |
-| `SRTO_ISN` (r) | 1.3.0 | post | `int32_t` | sequence | n/a | n/a | The value of the ISN (Initial Sequence Number), which is the first sequence number put on a firstmost sent UDP packets carrying SRT data payload. *This value is useful for developers of some more complicated mathods of flow control, possibly with multiple SRT sockets at a time, not predicted in any regular development.* |
+| `SRTO_ISN` (r) | 1.3.0 | post | `int32_t` | sequence | n/a | n/a | The value of the ISN (Initial Sequence Number), which is the first sequence number put on a firstmost sent UDP packets carrying SRT data payload. *This value is useful for developers of some more complicated methods of flow control, possibly with multiple SRT sockets at a time, not predicted in any regular development.* |
 | --- |
 | `SRTO_KMSTATE` (r) | 1.0.2 | n/a  | `int32_t` |   | n/a | n/a | Receiver Keying Material state. Available on both sender and receiver sides. Values defined in `enum SRT_KM_STATE`: | 
 |                    |       |      |           |   |     |     | * `SRT_KM_S_UNSECURED`: unsecured: data not encrypted  | 
