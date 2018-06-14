@@ -797,12 +797,12 @@ SrtRelay::SrtRelay(std::string host, int port, const std::map<std::string,std::s
 
 SrtModel::SrtModel(string host, int port, map<string,string> par)
 {
-    InitParameters(host, par);
+    InitParameters(host, par); // This fixes also 'm_mode' parameter
     if (m_mode == "caller")
         is_caller = true;
     else if (m_mode == "rendezvous")
         is_rend = true;
-    else
+    else if (m_mode != "listener")
         throw std::invalid_argument("Wrong 'mode' attribute; expected: caller, listener, rendezvous");
 
     m_host = host;
