@@ -115,7 +115,7 @@ template<size_t R>
 struct BitsetMask<R, R, true>
 {
     static const bool correct = true;
-    static const uint32_t value = 1 << R;
+    static const uint32_t value = 1u << R;
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition
@@ -585,18 +585,22 @@ inline void Split(const std::string & str, char delimiter, OutputIterator tokens
     if ( str.empty() )
         return; // May cause crash and won't extract anything anyway
 
-    std::size_t start;
-    std::size_t end = -1;
+    using namespace std;
 
-    do
+    size_t start = 0;
+    size_t end;
+
+    for (;;)
     {
-        start = end + 1;
         end = str.find(delimiter, start);
-        *tokens = str.substr(
-                start,
-                (end == std::string::npos) ? std::string::npos : end - start);
+        bool isend = (end == string::npos);
+        *tokens = str.substr(start,
+                isend ? string::npos : end - start);
         ++tokens;
-    } while (end != std::string::npos);
+        if (isend)
+            break;
+        start = end + 1;
+    }
 }
 
 template <class It>

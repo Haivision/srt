@@ -151,9 +151,14 @@ proc GetCompilerCommand {} {
 	# --cmake-c[++]-compiler
 	# (cmake-toolchain-file will set things up without the need to check things here)
 
+	set compiler gcc
+	if { [info exists ::optval(--with-compiler-type)] } {
+		set compiler $::optval(--with-compiler-type)
+	}
+
 	if { [info exists ::optval(--with-compiler-prefix)] } {
 		set prefix $::optval(--with-compiler-prefix)
-		return ${prefix}gcc
+		return ${prefix}$compiler
 	}
 
 	if { [info exists ::optval(--cmake-c-compiler)] } {
@@ -204,6 +209,7 @@ proc postprocess {} {
 		# Check characteristics of the compiler - in particular, whether the target is different
 		# than the current target.
 		set compiler_path ""
+		set target_platform ""
 		set cmd [GetCompilerCommand]
 		if { $cmd != "" } {
 			set gcc_version [exec $cmd -v 2>@1]
@@ -218,7 +224,7 @@ proc postprocess {} {
 			}
 
 			if { $target_platform == "" } {
-				puts "NOTE: can't obtain target from gcc -v: $l"
+				puts "NOTE: can't obtain target from '[file tail $cmd] -v': $l - ASSUMING HOST compiler"
 			} else {
 				if { $target_platform != $::tcl_platform(machine) } {
 					puts "NOTE: foreign target type detected ($target)" ;# - setting CROSSCOMPILING flag"

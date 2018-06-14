@@ -391,6 +391,26 @@ private:
 private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
+   int shift(int basepos, int shift)
+   {
+       return (basepos + shift) % m_iSize;
+   }
+
+   // Simplified versions with ++ and --; avoid using division instruction
+   int shift_forward(int basepos)
+   {
+       if (++basepos == m_iSize)
+           basepos = 0;
+       return basepos;
+   }
+
+   int shift_backward(int basepos)
+   {
+       if (basepos == 0)
+           basepos = m_iSize-1;
+       return --basepos;
+   }
+
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer
    int m_iSize;                         // size of the protocol buffer

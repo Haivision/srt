@@ -117,7 +117,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if (DEFINED WITH_COMPILER_PREFIX)
 	message(STATUS "Handling compiler with WITH_COMPILER_PREFIX=${WITH_COMPILER_PREFIX}")
 	# Check also type. Default is gcc.
-	if (NOT DEFINED WIHT_COMPILER_TYPE)
+	if (NOT DEFINED WITH_COMPILER_TYPE)
 		set (WITH_COMPILER_TYPE gcc)
 	endif()
 
@@ -127,6 +127,9 @@ if (DEFINED WITH_COMPILER_PREFIX)
 	elseif (${WITH_COMPILER_TYPE} STREQUAL cc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc)
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++)
+    elseif (${WITH_COMPILER_TYPE} STREQUAL icc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc)
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc)
 	else()
 		# Use blindly <command> for C compiler and <command>++ for C++.
 		# At least this matches clang.
