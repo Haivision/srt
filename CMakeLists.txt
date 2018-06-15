@@ -35,7 +35,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.0)
+set (SRT_VERSION 1.3.1)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
