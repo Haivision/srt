@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 
@@ -39,13 +31,11 @@ written by
 
 #include "hcrypt.h"
 
-int HaiCrypt_SetLogLevel(int level, int logfa)
-{
-    // Oh well. Implement some day.
-    (void)logfa;
-    (void)level;
-    return 0;
-}
+#if ENABLE_HAICRYPT_LOGGING
+void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg);
+#else
+#define HaiCrypt_DumpConfig(x) (void)0
+#endif
 
 
 int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
@@ -70,22 +60,22 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
     } else if ((16 != cfg->key_len)	/* SEK length */
             &&  (24 != cfg->key_len)
             &&  (32 != cfg->key_len)) {
-        HCRYPT_LOG(LOG_ERR, "invalid key length (%zd)\n", cfg->key_len);
+        HCRYPT_LOG(LOG_ERR, "invalid key length (%d). Expected: 16, 24, 32\n", (int)cfg->key_len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PASSPHRASE == cfg->secret.typ)
             &&  ((0 == cfg->secret.len) || (sizeof(cfg->secret.str) < cfg->secret.len))) { /* KEK length */
-        HCRYPT_LOG(LOG_ERR, "invalid secret passphrase length (%zd)\n", cfg->secret.len);
+        HCRYPT_LOG(LOG_ERR, "invalid secret passphrase length (%d)\n", (int)cfg->secret.len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
             &&  (16 != cfg->key_len)	/* SEK length */
             &&  (24 != cfg->key_len)
             &&  (32 != cfg->key_len)) {
-        HCRYPT_LOG(LOG_ERR, "invalid pre-shared secret length (%zd)\n", cfg->secret.len);
+        HCRYPT_LOG(LOG_ERR, "invalid pre-shared secret length (%d)\n", (int)cfg->secret.len);
         return(-1);
     } else if ((HAICRYPT_SECTYP_PRESHARED == cfg->secret.typ)
             &&  (cfg->key_len > cfg->secret.len)) {
-        HCRYPT_LOG(LOG_ERR, "preshared secret length (%zd) smaller than key length (%zd)\n", 
-                cfg->secret.len, cfg->key_len);
+        HCRYPT_LOG(LOG_ERR, "preshared secret length (%d) smaller than key length (%d)\n", 
+                (int)cfg->secret.len, (int)cfg->key_len);
         return(-1);
     } else if (NULL == cfg->cipher) {
         HCRYPT_LOG(LOG_ERR, "%s\n", "no cipher specified");
@@ -94,6 +84,8 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
         HCRYPT_LOG(LOG_ERR, "%s\n", "no data_max_len specified");
         return(-1);
     }
+
+    HaiCrypt_DumpConfig(cfg);
 
     cipher = (hcrypt_Cipher *)cfg->cipher;
     tx = HAICRYPT_CFG_F_TX & cfg->flags;

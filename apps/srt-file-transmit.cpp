@@ -1,21 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
@@ -29,8 +20,10 @@ written by
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <csignal>
 #include <thread>
 #include <chrono>
+#include <cassert>
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
@@ -53,6 +46,12 @@ static bool g_skip_flushing = false;
 
 using namespace std;
 
+static bool interrupt = false;
+void OnINT_ForceExit(int)
+{
+    Verb() << "\n-------- REQUESTED INTERRUPT!\n";
+    interrupt = true;
+}
 
 int main( int argc, char** argv )
 {
@@ -118,6 +117,9 @@ int main( int argc, char** argv )
     UriParser us(source), ut(target);
 
     Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
+
+    signal(SIGINT, OnINT_ForceExit);
+    signal(SIGTERM, OnINT_ForceExit);
 
     try
     {
@@ -191,7 +193,8 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         char* gwd = getcwd(tmppath, MAX_PATH);
         if ( !gwd )
         {
-            // Don't bother with that now. We need something better for that anyway.
+            // Don't bother with that now. We need something better for
+            // that anyway.
             throw std::invalid_argument("Path too long");
         }
         string wd = gwd;
@@ -205,163 +208,360 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
 
 bool DoUpload(UriParser& ut, string path, string filename)
 {
-    SrtModel m(ut.host(), ut.portno(), ut.parameters());
-
-    string id = filename;
-    Verb() << "Passing '" << id << "' as stream ID\n";
-
-    m.Establish(Ref(id));
-
-    // Check if the filename was changed
-    if (id != filename)
-    {
-        cerr << "SRT caller has changed the filename '" << filename << "' to '" << id << "' - rejecting\n";
-        return false;
-    }
-
-    Verb() << "USING ID: " << id;
-
-    // SrtTarget* tp = new SrtTarget;
-    // tp->StealFrom(m);
-    // unique_ptr<Target> target(tp);
-
-    //SRTSOCKET ss = tp->Socket();
-    SRTSOCKET ss = m.Socket();
-
-    // Use a manual loop for reading from SRT
-    vector<char> buf(::g_buffer_size);
+    bool result = false;
+    unique_ptr<Target> tar;
+    SRTSOCKET s = SRT_INVALID_SOCK;
+    bool connected = false;
+    int pollid = -1;
 
     ifstream ifile(path);
     if ( !ifile )
     {
         cerr << "Error opening file: '" << path << "'";
-        return false;
+        goto exit;
     }
 
-    for (;;)
+    pollid = srt_epoll_create();
+    if ( pollid < 0 )
     {
-        size_t n = ifile.read(buf.data(), ::g_buffer_size).gcount();
-        size_t shift = 0;
-        while (n > 0)
+        cerr << "Can't initialize epoll";
+        goto exit;
+    }
+
+
+    while (!interrupt)
+    {
+        if (!tar.get())
         {
-            int st = srt_send(ss, buf.data()+shift, n);
-            Verb() << "Upload: " << n << " --> " << st << (!shift ? string() : "+" + Sprint(shift));
-            if (st == SRT_ERROR)
+            int sockopt = SRTT_FILE;
+
+            tar = Target::Create(ut.uri());
+            if (!tar.get())
             {
-                cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;
-                return false;
+                cerr << "Unsupported target type: " << ut.uri() << endl;
+                goto exit;
             }
 
-            n -= st;
-            shift += st;
+            srt_setsockflag(tar->GetSRTSocket(), SRTO_TRANSTYPE,
+                &sockopt, sizeof sockopt);
+
+            int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+            if (srt_epoll_add_usock(pollid,
+                    tar->GetSRTSocket(), &events))
+            {
+                cerr << "Failed to add SRT destination to poll, "
+                    << tar->GetSRTSocket() << endl;
+                goto exit;
+            }
+            UDT::setstreamid(tar->GetSRTSocket(), filename);
         }
 
-        if (ifile.eof())
-            break;
+        s = tar->GetSRTSocket();
+        assert(s != SRT_INVALID_SOCK);
 
-        if ( !ifile.good() )
+        SRTSOCKET efd;
+        int efdlen = 1;
+        if (srt_epoll_wait(pollid,
+            0, 0, &efd, &efdlen,
+            100, nullptr, nullptr, 0, 0) < 0)
         {
-            cerr << "ERROR while reading file\n";
-            return false;
+            continue;
+        }
+
+        assert(efd == s);
+        assert(efdlen == 1);
+
+        SRT_SOCKSTATUS status = srt_getsockstate(s);
+        Verb() << "Event with status " << status << "\n";
+
+        switch (status)
+        {
+            case SRTS_LISTENING:
+            {
+                if (!tar->AcceptNewClient())
+                {
+                    cerr << "Failed to accept SRT connection" << endl;
+                    goto exit;
+                }
+
+                srt_epoll_remove_usock(pollid, s);
+
+                s = tar->GetSRTSocket();
+                int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+                if (srt_epoll_add_usock(pollid, s, &events))
+                {
+                    cerr << "Failed to add SRT client to poll" << endl;
+                    goto exit;
+                }
+                cerr << "Target connected (listener)" << endl;
+                connected = true;
+            }
+            break;
+            case SRTS_CONNECTED:
+            {
+                if (!connected)
+                {
+                    cerr << "Target connected (caller)" << endl;
+                    connected = true;
+                }
+            }
+            break;
+            case SRTS_BROKEN:
+            case SRTS_NONEXIST:
+            case SRTS_CLOSED:
+            {
+                cerr << "Target disconnected" << endl;
+                goto exit;
+            }
+            default:
+            {
+                // No-Op
+            }
+            break;
+        }
+
+        if (connected)
+        {
+            vector<char> buf(::g_buffer_size);
+            size_t n = ifile.read(buf.data(), ::g_buffer_size).gcount();
+            size_t shift = 0;
+            while (n > 0)
+            {
+                int st = srt_send(s, buf.data() + shift, n);
+                Verb() << "Upload: " << n << " --> " << st
+                    << (!shift ? string() : "+" + Sprint(shift));
+                if (st == SRT_ERROR)
+                {
+                    cerr << "Upload: SRT error: " << srt_getlasterror_str()
+                        << endl;
+                    goto exit;
+                }
+
+                n -= st;
+                shift += st;
+            }
+
+            if (ifile.eof())
+            {
+                cerr << "File sent" << endl;
+                result = true;
+                break;
+            }
+
+            if ( !ifile.good() )
+            {
+                cerr << "ERROR while reading file\n";
+                goto exit;
+            }
+
         }
     }
 
-    if ( !::g_skip_flushing )
+    if ( result && !::g_skip_flushing )
     {
-        // send-flush-loop
+        assert(s != SRT_INVALID_SOCK);
 
-        for (;;)
+        // send-flush-loop
+        result = false;
+        while (!interrupt)
         {
             size_t bytes;
             size_t blocks;
-            int st = srt_getsndbuffer(ss, &blocks, &bytes);
+            int st = srt_getsndbuffer(s, &blocks, &bytes);
             if (st == SRT_ERROR)
             {
-                cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str() << endl;
-                return false;
+                cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str()
+                    << endl;
+                goto exit;
             }
             if (bytes == 0)
             {
-                Verb() << "Sending buffer DEPLETED - ok.";
+                cerr << "Buffers flushed" << endl;
+                result = true;
                 break;
             }
-            Verb() << "Sending buffer still: bytes=" << bytes << " blocks=" << blocks;
+            Verb() << "Sending buffer still: bytes=" << bytes << " blocks="
+                << blocks;
             this_thread::sleep_for(chrono::milliseconds(250));
         }
     }
 
-    return true;
+exit:
+    if (pollid >= 0)
+    {
+        srt_epoll_release(pollid);
+    }
+
+    return result;
 }
 
 bool DoDownload(UriParser& us, string directory, string filename)
 {
-    SrtModel m(us.host(), us.portno(), us.parameters());
+    bool result = false;
+    unique_ptr<Source> src;
+    SRTSOCKET s = SRT_INVALID_SOCK;
+    bool connected = false;
+    int pollid = -1;
+    string id;
+    ofstream ofile;
+    SRT_SOCKSTATUS status;
+    SRTSOCKET efd;
+    int efdlen = 1;
 
-    string id = filename;
-    m.Establish(Ref(id));
-
-    // Disregard the filename, unless the destination file exists.
-
-    string path = directory + "/" + id;
-    struct stat state;
-    if ( stat(path.c_str(), &state) == -1 )
+    pollid = srt_epoll_create();
+    if ( pollid < 0 )
     {
-        switch ( errno )
+        cerr << "Can't initialize epoll";
+        goto exit;
+    }
+
+    while (!interrupt)
+    {
+        if (!src.get())
         {
-        case ENOENT:
-            // This is expected, go on.
+            int sockopt = SRTT_FILE;
+
+            src = Source::Create(us.uri());
+            if (!src.get())
+            {
+                cerr << "Unsupported source type: " << us.uri() << endl;
+                goto exit;
+            }
+
+            srt_setsockflag(src->GetSRTSocket(), SRTO_TRANSTYPE,
+                &sockopt, sizeof sockopt);
+
+            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            if (srt_epoll_add_usock(pollid,
+                    src->GetSRTSocket(), &events))
+            {
+                cerr << "Failed to add SRT source to poll, "
+                    << src->GetSRTSocket() << endl;
+                goto exit;
+            }
+        }
+
+        s = src->GetSRTSocket();
+        assert(s != SRT_INVALID_SOCK);
+
+        if (srt_epoll_wait(pollid,
+            &efd, &efdlen, 0, 0,
+            100, nullptr, nullptr, 0, 0) < 0)
+        {
+            continue;
+        }
+
+        assert(efd == s);
+        assert(efdlen == 1);
+
+        status = srt_getsockstate(s);
+        Verb() << "Event with status " << status << "\n";
+
+        switch (status)
+        {
+            case SRTS_LISTENING:
+            {
+                if (!src->AcceptNewClient())
+                {
+                    cerr << "Failed to accept SRT connection" << endl;
+                    goto exit;
+                }
+
+                srt_epoll_remove_usock(pollid, s);
+
+                s = src->GetSRTSocket();
+                int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                if (srt_epoll_add_usock(pollid, s, &events))
+                {
+                    cerr << "Failed to add SRT client to poll" << endl;
+                    goto exit;
+                }
+                id = UDT::getstreamid(s);
+                cerr << "Source connected (listener), id ["
+                    << id << "]" << endl;
+                connected = true;
+                continue;
+            }
             break;
-
-        default:
-            cerr << "Download: error '" << errno << "'when checking destination location: " << path << endl;
-            return false;
-        }
-    }
-    else
-    {
-        // Check if destination is a regular file, of so, allow to overwrite.
-        // Otherwise reject.
-        if (!S_ISREG(state.st_mode))
-        {
-            cerr << "Download: target location '" << path << "' does not designate a regular file.\n";
-            return false;
-        }
-    }
-
-    ofstream ofile(path, ios::out | ios::trunc);
-    if ( !ofile.good() )
-    {
-        cerr << "Download: can't create output file: " << path;
-        return false;
-    }
-    SRTSOCKET ss = m.Socket();
-
-    Verb() << "Downloading from '" << us.uri() << "' to '" << path;
-
-    vector<char> buf(::g_buffer_size);
-
-    for (;;)
-    {
-        int n = srt_recv(ss, buf.data(), ::g_buffer_size);
-        if (n == SRT_ERROR)
-        {
-            cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
-            return false;
-        }
-
-        if (n == 0)
-        {
-            Verb() << "Download COMPLETE.";
+            case SRTS_CONNECTED:
+            {
+                if (!connected)
+                {
+                    id = UDT::getstreamid(s);
+                    cerr << "Source connected (caller), id ["
+                        << id << "]" << endl;
+                    connected = true;
+                }
+            }
+            break;
+            case SRTS_BROKEN:
+            case SRTS_NONEXIST:
+            case SRTS_CLOSED:
+            {
+                cerr << "Source disconnected" << endl;
+                goto exit;
+            }
+            break;
+            default:
+            {
+                // No-Op
+            }
             break;
         }
 
-        // Write to file any amount of data received
+        if (connected)
+        {
+            vector<char> buf(::g_buffer_size);
+            int n;
 
-        Verb() << "Download: --> " << n;
-        ofile.write(buf.data(), n);
+            if(!ofile.is_open())
+            {
+                const char * fn = id.empty() ? filename.c_str() : id.c_str();
+                directory.append("/");
+                directory.append(fn);
+                ofile.open(directory.c_str(), ios::out | ios::trunc);
+
+                if(!ofile.is_open())
+                {
+                    cerr << "Error opening file [" << directory << "]" << endl;
+                    goto exit;
+                }
+                cerr << "Writing output to [" << directory << "]" << endl;
+            }
+
+            n = srt_recv(s, buf.data(), ::g_buffer_size);
+            if (n == SRT_ERROR)
+            {
+                cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
+                goto exit;
+            }
+
+            if (n == 0)
+            {
+                result = true;
+                cerr << "Download COMPLETE.";
+                break;
+            }
+
+            // Write to file any amount of data received
+            Verb() << "Download: --> " << n;
+            ofile.write(buf.data(), n);
+            if (!ofile.good())
+            {
+                cerr << "Error writing file" << endl;
+                goto exit;
+            }
+
+        }
     }
 
-    return true;
+exit:
+    if (pollid >= 0)
+    {
+        srt_epoll_release(pollid);
+    }
+
+    return result;
 }
 
 bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
@@ -397,8 +597,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri)
 
     string path = fileuri.path(), directory, filename;
     ExtractPath(path, Ref(directory), Ref(filename));
-
-    srt_source_uri["transtype"] = "file";
+    Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
     return DoDownload(srt_source_uri, directory, filename);
 }

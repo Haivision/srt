@@ -8,6 +8,7 @@ hcrypt_msg.h
 PRIVATE HEADERS
 hcrypt.h
 hcrypt-openssl.h
+haicrypt_log.h
 
 SOURCES
 hc_openssl_aes.c
@@ -19,6 +20,6 @@ hcrypt_ctx_tx.c
 hcrypt_rx.c
 hcrypt_sa.c
 hcrypt_tx.c
-hcrypt_ut.c
 hcrypt_xpt_srt.c
 hcrypt_xpt_sta.c
+haicrypt_log.cpp

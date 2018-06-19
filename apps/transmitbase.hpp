@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 #ifndef INC__COMMON_TRANMITBASE_HPP
 #define INC__COMMON_TRANMITBASE_HPP
 
@@ -13,7 +23,7 @@ extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
-
+extern bool printformat_json;
 
 class Location
 {

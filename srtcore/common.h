@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2009, The Board of Trustees of the University of Illinois.
@@ -492,6 +482,15 @@ public:
       /// sleep for a short interval. exact sleep time does not matter
 
    static void sleep();
+   
+      /// Wait for condition with timeout 
+      /// @param [in] cond Condition variable to wait for
+      /// @param [in] mutex locked mutex associated with the condition variable
+      /// @param [in] delay timeout in microseconds
+      /// @retval 0 Wait was successfull
+      /// @retval ETIMEDOUT The wait timed out
+
+   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
 
 private:
    uint64_t getTimeInMicroSec();
@@ -532,6 +531,8 @@ public:
 
    static void createCond(pthread_cond_t& cond);
    static void releaseCond(pthread_cond_t& cond);
+
+   void forceUnlock();
 
 private:
    pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected

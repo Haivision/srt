@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 /*****************************************************************************
@@ -123,7 +115,7 @@ typedef enum HaiCrypt_CryptoDir { HAICRYPT_CRYPTO_DIR_RX, HAICRYPT_CRYPTO_DIR_TX
 // internally it will be correctly interpreted,
 // for the outsider it's just some kinda incomplete type
 // but still if you use any kinda pointer instead, you'll get complaints
-typedef struct hcrypt_Session* HaiCrypt_Handle;
+typedef struct hcrypt_Session_str* HaiCrypt_Handle;
 
 
 

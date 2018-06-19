@@ -1,21 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 written by
@@ -75,9 +66,9 @@ written by
 
 #if ENABLE_HEAVY_LOGGING
 
-#define HLOGC(...) LOGC(__VA_ARGS__)
-#define HLOGF(...) LOGF(__VA_ARGS__)
-#define HLOGP(...) LOGP(__VA_ARGS__)
+#define HLOGC LOGC
+#define HLOGP LOGP
+#define HLOGF LOGF
 
 #else
 
@@ -325,11 +316,18 @@ struct LogDispatcher::Proxy
         if ( !fmts || fmts[0] == '\0' )
             return *this;
 
-        char buf[512];
         va_list ap;
         va_start(ap, fmts);
-        vsprintf(buf, fmts, ap);
+        vform(fmts, ap);
         va_end(ap);
+        return *this;
+    }
+
+    Proxy& vform(const char* fmts, va_list ap)
+    {
+        char buf[512];
+
+        vsprintf(buf, fmts, ap);
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {
