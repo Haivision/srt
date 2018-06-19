@@ -423,6 +423,245 @@ public:
 
 #endif
 
+// The version of std::tie from C++11, but for pairs only.
+template <class T1, class T2>
+struct PairProxy
+{
+    T1& v1;
+    T2& v2;
+
+    PairProxy(T1& c1, T2& c2): v1(c1), v2(c2) {}
+
+    void operator=(const std::pair<T1, T2>& p)
+    {
+        v1 = p.first;
+        v2 = p.second;
+    }
+};
+
+template <class T1, class T2> inline
+PairProxy<T1, T2> Tie2(T1& v1, T2& v2)
+{
+    return PairProxy<T1, T2<(v1, v2);
+}
+
+template<class T>
+struct PassFilter
+{
+    T lower, median, upper;
+};
+
+inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size)
+{
+    // This calculation does more-less the following:
+    //
+    // 1. Having example window:
+    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+    // 2. This window is now sorted, but we only know the value in the middle:
+    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+    // 3. Now calculate:
+    //   - lower: 90/8 = 11.25
+    //   - upper: 90*8 = 720
+    // 4. Now calculate the arithmetic median from all these values,
+    //    but drop those from outside the <lower, upper> range:
+    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
+    // 5. Calculate the median from the extracted range,
+    //    NOTE: the median is actually repeated once, so size is +1.
+    //
+    //    values = { 50, 51, 55, 80, 90, 100, 600 };
+    //    sum = 90 + accumulate(values); ==> 1026
+    //    median = sum/(1 + values.size()); ==> 147
+    //
+    // For comparison: the overall arithmetic median from this window == 430
+    //
+    // 6. Returned value = 1M/median
+
+    // get median value, but cannot change the original value order in the window
+    std::copy(window, window + size, replica);
+    std::nth_element(replica, replica + (size / 2), replica + size);
+    //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
+
+    PassFilter<int> filter;
+    filter.median = replica[size / 2];
+    filter.upper = filter.median << 3; // median*8
+    filter.lower = filter.median >> 3; // median/8
+
+    return filter;
+}
+
+inline pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFilter<int> filter)
+{
+    int count = 0;
+    int sum = 0;
+    for (; p != end; ++p)
+    {
+        // Throw away those that don't fit in the filter
+        if (*p < filter.lower || *p > filter.upper)
+            continue;
+
+        sum += *p;
+        ++count;
+    }
+
+    return make_pair(sum, count);
+}
+
+inline void AccumulatePassFilterParallel(const int* p, const int* end, PassFilter<int> filter,
+        const int* para,
+        ref_t<int> r_sum, ref_t<int> r_count, ref_t<int> r_paracount)
+{
+    int count = 0;
+    int sum = 0;
+    int parasum = 0;
+    for (; p != end; ++p, ++para)
+    {
+        // Throw away those that don't fit in the filter
+        if (*p < filter.lower || *p > filter.upper)
+            continue;
+
+        sum += *p;
+        parasum += *para;
+        ++count;
+    }
+    *r_count= count;
+    *r_sum = sum;
+    *r_paracount = parasum;
+}
+
+template<unsigned SEGMENT_SPAN_I, unsigned SEGMENT_NUMBER_I, int MAX_DRIFT_I>
+class FastDriftTracer
+{
+    int64_t m_qDriftSumSeg[SEGMENT_NUMBER_I];
+
+    unsigned m_uDriftSpan; // how many elements are filled.
+
+    int64_t m_qDrift;
+    int64_t m_qOverdrift;
+
+    static void size_assertion()
+    {
+        // SEGMENT_NUMBER_I must be at least 2.
+        // Segment number 10 is extraordinary, so this is
+        // tested as well (as possibly falsely overridden unsigned)
+        static const int X = 1/(SEGMENT_NUMBER_I < 2 || SEGMENT_NUMBER_I > 10 ? 0: 1);
+        (void)X;
+    }
+
+public:
+
+    static const unsigned MAX_SPAN = SEGMENT_SPAN_I * SEGMENT_NUMBER_I;
+    static const int MAX_DRIFT = MAX_DRIFT_I;
+
+    FastDriftTracer():
+        m_qDriftSumSeg(),
+        m_uDriftSpan(0),
+        m_qDrift(0),
+        m_qOverdrift(0)
+    {
+        size_assertion();
+    }
+
+    void shiftSegments()
+    {
+        // Copy over. Ranges overlap, but source range is in front
+        // of the target range.
+        std::copy(m_qDriftSumSeg+1, m_qDriftSumSeg+SEGMENT_NUMBER_I,
+                m_qDriftSumSeg);
+
+        // Clear the newly shifted-in segment
+        m_qDriftSumSeg[SEGMENT_NUMBER_I-1] = 0;
+
+        // Should be same as m_uDriftSpan -= SEGMENT_SPAN_I, but don't be too trusftul.
+        m_uDriftSpan = SEGMENT_SPAN_I * (SEGMENT_NUMBER_I-1);
+    }
+
+    bool update(int64_t driftval)
+    {
+        // We start from value 0, and m_uDriftSpan is under control
+
+        // Calculate which segment should be updated.
+        unsigned nseg = m_uDriftSpan/SEGMENT_SPAN_I;
+        // Sanity check
+        if (nseg >= SEGMENT_NUMBER_I)
+        {
+            // Maybe report error?
+            m_uDriftSpan = 0;
+            return false;
+        }
+
+        m_qDriftSumSeg[nseg] += driftval;
+        ++m_uDriftSpan;
+        if (m_uDriftSpan == MAX_SPAN)
+        {
+            // Only when this size was achieved, should the average be calculated.
+            // (This does the same as std::accumulate, but accepts arrays of constant size
+            // and does not use a loop - enforces compiler to expand the + expression in place).
+            m_qOverdrift = 0;
+            m_qDrift = accumulate_array(m_qDriftSumSeg)/MAX_SPAN;
+            shiftSegments();
+
+            // In case of "overdrift", save the overdriven value in 'm_qOverdrift'.
+            // In clear mode, you should add this value to the time base when update()
+            // returns true. The drift value will be since now measured with the
+            // overdrift assumed to be added to the base.
+            if (std::abs(m_qDrift) > MAX_DRIFT)
+            {
+                m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
+                m_qDrift -= m_qOverdrift;
+            }
+
+            // Inform that the values were just updated.
+            return true;
+        }
+
+        return false;
+    }
+
+    std::string stats()
+    {
+        std::ostringstream os;
+        unsigned nseg = m_uDriftSpan/SEGMENT_SPAN_I;
+
+        os << "DRIFT STATS: SUMS: [ ";
+
+        for (unsigned i = 0; i < SEGMENT_NUMBER_I; ++i)
+        {
+            unsigned size = i == nseg ? (m_uDriftSpan-(nseg*SEGMENT_SPAN_I)) : SEGMENT_SPAN_I;
+            os << m_qDriftSumSeg[i] << "~" << (size ? m_qDriftSumSeg[i]/size : 0) <<  " ";
+        }
+        os << "] seg=" << nseg << " span=" << m_uDriftSpan;
+        return os.str();
+    }
+
+    // These values can be read at any time, however if you want
+    // to depend on the fact that they have been changed lately,
+    // you have to check the return value from update().
+    //
+    // IMPORTANT: drift() can be called at any time, just remember
+    // that this value may look different than before only if the
+    // last update() returned true, which need not be important for you.
+    //
+    // CASE: CLEAR_ON_UPDATE = true
+    // overdrift() should be read only immediately after update() returned
+    // true. It will stay available with this value until the next time when
+    // update() returns true, in which case the value will be cleared.
+    // Therefore, after calling update() if it retuns true, you should read
+    // overdrift() immediately an make some use of it. Next valid overdrift
+    // will be then relative to every previous overdrift.
+    //
+    // CASE: CLEAR_ON_UPDATE = false
+    // overdrift() will start from 0, but it will always keep track on
+    // any changes in overdrift. By manipulating the MAX_DRIFT parameter
+    // you can decide how high the drift can go relatively to stay below
+    // overdrift.
+    int64_t drift() { return m_qDrift; }
+    int64_t overdrift() { return m_qOverdrift; }
+    unsigned span() { return m_uDriftSpan; }
+    static unsigned max() { return MAX_SPAN; }
+};
+
+
+
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
     if ( size == 0 )
