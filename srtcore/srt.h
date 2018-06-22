@@ -158,7 +158,7 @@ typedef enum SRT_SOCKOPT {
 	SRTO_IPTTL = 29,      // IP Time To Live (passthru for system sockopt IPPROTO_IP/IP_TTL)
 	SRTO_IPTOS,           // IP Type of Service (passthru for system sockopt IPPROTO_IP/IP_TOS)
 	SRTO_TLPKTDROP = 31,  // Enable receiver pkt drop
-    SRTO_SNDDROPDELAY = 32, // Extra delay towards latency for sender TLPKTDROP decision (-1 to off)
+	SRTO_SNDDROPDELAY = 32, // Extra delay towards latency for sender TLPKTDROP decision (-1 to off)
 	SRTO_NAKREPORT = 33,  // Enable receiver to send periodic NAK reports
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
