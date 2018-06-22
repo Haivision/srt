@@ -243,6 +243,7 @@ CUDT::CUDT()
    m_iOPT_TsbPdDelay = SRT_LIVE_DEF_LATENCY_MS;
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
    m_bOPT_TLPktDrop = true;
+   m_iOPT_SndDropDelay = 0;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -303,6 +304,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iOPT_TsbPdDelay = ancestor.m_iOPT_TsbPdDelay;
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
+   m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -581,6 +583,12 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_TLPktDrop = bool_int_value(optval, optlen);
         break;
 
+    case SRTO_SNDDROPDELAY:
+        // Surprise: you may be connected to alter this option.
+        // The application may manipulate this option on sender while transmitting.
+        m_iOPT_SndDropDelay = *(int*)optval;
+        break;
+
     case SRTO_PASSPHRASE:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -749,6 +757,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_iOPT_TsbPdDelay = SRT_LIVE_DEF_LATENCY_MS;
           m_iOPT_PeerTsbPdDelay = 0;
           m_bOPT_TLPktDrop = true;
+          m_iOPT_SndDropDelay = 0;
           m_bMessageAPI = true;
           m_bRcvNakReport = true;
           m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -765,6 +774,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_iOPT_TsbPdDelay = 0;
           m_iOPT_PeerTsbPdDelay = 0;
           m_bOPT_TLPktDrop = false;
+          m_iOPT_SndDropDelay = -1;
           m_bMessageAPI = false;
           m_bRcvNakReport = false;
           m_zOPT_ExpPayloadSize = 0; // use maximum
@@ -982,6 +992,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
 
    case SRTO_TLPKTDROP:
       *(int32_t*)optval = m_bTLPktDrop;
+      optlen = sizeof(int32_t);
+      break;
+
+   case SRTO_SNDDROPDELAY:
+      *(int32_t*)optval = m_iOPT_SndDropDelay;
       optlen = sizeof(int32_t);
       break;
 
@@ -4979,8 +4994,13 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
     // >>using 1 sec for worse case 1 frame using all bit budget.
     // picture rate would be useful in auto SRT setting for min latency
     // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
-    int threshold_ms = std::max(m_iPeerTsbPdDelay_ms, +SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*COMM_SYN_INTERVAL_US/1000);
-    if (timespan_ms > threshold_ms)
+    int threshold_ms = 0;
+    if (m_iOPT_SndDropDelay >= 0)
+    {
+        threshold_ms = std::max(m_iPeerTsbPdDelay_ms + m_iOPT_SndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS) + (2*COMM_SYN_INTERVAL_US/1000);
+    }
+
+    if (threshold_ms && timespan_ms > threshold_ms)
     {
         // protect packet retransmission
         CGuard::enterCS(m_AckLock);
