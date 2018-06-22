@@ -128,7 +128,7 @@ public:
 
 public:
 
-   std::string CONID(SRTSOCKET sock) const;
+   static std::string CONID(SRTSOCKET sock);
 
       /// initialize the UDT library.
       /// @return 0 if success, otherwise -1 is returned.

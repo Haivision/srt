@@ -58,8 +58,8 @@ using namespace std;
 
 
 CHandShake::CHandShake():
-m_iVersion(AF_UNSPEC),
-m_iType(UDT_UNDEFINED),
+m_iVersion(0),
+m_iType(0), // Universal: UDT_UNDEFINED or no flags
 m_iISN(0),
 m_iMSS(0),
 m_iFlightFlagSize(0),

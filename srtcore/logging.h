@@ -66,9 +66,9 @@ written by
 
 #if ENABLE_HEAVY_LOGGING
 
-#define HLOGC(...) LOGC(__VA_ARGS__)
-#define HLOGF(...) LOGF(__VA_ARGS__)
-#define HLOGP(...) LOGP(__VA_ARGS__)
+#define HLOGC LOGC
+#define HLOGP LOGP
+#define HLOGF LOGF
 
 #else
 
@@ -316,11 +316,18 @@ struct LogDispatcher::Proxy
         if ( !fmts || fmts[0] == '\0' )
             return *this;
 
-        char buf[512];
         va_list ap;
         va_start(ap, fmts);
-        vsprintf(buf, fmts, ap);
+        vform(fmts, ap);
         va_end(ap);
+        return *this;
+    }
+
+    Proxy& vform(const char* fmts, va_list ap)
+    {
+        char buf[512];
+
+        vsprintf(buf, fmts, ap);
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {

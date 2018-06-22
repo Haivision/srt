@@ -27,6 +27,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * [Using the `stransmit` App](docs/stransmit.md)
 * [SRT Encryption](docs/encryption.md)
 * [API](docs/API.md)
+* [Reporting problems](docs/reporting.md)
 
 # Requirements
 
