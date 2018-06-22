@@ -1498,7 +1498,6 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
       {
-         //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: nothing to be received for id=" << id << " -- setting size=-1");
          packet.setLength(-1);
          return -1;
       }
@@ -1509,8 +1508,6 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (packet.getLength() < newpkt->getLength())
    {
-      //HLOGC(dlog.Debug, log << "RcvQ:recvfrom: IPE: spare packet for id=" << id << " size="
-      //         << newpkt->getLength() << " TOO SMALL for incoming size=" << packet.getLength() << " -- SETTING -1 size");
       packet.setLength(-1);
       return -1;
    }
