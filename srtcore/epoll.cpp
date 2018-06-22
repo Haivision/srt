@@ -515,7 +515,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if (total > 0)
          return total;
 
-      if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * 1000LL))
+      if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
       #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)

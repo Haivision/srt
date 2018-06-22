@@ -162,7 +162,7 @@ uint64_t CTimer::readCPUFrequency()
    #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       mach_timebase_info_data_t info;
       mach_timebase_info(&info);
-      frequency = info.denom * 1000ULL / info.numer;
+      frequency = info.denom * uint64_t(1000) / info.numer;
    #endif
 
    // Fall back to microsecond if the resolution is not high enough.
@@ -257,7 +257,7 @@ uint64_t CTimer::getTime()
 #else
     timeval t;
     gettimeofday(&t, 0);
-    return t.tv_sec * 1000000ULL + t.tv_usec;
+    return t.tv_sec * uint64_t(1000000) + t.tv_usec;
 #endif
 }
 
@@ -300,7 +300,7 @@ void CTimer::sleep()
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * 1000000ULL + now.tv_usec + delay;
+    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
