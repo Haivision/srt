@@ -672,10 +672,9 @@ endmacro()
 if ( ENABLE_CXX11 )
 
 	# Make a virtual library of all shared app files
-	MafRead(apps/support.maf
-		SOURCES SOURCES_support_indir
+	MafReadDir(apps support.maf
+		SOURCES SOURCES_support
 	)
-	adddirname(apps "${SOURCES_support_indir}" SOURCES_support)
 
 	# A special trick that makes the shared application sources
 	# to be compiled once for all applications. Maybe this virtual
@@ -733,8 +732,7 @@ if ( ENABLE_CXX11 )
 			#
 			# For testing applications, every application has its exclusive
 			# list of source files in its own Manifest file.
-			MafRead(testing/${name}.maf SOURCES SOURCES_app_indir)
-			adddirname(testing "${SOURCES_app_indir}" SOURCES_app)
+			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
 			srt_add_program(${name} ${SOURCES_app})
 		endmacro()
 
