@@ -58,7 +58,7 @@ modified by
    #if __APPLE__
       #include "TargetConditionals.h"
    #endif
-   #if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #include <mach/mach_time.h>
    #endif
 #else
@@ -131,7 +131,7 @@ void CTimer::rdtsc(uint64_t &x)
       //SetThreadAffinityMask(hCurThread, dwOldMask);
       if (!ret)
          x = getTime() * s_ullCPUFrequency;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
       // use system call to read time clock for other archs
@@ -159,10 +159,10 @@ uint64_t CTimer::readCPUFrequency()
       int64_t ccf;
       if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
          frequency = ccf / 1000000;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       mach_timebase_info_data_t info;
       mach_timebase_info(&info);
-      frequency = info.denom * 1000ULL / info.numer;
+      frequency = info.denom * uint64_t(1000) / info.numer;
    #endif
 
    // Fall back to microsecond if the resolution is not high enough.
@@ -249,7 +249,7 @@ uint64_t CTimer::getTime()
     // however Cygwin platform is supported only for testing purposes.
 
     //For other systems without microsecond level resolution, add to this conditional compile
-#if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
+#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     uint64_t x;
     rdtsc(x);
     return x / s_ullCPUFrequency;
@@ -257,7 +257,7 @@ uint64_t CTimer::getTime()
 #else
     timeval t;
     gettimeofday(&t, 0);
-    return t.tv_sec * 1000000ULL + t.tv_usec;
+    return t.tv_sec * uint64_t(1000000) + t.tv_usec;
 #endif
 }
 
@@ -295,6 +295,17 @@ void CTimer::sleep()
    #else
       Sleep(1);
    #endif
+}
+
+int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+    timeval now;
+    gettimeofday(&now, 0);
+    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
+    timespec timeout;
+    timeout.tv_sec = time_us / 1000000;
+    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    
+    return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 
 

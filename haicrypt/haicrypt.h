@@ -115,7 +115,7 @@ typedef enum HaiCrypt_CryptoDir { HAICRYPT_CRYPTO_DIR_RX, HAICRYPT_CRYPTO_DIR_TX
 // internally it will be correctly interpreted,
 // for the outsider it's just some kinda incomplete type
 // but still if you use any kinda pointer instead, you'll get complaints
-typedef struct hcrypt_Session* HaiCrypt_Handle;
+typedef struct hcrypt_Session_str* HaiCrypt_Handle;
 
 
 

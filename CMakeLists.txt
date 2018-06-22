@@ -35,7 +35,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.0)
+set (SRT_VERSION 1.3.1)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -79,6 +79,7 @@ option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
+option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
@@ -245,6 +246,15 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# This options is necessary on some systems; on a cross-ARM compiler it
+# has been detected, for example, that -lrt is necessary for some applications
+# because clock_gettime is needed by some functions and it is alternatively
+# provided by libc, but only in newer versions. This options is rarely necessary,
+# but may help in several corner cases in unusual platforms.
+if (WITH_EXTRALIBS)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
+endif()
+
 # CMake has only discovered in 3.3 version that some set-finder is
 # necessary. Using variables for shortcut to a clumsy check syntax.
 
@@ -298,6 +308,14 @@ if (ENABLE_LOGGING)
     list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
 	if (ENABLE_HEAVY_LOGGING)
 		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
+	endif()
+	if (ENABLE_HAICRYPT_LOGGING)
+		if (ENABLE_HAICRYPT_LOGGING STREQUAL 2) # Allow value 2 for INSECURE DEBUG logging
+			message(WARNING " *** ENABLED INSECURE HAICRYPT LOGGING - USE FOR TESTING ONLY!!! ***")
+			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=2")
+		else()
+			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=1")
+		endif()
 	endif()
 endif()
 
@@ -654,10 +672,9 @@ endmacro()
 if ( ENABLE_CXX11 )
 
 	# Make a virtual library of all shared app files
-	MafRead(apps/support.maf
-		SOURCES SOURCES_support_indir
+	MafReadDir(apps support.maf
+		SOURCES SOURCES_support
 	)
-	adddirname(apps "${SOURCES_support_indir}" SOURCES_support)
 
 	# A special trick that makes the shared application sources
 	# to be compiled once for all applications. Maybe this virtual
@@ -715,8 +732,7 @@ if ( ENABLE_CXX11 )
 			#
 			# For testing applications, every application has its exclusive
 			# list of source files in its own Manifest file.
-			MafRead(testing/${name}.maf SOURCES SOURCES_app_indir)
-			adddirname(testing "${SOURCES_app_indir}" SOURCES_app)
+			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
 			srt_add_program(${name} ${SOURCES_app})
 		endmacro()
 

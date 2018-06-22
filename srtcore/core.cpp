@@ -91,6 +91,9 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+#if ENABLE_HAICRYPT_LOGGING
+        allfa.set(SRT_LOGFA_HAICRYPT, true);
+#endif
     }
 } logger_fa_all;
 
@@ -1541,7 +1544,69 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     CPacket& pkt = *r_pkt;
     CHandShake& hs = *r_hs;
 
-    HLOGC(mglog.Debug, log << "createSrtHandshake: have buffer size=" << pkt.getLength() << " kmdata_wordsize=" << kmdata_wordsize);
+    // This function might be called before the opposite version was recognized.
+    // Check if the version is exactly 4 because this means that the peer has already
+    // sent something - asynchronously, and usually in rendezvous - and we already know
+    // that the peer is version 4. In this case, agent must behave as HSv4, til the end.
+    if (m_ConnRes.m_iVersion == HS_VERSION_UDT4)
+    {
+        hs.m_iVersion = HS_VERSION_UDT4;
+        hs.m_iType = UDT_DGRAM;
+        if (hs.m_extension)
+        {
+            // Should be impossible
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
+            hs.m_extension = false;
+        }
+    }
+    else
+    {
+        hs.m_iType = 0; // Prepare it for flags
+    }
+
+    HLOGC(mglog.Debug, log << "createSrtHandshake: buf size=" << pkt.getLength()
+            << " hsx=" << MessageTypeStr(UMSG_EXT, srths_cmd)
+            << " kmx=" << MessageTypeStr(UMSG_EXT, srtkm_cmd)
+            << " kmdata_wordsize=" << kmdata_wordsize << " version=" << hs.m_iVersion);
+
+    // Once you are certain that the version is HSv5, set the enc type flags
+    // to advertise pbkeylen. Otherwise make sure that the old interpretation
+    // will correctly pick up the type field. PBKEYLEN should be advertized
+    // regardless of what URQ stage the handshake is (note that in case of rendezvous
+    // CONCLUSION might be the FIRST MESSAGE EVER RECEIVED by a party).
+    if (hs.m_iVersion > HS_VERSION_UDT4)
+    {
+        // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
+        // If fillSrtHandshake_HSRSP catches the condition of m_ullRcvPeerStartTime == 0,
+        // it will return size 0, which will mess up with further extension procedures;
+        // PREVENT THIS HERE.
+        if (hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && m_ullRcvPeerStartTime == 0)
+        {
+            LOGC(mglog.Error, log << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. BLOCKING extensions.");
+            hs.m_extension = false;
+        }
+
+        // The situation when this function is called without requested extensions
+        // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
+        // In this case for version 5 just clear the m_iType field, as it has
+        // different meaning in HSv5 and contains extension flags.
+        //
+        // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
+        // in the SRT_HSTYPE_ENCFLAGS field.
+        hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+
+        // Note: This is required only when sending a HS message without SRT extensions.
+        // When this is to be sent with SRT extensions, then KMREQ will be attached here
+        // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
+        // here, it's already too late (it should've been advertised before getting the first
+        // handshake message with KMREQ).
+    }
+    else
+    {
+        hs.m_iType = UDT_DGRAM;
+    }
 
     // values > URQ_CONCLUSION include also error types
     // if (hs.m_iVersion == HS_VERSION_UDT4 || hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and it's only valid for caller-listener mode
@@ -1549,41 +1614,28 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         // Serialize only the basic handshake, if this is predicted for
         // Hsv4 peer or this is URQ_INDUCTION or URQ_WAVEAHAND.
-        if (hs.m_iVersion > HS_VERSION_UDT4)
-        {
-            // The situation when this function is called without requested extensions
-            // is URQ_CONCLUSION in rendezvous mode in some of the transitions.
-            // In this case for version 5 just clear the m_iType field, as it has
-            // different meaning in HSv5 and contains extension flags.
-            //
-            // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
-            // in the SRT_HSTYPE_ENCFLAGS field.
-            hs.m_iType = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
-            bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
-            HLOGC(mglog.Debug, log << "createSrtHandshake: " << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
-
-            // Note: This is required only when sending a HS message without SRT extensions.
-            // When this is to be sent with SRT extensions, then KMREQ will be attached here
-            // and the PBKEYLEN will be extracted from it. If this is going to attach KMRSP
-            // here, it's already too late (it should've been advertised before getting the first
-            // handshake message with KMREQ).
-        }
-
         size_t hs_size = pkt.getLength();
         hs.store_to(pkt.m_pcData, Ref(hs_size));
         pkt.setLength(hs_size);
-        HLOGC(mglog.Debug, log << "createSrtHandshake: (no HSREQ/KMREQ ext) data: " << hs.show());
+        HLOGC(mglog.Debug, log << "createSrtHandshake: (no ext) size=" << hs_size << " data: " << hs.show());
         return true;
     }
 
-    string logext = "HSREQ";
+    // Sanity check, applies to HSv5 only cases.
+    if (srths_cmd == SRT_CMD_HSREQ && m_SrtHsSide == HSD_RESPONDER)
+    {
+        LOGC(mglog.Fatal, log << "IPE: SRT_CMD_HSREQ was requested to be sent in HSv5 by an INITIATOR side!");
+        return false; // should cause rejection
+    }
+
+    string logext = "HSX";
 
     bool have_kmreq = false;
     bool have_sid = false;
     bool have_smoother = false;
 
     // Install the SRT extensions
-    hs.m_iType = CHandShake::HS_EXT_HSREQ;
+    hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
     if ( srths_cmd == SRT_CMD_HSREQ )
     {
@@ -1614,7 +1666,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     {
         have_kmreq = true;
         hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-        logext += ",KMREQ";
+        logext += ",KMX";
     }
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext << ") data: " << hs.show());
@@ -1718,10 +1770,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             for (size_t ki = 0; ki < 2; ++ki)
             {
                 // Skip those that have expired
-                if ( !m_pCryptoControl->getKmMsg_needSend(ki) )
+                if ( !m_pCryptoControl->getKmMsg_needSend(ki, false) )
                     continue;
 
-                m_pCryptoControl->getKmMsg_markSent(ki);
+                m_pCryptoControl->getKmMsg_markSent(ki, false);
 
                 offset += ra_size;
 
@@ -1766,7 +1818,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
             if (kmdata_wordsize == 0)
             {
-                HLOGC(mglog.Debug, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+                LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
                 ra_size = 1;
                 keydata = failure_kmrsp;
 
@@ -1804,7 +1856,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     pkt.setLength((ra_size + offset) * sizeof(int32_t));
 
     HLOGC(mglog.Debug, log << "createSrtHandshake: filled HSv5 handshake flags: "
-        << hs.m_iType << " length: " << pkt.getLength() << " bytes");
+        << CHandShake::ExtensionFlagStr(hs.m_iType) << " length: " << pkt.getLength() << " bytes");
 
     return true;
 }
@@ -1950,8 +2002,9 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
         uint64_t oldPeerStartTime = m_ullRcvPeerStartTime;
         m_ullRcvPeerStartTime = CTimer::getTime() - (uint64_t)((uint32_t)ts);
         if (oldPeerStartTime) {
-            LOGF(mglog.Note,  "rcvSrtMsg: 2nd PeerStartTime diff=%lld usec", 
-                    (long long)(m_ullRcvPeerStartTime - oldPeerStartTime));
+            LOGC(mglog.Note, log << "rcvSrtMsg: 2nd PeerStartTime diff=" <<  
+                    (m_ullRcvPeerStartTime - oldPeerStartTime) << " usec");
+
         }
     }
 #else
@@ -2162,8 +2215,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         uint64_t oldPeerStartTime = m_ullRcvPeerStartTime;
         m_ullRcvPeerStartTime = CTimer::getTime() - (uint64_t)((uint32_t)ts);
         if (oldPeerStartTime) {
-            LOGF(mglog.Note,  "rcvSrtMsg: 2nd PeerStartTime diff=%lld usec", 
-                    (long long)(m_ullRcvPeerStartTime - oldPeerStartTime));
+            LOGC(mglog.Note, log << "rcvSrtMsg: 2nd PeerStartTime diff=" <<  
+                    (m_ullRcvPeerStartTime - oldPeerStartTime) << " usec");
+
         }
     }
 #else
@@ -2577,7 +2631,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this function
 #ifdef SRT_ENABLE_CONNTIMEO
-    uint64_t ttl = m_iConnTimeOut * 1000ULL;
+    uint64_t ttl = m_iConnTimeOut * uint64_t(1000);
 #else
     uint64_t ttl = 3000000;
 #endif
@@ -2691,7 +2745,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     uint64_t now = CTimer::getTime();
     reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
 
-    HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME HIGH. SENDING HS: " << m_ConnReq.show());
+    HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (" << now << "). SENDING HS: " << m_ConnReq.show());
 
     /*
      * Race condition if non-block connect response thread scheduled before we set m_bConnecting to true?
@@ -2715,6 +2769,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // asynchronous connect, return immediately
     if (!m_bSynRecving)
     {
+        HLOGC(mglog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Deferring the process to RcvQ:worker");
         return;
     }
 
@@ -2727,6 +2782,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     response.allocate(m_iMaxSRTPayloadSize);
 
     CUDTException e;
+    EConnectStatus cst = CONN_CONTINUE;
 
     while (!m_bClosing)
     {
@@ -2747,15 +2803,15 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             if (m_bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
 
+            now = CTimer::getTime();
 #if ENABLE_HEAVY_LOGGING
             {
                 CHandShake debughs;
                 debughs.load_from(reqpkt.m_pcData, reqpkt.getLength());
-                HLOGC(mglog.Debug, log << CONID() << "startConnect: REQ-TIME HIGH. cont/sending HS to peer: " << debughs.show());
+                HLOGC(mglog.Debug, log << CONID() << "startConnect: REQ-TIME HIGH (" << now << "). cont/sending HS to peer: " << debughs.show());
             }
 #endif
 
-            now = CTimer::getTime();
             m_llLastReqTime = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
             m_pSndQueue->sendto(serv_addr, reqpkt);
@@ -2765,21 +2821,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             HLOGC(mglog.Debug, log << "startConnect: LOOP: too early to send - " << tdiff << " < 250000");
         }
 
-        EConnectStatus cst = CONN_CONTINUE;
+        cst = CONN_CONTINUE;
         response.setLength(m_iMaxSRTPayloadSize);
         if (m_pRcvQueue->recvfrom(m_SocketID, Ref(response)) > 0)
         {
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
             cst = processConnectResponse(response, &e, true /*synchro*/);
 
-            HLOGC(mglog.Debug, log << CONID() << "startConnect: response processing result: "
-                << (cst == CONN_CONTINUE
-                        ? "INDUCED/CONCLUDING"
-                        : cst == CONN_ACCEPT
-                            ? "ACCEPTED"
-                            : cst == CONN_RENDEZVOUS
-                                ? "RENDEZVOUS (HSv5)"
-                                : "REJECTED"));
+            HLOGC(mglog.Debug, log << CONID() << "startConnect: response processing result: " << ConnectStatusStr(cst));
 
             // Expected is that:
             // - the peer responded with URQ_INDUCTION + cookie. This above function
@@ -2810,14 +2859,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                 // it means that it has done all that was required, however none of the below
                 // things has to be done (this function will do it by itself if needed).
                 // Otherwise the handshake rolling can be interrupted and considered complete.
-                cst = processRendezvous(Ref(reqpkt), response, serv_addr, true /*synchro*/);
+                cst = processRendezvous(Ref(reqpkt), response, serv_addr, true /*synchro*/, RST_OK);
                 if (cst == CONN_CONTINUE)
                     continue;
                 break;
             }
 
             if ( cst != CONN_CONTINUE )
-                break;
+                break; // --> OUTSIDE-LOOP
 
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
@@ -2852,7 +2901,12 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             //
             // Now that this is fixed, the handshake messages from RendezvousQueue
             // are sent only when there is a rendezvous mode or non-blocking mode.
-            createSrtHandshake(Ref(reqpkt), Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0);
+            if ( !createSrtHandshake(Ref(reqpkt), Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
+            {
+                LOGC(mglog.Error, log << "createSrtHandshake failed - REJECTING.");
+                cst = CONN_REJECT;
+                break;
+            }
             // These last 2 parameters designate the buffer, which is in use only for SRT_CMD_KMRSP.
             // If m_ConnReq.m_iVersion == HS_VERSION_UDT4, this function will do nothing,
             // except just serializing the UDT handshake.
@@ -2860,22 +2914,30 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
 
-        if ( cst == CONN_REJECT )
+#if ENABLE_HEAVY_LOGGING
+        // Non-fatal assertion
+        if (cst == CONN_REJECT) // Might be returned by processRendezvous
         {
-            e = CUDTException(MJ_SETUP, MN_REJECTED, 0);
+            LOGC(mglog.Error, log << "startConnect: IPE: cst=REJECT NOT EXPECTED HERE, the loop should've been interrupted!");
             break;
         }
+#endif
 
         if (CTimer::getTime() > ttl)
         {
-            //Remove the connector from the RcvQueue for TTL on blocking connect.
-            //All other breaks from this loop have already done this through CUDT::processConnectResponse
-            m_pRcvQueue->removeConnector(m_SocketID, true);
-
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             break;
         }
+    }
+
+    // <--- OUTSIDE-LOOP
+    // Here will fall the break when not CONN_CONTINUE.
+    // CONN_RENDEZVOUS is handled by processRendezvous.
+    // CONN_ACCEPT will skip this and pass on.
+    if ( cst == CONN_REJECT )
+    {
+        e = CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
     if (e.getErrorCode() == 0)
@@ -2889,7 +2951,12 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     }
 
     if (e.getErrorCode() != 0)
+    {
+        // The process is to be abnormally terminated, remove the connector
+        // now because most likely no other processing part has done anything with it.
+        m_pRcvQueue->removeConnector(m_SocketID);
         throw e;
+    }
 
     HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded");
 
@@ -2913,12 +2980,13 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
     cst = processConnectResponse(pkt, &e, false);
 
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
-        << ConnectStatusStr(cst));
+        << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
+    m_llLastReqTime = 0;
 
     return cst;
 }
 
-bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr)
+bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr)
 {
     // IMPORTANT!
 
@@ -2933,15 +3001,17 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - this->m_StartTime);
 
-    HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: HIGH. Should prevent too quick responses.");
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH (" << now << "). Should prevent too quick responses.");
     m_llLastReqTime = now;
     // ID = 0, connection request
     request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
 
+    bool status = true;
+
     if ( cst == CONN_RENDEZVOUS )
     {
         HLOGC(mglog.Debug, log << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(Ref(request), response, serv_addr, false /*asynchro*/);
+        cst = processRendezvous(Ref(request), response, serv_addr, false /*asynchro*/, rst);
         if (cst == CONN_ACCEPT)
         {
             HLOGC(mglog.Debug, log << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. Done.");
@@ -2951,8 +3021,13 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
         if (cst != CONN_CONTINUE)
         {
             LOGC(mglog.Error, log << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
-            return false;
+            status = false;
         }
+    }
+    else if (cst == CONN_REJECT)
+    {
+            LOGC(mglog.Error, log << "processAsyncConnectRequest: REJECT reported from HS processing, not processing further.");
+            return false;
     }
     else
     {
@@ -2960,16 +3035,33 @@ bool CUDT::processAsyncConnectRequest(EConnectStatus cst, const CPacket& respons
         HLOGC(mglog.Debug, log << "processAsyncConnectRequest: serializing HS: buffer size=" << request.getLength());
         if (!createSrtHandshake(Ref(request), Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
         {
+            // All 'false' returns from here are IPE-type, mostly "invalid argument" plus "all keys expired".
             LOGC(mglog.Error, log << "IPE: processAsyncConnectRequest: createSrtHandshake failed, dismissing.");
-            return false;
+            status = false;
         }
-        HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending HS reqtype=" << RequestTypeStr(m_ConnReq.m_iReqType)
-            << " to socket " << request.m_iID << " size=" << request.getLength());
+        else
+        {
+            HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending HS reqtype=" << RequestTypeStr(m_ConnReq.m_iReqType)
+                    << " to socket " << request.m_iID << " size=" << request.getLength());
+        }
     }
 
-    m_pSndQueue->sendto(serv_addr, request);
+    if (!status)
+    {
+        return false;
+        /* XXX Shouldn't it send a single response packet for the rejection?
+        // Set the version to 0 as "handshake rejection" status and serialize it 
+        CHandShake zhs;
+        size_t size = request.getLength();
+        zhs.store_to(request.m_pcData, Ref(size));
+        request.setLength(size);
+        */
+    }
 
-    return true; // CORRECTLY HANDLED, REMOVE CONNECTOR.
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
+    m_llLastReqTime = CTimer::getTime();
+    m_pSndQueue->sendto(serv_addr, request);
+    return status;
 }
 
 void CUDT::cookieContest()
@@ -2977,8 +3069,12 @@ void CUDT::cookieContest()
     if (m_SrtHsSide != HSD_DRAW)
         return;
 
+    HLOGC(mglog.Debug, log << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
+
     if ( m_ConnReq.m_iCookie == 0 || m_ConnRes.m_iCookie == 0 )
     {
+        // Note that it's virtually impossible that Agent's cookie is not ready, this
+        // shall be considered IPE.
         // Not all cookies are ready, don't start the contest.
         return;
     }
@@ -3014,7 +3110,7 @@ void CUDT::cookieContest()
     m_SrtHsSide = HSD_DRAW;
 }
 
-EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& response, const sockaddr* serv_addr, bool synchro)
+EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& response, const sockaddr* serv_addr, bool synchro, EReadStatus rst)
 {
     if ( m_RdvState == CHandShake::RDV_CONNECTED )
     {
@@ -3033,7 +3129,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     // a very rare case of creating identical cookies.
     if (m_SrtHsSide == HSD_DRAW)
     {
-        m_pRcvQueue->removeConnector(m_SocketID, synchro);
+        LOGC(mglog.Error, log << "COOKIE CONTEST UNRESOLVED: can't assign connection roles, please wait another minute.");
         return CONN_REJECT;
     }
 
@@ -3045,7 +3141,13 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
 
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
     bool needs_extension = ext_flags != 0; // Initial value: received HS has extensions.
-    bool needs_hsrsp = rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension));
+    bool needs_hsrsp;
+    rendezvousSwitchState(Ref(rsp_type), Ref(needs_extension), Ref(needs_hsrsp));
+    if (rsp_type > URQ_FAILURE_TYPES)
+    {
+        HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
+        return CONN_REJECT;
+    }
     checkUpdateCryptoKeyLen("processRendezvous", m_ConnRes.m_iType);
 
     // We have three possibilities here as it comes to HSREQ extensions:
@@ -3059,7 +3161,6 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
-        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
@@ -3070,22 +3171,98 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( !prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
     {
         HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
-        m_pRcvQueue->removeConnector(m_SocketID, synchro);
         return CONN_REJECT;
     }
 
     // Case 2.
     if ( needs_hsrsp )
     {
-        HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW. Respond immediately.");
-        m_llLastReqTime = 0;
         // This means that we have received HSREQ extension with the handshake, so we need to interpret
         // it and craft the response.
-        if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
+        if (rst == RST_OK)
         {
-            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake.");
-            m_pRcvQueue->removeConnector(m_SocketID, synchro);
-            return CONN_REJECT;
+            // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
+            // Sanity check
+            m_llLastReqTime = 0;
+            if (response.getLength() == -1u)
+            {
+                LOGC(mglog.Fatal, log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
+                return CONN_REJECT;
+            }
+
+            if ( !interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize) )
+            {
+                HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
+                return CONN_REJECT;
+            }
+
+            // Pass on, inform about the shortened response-waiting period.
+            HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
+        }
+        else
+        {
+            // If the last CONCLUSION message didn't contain the KMX extension, there's
+            // no key recorded yet, so it can't be extracted. Mark this kmdatasize empty though.
+            int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
+            {
+                // This is a periodic handshake update, so you need to extract the KM data from the
+                // first message, provided that it is there.
+                size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
+                if (msgsize == 0)
+                {
+                    switch (m_pCryptoControl->m_RcvKmState)
+                    {
+                        // If the KMX process ended up with a failure, the KMX is not recorded.
+                        // In this case as the KMRSP answer the "failure status" should be crafted.
+                    case SRT_KM_S_NOSECRET:
+                    case SRT_KM_S_BADSECRET:
+                        {
+                            HLOGC(mglog.Debug, log << "processRendezvous: No KMX recorded, status = NOSECRET. Respond with NOSECRET.");
+
+                            // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
+                            // that is, copy the NOSECRET code into KMX message.
+                            memcpy(kmdata, &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
+                            kmdatasize = 1;
+                        }
+                        break;
+
+                    default:
+                        // Remaining values:
+                        // UNSECURED: should not fall here at alll
+                        // SECURING: should not happen in HSv5
+                        // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
+                        {
+                            // Remaining situations:
+                            // - password only on this site: shouldn't be considered to be sent to a no-password site
+                            LOGC(mglog.Error, log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
+                                    << KmStateStr(m_pCryptoControl->m_RcvKmState) << " SND="
+                                    << KmStateStr(m_pCryptoControl->m_SndKmState));
+                            return CONN_REJECT;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    kmdatasize = msgsize/4;
+                    if (msgsize > kmdatasize*4)
+                    {
+                        // Sanity check
+                        LOGC(mglog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
+                        memset(kmdata+(kmdatasize*4), 0, msgsize - (kmdatasize*4));
+                        ++kmdatasize;
+                    }
+
+                    HLOGC(mglog.Debug, log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size=" << kmdatasize);
+                    memcpy(kmdata, m_pCryptoControl->getKmMsg_data(0), msgsize);
+                }
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "processRendezvous: no KMX flag - not extracting KM data for KMRSP");
+                kmdatasize = 0;
+            }
         }
 
         // No matter the value of needs_extension, the extension is always needed
@@ -3097,8 +3274,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
-            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake.");
-            m_pRcvQueue->removeConnector(m_SocketID, synchro);
+            HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
+            m_llLastReqTime = 0;
             return CONN_REJECT;
         }
 
@@ -3115,10 +3292,19 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // The same is done in CUDT::postConnect(), however this section will
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
-        HLOGC(mglog.Debug, log << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-        if ( !interpretSrtHandshake(m_ConnRes, response, 0, 0) )
+
+        if (rst != RST_OK || response.getLength() == -1u)
         {
-            m_ConnReq.m_iReqType = URQ_ERROR_REJECT;
+            // Actually the -1 length would be an IPE, but it's likely that this was reported already.
+            HLOGC(mglog.Debug, log << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
+            if ( !interpretSrtHandshake(m_ConnRes, response, 0, 0) )
+            {
+                m_ConnReq.m_iReqType = URQ_ERROR_REJECT;
+            }
         }
         // This should be false, make a kinda assert here.
         if ( needs_extension )
@@ -3150,11 +3336,6 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     m_ConnReq.m_extension = needs_extension;
 
     rpkt.setLength(m_iMaxSRTPayloadSize);
-    // needs_extension here distinguishes between cases 1 and 3.
-    // NOTE: in case when interpretSrtHandshake was run under the conditions above (to interpret HSRSP),
-    // then createSrtHandshake below will create only empty AGREEMENT message.
-    createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0);
-
     if ( m_RdvState == CHandShake::RDV_CONNECTED )
     {
         // When synchro=false, don't lock a mutex for rendezvous queue.
@@ -3178,6 +3359,19 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         return CONN_ACCEPT;
     }
 
+    // createSrtHandshake moved here because if the above conditions are satisfied,
+    // no response is going to be send, so nothing needs to be "created".
+
+    // needs_extension here distinguishes between cases 1 and 3.
+    // NOTE: in case when interpretSrtHandshake was run under the conditions above (to interpret HSRSP),
+    // then createSrtHandshake below will create only empty AGREEMENT message.
+    if ( !createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
+    {
+        LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        m_llLastReqTime = 0;
+        return CONN_REJECT;
+    }
+
     if ( rsp_type == URQ_AGREEMENT && m_RdvState == CHandShake::RDV_CONNECTED )
     {
         // We are using our own serialization method (not the one called after
@@ -3194,8 +3388,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // catalyzer here and may turn the entity on the right track faster. When
         // AGREEMENT is missed, it may have kinda initial tearing.
 
-        HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
         uint64_t now = CTimer::getTime();
+        HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
         m_llLastReqTime = now;
         rpkt.m_iTimeStamp = int32_t(now - m_StartTime);
         m_pSndQueue->sendto(serv_addr, rpkt);
@@ -3203,10 +3397,17 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         return CONN_ACCEPT;
     }
 
-    // the request time must be updated so that the next handshake can be sent out immediately.
-    HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW. Respond immediately.");
-    m_llLastReqTime = 0;
-    HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType) << " SENDING response, but consider yourself conencted");
+    if (rst == RST_OK)
+    {
+        // the request time must be updated so that the next handshake can be sent out immediately
+        HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType)
+                << " REQ-TIME: LOW to send immediately, consider yourself conencted");
+        m_llLastReqTime = 0;
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "processRendezvous: REQ-TIME: remains previous value, consider yourself connected");
+    }
     return CONN_CONTINUE;
 }
 
@@ -3221,14 +3422,13 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
    if (!m_bConnecting)
-   {
-       m_pRcvQueue->removeConnector(m_SocketID, synchro);
-       return CONN_REJECT;
-   }
+      return CONN_REJECT;
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
-   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << MessageTypeStr(response.getType(), response.getExtendedType()));
+   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" <<
+           (response.isControl() ?  MessageTypeStr(response.getType(), response.getExtendedType())
+            : string("DATA")));
    //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
 
    // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
@@ -3277,7 +3477,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
            << MessageTypeStr(response.getType(), response.getExtendedType()));
-       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3285,14 +3484,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    {
        // Handshake data were too small to reach the Handshake structure. Reject.
        LOGC(mglog.Error, log << CONID() << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
-       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
    HLOGC(mglog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
    if ( m_ConnRes.m_iReqType > URQ_FAILURE_TYPES )
    {
-       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3301,7 +3498,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
        // and you'll avoid problems.
        LOGC(mglog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
-       m_pRcvQueue->removeConnector(m_SocketID, synchro);
        return CONN_REJECT;
    }
 
@@ -3316,7 +3512,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
        {
            LOGC(mglog.Error, log << CONID() << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
-           m_pRcvQueue->removeConnector(m_SocketID, synchro);
            return CONN_REJECT;
        }
 
@@ -3444,10 +3639,6 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1 )
         m_ullRcvPeerStartTime = 0; // will be set correctly in SRT HS.
 
-    // Remove from rendezvous queue (in this particular case it's
-    // actually removing the socket that undergoes asynchronous HS processing).
-    m_pRcvQueue->removeConnector(m_SocketID, synchro);
-
     // This procedure isn't being executed in rendezvous because
     // in rendezvous it's completed before calling this function.
     if ( !rendezvous )
@@ -3469,7 +3660,9 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         // however in this case the HSREQ extension will not be attached,
         // so it will simply go the "old way".
         bool ok = prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
-        if ( ok )
+        // May happen that 'response' contains a data packet that was sent in rendezvous mode.
+        // In this situation the interpretation of handshake was already done earlier.
+        if (ok && response.isControl())
         {
             ok = interpretSrtHandshake(m_ConnRes, response, 0, 0);
             if (!ok && eout)
@@ -3499,6 +3692,18 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
+
+    // Remove from rendezvous queue (in this particular case it's
+    // actually removing the socket that undergoes asynchronous HS processing).
+    // Removing at THIS point because since when setNewEntry is called,
+    // the next iteration in the CRcvQueue::worker loop will be dispatching
+    // packets normally, as within-connection, so the "connector" won't
+    // play any role since this time.
+    // The connector, however, must stay alive until the setNewEntry is called
+    // because otherwise the packets that are coming for this socket before the
+    // connection process is complete will be rejected as "attack", instead of
+    // being enqueued for later pickup from the queue.
+    m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
     s_UDTUnited.connect_complete(m_SocketID);
@@ -3554,10 +3759,11 @@ void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
 }
 
 // Rendezvous
-bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> needs_extension)
+void CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> needs_extension, ref_t<bool> needs_hsrsp)
 {
     UDTRequestType req = m_ConnRes.m_iReqType;
-    bool has_extension = !!m_ConnRes.m_iType; // it holds flags, if no flags, there are no extensions.
+    int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+    bool has_extension = !!hs_flags; // it holds flags, if no flags, there are no extensions.
 
     const HandshakeSide& hsd = m_SrtHsSide;
     // Note important possibilities that are considered here:
@@ -3591,7 +3797,9 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
     // the peer, while the peer could not send URQ_CONCLUSION without switching off RDV_WAVING
     // (actually to RDV_ATTENTION). There's also no exit to RDV_FINE from RDV_ATTENTION.
 
+    // DEFAULT STATEMENT: don't attach extensions to URQ_CONCLUSION, neither HSREQ nor HSRSP.
     *needs_extension = false;
+    *needs_hsrsp = false;
 
     string reason;
 
@@ -3606,24 +3814,24 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
         const CHandShake::RendezvousState& nst;
         const UDTRequestType& nrq;
         bool& needext;
+        bool& needrsp;
         string& reason;
-        LogAtTheEnd(CHandShake::RendezvousState st, UDTRequestType rq,
-                const CHandShake::RendezvousState& rst, const UDTRequestType& rrq, bool& needx, string& rsn):
-            ost(st), orq(rq), nst(rst), nrq(rrq), needext(needx), reason(rsn) {}
+
         ~LogAtTheEnd()
         {
             HLOGC(mglog.Debug, log << "rendezvousSwitchState: STATE["
                 << CHandShake::RdvStateStr(ost) << "->" << CHandShake::RdvStateStr(nst) << "] REQTYPE["
                 << RequestTypeStr(orq) << "->" << RequestTypeStr(nrq) << "] "
-                << (needext ? "HSREQ-ext" : "") << (reason == "" ? string() : "reason:" + reason));
+                << "ext:" << (needext ? (needrsp ? "HSRSP" : "HSREQ") : "NONE")
+                << (reason == "" ? string() : "reason:" + reason));
         }
-    } l_logend(m_RdvState, req, m_RdvState, *rsptype, *needs_extension, reason);
+      } l_logend = {m_RdvState, req, m_RdvState, *rsptype, *needs_extension, *needs_hsrsp, reason};
 
 #endif
 
     switch (m_RdvState)
     {
-    case CHandShake::RDV_INVALID: return false;
+    case CHandShake::RDV_INVALID: return;
 
     case CHandShake::RDV_WAVING:
         {
@@ -3635,7 +3843,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 *rsptype = URQ_CONCLUSION;
                 if ( hsd == HSD_INITIATOR )
                     *needs_extension = true;
-                return false;
+                return;
             }
 
             if ( req == URQ_CONCLUSION )
@@ -3647,8 +3855,8 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 // if this->isWinner(), then craft HSREQ for that response.
                 // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
                 if ( hsd == HSD_RESPONDER )
-                    return true;
-                return false;
+                    *needs_hsrsp = true;
+                return;
             }
 
         }
@@ -3667,7 +3875,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 *rsptype = URQ_CONCLUSION;
                 if ( hsd == HSD_INITIATOR )
                     *needs_extension = true;
-                return false;
+                return;
             }
 
             if ( req == URQ_CONCLUSION )
@@ -3679,25 +3887,44 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                 {
                     // WINNER should get a response with HSRSP, otherwise this is kinda empty conclusion.
                     // If no HSRSP attached, stay in this state.
-                    if (m_ConnRes.m_iType == 0)
+                    if (hs_flags == 0)
                     {
                         HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
                             "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
                         *rsptype = URQ_CONCLUSION;
-                        return false;
+                        *needs_extension = true; // If you expect to receive HSRSP, continue sending HSREQ
+                        return;
                     }
                     m_RdvState = CHandShake::RDV_CONNECTED;
                     *rsptype = URQ_AGREEMENT;
-                    return false;
+                    return;
                 }
 
                 // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
                 if ( hsd == HSD_RESPONDER )
                 {
+                    // If no HSREQ attached, stay in this state.
+                    // (Although this seems completely impossible).
+                    if (hs_flags == 0)
+                    {
+                        LOGC(mglog.Warn, log << "rendezvousSwitchState: (IPE!)"
+                            "{RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
+                        *rsptype = URQ_CONCLUSION;
+                        *needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait for the right message)
+                        return;
+                    }
                     m_RdvState = CHandShake::RDV_INITIATED;
                     *rsptype = URQ_CONCLUSION;
-                    return true;
+                    *needs_extension = true;
+                    *needs_hsrsp = true;
+                    return;
                 }
+
+                LOGC(mglog.Error, log << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
+                // Fallback for cookie draw
+                m_RdvState = CHandShake::RDV_INVALID;
+                *rsptype = URQ_ERROR_REJECT;
+                return;
             }
 
             if ( req == URQ_AGREEMENT )
@@ -3716,7 +3943,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
                     // Both sides are connected, no need to send anything anymore.
                     *rsptype = URQ_DONE;
-                    return false;
+                    return;
                 }
 
                 if ( hsd == HSD_RESPONDER )
@@ -3726,8 +3953,9 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                     // inform the other party that we need the conclusion message once again.
                     // The ATTENTION state should be maintained.
                     *rsptype = URQ_CONCLUSION;
-                    // This is a conclusion message to call for getting HSREQ, so no extensions.
-                    return false;
+                    *needs_extension = true;
+                    *needs_hsrsp = true;
+                    return;
                 }
             }
 
@@ -3737,7 +3965,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
     case CHandShake::RDV_FINE:
         {
-            // In FINE state we can't receive URQ_WAVEAHAND because if the party has already
+            // In FINE state we can't receive URQ_WAVEAHAND because if the peer has already
             // sent URQ_CONCLUSION, it's already in CHandShake::RDV_ATTENTION, and in this state it can
             // only send URQ_CONCLUSION, whereas when it isn't in CHandShake::RDV_ATTENTION, it couldn't
             // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in CHandShake::RDV_FINE state.
@@ -3779,12 +4007,13 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                     // initiator should send HSREQ, responder HSRSP,
                     // in both cases extension is needed
                     *needs_extension = true;
-                    return hsd == HSD_RESPONDER;
+                    *needs_hsrsp = hsd == HSD_RESPONDER;
+                    return;
                 }
 
                 m_RdvState = CHandShake::RDV_CONNECTED;
                 *rsptype = URQ_AGREEMENT;
-                return false;
+                return;
             }
 
             if ( req == URQ_AGREEMENT )
@@ -3798,7 +4027,7 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
 
                 m_RdvState = CHandShake::RDV_CONNECTED;
                 *rsptype = URQ_DONE;
-                return false;
+                return;
             }
 
         }
@@ -3811,9 +4040,18 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
             // switch to CONNECTED. No response required.
             if ( req == URQ_AGREEMENT )
             {
+                // No matter in which state we'd be, just switch to connected.
+                if (m_RdvState == CHandShake::RDV_CONNECTED)
+                {
+                    HLOGC(mglog.Debug, log << "<-- AGREEMENT: already connected");
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "<-- AGREEMENT: switched to connected");
+                }
                 m_RdvState = CHandShake::RDV_CONNECTED;
                 *rsptype = URQ_DONE;
-                return false;
+                return;
             }
 
             if ( req == URQ_CONCLUSION )
@@ -3828,27 +4066,30 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
                         "{RESPONDER}[INITIATED] awaits AGREEMENT, "
                         "got CONCLUSION, sending CONCLUSION+HSRSP");
                     *needs_extension = true;
-                    return true;
+                    *needs_hsrsp = true;
+                    return;
                 }
 
                 // Loser, initiated? This may only happen in parallel arrangement, where
                 // the agent exchanges empty conclusion messages with the peer, simultaneously
                 // exchanging HSREQ-HSRSP conclusion messages. Check if THIS message contained
                 // HSREQ, and set responding HSRSP in that case.
-                if ( m_ConnRes.m_iType == 0 )
+                if ( hs_flags == 0 )
                 {
                     HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
                         "{INITIATOR}[INITIATED] awaits AGREEMENT, "
-                        "got empty CONCLUSION, responding empty CONCLUSION");
-                    *needs_extension = false;
-                    return false;
+                        "got empty CONCLUSION, STILL RESPONDING CONCLUSION+HSRSP");
                 }
+                else
+                {
 
-                HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
-                    "{INITIATOR}[INITIATED] awaits AGREEMENT, "
-                    "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
+                    HLOGC(mglog.Debug, log << "rendezvousSwitchState: "
+                            "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                            "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
+                }
                 *needs_extension = true;
-                return true;
+                *needs_hsrsp = true;
+                return;
             }
         }
 
@@ -3858,14 +4099,13 @@ bool CUDT::rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> need
     case CHandShake::RDV_CONNECTED:
         // Do nothing. This theoretically should never happen.
         *rsptype = URQ_DONE;
-        return false;
+        return;
     }
 
     HLOGC(mglog.Debug, log << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID");
     // All others are treated as errors
     m_RdvState = CHandShake::RDV_WAVING;
     *rsptype = URQ_ERROR_INVALID;
-    return false;
 }
 
 /*
@@ -3934,18 +4174,15 @@ void* CUDT::tsbpd(void* param)
                 self->m_iRcvLastSkipAck = skiptoseqno;
 
 #if ENABLE_LOGGING
-                uint64_t now = CTimer::getTime();
-
-#if ENABLE_HEAVY_LOGGING
                 int64_t timediff = 0;
                 if ( tsbpdtime )
-                    timediff = int64_t(now) - int64_t(tsbpdtime);
-
+                     timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
+#if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << int64_t(now - tsbpdtime) << "ms");
+                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -3987,18 +4224,16 @@ void* CUDT::tsbpd(void* param)
 
       if (tsbpdtime != 0)
       {
+         int64_t timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
          /*
          * Buffer at head of queue is not ready to play.
          * Schedule wakeup when it will be.
          */
           self->m_bTsbPdAckWakeup = false;
           THREAD_PAUSED();
-          timespec locktime;
-          locktime.tv_sec = tsbpdtime / 1000000;
-          locktime.tv_nsec = (tsbpdtime % 1000000) * 1000;
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << ((tsbpdtime - CTimer::getTime())/1000.0) << "ms");
-          pthread_cond_timedwait(&self->m_RcvTsbPdCond, &self->m_RecvLock, &locktime);
+              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
+          CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
       }
       else
@@ -4146,7 +4381,17 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    HLOGC(mglog.Debug, log << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
    // Prepare all structures
-   prepareConnectionObjects(*hs, HSD_DRAW, 0);
+   if (!prepareConnectionObjects(*hs, HSD_DRAW, 0))
+   {
+       HLOGC(mglog.Debug, log << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+       // If the SRT Handshake extension was provided and wasn't interpreted
+       // correctly, the connection should be rejected.
+       //
+       // Respond with the rejection message and exit with exception
+       // so that the caller will know that this new socket should be deleted.
+       hs->m_iReqType = URQ_ERROR_REJECT;
+       throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+   }
    // Since now you can use m_pCryptoControl
 
    CInfoBlock ib;
@@ -4208,6 +4453,9 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }
 
+   // Set target socket ID to the value from received handshake's source ID.
+   response.m_iID = m_PeerID;
+
 #if ENABLE_HEAVY_LOGGING
    {
        // To make sure what REALLY is being sent, parse back the handshake
@@ -4237,6 +4485,9 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // Lazy initialization
     if ( m_pCryptoControl )
         return true;
+
+    // Write back this value, when it was just determined.
+    m_SrtHsSide = side;
 
     m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
 
@@ -4297,8 +4548,14 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
     // Do a fast pre-check first - this simply declares that agent uses HSv5
     // and the legacy SRT Handshake is not to be done. Second check is whether
     // agent is sender (=initiator in HSv4).
-    if ( m_iSndHsRetryCnt == 0 || !m_bDataSender )
+    if ( !isTsbPd() || !m_bDataSender )
         return;
+
+    if (m_iSndHsRetryCnt <= 0)
+    {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        return;
+    }
 
     uint64_t now = CTimer::getTime();
     if (timebase != 0)
@@ -4314,18 +4571,21 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
          * - last sent handshake req should have been replied (RTT*1.5 elapsed); and
          * then (re-)send handshake request.
          */
-        if ( !isTsbPd() // tsbpd off = no HSREQ required
-                || m_iSndHsRetryCnt <= 0 // expired (actually sanity check, theoretically impossible to be <0)
-                || timebase > now ) // too early
+        if ( timebase > now ) // too early
+        {
+            HLOGC(mglog.Debug, log << "Legacy HSREQ: TOO EARLY, will still retry " << m_iSndHsRetryCnt << " times");
             return;
+        }
     }
     // If 0 timebase, it means that this is the initial sending with the very first
     // payload packet sent. Send only if this is still set to maximum+1 value.
     else if (m_iSndHsRetryCnt < SRT_MAX_HSRETRY+1)
     {
+        HLOGC(mglog.Debug, log << "Legacy HSREQ: INITIAL, REPEATED, so not to be done. Will repeat on sending " << m_iSndHsRetryCnt << " times");
         return;
     }
 
+    HLOGC(mglog.Debug, log << "Legacy HSREQ: SENDING, will repeat " << m_iSndHsRetryCnt << " times if no response");
     m_iSndHsRetryCnt--;
     m_ullSndHsLastTime_us = now;
     sendSrtMsg(SRT_CMD_HSREQ);
@@ -4333,11 +4593,28 @@ void CUDT::considerLegacySrtHandshake(uint64_t timebase)
 
 void CUDT::checkSndTimers(Whether2RegenKm regen)
 {
-    if (m_SrtHsSide == HSD_RESPONDER)
-        return;
+    if (m_SrtHsSide == HSD_INITIATOR)
+    {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
+        // Legacy method for HSREQ, only if initiator.
+        considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "checkSndTimers: HS SIDE: " << (m_SrtHsSide == HSD_RESPONDER ? "RESPONDER" : "DRAW (IPE?)")
+                << " - not considering legacy handshake");
+    }
 
-    considerLegacySrtHandshake(m_ullSndHsLastTime_us + m_iRTT*3/2);
-    m_pCryptoControl->sendKeysToPeer(regen);
+    // This must be done always on sender, regardless of HS side.
+    // When regen == DONT_REGEN_KM, it's a handshake call, so do
+    // it only for initiator.
+    if (regen || m_SrtHsSide == HSD_INITIATOR)
+    {
+        // Don't call this function in "non-regen mode" (sending only),
+        // if this side is RESPONDER. This shall be called only with
+        // regeneration request, which is required by the sender.
+        m_pCryptoControl->sendKeysToPeer(regen);
+    }
 }
 
 void CUDT::addressAndSend(CPacket& pkt)
@@ -4364,7 +4641,8 @@ void CUDT::close()
       uint64_t entertime = CTimer::getTime();
 
       HLOGC(mglog.Debug, log << CONID() << " ... (linger)");
-      while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) && (CTimer::getTime() - entertime < m_Linger.l_linger * 1000000ULL))
+      while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0)
+              && (CTimer::getTime() - entertime < m_Linger.l_linger * uint64_t(1000000)))
       {
          // linger has been checked by previous close() call and has expired
          if (m_ullLingerExpiration >= entertime)
@@ -4374,7 +4652,7 @@ void CUDT::close()
          {
             // if this socket enables asynchronous sending, return immediately and let GC to close it later
             if (m_ullLingerExpiration == 0)
-               m_ullLingerExpiration = entertime + m_Linger.l_linger * 1000000ULL;
+               m_ullLingerExpiration = entertime + m_Linger.l_linger * uint64_t(1000000);
 
             return;
          }
@@ -4535,7 +4813,7 @@ int CUDT::send(const char* data, int len)
               }
               else
               {
-                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
+                  uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * uint64_t(1000);
                   timespec locktime;
 
                   locktime.tv_sec = exptime / 1000000;
@@ -4639,24 +4917,15 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    uint64_t exptime = CTimer::getTime() + 1000000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000);
                 }
             }
             else
             {
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
-                timespec locktime;
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime);
+                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
                     if (CTimer::getTime() >= exptime)
                         break;
                 }
@@ -4762,17 +5031,19 @@ void CUDT::checkNeedDrop(ref_t<bool> bCongestion)
             }
             LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
-            HLOGF(dlog.Debug, "drop,now %lluus,%d-%d seqs,%d pkts,%d bytes,%d ms",
-                    (unsigned long long)CTimer::getTime(),
-                    realack, m_iSndCurrSeqNo,
-                    dpkts, dbytes, timespan_ms);
+            HLOGC(dlog.Debug, log << "drop,now " <<
+                    CTimer::getTime() << "us," <<
+                    realack << "-" <<  m_iSndCurrSeqNo << " seqs," <<
+                    dpkts << " pkts," <<  dbytes << " bytes," <<  timespan_ms << " ms");
+
         }
         *bCongestion = true;
         CGuard::leaveCS(m_AckLock);
     }
     else if (timespan_ms > (m_iPeerTsbPdDelay_ms/2))
     {
-        HLOGF(mglog.Debug, "cong, NOW: %lluus, BYTES %d, TMSPAN %dms", (unsigned long long)CTimer::getTime(), bytes, timespan_ms);
+        HLOGC(mglog.Debug, log << "cong, NOW: " << CTimer::getTime() << "us, BYTES " <<  bytes << ", TMSPAN " <<  timespan_ms << "ms");
+
         *bCongestion = true;
     }
 }
@@ -4848,11 +5119,15 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
+    /* XXX
+       This might be worth preserving for several occasions, but it
+       must be at least conditional because it breaks backward compat.
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
     {
         LOGC(dlog.Error, log << "Encryption is required, but the peer did not supply correct credentials. Sending rejected.");
         throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
+    */
 
     CGuard sendguard(m_SendLock);
 
@@ -4897,17 +5172,13 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 }
                 else
                 {
-                    uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-                    timespec locktime;
-
-                    locktime.tv_sec = exptime / 1000000;
-                    locktime.tv_nsec = (exptime % 1000000) * 1000;
+                    uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * uint64_t(1000);
 
                     while (stillConnected()
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
+                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * uint64_t(1000));
                 }
             }
 
@@ -5149,12 +5420,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
-                uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
-                timespec locktime;
-
-                locktime.tv_sec = exptime / 1000000;
-                locktime.tv_nsec = (exptime % 1000000) * 1000;
-                if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvLock, &locktime) == ETIMEDOUT)
+                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
@@ -5844,7 +6110,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 #if 0//debug
     static int callcnt = 0;
-    if (!(callcnt++ % 250)) fprintf(stderr, "SndPeriod=%llu\n", (unsigned long long)m_ullInterval_tk/m_ullCPUFrequency);
+    if (!(callcnt++ % 250)) cerr << "SndPeriod=" << (m_ullInterval_tk/m_ullCPUFrequency) << "\n");
+
 #endif
 }
 
@@ -6684,7 +6951,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          if ( req.m_iVersion > HS_VERSION_UDT4 )
          {
              initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-             if ( req.m_iType != 0 ) // has SRT extensions
+             int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+             if ( hs_flags != 0 ) // has SRT extensions
              {
                  HLOGC(mglog.Debug, log << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType) << " WITH SRT ext");
                  have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
@@ -6695,7 +6963,22 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
                  }
                  else
                  {
-                     initdata.m_extension = true;
+                     // Extensions are added only in case of CONCLUSION (not AGREEMENT).
+                     // Actually what is expected here is that this may either process the
+                     // belated-repeated handshake from a caller (and then it's CONCLUSION,
+                     // and should be added with HSRSP/KMRSP), or it's a belated handshake
+                     // of Rendezvous when it has already considered itself connected.
+                     // Sanity check - according to the rules, there should be no such situation
+                     if (m_bRendezvous && m_SrtHsSide == HSD_RESPONDER)
+                     {
+                         LOGC(mglog.Error, log << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in handshake phase.");
+                     }
+
+                     // The 'extension' flag will be set from this variable; set it to false
+                     // in case when the AGREEMENT response is to be sent.
+                     have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                     HLOGC(mglog.Debug, log << "processCtrl/HS: processing ok, reqtype="
+                             << RequestTypeStr(initdata.m_iReqType) << " kmdatasize=" << kmdatasize);
                  }
              }
              else
@@ -7335,9 +7618,6 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
-#if ENABLE_LOGGING
-              static int nereport = 0;
-#endif
               /*
                * Could not decrypt
                * Keep packet in received buffer
@@ -7348,10 +7628,6 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
-#if ENABLE_LOGGING
-              if (nereport++%100 == 0)
-                  LOGC(dlog.Error, log << "DECRYPT ERROR - dropping a packet of " << packet.getLength() << " bytes");
-#endif
           }
       }
       else
@@ -7851,6 +8127,15 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
    CHandShake hs;
    hs.load_from(packet.m_pcData, packet.getLength());
 
+   // XXX MOST LIKELY this hs should be now copied into m_ConnRes field, which holds
+   // the handshake structure sent from the peer (no matter the role or mode).
+   // This should simplify the createSrtHandshake() function which can this time
+   // simply write the crafted handshake structure into m_ConnReq, which needs no
+   // participation of the local handshake and passing it as a parameter through
+   // newConnection() -> acceptAndRespond() -> createSrtHandshake(). This is also
+   // required as a source of the peer's information used in processing in other
+   // structures.
+
    int32_t cookie_val = bake(addr);
 
    HLOGC(mglog.Debug, log << "processConnectRequest: new cookie: " << hex << cookie_val);
@@ -8253,8 +8538,10 @@ void CUDT::checkTimers()
                 HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
                     << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)");
 
-                HLOGF(mglog.Debug,  "timeout lost: pkts=%d rtt+4*var=%d cnt=%d diff=%llu", num,
-                        m_iRTT + 4 * m_iRTTVar, m_iReXmitCount, (unsigned long long)(currtime_tk - (m_ullLastRspAckTime_tk + exp_int)));
+                HLOGC(mglog.Debug, log << "timeout lost: pkts=" <<  num << " rtt+4*var=" <<
+                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " diff="
+                        << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
+
                 if (num > 0) {
                     m_iTraceSndLoss += 1; // num;
                     m_iSndLossTotal += 1; // num;
