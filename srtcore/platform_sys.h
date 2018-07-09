@@ -15,9 +15,9 @@
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
-   #include <inttypes.h>
    #include <stdint.h>
    #if defined(_MSC_VER)
+      #include <inttypes.h>
       #pragma warning(disable:4251)
    #endif
 #else
