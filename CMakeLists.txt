@@ -432,7 +432,6 @@ endif()
 # will now apply to the dependent library.
 #list(APPEND SOURCES_srt ${SOURCES_haicrypt})
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
-set (HEADERS_srt ${HEADERS_srt} ${HEADERS_srt_win32})
 
 if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
