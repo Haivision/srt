@@ -802,7 +802,7 @@ SrtModel::SrtModel(string host, int port, map<string,string> par)
         is_caller = true;
     else if (m_mode == "rendezvous")
         is_rend = true;
-    else
+    else if (m_mode != "listener")
         throw std::invalid_argument("Wrong 'mode' attribute; expected: caller, listener, rendezvous");
 
     m_host = host;
