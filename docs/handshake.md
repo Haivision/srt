@@ -153,10 +153,10 @@ covering **extension flags**.
 An SRT control packet header ("packet type" bit = 1) has the following structure:
 
 ```
-   0                   1                   2                   3
-   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |1|          Message Type         |    Message Extended Type    |
+   |1|          Message Type        |    Message Extended Type     |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                          Additional Data                      |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -1067,7 +1067,7 @@ message contains one of these flags:
 - `HS_EXT_KMREQ`: if using encryption, defines encryption block
 - `HS_EXT_CONFIG`: informs about having extra configuration data attached
 
-The above schema shows the HSv5 packet structure that can be split into
+The above schema shows the HSv5 packet structure, which can be split into
 three parts:
 
 1. The Handshake data part (up to "Peer IP Address" field)
@@ -1075,11 +1075,10 @@ three parts:
 3. The KMREQ extension
 
 Note that extensions are added only in certain situations (as described
-above with the handshake process), so sometimes there are no extensions
-at all. When extensions are added, the HSREQ extension is always present.
-The KMREQ extension is added only if the encryption is requested (the
-passphrase is set by `SRTO_PASSPHRASE` socket option). There might be
-also other extensions following.
+above), so sometimes there are no extensions at all. When extensions are added,
+the HSREQ extension is always present. The KMREQ extension is added only if
+encryption is requested (the passphrase is set by the `SRTO_PASSPHRASE` socket
+option). There might be also other extensions placed after HSREQ and KMREQ.
 
 Every extension block has the following structure:
 
@@ -1217,11 +1216,11 @@ encrypted and with which key.
 
 2. **Retransmission** flag (1 bit). Controlled by `SRT_OPT_REXMITFLG`, this flag 
 is 0 when a packet is sent the first time, and 1 when it is retransmitted (i.e. 
-requested in a loss report). When the incoming packet is belated (one with a
+requested in a loss report). When the incoming packet is late (one with a
 sequence number older than the newest received so far), this flag allows the
-Receiver to distinguish between a retransmitted packet and reordered packet.
+Receiver to distinguish between a retransmitted packet and a reordered packet.
 This is used by the "reorder tolerance" feature described in the API
-documentation under "SRTO_LOSSMAXTTL").
+documentation under `SRTO_LOSSMAXTTL` socket option.
 
 As of version 1.2.0 both these fields are in use, and therefore both these
 flags must always be set. In theory, there might still exist some SRT versions 
@@ -1350,7 +1349,7 @@ will still be able to send unencrypted data to the Responder.
 
 - If both have declared encryption, but have set different passwords,
 the Responder will send a `KMRSP` block with an `SRT_KM_S_BADSECRET` value.
-The transmission in both direction will be "scrambled" (encrypted and
+The transmission in both directions will be "scrambled" (encrypted and
 not decryptable).
 
 The value of the encryption status can be retrieved from the
@@ -1473,7 +1472,7 @@ extension blocks, except that in case of the SRT Extended Message only one
 direction (forward KMX) is updated. HSv4 relies only on these messages, so 
 there's no difference between initial and refreshed KM exchange. In HSv5 the 
 initial KM exchange is done within the handshake in both directions, and then 
-the key refresh process is started by the sender and it updates the key for one
+the key refresh process is started by the Sender and it updates the key for one
 direction only.
 
 [Return to top of page](#srt-handshake)
