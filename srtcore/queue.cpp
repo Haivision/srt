@@ -511,7 +511,7 @@ void* CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = 5000000LL * CTimer::getCPUFrequency();
+    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
     self->m_ullDbgTime += self->m_ullDbgPeriod;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
@@ -1493,7 +1493,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (i == m_mBuffer.end())
    {
-      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000ULL);
+      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000);
 
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())

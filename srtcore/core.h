@@ -177,7 +177,7 @@ public: //API
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
-    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
+    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
     static int sendmsg2(SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
     static int recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
@@ -557,7 +557,8 @@ private: // Identification
     bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
     int m_iOPT_TsbPdDelay;           // Agent's Rx latency
     int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.
-    bool m_bOPT_TLPktDrop;            // Whether Agent WILL DO TLPKTDROP on Rx.
+    bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
+    int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     std::string m_sStreamName;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds

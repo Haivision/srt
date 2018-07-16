@@ -158,7 +158,7 @@ typedef enum SRT_SOCKOPT {
 	SRTO_IPTTL = 29,      // IP Time To Live (passthru for system sockopt IPPROTO_IP/IP_TTL)
 	SRTO_IPTOS,           // IP Type of Service (passthru for system sockopt IPPROTO_IP/IP_TOS)
 	SRTO_TLPKTDROP = 31,  // Enable receiver pkt drop
-    // deprecated: SRTO_TSBPDMAXLAG (@c below)
+	SRTO_SNDDROPDELAY = 32, // Extra delay towards latency for sender TLPKTDROP decision (-1 to off)
 	SRTO_NAKREPORT = 33,  // Enable receiver to send periodic NAK reports
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
@@ -193,6 +193,7 @@ typedef enum SRT_SOCKOPT {
 static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 
 // This has been deprecated a long time ago, treat this as never implemented.
+// The value is also already reused for another option.
 static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
@@ -541,7 +542,7 @@ typedef struct SRT_MsgCtrl_
    int msgttl;           // TTL for a message, default -1 (delivered always)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;     // source timestamp (usec), 0LL: use internal time     
+   uint64_t srctime;     // source timestamp (usec), 0: use internal time     
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
 } SRT_MSGCTRL;
