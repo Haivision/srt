@@ -338,15 +338,7 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 endif()
 
 if (MINGW)
-	set (PTHREAD_LIBRARY -lpthreadGC2)
-	# XXX CONSIDER THIS. It came from a merged previous master version
-	# and was under an if(NOT MINGW)...elseif(THREADS_FOUND) condition.
-	# Might be that the current form still suffices; resolve this and remove comment.
-	#if(THREADS_FOUND)
-	#set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
-	#else()
 	find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
-	#endif() 
 elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
