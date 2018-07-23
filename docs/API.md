@@ -446,12 +446,8 @@ inside the library.
 | --------------------- | ----- | ------- | --------- | ------ | ------------------ | ------ |
 | `SRTO_IPTOS`          | 1.0.5 | pre     | `int32_t` |        | (platform default) | 0..255 |
 
-<<<<<<< HEAD
-- IP Type of Service (see IP_TOS option for UDP). Applies to sender only. 
-=======
 - IPv4 Type of Service (see IP_TOS option for IP) or IPv6 Traffic Class (see IPV6_TCLASS
 of IPv6) depending on socket address family. Applies to sender only. 
->>>>>>> upstream/master
 - *Sender: user configurable, default: 0xB8*
 ---
 
@@ -470,12 +466,8 @@ regular development.*
 | --------------------- | ----- | ------- | --------- | ------ | ------------------ | ------ |
 | `SRTO_IPTTL`          | 1.0.5 | pre     | `int32_t` | hops   | (platform default) | 1..255 |
 
-<<<<<<< HEAD
-- IP Time To Live (see IP_TTL option for UDP). Applies to sender only. 
-=======
 - IPv4 Time To Live (see IP_TTL option for IP) or IPv6 unicast hops (see IPV6_UNICAST_HOPS for
 IPV6) depending on socket address family. Applies to sender only. 
->>>>>>> upstream/master
 - *Sender: user configurable, default: 64*
 ---
 
