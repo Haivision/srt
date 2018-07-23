@@ -8,7 +8,7 @@
 
 # Introduction
 
-Secure Reliable Transport (SRT) is a proprietary transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.
+Secure Reliable Transport (SRT) is a transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.
 
 |    |    |
 | --- | --- |
