@@ -169,12 +169,12 @@ public:
          T* last_data = m_StorageList.back();
          int last_key = last_data->getKey() % m_iHashSize;
 
-         item_list = m_vHashPtr[last_key];
-         for (typename ItemPtrList::iterator i = item_list.begin(); i != item_list.end(); ++ i)
+         ItemPtrList& last_item_list = m_vHashPtr[last_key];
+         for (typename ItemPtrList::iterator i = last_item_list.begin(); i != last_item_list.end(); ++ i)
          {
             if (*last_data == ***i)
             {
-               item_list.erase(i);
+               last_item_list.erase(i);
                break;
             }
          }
