@@ -453,6 +453,8 @@ if (srt_libspec_shared)
 	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
+	elseif (MINGW)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	endif()
 endif()
 
@@ -477,6 +479,8 @@ if (srt_libspec_static)
 	target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
+	elseif (MINGW)
+		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32.lib ws2_32.lib)
 	endif()
 endif()
 
@@ -501,6 +505,8 @@ endif()
 
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
+elseif (MINGW)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} wsock32.lib ws2_32.lib)
 endif()
 
 # ---
