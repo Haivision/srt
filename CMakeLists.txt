@@ -165,9 +165,11 @@ if ( USE_GNUTLS )
 	)
 	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 else()
-	set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 
 	if (USE_OPENSSL_PC)
+
+	        # Only use the .pc files if we actually try to find them
+	        set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
 
 		pkg_check_modules(SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
@@ -358,7 +360,6 @@ elseif (WIN32)
 		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
 	endif()
 else ()
-	set(THREADS_PREFER_PTHREAD_FLAG ON)
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
 endif()
@@ -493,7 +494,10 @@ endif()
 
 target_include_directories(haicrypt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
+# Only set the libraries directly if they're in the Requires.private
+if (NOT SSL_REQUIRED_MODULES)
+  set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
+endif()
 
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
