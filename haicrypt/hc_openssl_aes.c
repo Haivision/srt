@@ -25,7 +25,9 @@ written by
 #include <string.h>
 #include <openssl/evp.h>	/* PKCS5_xxx() */
 #include <openssl/aes.h>	/* AES_xxx() */
-#include <openssl/modes.h>	/* CRYPTO_xxx() */
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(OPENSSL_IS_BORINGSSL))
+# include <openssl/modes.h>	/* CRYPTO_xxx() */
+#endif
 #include <openssl/rand.h>
 #include <openssl/err.h>
 
@@ -257,14 +259,13 @@ static int hcOpenSSL_AES_Encrypt(
 			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
 			/* Encrypt packet payload in output message buffer */
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(OPENSSL_IS_BORINGSSL))
 			CRYPTO_ctr128_encrypt(in_data[0].payload, &out_msg[pfx_len], 
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs, (block128_f) AES_encrypt);
 #else
-			AES_ctr128_encrypt(in_data[0].payload, &out_msg[pfx_len], 
+			AES_ctr128_encrypt(in_data[0].payload, &out_msg[pfx_len],
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs);
 #endif
-
 
 			/* Prepend packet prefix (clear text) in output buffer */
 			memcpy(out_msg, in_data[0].pfx, pfx_len);
@@ -395,11 +396,11 @@ static int hcOpenSSL_AES_Decrypt(hcrypt_CipherData *cipher_data, hcrypt_Ctx *ctx
 			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
 			/* Decrypt message (same as encrypt for CTR mode) */
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-			CRYPTO_ctr128_encrypt(in_data[0].payload, out_txt, 
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(OPENSSL_IS_BORINGSSL))
+			CRYPTO_ctr128_encrypt(in_data[0].payload, out_txt,
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs, (block128_f) AES_encrypt);
 #else
-			AES_ctr128_encrypt(in_data[0].payload, out_txt, 
+			AES_ctr128_encrypt(in_data[0].payload, out_txt,
 				in_data[0].len, aes_key, iv, ctr, &blk_ofs);
 #endif
 			out_len = in_data[0].len;
