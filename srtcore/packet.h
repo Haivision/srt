@@ -57,6 +57,7 @@ modified by
 #include "udt.h"
 #include "common.h"
 #include "utilities.h"
+#include "netinet_any.h"
 
 #ifdef WIN32
 
@@ -362,6 +363,7 @@ protected:
 
    int32_t __pad;
    bool m_data_owned;
+   sockaddr_any m_DestAddr;
 
 protected:
    CPacket& operator=(const CPacket&);

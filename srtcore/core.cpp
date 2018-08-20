@@ -2754,7 +2754,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
      */
     m_llLastReqTime = now;
     m_bConnecting = true;
-    m_pSndQueue->sendto(serv_addr, reqpkt);
+    m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
 
     //
     ///
@@ -2814,7 +2814,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
             m_llLastReqTime = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
-            m_pSndQueue->sendto(serv_addr, reqpkt);
+            m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
         }
         else
         {
@@ -3060,7 +3060,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
     m_llLastReqTime = CTimer::getTime();
-    m_pSndQueue->sendto(serv_addr, request);
+    m_pSndQueue->sendto(serv_addr, request, m_SourceAddr);
     return status;
 }
 
@@ -3392,7 +3392,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
         m_llLastReqTime = now;
         rpkt.m_iTimeStamp = int32_t(now - m_StartTime);
-        m_pSndQueue->sendto(serv_addr, rpkt);
+        m_pSndQueue->sendto(serv_addr, rpkt, m_SourceAddr);
 
         return CONN_ACCEPT;
     }
@@ -4468,7 +4468,7 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
            << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID);
    }
 #endif
-   m_pSndQueue->sendto(peer, response);
+   m_pSndQueue->sendto(peer, response, m_SourceAddr);
 }
 
 
@@ -4621,7 +4621,7 @@ void CUDT::addressAndSend(CPacket& pkt)
 {
     pkt.m_iID = m_PeerID;
     pkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-    m_pSndQueue->sendto(m_pPeerAddr, pkt);
+    m_pSndQueue->sendto(m_pPeerAddr, pkt, m_SourceAddr);
 }
 
 
@@ -6252,7 +6252,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       {
          ctrlpkt.pack(pkttype, NULL, &ack, size);
          ctrlpkt.m_iID = m_PeerID;
-         nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+         nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
          DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
          break;
       }
@@ -6382,7 +6382,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
 
          ctrlpkt.m_iID = m_PeerID;
          ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-         nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+         nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
          DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
          m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
@@ -6397,7 +6397,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    case UMSG_ACKACK: //110 - Acknowledgement of Acknowledgement
       ctrlpkt.pack(pkttype, lparam);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
@@ -6412,7 +6412,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
               ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
 
               ctrlpkt.m_iID = m_PeerID;
-              nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+              nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
               ++ m_iSentNAK;
               ++ m_iSentNAKTotal;
@@ -6431,7 +6431,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
               {
                   ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
                   ctrlpkt.m_iID = m_PeerID;
-                  nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+                  nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
                   ++ m_iSentNAK;
                   ++ m_iSentNAKTotal;
@@ -6461,7 +6461,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    case UMSG_CGWARNING: //100 - Congestion Warning
       ctrlpkt.pack(pkttype);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       CTimer::rdtsc(m_ullLastWarningTime);
 
@@ -6470,35 +6470,35 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    case UMSG_KEEPALIVE: //001 - Keep-alive
       ctrlpkt.pack(pkttype);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
    case UMSG_HANDSHAKE: //000 - Handshake
       ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
    case UMSG_SHUTDOWN: //101 - Shutdown
       ctrlpkt.pack(pkttype);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
    case UMSG_DROPREQ: //111 - Msg drop request
       ctrlpkt.pack(pkttype, lparam, rparam, 8);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
    case UMSG_PEERERROR: //1000 - acknowledge the peer side a special error
       ctrlpkt.pack(pkttype, lparam);
       ctrlpkt.m_iID = m_PeerID;
-      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+      nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
       break;
 
@@ -7008,7 +7008,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
              uint64_t currtime_tk;
              CTimer::rdtsc(currtime_tk);
              response.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
-             int nbsent = m_pSndQueue->sendto(m_pPeerAddr, response);
+             int nbsent = m_pSndQueue->sendto(m_pPeerAddr, response, m_SourceAddr);
              if (nbsent)
              {
                  uint64_t currtime_tk;
@@ -7177,7 +7177,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
     }
 }
 
-int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
+int CUDT::packData(CPacket& packet, uint64_t& ts_tk, sockaddr_any& src_adr)
 {
    int payload = 0;
    bool probe = false;
@@ -7412,6 +7412,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    }
 
    m_ullTargetTime_tk = ts_tk;
+
+   src_adr = m_SourceAddr;
 
    return payload;
 }
@@ -8178,7 +8180,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-      m_pSndQueue->sendto(addr, packet);
+      m_pSndQueue->sendto(addr, packet, m_SourceAddr);
       return URQ_INDUCTION;
    }
 
@@ -8249,7 +8251,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
        packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-       m_pSndQueue->sendto(addr, packet);
+       m_pSndQueue->sendto(addr, packet, m_SourceAddr);
    }
    else
    {
@@ -8297,7 +8299,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
            packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-           m_pSndQueue->sendto(addr, packet);
+           m_pSndQueue->sendto(addr, packet, m_SourceAddr);
        }
        else
        {

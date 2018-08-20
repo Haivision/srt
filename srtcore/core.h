@@ -693,7 +693,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
-    int packData(CPacket& packet, uint64_t& ts);
+    int packData(CPacket& packet, uint64_t& ts, sockaddr_any& src_adr);
     int processData(CUnit* unit);
     void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);
@@ -789,6 +789,7 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;			// packet sending queue
     CRcvQueue* m_pRcvQueue;			// packet receiving queue
     sockaddr* m_pPeerAddr;			// peer address
+    sockaddr_any m_SourceAddr;      // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];			// local UDP IP address
     CSNode* m_pSNode;				// node information for UDT list used in snd queue
     CRNode* m_pRNode;                            // node information for UDT list used in rcv queue

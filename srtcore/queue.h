@@ -172,7 +172,7 @@ public:
       /// @param [out] pkt the next packet to be sent
       /// @return 1 if successfully retrieved, -1 if no packet found.
 
-   int pop(sockaddr*& addr, CPacket& pkt);
+   int pop(sockaddr*& addr, CPacket& pkt, sockaddr_any& src);
 
       /// Remove UDT instance from the list.
       /// @param [in] u pointer to the UDT instance
@@ -351,12 +351,16 @@ public:
 
    void init(CChannel* c, CTimer* t);
 
-      /// Send out a packet to a given address.
+      /// Send out a packet to a given address. The @a src parameter is
+      /// blindly passed by the caller down the call with intention to
+      /// be received eventually by CChannel::sendto, and used only if
+      /// appropriate conditions state so.
       /// @param [in] addr destination address
       /// @param [in] packet packet to be sent out
+      /// @param [in] src The source IP address (details above)
       /// @return Size of data sent out.
 
-   int sendto(const sockaddr* addr, CPacket& packet);
+   int sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& src);
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Get the IP TTL.

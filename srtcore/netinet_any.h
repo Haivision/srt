@@ -42,6 +42,38 @@ struct sockaddr_any
         len = size();
     }
 
+    sockaddr_any(const sockaddr* src)
+    {
+        // It's not safe to copy it directly, so check.
+        if (src->sa_family == AF_INET)
+        {
+            memcpy(&sin, src, sizeof sin);
+        }
+        else // assume AF_INET6
+        {
+            // Note: this isn't too safe, may crash for stupid values
+            // of src->sa_family or any other data
+            // in the source structure, so make sure it's correct first.
+            memcpy(&sin6, src, sizeof sin6);
+        }
+    }
+
+    sockaddr_any(const in_addr& i4_adr, uint16_t port)
+    {
+        // Some cases require separately IPv4 address passed as in_addr,
+        // so port is given separately.
+        sa.sa_family = AF_INET;
+        sin.sin_addr = i4_adr;
+        sin.sin_port = htons(port);
+    }
+
+    sockaddr_any(const in6_addr& i6_adr, uint16_t port)
+    {
+        sa.sa_family = AF_INET6;
+        sin6.sin6_addr = i6_adr;
+        sin6.sin6_port = htons(port);
+    }
+
     socklen_t size() const
     {
         switch (sa.sa_family)
@@ -120,6 +152,14 @@ struct sockaddr_any
             return memcmp(&c1, &c2, sizeof(c1)) < 0;
         }
     };
+
+    // Tests if the current address is the "any" wildcard.
+    bool isany() const
+    {
+        if (sa.sa_family == AF_INET)
+            return sin.sin_addr.s_addr == INADDR_ANY;
+        return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
+    }
 };
 
 template<> struct sockaddr_any::TypeMap<AF_INET> { typedef sockaddr_in type; };

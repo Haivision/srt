@@ -146,6 +146,7 @@ void CChannel::open(const sockaddr* addr)
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
       memcpy(&m_BindAddr, addr, namelen);
       m_BindAddr.len = namelen;
+      m_bBindMasked = m_BindAddr.isany();
    }
    else
    {
@@ -166,6 +167,10 @@ void CChannel::open(const sockaddr* addr)
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = res->ai_addrlen;
+
+      // We know that this is intentionally bind now to "any",
+      // so the requester-destination address must be remembered and passed.
+      m_bBindMasked = true;
 
       ::freeaddrinfo(res);
    }
@@ -251,6 +256,12 @@ void CChannel::setUDPSockOpt()
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(timeval)))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
+
+    if (m_bBindMasked)
+    {
+        int on = 1;
+        ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
+    }
 }
 
 void CChannel::close() const
@@ -363,7 +374,7 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 }
 
 
-int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
+int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& source_addr) const
 {
 #if ENABLE_LOGGING
     std::ostringstream spec;
@@ -383,7 +394,8 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID
+        << " target=%" << packet.m_iID << " sourceIP="
+        << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(&source_addr) : "default")
         << spec.str());
 #endif
 
@@ -409,8 +421,15 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       mh.msg_namelen = m_iSockAddrSize;
       mh.msg_iov = (iovec*)packet.m_PacketVector;
       mh.msg_iovlen = 2;
-      mh.msg_control = NULL;
-      mh.msg_controllen = 0;
+      if (m_bBindMasked && !source_addr.isany())
+      {
+          setSourceAddress(mh, source_addr);
+      }
+      else
+      {
+          mh.msg_control = NULL;
+          mh.msg_controllen = 0;
+      }
       mh.msg_flags = 0;
 
       int res = ::sendmsg(m_iSocket, &mh, 0);
@@ -450,8 +469,22 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     mh.msg_namelen = m_iSockAddrSize;
     mh.msg_iov = packet.m_PacketVector;
     mh.msg_iovlen = 2;
-    mh.msg_control = NULL;
-    mh.msg_controllen = 0;
+    if (!m_bBindMasked)
+    {
+        // We don't need ancillary data - the source address
+        // will always be the bound address.
+        mh.msg_control = NULL;
+        mh.msg_controllen = 0;
+    }
+    else
+    {
+        // Extract the destination IP address from the ancillary
+        // data. This might be interesting for the connection to
+        // know to which address the packet should be sent back during
+        // the handshake and then addressed when sending during connection.
+        mh.msg_control = m_acCmsgBuffer;
+        mh.msg_controllen = sizeof m_acCmsgBuffer;
+    }
     mh.msg_flags = 0;
 
 #ifdef UNIX
@@ -503,6 +536,15 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         }
 
         goto Return_error;
+    }
+
+    if (m_bBindMasked)
+    {
+        // Extract the address. Set it explicitly; if this returns address that isany(),
+        // it will simply set this on the packet so that it behaves as if nothing was
+        // extracted (it will "fail the old way").
+        packet.m_DestAddr = getTargetAddress(mh);
+        HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: ANY BOUND, retrieved DEST ADDR: " << SockaddrToString(&packet.m_DestAddr));
     }
 
 #else

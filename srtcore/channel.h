@@ -121,7 +121,7 @@ public:
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data sent.
 
-   int sendto(const sockaddr* addr, CPacket& packet) const;
+   int sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& src) const;
 
       /// Receive a packet from the channel and record the source address.
       /// @param [in] addr pointer to the source address.
@@ -175,6 +175,47 @@ private:
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
    sockaddr_any m_BindAddr;
+   bool m_bBindMasked;                  // True if m_BindAddr is INADDR_ANY. Need for quick check.
+
+   // This is 'mutable' because it's a utility buffer defined here
+   // to avoid unnecessary re-allocations.
+   mutable char m_acCmsgBuffer [CMSG_SPACE(sizeof(in_pktinfo))]; // Reserved space for ancillary data with pktinfo
+
+   sockaddr_any getTargetAddress(const msghdr& msg) const
+   {
+       // Loop through IP header messages
+       cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+       for ( cmsg = CMSG_FIRSTHDR(&msg);
+               cmsg != NULL;
+               cmsg = CMSG_NXTHDR( ((msghdr*)&msg), cmsg ) )
+       {
+           if (cmsg->cmsg_level != IPPROTO_IP ||
+                   cmsg->cmsg_type != IP_PKTINFO)
+           {
+               continue;
+           }
+
+           // Get IP (int)
+           in_pktinfo *dest_ip_ptr = (in_pktinfo*)CMSG_DATA(cmsg);
+           return sockaddr_any(dest_ip_ptr->ipi_addr, 0);
+       }
+
+       // Fallback for an error
+       // (this should be resistant for further refactoring)
+       return sockaddr_any(m_BindAddr.family());
+   }
+
+   void setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
+   {
+       // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
+       cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
+       cmsg_send->cmsg_level = IPPROTO_IP;
+       cmsg_send->cmsg_type = IP_PKTINFO;
+       cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
+       in_pktinfo* pktinfo = (in_pktinfo*) CMSG_DATA(cmsg_send);
+       pktinfo->ipi_ifindex = 0;
+       pktinfo->ipi_spec_dst = adr.sin.sin_addr;
+   }
 };
 
 
