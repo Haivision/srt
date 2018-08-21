@@ -305,7 +305,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
    insert_(1, u);
 }
 
-int CSndUList::pop(sockaddr*& addr, CPacket& pkt, sockaddr_any& src)
+int CSndUList::pop(ref_t<sockaddr*> r_addr, ref_t<CPacket> r_pkt, ref_t<sockaddr_any> r_src)
 {
    CGuard listguard(m_ListLock);
 
@@ -325,10 +325,10 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt, sockaddr_any& src)
       return -1;
 
    // pack a packet from the socket
-   if (u->packData(pkt, ts, src) <= 0)
+   if (u->packData(r_pkt, Ref(ts), r_src) <= 0)
       return -1;
 
-   addr = u->m_pPeerAddr;
+   *r_addr = u->m_pPeerAddr;
 
    // insert a new entry, ts is the next processing time
    if (ts > 0)
@@ -558,7 +558,7 @@ void* CSndQueue::worker(void* param)
             sockaddr* addr;
             CPacket pkt;
             sockaddr_any source_addr;
-            if (self->m_pSndUList->pop(addr, pkt, source_addr) < 0)
+            if (self->m_pSndUList->pop(Ref(addr), Ref(pkt), Ref(source_addr)) < 0)
             {
                 continue;
 

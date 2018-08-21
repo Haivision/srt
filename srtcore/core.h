@@ -693,7 +693,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
-    int packData(CPacket& packet, uint64_t& ts, sockaddr_any& src_adr);
+    int packData(ref_t<CPacket> packet, ref_t<uint64_t> ts, ref_t<sockaddr_any> src_adr);
     int processData(CUnit* unit);
     void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);

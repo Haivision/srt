@@ -172,7 +172,7 @@ public:
       /// @param [out] pkt the next packet to be sent
       /// @return 1 if successfully retrieved, -1 if no packet found.
 
-   int pop(sockaddr*& addr, CPacket& pkt, sockaddr_any& src);
+   int pop(ref_t<sockaddr*> addr, ref_t<CPacket> pkt, ref_t<sockaddr_any> src);
 
       /// Remove UDT instance from the list.
       /// @param [in] u pointer to the UDT instance

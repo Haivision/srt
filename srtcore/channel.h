@@ -198,9 +198,10 @@ private:
                cmsg != NULL;
                cmsg = CMSG_NXTHDR( ((msghdr*)&msg), cmsg ) )
        {
+           // This should be safe - this packet contains always either
+           // IPv4 headers or IPv6 headers.
            if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
            {
-               // Get IP (int)
                in_pktinfo *dest_ip_ptr = (in_pktinfo*)CMSG_DATA(cmsg);
                return sockaddr_any(dest_ip_ptr->ipi_addr, 0);
            }
@@ -223,7 +224,6 @@ private:
        // both IPv4 and IPv6 ancillary data, case we could have them. Only one
        // IP version is used and it's the version as found in @a adr, which should
        // be the version used for binding.
-
 
        if (adr.family() == AF_INET)
        {

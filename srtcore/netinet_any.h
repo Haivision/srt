@@ -49,12 +49,18 @@ struct sockaddr_any
         {
             memcpy(&sin, src, sizeof sin);
         }
-        else // assume AF_INET6
+        else if (src->sa_family == AF_INET6)
         {
             // Note: this isn't too safe, may crash for stupid values
             // of src->sa_family or any other data
             // in the source structure, so make sure it's correct first.
             memcpy(&sin6, src, sizeof sin6);
+        }
+        else
+        {
+            // Error fallback: no other families than IP are regarded.
+            sa.sa_family = AF_UNSPEC;
+            len = 0;
         }
     }
 
@@ -65,6 +71,7 @@ struct sockaddr_any
         sa.sa_family = AF_INET;
         sin.sin_addr = i4_adr;
         sin.sin_port = htons(port);
+        len = sizeof sin;
     }
 
     sockaddr_any(const in6_addr& i6_adr, uint16_t port)
@@ -72,6 +79,7 @@ struct sockaddr_any
         sa.sa_family = AF_INET6;
         sin6.sin6_addr = i6_adr;
         sin6.sin6_port = htons(port);
+        len = sizeof sin6;
     }
 
     socklen_t size() const

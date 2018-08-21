@@ -168,7 +168,7 @@ void CChannel::open(const sockaddr* addr)
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = res->ai_addrlen;
 
-      // We know that this is intentionally bind now to "any",
+      // We know that this is intentionally bound now to "any",
       // so the requester-destination address must be remembered and passed.
       m_bBindMasked = true;
 
@@ -176,11 +176,6 @@ void CChannel::open(const sockaddr* addr)
    }
 
    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
-
-   if (m_bBindMasked)
-   {
-       HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
-   }
 
    setUDPSockOpt();
 }
@@ -264,6 +259,7 @@ void CChannel::setUDPSockOpt()
 
     if (m_bBindMasked)
     {
+        HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
         int on = 1, off = 0;
         ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));

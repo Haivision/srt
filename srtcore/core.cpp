@@ -2754,6 +2754,10 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
      */
     m_llLastReqTime = now;
     m_bConnecting = true;
+
+    // At this point m_SourceAddr is probably default-any, but this function
+    // now requires that the address be specified here because there will be
+    // no possibility to do it at any next stage of sending.
     m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
 
     //
@@ -2783,6 +2787,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
     CUDTException e;
     EConnectStatus cst = CONN_CONTINUE;
+    // This is a temporary place to store the DESTINATION IP from the incoming packet.
+    // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
     sockaddr_any use_source_adr(m_iIPversion); // use BindAddress.family() after refactoring
 
     while (!m_bClosing)
@@ -3429,7 +3435,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
-   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << 
+   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" <<
            (response.isControl() ?  MessageTypeStr(response.getType(), response.getExtendedType())
             : string("DATA")));
    //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
@@ -3636,7 +3642,7 @@ void CUDT::applyResponseSettings(const CPacket& hspkt)
         << " flw=" << m_ConnRes.m_iFlightFlagSize
         << " isn=" << m_ConnRes.m_iISN
         << " peerID=" << m_ConnRes.m_iID
-        << " sourceAddress=" << SockaddrToString(&m_SourceAddr));
+        << " sourceIP=" << SockaddrToString(&m_SourceAddr));
 }
 
 EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro)
@@ -4474,7 +4480,7 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
            << RequestTypeStr(debughs.m_iReqType) << " version=" << debughs.m_iVersion
            << " (connreq:" << RequestTypeStr(m_ConnReq.m_iReqType)
            << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID
-           << " sourceIP(UDP)=" << SockaddrToString(&m_SourceAddr));
+           << " sourceIP=" << SockaddrToString(&m_SourceAddr));
    }
 #endif
    m_pSndQueue->sendto(peer, response, m_SourceAddr);
@@ -7186,8 +7192,11 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
     }
 }
 
-int CUDT::packData(CPacket& packet, uint64_t& ts_tk, sockaddr_any& src_adr)
+int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<sockaddr_any> r_src_adr)
 {
+   CPacket& packet = *r_packet;
+   uint64_t& ts_tk = *r_ts_tk;
+   sockaddr_any& src_adr = *r_src_adr;
    int payload = 0;
    bool probe = false;
    uint64_t origintime = 0;
@@ -8152,6 +8161,15 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
 
    HLOGC(mglog.Debug, log << "processConnectRequest: new cookie: " << hex << cookie_val);
 
+   // Remember and use the incoming destination address here
+   // and use it as a source address when responding. It's not possible
+   // to record this address yet because this happens still in the frames
+   // of the listener socket. Only when processing switches to the newly
+   // spawned accepted socket can the address be recorded in its
+   // m_SourceAddr field.
+   sockaddr_any use_source_addr = packet.udpDestAddr();
+
+
    // REQUEST:INDUCTION.
    // Set a cookie, a target ID, and send back the same as
    // RESPONSE:INDUCTION.
@@ -8166,8 +8184,6 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
        // inside a union will enforce whole union to be aligned to int32_t.
       hs.m_iCookie = cookie_val;
       packet.m_iID = hs.m_iID;
-
-      sockaddr_any use_source_addr = packet.udpDestAddr();
 
       // Ok, now's the time. The listener sets here the version 5 handshake,
       // even though the request was 4. This is because the old client would
@@ -8263,7 +8279,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
        packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-       m_pSndQueue->sendto(addr, packet, m_SourceAddr);
+       m_pSndQueue->sendto(addr, packet, use_source_addr);
    }
    else
    {
@@ -8311,7 +8327,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
            packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-           m_pSndQueue->sendto(addr, packet, m_SourceAddr);
+           m_pSndQueue->sendto(addr, packet, use_source_addr);
        }
        else
        {
