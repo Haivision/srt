@@ -437,6 +437,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
           }
           else
           {
+              HLOGC(mglog.Debug, log << "CChannel::setSourceAddress: setting as " << SockaddrToString(&source_addr));
               have_set_src = true;
           }
       }

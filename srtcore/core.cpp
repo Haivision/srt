@@ -2783,6 +2783,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
     CUDTException e;
     EConnectStatus cst = CONN_CONTINUE;
+    sockaddr_any use_source_adr(m_iIPversion); // use BindAddress.family() after refactoring
 
     while (!m_bClosing)
     {
@@ -2814,7 +2815,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
             m_llLastReqTime = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
-            m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
+            m_pSndQueue->sendto(serv_addr, reqpkt, use_source_adr);
         }
         else
         {
@@ -2825,6 +2826,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         response.setLength(m_iMaxSRTPayloadSize);
         if (m_pRcvQueue->recvfrom(m_SocketID, Ref(response)) > 0)
         {
+            use_source_adr = response.udpDestAddr();
+
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
             cst = processConnectResponse(response, &e, true /*synchro*/);
 
@@ -2958,7 +2961,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         throw e;
     }
 
-    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded");
+    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded. sourceIP=" << SockaddrToString(&m_SourceAddr));
 
     // Parameters at the end.
     HLOGC(mglog.Debug, log << "startConnect: END. Parameters:"
@@ -3426,7 +3429,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
    // the peer, however switch to connected state. 
-   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" <<
+   HLOGC(mglog.Debug, log << "processConnectResponse: TYPE:" << 
            (response.isControl() ?  MessageTypeStr(response.getType(), response.getExtendedType())
             : string("DATA")));
    //ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
@@ -3626,7 +3629,7 @@ void CUDT::applyResponseSettings(const CPacket& hspkt)
     m_iRcvCurrSeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
-   m_SourceAddr = hspkt.udpDestAddr();
+    m_SourceAddr = hspkt.udpDestAddr();
 
     HLOGC(mglog.Debug, log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
         << " mss=" << m_ConnRes.m_iMSS
@@ -7419,6 +7422,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk, sockaddr_any& src_adr)
 
    m_ullTargetTime_tk = ts_tk;
 
+   HLOGC(mglog.Debug, log << "packData: Setting source address: " << SockaddrToString(&m_SourceAddr));
    src_adr = m_SourceAddr;
 
    return payload;
@@ -8163,6 +8167,8 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
       hs.m_iCookie = cookie_val;
       packet.m_iID = hs.m_iID;
 
+      sockaddr_any use_source_addr = packet.udpDestAddr();
+
       // Ok, now's the time. The listener sets here the version 5 handshake,
       // even though the request was 4. This is because the old client would
       // simply return THE SAME version, not even looking into it, giving the
@@ -8186,7 +8192,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-      m_pSndQueue->sendto(addr, packet, m_SourceAddr);
+      m_pSndQueue->sendto(addr, packet, use_source_addr);
       return URQ_INDUCTION;
    }
 
