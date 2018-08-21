@@ -3489,6 +3489,11 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        return CONN_REJECT;
    }
 
+   if (m_bRendezvous)
+   {
+       m_SourceAddr = response.udpDestAddr();
+   }
+
    if ( m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1 )
    {
        // Handshake data were too small to reach the Handshake structure. Reject.
