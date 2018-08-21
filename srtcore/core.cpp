@@ -7196,7 +7196,6 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
 {
    CPacket& packet = *r_packet;
    uint64_t& ts_tk = *r_ts_tk;
-   sockaddr_any& src_adr = *r_src_adr;
    int payload = 0;
    bool probe = false;
    uint64_t origintime = 0;
@@ -7432,7 +7431,7 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
    m_ullTargetTime_tk = ts_tk;
 
    HLOGC(mglog.Debug, log << "packData: Setting source address: " << SockaddrToString(&m_SourceAddr));
-   src_adr = m_SourceAddr;
+   *r_src_adr = m_SourceAddr;
 
    return payload;
 }
@@ -8168,7 +8167,6 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
    // spawned accepted socket can the address be recorded in its
    // m_SourceAddr field.
    sockaddr_any use_source_addr = packet.udpDestAddr();
-
 
    // REQUEST:INDUCTION.
    // Set a cookie, a target ID, and send back the same as
