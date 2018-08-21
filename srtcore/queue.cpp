@@ -1525,6 +1525,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
    memcpy(packet.m_pcData, newpkt->m_pcData, newpkt->getLength());
    packet.setLength(newpkt->getLength());
 
+   packet.m_DestAddr = newpkt->m_DestAddr;
+
    delete [] newpkt->m_pcData;
    delete newpkt;
 

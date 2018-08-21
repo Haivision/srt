@@ -177,6 +177,11 @@ void CChannel::open(const sockaddr* addr)
 
    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
 
+   if (m_bBindMasked)
+   {
+       HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
+   }
+
    setUDPSockOpt();
 }
 
@@ -259,8 +264,10 @@ void CChannel::setUDPSockOpt()
 
     if (m_bBindMasked)
     {
-        int on = 1;
+        int on = 1, off = 0;
         ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
+        ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
+        ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
     }
 }
 
@@ -421,11 +428,20 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
       mh.msg_namelen = m_iSockAddrSize;
       mh.msg_iov = (iovec*)packet.m_PacketVector;
       mh.msg_iovlen = 2;
+      bool have_set_src = false;
       if (m_bBindMasked && !source_addr.isany())
       {
-          setSourceAddress(mh, source_addr);
+          if ( !setSourceAddress(mh, source_addr))
+          {
+              LOGC(mglog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
+          }
+          else
+          {
+              have_set_src = true;
+          }
       }
-      else
+
+      if (!have_set_src)
       {
           mh.msg_control = NULL;
           mh.msg_controllen = 0;

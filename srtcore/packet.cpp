@@ -481,6 +481,8 @@ CPacket* CPacket::clone() const
    memcpy(pkt->m_pcData, m_pcData, m_PacketVector[PV_DATA].iov_len);
    pkt->m_PacketVector[PV_DATA].iov_len = m_PacketVector[PV_DATA].iov_len;
 
+   pkt->m_DestAddr = m_DestAddr;
+
    return pkt;
 }
 

@@ -3165,7 +3165,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     }
 
     // This must be done before prepareConnectionObjects().
-    applyResponseSettings();
+    applyResponseSettings(response);
 
     // This must be done before interpreting and creating HSv5 extensions.
     if ( !prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
@@ -3609,7 +3609,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
    return postConnect(response, false, eout, synchro);
 }
 
-void CUDT::applyResponseSettings()
+void CUDT::applyResponseSettings(const CPacket& hspkt)
 {
     // Re-configure according to the negotiated values.
     m_iMSS = m_ConnRes.m_iMSS;
@@ -3626,12 +3626,14 @@ void CUDT::applyResponseSettings()
     m_iRcvCurrSeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
+   m_SourceAddr = hspkt.udpDestAddr();
 
     HLOGC(mglog.Debug, log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
         << " mss=" << m_ConnRes.m_iMSS
         << " flw=" << m_ConnRes.m_iFlightFlagSize
         << " isn=" << m_ConnRes.m_iISN
-        << " peerID=" << m_ConnRes.m_iID);
+        << " peerID=" << m_ConnRes.m_iID
+        << " sourceAddress=" << SockaddrToString(&m_SourceAddr));
 }
 
 EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro)
@@ -3654,7 +3656,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         //
         // Currently just this function must be called always BEFORE prepareConnectionObjects
         // everywhere except acceptAndRespond().
-        applyResponseSettings();
+        applyResponseSettings(response);
 
         // This will actually be done also in rendezvous HSv4,
         // however in this case the HSREQ extension will not be attached,
@@ -4456,6 +4458,9 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    // Set target socket ID to the value from received handshake's source ID.
    response.m_iID = m_PeerID;
 
+   // We can safely assign it here stating that this has passed the cookie test.
+   m_SourceAddr = hspkt.udpDestAddr();
+
 #if ENABLE_HEAVY_LOGGING
    {
        // To make sure what REALLY is being sent, parse back the handshake
@@ -4465,7 +4470,8 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        HLOGC(mglog.Debug, log << CONID() << "acceptAndRespond: sending HS to peer, reqtype="
            << RequestTypeStr(debughs.m_iReqType) << " version=" << debughs.m_iVersion
            << " (connreq:" << RequestTypeStr(m_ConnReq.m_iReqType)
-           << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID);
+           << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID
+           << " sourceIP(UDP)=" << SockaddrToString(&m_SourceAddr));
    }
 #endif
    m_pSndQueue->sendto(peer, response, m_SourceAddr);

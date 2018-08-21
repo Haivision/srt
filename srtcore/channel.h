@@ -179,7 +179,16 @@ private:
 
    // This is 'mutable' because it's a utility buffer defined here
    // to avoid unnecessary re-allocations.
-   mutable char m_acCmsgBuffer [CMSG_SPACE(sizeof(in_pktinfo))]; // Reserved space for ancillary data with pktinfo
+
+   // Unfortunately, this isn't C++11 and we can't rely on that std::max uses constexpr.
+   // We need a macro.
+#define SRT_CHN_MAX(a, b) ((a) > (b) ? (a) : (b))
+
+   static const size_t CMSG_MAX_SPACE = SRT_CHN_MAX(CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)));
+
+#undef SRT_CHN_MAX
+
+   mutable char m_acCmsgBuffer [CMSG_MAX_SPACE]; // Reserved space for ancillary data with pktinfo
 
    sockaddr_any getTargetAddress(const msghdr& msg) const
    {
@@ -189,15 +198,18 @@ private:
                cmsg != NULL;
                cmsg = CMSG_NXTHDR( ((msghdr*)&msg), cmsg ) )
        {
-           if (cmsg->cmsg_level != IPPROTO_IP ||
-                   cmsg->cmsg_type != IP_PKTINFO)
+           if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
            {
-               continue;
+               // Get IP (int)
+               in_pktinfo *dest_ip_ptr = (in_pktinfo*)CMSG_DATA(cmsg);
+               return sockaddr_any(dest_ip_ptr->ipi_addr, 0);
            }
 
-           // Get IP (int)
-           in_pktinfo *dest_ip_ptr = (in_pktinfo*)CMSG_DATA(cmsg);
-           return sockaddr_any(dest_ip_ptr->ipi_addr, 0);
+           if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
+           {
+               in6_pktinfo* dest_ip_ptr = (in6_pktinfo*)CMSG_DATA(cmsg);
+               return sockaddr_any(dest_ip_ptr->ipi6_addr, 0);
+           }
        }
 
        // Fallback for an error
@@ -205,16 +217,48 @@ private:
        return sockaddr_any(m_BindAddr.family());
    }
 
-   void setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
+   bool setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
    {
-       // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
-       cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
-       cmsg_send->cmsg_level = IPPROTO_IP;
-       cmsg_send->cmsg_type = IP_PKTINFO;
-       cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
-       in_pktinfo* pktinfo = (in_pktinfo*) CMSG_DATA(cmsg_send);
-       pktinfo->ipi_ifindex = 0;
-       pktinfo->ipi_spec_dst = adr.sin.sin_addr;
+       // In contrast to an advice followed on the net, there's no case of putting
+       // both IPv4 and IPv6 ancillary data, case we could have them. Only one
+       // IP version is used and it's the version as found in @a adr, which should
+       // be the version used for binding.
+
+
+       if (adr.family() == AF_INET)
+       {
+           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_controllen = CMSG_SPACE(sizeof(in_pktinfo));
+           cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
+
+           // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
+           cmsg_send->cmsg_level = IPPROTO_IP;
+           cmsg_send->cmsg_type = IP_PKTINFO;
+           cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
+           in_pktinfo* pktinfo = (in_pktinfo*) CMSG_DATA(cmsg_send);
+           pktinfo->ipi_ifindex = 0;
+           pktinfo->ipi_spec_dst = adr.sin.sin_addr;
+
+           return true;
+       }
+
+       if (adr.family() == AF_INET6)
+       {
+           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_controllen = CMSG_SPACE(sizeof(in6_pktinfo));
+           cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
+
+           cmsg_send->cmsg_level = IPPROTO_IPV6;
+           cmsg_send->cmsg_type = IPV6_PKTINFO;
+           cmsg_send->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
+           in6_pktinfo* pktinfo = (in6_pktinfo*) CMSG_DATA(cmsg_send);
+           pktinfo->ipi6_ifindex = 0;
+           pktinfo->ipi6_addr = adr.sin6.sin6_addr;
+
+           return true;
+       }
+
+       return false;
    }
 };
 
