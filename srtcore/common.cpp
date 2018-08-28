@@ -367,11 +367,13 @@ CGuard::~CGuard()
 
 int CGuard::enterCS(pthread_mutex_t& lock, bool block)
 {
+    LOGS(cerr, log << "enterCS(" << (block?"block":"try") << "): { LOCK: " << (&lock) << " ...");
     return block ? pthread_mutex_lock(&lock) : pthread_mutex_trylock(&lock);
 }
 
 int CGuard::leaveCS(pthread_mutex_t& lock)
 {
+    LOGS(cerr, log << "leaveCS: } UNLOCK: " << (&lock));
     return pthread_mutex_unlock(&lock);
 }
 
@@ -386,6 +388,7 @@ bool CGuard::isthread(const pthread_t& thr)
 
 bool CGuard::join(pthread_t& thr)
 {
+    LOGS(cerr, log << "JOIN: " << thr << " ---> " << pthread_self());
     int ret = pthread_join(thr, NULL);
     thr = pthread_t(); // prevent dangling
     return ret == 0;
@@ -393,6 +396,7 @@ bool CGuard::join(pthread_t& thr)
 
 bool CGuard::join(pthread_t& thr, void*& result)
 {
+    LOGS(cerr, log << "JOIN: " << thr << " ---> " << pthread_self());
     int ret = pthread_join(thr, &result);
     thr = pthread_t();
     return ret == 0;
@@ -436,7 +440,7 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_
     if (lockst == 0)
     {
         pthread_mutex_unlock(m_mutex);
-        LOGS(std::cerr, log << "CCond: Mutex in CGuard IS NOT LOCKED.");
+        LOGS(std::cerr, log << "CCond: IPE: Mutex in CGuard IS NOT LOCKED.");
         return;
     }
 #endif
