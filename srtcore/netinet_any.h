@@ -168,7 +168,10 @@ struct sockaddr_any
     {
         bool operator()(const sockaddr_any& c1, const sockaddr_any& c2)
         {
-            return memcmp(&c1, &c2, sizeof(c1)) == 0;
+            if (c1.family() != c2.family())
+                return false;
+
+            return memcmp(&c1, &c2, c1.size()) == 0;
         }
     };
 

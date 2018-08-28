@@ -319,7 +319,6 @@ private:
    {
       SRTSOCKET m_iID;			// UDT socket ID (self)
       CUDT* m_pUDT;			// UDT instance
-      int m_iIPversion;                 // IP version
       sockaddr_any m_PeerAddr;		// UDT sonnection peer address
       uint64_t m_ullTTL;			// the time that this request expires
    };
