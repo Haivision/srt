@@ -247,7 +247,6 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
-    vector<string> source_items, target_items;
 
     if (!need_help)
     {
@@ -260,8 +259,8 @@ int main( int argc, char** argv )
         }
         else
         {
-            source_items.push_back(args[0]);
-            target_items.push_back(args[1]);
+            source_spec = args[0];
+            target_spec = args[1];
         }
     }
 
