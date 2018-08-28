@@ -80,6 +80,7 @@ option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
+option(ENABLE_THREAD_LOGGING "Should logging for thread/mutex/CV be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
@@ -90,16 +91,26 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
+set (DISPLAY_LOGGING DISABLED)
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
-	message(STATUS "LOGGING: DISABLED")
 else()
 	if (ENABLE_HEAVY_LOGGING)
-		message(STATUS "LOGGING: HEAVY")
+		set (DISPLAY_LOGGING HEAVY)
 	else()
-		message(STATUS "LOGGING: ENABLED")
+		set (DISPLAY_LOGGING ENABLED)
+	endif()
+
+	if (ENABLE_HAICRYPT_LOGGING)
+		list (APPEND DISPLAY_LOGGING HAICRYPT)
+	endif()
+
+	if (ENABLE_THREAD_LOGGING)
+		list (APPEND DISPLAY_LOGGING THREADS)
 	endif()
 endif()
+
+message(STATUS "LOGGING: ${DISPLAY_LOGGING}")
 
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
@@ -318,6 +329,9 @@ if (ENABLE_LOGGING)
 		else()
 			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=1")
 		endif()
+	endif()
+	if (ENABLE_THREAD_LOGGING)
+		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_THREAD_LOGGING=1")
 	endif()
 endif()
 

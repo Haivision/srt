@@ -61,6 +61,12 @@ modified by
    #include <winsock2.h>
    #include <ws2tcpip.h>
 #endif
+
+// For crash-asserts
+#if ENABLE_THREAD_LOGGING
+#include <stdexcept>
+#endif
+
 #include <cmath>
 #include <sstream>
 #include "srt.h"
@@ -4135,7 +4141,10 @@ void* CUDT::tsbpd(void* param)
 
    THREAD_STATE_INIT("SRT:TsbPd");
 
-   CGuard::enterCS(self->m_RecvLock);
+   CGuard recv_gl(self->m_RecvLock);
+   CCondDelegate recvdata_cc(self->m_RecvDataCond, recv_gl);
+   CCondDelegate tsbpd_cc(self->m_RcvTsbPdCond, recv_gl);
+
    self->m_bTsbPdAckWakeup = true;
    while (!self->m_bClosing)
    {
@@ -4228,7 +4237,7 @@ void* CUDT::tsbpd(void* param)
          */
          if (self->m_bSynRecving)
          {
-             pthread_cond_signal(&self->m_RecvDataCond);
+             recvdata_cc.signal_locked(recv_gl);
          }
          /*
          * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -4249,7 +4258,7 @@ void* CUDT::tsbpd(void* param)
           THREAD_PAUSED();
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
               << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
-          CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
+          tsbpd_cc.wait_for(timediff);
           THREAD_RESUMED();
       }
       else
@@ -4267,11 +4276,11 @@ void* CUDT::tsbpd(void* param)
          HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
          self->m_bTsbPdAckWakeup = true;
          THREAD_PAUSED();
-         pthread_cond_wait(&self->m_RcvTsbPdCond, &self->m_RecvLock);
+         tsbpd_cc.wait();
          THREAD_RESUMED();
       }
    }
-   CGuard::leaveCS(self->m_RecvLock);
+   // m_RecvLock will be unlocked in ~CGuard.
    THREAD_EXIT();
    HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
    return NULL;
@@ -4760,12 +4769,12 @@ void CUDT::close()
       m_bConnected = false;
    }
 
-   if ( m_bTsbPd  && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+   if (m_bTsbPd && CGuard::isthread(m_RcvTsbPdThread))
    {
        HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-       void* retval;
-       int ret SRT_ATR_UNUSED = pthread_join(m_RcvTsbPdThread, &retval);
-       HLOGC(mglog.Debug, log << "... " << (ret == 0 ? "SUCCEEDED" : "FAILED"));
+       // void* retval; used?
+       bool ret SRT_ATR_UNUSED = CGuard::join(m_RcvTsbPdThread);
+       HLOGC(mglog.Debug, log << "... " << (ret ? "SUCCEEDED" : "FAILED"));
    }
 
    HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
@@ -4893,7 +4902,7 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     CGuard recvguard(m_RecvLock);
-
+    CCondDelegate tsbpd_cc(m_RcvTsbPdCond, recvguard);
     if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
     {
         if (m_bShutdown)
@@ -4976,7 +4985,7 @@ int CUDT::receiveBuffer(char* data, int len)
     if (m_bTsbPd)
     {
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-        pthread_cond_signal(&m_RcvTsbPdCond);
+        tsbpd_cc.signal_locked(recvguard);
     }
 
 
@@ -5182,13 +5191,14 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             {
                 // wait here during a blocking sending
                 CGuard sendblock_lock(m_SendBlockLock);
+                CCondDelegate sendcond(m_SendBlockCond, sendblock_lock);
 
                 if (m_iSndTimeOut < 0)
                 {
                     while (stillConnected()
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth)
-                        pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+                        sendcond.wait();
                 }
                 else
                 {
@@ -5198,7 +5208,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                             && sndBuffersLeft() < minlen
                             && m_bPeerHealth
                             && exptime > CTimer::getTime())
-                        CTimer::condTimedWaitUS(&m_SendBlockCond, &m_SendBlockLock, m_iSndTimeOut * uint64_t(1000));
+                        sendcond.wait_until(exptime);
                 }
             }
 
@@ -5348,6 +5358,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard(m_RecvLock);
+    CCondDelegate tscond(m_RcvTsbPdCond, recvguard);
 
     /* XXX DEBUG STUFF - enable when required
        char charbool[2] = {'0', '1'};
@@ -5369,7 +5380,9 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
         /* Kick TsbPd thread to schedule next wakeup (if running) */
         if (m_bTsbPd)
-            pthread_cond_signal(&m_RcvTsbPdCond);
+        {
+            tscond.signal_locked(recvguard);
+        }
 
         if (!m_pRcvBuffer->isRcvDataReady())
         {
@@ -5397,7 +5410,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
-                pthread_cond_signal(&m_RcvTsbPdCond);
+                tscond.signal_locked(recvguard);
 
             // Shut up EPoll if no more messages in non-blocking mode
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
@@ -5409,7 +5422,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             {
                 // Kick TsbPd thread to schedule next wakeup (if running)
                 if (m_bTsbPd)
-                    pthread_cond_signal(&m_RcvTsbPdCond);
+                    tscond.signal_locked(recvguard);
 
                 // Shut up EPoll if no more messages in non-blocking mode
                 s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
@@ -5427,6 +5440,8 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     //Do not block forever, check connection status each 1 sec.
     uint64_t recvtmo = m_iRcvTimeOut < 0 ? 1000 : m_iRcvTimeOut;
 
+    CCondDelegate recv_cond(m_RecvDataCond, recvguard);
+
     do
     {
         if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
@@ -5434,23 +5449,39 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
             {
-                HLOGP(tslog.Debug, "recvmsg: KICK tsbpd()");
-                pthread_cond_signal(&m_RcvTsbPdCond);
+                // XXX Experimental, so just inform:
+                // Check if the last check of isRcvDataReady has returned any "next time for a packet".
+                // If so, then it means that TSBPD has fallen asleep only up to this time, so waking it up
+                // would be "spurious". If a new packet comes ahead of the packet which's time is returned
+                // in tstime (as TSBPD sleeps up to then), the procedure that receives it is responsible
+                // of kicking TSBPD.
+                // bool spurious = (tstime != 0);
+
+                HLOGC(tslog.Debug, log << "receiveMessage: KICK tsbpd" << (tstime ? " (SPURIOUS!)" : ""));
+                tscond.signal_locked(recvguard);
             }
 
             do
             {
-                if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000) == ETIMEDOUT)
+                uint64_t exptime = CTimer::getTime() + (recvtmo * uint64_t(1000));
+
+                HLOGC(tslog.Debug, log << "receiveMessage: fall asleep up to TS="
+                    << logging::FormatTime(exptime) << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
+
+                if (!recv_cond.wait_until(exptime))
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
-                    HLOGP(tslog.Debug, "recvmsg: DATA COND: EXPIRED -- trying to get data anyway");
+                    HLOGP(tslog.Debug, "receiveMessage: DATA COND: EXPIRED -- checking connection conditions and rolling again");
                 }
                 else
                 {
-                    HLOGP(tslog.Debug, "recvmsg: DATA COND: KICKED.");
+                    HLOGP(tslog.Debug, "receiveMessage: DATA COND: KICKED.");
                 }
             } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+
+            HLOGC(tslog.Debug, log << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
+                << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady());
         }
 
         /* XXX DEBUG STUFF - enable when required
@@ -5484,7 +5515,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            tscond.signal_locked(recvguard);
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
@@ -5575,9 +5606,10 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
         {
             CGuard lk(m_SendBlockLock);
+            CCondDelegate sendcond(m_SendBlockCond, lk);
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-                pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
+                sendcond.wait();
         }
 
         if (m_bBroken || m_bClosing)
@@ -5698,10 +5730,13 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
             throw CUDTException(MJ_FILESYSTEM, MN_WRITEFAIL);
         }
 
-        pthread_mutex_lock(&m_RecvDataLock);
-        while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
-            pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock);
-        pthread_mutex_unlock(&m_RecvDataLock);
+        {
+            CGuard gl(m_RecvDataLock);
+            CCondDelegate rcond(m_RecvDataCond, gl);
+
+            while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+                rcond.wait();
+        }
 
         if (!m_bConnected)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -5780,14 +5815,14 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->msRTT = m_iRTT/1000.0;
    perf->mbpsBandwidth = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
 
-   if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, false) == 0)
    {
       perf->byteAvailSndBuf = (m_pSndBuffer == NULL) ? 0 
           : sndBuffersLeft() * m_iMSS;
       perf->byteAvailRcvBuf = (m_pRcvBuffer == NULL) ? 0 
           : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
 
-      pthread_mutex_unlock(&m_ConnectionLock);
+      CGuard::leaveCS(m_ConnectionLock);
    }
    else
    {
@@ -5914,7 +5949,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 
    perf->mbpsBandwidth = Bps2Mbps( availbw * (m_iMaxSRTPayloadSize + pktHdrSize) );
 
-   if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, false) == 0)
    {
       if (m_pSndBuffer)
       {
@@ -5974,7 +6009,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
          //<
       }
 
-      pthread_mutex_unlock(&m_ConnectionLock);
+      CGuard::leaveCS(m_ConnectionLock);
    }
    else
    {
@@ -6137,58 +6172,55 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 void CUDT::initSynch()
 {
-      pthread_mutex_init(&m_SendBlockLock, NULL);
-      pthread_cond_init(&m_SendBlockCond, NULL);
-      pthread_mutex_init(&m_RecvDataLock, NULL);
-      pthread_cond_init(&m_RecvDataCond, NULL);
-      pthread_mutex_init(&m_SendLock, NULL);
-      pthread_mutex_init(&m_RecvLock, NULL);
-      pthread_mutex_init(&m_RcvLossLock, NULL);
-      pthread_mutex_init(&m_AckLock, NULL);
-      pthread_mutex_init(&m_ConnectionLock, NULL);
+      CGuard::createMutex(m_SendBlockLock);
+      CGuard::createCond(m_SendBlockCond);
+      CGuard::createMutex(m_RecvDataLock);
+      CGuard::createCond(m_RecvDataCond);
+      CGuard::createMutex(m_SendLock);
+      CGuard::createMutex(m_RecvLock);
+      CGuard::createMutex(m_RcvLossLock);
+      CGuard::createMutex(m_AckLock);
+      CGuard::createMutex(m_ConnectionLock);
       memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
-      pthread_cond_init(&m_RcvTsbPdCond, NULL);
+      CGuard::createCond(m_RcvTsbPdCond);
 }
 
 void CUDT::destroySynch()
 {
-      pthread_mutex_destroy(&m_SendBlockLock);
-      pthread_cond_destroy(&m_SendBlockCond);
-      pthread_mutex_destroy(&m_RecvDataLock);
-      pthread_cond_destroy(&m_RecvDataCond);
-      pthread_mutex_destroy(&m_SendLock);
-      pthread_mutex_destroy(&m_RecvLock);
-      pthread_mutex_destroy(&m_RcvLossLock);
-      pthread_mutex_destroy(&m_AckLock);
-      pthread_mutex_destroy(&m_ConnectionLock);
-      pthread_cond_destroy(&m_RcvTsbPdCond);
+      CGuard::releaseMutex(m_SendBlockLock);
+      CGuard::releaseCond(m_SendBlockCond);
+      CGuard::releaseMutex(m_RecvDataLock);
+      CGuard::releaseCond(m_RecvDataCond);
+      CGuard::releaseMutex(m_SendLock);
+      CGuard::releaseMutex(m_RecvLock);
+      CGuard::releaseMutex(m_RcvLossLock);
+      CGuard::releaseMutex(m_AckLock);
+      CGuard::releaseMutex(m_ConnectionLock);
+      CGuard::releaseCond(m_RcvTsbPdCond);
 
 }
 
 void CUDT::releaseSynch()
 {
     // wake up user calls
-    pthread_mutex_lock(&m_SendBlockLock);
-    pthread_cond_signal(&m_SendBlockCond);
-    pthread_mutex_unlock(&m_SendBlockLock);
+    CCondDelegate sndblock(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK);
+    sndblock.lock_signal();
 
-    pthread_mutex_lock(&m_SendLock);
-    pthread_mutex_unlock(&m_SendLock);
+    CGuard::enterCS(m_SendLock);
+    CGuard::leaveCS(m_SendLock);
 
-    pthread_mutex_lock(&m_RecvDataLock);
-    pthread_cond_signal(&m_RecvDataCond);
-    pthread_mutex_unlock(&m_RecvDataLock);
+    CCondDelegate rdcond(m_RecvDataCond, m_RecvDataLock, CCondDelegate::NOLOCK);
+    rdcond.lock_signal();
 
-    pthread_mutex_lock(&m_RecvLock);
-    pthread_cond_signal(&m_RcvTsbPdCond);
-    pthread_mutex_unlock(&m_RecvLock);
-    if (!pthread_equal(m_RcvTsbPdThread, pthread_t())) 
+    CCondDelegate tscond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+    tscond.lock_signal();
+
+    if (!CGuard::isthread(m_RcvTsbPdThread))
     {
-        pthread_join(m_RcvTsbPdThread, NULL);
-        m_RcvTsbPdThread = pthread_t();
+        CGuard::join(m_RcvTsbPdThread);
     }
-    pthread_mutex_lock(&m_RecvLock);
-    pthread_mutex_unlock(&m_RecvLock);
+    CGuard::enterCS(m_RecvLock);
+    CGuard::leaveCS(m_RecvLock);
 }
 
 #if ENABLE_HEAVY_LOGGING
@@ -6310,19 +6342,19 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          if (m_bTsbPd)
          {
              /* Newly acknowledged data, signal TsbPD thread */
-             pthread_mutex_lock(&m_RecvLock);
+             CGuard rlock(m_RecvLock);
+             CCondDelegate cc(m_RcvTsbPdCond, rlock);
              if (m_bTsbPdAckWakeup)
-                pthread_cond_signal(&m_RcvTsbPdCond);
-             pthread_mutex_unlock(&m_RecvLock);
+                 cc.signal_locked(rlock);
          }
          else
          {
              if (m_bSynRecving)
              {
                  // signal a waiting "recv" call if there is any data available
-                 pthread_mutex_lock(&m_RecvDataLock);
-                 pthread_cond_signal(&m_RecvDataCond);
-                 pthread_mutex_unlock(&m_RecvDataLock);
+                 CGuard rlock(m_RecvDataLock);
+                 CCondDelegate cc(m_RecvDataCond, rlock);
+                 cc.signal_locked(rlock);
              }
              // acknowledge any waiting epolls to read
              s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
@@ -6703,8 +6735,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       CGuard::leaveCS(m_AckLock);
       if (m_bSynSending)
       {
-          CGuard lk(m_SendBlockLock);
-          pthread_cond_signal(&m_SendBlockCond);
+          CCondDelegate sc(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK);
+          sc.lock_signal();
       }
 
       // acknowledde any waiting epolls to write
@@ -7197,8 +7229,10 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
     }
 }
 
+// [[using thread("SRT:SndQ:worker")]]
 int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<sockaddr_any> r_src_adr)
 {
+   /// XXX THREAD_CHECK_AFFINITY(m_pSndQueue->threadId());
    CPacket& packet = *r_packet;
    uint64_t& ts_tk = *r_ts_tk;
    int payload = 0;
@@ -7456,8 +7490,8 @@ void CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
-        CGuard rl(m_RecvLock);
-        pthread_cond_signal(&m_RcvTsbPdCond);
+        CCondDelegate cc(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+        cc.lock_signal();
     }
 
     // Signal the sender and recver if they are waiting for data.
@@ -7470,8 +7504,26 @@ void CUDT::processClose()
 
 }
 
+inline void ThreadCheckAffinity(const char* function SRT_ATR_UNUSED, pthread_t thr SRT_ATR_UNUSED)
+{
+#if ENABLE_THREAD_LOGGING
+    if (thr == pthread_self())
+        return;
+
+    LOGC(mglog.Fatal, log << "IPE: '" << function << "' should not be executed in this thread!");
+    throw std::runtime_error("INTERNAL ERROR: incorrect function affinity");
+#endif
+}
+
+#define THREAD_CHECK_AFFINITY(thr) ThreadCheckAffinity(__FUNCTION__, thr)
+
 int CUDT::processData(CUnit* unit)
 {
+   THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
+
+   if (m_bClosing)
+       return -1;
+
    CPacket& packet = unit->m_Packet;
 
    // XXX This should be called (exclusively) here:
@@ -7483,7 +7535,7 @@ int CUDT::processData(CUnit* unit)
    m_ullLastRspTime_tk = currtime_tk;
 
    /* We are receiver, start tsbpd thread if TsbPd is enabled */
-   if (m_bTsbPd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
+   if (m_bTsbPd && !CGuard::isthread(m_RcvTsbPdThread))
    {
        HLOGP(mglog.Debug, "Spawning TSBPD thread");
        int st = 0;
@@ -7492,7 +7544,10 @@ int CUDT::processData(CUnit* unit)
            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
        }
        if ( st != 0 )
+       {
+           LOGC(mglog.Error, log << "processData: PROBLEM SPAWNING TSBPD thread: " << st);
            return -1;
+       }
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
@@ -7732,9 +7787,9 @@ int CUDT::processData(CUnit* unit)
 
        if (m_bTsbPd)
        {
-           pthread_mutex_lock(&m_RecvLock);
-           pthread_cond_signal(&m_RcvTsbPdCond);
-           pthread_mutex_unlock(&m_RecvLock);
+           HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
+           CCondDelegate cond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+           cond.lock_signal();
        }
    }
 

@@ -78,15 +78,32 @@ written by
 
 #endif
 
+#ifndef ENABLE_THREAD_LOGGING
+#define LOGS(...)
+#else
+
+// Note: can't use CGuard here because CGuard uses LOGS in itself and will cause infinite recursion.
+#define LOGS(stream, args) if (::srt_logger_config.max_level == logging::LogLevel::debug) { \
+    char tn[512]; g_gmtx.lock(); ThreadName::get(tn); std::ostringstream log; \
+    log << logging::FormatTime(CTimer::getTime()) << "/" << tn << "##: "; \
+    args; \
+    log << std::endl; stream << log.str(); \
+    g_gmtx.unlock(); \
+}
+#endif
+
 #else
 
 #define LOGC(...)
 #define LOGF(...)
 #define LOGP(...)
+#define LOGS(...)
 
 #define HLOGC(...)
 #define HLOGF(...)
 #define HLOGP(...)
+// LOGS doesn't have the heavy version because it's always
+// considered "heavy" and it's turned on only per request.
 
 #endif
 
