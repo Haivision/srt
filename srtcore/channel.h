@@ -184,7 +184,9 @@ private:
    // We need a macro.
 #define SRT_CHN_MAX(a, b) ((a) > (b) ? (a) : (b))
 
-   static const size_t CMSG_MAX_SPACE = SRT_CHN_MAX(CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)));
+   //static const size_t CMSG_MAX_SPACE = SRT_CHN_MAX(CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)));
+   //XXX Experimental
+   static const size_t CMSG_MAX_SPACE = CMSG_SPACE(sizeof(in_pktinfo)) + CMSG_SPACE(sizeof(in6_pktinfo));
 
 #undef SRT_CHN_MAX
 
