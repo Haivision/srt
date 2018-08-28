@@ -83,19 +83,6 @@ using namespace std;
 
 map<string,string> g_options;
 
-string Option(string deflt="") { return deflt; }
-
-template <class... Args>
-string Option(string deflt, string key, Args... further_keys)
-{
-    map<string, string>::iterator i = g_options.find(key);
-    if ( i == g_options.end() )
-        return Option(deflt, further_keys...);
-    return i->second;
-}
-
-ostream* cverb = &cout;
-
 struct ForcedExit: public std::runtime_error
 {
     ForcedExit(const std::string& arg):
@@ -213,44 +200,94 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    vector<string> args;
-    copy(argv+1, argv+argc, back_inserter(args));
 
-    // Check options
-    vector<string> params;
+    OptionName
+        o_timeout   ("<timeout[s]=0> Data transmission timeout", "t",   "to", "timeout" ),
+        o_chunk     ("<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
+        o_bandwidth ("<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
+        o_report    ("<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
+        o_verbose   (" Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_crash     (" Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
+        o_loglevel  ("<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
+        o_logfa     ("<FA=all> Enabled Functional Areas", "lfa", "logfa"),
+        o_logfile   ("<filepath> File to send logs to", "lf",  "logfile"),
+        o_stats     ("<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_logint    (" Use internal function for receiving logs (for testing)",        "loginternal"),
+        o_skipflush (" Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
+        o_stoptime  ("<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_help      (" This help", "?",   "help", "-help")
+            ;
 
-    for (string a: args)
+
+    vector<OptionScheme> optargs = {
+        { o_timeout, OptionScheme::ARG_ONE },
+        { o_chunk, OptionScheme::ARG_ONE },
+        { o_bandwidth, OptionScheme::ARG_ONE },
+        { o_report, OptionScheme::ARG_ONE },
+        { o_verbose, OptionScheme::ARG_NONE },
+        { o_crash, OptionScheme::ARG_NONE },
+        { o_loglevel, OptionScheme::ARG_ONE },
+        { o_logfa, OptionScheme::ARG_ONE },
+        { o_logfile, OptionScheme::ARG_ONE },
+        { o_stats, OptionScheme::ARG_ONE },
+        { o_skipflush, OptionScheme::ARG_NONE },
+        { o_stoptime, OptionScheme::ARG_ONE },
+    };
+
+    options_t params = ProcessOptions(argv, argc, optargs);
+
+    // Check the special option: -g
+    // The syntax is:
+    // ./stransmit -g SRT1 SRT2 SRT3 SRT4: <1, 2, 3> is a source redundancy group, 4 is target
+    // ./stransmit SRT1 -g SRT2 SRT3 SRT4: 1 is a single source, 2 3 4 is a target redundancy group
+    // ./stransmit SRT1 SRT2 SRT3 -g SRT4 SRT5 SRT6: 1, 2, 3 is a source redundancy group, 4, 5, 6 is a target redundancy group
+
+    bool need_help = Option<OutString>(params, "no", o_help) != "no";
+
+    vector<string> args = params[""];
+
+    string source_spec, target_spec;
+    vector<string> source_items, target_items;
+
+    if (!need_help)
     {
-        if ( a[0] == '-' )
-        {
-            string key = a.substr(1);
-            size_t pos = key.find(':');
-            if ( pos == string::npos )
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos+1);
-            key = key.substr(0, pos);
-            g_options[key] = value;
-            continue;
-        }
+        // You may still need help.
 
-        params.push_back(a);
+        if (args.size() < 2)
+        {
+            cerr << "ERROR: source and target URI must be specified.\n\n";
+            need_help = true;
+        }
+        else
+        {
+            source_items.push_back(args[0]);
+            target_items.push_back(args[1]);
+        }
     }
 
-    if ( params.size() != 2 )
+    if (need_help)
     {
-        cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
-        cerr << "\t-t:<timeout=0> - connection timeout\n";
-        cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
-        cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
-        cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
-        cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
-        cerr << "\t-k - crash on error (aka developer mode)\n";
-        cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
+        cerr << "Usage:\n";
+        cerr << "     " << argv[0] << " [options] <input> <output>\n";
+        cerr << "*** (Position of [options] is unrestricted.)\n";
+        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+        cerr << "where:\n";
+        cerr << "    <input> and <output> is specified by an URI.\n";
+        cerr << "SUPPORTED URI SCHEMES:\n";
+        cerr << "    srt: use SRT connection\n";
+        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
+        cerr << "    file (default if scheme not specified) specified as:\n";
+        cerr << "       - empty host/port and absolute file path in the URI\n";
+        cerr << "       - only a filename, also as a relative path\n";
+        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
+        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
+        for (auto os: optargs)
+            cout << OptionHelpItem(os.id) << endl;
         return 1;
     }
 
-    int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
-    size_t chunk = stoul(Option("0", "c", "chunk"), 0, 0);
+    int timeout = Option<OutNumber>(params, "30", o_timeout);
+    size_t chunk = Option<OutNumber>(params, "0", o_chunk);
     if ( chunk == 0 )
     {
         chunk = SRT_LIVE_DEF_PLSIZE;
@@ -259,8 +296,11 @@ int main( int argc, char** argv )
     {
         transmit_chunk_size = chunk;
     }
+    
+    size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
+    transmit_bw_report = Option<OutNumber>(params, "0", o_report);
+    string verbose_val = Option<OutString>(params, "no", o_verbose);
 
-    string verbose_val = Option("no", "v", "verbose");
     int verbch = 1; // default cerr
     if (verbose_val != "no")
     {
@@ -288,30 +328,18 @@ int main( int argc, char** argv )
         }
     }
 
-    bool crashonx = Option("no", "k", "crash") != "no";
-    string loglevel = Option("error", "loglevel");
-    string logfa = Option("general", "logfa");
-    string logfile = Option("", "logfile");
-    bool internal_log = Option("no", "loginternal") != "no";
-    bool skip_flushing = Option("no", "S", "skipflush") != "no";
+    bool crashonx = OptionPresent(params, o_crash);
+
+    string loglevel = Option<OutString>(params, "error", o_loglevel);
+    string logfa = Option<OutString>(params, "general", o_logfa);
+    string logfile = Option<OutString>(params, "", o_logfile);
+    transmit_stats_report = Option<OutNumber>(params, "0", o_stats);
+
+    bool internal_log = OptionPresent(params, o_logint);
+    bool skip_flushing = OptionPresent(params, o_skipflush);
 
     // Options that require integer conversion
-    size_t bandwidth;
-    size_t stoptime;
-
-    try
-    {
-        bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
-        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
-        transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
-        stoptime = stoul(Option("0", "d", "stoptime"));
-    }
-    catch (std::invalid_argument)
-    {
-        cerr << "ERROR: Incorrect integer number specified for an option.\n";
-        return 1;
-    }
-
+    size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
@@ -387,8 +415,8 @@ int main( int argc, char** argv )
 
     try
     {
-        src = Source::Create(params[0]);
-        tar = Target::Create(params[1]);
+        src = Source::Create(source_spec);
+        tar = Target::Create(target_spec);
     }
     catch(std::exception& x)
     {
@@ -424,7 +452,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'";
+    Verb() << "STARTING TRANSMISSION: '" << args[0] << "' --> '" << args[1] << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)

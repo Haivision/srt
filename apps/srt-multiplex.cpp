@@ -467,9 +467,9 @@ int main( int argc, char** argv )
 
     // Check options
     vector<OptionScheme> optargs = {
-        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
-        { {"i"}, OptionScheme::ARG_VAR },
-        { {"o"}, OptionScheme::ARG_VAR }
+        { OptionName {"ll", "loglevel"}, OptionScheme::ARG_ONE },
+        { OptionName {"i"} , OptionScheme::ARG_VAR },
+        { OptionName {"o"} , OptionScheme::ARG_VAR }
     };
     map<string, vector<string>> params = ProcessOptions(argv, argc, optargs);
 

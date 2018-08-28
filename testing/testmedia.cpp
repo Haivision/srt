@@ -260,6 +260,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     // Assign the others here.
     m_options = par;
+    m_options["mode"] = m_mode;
 }
 
 void SrtCommon::PrepareListener(string host, int port, int backlog)
@@ -706,16 +707,13 @@ bytevector SrtSource::Read(size_t chunk)
                     SRTSOCKET sready[2];
                     if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
                     {
-                        if ( Verbose::on )
-                        {
-                            Verb() << "... epoll reported ready " << len << " sockets";
-                        }
+                        Verb() << "... epoll reported ready " << len << " sockets";
                         continue;
                     }
                     // If was -1, then passthru.
                 }
             }
-            Error(UDT::getlasterror(), "recvmsg");
+            Error(UDT::getlasterror(), "srt_recvmsg2");
         }
 
         if ( stat == 0 )

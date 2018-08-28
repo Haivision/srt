@@ -55,7 +55,7 @@ void OnINT_ForceExit(int)
 
 int main( int argc, char** argv )
 {
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_buffer = {"b", "buffer" },
         o_verbose = {"v", "verbose" },

@@ -294,7 +294,7 @@ public:
 
 int main( int argc, char** argv )
 {
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_verbose = {"v", "verbose" },
         o_input = {"i", "input"},
