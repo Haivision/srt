@@ -35,26 +35,35 @@ struct sockaddr_any
     };
     socklen_t len;
 
-    sockaddr_any(int domain = AF_INET)
+    // Default domain is unspecified, and
+    // in this case the size is 0.
+    // Note that AF_* (and alias PF_*) types have
+    // many various values, of which only
+    // AF_INET and AF_INET6 are handled here.
+    // Others make the same effect as unspecified.
+    explicit sockaddr_any(int domain = AF_UNSPEC)
     {
+        // Default domain is "unspecified"
         memset(this, 0, sizeof *this);
         sa.sa_family = domain;
         len = size();
     }
 
-    sockaddr_any(const sockaddr* src)
+    sockaddr_any(const sockaddr* source, socklen_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (src->sa_family == AF_INET)
+        if (source->sa_family == AF_INET && namelen >= sizeof sin)
         {
-            memcpy(&sin, src, sizeof sin);
+            memcpy(&sin, source, sizeof sin);
+            len = sizeof sin;
         }
-        else if (src->sa_family == AF_INET6)
+        else if (source->sa_family == AF_INET6 && namelen >= sizeof sin6)
         {
             // Note: this isn't too safe, may crash for stupid values
-            // of src->sa_family or any other data
+            // of source->sa_family or any other data
             // in the source structure, so make sure it's correct first.
-            memcpy(&sin6, src, sizeof sin6);
+            memcpy(&sin6, source, sizeof sin6);
+            len = sizeof sin6;
         }
         else
         {
@@ -82,18 +91,50 @@ struct sockaddr_any
         len = sizeof sin6;
     }
 
-    socklen_t size() const
+    static socklen_t size(int family)
     {
-        switch (sa.sa_family)
+        switch (family)
         {
-        case AF_INET: return socklen_t(sizeof sin);
-        case AF_INET6: return socklen_t(sizeof sin6);
+        case AF_INET: return socklen_t(sizeof (sockaddr_in));
+        case AF_INET6: return socklen_t(sizeof (sockaddr_in6));
 
-        default: return 0; // fallback, impossible
+        default: return 0; // fallback
         }
     }
 
+    bool empty() const
+    {
+        switch (sa.sa_family)
+        {
+        case AF_INET:
+            return sin.sin_port == 0 && sin.sin_addr.s_addr == 0;
+
+        case AF_INET6:
+            if (sin6.sin6_port != 0)
+                return false;
+
+            // This length expression should result in 4, as
+            // the size of sin6_addr is 16.
+            for (size_t i = 0; i < (sizeof sin6.sin6_addr)/sizeof(int32_t); ++i)
+                if (((int32_t*)&sin6.sin6_addr)[i] != 0)
+                    return false;
+            return true;
+        }
+
+        return true; // unspec-family address is always empty
+    }
+
+    socklen_t size() const
+    {
+        return size(sa.sa_family);
+    }
+
     int family() const { return sa.sa_family; }
+    void family(int val)
+    {
+        sa.sa_family = val;
+        len = size();
+    }
 
     // port is in exactly the same location in both sin and sin6
     // and has the same size. This is actually yet another common
@@ -111,10 +152,12 @@ struct sockaddr_any
     }
 
     sockaddr* get() { return &sa; }
-    sockaddr* operator&() { return &sa; }
-
     const sockaddr* get() const { return &sa; }
+    sockaddr* operator&() { return &sa; }
     const sockaddr* operator&() const { return &sa; }
+
+    operator sockaddr&() { return sa; }
+    operator const sockaddr&() const { return sa; }
 
     template <int> struct TypeMap;
 
@@ -128,6 +171,13 @@ struct sockaddr_any
             return memcmp(&c1, &c2, sizeof(c1)) == 0;
         }
     };
+
+    bool operator==(const sockaddr_any& c2) const
+    {
+        return Equal()(*this, c2);
+    }
+
+    bool operator!=(const sockaddr_any& c2) const { return !(*this == c2); }
 
     struct EqualAddress
     {

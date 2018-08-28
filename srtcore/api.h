@@ -77,9 +77,8 @@ public:
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
-   int m_iIPversion;                         //< IP version
-   sockaddr* m_pSelfAddr;                    //< pointer to the local address of the socket
-   sockaddr* m_pPeerAddr;                    //< pointer to the peer address of the socket
+   sockaddr_any m_SelfAddr;                    //< local address of the socket
+   sockaddr_any m_PeerAddr;                    //< peer address of the socket
 
    SRTSOCKET m_SocketID;                     //< socket ID
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
@@ -141,11 +140,9 @@ public:
    int cleanup();
 
       /// Create a new UDT socket.
-      /// @param [in] af IP version, IPv4 (AF_INET) or IPv6 (AF_INET6).
-      /// @param [in] type (ignored)
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket(int af, int );
+   SRTSOCKET newSocket();
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;
@@ -153,7 +150,7 @@ public:
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
-   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+   int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
 
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.
@@ -169,14 +166,14 @@ public:
 
       // socket APIs
 
-   int bind(const SRTSOCKET u, const sockaddr* name, int namelen);
+   int bind(const SRTSOCKET u, const sockaddr_any& name);
    int bind(const SRTSOCKET u, UDPSOCKET udpsock);
    int listen(const SRTSOCKET u, int backlog);
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int close(const SRTSOCKET u);
-   int getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
-   int getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
+   void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
+   void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
    int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
    int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
    int epoll_create();
@@ -218,9 +215,9 @@ private:
 
 private:
    void connect_complete(const SRTSOCKET u);
-   CUDTSocket* locate(const SRTSOCKET u);
-   CUDTSocket* locate(const sockaddr* peer, const SRTSOCKET id, int32_t isn);
-   void updateMux(CUDTSocket* s, const sockaddr* addr = NULL, const UDPSOCKET* = NULL);
+   CUDTSocket* locateSocket(const SRTSOCKET u);
+   CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+   void updateMux(CUDTSocket* s, const sockaddr_any& addr, const int* udp_sockets = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
@@ -255,13 +252,13 @@ private:
 };
 
 // Debug support
-inline std::string SockaddrToString(const sockaddr* sadr)
+inline std::string SockaddrToString(const sockaddr_any& sadr)
 {
     void* addr =
-        sadr->sa_family == AF_INET ?
-        (void*)&((sockaddr_in*)sadr)->sin_addr
-        : sadr->sa_family == AF_INET6 ?
-        (void*)&((sockaddr_in6*)sadr)->sin6_addr
+        sadr.family() == AF_INET ?
+            (void*)&sadr.sin.sin_addr
+        : sadr.family() == AF_INET6 ?
+            (void*)&sadr.sin6.sin6_addr
         : 0;
     // (cast to (void*) is required because otherwise the 2-3 arguments
     // of ?: operator would have different types, which isn't allowed in C++.
@@ -278,12 +275,12 @@ inline std::string SockaddrToString(const sockaddr* sadr)
     flags = NI_NUMERICHOST | NI_NUMERICSERV;
 #endif
 
-    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, flags))
+    if (!getnameinfo(sadr.get(), sadr.size(), hostbuf, 1024, NULL, 0, flags))
     {
         output << hostbuf;
     }
 
-    output << ":" << ntohs(((sockaddr_in*)sadr)->sin_port); // TRICK: sin_port and sin6_port have the same offset and size
+    output << ":" << sadr.hport();
     return output.str();
 }
 
