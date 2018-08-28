@@ -103,7 +103,8 @@ m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
 #endif
 m_iSndBufSize(65536),
-m_iRcvBufSize(65536)
+m_iRcvBufSize(65536),
+m_bBindMasked(true) // By default the socket is bound to ANY
 {
 }
 
@@ -136,6 +137,7 @@ void CChannel::open(const sockaddr_any& addr)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
     m_BindAddr = addr;
+    m_bBindMasked = m_BindAddr.isany();
 
     LOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(m_BindAddr));
 
