@@ -6207,7 +6207,7 @@ void CUDT::releaseSynch()
     CCondDelegate tscond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
     tscond.lock_signal();
 
-    if (!CGuard::isthread(m_RcvTsbPdThread))
+    if (CGuard::isthread(m_RcvTsbPdThread))
     {
         CGuard::join(m_RcvTsbPdThread);
     }
