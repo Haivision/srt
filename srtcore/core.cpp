@@ -5449,15 +5449,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
             {
-                // XXX Experimental, so just inform:
-                // Check if the last check of isRcvDataReady has returned any "next time for a packet".
-                // If so, then it means that TSBPD has fallen asleep only up to this time, so waking it up
-                // would be "spurious". If a new packet comes ahead of the packet which's time is returned
-                // in tstime (as TSBPD sleeps up to then), the procedure that receives it is responsible
-                // of kicking TSBPD.
-                // bool spurious = (tstime != 0);
-
-                HLOGC(tslog.Debug, log << "receiveMessage: KICK tsbpd" << (tstime ? " (SPURIOUS!)" : ""));
+                HLOGC(tslog.Debug, log << "receiveMessage: KICK tsbpd");
                 tscond.signal_locked(recvguard);
             }
 
