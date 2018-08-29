@@ -257,6 +257,7 @@ public:
       /// @return Text message for the exception description.
 
    const char* getErrorMessage();
+   const std::string& getErrorString();
 
       /// Get the system errno for the exception.
       /// @return errno.

@@ -917,15 +917,15 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    {
       int32_t event = 0;
       if (m_bBroken)
-         event |= UDT_EPOLL_ERR;
+         event |= SRT_EPOLL_ERR;
       else
       {
          CGuard::enterCS(m_RecvLock);
          if (m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady())
-            event |= UDT_EPOLL_IN;
+            event |= SRT_EPOLL_IN;
          CGuard::leaveCS(m_RecvLock);
          if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
-            event |= UDT_EPOLL_OUT;
+            event |= SRT_EPOLL_OUT;
       }
       *(int32_t*)optval = event;
       optlen = sizeof(int32_t);
@@ -1290,7 +1290,7 @@ size_t CUDT::fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int
     {
     case SRT_CMD_HSREQ: return fillSrtHandshake_HSREQ(srtdata, srtlen, hs_version);
     case SRT_CMD_HSRSP: return fillSrtHandshake_HSRSP(srtdata, srtlen, hs_version);
-    default: LOGC(mglog.Fatal, log << "IPE: createSrtHandshake/sendSrtMsg called with value " << msgtype); return 0;
+    default: LOGC(mglog.Fatal, log << "IPE: fillSrtHandshake/sendSrtMsg called with value " << msgtype); return 0;
     }
 }
 
@@ -2706,12 +2706,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_iISN = m_ConnReq.m_iISN = forced_isn;
     }
 
-    m_iLastDecSeq = m_iISN - 1;
-    m_iSndLastAck = m_iISN;
-    m_iSndLastDataAck = m_iISN;
-    m_iSndLastFullAck = m_iISN;
-    m_iSndCurrSeqNo = m_iISN - 1;
-    m_iSndLastAck2 = m_iISN;
+    setInitialSndSeq(m_iISN);
     m_ullSndLastAck2Time = CTimer::getTime();
 
     // Inform the server my configurations.
@@ -2741,7 +2736,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     reqpkt.setLength(hs_size);
 
     uint64_t now = CTimer::getTime();
-    reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+    setPacketTS(reqpkt, now);
 
     HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (" << now << "). SENDING HS: " << m_ConnReq.show());
 
@@ -2768,12 +2763,17 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     ///
     //
 
-    // asynchronous connect, return immediately
+    //////////////////////////////////////////////////////
+    // SYNCHRO BAR
+    //////////////////////////////////////////////////////
     if (!m_bSynRecving)
     {
         HLOGC(mglog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Deferring the process to RcvQ:worker");
         return;
     }
+
+    // Below this bar, rest of function maintains only and exclusively
+    // the SYNCHRONOUS (blocking) connection process. 
 
     // Wait for the negotiated configurations from the peer side.
 
@@ -2818,7 +2818,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 #endif
 
             m_llLastReqTime = now;
-            reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+            setPacketTS(reqpkt, now);
             m_pSndQueue->sendto(serv_addr, reqpkt, use_source_adr);
         }
         else
@@ -2833,7 +2833,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             use_source_adr = response.udpDestAddr();
 
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
-            cst = processConnectResponse(response, &e, true /*synchro*/);
+            cst = processConnectResponse(response, &e, COM_SYNCHRO);
 
             HLOGC(mglog.Debug, log << CONID() << "startConnect: response processing result: " << ConnectStatusStr(cst));
 
@@ -2984,7 +2984,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
 
     CGuard cg(m_ConnectionLock); // FIX
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
-    cst = processConnectResponse(pkt, &e, false);
+    cst = processConnectResponse(pkt, &e, COM_ASYNCHRO);
 
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
         << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
@@ -3006,7 +3006,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
     request.setControl(UMSG_HANDSHAKE);
     request.allocate(m_iMaxSRTPayloadSize);
     uint64_t now = CTimer::getTime();
-    request.m_iTimeStamp = int(now - this->m_StartTime);
+    setPacketTS(request, now);
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH (" << now << "). Should prevent too quick responses.");
     m_llLastReqTime = now;
@@ -3398,7 +3398,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         uint64_t now = CTimer::getTime();
         HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
         m_llLastReqTime = now;
-        rpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+        setPacketTS(rpkt, now);
         m_pSndQueue->sendto(serv_addr, rpkt, m_SourceAddr);
 
         return CONN_ACCEPT;
@@ -3418,7 +3418,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     return CONN_CONTINUE;
 }
 
-EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout, bool synchro) ATR_NOEXCEPT
+EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT
 {
     // NOTE: ASSUMED LOCK ON: m_ConnectionLock.
 
@@ -3629,13 +3629,9 @@ void CUDT::applyResponseSettings(const CPacket& hspkt)
     int udpsize = m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN = m_ConnRes.m_iISN;
-    m_iRcvLastAck = m_ConnRes.m_iISN;
-#ifdef ENABLE_LOGGING
-    m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-    m_iRcvLastSkipAck = m_iRcvLastAck;
-    m_iRcvLastAckAck = m_ConnRes.m_iISN;
-    m_iRcvCurrSeqNo = m_ConnRes.m_iISN - 1;
+
+    setInitialRcvSeq(m_iPeerISN);
+
     m_PeerID = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
     m_SourceAddr = hspkt.udpDestAddr();
@@ -3697,7 +3693,11 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
-    setupCC();
+    if (!setupCC())
+    {
+        LOGC(mglog.Error, log << "setupCC failed - rejecting connection");
+        return CONN_REJECT;
+    }
 
     // And, I am connected too.
     m_bConnecting = false;
@@ -3723,7 +3723,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     s_UDTUnited.connect_complete(m_SocketID);
 
     // acknowledde any waiting epolls to write
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
 
     LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
@@ -4177,15 +4177,7 @@ void* CUDT::tsbpd(void* param)
                 * packet ready to play but preceeded by missing packets (hole).
                 */
 
-                /* Update drop/skip stats */
-                self->m_iRcvDropTotal += seqlen;
-                self->m_iTraceRcvDrop += seqlen;
-                /* Estimate dropped/skipped bytes from average payload */
-                int avgpayloadsz = self->m_pRcvBuffer->getRcvAvgPayloadSize();
-                self->m_ullRcvBytesDropTotal += seqlen * avgpayloadsz;
-                self->m_ullTraceRcvBytesDrop += seqlen * avgpayloadsz;
-
-                self->unlose(self->m_iRcvLastSkipAck, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
+                self->updateForgotten(seqlen, self->m_iRcvLastSkipAck, skiptoseqno);
                 self->m_pRcvBuffer->skipData(seqlen);
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
@@ -4199,7 +4191,7 @@ void* CUDT::tsbpd(void* param)
                     << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
-                LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
+                LOGC(dlog.Warn, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
 #endif
 
                 tsbpdtime = 0; //Next sent ack will unblock
@@ -4234,7 +4226,7 @@ void* CUDT::tsbpd(void* param)
          /*
          * Set EPOLL_IN to wakeup any thread waiting on epoll
          */
-         self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, UDT_EPOLL_IN, true);
+         self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
          CTimer::triggerEvent();
          tsbpdtime = 0;
       }
@@ -4276,6 +4268,19 @@ void* CUDT::tsbpd(void* param)
    THREAD_EXIT();
    HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
    return NULL;
+}
+
+void CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
+{
+    /* Update drop/skip stats */
+    m_iRcvDropTotal += seqlen;
+    m_iTraceRcvDrop += seqlen;
+    /* Estimate dropped/skipped bytes from average payload */
+    int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+    m_ullRcvBytesDropTotal += seqlen * avgpayloadsz;
+    m_ullTraceRcvBytesDrop += seqlen * avgpayloadsz;
+
+    unlose(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
 }
 
 bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUDTException* eout)
@@ -4356,13 +4361,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
 
    m_iPeerISN = hs->m_iISN;
 
-   m_iRcvLastAck = hs->m_iISN;
-#ifdef ENABLE_LOGGING
-   m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-   m_iRcvLastSkipAck = m_iRcvLastAck;
-   m_iRcvLastAckAck = hs->m_iISN;
-   m_iRcvCurrSeqNo = hs->m_iISN - 1;
+   setInitialRcvSeq(m_iPeerISN);
 
    m_PeerID = hs->m_iID;
    hs->m_iID = m_SocketID;
@@ -4370,12 +4369,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
    // use peer's ISN and send it back for security check
    m_iISN = hs->m_iISN;
 
-   m_iLastDecSeq = m_iISN - 1;
-   m_iSndLastAck = m_iISN;
-   m_iSndLastDataAck = m_iISN;
-   m_iSndLastFullAck = m_iISN;
-   m_iSndCurrSeqNo = m_iISN - 1;
-   m_iSndLastAck2 = m_iISN;
+   setInitialSndSeq(m_iISN);
    m_ullSndLastAck2Time = CTimer::getTime();
 
    // this is a reponse handshake
@@ -4529,7 +4523,7 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     return m_pCryptoControl->init(side, bidirectional);
 }
 
-void CUDT::setupCC()
+bool CUDT::setupCC()
 {
     // Prepare configuration object,
     // Create the CCC object and configure it.
@@ -4545,7 +4539,10 @@ void CUDT::setupCC()
 
     // Smoother will retrieve whatever parameters it needs
     // from *this.
-    m_Smoother.configure(this);
+    if (!m_Smoother.configure(this))
+    {
+        return false;
+    }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
     // When default 0 value is returned, the current value set by CUDT
@@ -4560,7 +4557,10 @@ void CUDT::setupCC()
         << " rtt=" << m_iRTT
         << " bw=" << m_iBandwidth);
 
-    updateCC(TEV_INIT, TEV_INIT_RESET);
+    if (!updateCC(TEV_INIT, TEV_INIT_RESET))
+        return false;
+
+    return true;
 }
 
 void CUDT::considerLegacySrtHandshake(uint64_t timebase)
@@ -4640,7 +4640,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 void CUDT::addressAndSend(CPacket& pkt)
 {
     pkt.m_iID = m_PeerID;
-    pkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+    setPacketTS(pkt, CTimer::getTime());
     m_pSndQueue->sendto(m_PeerAddr, pkt, m_SourceAddr);
 }
 
@@ -4700,7 +4700,7 @@ void CUDT::close()
     * it would remove the socket from the EPoll after close.
     */
    // trigger any pending IO events.
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
    // then remove itself from all epoll monitoring
    try
    {
@@ -4747,8 +4747,6 @@ void CUDT::close()
           sendCtrl(UMSG_SHUTDOWN);
       }
 
-      m_pCryptoControl->close();
-
       // Store current connection information.
       CInfoBlock ib;
        ib.m_iFamily = m_PeerAddr.family();
@@ -4759,6 +4757,9 @@ void CUDT::close()
 
       m_bConnected = false;
    }
+
+   if (m_pCryptoControl)
+       m_pCryptoControl->close();
 
    if (m_bTsbPd && CGuard::isthread(m_RcvTsbPdThread))
    {
@@ -4880,7 +4881,7 @@ int CUDT::send(const char* data, int len)
    if (sndBuffersLeft() <= 0)
    {
       // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
    }
 
    return size;
@@ -4985,7 +4986,7 @@ int CUDT::receiveBuffer(char* data, int len)
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     if ((res <= 0) && (m_iRcvTimeOut >= 0))
@@ -5272,7 +5273,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
     {
         // write is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
     }
 
 #ifdef SRT_ENABLE_ECN
@@ -5368,10 +5369,11 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     if (m_bBroken || m_bClosing)
     {
+        HLOGC(mglog.Debug, log << "recvmsg: CONNECTION BROKEN - reading from recv buffer just for formality");
         int res = m_pRcvBuffer->readMsg(data, len);
         mctrl.srctime = 0;
 
-        /* Kick TsbPd thread to schedule next wakeup (if running) */
+        // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
         {
             tscond.signal_locked(recvguard);
@@ -5380,7 +5382,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         if (!m_pRcvBuffer->isRcvDataReady())
         {
             // read is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
         }
 
         if (res == 0)
@@ -5395,38 +5397,42 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     if (!m_bSynRecving)
     {
+        HLOGC(dlog.Debug, log << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
         int res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
         if (res == 0)
         {
             // read is not available any more
-
+            HLOGP(dlog.Debug, "receiveMessage: nothing to read, kicking TSBPD, return AGAIN");
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
                 tscond.signal_locked(recvguard);
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
-        else
+
+        if (!m_pRcvBuffer->isRcvDataReady())
         {
-            if (!m_pRcvBuffer->isRcvDataReady())
-            {
-                // Kick TsbPd thread to schedule next wakeup (if running)
-                if (m_bTsbPd)
-                    tscond.signal_locked(recvguard);
+            HLOGP(dlog.Debug, "receiveMessage: DATA READ, but nothing more - kicking TSBPD.");
+            // Kick TsbPd thread to schedule next wakeup (if running)
+            if (m_bTsbPd)
+                tscond.signal_locked(recvguard);
 
-                // Shut up EPoll if no more messages in non-blocking mode
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            // Shut up EPoll if no more messages in non-blocking mode
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
 
-                // After signaling the tsbpd for ready data, report the bandwidth.
-                double bw SRT_ATR_UNUSED = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
-                HLOGC(mglog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
-            }
-            return res;
+            // After signaling the tsbpd for ready data, report the bandwidth.
+#if ENABLE_HEAVY_LOGGING
+            double bw = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
+            HLOGC(mglog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
+#endif
         }
+        return res;
     }
+
+    HLOGC(dlog.Debug, log << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size=" << len);
 
     int res = 0;
     bool timeout = false;
@@ -5504,7 +5510,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     // Unblock when required
@@ -5627,7 +5633,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
     if (sndBuffersLeft() <= 0)
     {
         // write is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
     }
 
     return size - tosend;
@@ -5746,7 +5752,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     return size - torecv;
@@ -6029,7 +6035,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    }
 }
 
-void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
+bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 {
     // Special things that must be done HERE, not in Smoother,
     // because it involves the input buffer in CUDT. It would be
@@ -6039,12 +6045,12 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
     // time when the sending buffer. For sanity check, check both first.
     if (!m_Smoother.ready() || !m_pSndBuffer)
     {
-        LOGC(mglog.Error, log << "updateCC: CAN'T DO UPDATE - smoother "
+        LOGC(mglog.Error, log << CONID() << "updateCC: CAN'T DO UPDATE - smoother "
             << (m_Smoother.ready() ? "ready" : "NOT READY")
             << "; sending buffer "
             << (m_pSndBuffer ? "NOT CREATED" : "created"));
 
-        return;
+        return false;
     }
 
     HLOGC(mglog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(evt));
@@ -6060,7 +6066,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
         if (only_input && m_llMaxBW)
         {
-            HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
+            HLOGC(mglog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
             // Don't change
         }
         else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
@@ -6087,7 +6093,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
                 m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? SND_INPUTRATE_FAST_START_US: 0);
             }
 
-            HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
+            HLOGC(mglog.Debug, log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
                 << (only_input == TEV_INIT_RESET ? " (UNCHANGED)"
                         : only_input == TEV_INIT_OHEADBW ? " (only Overhead)": " (updated sampling rate)"));
         }
@@ -6124,7 +6130,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         }
     }
 
-    HLOGC(mglog.Debug, log << "udpateCC: emitting signal for EVENT:" << TransmissionEventStr(evt));
+    HLOGC(mglog.Debug, log << CONID() << "updateCC: emitting signal for EVENT:" << TransmissionEventStr(evt));
 
     // Now execute a smoother-defined action for that event.
     EmitSignal(evt, arg);
@@ -6140,9 +6146,9 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
         m_dCongestionWindow = m_Smoother->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
-        HLOGC(mglog.Debug, log << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
+        HLOGC(mglog.Debug, log << CONID() << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
             << "tk (" << m_Smoother->pktSndPeriod_us() << "us) cgwindow="
-            << std::setprecision(3) << m_dCongestionWindow);
+            << std::fixed << std::setprecision(5) << m_dCongestionWindow);
 #endif
     }
 
@@ -6153,6 +6159,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
     if (!(callcnt++ % 250)) cerr << "SndPeriod=" << (m_ullInterval_tk/m_ullCPUFrequency) << "\n");
 
 #endif
+
+    return true;
 }
 
 void CUDT::initSynch()
@@ -6246,7 +6254,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
 
-   ctrlpkt.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
+   setPacketTS(ctrlpkt, currtime_tk/m_ullCPUFrequency);
 
    int nbsent = 0;
    int local_prevack = 0;
@@ -6342,7 +6350,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
                  cc.signal_locked(rlock);
              }
              // acknowledge any waiting epolls to read
-             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
          }
          CGuard::enterCS(m_AckLock);
       }
@@ -6418,7 +6426,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          }
 
          ctrlpkt.m_iID = m_PeerID;
-         ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+         setPacketTS(ctrlpkt, CTimer::getTime());
          nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
          DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
@@ -6725,7 +6733,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       }
 
       // acknowledde any waiting epolls to write
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
 
       // insert this socket to snd list if it is not on the list yet
       m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
@@ -6828,8 +6836,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       //   sendCtrl(UMSG_CGWARNING);
 
       // RTT EWMA
-      m_iRTTVar = (m_iRTTVar * 3 + abs(rtt - m_iRTT)) >> 2;
-      m_iRTT = (m_iRTT * 7 + rtt) >> 3;
+      m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+      m_iRTT = avg_iir<8>(m_iRTT, rtt);
 
       updateCC(TEV_ACKACK, ack);
 
@@ -6941,6 +6949,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
    case UMSG_CGWARNING: //100 - Delay Warning
       // One way packet delay is increasing, so decrease the sending rate
       m_ullInterval_tk = (uint64_t)ceil(m_ullInterval_tk * 1.125);
+      // XXX The use of this field hasn't been found; a field with the
+      // same name is found in FileSmoother (created after CUDTCC from UDT)
+      // and it's updated with the value of m_iSndCurrSeqNo upon necessity.
       m_iLastDecSeq = m_iSndCurrSeqNo;
       // XXX Note as interesting fact: this is only prepared for handling,
       // but nothing in the code is sending this message. Probably predicted
@@ -7044,7 +7055,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
              response.m_iID = m_PeerID;
              uint64_t currtime_tk;
              CTimer::rdtsc(currtime_tk);
-             response.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
+             setPacketTS(response, currtime_tk/m_ullCPUFrequency);
              int nbsent = m_pSndQueue->sendto(m_PeerAddr, response, m_SourceAddr);
              if (nbsent)
              {
@@ -7072,7 +7083,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // Signal the sender and recver if they are waiting for data.
       releaseSynch();
       // Unblock any call so they learn the connection_broken error
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
       CTimer::triggerEvent();
 
@@ -7083,13 +7094,20 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
       CGuard::leaveCS(m_RecvLock);
 
-      unlose(*(int32_t*)ctrlpkt.m_pcData, *(int32_t*)(ctrlpkt.m_pcData + 4));
-
-      // move forward with current recv seq no.
-      if ((CSeqNo::seqcmp(*(int32_t*)ctrlpkt.m_pcData, CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
-         && (CSeqNo::seqcmp(*(int32_t*)(ctrlpkt.m_pcData + 4), m_iRcvCurrSeqNo) > 0))
       {
-         m_iRcvCurrSeqNo = *(int32_t*)(ctrlpkt.m_pcData + 4);
+          int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;
+
+          unlose(dropdata[0], dropdata[1]);
+
+          // move forward with current recv seq no.
+          // SYMBOLIC:
+          // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
+          //   && dropdata[1] >% m_iRcvCurrSeqNo )
+          if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
+                  && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
+          {
+              m_iRcvCurrSeqNo = dropdata[1];
+          }
       }
 
       break;
@@ -7284,8 +7302,7 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
          m_pSndLossList->remove(seqpair[1]);
 
          // skip all dropped packets
-         if (CSeqNo::seqcmp(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1])) < 0)
-             m_iSndCurrSeqNo = CSeqNo::incseq(seqpair[1]);
+         m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1]));
 
          return 0;
       }
@@ -7371,13 +7388,20 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
        * doesn't screw up the start time on the other side.
        */
       if (origintime >= m_StartTime)
-         packet.m_iTimeStamp = int(origintime - m_StartTime);
+      {
+          setPacketTS(packet, origintime);
+      }
       else
-         packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+      {
+          setPacketTS(packet, CTimer::getTime());
+          LOGC(dlog.Error, log << "packData: reference time=" << logging::FormatTime(origintime)
+              << " is in the past towards start time=" << logging::FormatTime(m_StartTime)
+              << " - setting NOW as reference time for the data packet");
+      }
    }
    else
    {
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       setPacketTS(packet, CTimer::getTime());
    }
 
    packet.m_iID = m_PeerID;
@@ -7482,7 +7506,7 @@ void CUDT::processClose()
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
     CTimer::triggerEvent();
@@ -7570,9 +7594,21 @@ int CUDT::processData(CUnit* unit)
 #endif
    }
 
+#if ENABLE_HEAVY_LOGGING
+   {
+       int tsbpddelay = m_iTsbPdDelay_ms*1000; // (value passed to CRcvBuffer::setRcvTsbPdMode)
 
-   HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength() << " seq=" << packet.getSeqNo());
-   //    << "(" << rexmitstat[pktrexmitflag] << rexmit_reason << ")";
+       // It's easier to remove the latency factor from this value than to add a function
+       // that exposes the details basing on which this value is calculated.
+       uint64_t pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
+       uint64_t ets = pts - tsbpddelay;
+
+       HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
+           << " seq=" << packet.getSeqNo()
+           << " ETS=" << logging::FormatTime(ets)
+           << " PTS=" << logging::FormatTime(pts));
+   }
+#endif
 
    updateCC(TEV_RECEIVE, &packet);
    ++ m_iPktCount;
@@ -7727,7 +7763,7 @@ int CUDT::processData(CUnit* unit)
        * Do no ask loss packets retransmission
        */
        ;
-       HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+       HLOGC(mglog.Debug, log << CONID() << "processData: ERROR: packet not decrypted, dropping data.");
    }
    else
    // Loss detection.
@@ -7745,7 +7781,7 @@ int CUDT::processData(CUnit* unit)
                // pack loss list for (possibly belated) NAK
                // The LOSSREPORT will be sent in a while.
                m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-               HLOGF(mglog.Debug, "added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
+               HLOGF(mglog.Debug, "processData: added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
            }
            else
            {
@@ -7759,7 +7795,7 @@ int CUDT::processData(CUnit* unit)
                    seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
                    sendCtrl(UMSG_LOSSREPORT, NULL, seq, 2);
                }
-               HLOGF(mglog.Debug, "lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
+               HLOGF(mglog.Debug, "processData: lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
            }
 
            int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
@@ -8249,7 +8285,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
-      packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+      setPacketTS(packet, CTimer::getTime());
       m_pSndQueue->sendto(addr, packet, use_source_addr);
       return URQ_INDUCTION;
    }
@@ -8320,7 +8356,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
        size_t size = CHandShake::m_iContentSize;
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       setPacketTS(packet, CTimer::getTime());
        m_pSndQueue->sendto(addr, packet, use_source_addr);
    }
    else
@@ -8368,13 +8404,13 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
            size_t size = CHandShake::m_iContentSize;
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
-           packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+           setPacketTS(packet, CTimer::getTime());
            m_pSndQueue->sendto(addr, packet, use_source_addr);
        }
        else
        {
            // a new connection has been created, enable epoll for write
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
        }
    }
    LOGC(mglog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -8510,7 +8546,7 @@ void CUDT::checkTimers()
             releaseSynch();
 
             // app can call any UDT API to learn the connection_broken error
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
             CTimer::triggerEvent();
 
@@ -8652,13 +8688,13 @@ void CUDT::addEPoll(const int eid)
    CGuard::enterCS(m_RecvLock);
    if (m_pRcvBuffer->isRcvDataReady())
    {
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
    }
    CGuard::leaveCS(m_RecvLock);
 
    if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
    {
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
    }
 }
 
@@ -8668,7 +8704,7 @@ void CUDT::removeEPoll(const int eid)
    // since this happens after the epoll ID has been removed, they cannot be set again
    set<int> remove;
    remove.insert(eid);
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, UDT_EPOLL_IN | UDT_EPOLL_OUT, false);
+   s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
 
    CGuard::enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);

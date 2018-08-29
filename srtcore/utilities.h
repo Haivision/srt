@@ -69,6 +69,7 @@ written by
 #include <map>
 #include <functional>
 #include <memory>
+#include <iomanip>
 #include <sstream>
 #include <cstdlib>
 #include <cerrno>
@@ -257,19 +258,23 @@ template<typename Type>
 class ref_t
 {
     Type* m_data;
+    
+    // Use your own addressof to walk around any
+    // defined operator&.
+    template <class InType>
+    static InType* adrof(InType& refr)
+    {
+        unsigned char& mem = (unsigned char&)refr;
+        return (InType*)&mem;
+    }
+
 
 public:
     typedef Type type;
 
-#if HAVE_CXX11
     explicit ref_t(Type& __indata)
-        : m_data(std::addressof(__indata))
+        : m_data(adrof(__indata))
         { }
-#else
-    explicit ref_t(Type& __indata)
-        : m_data((Type*)(&(char&)(__indata)))
-        { }
-#endif
 
     ref_t(const ref_t<Type>& inref)
         : m_data(inref.m_data)
@@ -366,6 +371,14 @@ auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
 
 
 #else
+
+template <class Arg1>
+inline std::string Sprint(const Arg1& arg)
+{
+    std::ostringstream sout;
+    sout << arg;
+    return sout.str();
+}
 
 template <class Type>
 ref_t<Type> Ref(Type& arg)
@@ -578,6 +591,45 @@ struct MapProxy
     }
 };
 
+inline std::string BufferStamp(const char* mem, size_t size)
+{
+    using namespace std;
+
+    union
+    {
+        char spread[16];
+        uint32_t testin[4];
+    };
+    int n = 16-size;
+    if (n > 0)
+        memset(spread+16-n, 0, n);
+    memcpy(spread, mem, min(size_t(16), size));
+
+    // Now prepare 4 cells for uint32_t.
+    union
+    {
+        uint32_t sum;
+        char cells[4];
+    };
+    memset(cells, 0, 4);
+
+    for (size_t x = 0; x < 4; ++x)
+        for (size_t y = 0; y < 4; ++y)
+        {
+            cells[x] += spread[x+4*y];
+        }
+
+    // Convert to hex string
+
+    ostringstream os;
+
+    //os << hex << uppercase << setfill('0') << setw(8) << testin[3] << testin[2] << testin[1] << testin[0];
+    //os << "|";
+    os << hex << uppercase << setfill('0') << setw(8) << sum;
+
+    return os.str();
+}
+
 
 template <class OutputIterator>
 inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
@@ -620,5 +672,12 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
     return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
 }
+
+#define SRTU_PROPERTY_RO(type, name, field) type name() { return field; }
+#define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& name(type arg) { field = arg; return *this; }
+#define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
+#define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
+
 
 #endif

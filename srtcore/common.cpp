@@ -76,7 +76,7 @@ modified by
 #include <cmath>
 #include <iostream>
 #include <iomanip>
-#include "srt.h"
+#include "udt.h"
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
@@ -573,6 +573,11 @@ CUDTException::~CUDTException()
 
 const char* CUDTException::getErrorMessage()
 {
+    return getErrorString().c_str();
+}
+
+const string& CUDTException::getErrorString()
+{
    // translate "Major:Minor" code into text message.
 
    switch (m_iMajor)
@@ -782,7 +787,7 @@ const char* CUDTException::getErrorMessage()
    m_strMsg += ".";
    #endif
 
-   return m_strMsg.c_str();
+   return m_strMsg;
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
@@ -982,15 +987,13 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
 std::string ConnectStatusStr(EConnectStatus cst)
 {
-    return (cst == CONN_CONTINUE
-        ? "INDUCED/CONCLUDING"
-        : cst == CONN_ACCEPT
-        ? "ACCEPTED"
-        : cst == CONN_RENDEZVOUS
-        ? "RENDEZVOUS (HSv5)"
-        : cst == CONN_AGAIN
-        ? "AGAIN"
-        : "REJECTED");
+    return
+          cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
+        : cst == CONN_RUNNING ? "RUNNING"
+        : cst == CONN_ACCEPT ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN ? "AGAIN"
+        : "REJECTED";
 }
 
 std::string TransmissionEventStr(ETransmissionEvent ev)

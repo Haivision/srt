@@ -55,6 +55,7 @@ modified by
 
 
 #include <cstdlib>
+#include <cstdio>
 #ifndef WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
@@ -63,8 +64,9 @@ modified by
    //#include <windows.h>
 #endif
 #include <pthread.h>
-#include "udt.h"
+#include "srt.h"
 #include "utilities.h"
+#include "netinet_any.h"
 
 enum UDTSockType
 {
@@ -146,7 +148,14 @@ enum EConnectStatus
     CONN_REJECT = -1,    //< Error during processing handshake.
     CONN_CONTINUE = 1,   //< induction->conclusion phase
     CONN_RENDEZVOUS = 2, //< pass to a separate rendezvous processing (HSv5 only)
+    CONN_RUNNING = 10,   //< no connection in progress, already connected
     CONN_AGAIN = -2      //< No data was read, don't change any state.
+};
+
+enum EConnectMethod
+{
+    COM_ASYNCHRO,
+    COM_SYNCHRO
 };
 
 std::string ConnectStatusStr(EConnectStatus est);
@@ -570,9 +579,7 @@ public:
    // Turned explicitly to string because this is exposed only for logging purposes.
    std::string show_mutex()
    {
-       std::ostringstream os;
-       os << (&m_Mutex);
-       return os.str();
+       return Sprint(&m_Mutex);
    }
 #endif
 
@@ -712,6 +719,13 @@ public:
            return m_iMaxSeqNo - left + 1;
        }
        return seq - dec;
+   }
+
+   static int32_t maxseq(int32_t seq1, int32_t seq2)
+   {
+       if (seqcmp(seq1, seq2) < 0)
+           return seq2;
+       return seq1;
    }
 
 public:

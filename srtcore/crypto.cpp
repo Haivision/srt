@@ -792,6 +792,7 @@ EncryptionStatus CCryptoControl::decrypt(ref_t<CPacket> r_packet)
 
 CCryptoControl::~CCryptoControl()
 {
+    close();
     if (m_hSndCrypto)
     {
         HaiCrypt_Close(m_hSndCrypto);

@@ -83,6 +83,10 @@ written by
 #define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
 #define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(_MSC_VER)
+#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
+#define SRT_ATR_DEPRECATED __declspec((deprecated))
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_UNUSED
 #define SRT_ATR_DEPRECATED
@@ -517,14 +521,22 @@ SRT_API extern int srt_startup(void);
 SRT_API extern int srt_cleanup(void);
 
 // socket operations
-SRT_API extern SRTSOCKET srt_socket(int af, int type, int protocol);
+// DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
+// and socket creation doesn't need any arguments. Use srt_create_socket().
+SRT_API extern SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API extern SRTSOCKET srt_create_socket();
 SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API extern int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API extern int srt_bind_acquire(SRTSOCKET u, int sys_udp_sock);
+// Old name of srt_bind_acquire(), please don't use
+static inline int srt_bind_peerof(SRTSOCKET u, int sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline int srt_bind_peerof(SRTSOCKET u, int sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API extern int srt_listen(SRTSOCKET u, int backlog);
 SRT_API extern SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API extern int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API extern int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
+SRT_API extern int srt_connect_bind(SRTSOCKET u,
+        const struct sockaddr* source, int source_len,
+        const struct sockaddr* target, int target_len);
 SRT_API extern int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen);
 SRT_API extern int srt_close(SRTSOCKET u);

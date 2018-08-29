@@ -75,24 +75,11 @@ extern logging::LogConfig srt_logger_config;
 
 extern logging::Logger mglog;
 
-CUDTSocket::CUDTSocket():
-m_Status(SRTS_INIT),
-m_TimeStamp(0),
-m_SocketID(0),
-m_ListenSocket(0),
-m_PeerID(0),
-m_iISN(0),
-m_pUDT(NULL),
-m_pQueuedSockets(NULL),
-m_pAcceptSockets(NULL),
-m_AcceptCond(),
-m_AcceptLock(),
-m_uiBackLog(0),
-m_iMuxID(-1)
+void CUDTSocket::construct()
 {
-      pthread_mutex_init(&m_AcceptLock, NULL);
-      pthread_cond_init(&m_AcceptCond, NULL);
-      pthread_mutex_init(&m_ControlLock, NULL);
+    pthread_mutex_init(&m_AcceptLock, NULL);
+    pthread_cond_init(&m_AcceptCond, NULL);
+    pthread_mutex_init(&m_ControlLock, NULL);
 }
 
 CUDTSocket::~CUDTSocket()
@@ -108,6 +95,20 @@ CUDTSocket::~CUDTSocket()
    pthread_cond_destroy(&m_AcceptCond);
    pthread_mutex_destroy(&m_ControlLock);
 }
+
+
+SRT_SOCKSTATUS CUDTSocket::getStatus()
+{
+    if (m_pUDT->m_bBroken)
+        return SRTS_BROKEN;
+
+    // Connecting timed out
+    if ((m_Status == SRTS_CONNECTING) && !m_pUDT->m_bConnecting)
+        return SRTS_BROKEN;
+
+    return m_Status;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -267,15 +268,10 @@ SRTSOCKET CUDTUnited::newSocket()
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
-   // The "Socket type" is deprecated. For the sake of
-   // HSv4 there will be only a "socket type" field set
-   // in the handshake, always to UDT_DGRAM.
-   //ns->m_pUDT->m_iSockType = (type == SOCK_STREAM) ? UDT_STREAM : UDT_DGRAM;
-   ns->m_pUDT->m_iSockType = UDT_DGRAM;
    ns->m_pUDT->m_pCache = m_pCache;
 
    // protect the m_Sockets structure.
-   CGuard::enterCS(m_ControlLock);
+    CGuard cs(m_ControlLock);
    try
    {
       HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
@@ -286,11 +282,9 @@ SRTSOCKET CUDTUnited::newSocket()
    catch (...)
    {
       //failure and rollback
-      CGuard::leaveCS(m_ControlLock);
       delete ns;
       ns = NULL;
    }
-   CGuard::leaveCS(m_ControlLock);
 
    if (!ns)
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
@@ -310,6 +304,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        LOGC(mglog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
        return -1;
    }
+
+    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener %" << listen << " contacted with backlog=" << ls->m_uiBackLog);
 
    // if this connection has already been processed
    if ((ns = locatePeer(peer, hs->m_iID, hs->m_iISN)) != NULL)
@@ -340,6 +336,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
          //except for this situation a new connection should be started
       }
+   }
+   else
+   {
+      HLOGC(mglog.Debug, log << "newConnection: NOT located any peer %" << hs->m_iID << " - resuming with initial connection.");
    }
 
    // exceeding backlog, refuse the connection request
@@ -435,6 +435,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    catch (...)
    {
+      LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
       error = 2;
    }
    CGuard::leaveCS(m_ControlLock);
@@ -446,6 +447,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    catch (...)
    {
+      LOGC(mglog.Error, log << "newConnection: error when queuing socket!");
       error = 3;
    }
    CGuard::leaveCS(ls->m_AcceptLock);
@@ -478,25 +480,12 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    return 1;
 }
 
-CUDT* CUDTUnited::lookup(const SRTSOCKET u)
-{
-   // protects the m_Sockets structure
-   CGuard cg(m_ControlLock);
-
-   map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
-
-   if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
-   return i->second->m_pUDT;
-}
-
 SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure
     CGuard cg(m_ControlLock);
 
-    map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+    sockets_t::iterator i = m_Sockets.find(u);
 
     if (i == m_Sockets.end())
     {
@@ -505,24 +494,11 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 
         return SRTS_NONEXIST;
     }
-    CUDTSocket* s = i->second;
-
-    if (s->m_pUDT->m_bBroken)
-        return SRTS_BROKEN;
-
-    // Connecting timed out
-    if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting)
-        return SRTS_BROKEN;
-
-    return s->m_Status;
+    return i->second->getStatus();
 }
 
-int CUDTUnited::bind(const SRTSOCKET u, const sockaddr_any& name)
+int CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
 {
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
    CGuard cg(s->m_ControlLock);
 
    // cannot bind a socket more than once
@@ -539,12 +515,8 @@ int CUDTUnited::bind(const SRTSOCKET u, const sockaddr_any& name)
    return 0;
 }
 
-int CUDTUnited::bind(SRTSOCKET u, UDPSOCKET udpsock)
+int CUDTUnited::bind(CUDTSocket* s, int udpsock)
 {
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
    CGuard cg(s->m_ControlLock);
 
    // cannot bind a socket more than once
@@ -733,7 +705,26 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
    return u;
 }
 
-int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
+int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen)
+{
+    sockaddr_any source_addr(srcname, srclen);
+    if (source_addr.len == 0)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    sockaddr_any target_addr(tarname, tarlen);
+    if (target_addr.len == 0)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    CUDTSocket* s = locateSocket(u);
+    if (s == NULL)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    // For a single socket, just do bind, then connect
+
+    bind(s, source_addr);
+    return connectIn(s, target_addr, 0);
+}
+
+int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
     sockaddr_any target_addr(name, namelen);
     if (target_addr.len == 0)
@@ -741,6 +732,12 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    CUDTSocket* s = locateSocket(u);
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    return connectIn(s, target_addr, forced_isn);
+}
+
+int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
+{
 
    CGuard cg(s->m_ControlLock);
 
@@ -817,9 +814,15 @@ void CUDTUnited::connect_complete(const SRTSOCKET u)
 
 int CUDTUnited::close(const SRTSOCKET u)
 {
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+    CUDTSocket* s = locateSocket(u);
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    return close(s);
+}
+
+int CUDTUnited::close(CUDTSocket* s)
+{
 
    HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
@@ -850,11 +853,7 @@ int CUDTUnited::close(const SRTSOCKET u)
       // is currently occupying (due to blocked slot in the RcvQueue).
 
       HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing listener immediately)");
-      {
-          CGuard cg(s->m_pUDT->m_ConnectionLock);
-          s->m_pUDT->m_bListening = false;
-          s->m_pUDT->m_pRcvQueue->removeListener(s->m_pUDT);
-      }
+      s->m_pUDT->notListening();
 
       // broadcast all "accept" waiting
       pthread_mutex_lock(&(s->m_AcceptLock));
@@ -872,7 +871,7 @@ int CUDTUnited::close(const SRTSOCKET u)
 
        // since "s" is located before m_ControlLock, locate it again in case
        // it became invalid
-       map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+       sockets_t::iterator i = m_Sockets.find(id);
        if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
            return 0;
        s = i->second;
@@ -1309,16 +1308,20 @@ int CUDTUnited::epoll_release(const int eid)
    return m_EPoll.release(eid);
 }
 
-CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u)
+CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
-   CGuard cg(m_ControlLock);
+    CGuard cg(m_ControlLock);
 
-   map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+    sockets_t::iterator i = m_Sockets.find(u);
 
-   if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
-      return NULL;
+    if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
+    {
+        if (erh == ERH_RETURN)
+            return NULL;
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+    }
 
-   return i->second;
+    return i->second;
 }
 
 CUDTSocket* CUDTUnited::locatePeer(
@@ -1336,7 +1339,7 @@ CUDTSocket* CUDTUnited::locatePeer(
    for (set<SRTSOCKET>::iterator j = i->second.begin();
       j != i->second.end(); ++ j)
    {
-      map<SRTSOCKET, CUDTSocket*>::iterator k = m_Sockets.find(*j);
+      sockets_t::iterator k = m_Sockets.find(*j);
       // this socket might have been closed and moved m_ClosedSockets
       if (k == m_Sockets.end())
          continue;
@@ -1358,7 +1361,7 @@ void CUDTUnited::checkBrokenSockets()
    vector<SRTSOCKET> tbc;
    vector<SRTSOCKET> tbr;
 
-   for (map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.begin();
+   for (sockets_t::iterator i = m_Sockets.begin();
       i != m_Sockets.end(); ++ i)
    {
        CUDTSocket* s = i->second;
@@ -1404,8 +1407,7 @@ void CUDTUnited::checkBrokenSockets()
          m_ClosedSockets[i->first] = s;
 
          // remove from listener's queue
-         map<SRTSOCKET, CUDTSocket*>::iterator ls = m_Sockets.find(
-            s->m_ListenSocket);
+         sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
          if (ls == m_Sockets.end())
          {
             ls = m_ClosedSockets.find(s->m_ListenSocket);
@@ -1420,7 +1422,7 @@ void CUDTUnited::checkBrokenSockets()
       }
    }
 
-   for (map<SRTSOCKET, CUDTSocket*>::iterator j = m_ClosedSockets.begin();
+   for (sockets_t::iterator j = m_ClosedSockets.begin();
       j != m_ClosedSockets.end(); ++ j)
    {
       // HLOGF(mglog.Debug, "checking CLOSED socket: %d\n", j->first);
@@ -1459,29 +1461,40 @@ void CUDTUnited::checkBrokenSockets()
 
 void CUDTUnited::removeSocket(const SRTSOCKET u)
 {
-   map<SRTSOCKET, CUDTSocket*>::iterator i = m_ClosedSockets.find(u);
+   sockets_t::iterator i = m_ClosedSockets.find(u);
 
    // invalid socket ID
    if (i == m_ClosedSockets.end())
       return;
 
-   // decrease multiplexer reference count, and remove it if necessary
-   const int mid = i->second->m_iMuxID;
+   CUDTSocket* s = i->second;
 
-   if (i->second->m_pQueuedSockets)
+   // decrease multiplexer reference count, and remove it if necessary
+   const int mid = s->m_iMuxID;
+
+   if (s->m_pQueuedSockets)
    {
-       CGuard cg(i->second->m_AcceptLock);
+       CGuard cg(s->m_AcceptLock);
 
       // if it is a listener, close all un-accepted sockets in its queue
       // and remove them later
-      for (set<SRTSOCKET>::iterator q = i->second->m_pQueuedSockets->begin();
-         q != i->second->m_pQueuedSockets->end(); ++ q)
+      for (set<SRTSOCKET>::iterator q = s->m_pQueuedSockets->begin();
+         q != s->m_pQueuedSockets->end(); ++ q)
       {
-         m_Sockets[*q]->m_pUDT->m_bBroken = true;
-         m_Sockets[*q]->m_pUDT->close();
-         m_Sockets[*q]->m_TimeStamp = CTimer::getTime();
-         m_Sockets[*q]->m_Status = SRTS_CLOSED;
-         m_ClosedSockets[*q] = m_Sockets[*q];
+         sockets_t::iterator si = m_Sockets.find(*q);
+         if (si == m_Sockets.end())
+         {
+               // gone in the meantime
+            LOGC(mglog.Error, log << "removeSocket: IPE? socket %" << u << " being queued for listener socket %" << s->m_SocketID << " is GONE in the meantime ???");
+            continue;
+         }
+
+         CUDTSocket* as = si->second;
+         as->m_pUDT->m_bBroken = true;
+         as->m_pUDT->close();
+         as->m_TimeStamp = CTimer::getTime();
+         as->m_Status = SRTS_CLOSED;
+         m_ClosedSockets[*q] = as;
          m_Sockets.erase(*q);
       }
 
@@ -1489,7 +1502,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    // remove from peer rec
    map<int64_t, set<SRTSOCKET> >::iterator j = m_PeerRec.find(
-      i->second->getPeerSpec());
+      s->getPeerSpec());
    if (j != m_PeerRec.end())
    {
       j->second.erase(u);
@@ -1502,14 +1515,14 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    * remains forever causing epoll_wait to unblock continuously for inexistent
    * sockets. Get rid of all events for this socket.
    */
-   m_EPoll.update_events(u, i->second->m_pUDT->m_sPollID,
+   m_EPoll.update_events(u, s->m_pUDT->m_sPollID,
       UDT_EPOLL_IN|UDT_EPOLL_OUT|UDT_EPOLL_ERR, false);
 
    // delete this one
    HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
-   i->second->m_pUDT->close();
+   s->m_pUDT->close();
    HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
-   delete i->second;
+   delete s;
    m_ClosedSockets.erase(i);
 
    map<int, CMultiplexer>::iterator m;
@@ -1764,7 +1777,7 @@ void* CUDTUnited::garbageCollect(void* p)
 
    // remove all sockets and multiplexers
    CGuard::enterCS(self->m_ControlLock);
-   for (map<SRTSOCKET, CUDTSocket*>::iterator i = self->m_Sockets.begin();
+   for (sockets_t::iterator i = self->m_Sockets.begin();
       i != self->m_Sockets.end(); ++ i)
    {
       i->second->m_pUDT->m_bBroken = true;
@@ -1774,7 +1787,7 @@ void* CUDTUnited::garbageCollect(void* p)
       self->m_ClosedSockets[i->first] = i->second;
 
       // remove from listener's queue
-      map<SRTSOCKET, CUDTSocket*>::iterator ls = self->m_Sockets.find(
+      sockets_t::iterator ls = self->m_Sockets.find(
          i->second->m_ListenSocket);
       if (ls == self->m_Sockets.end())
       {
@@ -1790,7 +1803,7 @@ void* CUDTUnited::garbageCollect(void* p)
    }
    self->m_Sockets.clear();
 
-   for (map<SRTSOCKET, CUDTSocket*>::iterator j = self->m_ClosedSockets.begin();
+   for (sockets_t::iterator j = self->m_ClosedSockets.begin();
       j != self->m_ClosedSockets.end(); ++ j)
    {
       j->second->m_TimeStamp = 0;
@@ -1856,6 +1869,18 @@ SRTSOCKET CUDT::socket()
    }
 }
 
+int CUDT::setError(const CUDTException& e)
+{
+    s_UDTUnited.setError(new CUDTException(e));
+    return SRT_ERROR;
+}
+
+int CUDT::setError(CodeMajor mj, CodeMinor mn, int syserr)
+{
+    s_UDTUnited.setError(new CUDTException(mj, mn, syserr));
+    return SRT_ERROR;
+}
+
 int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
 {
    try
@@ -1867,36 +1892,40 @@ int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
            // too small for particular family, or that family is
            // not recognized (is none of AF_INET, AF_INET6).
            // This is a user error.
-           s_UDTUnited.setError(new CUDTException(MJ_NOTSUP, MN_INVAL, 0));
-           return ERROR;
+           return setError(MJ_NOTSUP, MN_INVAL, 0);
        }
-       return s_UDTUnited.bind(u, sa);
+       CUDTSocket* s = s_UDTUnited.locateSocket(u);
+       if (!s)
+           return setError(MJ_NOTSUP, MN_INVAL, 0);
+
+       return s_UDTUnited.bind(s, sa);
    }
    catch (CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
+       return setError(e);
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
-      return ERROR;
+       return setError(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
    catch (std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "bind: UNEXPECTED EXCEPTION: "
          << typeid(ee).name()
          << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
-      return ERROR;
+      return setError(MJ_UNKNOWN, MN_NONE, 0);
    }
 }
 
-int CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
+int CUDT::bind(SRTSOCKET u, int udpsock)
 {
    try
    {
-      return s_UDTUnited.bind(u, udpsock);
+        CUDTSocket* s = s_UDTUnited.locateSocket(u);
+        if (!s)
+            return setError(MJ_NOTSUP, MN_INVAL, 0);
+
+        return s_UDTUnited.bind(s, udpsock);
    }
    catch (CUDTException& e)
    {
@@ -1963,7 +1992,32 @@ SRTSOCKET CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
 }
 
 int CUDT::connect(
-   SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
+    SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen)
+{
+   try
+   {
+      return s_UDTUnited.connect(u, name, namelen, tname, tnamelen);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "connect: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
    try
    {
@@ -2050,12 +2104,16 @@ int CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
    }
 }
 
-int CUDT::getsockopt(
-   SRTSOCKET u, int, SRT_SOCKOPT optname, void* optval, int* optlen)
+int CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* optval, int* optlen)
 {
+   if (!optval || !optlen)
+   {
+      return setError(MJ_NOTSUP, MN_INVAL, 0);
+   }
+
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       udt->getOpt(optname, optval, *optlen);
       return 0;
    }
@@ -2077,7 +2135,7 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       udt->setOpt(optname, optval, optlen);
       return 0;
    }
@@ -2099,7 +2157,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->send(buf, len);
    }
    catch (CUDTException e)
@@ -2125,7 +2183,7 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->recv(buf, len);
    }
    catch (CUDTException e)
@@ -2148,7 +2206,7 @@ int CUDT::sendmsg(
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->sendmsg(buf, len, ttl, inorder, srctime);
    }
    catch (CUDTException e)
@@ -2175,7 +2233,7 @@ int CUDT::sendmsg2(
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->sendmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
@@ -2201,7 +2259,7 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->recvmsg(buf, len, srctime);
    }
    catch (CUDTException e)
@@ -2222,7 +2280,7 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->recvmsg2(buf, len, r_m);
    }
    catch (CUDTException e)
@@ -2243,7 +2301,7 @@ int64_t CUDT::sendfile(
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->sendfile(ifs, offset, size, block);
    }
    catch (CUDTException e)
@@ -2270,7 +2328,7 @@ int64_t CUDT::recvfile(
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       return udt->recvfile(ofs, offset, size, block);
    }
    catch (CUDTException e)
@@ -2558,7 +2616,7 @@ int CUDT::perfmon(SRTSOCKET u, CPerfMon* perf, bool clear)
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       udt->sample(perf, clear);
       return 0;
    }
@@ -2580,7 +2638,7 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
 {
    try
    {
-      CUDT* udt = s_UDTUnited.lookup(u);
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       udt->bstats(perf, clear, instantaneous);
       return 0;
    }
@@ -2602,7 +2660,7 @@ CUDT* CUDT::getUDTHandle(SRTSOCKET u)
 {
    try
    {
-      return s_UDTUnited.lookup(u);
+      return s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
    }
    catch (CUDTException e)
    {

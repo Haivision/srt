@@ -165,7 +165,8 @@ private:
         // packet = payload + header
         double pktsize = m_iSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000*1000.0 * (pktsize/m_llSndMaxBW);
-        HLOGC(mglog.Debug, log << "LiveSmoother: sending period updated: " << m_iSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "LiveSmoother: sending period updated: " << m_dPktSndPeriod
+                << " by avg pktsize=" << m_iSndAvgPayloadSize);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -611,8 +612,16 @@ bool Smoother::configure(CUDT* parent)
     return !!smoother;
 }
 
+void Smoother::dispose()
+{
+    if (smoother)
+    {
+        delete smoother;
+        smoother = 0;
+    }
+}
+
 Smoother::~Smoother()
 {
-    delete smoother;
-    smoother = 0;
+    dispose();
 }

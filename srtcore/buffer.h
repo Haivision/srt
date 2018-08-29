@@ -213,7 +213,8 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
+   static const int DEFAULT_SIZE = 65536;
+   CRcvBuffer(CUnitQueue* queue, int bufsize = DEFAULT_SIZE);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -355,8 +356,25 @@ public:
 
    void skipData(int len);
 
+   bool empty() { return m_iStartPos == m_iLastAckPos; }
+   bool full() { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
+   int capacity() { return m_iSize; }
+
 
 private:
+   /// This gives up unit at index p. The unit is given back to the
+   /// free unit storage for further assignment for the new incoming
+   /// data.
+   size_t freeUnitAt(size_t p)
+   {
+       CUnit* u = m_pUnit[p];
+       m_pUnit[p] = NULL;
+       size_t rmbytes = u->m_Packet.getLength();
+       u->m_iFlag = CUnit::FREE;
+       --m_pUnitQueue->m_iCount;
+       return rmbytes;
+   }
+
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
       // Parameters (of the 1st packet queue, ready to play or not):
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
@@ -379,7 +397,7 @@ private:
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
-   bool empty() const;
+
 private:
 
    /// thread safe bytes counter
@@ -391,17 +409,41 @@ private:
 private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
+   int shift(int basepos, int shift)
+   {
+       return (basepos + shift) % m_iSize;
+   }
+
+   // Simplified versions with ++ and --; avoid using division instruction
+   int shift_forward(int basepos)
+   {
+       if (++basepos == m_iSize)
+           return 0;
+       return basepos;
+   }
+
+   int shift_backward(int basepos)
+   {
+       if (basepos == 0)
+           return m_iSize-1;
+       return --basepos;
+   }
+
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer
-   int m_iSize;                         // size of the protocol buffer
-   CUnitQueue* m_pUnitQueue;		// the shared unit queue
+   CUnit** m_pUnit;                  // Array of pointed units collected in the buffer
+   int m_iSize;                      // Size of the internal array
+   CUnitQueue* m_pUnitQueue;		 // the shared unit queue
 
-   int m_iStartPos;                     // the head position for I/O (inclusive)
-   int m_iLastAckPos;                   // the last ACKed position (exclusive)
-					// EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
-   int m_iMaxPos;			// the furthest data position
+   int m_iStartPos;                  // HEAD: first packet available for reading
+   int m_iLastAckPos;                // the last ACKed position (exclusive), follows the last readable
+   int m_iMaxPos;			         // delta between contiguous-TAIL and reception-TAIL
 
-   int m_iNotch;			// the starting read point of the first unit
+
+   int m_iNotch;			         // the starting read point of the first unit
+                                     // (this is required for stream reading mode; it's
+                                     // the position in the first unit in the list
+                                     // up to which data are already retrieved;
+                                     // in message reading mode it's unused and always 0)
 
    pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer

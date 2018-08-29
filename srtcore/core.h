@@ -170,6 +170,7 @@ public: //API
     static int listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    static int connect(SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -201,12 +202,9 @@ public: //API
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+    static int setError(const CUDTException& e);
+    static int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
-    static int setError(const CUDTException& e)
-    {
-        s_UDTUnited.setError(new CUDTException(e));
-        return SRT_ERROR;
-    }
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -266,10 +264,47 @@ public: // internal API
     int bandwidth() { return m_iBandwidth; }
     int64_t maxBandwidth() { return m_llMaxBW; }
     int MSS() { return m_iMSS; }
+
+    uint32_t latency_us() {return m_iTsbPdDelay_ms*1000; }
+
     size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
+    sockaddr_any peerAddr() { return m_PeerAddr; }
+
+    int minSndSize(int len = 0)
+    {
+        if (len == 0) // wierd, can't use non-static data member as default argument!
+            len = m_iMaxSRTPayloadSize;
+        return m_bMessageAPI ? (len+m_iMaxSRTPayloadSize-1)/m_iMaxSRTPayloadSize : 1;
+    }
+
+    int makeTS(uint64_t from_time)
+    {
+        // NOTE:
+        // - This calculates first the time difference towards start time.
+        // - This difference value is also CUT OFF THE SEGMENT information
+        //   (a multiple of MAX_TIMESTAMP+1)
+        // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
+        // XXX Would be nice to check if local_time > m_StartTime,
+        // otherwise it may go unnoticed with clock skew.
+        return int(from_time - m_StartTime);
+    }
+
+    void setPacketTS(CPacket& p, uint64_t local_time)
+    {
+        p.m_iTimeStamp = makeTS(local_time);
+    }
+
+    // Utility used for closing a listening socket
+    // immediately to free the socket
+    void notListening()
+    {
+        CGuard cg(m_ConnectionLock);
+        m_bListening = false;
+        m_pRcvQueue->removeListener(this);
+    }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -305,8 +340,7 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
-
+    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
     // according to the present state and received message type, as well as the
@@ -496,19 +530,20 @@ private:
         return m_iSndBufSize - m_pSndBuffer->getCurrBufSize();
     }
 
+    uint64_t socketStartTime()
+    {
+        return m_StartTime;
+    }
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
+
+    void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
 private: // Identification
     SRTSOCKET m_SocketID;                        // UDT socket number
-
-    // XXX Deprecated field. In any place where it's used, UDT_DGRAM is
-    // the only allowed value. The functionality of distinguishing the transmission
-    // method is now in m_Smoother.
-    UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
     int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
@@ -616,10 +651,40 @@ private: // Sending related data
 
     volatile int32_t m_iSndLastFullAck;          // Last full ACK received
     volatile int32_t m_iSndLastAck;              // Last ACK received
+
+    // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
+    // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
+    // this value is shifted to the acknowledged position, and the blocks are removed from the
+    // m_pSndBuffer buffer up to excluding this sequence number.
+    // XXX CONSIDER removing this field and give up the maintenance of this sequence number
+    // to the sending buffer. This way, extraction of an old packet for retransmission should
+    // require only the lost sequence number, and how to find the packet with this sequence
+    // will be up to the sending buffer.
     volatile int32_t m_iSndLastDataAck;          // The real last ACK that updates the sender buffer and loss list
     volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that has been sent
     int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
+    void setInitialSndSeq(int32_t isn)
+    {
+        m_iLastDecSeq = isn - 1; // <-- purpose unknown; duplicate from FileSmoother?
+        m_iSndLastAck = isn;
+        m_iSndLastDataAck = isn;
+        m_iSndLastFullAck = isn;
+        m_iSndCurrSeqNo = isn - 1;
+        m_iSndLastAck2 = isn;
+    }
+
+    void setInitialRcvSeq(int32_t isn)
+    {
+        m_iRcvLastAck = isn;
+#ifdef ENABLE_LOGGING
+        m_iDebugPrevLastAck = m_iRcvLastAck;
+#endif
+        m_iRcvLastSkipAck = m_iRcvLastAck;
+        m_iRcvLastAckAck = isn;
+        m_iRcvCurrSeqNo = isn - 1;
+    }
+
     uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
@@ -685,8 +750,20 @@ private: // synchronization: mutexes and conditions
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
-    void setupCC();
-    void updateCC(ETransmissionEvent, EventVariant arg);
+
+    // XXX This can fail only when it failed to create a smoother
+    // which only may happen when the smoother list is extended 
+    // with user-supplied smoothers, not a case so far.
+    // SRT_ATR_NODISCARD
+    bool setupCC();
+    // for updateCC it's ok to discard the value. This returns false only if
+    // the Smoother isn't created, and this can be prevented from.
+    bool updateCC(ETransmissionEvent, EventVariant arg);
+
+    // XXX Unsure as to this return value is meaningful.
+    // May happen that this failure is acceptable slongs
+    // the other party will be sending unencrypted stream.
+    // SRT_ATR_NODISCARD
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
