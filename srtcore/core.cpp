@@ -206,6 +206,9 @@ void CUDT::construct()
 
     // Initilize mutex and condition variables
     initSynch();
+
+    // Default: 
+    m_PrepareLossCallback.set(this, &CUDT::PrepareLossArray);
 }
 
 CUDT::CUDT()
@@ -7526,6 +7529,48 @@ inline void ThreadCheckAffinity(const char* function SRT_ATR_UNUSED, pthread_t t
 
 #define THREAD_CHECK_AFFINITY(thr) ThreadCheckAffinity(__FUNCTION__, thr)
 
+vector<int32_t> CUDT::PrepareLossArray(void* vself, LossRange& seq)
+{
+    // ASSUME: Lock on m_RcvLossLock
+
+    CUDT* self = (CUDT*)vself;
+    vector<int32_t> output;
+    int initial_loss_ttl = 0;
+    if ( self->m_bPeerRexmitFlag )
+        initial_loss_ttl = self->m_iReorderTolerance;
+
+    // If loss found, insert them to the receiver loss list
+    self->m_pRcvLossList->insert(seq.lo, seq.hi);
+
+    if ( initial_loss_ttl )
+    {
+        // pack loss list for (possibly belated) NAK
+        // The LOSSREPORT will be sent in a while.
+        self->m_FreshLoss.push_back(CRcvFreshLoss(seq.lo, seq.hi, initial_loss_ttl));
+        HLOGF(mglog.Debug, "processData: added loss sequence %d-%d (%d) with tolerance %d", seq.lo, seq.hi,
+                1+CSeqNo::seqcmp(seq.hi, seq.lo), initial_loss_ttl);
+    }
+    else
+    {
+        // old code; run immediately when tolerance = 0
+        // or this feature isn't used because of the peer
+        if ( seq.lo == seq.hi )
+        {
+            output.push_back(seq.lo);
+            HLOGF(mglog.Debug, "PrepareLossArray: lost 1 packet %d: sending LOSSREPORT", seq.lo);
+        }
+        else
+        {
+            output.push_back(seq.lo | LOSSDATA_SEQNO_RANGE_FIRST);
+            output.push_back(seq.hi);
+            HLOGF(mglog.Debug, "PrepareLossArray: lost %d packets %d-%d: sending LOSSREPORT",
+                    1+CSeqNo::seqcmp(seq.hi, seq.lo), seq.lo, seq.hi);
+        }
+    }
+
+    return output;
+}
+
 int CUDT::processData(CUnit* unit)
 {
    THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
@@ -7637,6 +7682,8 @@ int CUDT::processData(CUnit* unit)
       CGuard recvbuf_acklock(m_AckLock);
 
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
+
+      // ##  packet.m_iSeqNo = m_iRcvLastSkipAck +% offset
 
       bool excessive = false;
       string exc_type = "EXPECTED";
@@ -7767,37 +7814,27 @@ int CUDT::processData(CUnit* unit)
    }
    else
    // Loss detection.
+   // IF packet.m_iSeqNo %> 1 +% m_iRcvCurrSeqNo
    if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
    {
        {
            CGuard lg(m_RcvLossLock);
-           int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-           int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
-           // If loss found, insert them to the receiver loss list
-           m_pRcvLossList->insert(seqlo, seqhi);
 
-           if ( initial_loss_ttl )
+           LossRange lossrange(
+                   CSeqNo::incseq(m_iRcvCurrSeqNo),
+                   CSeqNo::decseq(packet.m_iSeqNo));
+
+           vector<int32_t> lossarray = m_PrepareLossCallback.call(lossrange);
+
+           if (!lossarray.empty())
            {
-               // pack loss list for (possibly belated) NAK
-               // The LOSSREPORT will be sent in a while.
-               m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-               HLOGF(mglog.Debug, "processData: added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-           }
-           else
-           {
-               // old code; run immediately when tolerance = 0
-               // or this feature isn't used because of the peer
-               int32_t seq[2] = { seqlo, seqhi };
-               if ( seqlo == seqhi )
-                   sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
-               else
-               {
-                   seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
-                   sendCtrl(UMSG_LOSSREPORT, NULL, seq, 2);
-               }
-               HLOGF(mglog.Debug, "processData: lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
+               sendCtrl(UMSG_LOSSREPORT, NULL, &lossarray[0], lossarray.size());
            }
 
+           // Even if there is some mechanism that makes a fake "no loss"
+           // to be recorded, the statistics should represent the true packet
+           // loss number. The above only provides ability to avoid unnecessary
+           // retransmissions.
            int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
            m_iTraceRcvLoss += loss;
            m_iRcvLossTotal += loss;

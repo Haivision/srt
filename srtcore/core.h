@@ -317,6 +317,17 @@ public: // internal API
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
+    // This is in public section so prospective overriding it can be
+    // done by directly assigning to a field.
+
+    struct LossRange
+    {
+        int32_t lo, hi;
+        LossRange(int32_t a, int32_t b): lo(a), hi(b) {}
+    };
+
+    Callback<std::vector<int32_t>, LossRange> m_PrepareLossCallback;
+
 private:
     /// initialize a UDT entity and bind to a local address.
 
@@ -539,6 +550,8 @@ private:
     static void* tsbpd(void* param);
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
+
+    static std::vector<int32_t> PrepareLossArray(void* vself, LossRange& input);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
