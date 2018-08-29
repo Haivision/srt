@@ -4902,7 +4902,7 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     CGuard recvguard(m_RecvLock);
-    CCondDelegate tsbpd_cc(m_RcvTsbPdCond, recvguard);
+
     if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
     {
         if (m_bShutdown)
@@ -4931,6 +4931,8 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+    CCondDelegate rcond(m_RecvDataCond, recvguard);
+    CCondDelegate tscond(m_RcvTsbPdCond, recvguard);
 
     if (!m_pRcvBuffer->isRcvDataReady())
     {
@@ -4946,7 +4948,7 @@ int CUDT::receiveBuffer(char* data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     //Do not block forever, check connection status each 1 sec.
-                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000);
+                    rcond.wait_for(1000000);
                 }
             }
             else
@@ -4954,7 +4956,7 @@ int CUDT::receiveBuffer(char* data, int len)
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
+                    rcond.wait_until(exptime);
                     if (CTimer::getTime() >= exptime)
                         break;
                 }
@@ -4985,7 +4987,7 @@ int CUDT::receiveBuffer(char* data, int len)
     if (m_bTsbPd)
     {
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-        tsbpd_cc.signal_locked(recvguard);
+        tscond.signal_locked(recvguard);
     }
 
 
