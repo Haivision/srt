@@ -7540,6 +7540,10 @@ vector<int32_t> CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
         initial_loss_ttl = self->m_iReorderTolerance;
 
     int seqdiff = CSeqNo::seqcmp(self->m_iRcvCurrSeqNo, pkt.m_iSeqNo);
+
+    HLOGC(mglog.Debug, log << "defaultPacketArrival: checking sequence " << pkt.m_iSeqNo
+            << " against latest " << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
+
     // Loss detection.
     if (seqdiff > 1) // packet is later than the very subsequent packet
     {
