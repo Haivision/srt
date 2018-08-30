@@ -181,6 +181,63 @@ struct BandwidthGuard
     }
 };
 
+bool CheckMediaSpec(const string& prefix, const vector<string>& spec, ref_t<string> r_outspec)
+{
+    // This function prints error messages by itself then returns false.
+    // Otherwise nothing is printed and true is returned.
+    // r_outspec is for a case when a redundancy specification should be translated.
+
+    string& outspec = *r_outspec;
+
+    if (spec.empty())
+    {
+        cerr << prefix << ": Specification is empty\n";
+        return false;
+    }
+
+    if (spec.size() == 1)
+    {
+        // Then, whatever.
+        outspec = spec[0];
+        return true;
+    }
+
+    // We have multiple items specified, check each one
+    // it SRT, if so, craft the redundancy URI spec,
+    // otherwise reject
+    vector<string> adrs;
+    map<string,string> uriparam;
+    bool first = true;
+    for (auto uris: spec)
+    {
+        UriParser uri(uris);
+        if (uri.type() != UriParser::SRT)
+        {
+            cerr << ": Multiple media must be all with SRT scheme.\n";
+            return false;
+        }
+
+        adrs.push_back(uri.host() + ":" + uri.port());
+        if (first)
+        {
+            uriparam = uri.parameters();
+            first = false;
+        }
+    }
+
+    outspec = "srt:////group?type=redundancy";
+    for (auto& name_value: uriparam)
+    {
+        string name, value; tie(name, value) = name_value;
+        outspec += "&" + name + "=" + value;
+    }
+    outspec += "&nodes=";
+    for (string& a: adrs)
+        outspec += a + ",";
+
+    return true;
+}
+
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 int main( int argc, char** argv )
@@ -215,6 +272,7 @@ int main( int argc, char** argv )
         o_logint    (" Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush (" Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ("<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_group     ("<URIs...> Using multiple SRT connections as redundancy group", "g"),
         o_help      (" This help", "?",   "help", "-help")
             ;
 
@@ -232,6 +290,7 @@ int main( int argc, char** argv )
         { o_stats, OptionScheme::ARG_ONE },
         { o_skipflush, OptionScheme::ARG_NONE },
         { o_stoptime, OptionScheme::ARG_ONE },
+        { o_group, OptionScheme::ARG_VAR }
     };
 
     options_t params = ProcessOptions(argv, argc, optargs);
@@ -247,31 +306,76 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
+    vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+    vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
-        if (args.size() < 2)
+        if ( !groupspec.empty() )
         {
-            cerr << "ERROR: source and target URI must be specified.\n\n";
-            need_help = true;
+            // Check if you have something before -g and after -g.
+            if (args.empty())
+            {
+                // Then all items are sources, but the last one is a single target.
+                if (groupspec.size() < 3)
+                {
+                    cerr << "ERROR: Redundancy group: with nothing preceding -g, use -g <SRC-URI1> <SRC-URI2>... <TAR-URI> (at least 3 args)\n";
+                    need_help = true;
+                }
+                else
+                {
+                    copy(groupspec.begin(), groupspec.end()-1, back_inserter(source_items));
+                    target_items.push_back(*(groupspec.end()-1));
+                }
+            }
+            else
+            {
+                // Something before g, something after g. This time -g can accept also one argument.
+                copy(args.begin(), args.end(), back_inserter(source_items));
+                copy(groupspec.begin(), groupspec.end(), back_inserter(target_items));
+            }
         }
         else
         {
-            source_spec = args[0];
-            target_spec = args[1];
+            if (args.size() < 2)
+            {
+                cerr << "ERROR: source and target URI must be specified.\n\n";
+                need_help = true;
+            }
+            else
+            {
+                source_items.push_back(args[0]);
+                target_items.push_back(args[1]);
+            }
         }
+    }
+
+    if (!need_help)
+    {
+        // Redundancy is then simply recognized by the fact that there are
+        // multiple specified inputs or outputs, for SRT caller only. Check
+        // every URI in advance.
+        if (!CheckMediaSpec("INPUT", source_items, Ref(source_spec)))
+            need_help = true;
+        if (!CheckMediaSpec("OUTPUT", target_items, Ref(target_spec)))
+            need_help = true;
     }
 
     if (need_help)
     {
         cerr << "Usage:\n";
-        cerr << "     " << argv[0] << " [options] <input> <output>\n";
+        cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
+        cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
         cerr << "*** (Position of [options] is unrestricted.)\n";
         cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
         cerr << "where:\n";
-        cerr << "    <input> and <output> is specified by an URI.\n";
+        cerr << "    (1) Exactly one input and one output URI spec is required,\n";
+        cerr << "    (2) Multiple SRT inputs or output as redundant links are allowed.\n";
+        cerr << "        `URI1 URI2 -g URI3` uses 1, 2 input and 3 output\n";
+        cerr << "        `-g URI1 URI2 URI3` like above\n";
+        cerr << "        `URI1 -g URI2 URI3` uses 1 input and 2, 3 output\n";
         cerr << "SUPPORTED URI SCHEMES:\n";
         cerr << "    srt: use SRT connection\n";
         cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";

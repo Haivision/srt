@@ -222,7 +222,8 @@ const SocketOption srt_options [] {
     { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
     { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype },
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
-    { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr }
+    { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::BOOL, nullptr}
 };
 }
 

@@ -967,7 +967,8 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmreq",
         "EXT:kmrsp",
         "EXT:sid",
-        "EXT:smoother"
+        "EXT:smoother",
+        "EXT:group"
     };
 
 

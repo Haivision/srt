@@ -64,6 +64,8 @@ modified by
 #include "cache.h"
 #include "epoll.h"
 #include "handshake.h"
+#include "core.h"
+
 
 class CUDT;
 
@@ -76,6 +78,7 @@ public:
        m_SocketID(0),
        m_ListenSocket(0),
        m_PeerID(0),
+       m_IncludedGroup(),
        m_iISN(0),
        m_pUDT(NULL),
        m_pQueuedSockets(NULL),
@@ -96,13 +99,16 @@ public:
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
-   sockaddr_any m_SelfAddr;                    //< local address of the socket
-   sockaddr_any m_PeerAddr;                    //< peer address of the socket
+   sockaddr_any m_SelfAddr;                  //< local address of the socket
+   sockaddr_any m_PeerAddr;                  //< peer address of the socket
 
    SRTSOCKET m_SocketID;                     //< socket ID
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
+   CUDTGroup::gli_t m_IncludedIter;
+   CUDTGroup* m_IncludedGroup;
+
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
@@ -118,6 +124,8 @@ public:
    int m_iMuxID;                             //< multiplexer ID
 
    pthread_mutex_t m_ControlLock;            //< lock this socket exclusively for control APIs: bind/listen/connect
+
+   CUDT& core() { return *m_pUDT; }
 
    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
@@ -140,6 +148,7 @@ private:
 class CUDTUnited
 {
 friend class CUDT;
+friend class CUDTGroup;
 friend class CRendezvousQueue;
 
 public:
@@ -162,9 +171,10 @@ public:
    int cleanup();
 
       /// Create a new UDT socket.
+      /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket();
+   SRTSOCKET newSocket(CUDTSocket** pps = NULL);
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;
@@ -187,8 +197,9 @@ public:
    int listen(const SRTSOCKET u, int backlog);
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
-   int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
+   int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn, CUDTGroup* pg);
+   int groupConnect(ref_t<CUDTGroup> g, const sockaddr_any& source, const sockaddr_any& target);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -215,17 +226,56 @@ public:
 
    CUDTException* getError();
 
+   CUDTGroup& addGroup(SRTSOCKET id)
+   {
+       CGuard cg(m_ControlLock);
+       // This only ensures that the element exists.
+       CUDTGroup& g = m_Groups[id];
+       g.m_pGlobal = this;
+       return g;
+   }
+
+   void deleteGroup(CUDTGroup* g)
+   {
+       CGuard cg(m_ControlLock);
+       m_Groups.erase(g->m_GroupID);
+   }
+
+   CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
+   {
+       CGuard cg(m_ControlLock);
+
+       for (groups_t::iterator i = m_Groups.begin();
+               i != m_Groups.end(); ++i)
+       {
+           if (i->second.peerid() == peergroup)
+               return &i->second;
+       }
+       return NULL;
+   }
+
+   CEPoll& epolmg() { return m_EPoll; }
+
 private:
 //   void init();
 
+   SRTSOCKET generateSocketID(bool group = false);
+
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
+   typedef std::map<SRTSOCKET, CUDTGroup> groups_t;
+
    sockets_t m_Sockets;
+   groups_t m_Groups;
 
    pthread_mutex_t m_ControlLock;                    // used to synchronize UDT API
 
    pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
-   SRTSOCKET m_SocketIDGenerator;                             // seed to generate a new unique socket ID
+
+   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+
+   SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
+   SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
@@ -237,6 +287,7 @@ private:
    void connect_complete(SRTSOCKET u);
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+   CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const int* udp_sockets = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 

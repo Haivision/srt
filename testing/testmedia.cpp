@@ -173,7 +173,7 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
 }
 
 
-void SrtCommon::InitParameters(string host, map<string,string> par)
+void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
     if ( Verbose::on )
@@ -182,6 +182,63 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
+        }
+    }
+
+    if (path != "")
+    {
+        // Special case handling of an unusual specification.
+
+        if (path.substr(0, 2) != "//")
+        {
+            Error("Path specification not supported for SRT (use // in front for special cases)");
+        }
+
+        path = path.substr(2);
+
+        if (path == "group")
+        {
+            // Group specified, check type.
+            m_group_type = par["type"];
+            if (m_group_type == "")
+            {
+                Error("With //group, the group 'type' must be specified.");
+            }
+
+            if (m_group_type != "redundancy")
+            {
+                Error("With //group, only type=redundancy is currently supported");
+            }
+
+            vector<string> nodes;
+            Split(par["nodes"], ',', back_inserter(nodes));
+
+            if (nodes.empty())
+            {
+                Error("With //group, 'nodes' must specify comma-separated host:port specs.");
+            }
+
+            // Check if correctly specified
+            for (string& hostport: nodes)
+            {
+                if (hostport == "")
+                    continue;
+                UriParser check(hostport, UriParser::EXPECT_HOST);
+                if (check.host() == "" || check.port() == "")
+                {
+                    Error("With //group, 'nodes' must specify comma-separated host:port specs.");
+                }
+
+                if (check.portno() <= 1024)
+                {
+                    Error("With //group, every node in 'nodes' must have port >1024");
+                }
+
+                m_group_nodes.push_back(Connection(check.host(), check.portno()));
+            }
+
+            par.erase("type");
+            par.erase("nodes");
         }
     }
 
@@ -194,7 +251,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         // Use the following convention:
         // 1. Server for source, Client for target
         // 2. If host is empty, then always server.
-        if ( host == "" )
+        if ( host == "" && m_group_nodes.empty() )
             m_mode = "listener";
         //else if ( !dir_output )
         //m_mode = "server";
@@ -206,6 +263,11 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_mode = "caller";
     else if ( m_mode == "server" )
         m_mode = "listener";
+
+    if (m_mode == "listener" && !m_group_nodes.empty())
+    {
+        Error("Multiple nodes (redundant links) only supported in CALLER (client) mode.");
+    }
 
     par.erase("mode");
 
@@ -352,10 +414,10 @@ void SrtCommon::AcceptNewClient()
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir)
+void SrtCommon::Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir)
 {
     m_direction = dir;
-    InitParameters(host, par);
+    InitParameters(host, path, par);
 
     Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
         << "(" << (m_blocking_mode ? "" : "non-") << "blocking)"
@@ -364,7 +426,16 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
     try
     {
         if ( m_mode == "caller" )
-            OpenClient(host, port);
+        {
+            if (m_group_nodes.empty())
+            {
+                OpenClient(host, port);
+            }
+            else
+            {
+                OpenGroupClient(); // Source data are in the fields already.
+            }
+        }
         else if ( m_mode == "listener" )
             OpenServer(m_adapter, port);
         else if ( m_mode == "rendezvous" )
@@ -534,7 +605,7 @@ void SrtCommon::PrepareClient()
 {
     m_sock = srt_create_socket();
     if ( m_sock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_create_socket");
+        Error(UDT::getlasterror(), "srt_socket");
 
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
@@ -545,6 +616,104 @@ void SrtCommon::PrepareClient()
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
     }
 
+}
+
+void SrtCommon::OpenGroupClient()
+{
+    SRT_GROUP_TYPE type = SRT_GTYPE_UNDEFINED;
+
+    // Resolve group type.
+    if (m_group_type == "redundancy")
+        type = SRT_GTYPE_REDUNDANT;
+    // else if blah blah blah...
+    else
+    {
+        Error("With //group, type='" + m_group_type + "' undefined");
+    }
+
+    m_sock = srt_create_group(type);
+
+    int stat = ConfigurePre(m_sock);
+
+    if ( stat == SRT_ERROR )
+        Error(UDT::getlasterror(), "ConfigurePre");
+
+    if ( !m_blocking_mode )
+    {
+        // Note: here the GROUP is added to the poller.
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+    }
+
+    // ConnectClient can't be used here, the code must
+    // be more-less repeated. In this case the situation
+    // that not all connections can be established is tolerated,
+    // the only case of error is when none of the connections
+    // can be established.
+
+    bool any_node = false;
+
+    Verb() << "REDUNDANT connections with " << m_group_nodes.size() << " nodes:";
+
+    int i = 1;
+    for (Connection& c: m_group_nodes)
+    {
+        sockaddr_in sa = CreateAddrInet(c.host, c.port);
+        sockaddr* psa = (sockaddr*)&sa;
+        Verb() << "[" << i << "] Connecting to node " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        ++i;
+
+        int insock = srt_connect(m_sock, psa, sizeof sa);
+        if (insock == SRT_ERROR)
+        {
+            // Whatever. Skip the node.
+            Verb() << "FAILED: ";
+        }
+        else
+        {
+            int stat = ConfigurePost(insock);
+            if (stat == -1)
+            {
+                // This kind of error must reject the whole operation.
+                // Usually you'll get this error on the first socket,
+                // and doing this on the others would result in the same.
+                Error(UDT::getlasterror(), "ConfigurePost");
+            }
+
+            // Have socket, store it into the group socket array.
+            c.socket = insock;
+            c.status = 0;
+            any_node = true;
+        }
+    }
+
+    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
+    if ( !m_blocking_mode )
+    {
+        Verb() << "[ASYNC] " << VerbNoEOL;
+
+        // SPIN-WAITING version. Don't use it unless you know what you're doing.
+        // SpinWaitAsync();
+
+        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
+        int len = 2;
+        SRTSOCKET ready[2];
+        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
+        {
+            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+        }
+        else
+        {
+            Error(UDT::getlasterror(), "srt_epoll_wait");
+        }
+    }
+
+    if (!any_node)
+    {
+        Error("REDUNDANCY: all redundant connections failed");
+    }
+
+    // Prepare group data for monitoring the group status.
+    m_group_data.resize(m_group_nodes.size());
 }
 
 /*
@@ -628,6 +797,13 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
+void SrtCommon::Error(string msg)
+{
+    cerr << "\nERROR (app): " << msg << endl;
+    throw std::runtime_error(msg);
+}
+
+
 void SrtCommon::SetupRendezvous(string adapter, int port)
 {
     bool yes = true;
@@ -674,9 +850,65 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
-SrtSource::SrtSource(string host, int port, const map<string,string>& par)
+void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
-    Init(host, port, par, SRT_EPOLL_IN);
+    if (!grpdata)
+    {
+        // This happens when you passed too small array. Treat this as error and stop.
+        cerr << "ERROR: redundancy group update reports " << grpdata_size
+            << " existing sockets, but app registerred only " << m_group_nodes.size() << endl;
+        Error("Too many unpredicted sockets in the group");
+    }
+
+    // Note: sockets are not necessarily in the same order. Find
+    // the socket by id.
+    for (size_t i = 0; i < grpdata_size; ++i)
+    {
+        SRTSOCKET id = grpdata[i].id;
+
+        SRT_SOCKSTATUS status = grpdata[i].status;
+        int result = grpdata[i].result;
+
+        if (result != -1 && status == SRTS_CONNECTED)
+        {
+            // Everything's ok. Don't do anything.
+            continue;
+        }
+
+        auto pgi = find_if(m_group_nodes.begin(), m_group_nodes.end(), [id](Connection& c) { return c.socket == id; });
+        if (pgi == m_group_nodes.end())
+        {
+            // A new socket appeared out of the blue. Internal error?
+            Error("Unregisterred socket ID appeared in the status. INTERNAL ERROR.");
+        }
+
+        sockaddr_in sa = CreateAddrInet(pgi->host, pgi->port);
+        sockaddr* psa = (sockaddr*)&sa;
+        Verb() << "[" << i << "] RECONNECTING to node " << pgi->host << ":" << pgi->port << " ... " << VerbNoEOL;
+        ++i;
+
+        int insock = srt_connect(m_sock, psa, sizeof sa);
+        if (insock == SRT_ERROR)
+        {
+            // Whatever. Skip the node.
+            Verb() << "FAILED: ";
+        }
+        else
+        {
+            ConfigurePost(insock);
+            // Ignore error this time. It's unlikely that an error
+            // will pop up at the time of reconnecting.
+
+            // Have socket, store it into the group socket array.
+            pgi->socket = insock;
+            pgi->status = 0;
+        }
+    }
+}
+
+SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
+{
+    Init(host, port, path, par, SRT_EPOLL_IN);
     ostringstream os;
     os << host << ":" << port;
     hostport_copy = os.str();
@@ -686,13 +918,21 @@ bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    bool have_group = !m_group_nodes.empty();
     bytevector data(chunk);
     bool ready = true;
     int stat;
     do
     {
+        if (have_group)
+        {
+            mctrl.grpdata = m_group_data.data();
+            mctrl.grpdata_size = m_group_data.size();
+        }
+
         ::transmit_throw_on_interrupt = true;
-        stat = srt_recvmsg(m_sock, data.data(), chunk);
+        stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
         if ( stat == SRT_ERROR )
         {
@@ -727,6 +967,11 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
+    if (have_group)
+    {
+        UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+    }
+
     CBytePerfMon perf;
     srt_bstats(m_sock, &perf, true);
     if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
@@ -744,9 +989,9 @@ bytevector SrtSource::Read(size_t chunk)
     return data;
 }
 
-SrtTarget::SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
+SrtTarget::SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
 {
-    Init(host, port, par, SRT_EPOLL_OUT);
+    Init(host, port, path, par, SRT_EPOLL_OUT);
 }
 
 
@@ -782,20 +1027,38 @@ void SrtTarget::Write(const bytevector& data)
             Error(UDT::getlasterror(), "srt_epoll_wait");
     }
 
-    int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    bool have_group = !m_group_nodes.empty();
+    if (have_group)
+    {
+        mctrl.grpdata = m_group_data.data();
+        mctrl.grpdata_size = m_group_data.size();
+    }
+
+    int stat = srt_sendmsg2(m_sock, data.data(), data.size(), &mctrl);
+
+    // For a socket group, the error is reported only
+    // if ALL links from the group have failed to perform
+    // the operation. If only one did, the result will be
+    // visible in the status array.
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
+
+    if (have_group)
+    {
+        UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+    }
 }
 
-SrtRelay::SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par)
+SrtRelay::SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
 {
-    Init(host, port, par, SRT_EPOLL_IN | SRT_EPOLL_OUT);
+    Init(host, port, path, par, SRT_EPOLL_IN | SRT_EPOLL_OUT);
 }
 
 SrtModel::SrtModel(string host, int port, map<string,string> par)
 {
-    InitParameters(host, par);
+    InitParameters(host, "", par);
     if (m_mode == "caller")
         is_caller = true;
     else if (m_mode == "rendezvous")
@@ -885,7 +1148,8 @@ template <> struct Srt<Target> { typedef SrtTarget type; };
 template <> struct Srt<Relay> { typedef SrtRelay type; };
 
 template <class Iface>
-Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
+Iface* CreateSrt(const string& host, int port, std::string path, const map<string,string>& par)
+{ return new typename Srt<Iface>::type (host, port, path, par); }
 
 bytevector ConsoleRead(size_t chunk)
 {
@@ -1231,13 +1495,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
 
     case UriParser::SRT:
-        iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
-        {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
-            throw invalid_argument("Invalid port number");
-        }
-        ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
+        ptr.reset( CreateSrt<Base>(u.host(), u.portno(), u.path(), u.parameters()) );
         break;
 
 

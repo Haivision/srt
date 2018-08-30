@@ -31,9 +31,18 @@ extern "C" {
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
+// Socket creation.
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
+// Group management.
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
+int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
+int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
+SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
+// int srt_bind_multicast()
+
+// Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
 int srt_bind_acquire(SRTSOCKET u, int udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
@@ -135,8 +144,7 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
     return ret;
 }
 
-extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0 };
-
+extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0, 0, 0 };
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
     *mctrl = srt_msgctrl_default;

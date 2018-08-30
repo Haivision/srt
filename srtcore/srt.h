@@ -97,7 +97,15 @@ written by
 extern "C" {
 #endif
 
-typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
+typedef int32_t SRTSOCKET;
+
+// The most significant bit 31 (sign bit actually) is left unused,
+// so that all people who check the value for < 0 instead of -1
+// still get what they want. The bit 30 is reserved for marking
+// the "socket group". Most of the API functions should work
+// transparently with the socket descriptor designating a single
+// socket or a socket group.
+static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef WIN32
    #ifndef __MINGW__
@@ -182,7 +190,8 @@ typedef enum SRT_SOCKOPT {
     SRTO_PAYLOADSIZE,
     SRTO_TRANSTYPE,         // Transmission type (set of options required for given transmission type)
     SRTO_KMREFRESHRATE,
-    SRTO_KMPREANNOUNCE
+    SRTO_KMPREANNOUNCE,
+    SRTO_GROUPCONNECT
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -516,6 +525,14 @@ typedef struct CBytePerfMon SRT_TRACEBSTATS;
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;
 
+typedef enum SRT_GROUP_TYPE
+{
+    SRT_GTYPE_UNDEFINED,
+    SRT_GTYPE_REDUNDANT,
+    // ...
+    SRT_GTYPE__END
+} SRT_GROUP_TYPE;
+
 // library initialization
 SRT_API extern int srt_startup(void);
 SRT_API extern int srt_cleanup(void);
@@ -525,6 +542,13 @@ SRT_API extern int srt_cleanup(void);
 // and socket creation doesn't need any arguments. Use srt_create_socket().
 SRT_API extern SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API extern SRTSOCKET srt_create_socket();
+
+// Group management
+SRT_API extern SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
+SRT_API extern int srt_include(SRTSOCKET socket, SRTSOCKET group);
+SRT_API extern int srt_exclude(SRTSOCKET socket);
+SRT_API extern SRTSOCKET srt_groupof(SRTSOCKET socket);
+
 SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API extern int srt_bind_acquire(SRTSOCKET u, int sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -547,6 +571,14 @@ SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOP
 SRT_API extern int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API extern int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+
 // XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
 {
@@ -557,7 +589,13 @@ typedef struct SRT_MsgCtrl_
    uint64_t srctime;     // source timestamp (usec), 0: use internal time     
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata;
+   size_t grpdata_size;
 } SRT_MSGCTRL;
+
+static const int SRTF_ASYNC = 1,    // Don't wait until every operation completes
+                 SRTF_PARTIAL = 2,  // Accept that only part of the buffer can be sent
+                 SRTF_FULL = 4;
 
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.

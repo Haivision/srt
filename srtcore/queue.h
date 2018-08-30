@@ -406,6 +406,10 @@ private:
    } m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
+
 private:
    CSndQueue(const CSndQueue&);
    CSndQueue& operator=(const CSndQueue&);
@@ -445,7 +449,10 @@ public:
 
    int recvfrom(int32_t id, ref_t<CPacket> packet);
 
+   // Needed for affinity check (debug only)
    pthread_t threadId() { return m_WorkerThread; }
+
+   void stopWorker();
 
 private:
    static void* worker(void* param);
@@ -468,6 +475,9 @@ private:
 
    volatile bool m_bClosing;            // closing the worker
    pthread_cond_t m_ExitCond;
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
 
 private:
    int setListener(CUDT* u);

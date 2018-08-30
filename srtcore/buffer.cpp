@@ -140,9 +140,10 @@ CSndBuffer::~CSndBuffer()
    pthread_mutex_destroy(&m_BufLock);
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno)
+void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_seqno, ref_t<int32_t> r_msgno)
 {
     int32_t& msgno = *r_msgno;
+    int32_t& seqno = *r_seqno;
 
     int size = len / m_iMSS;
     if ((len % m_iMSS) != 0)
@@ -164,6 +165,11 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
         << (inorder ? "" : " NOT") << " in order");
 
+    // The sequence number passed to this function is the sequence number
+    // that the very first packet from the packet series should get here.
+    // If there's more than one packet, this function must increase it by itself
+    // and then return the accordingly modified sequence number in the reference.
+
     Block* s = m_pLastBlock;
     msgno = m_iNextMsgNo;
     for (int i = 0; i < size; ++ i)
@@ -172,9 +178,12 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         if (pktlen > m_iMSS)
             pktlen = m_iMSS;
 
-        HLOGC(dlog.Debug, log << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+        HLOGC(dlog.Debug, log << "addBuffer: seq=" << seqno << " spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
         memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
         s->m_iLength = pktlen;
+
+        s->m_iSeqNo = seqno;
+        seqno = CSeqNo::incseq(seqno);
 
         s->m_iMsgNoBitset = m_iNextMsgNo | inorder;
         if (i == 0)
@@ -350,15 +359,17 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    return total;
 }
 
-int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, int kflgs)
+int CSndBuffer::readData(ref_t<CPacket> r_packet, ref_t<uint64_t> srctime, int kflgs)
 {
    // No data to read
    if (m_pCurrBlock == m_pLastBlock)
       return 0;
 
    // Make the packet REFLECT the data stored in the buffer.
-   *data = m_pCurrBlock->m_pcData;
+   r_packet.get().m_pcData = m_pCurrBlock->m_pcData;
    int readlen = m_pCurrBlock->m_iLength;
+   r_packet.get().setLength(readlen);
+   r_packet.get().m_iSeqNo = m_pCurrBlock->m_iSeqNo;
 
    // XXX This is probably done because the encryption should happen
    // just once, and so this sets the encryption flags to both msgno bitset
@@ -393,9 +404,9 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
    {
        m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
    }
-   msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
+   r_packet.get().m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
 
-   srctime =
+   *srctime =
       m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
       m_pCurrBlock->m_ullOriginTime_us;
 
@@ -406,8 +417,12 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
    return readlen;
 }
 
-int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, uint64_t& srctime, int& msglen)
+int CSndBuffer::readData(const int offset, ref_t<CPacket> r_packet, ref_t<uint64_t> r_srctime, ref_t<int> r_msglen)
 {
+   int32_t& msgno_bitset = r_packet.get().m_iMsgNo;
+   uint64_t& srctime = *r_srctime;
+   int& msglen = *r_msglen;
+
    CGuard bufferguard(m_BufLock);
 
    Block* p = m_pFirstBlock;
@@ -456,8 +471,9 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
       return -1;
    }
 
-   *data = p->m_pcData;
+   r_packet.get().m_pcData = p->m_pcData;
    int readlen = p->m_iLength;
+   r_packet.get().setLength(readlen);
 
    // XXX Here the value predicted to be applied to PH_MSGNO field is extracted.
    // As this function is predicted to extract the data to send as a rexmited packet,
@@ -465,7 +481,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
    // encrypted, and with all ENC flags already set. So, the first call to send
    // the packet originally (the other overload of this function) must set these
    // flags.
-   msgno_bitset = p->m_iMsgNoBitset;
+   r_packet.get().m_iMsgNo = p->m_iMsgNoBitset;
 
    srctime = 
       p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
@@ -934,16 +950,21 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - passack: false (the report concerns a packet with an exactly next sequence)
     // - skipseqno == -1: no packets to skip towards the first RTP
-    // - ppkt: that exactly packet that is reported (for debugging purposes)
+    // - curpktseq: sequence number for reported packet (for debug purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
+
+    // getRcvReadyMsg returns true if the time to play for the first message
+    // (returned in r_tsbpdtime) is in the past.
     if (getRcvReadyMsg(r_tsbpdtime, r_curpktseq))
     {
         return true;
     }
     else if (*r_tsbpdtime != 0)
     {
+        // This means that a message next to be played, has been found,
+        // but the time to play is in future.
         return false;
     }
 
@@ -951,7 +972,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, passack=true, skipseqno=-1, ppkt=0, @return false
+    //    - returned: tsbpdtime=0, passack=true, skipseqno=-1, curpktseq=0, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
     //    - returned: tsbpdtime=PKT.TS, passack=true, skipseqno=PKT.SEQ, ppkt=PKT, @return LOCAL(PKT.TS) <= NOW
 
@@ -1651,6 +1672,8 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
     int rmpkts = 0;
     int rmbytes = 0;
     //skip all bad msgs at the beginning
+    // This loop rolls until the "buffer is empty" (head == tail),
+    // in particular, there's no units accessible for the reader.
     while (m_iStartPos != m_iLastAckPos)
     {
         // Roll up to the first valid unit
