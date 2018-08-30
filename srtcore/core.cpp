@@ -7587,6 +7587,29 @@ vector<int32_t> CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     return output;
 }
 
+#if ENABLE_HEAVY_LOGGING
+std::string DisplayLossArray(const vector<int32_t>& a)
+{
+    std::ostringstream os;
+
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        int32_t seq = a[i];
+        if (IsSet(seq, LOSSDATA_SEQNO_RANGE_FIRST))
+            os << (seq & ~LOSSDATA_SEQNO_RANGE_FIRST) << "-";
+        else
+            os << seq << ",";
+    }
+
+    std::string out = os.str();
+    if (out[out.size()-1] != ',')
+        return out + "???";
+    return out.substr(0, out.size()-1);
+}
+#else
+std::string DisplayLossArray(const vector<int32_t>&) { return std::string(); }
+#endif
+
 int CUDT::processData(CUnit* unit)
 {
    THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
@@ -7838,6 +7861,7 @@ int CUDT::processData(CUnit* unit)
 
        if (!lossarray.empty())
        {
+           HLOGC(mglog.Debug, log << "LOSSREPORT: " << DisplayLossArray(lossarray));
            sendCtrl(UMSG_LOSSREPORT, NULL, &lossarray[0], lossarray.size());
 
            if (m_bTsbPd)
