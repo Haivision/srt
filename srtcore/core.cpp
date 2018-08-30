@@ -7539,7 +7539,7 @@ vector<int32_t> CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     if ( self->m_bPeerRexmitFlag )
         initial_loss_ttl = self->m_iReorderTolerance;
 
-    int seqdiff = CSeqNo::seqcmp(self->m_iRcvCurrSeqNo, pkt.m_iSeqNo);
+    int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
 
     HLOGC(mglog.Debug, log << "defaultPacketArrival: checking sequence " << pkt.m_iSeqNo
             << " against latest " << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
@@ -7848,7 +7848,7 @@ int CUDT::processData(CUnit* unit)
            }
        }
 
-       int loss = CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 1;
+       int loss = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) - 1;
        // Difference between these two sequence numbers is expected to be:
        // 0 - duplicated last packet (theory only)
        // 1 - subsequent packet (alright)
