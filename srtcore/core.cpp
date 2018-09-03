@@ -3184,7 +3184,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
             // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
             // Sanity check
             m_llLastReqTime = 0;
-            if (response.getLength() == -1u)
+            if (response.getLength() == size_t(-1))
             {
                 LOGC(mglog.Fatal, log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
                 return CONN_REJECT;
@@ -3293,7 +3293,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
 
-        if (rst != RST_OK || response.getLength() == -1u)
+        if (rst != RST_OK || response.getLength() == size_t(-1))
         {
             // Actually the -1 length would be an IPE, but it's likely that this was reported already.
             HLOGC(mglog.Debug, log << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
