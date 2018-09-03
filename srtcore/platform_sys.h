@@ -16,7 +16,7 @@
    #include <ws2ipdef.h>
    #include <windows.h>
    #if defined(_MSC_VER)
-      #include <win/stdint.h>
+      #include <stdint.h>
       #include <win/inttypes.h>
       #pragma warning(disable:4251)
    #elif defined(__MINGW32__)
