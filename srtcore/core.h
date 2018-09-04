@@ -776,7 +776,7 @@ private:
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int32_t uptoseq = CSeqNo::m_iMaxSeqNo);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
-    void dropMessage(int32_t seqtoskip);
+    size_t dropMessage(int32_t seqtoskip);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
     /// @param ifs [in] The input file stream.

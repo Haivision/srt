@@ -10641,16 +10641,23 @@ void CUDTGroup::readInterceptorThread()
     CGuard glock(m_GroupLock);
     CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
 
+    HLOGP(tslog.Debug, "STARTING GROUP TSBPD THREAD");
+
     for (;;)
     {
+        HLOGP(tslog.Debug, "GROUP: Loop begin");
         // This loop will be interrupted when closing.
         if (m_bClosing)
+        {
+            HLOGP(tslog.Debug, "GROUP: The group is closing, interrupting thread.");
             break;
+        }
 
         // Check if you have any data waiting for extraction.
         // If not, sleep until there are any
         if (m_Providers.empty())
         {
+            HLOGP(tslog.Debug, "GROUP: No packets provided - waiting for provision");
             cc_ahead.wait();
             continue; // re-check the initial loop-break condition
         }
@@ -10667,12 +10674,14 @@ void CUDTGroup::readInterceptorThread()
 
         if (!have || frp.provider.empty())
         {
+            LOGC(tslog.Error, log << "IPE: EMPTY PROVIDER %" << m_RcvBaseSeqNo << " - searching for next valid...");
             // This is a fatal error, internal data discrepancy.
             // Re-check the buffer, find the earliest one, if none found,
             // reset the buffer and set the base sequence to ready sequence
             firstready = m_Providers.find_if(Provider::FValid());
             if (firstready == -1)
             {
+                LOGC(tslog.Error, log << "IPE: NO PROVIDERS PAST %" << m_RcvBaseSeqNo << " - lifting to %" << m_RcvReadySeqNo);
                 m_Providers.reset();
                 m_RcvBaseSeqNo = m_RcvReadySeqNo;
                 continue;
@@ -10690,12 +10699,16 @@ void CUDTGroup::readInterceptorThread()
             {
                 // XXX LOG DROP
                 // The time has come. Drop and forget all others.
+                int32_t new_base = CSeqNo::incseq(m_RcvBaseSeqNo, firstready);
+                LOGC(tslog.Error, log << "TLPKTDROP - dropping %" << m_RcvBaseSeqNo << "-" << new_base);
                 m_Providers.drop(firstready-1);
-                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, firstready);
+                m_RcvBaseSeqNo = new_base;
                 firstready = 0;
             }
             else
             {
+                HLOGC(tslog.Debug, log << "GROUP: FUTURE PACKET %" << m_RcvBaseSeqNo << " to be played in "
+                        << ((frp.playtime - now)/1000.0) << "ms T=" << logging::FormatTime(frp.playtime));
                 // Do a CV-sleep in this loop, then start again.
                 // This will restart the loop when the time passes
                 // or when a new packet comes that predates the first
@@ -10721,7 +10734,7 @@ void CUDTGroup::readInterceptorThread()
                 Provider prov;
                 if (!m_Providers.get(i, Ref(prov)))
                 {
-                    // ERROR, XXX LOG
+                    LOGC(tslog.Error, log << "IPE: No packet at %" << CSeqNo::incseq(m_RcvBaseSeqNo, i) << " - interrupting loop");
                     break;
                 }
 
@@ -10729,6 +10742,7 @@ void CUDTGroup::readInterceptorThread()
                 // This limit should be set to the value of the receiver buffer.
                 if (m_Pending.size() > 8192)
                 {
+                    LOGC(tslog.Error, log << "Group buffer full! DROPPING ONE PACKET.");
                     m_Pending.pop_front();
                 }
 
@@ -10754,6 +10768,9 @@ void CUDTGroup::readInterceptorThread()
                             LOGC(mglog.Error, log << "SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << m_RcvBaseSeqNo);
                             continue;
                         }
+
+                        HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << m_RcvBaseSeqNo << " size=" << nbytes
+                                << " STAMP: " << BufferStamp(p.packet.m_pcData, p.packet.getLength()));
                         break; // We have our data. 
                     }
                     ++ip;
@@ -10761,7 +10778,7 @@ void CUDTGroup::readInterceptorThread()
 
                 if (p.playtime == 0)
                 {
-                    // Nothing was extracted - RUNTIME ERROR XXX
+                    LOGC(tslog.Error, log << "IPE: NO PACKET EXTRACTED - withdrawing added cell");
                     m_Pending.pop_back();
                     break;
                 }
@@ -10773,7 +10790,9 @@ void CUDTGroup::readInterceptorThread()
                 for (list<SocketData>::iterator sd = m_Group.begin(); sd != m_Group.end(); ++sd)
                 {
                     CUDT* self = sd->ps->m_pUDT;
-                    self->dropMessage(skiptoseqno);
+                    size_t ns SRT_ATR_UNUSED = self->dropMessage(skiptoseqno);
+                    HLOGC(tslog.Debug, log << "By @" << self->m_SocketID << " skipping up to %" << m_RcvBaseSeqNo
+                            << ", skipped " << ns << " bytes");
                 }
                 ++lastextracted;
             }
@@ -10787,8 +10806,7 @@ void CUDTGroup::readInterceptorThread()
 
             if (m_Pending.empty())
             {
-                // Not able to deliver any data. Wait for the next portion
-                // XXX This should never happen, log.
+                LOGC(tslog.Error, log << "IPE: No more pending at offset=" << lastextracted);
                 continue;
             }
         }
@@ -10807,6 +10825,7 @@ void CUDTGroup::readInterceptorThread()
              */
             if (m_bSynRecving)
             {
+                HLOGC(tslog.Debug, log << "SYNC MODE: signaling data rx cv");
                 recvdata_cc.signal_locked(recv_gl);
             }
             /*
@@ -10818,11 +10837,11 @@ void CUDTGroup::readInterceptorThread()
     }
 }
 
-void CUDT::dropMessage(int32_t skiptoseqno)
+size_t CUDT::dropMessage(int32_t skiptoseqno)
 {
     int seqlen = CSeqNo::seqoff(m_iRcvLastSkipAck, skiptoseqno);
     if (seqlen <= 0)
-        return;
+        return 0;
 
     // The lock is applied in this order: RecvLock, then AckLock.
     // This follows the order in CUDT::tsbpd, which does skipData
@@ -10831,8 +10850,9 @@ void CUDT::dropMessage(int32_t skiptoseqno)
     CGuard acklock(m_AckLock);
 
     updateForgotten(seqlen, m_iRcvLastSkipAck, skiptoseqno);
-    m_pRcvBuffer->dropData(seqlen);
+    size_t dd = m_pRcvBuffer->dropData(seqlen);
     m_iRcvLastSkipAck = skiptoseqno;
+    return dd;
 }
 
 
