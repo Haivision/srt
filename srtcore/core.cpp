@@ -5821,7 +5821,7 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
     return receiveBuffer(data, len);
 }
 
-int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
+int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_t uptoseq)
 {
     SRT_MSGCTRL& mctrl = *r_mctrl;
     // Recvmsg isn't restricted to the smoother type, it's the most
@@ -5883,11 +5883,15 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             return res;
     }
 
+    int seqdistance = -1;
+    if (uptoseq != CSeqNo::m_iMaxSeqNo)
+        seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq)-1;
+
     if (!m_bSynRecving)
     {
         HLOGC(dlog.Debug, log << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
-        int res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
+        int res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
         if (res == 0)
         {
             // read is not available any more
@@ -5979,7 +5983,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 << " NMSG " << m_pRcvBuffer->getRcvMsgNum());
                 */
 
-        res = m_pRcvBuffer->readMsg(data, len, r_mctrl);
+        res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
 
         if (m_bBroken || m_bClosing)
         {
@@ -9438,10 +9442,7 @@ void CUDTGroup::addEPoll(int eid)
 
        any = true;
    }
-   // Locking doesn't seem necessary. The HEAD-TAIL range
-   // is for exclusive use of the reader, which is group
-   // in this case.
-   if (!any || !m_pRcvBuffer->isRcvDataReady())
+   if (!any || m_Pending.empty())
        all_in = false;
 
    if (any)
@@ -9525,6 +9526,19 @@ std::list<CUDTGroup::SocketData> CUDTGroup::s_NoGroup;
 CUDTGroup::gli_t CUDTGroup::add(SocketData data)
 {
     CGuard g(m_GroupLock);
+
+    if (m_Group.empty())
+    {
+        // First socket (or the group has somehow become empty).
+        // Set the size of providers buffer to the value identical
+        // with the buffer size.
+        m_Providers.set_capacity(data.ps->m_pUDT->m_iRcvBufSize);
+
+        // XXX In case when m_Pending is turned into some other
+        // container type, preallocate the memory here.
+        //m_Pending.reserve(data.ps->m_pUDT->m_iRcvBufSize);
+    }
+
     m_Group.push_back(data);
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)
@@ -9575,24 +9589,24 @@ CUDTGroup::CUDTGroup():
         m_bTsbPd(true),
         m_bTLPktDrop(true),
         m_iRcvTimeOut(-1),
-        m_RcvTsbPdThread(),
-        m_pRcvBuffer(),
+        m_RcvInterceptorThread(),
+        m_Providers(0), // Will be set later in CUDTGroup::add
         m_bOpened(false),
         m_bClosing(false),
-        m_iRcvDeliveredSeqNo(0),
-        m_iRcvContiguousSeqNo(0),
         m_iLastSchedSeqNo(0)
 {
     CGuard::createMutex(m_GroupLock);
-    CGuard::createCond(m_RcvTsbPdCond);
-    CGuard::createCond(m_RecvDataCond);
+    CGuard::createMutex(m_RcvDataLock);
+    CGuard::createCond(m_RcvDataCond);
+    CGuard::createCond(m_RcvPacketAhead);
 }
 
 CUDTGroup::~CUDTGroup()
 {
-    CGuard::releaseCond(m_RecvDataCond);
-    CGuard::releaseCond(m_RcvTsbPdCond);
     CGuard::releaseMutex(m_GroupLock);
+    CGuard::releaseMutex(m_RcvDataLock);
+    CGuard::releaseCond(m_RcvDataCond);
+    CGuard::releaseCond(m_RcvPacketAhead);
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -10421,300 +10435,404 @@ void CUDTGroup::getMemberStatus(ref_t< vector<SRT_SOCKGROUPDATA> > r_gd, SRTSOCK
 int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 {
     HLOGP(mglog.Debug, "CUDTGroup::recv -- start, locking group");
-    CGuard groupguard(m_GroupLock);
-    CCondDelegate tscond(m_RcvTsbPdCond, groupguard);
-
-    // This checking requires the group to be locked because
-    // a socket may go disconnected in the meantime and in result
-    // this variable turn to NULL.
-    if (!m_pRcvBuffer)
-    {
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-
-        // Signal to unlock TSBPD and make it exit
-        tscond.signal_locked(groupguard);
-        // This value becomes NULL when the last socket unrefs it.
-        // This means that the group contains no sockets.
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    }
-
-    bool any = false;
-    for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
-    {
-        // In order to check arguments by smoother, you need at least
-        // one working connection. Well, to do any operation of reading
-        // as well.
-        if (i->ps->m_pUDT->stillConnected())
-        {
-            if (!i->ps->m_pUDT->m_Smoother->checkTransArgs(
-                        Smoother::STA_MESSAGE,
-                        Smoother::STAD_RECV,
-                        buf, len, -1, false))
-                throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
-            any = true;
-            break;
-        }
-    }
-
-    if (!any)
-    {
-        // Signal to unlock TSBPD and make it exit
-        tscond.signal_locked(groupguard);
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    }
-
-
-    // ----
-    // ASYNC MODE. Check if anything ready to deliver, if not, return AGAIN/RDAVAIL.
-    // ----
-    if (!m_bSynRecving)
-    {
-        HLOGC(dlog.Debug, log << "CUDTGroup::recv: BEGIN ASYNC MODE. Going to extract payload size=" << len);
-
-        // Async mode: try to read once. If this fails, return AGAIN.
-        int res = m_pRcvBuffer->readMsg(buf, len, r_mc);
-        if (res == 0)
-        {
-            // Kick TsbPd thread to schedule next wakeup (if running)
-            HLOGP(dlog.Debug, "CUDTGroup::recv: nothing to read, kicking TSBPD, return AGAIN");
-            if (m_bTsbPd)
-                tscond.signal_locked(groupguard);
-
-            // Nothing is available. Clear events, return AGAIN.
-            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-            throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
-        }
-
-        // So, we have the data, copied to the output buffer.
-        // Check if we have anything for the next time.
-        if (!m_pRcvBuffer->isRcvDataReady())
-        {
-            // Kick TsbPd thread to schedule next wakeup (if running)
-            HLOGP(dlog.Debug, "CUDTGroup::recv: DATA READ, but nothing more - kicking TSBPD.");
-            if (m_bTsbPd)
-                tscond.signal_locked(groupguard);
-            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-
-        }
-        return res;
-    }
-
-    // ----
-    // SYNC MODE. If anything ready to deliver, deliver. Otherwise roll in a waiting loop
-    // until anything is available or the connection got broken.
-    // ----
-    HLOGC(dlog.Debug, log << "CUDTGroup::recv: BEGIN SYNC MODE. Going to extract payload size=" << len);
-
-    // Sync mode: if nothing available, wait for the signal, then try again.
-    // The signal will be delivered:
-    // - in non-TSBPD mode, by the receiver buffer
-    // - in TSBPD mode, by TSBPD thread.
-
-    int res = 0;
-    bool timeout = false;
-    //Do not block forever, check connection status each 1 sec.
-    uint64_t recvtmo = m_iRcvTimeOut <= 0 ? 1000 : m_iRcvTimeOut;
-
-    CCondDelegate recv_cond(m_RecvDataCond, groupguard);
-
-    do
-    {
-        if (m_pRcvBuffer && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
-        {
-            /* Kick TsbPd thread to schedule next wakeup (if running) */
-            if (m_bTsbPd)
-            {
-                HLOGP(tslog.Debug, "CUDTGroup::recv KICK tsbpd()");
-                tscond.signal_locked(groupguard);
-            }
-
-            do
-            {
-                uint64_t exptime = CTimer::getTime() + (recvtmo * 1000ULL);
-
-                HLOGC(tslog.Debug, log << "CUDTGroup::recv fall asleep up to TS="
-                    << logging::FormatTime(exptime) << " lock=" << (&m_GroupLock) << " cond=" << (&m_RecvDataCond));
-
-                if (!recv_cond.wait_until(exptime))
-                {
-                    if (!(m_iRcvTimeOut <= 0))
-                        timeout = true;
-                    HLOGP(tslog.Debug, "CUDTGroup::recv DATA COND: EXPIRED -- checking connection conditions and rolling again");
-                }
-                else
-                {
-                    HLOGP(tslog.Debug, "CUDTGroup::recv DATA COND: KICKED.");
-                }
-            } while (m_pRcvBuffer && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
-
-#if ENABLE_HEAVY_LOGGING
-            bool data_ready = m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady();
-
-            HLOGC(tslog.Debug, log << "CUDTGroup::recv lock-waiting loop exited: stillConntected=" << m_pRcvBuffer
-                << "timeout=" << timeout << " data-ready=" << data_ready);
-#endif
-            // After re-acquiring the lock, the buffer could have been gone
-            // due to losing all connections. Interrupt the loop in this case,
-            // it doesn't make any sense anymore.
-            if (!m_pRcvBuffer)
-            {
-                m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-            }
-        }
-
-        res = m_pRcvBuffer->readMsg(buf, len, r_mc);
-
-        if (m_bClosing)
-        {
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-    } while ((res == 0) && !timeout);
-
-    if (!m_pRcvBuffer->isRcvDataReady())
-    {
-        // Falling here means usually that res == 0 && timeout == true.
-        // res == 0 would repeat the above loop, unless there was also a timeout.
-        // timeout has interrupted the above loop, but with res > 0 this condition
-        // wouldn't be satisfied.
-
-        // read is not available any more
-
-        // Kick TsbPd thread to schedule next wakeup (if running)
-        if (m_bTsbPd)
-        {
-            HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-            tscond.signal_locked(groupguard);
-        }
-
-        // Shut up EPoll if no more messages in non-blocking mode
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
-    }
-
-    /* XXX DEBUG STUFF - enable when required
-       {
-       char ptrn [] = "RECVMSG/EXIT RES ? RCVTIMEOUT                ";
-       char chartribool [3] = { '-', '0', '+' };
-       int pos [] = { 17, 29 };
-       ptrn[pos[0]] = chartribool[int(res >= 0) + int(res > 0)];
-       sprintf(ptrn + pos[1], "%d\n", m_iRcvTimeOut);
-       fputs(ptrn, stderr);
-       }
-    // */
-
-    if ((res <= 0) && (m_iRcvTimeOut >= 0))
-        throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
-
-    return res;
-}
-
-// This is a common part of CUDT::tsbpd and CUDTGroup::tsbpd.
-// Could be provided by a common abstract class, but this would generate too much noise.
-template <class ExecutorType>
-void SRT_tsbpdLoop(
-        ExecutorType* self,
-        SRTSOCKET sid,
-        CGuard& lock)
-{
-    CCondDelegate rcond(*self->recvDataCond(), lock);
-    CCondDelegate tscond(*self->recvTsbPdCond(), lock);
 
     for (;;)
     {
-        if (self->closing())
+        if (m_bClosing)
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+        bool any = false;
         {
-            HLOGP(tslog.Debug, "TSBPD INTERRUPTED: exiting");
-            break;
+            CGuard groupguard(m_GroupLock);
+            CCondDelegate cc_ahead(m_RcvPacketAhead, groupguard);
+
+            for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
+            {
+                // In order to check arguments by smoother, you need at least
+                // one working connection. Well, to do any operation of reading
+                // as well.
+                if (i->ps->m_pUDT->stillConnected())
+                {
+                    if (!i->ps->m_pUDT->m_Smoother->checkTransArgs(
+                                Smoother::STA_MESSAGE,
+                                Smoother::STAD_RECV,
+                                buf, len, -1, false))
+                        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
+                    any = true;
+                    break;
+                }
+            }
+
+            if (!any)
+            {
+                // Signal to unlock TSBPD and make it exit
+                cc_ahead.signal_locked(groupguard);
+                m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+                throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+            }
         }
 
-        int32_t pkt_seq = 0;
-        uint64_t tsbpdtime = 0;
-        bool need_skipped = false;
-
-        // This is the wakeup moment.
-
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-        self->rcvBuffer()->updRcvAvgDataSize(CTimer::getTime());
-#endif
-
-        bool rxready = self->rcvBuffer()->getFirstAvailMsg(Ref(tsbpdtime), Ref(pkt_seq), Ref(need_skipped));
-#if ENABLE_HEAVY_LOGGING
-
-        if (tsbpdtime == 0)
+        CGuard readlock(m_RcvDataLock);
+        CCondDelegate rcvcond(m_RcvDataCond, readlock);
+        if (m_Pending.empty())
         {
-            HLOGC(tslog.Debug, log << "getFirstAvailMsg status: no packets available");
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+
+            // No data to read, report error if nonblocking
+            if (!m_bSynRecving)
+                throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+
+            // Wait indefinitely
+            rcvcond.wait();
+            continue;
+        }
+
+        // The buffer isn't empty, but the packet on top may be not yet
+        // ready to deliver
+        uint64_t now = CTimer::getTime();
+
+        if (m_Pending[0].playtime > now)
+        {
+            // Sleep by CV
+            rcvcond.wait_until(m_Pending[0].playtime);
+            continue;
+        }
+
+    }
+    // Top packet is ready to play, extract it, if you have enough space.
+    if (int(m_Pending[0].packet.getLength()) > len)
+    {
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+    }
+
+    len = m_Pending[0].packet.getLength();
+    memcpy(buf, m_Pending[0].packet.m_pcData, len);
+    *r_mc = m_Pending[0].msgctrl;
+    m_Pending.pop_front();
+
+    return len;
+}
+
+vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CUDT* provider, uint64_t time)
+{
+    // This should be called by RcvQ:worker thread from one
+    // of the sockets from the group.
+
+    // This function defines that the packet at 'sequence' has come,
+    // the expected sequence is 'exp_sequence'. If they are equal,
+    // there's no packet loss, otherwise the loss bitmap should
+    // be filled with values from exp_sequence up to one less
+    // than 'sequence' by taking current values from the provider array.
+
+    vector<bool> loss_bitmap;
+
+    if (!CGuard::isthread(m_RcvInterceptorThread))
+    {
+        HLOGP(mglog.Debug, "Spawning GROUP TSBPD thread");
+        int st = 0;
+        {
+            ThreadName tn("SRT:GrpInt");
+            st = pthread_create(&m_RcvInterceptorThread, NULL, &CUDTGroup::readInterceptorThread_FWD, this);
+        }
+        if ( st != 0 )
+        {
+            LOGC(mglog.Fatal, log << "processData: PROBLEM SPAWNING TSBPD thread: " << st);
+            return loss_bitmap;
+        }
+    }
+
+    CGuard gl(m_GroupLock);
+    CCondDelegate cc_ahead(m_RcvPacketAhead, gl);
+
+    // First, notify the position.
+    int offset = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo);
+    if (offset < 0)
+        return loss_bitmap; // ignore; the packet is already extracted
+
+    bool nopackets = m_Providers.empty();
+
+    if (!m_Providers.update(offset, Provider::FUpdate(provider, time)))
+    {
+        // This is a fallback; it should never happen because
+        // packets should be extracted immediately or when the
+        // time comes. Case it happens that the time is long in future
+        // (at least theoretically), and it's preceded by a lost
+        // packet long time not recovered, this should be taken care
+        // of by loss-dropping forcefully.
+
+        // Drop as many initial packets as necessary to store this one,
+        // then try again.
+        int dropshift = offset - (m_Providers.capacity()-1);
+        if (dropshift > 0)
+        {
+            offset -= dropshift; // should be same as: offset = capacity()-1
+            m_Providers.drop(dropshift);
+            m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, dropshift);
+            m_Providers.update(offset, Provider::FUpdate(provider, time));
         }
         else
         {
-            HLOGC(tslog.Debug, log << "getFirstAvailMsg status: seq=" << pkt_seq << " PTS=" << logging::FormatTime(tsbpdtime)
-                    << (rxready ? " (considered now)" : " (in future)")
-                    << (need_skipped ? " DROP required" : " CONTIGUOUS"));
+            return loss_bitmap; // fallback - this should never happen, XXX LOG!
         }
-#endif
+    }
 
-        if (self->isTLPktDrop() && need_skipped && rxready)
+    // If provider buffer was empty, then m_RcvReadySeqNo has a singluar
+    // value and m_RcvBaseSeqNo has the value of the sequence that is expected
+    // to be stored at position 0 in the buffer (as usual, with the difference
+    // that we know for sure in this case that there is no element at this
+    // position).
+
+    bool isahead;
+
+    if (nopackets)
+    {
+        // This turns the currently SINGULAR value of m_RcvLatestSeqNo
+        m_RcvLatestSeqNo = sequence;
+        isahead = true;
+    }
+    else
+    {
+        isahead = CSeqNo::seqcmp(sequence, m_RcvReadySeqNo) < 0;
+        if (CSeqNo::seqcmp(sequence, m_RcvLatestSeqNo) > 0)
         {
-            // We can't wait any more time for the packet to arrive, the next-to-lost packet
-            // is ready to play. Forget the lost packets.
-            self->forgetPacketsUpTo(pkt_seq);
+            m_RcvLatestSeqNo = sequence;
         }
-#if ENABLE_HEAVY_LOGGING
-        string sleep_reason = "NO DATA";
-#endif
+    }
 
-        // rxready simply means that the TSBPD time of this packet is already in the past.
-        // Otherwise there's either tsbpdtime == 0 (if no packet is waiting in the buffer),
-        // or in future.
-        if (rxready)
+    if (isahead)
+    {
+        m_RcvReadySeqNo = sequence;
+        cc_ahead.signal_locked(gl);
+    }
+
+    // Now provide as many bits as needed for the range between exp_range and sequence
+    // with marks where the lost packets are. If they are equal, there are no loss.
+    if (exp_sequence == sequence)
+        return loss_bitmap; // still empty.
+
+    // First check if we had these packets notified at all.
+    // That is, if exp_sequence predates m_RcvBaseSeqNo, all bits
+    // in this range should be set to 1.
+
+    int since = 0;
+    int forgotten = CSeqNo::seqcmp(m_RcvBaseSeqNo, exp_sequence);
+    if (forgotten > 0)
+    {
+        loss_bitmap.resize(forgotten, true);
+    }
+    else
+    {
+        since = -forgotten;
+    }
+
+    for (int i = since; i < offset; ++i)
+    {
+        Provider p;
+        if (!m_Providers.get(i, Ref(p)))
+            break; // don't go further if no element here. XXX LOG, impossible error!
+        loss_bitmap.push_back(!p.provider.empty());
+    }
+
+    return loss_bitmap;
+}
+
+void CUDTGroup::readInterceptorThread()
+{
+    CGuard glock(m_GroupLock);
+    CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
+
+    for (;;)
+    {
+        // This loop will be interrupted when closing.
+        if (m_bClosing)
+            break;
+
+        // Check if you have any data waiting for extraction.
+        // If not, sleep until there are any
+        if (m_Providers.empty())
         {
-            if (self->isSynReceiving())
+            cc_ahead.wait();
+            continue; // re-check the initial loop-break condition
+        }
+
+        // We have something in the providers.
+        // Get the time from the nearest provider.
+        // Compare it with current time.
+        uint64_t now = CTimer::getTime();
+
+        // Should be 0, if there's a packet at position 0.
+        int firstready = CSeqNo::seqcmp(m_RcvReadySeqNo, m_RcvBaseSeqNo);
+        Provider frp;
+        bool have = m_Providers.get(firstready, Ref(frp));
+
+        if (!have || frp.provider.empty())
+        {
+            // This is a fatal error, internal data discrepancy.
+            // Re-check the buffer, find the earliest one, if none found,
+            // reset the buffer and set the base sequence to ready sequence
+            firstready = m_Providers.find_if(Provider::FValid());
+            if (firstready == -1)
             {
-                HLOGC(tslog.Debug, log << "tsbpd: TIME TO PLAY NOW: setting EPOLL bit and signaling DataCond of %" << sid
-                        << " LOCK:lock=" << lock.show_mutex() << " SIGNAL:cond=" << self->recvDataCond());
-                rcond.signal_locked(lock);
+                m_Providers.reset();
+                m_RcvBaseSeqNo = m_RcvReadySeqNo;
+                continue;
+            }
+            m_Providers.get(firstready, Ref(frp));
+        }
+
+        // If the first ready packet is not the one at position 0,
+        // it means that we have to wait for that packet to be available,
+        // not more than up to the moment when the ready packet needs to
+        // be delivered.
+        if (firstready != 0)
+        {
+            if (frp.playtime < now)
+            {
+                // XXX LOG DROP
+                // The time has come. Drop and forget all others.
+                m_Providers.drop(firstready-1);
+                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, firstready);
+                firstready = 0;
             }
             else
             {
-                HLOGC(tslog.Debug, log << "tsbpd: TIME TO PLAY NOW: ONLY setting EPOLL (async mode) for %" << sid);
+                // Do a CV-sleep in this loop, then start again.
+                // This will restart the loop when the time passes
+                // or when a new packet comes that predates the first
+                // ready for extraction.
+                cc_ahead.wait_until(frp.playtime);
+                continue;
             }
-            self->uglobal()->epolmg().update_events(sid, self->pollset(), SRT_EPOLL_IN, true);
-
-
-            HLOGC(tslog.Debug, log << "tsbpd: packet SIGNED OFF: seq=" << pkt_seq << " - WAIT FOR READER TO EXTRACT.");
-
-            // This enforces jumping to the condition that contains no timeout waiting
-            // so that this makes the producer-consumer cycle against the reading function.
-            // IMPORTANT: this causes to wait for the next signal coming from anywhere,
-            // which may be the packet coming in, or the reading function confirming that
-            // it has read the signed-off packet.
-            tsbpdtime = 0;
-#if ENABLE_HEAVY_LOGGING
-            sleep_reason = "SIGNED OFF";
-#endif
         }
 
-        // Ok, worked out. Now go to sleep.
+        CGuard recv_gl(m_RcvDataLock);
+        CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl);
 
-        if (tsbpdtime != 0)
+        // If we have a first packet ready, extract it immediately,
+        // and continue up to the first non-contiguous.
+        if (firstready == 0) // (repeated condition because could be changed above)
         {
-            // Go to sleep until the time comes.
-            // Note that this still may wake it up in case of a new packet arrived.
-#if ENABLE_HEAVY_LOGGING
-            uint64_t timediff = tsbpdtime - CTimer::getTime();
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << pkt_seq
-                    << " PTS=" << logging::FormatTime(tsbpdtime) << " - waiting " << setprecision(6) << (timediff/1000.0) << "ms");
-#endif
-            tscond.wait_until(tsbpdtime);
+            // Apply the read lock, we will be feeding the data buffer.
+            int lastready = CSeqNo::seqcmp(m_RcvLatestSeqNo, m_RcvBaseSeqNo);
+            // Extract NOW, everything that is declared available.
+            int lastextracted = -1;
+            for (int i = 0; i <= lastready; ++i)
+            {
+                Provider prov;
+                if (!m_Providers.get(i, Ref(prov)))
+                {
+                    // ERROR, XXX LOG
+                    break;
+                }
+
+                // XXX hardcode the limit, for now.
+                // This limit should be set to the value of the receiver buffer.
+                if (m_Pending.size() > 8192)
+                {
+                    m_Pending.pop_front();
+                }
+
+                m_Pending.push_back(Pending());
+                Pending& p = m_Pending.back();
+
+                // We don't know yet how long the packet is that we don't even
+                // know if is ready for extraction. Allocate the current possible maximum.
+                // XXX The maximum payload value should be predefined for the group.
+                p.packet.allocate(frp.provider[0]->maxPayloadSize());
+
+                for (vector<CUDT*>::iterator ip = prov.provider.begin();
+                        ip != prov.provider.end(); ++ip)
+                {
+                    CUDT* core = *ip;
+                    int nbytes = core->receiveMessage(p.packet.m_pcData, p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
+                    if (nbytes > 0)
+                    {
+                        p.playtime = p.msgctrl.srctime;
+                        p.packet.setLength(nbytes);
+                        if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
+                        {
+                            LOGC(mglog.Error, log << "SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << m_RcvBaseSeqNo);
+                            continue;
+                        }
+                        break; // We have our data. 
+                    }
+                    ++ip;
+                }
+
+                if (p.playtime == 0)
+                {
+                    // Nothing was extracted - RUNTIME ERROR XXX
+                    m_Pending.pop_back();
+                    break;
+                }
+
+                int skiptoseqno = m_RcvBaseSeqNo;
+
+                // Good. Now walk through all sockets in the group and request
+                // to skip packets up to this value.
+                for (list<SocketData>::iterator sd = m_Group.begin(); sd != m_Group.end(); ++sd)
+                {
+                    CUDT* self = sd->ps->m_pUDT;
+                    self->dropMessage(skiptoseqno);
+                }
+                ++lastextracted;
+            }
+
+            // Remove from Pending all that were extracted. The above loop
+            // is interrupted at the first non-contiguous cell.
+            if (lastextracted >= 0)
+            {
+                m_Providers.drop(lastextracted);
+            }
+
+            if (m_Pending.empty())
+            {
+                // Not able to deliver any data. Wait for the next portion
+                // XXX This should never happen, log.
+                continue;
+            }
         }
-        else
-        {
-            // No sleep time - so go to sleep indefinitely
-            // (until the packet arrival happens or the closing condition).
 
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: " << sleep_reason << " - falling asleep (indefinitely)");
-            tscond.wait();
+        // Now check if the packet at head is ready to play.
+        // If not, fall asleep on a CV to be woken up by a new
+        // packet coming.
+        Pending& fp = m_Pending[0];
+        if (fp.playtime > now)
+        {
+            HLOGC(tslog.Debug, log << CONID() << "GROUP tsbpd: PLAYING PACKET seq=" << fp.msgctrl.pktseq
+                    << " (belated " << ((CTimer::getTime() - fp.playtime)/1000.0) << "ms)");
+            /*
+             * There are packets ready to be delivered
+             * signal a waiting "recv" call if there is any data available
+             */
+            if (m_bSynRecving)
+            {
+                recvdata_cc.signal_locked(recv_gl);
+            }
+            /*
+             * Set EPOLL_IN to wakeup any thread waiting on epoll
+             */
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
+            CTimer::triggerEvent();
         }
     }
 }
+
+void CUDT::dropMessage(int32_t skiptoseqno)
+{
+    int seqlen = CSeqNo::seqoff(m_iRcvLastSkipAck, skiptoseqno);
+    if (seqlen <= 0)
+        return;
+
+    // The lock is applied in this order: RecvLock, then AckLock.
+    // This follows the order in CUDT::tsbpd, which does skipData
+    // and applies both locks in this order by the same reason.
+    CGuard rxlock(m_RecvLock);
+    CGuard acklock(m_AckLock);
+
+    updateForgotten(seqlen, m_iRcvLastSkipAck, skiptoseqno);
+    m_pRcvBuffer->dropData(seqlen);
+    m_iRcvLastSkipAck = skiptoseqno;
+}
+
 

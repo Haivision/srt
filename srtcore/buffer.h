@@ -316,8 +316,7 @@ public:
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return actuall size of data read.
 
-   int readMsg(char* data, int len, ref_t<SRT_MSGCTRL> mctrl);
-
+   int readMsg(char* data, int len, ref_t<SRT_MSGCTRL> mctrl, int upto);
       /// Query if data is ready to read (tsbpdtime <= now if TsbPD is active).
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       ///                        of next packet in recv buffer, ready or not.
@@ -326,6 +325,13 @@ public:
       /// both cases).
 
    bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+
+#ifdef SRT_DEBUG_TSBPD_OUTJITTER
+   void debugJitter(uint64_t);
+#else
+   void debugJitter(uint64_t) {}
+#endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
+
    bool isRcvDataReady();
    bool isRcvDataAvailable()
    {
@@ -396,7 +402,7 @@ private:
       /// @retval false tsbpdtime = 0: no packet ready to play
 
 
-   bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+   bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq, int upto = -1);
 
       /// Get packet delivery local time base (adjusted for wrap around)
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
@@ -412,7 +418,11 @@ public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
 
+   size_t dropData(int len);
 private:
+
+   int extractData(char *data, int len, int p, int q, bool passack);
+   bool accessMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> r_passack, ref_t<uint64_t> r_playtime, int upto);
 
    /// thread safe bytes counter
    /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.

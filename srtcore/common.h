@@ -886,6 +886,312 @@ public:
 };
 
 
+// There are some better or worse things you can find outside,
+// there's also boost::circular_buffer, but it's too overspoken
+// to be included here. We also can't rely on boost. Maybe in future
+// when it's added to the standard and SRT can heighten C++ standard
+// requirements; until then it needs this replacement.
+template <class Value>
+class CircularBuffer
+{
+#ifdef SRT_TEST_CIRCULAR_BUFFER
+public:
+#endif
+    int m_iSize;
+    Value* m_aStorage;
+    int m_xBegin;
+    int m_xEnd;
+
+public:
+
+    typedef Value value_type;
+
+    CircularBuffer(int size)
+        :m_iSize(size+1),
+         m_xBegin(0),
+         m_xEnd(0)
+    {
+        // We reserve one spare element just for a case.
+        if (size == 0)
+            m_aStorage = 0;
+        else
+            m_aStorage = new Value[size+1];
+    }
+
+    void set_capacity(int size)
+    {
+        // This isn't called resize (the size is 0 after the operation)
+        // nor reserve (the existing elements are removed).
+        if (size != m_iSize)
+        {
+            if (m_aStorage)
+                delete [] m_aStorage;
+            m_iSize = size+1;
+            m_aStorage = new Value[m_iSize];
+        }
+        reset();
+    }
+
+    void reset()
+    {
+        m_xBegin = 0;
+        m_xEnd = 0;
+    }
+
+    ~CircularBuffer()
+    {
+        delete [] m_aStorage;
+    }
+
+    // In the beginning, m_xBegin == m_xEnd, which
+    // means that the container is empty. Adding can
+    // be done exactly at the place pointed to by m_xEnd,
+    // and m_xEnd must be then shifted to the next unused one.
+    // When (m_xEnd + 1) % m_zSize == m_xBegin, the container
+    // is considered full and the element adding is rejected.
+    //
+    // This container is not designed to be STL-compatible
+    // because it doesn't make much sense. It's not a typical
+    // container, even treated as random-access container.
+
+    int shift(int basepos, int shift) const
+    {
+        return (basepos + shift) % m_iSize;
+    }
+
+    // Simplified versions with ++ and --; avoid using division instruction
+    int shift_forward(int basepos) const
+    {
+        if (++basepos == m_iSize)
+            return 0;
+        return basepos;
+    }
+
+    int shift_backward(int basepos) const
+    {
+        if (basepos == 0)
+            return m_iSize-1;
+        return --basepos;
+    }
+
+    size_t size() const
+    {
+        // Count the distance between begin and end
+        if (m_xEnd < m_xBegin)
+        {
+            // Use "merge two slices" method.
+            // (BEGIN - END) is the distance of the unused
+            // space in the middle. Used space is left to END
+            // and right to BEGIN, the sum of the left and right
+            // slice and the free space is the size.
+
+            // This includes also a case when begin and end
+            // are equal, which means that it's empty, so
+            // spaceleft() should simply return m_iSize.
+            return m_iSize - (m_xBegin - m_xEnd);
+        }
+
+        return m_xEnd - m_xBegin;
+    }
+
+    bool empty() const { return m_xEnd == m_xBegin; }
+
+    size_t capacity() const { return m_iSize-1; }
+
+    int spaceleft() const
+    {
+        // It's kinda tautology, but this will be more efficient.
+        if (m_xEnd < m_xBegin)
+        {
+            return m_xBegin - m_xEnd;
+        }
+
+        return m_iSize - (m_xEnd - m_xBegin);
+    }
+
+    // This is rather written for testing and rather won't
+    // be used in the real code.
+    int push(const Value& v = Value())
+    {
+        // Check if you can add
+        int nend = shift_forward(m_xEnd);
+        if ( nend == m_xBegin)
+            return -1;
+
+        m_aStorage[m_xEnd] = v;
+        m_xEnd = nend;
+        return size() - 1;
+    }
+
+    // Ok, now it's the real deal.
+    bool access(int position, ref_t<Value*> r_v, ref_t<bool> r_isnew)
+    {
+        // Reject if no space left.
+        // Also INVAL if negative position.
+        if (position >= (m_iSize-1) || position < 0)
+            return false; // That's way to far, we can't even calculate
+
+        int ipos = m_xBegin + position;
+
+        int vend = m_xEnd;
+        if (m_xEnd < m_xBegin)
+            vend += m_iSize;
+
+        bool exceeds = ipos >= vend;
+
+        if (ipos >= m_iSize)
+            ipos -= m_iSize; // wrap around
+
+        // Update the end position.
+        if (exceeds)
+        {
+            int nend = ipos+1;
+            if (m_xEnd > nend)
+            {
+                // Here we know that the current index exceeds the size.
+                // So, if this happens, it's m_xEnd wrapped around.
+                // Clear out elements in two slices:
+                // - from m_xEnd to m_iSize-1
+                // - from 0 to nend
+                for (int i = m_xEnd; i < m_iSize; ++i)
+                    m_aStorage[i] = Value();
+                for (int i = 0; i < nend; ++i)
+                    m_aStorage[i] = Value();
+            }
+            else
+            {
+                for (int i = m_xEnd; i < nend; ++i)
+                    m_aStorage[i] = Value();
+            }
+
+            if (nend == m_iSize)
+                nend = 0;
+
+            m_xEnd = nend;
+        }
+
+        *r_isnew = exceeds;
+        *r_v = &m_aStorage[ipos];
+        return true;
+    }
+
+    bool set(int position, const Value& newval, bool overwrite = true)
+    {
+        Value* pval = 0;
+        bool isnew = false;
+        if (!access(position, Ref(pval), Ref(isnew)))
+            return false;
+
+        if (isnew || overwrite)
+            *pval = newval;
+        return true;
+    }
+
+    template<class Updater>
+    bool update(int position, Updater updater)
+    {
+        Value* pval = 0;
+        bool isnew = false;
+        if (!access(position, Ref(pval), Ref(isnew)))
+            return false;
+
+        updater(*pval, isnew);
+        return true;
+    }
+
+    int getIndexFor(int position) const
+    {
+        int ipos = m_xBegin + position;
+
+        int vend = m_xEnd;
+        if (vend < m_xBegin)
+            vend += m_iSize;
+
+        if (ipos >= vend)
+            return -1;
+
+        if (ipos >= m_iSize)
+            ipos -= m_iSize;
+
+        return ipos;
+    }
+
+    bool get(int position, ref_t<Value> out) const
+    {
+        // Check if that position is occupied
+        if (position > m_iSize || position < 0)
+            return false;
+
+        int ipos = getIndexFor(position);
+        if (ipos == -1)
+            return false;
+
+        *out = m_aStorage[ipos];
+        return true;
+    }
+
+    bool drop(int position)
+    {
+        // This function "deletes" items by shifting the
+        // given position + 1 to position 0. That is,
+        // elements from the beginning are being deleted
+        // up to (including) the given position.
+        if (position > m_iSize || position < 0)
+            return false;
+
+        int ipos = m_xBegin + position;
+        int vend = m_xEnd;
+        if (vend < m_xBegin)
+            vend += m_iSize;
+
+        // Destroy the elements in the removed range
+
+        if (ipos >= vend)
+        {
+            // There was a request to drop; the position
+            // is higher than the number of items. Allow this
+            // and simply make the container empty.
+            reset();
+            return true;
+        }
+
+        // Otherwise we have a new beginning.
+        m_xBegin = ipos;
+        if (m_xBegin >= m_iSize)
+            m_xBegin -= m_iSize;
+
+        return true;
+    }
+
+    // This function searches for an element that satisfies
+    // the given predicate. If none found, returns -1.
+    template <class Predicate>
+    int find_if(Predicate pred)
+    {
+        if (m_xEnd < m_xBegin)
+        {
+            // Loop in two slices
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                if (pred(m_aStorage[i]))
+                    return i - m_xBegin;
+
+            for (int i = 0; i < m_xEnd; ++i)
+                if (pred(m_aStorage[i]))
+                    return i + m_iSize - m_xBegin;
+        }
+        else
+        {
+            for (int i = m_xBegin; i < m_xEnd; ++i)
+                if (pred(m_aStorage[i]))
+                    return i - m_xBegin;
+        }
+
+        return -1;
+    }
+};
+
+
+
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 {

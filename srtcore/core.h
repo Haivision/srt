@@ -185,6 +185,55 @@ public:
         bool ready_error;
     };
 
+    // This object will be placed at the position in the
+    // buffer assigned to packet's sequence number. When extracting
+    // the data to be delivered to the output, this defines, from
+    // which socket the data should be read to get the packet of that
+    // sequence. The data are read until the packet with this sequence
+    // is found. The play time defines when exactly the packet should be
+    // given up to the application.
+    struct Provider
+    {
+        uint64_t playtime;
+        std::vector<CUDT*> provider; // XXX may be not the most optimal
+
+        Provider(): playtime(0) {}
+
+        struct FUpdate
+        {
+            uint64_t playtime;
+            CUDT* provider;
+            FUpdate(CUDT* prov, uint64_t pt): playtime(pt), provider(prov) {}
+            void operator()(Provider& accessed, bool isnew)
+            {
+                if (isnew)
+                {
+                    accessed.playtime = playtime;
+                    accessed.provider.clear();
+                }
+
+                accessed.provider.push_back(provider);
+            }
+        };
+
+        struct FValid
+        {
+            bool operator()(const Provider& p) { return !p.provider.empty(); }
+        };
+    };
+
+    // This object keeps the data extracted from the packet and waiting
+    // to be delivered to the application when the time comes. The CPacket
+    // object is used here because it already provides the automatic allocation
+    // facility. It's not the best that can be used here, but there's no better
+    // alternative, provided we need to keep the receiver buffer untouched.
+    struct Pending
+    {
+        uint64_t playtime;
+        CPacket packet;
+        SRT_MSGCTRL msgctrl;
+    };
+
     struct ConfigItem
     {
         SRT_SOCKOPT so;
@@ -284,6 +333,8 @@ public:
     void addEPoll(int eid);
     void removeEPoll(int eid);
 
+    std::vector<bool> providePacket(int32_t exp_sequence, int32_t sequence, CUDT *provider, uint64_t time);
+
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
@@ -295,6 +346,13 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(ref_t<size_t> r_size, ref_t<bool> r_still_alive);
     void getMemberStatus(ref_t< std::vector<SRT_SOCKGROUPDATA> > r_gd, SRTSOCKET wasread, int result, bool again);
+    void readInterceptorThread();
+    static void* readInterceptorThread_FWD(void* vself)
+    {
+        CUDTGroup* self = (CUDTGroup*)vself;
+        self->readInterceptorThread();
+        return 0;
+    }
 
     class CUDTUnited* m_pGlobal;
     pthread_mutex_t m_GroupLock;
@@ -312,9 +370,32 @@ private:
     bool m_bTsbPd;
     bool m_bTLPktDrop;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
-    pthread_t m_RcvTsbPdThread;
-    pthread_cond_t m_RcvTsbPdCond;
-    CRcvBuffer* m_pRcvBuffer;
+    pthread_t m_RcvInterceptorThread;
+
+    // This buffer gets updated when a packet with some seq number has come.
+    // This gives the TSBPD thread clue that a packet is ready for extraction
+    // for given sequence number. This is also a central packet information for
+    // other sockets in the group to know whether the packet recovery for jumped-over
+    // sequences shall be undertaken or not.
+    CircularBuffer<Provider> m_Providers;
+    std::deque<Pending> m_Pending;
+
+    // This condition shall be signaled when a packet arrives
+    // at the position earlier than the current earliest sequence.
+    // Including when the provider buffer is currently empty.
+    pthread_cond_t m_RcvPacketAhead;
+
+    // This is the sequence number of the position [0] in m_Providers buffer.
+    volatile int32_t m_RcvBaseSeqNo;
+
+    // This is the sequence number that is next available for extraction.
+    // May be equal to m_RcvBaseSeqNo if you have a packet at head ready.
+    // This sequence should be updated in case when the buffer was empty
+    // and when the newly coming packet has a sequence less than this.
+    volatile int32_t m_RcvReadySeqNo;
+
+    volatile int32_t m_RcvLatestSeqNo;
+
     bool m_bOpened;                    // Set to true on a first use
     bool m_bClosing;
 
@@ -324,11 +405,11 @@ private:
     // for setting later on a socket.
     std::vector<ConfigItem> m_config;
 
-    pthread_cond_t m_RecvDataCond;
-    volatile int32_t m_iRcvDeliveredSeqNo; // Seq of the payload last delivered
-    volatile int32_t m_iRcvContiguousSeqNo; // Seq of the freshest payload stored in the buffer with no loss-gap
+    // Signal for the blocking user thread that the packet
+    // is ready to deliver.
+    pthread_cond_t m_RcvDataCond;
+    pthread_mutex_t m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
-
 public:
 
     std::string CONID() const
@@ -352,11 +433,8 @@ public:
 
     // Required for SRT_tsbpdLoop
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
-    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
-    SRTU_PROPERTY_RO(pthread_cond_t*, recvDataCond, &m_RecvDataCond);
-    SRTU_PROPERTY_RO(pthread_cond_t*, recvTsbPdCond, &m_RcvTsbPdCond);
     SRTU_PROPERTY_RO(CUDTUnited*, uglobal, m_pGlobal);
     SRTU_PROPERTY_RO(std::set<int>&, pollset, m_sPollID);
 };
@@ -695,8 +773,10 @@ private:
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
-    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int32_t uptoseq = CSeqNo::m_iMaxSeqNo);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
+
+    void dropMessage(int32_t seqtoskip);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
     /// @param ifs [in] The input file stream.

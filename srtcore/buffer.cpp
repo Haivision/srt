@@ -939,6 +939,35 @@ void CRcvBuffer::skipData(int len)
       m_iMaxPos = 0;
 }
 
+size_t CRcvBuffer::dropData(int len)
+{
+    // This function does the same as skipData, although skipData
+    // should work in the condition of absence of data, so no need
+    // to force the units in the range to be freed. This function
+    // works in more general condition where we don't know if there
+    // are any data in the given range, but want to remove these
+    // "sequence positions" from the buffer, whether there are data
+    // at them or not.
+
+    size_t stats_bytes = 0;
+
+    int p = m_iStartPos;
+    int past_q = shift(p, len);
+    while (p != past_q)
+    {
+        if (m_pUnit[p] && m_pUnit[p]->m_iFlag == CUnit::GOOD)
+        {
+            stats_bytes += m_pUnit[p]->m_Packet.getLength();
+        }
+
+        freeUnitAt(p);
+        p = shift_forward(p);
+    }
+
+    m_iStartPos = past_q;
+    return stats_bytes;
+}
+
 bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passack, ref_t<int32_t> r_skipseqno, ref_t<int32_t> r_curpktseq)
 {
     int32_t& skipseqno = *r_skipseqno;
@@ -1055,15 +1084,46 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     return false;
 }
 
-bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curpktseq)
+bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curpktseq, int upto)
 {
     *r_tsbpdtime = 0;
     int rmpkts = 0;
     int rmbytes = 0;
+    bool havelimit = upto != -1;
+    int end = -1, past_end = -1;
+    if (havelimit)
+    {
+        int stretch = (m_iSize + m_iStartPos - m_iLastAckPos) % m_iSize;
+        if (upto > stretch)
+        {
+            // Do nothing. This position is already gone.
+            return false;
+        }
+
+        end = m_iLastAckPos - upto;
+        if (end < 0)
+            end += m_iSize;
+        past_end = shift_forward(end); // For in-loop comparison
+    }
+
+    // NOTE: position m_iLastAckPos in the buffer represents the sequence number of
+    // CUDT::m_iRcvLastSkipAck. Therefore 'upto' contains a positive value that should
+    // be decreased from m_iLastAckPos to get the position in the buffer that represents
+    // the sequence number up to which we'd like to read.
 
     string reason = "NOT RECEIVED";
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shift_forward(i))
     {
+        // In case when we want to read only up to given sequence number, stop
+        // the loop if this number was reached. This number must be extracted from
+        // the buffer and any following must wait here for "better times". Note
+        // that the unit that points to the requested sequence must remain in
+        // the buffer, unless there is no valid packet at that position, in which
+        // case it is allowed to point to the NEXT sequence towards it, however
+        // if it does, this cell must remain in the buffer for prospective recovery.
+        if (havelimit && i == past_end)
+            break;
+
         bool freeunit = false;
 
         /* Skip any invalid skipped/dropped packets */
@@ -1081,23 +1141,69 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
         }
         else
         {
-            *r_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
-            int64_t towait = (*r_tsbpdtime - CTimer::getTime());
-            if (towait > 0)
+            // This does:
+            // 1. Get the TSBPD time of the unit. Stop and return false if this unit
+            //    is not yet ready to play.
+            // 2. If it's ready to play, check also if it's decrypted. If not, skip it.
+            // 3. If it's ready to play and decrypted, stop and return it.
+            if (!havelimit)
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
-                return false;
-            }
+                *r_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+                int64_t towait = (*r_tsbpdtime - CTimer::getTime());
+                if (towait > 0)
+                {
+                    HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
+                    return false;
+                }
 
-            if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
-            {
-                reason = "DECRYPTION FAILED";
-                freeunit = true; /* packet not decrypted */
+                if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+                {
+                    reason = "DECRYPTION FAILED";
+                    freeunit = true; /* packet not decrypted */
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
+                    return true;
+                }
             }
+            // In this case:
+            // 1. We don't even look into the packet if this is not the requested sequence.
+            //    All packets that are earlier than the required sequence will be dropped.
+            // 2. When found the packet with expected sequence number, and the condition for
+            //    good unit is passed, we get the timestamp.
+            // 3. If the packet is not decrypted, we allow it to be removed
+            // 4. If we reached the required sequence, and the packet is good, KEEP IT in the buffer,
+            //    and return with the pointer pointing to this very buffer. Only then return true.
             else
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
-                return true;
+                // We have a limit up to which the reading will be done,
+                // no matter if the time has come or not - although retrieve it.
+                if (i == end)
+                {
+                    // We have the packet we need. Extract its data.
+                    *r_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+
+                    // If we have a decryption failure, allow the unit to be released.
+                    if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+                    {
+                        reason = "DECRYPTION FAILED";
+                        freeunit = true; /* packet not decrypted */
+                    }
+                    else
+                    {
+                        // Stop here and keep the packet in the buffer, so it will be
+                        // next extracted.
+                        HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready for extraction");
+                        return true;
+                    }
+                }
+                else
+                {
+                    // Continue the loop and remove the current packet because
+                    // its sequence number is too old.
+                    freeunit = true;
+                }
             }
         }
 
@@ -1536,53 +1642,16 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
 int CRcvBuffer::readMsg(char* data, int len)
 {
     SRT_MSGCTRL dummy = srt_msgctrl_default;
-    return readMsg(data, len, Ref(dummy));
+    return readMsg(data, len, Ref(dummy), -1);
 }
 
-
-int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
+int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl, int upto)
 {
     SRT_MSGCTRL& msgctl = *r_msgctl;
-    int p, q;
+    int p = -1, q = -1;
     bool passack;
-    bool empty = true;
-    uint64_t& rplaytime = msgctl.srctime;
 
-    if (m_bTsbPdMode)
-    {
-        passack = false;
-        int seq = 0;
-
-        if (getRcvReadyMsg(Ref(rplaytime), Ref(seq)))
-        {
-            empty = false;
-
-            // In TSBPD mode you always read one message
-            // at a time and a message always fits in one UDP packet,
-            // so in one "unit".
-            p = q = m_iStartPos;
-
-#ifdef SRT_DEBUG_TSBPD_OUTJITTER
-            uint64_t now = CTimer::getTime();
-            if ((now - rplaytime)/10 < 10)
-                m_ulPdHisto[0][(now - rplaytime)/10]++;
-            else if ((now - rplaytime)/100 < 10)
-                m_ulPdHisto[1][(now - rplaytime)/100]++;
-            else if ((now - rplaytime)/1000 < 10)
-                m_ulPdHisto[2][(now - rplaytime)/1000]++;
-            else
-                m_ulPdHisto[3][1]++;
-#endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
-        }
-    }
-    else
-    {
-        rplaytime = 0;
-        if (scanMsg(Ref(p), Ref(q), Ref(passack)))
-            empty = false;
-
-    }
-
+    bool empty = accessMsg(Ref(p), Ref(q), Ref(passack), Ref(msgctl.srctime), upto);
     if (empty)
         return 0;
 
@@ -1595,6 +1664,92 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     msgctl.pktseq = pkt1.getSeqNo();
     msgctl.msgno = pkt1.getMsgSeq();
 
+    return extractData(data, len, p, q, passack);
+
+}
+
+/*
+int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
+{
+    SRT_MSGCTRL& msgctl = *r_msgctl;
+    int p, q;
+    bool passack;
+
+    bool empty = accessMsg(Ref(p), Ref(q), Ref(passack), Ref(msgctl.srctime), -1);
+    if (empty)
+        return 0;
+
+    // This should happen just once. By 'empty' condition
+    // we have a guarantee that m_pUnit[p] exists and is valid.
+    CPacket& pkt1 = m_pUnit[p]->m_Packet;
+
+    // This returns the sequence number and message number to
+    // the API caller.
+    msgctl.pktseq = pkt1.getSeqNo();
+    msgctl.msgno = pkt1.getMsgSeq();
+
+    return extractData(data, len, p, q, passack);
+}
+*/
+
+#ifdef SRT_DEBUG_TSBPD_OUTJITTER
+void CRcvBuffer::debugJitter(uint64_t rplaytime)
+{
+    uint64_t now = CTimer::getTime();
+    if ((now - rplaytime)/10 < 10)
+        m_ulPdHisto[0][(now - rplaytime)/10]++;
+    else if ((now - rplaytime)/100 < 10)
+        m_ulPdHisto[1][(now - rplaytime)/100]++;
+    else if ((now - rplaytime)/1000 < 10)
+        m_ulPdHisto[2][(now - rplaytime)/1000]++;
+    else
+        m_ulPdHisto[3][1]++;
+}
+#endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
+
+bool CRcvBuffer::accessMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> r_passack, ref_t<uint64_t> r_playtime, int upto)
+{
+    // This function should do the following:
+    // 1. Find the first packet starting the next message (or just next packet)
+    // 2. When found something ready for extraction, return true.
+    // 3. p and q point the index range for extraction
+    // 4. passack decides if this range shall be removed after extraction
+
+    int& p = *r_p, & q = *r_q;
+    bool& passack = *r_passack;
+    uint64_t& rplaytime = *r_playtime;
+    bool empty = true;
+
+    if (m_bTsbPdMode)
+    {
+        passack = false;
+        int seq = 0;
+
+        if (getRcvReadyMsg(r_playtime, Ref(seq)), upto)
+        {
+            empty = false;
+            // In TSBPD mode you always read one message
+            // at a time and a message always fits in one UDP packet,
+            // so in one "unit".
+            p = q = m_iStartPos;
+
+            debugJitter(rplaytime);
+        }
+
+    }
+    else
+    {
+        rplaytime = 0;
+        if (scanMsg(Ref(p), Ref(q), Ref(passack)))
+            empty = false;
+
+    }
+
+    return empty;
+}
+
+int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
+{
     int rs = len;
     int past_q = shift_forward(q);
     while (p != past_q)
@@ -1646,12 +1801,11 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
         else
             m_pUnit[p]->m_iFlag = CUnit::PASSACK;
 
-        if (++ p == m_iSize)
-            p = 0;
+        p = shift_forward(p);
     }
 
     if (!passack)
-        m_iStartPos = shift_forward(q);
+        m_iStartPos = past_q;
 
     return len - rs;
 }
