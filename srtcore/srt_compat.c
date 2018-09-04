@@ -88,7 +88,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
     {
         strncpy(buf, lpMsgBuf, buflen-1);
         buf[buflen-1] = 0;
-        LocalFree(lpMsgBuf);
+        LocalFree((HLOCAL)lpMsgBuf);
     }
     else
     {
