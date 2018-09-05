@@ -9802,6 +9802,7 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     }
     catch (...)
     {
+        ns->removeFromGroup();
         // Intercept to delete the socket on failure.
         delete ns;
         throw;
