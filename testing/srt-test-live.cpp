@@ -581,7 +581,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << args[0] << "' --> '" << args[1] << "'";
+    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)
