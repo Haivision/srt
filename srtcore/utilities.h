@@ -380,6 +380,19 @@ inline std::string Sprint(const Arg1& arg)
     return sout.str();
 }
 
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
+
 template <class Type>
 ref_t<Type> Ref(Type& arg)
 {

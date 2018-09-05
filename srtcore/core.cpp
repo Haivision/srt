@@ -9793,6 +9793,8 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     ns->m_IncludedIter = f;
     ns->m_IncludedGroup = &g;
 
+    ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
+
     int isn = g.currentSchedSequence();
 
     // We got it. Bind the socket, if the source address was set
@@ -10531,6 +10533,164 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     m_Pending.pop_front();
 
     return len;
+}
+
+vector<int32_t> CUDT::groupPacketArrival(void* vself, CPacket& pkt)
+{
+// [[using affinity(m_pRcvBuffer->workerThread())]];
+    CUDT* self = (CUDT*)vself;
+    vector<int32_t> output;
+
+    CUDTGroup* pg = self->m_parent->m_IncludedGroup;
+    if (!pg)
+    {
+        // IPE!!! But this can't be reported every time it happens, it would flood the logs.
+        return defaultPacketArrival(vself, pkt);
+    }
+
+    /* XXX REINSTATE!
+    int initial_loss_ttl = 0;
+    if ( self->m_bPeerRexmitFlag )
+        initial_loss_ttl = self->m_iReorderTolerance;
+        */
+
+    int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
+
+    // This function has nothing to do but extract the actual lost packets.
+    //
+    // In live mode, where we expect more-less constant time between consecutive packets,
+    //  we can state the following order in time over two links:
+    //
+    //   Link A         Link B
+    //   .              .
+    //   .              .
+    //   P120           .
+    //   .              .
+    //   .              P120
+    //   .              .
+    //   P121           .
+    //   .              .
+    //   .              P121
+    //   .              .
+    //   . (LOST 122)   .
+    //   .              .
+    //   .              P122
+    //   .              .
+    //   P123           .   <--- Link A sees 122 lost, but Link B has it already.
+    //
+    // This rule won't work in case when a possible delay on a single link could
+    // be greater than the time gap between two packets. If this happens, the
+    // "maximum link delay" should be probably calculated for all links and this
+    // delay time should be kept for the whole time as long as the group is alive.
+    // Then this delay should be applied between receiving the loss-cover packet
+    // and sending lossreport. Note that lossreport is being normally sent
+    // immediately, and currently the only implemented delay is LOSSMAXTTL, which
+    // delays lossreport by the NUMBER OF PACKETS, not by time.
+    //
+    // Probably the only way to implement it would be in THIS function, just by
+    // exceeding this delay time. That is, sending the lossreport is being delayed
+    // by the time difference between the current and the slowest link last noted
+    // on packets that arrived on both the slowest and this link.
+
+    HLOGC(mglog.Debug, log << "groupPacketArrival: checking %" << pkt.m_iSeqNo
+            << " against latest %" << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
+
+    // We don't do usual loss detection, instead we check first whether
+    // we have this packet delivered already, and note as loss only those
+    // that were lost on all links.
+
+    // May happen that some timely LOSSMAXTTL should be introduced anyway.
+    // Currently this LOSSMAXTTL can't be used.
+
+    uint64_t pts = self->m_pRcvBuffer->getPktTsbPdTime(pkt.getMsgTimeStamp());
+    vector<bool> loss_bitmap = pg->providePacket(CSeqNo::incseq(self->m_iRcvCurrSeqNo), pkt.m_iSeqNo, self, pts);
+
+    if (loss_bitmap.empty())
+    {
+#if ENABLE_HEAVY_LOGGING
+        if (seqdiff > 1)
+        {
+            HLOGC(mglog.Debug, log << "groupPacketArrival: this link lost " << (seqdiff-1)
+                    << " packets, but they are declared retrieved another way.");
+        }
+#endif
+        return output; // still empty
+    }
+
+    // Ok, now translate the loss_bitmap into the loss array suitable for
+    // UMSG_LOSSREPORT.
+
+    typedef vector< pair<int32_t, int32_t> > losspairs_t;
+    losspairs_t losspairs;
+
+    pair<int32_t, int32_t> currloss = make_pair(CSeqNo::m_iMaxSeqNo, CSeqNo::m_iMaxSeqNo);
+
+    HLOGC(mglog.Debug, log << "LOSS BITMAP (since %" << CSeqNo::incseq(self->m_iRcvCurrSeqNo)
+            << ") " << Printable(loss_bitmap));
+
+    bool noloss = true;
+    for (size_t i = 0; i < loss_bitmap.size(); ++i)
+    {
+        if (loss_bitmap[i] != noloss)
+        {
+            // State changed. (Including having the packet at [0] as lost).
+            if (noloss)
+            {
+                // This means the state changed from noloss to loss.
+                // Notify the first sequence where it happened.
+                currloss.first = CSeqNo::incseq(self->m_iRcvCurrSeqNo, i+1);
+            }
+            else
+            {
+                // Changed from loss to noloss. The previous sequence
+                // is the last of the series.
+                currloss.second = CSeqNo::incseq(self->m_iRcvCurrSeqNo, i);
+                HLOGC(mglog.Debug, log << "... Adding pair: " << currloss.first
+                        << " - " << currloss.second);
+                losspairs.push_back(currloss);
+                currloss = make_pair(CSeqNo::m_iMaxSeqNo, CSeqNo::m_iMaxSeqNo);
+            }
+        }
+        noloss = loss_bitmap[i];
+    }
+    // If this was a loss until the very end, complement the second of the last pair
+    if (!noloss)
+    {
+        currloss.second = CSeqNo::incseq(self->m_iRcvCurrSeqNo, loss_bitmap.size()-1);
+        HLOGC(mglog.Debug, log << "... Adding LAST pair: " << currloss.first
+                << " - " << currloss.second);
+        losspairs.push_back(currloss);
+    }
+
+    // Now process the loss array - add it to the loss records and
+    // create the loss array to be sent out immediately.
+
+    for (losspairs_t::iterator x = losspairs.begin(); x != losspairs.end(); ++x)
+    {
+        int32_t seqlo = x->first;
+        int32_t seqhi = x->second;
+
+        {
+            // If loss found, insert them to the receiver loss list
+            CGuard lg(self->m_RcvLossLock);
+            self->m_pRcvLossList->insert(seqlo, seqhi);
+        }
+
+        if ( seqlo == seqhi )
+        {
+            output.push_back(seqlo);
+            HLOGF(mglog.Debug, "groupPacketArrival: lost 1 packet %d: preparing LOSSREPORT", seqlo);
+        }
+        else
+        {
+            output.push_back(seqlo | LOSSDATA_SEQNO_RANGE_FIRST);
+            output.push_back(seqhi);
+            HLOGF(mglog.Debug, "groupPacketArrival: lost %d packets %d-%d: preparing LOSSREPORT",
+                    1+CSeqNo::seqcmp(seqhi, seqlo), seqlo, seqhi);
+        }
+    }
+
+    return output;
 }
 
 vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CUDT* provider, uint64_t time)

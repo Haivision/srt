@@ -879,6 +879,7 @@ private:
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static std::vector<int32_t> defaultPacketArrival(void* vself, CPacket& pkt);
+    static std::vector<int32_t> groupPacketArrival(void* vself, CPacket& pkt);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
