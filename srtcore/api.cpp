@@ -610,6 +610,8 @@ ERR_ROLLBACK:
         gi->sndstate = CUDTGroup::GST_IDLE;
         gi->rcvstate = CUDTGroup::GST_IDLE;
         gi->laststatus = SRTS_CONNECTED;
+
+        ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
     }
 
     // wake up a waiting accept() call
