@@ -2486,7 +2486,6 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSREQ, HS_VERSION_SRT1);
             }
             else if ( cmd == SRT_CMD_HSRSP )
             {
@@ -2510,7 +2509,6 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSRSP, HS_VERSION_SRT1);
             }
             else if ( cmd == SRT_CMD_NONE )
             {
@@ -3625,6 +3623,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
                 return CONN_REJECT;
             }
 
+            updateAfterSrtHandshake(HS_VERSION_SRT1);
+
             // Pass on, inform about the shortened response-waiting period.
             HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
         }
@@ -3741,6 +3741,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
             LOGC(mglog.Fatal, log << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
             m_ConnReq.m_extension = false;
         }
+        updateAfterSrtHandshake(HS_VERSION_SRT1);
     }
 
     HLOGC(mglog.Debug, log << CONID() << "processRendezvous: COOKIES Agent/Peer: "
@@ -4107,6 +4108,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
+    updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     CInfoBlock ib;
     ib.m_iFamily = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
@@ -4882,6 +4884,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
        hs->m_iReqType = URQ_ERROR_REJECT;
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }
+
+   updateAfterSrtHandshake(m_ConnRes.m_iVersion);
 
    setupCC();
 
@@ -7641,7 +7645,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           // parties are HSv5.
           if ( understood )
           {
-              updateAfterSrtHandshake(ctrlpkt.getExtendedType(), HS_VERSION_UDT4);
+              if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+              {
+                  updateAfterSrtHandshake(HS_VERSION_UDT4);
+              }
           }
           else
           {
@@ -7657,7 +7664,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
 void CUDT::updateSrtRcvSettings()
 {
-    if (isOPT_TsbPd())
+    // CHANGED: we need to apply the tsbpd delay only for socket TSBPD.
+    // For Group TSBPD the buffer will have to deliver packets always on request
+    // by sequence number.
+    if (m_bTsbPd)
     {
         /* We are TsbPd receiver */
         CGuard::enterCS(m_RecvLock);
@@ -7667,6 +7677,14 @@ void CUDT::updateSrtRcvSettings()
         HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03u secs",
                 m_iTsbPdDelay_ms/1000,
                 m_iTsbPdDelay_ms%1000);
+    }
+    else if (m_bGroupTsbPd)
+    {
+        CGuard::enterCS(m_RecvLock);
+        m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, 0);
+        CGuard::leaveCS(m_RecvLock);
+
+        HLOGP(mglog.Debug,  "AFTER HS: Set Rcv GROUP TsbPd mode, NO DELAY (Group facility will apply it)");
     }
     else
     {
@@ -7695,18 +7713,8 @@ void CUDT::updateSrtSndSettings()
     }
 }
 
-void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
+void CUDT::updateAfterSrtHandshake(int hsv)
 {
-
-    switch (srt_cmd)
-    {
-    case SRT_CMD_HSREQ:
-    case SRT_CMD_HSRSP:
-        break;
-    default:
-        return;
-    }
-
     // Update settings from options. This is to prevent TSBPD thread from
     // starting too early when HSv4 is in use. Must be done here though
     // before the buffers are created and get settings from here.
@@ -7739,7 +7747,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
         updateSrtRcvSettings();
         updateSrtSndSettings();
     }
-    else if ( srt_cmd == SRT_CMD_HSRSP )
+    else if (m_SrtHsSide == HSD_INITIATOR)
     {
         // HSv4 INITIATOR is sender
         updateSrtSndSettings();

@@ -721,7 +721,7 @@ private:
     SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
     void synchronizeGroupTime(CUDTGroup* grp);
 
-    void updateAfterSrtHandshake(int srt_cmd, int hsv);
+    void updateAfterSrtHandshake(int hsv);
 
     void updateSrtRcvSettings();
     void updateSrtSndSettings();

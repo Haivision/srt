@@ -1065,6 +1065,8 @@ int CUDTUnited::close(CUDTSocket* s)
    }
    else
    {
+       if (s->m_IncludedGroup)
+           s->removeFromGroup(); // m_ControlLock already locked by socket_cg
        s->m_pUDT->close();
 
        // synchronize with garbage collection.
@@ -2206,12 +2208,15 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
         return setError(MJ_NOTSUP, MN_INVAL, 0);
 
     CGuard grd(s->m_ControlLock);
-
-    s->m_IncludedGroup->remove(socket);
-    s->m_IncludedIter = CUDTGroup::gli_NULL();
-    s->m_IncludedGroup = NULL;
-
+    s->removeFromGroup();
     return 0;
+}
+
+void CUDTSocket::removeFromGroup()
+{
+    m_IncludedGroup->remove(m_SocketID);
+    m_IncludedIter = CUDTGroup::gli_NULL();
+    m_IncludedGroup = NULL;
 }
 
 SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)

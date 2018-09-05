@@ -138,6 +138,8 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
+   void removeFromGroup();
+
 private:
    CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);
