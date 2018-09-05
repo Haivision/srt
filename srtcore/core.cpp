@@ -10731,6 +10731,9 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
 
     bool nopackets = m_Providers.empty();
 
+    HLOGC(mglog.Debug, log << "PROVIDING PACKET %" << sequence << " AFTER %" << exp_sequence << " base=%"
+            << m_RcvBaseSeqNo << " latest=%" << m_RcvLatestSeqNo << " ready=%" << m_RcvReadySeqNo);
+
     if (!m_Providers.update(offset, Provider::FUpdate(provider, time)))
     {
         // This is a fallback; it should never happen because
