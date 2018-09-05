@@ -550,11 +550,7 @@ m_iMajor(major),
 m_iMinor(minor)
 {
    if (err == -1)
-      #ifndef WIN32
-         m_iErrno = errno;
-      #else
-         m_iErrno = GetLastError();
-      #endif
+       m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
 }
@@ -732,6 +728,9 @@ const string& CUDTException::getErrorString()
         case MN_EIDINVAL:
            m_strMsg += ": Invalid epoll ID";
            break;
+
+        case MN_EEMPTY:
+           m_strMsg += ": All sockets removed from epoll, waiting would deadlock";
 
         default:
            break;

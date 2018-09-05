@@ -392,14 +392,14 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if (p == m_mPolls.end())
       {
          CGuard::leaveCS(m_EPollLock);
-         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL, 0);
       }
 
       if (p->second.m_sUDTSocksIn.empty() && p->second.m_sUDTSocksOut.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
       {
          // no socket is being monitored, this may be a deadlock
          CGuard::leaveCS(m_EPollLock);
-         throw CUDTException(MJ_NOTSUP, MN_INVAL);
+         throw CUDTException(MJ_NOTSUP, MN_EEMPTY, 0);
       }
 
       // Sockets with exceptions are returned to both read and write sets.

@@ -68,6 +68,14 @@ modified by
 #include "utilities.h"
 #include "netinet_any.h"
 
+// System-independent errno
+#ifndef WIN32
+   #define NET_ERROR errno
+#else
+   #define NET_ERROR WSAGetLastError()
+#endif
+
+
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation

@@ -85,12 +85,6 @@ modified by
     typedef int socklen_t;
 #endif
 
-#ifndef WIN32
-   #define NET_ERROR errno
-#else
-   #define NET_ERROR WSAGetLastError()
-#endif
-
 using namespace std;
 
 
@@ -124,7 +118,7 @@ void CChannel::createSocket(int family)
 #endif
 
     if (m_iSocket == invalid)
-        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+        throw CUDTException(MJ_SETUP, MN_NONE);
 
 }
 
@@ -134,7 +128,7 @@ void CChannel::open(const sockaddr_any& addr)
     socklen_t namelen = addr.size();
 
     if (::bind(m_iSocket, &addr.sa, namelen) == -1)
-        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+        throw CUDTException(MJ_SETUP, MN_NORES);
 
     m_BindAddr = addr;
     m_bBindMasked = m_BindAddr.isany();
@@ -172,7 +166,7 @@ void CChannel::open(int family)
     }
 
     if (::bind(m_iSocket, res->ai_addr, res->ai_addrlen) == -1)
-        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+        throw CUDTException(MJ_SETUP, MN_NORES);
 
     m_BindAddr = sockaddr_any(res->ai_addr, res->ai_addrlen);
 
@@ -209,7 +203,7 @@ void CChannel::setUDPSockOpt()
       // for other systems, if requested is greated than maximum, the maximum value will be automactally used
       if ((0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_iRcvBufSize, sizeof(int))) ||
           (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&m_iSndBufSize, sizeof(int))))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+         throw CUDTException(MJ_SETUP, MN_NORES);
    #endif
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -218,12 +212,12 @@ void CChannel::setUDPSockOpt()
          if(m_BindAddr.family() == AF_INET)
          {
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+               throw CUDTException(MJ_SETUP, MN_NORES);
          }
          else //Assuming AF_INET6
          {
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+               throw CUDTException(MJ_SETUP, MN_NORES);
          }
       }   
       if (-1 != m_iIpToS)
@@ -231,12 +225,12 @@ void CChannel::setUDPSockOpt()
          if(m_BindAddr.family() == AF_INET)
          {
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+               throw CUDTException(MJ_SETUP, MN_NORES);
          }
          else //Assuming AF_INET6
          {
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+               throw CUDTException(MJ_SETUP, MN_NORES);
          }
       }
 #endif
@@ -256,15 +250,15 @@ void CChannel::setUDPSockOpt()
       // UNIX does not support SO_RCVTIMEO
       int opts = ::fcntl(m_iSocket, F_GETFL);
       if (-1 == ::fcntl(m_iSocket, F_SETFL, opts | O_NONBLOCK))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+         throw CUDTException(MJ_SETUP, MN_NORES);
    #elif defined(WIN32)
       DWORD ot = 1; //milliseconds
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&ot, sizeof(DWORD)))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+         throw CUDTException(MJ_SETUP, MN_NORES);
    #else
       // Set receiving time-out value
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(timeval)))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+         throw CUDTException(MJ_SETUP, MN_NORES);
    #endif
 
     if (m_bBindMasked)
