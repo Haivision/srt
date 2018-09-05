@@ -9753,6 +9753,9 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
         return -1;
 
     CUDTSocket* ns = 0;
+
+    // NOTE: After calling newSocket, the socket is mapped into m_Sockets.
+    // It must be MANUALLY removed from this list in case we need it deleted.
     SRTSOCKET sid = newSocket(&ns);
 
     // XXX Support non-blockin mode:
@@ -9774,6 +9777,8 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     }
     catch (...)
     {
+        CGuard cl(m_ControlLock);
+        m_Sockets.erase(ns->m_SocketID);
         // Intercept to delete the socket on failure.
         delete ns;
         throw;
@@ -9802,7 +9807,13 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     }
     catch (...)
     {
+        // We know it does belong to a group.
+        // Remove it first because this involves a mutex, and we want
+        // to avoid locking more than one mutex at a time.
         ns->removeFromGroup();
+
+        CGuard cl(m_ControlLock);
+        m_Sockets.erase(ns->m_SocketID);
         // Intercept to delete the socket on failure.
         delete ns;
         throw;
