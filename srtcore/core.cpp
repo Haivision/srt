@@ -10770,6 +10770,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
         int dropshift = offset - (m_Providers.capacity()-1);
         if (dropshift > 0)
         {
+            LOGC(mglog.Error, log << "PROVIDE: space exceeded in Providers - dropping " << dropshift << " providers");
             offset -= dropshift; // should be same as: offset = capacity()-1
             m_Providers.drop(dropshift);
             m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, dropshift);
@@ -10777,9 +10778,20 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
         }
         else
         {
+            LOGC(mglog.Fatal, log << "IPE: NEGATIVE DROPSHIFT for providers offset=" << offset << " capacity=" << m_Providers.capacity());
             return loss_bitmap; // fallback - this should never happen, XXX LOG!
         }
     }
+
+#if ENABLE_HEAVY_LOGGING
+    {
+        Provider testp;
+        bool have = m_Providers.get(offset, Ref(testp));
+        HLOGC(mglog.Debug, log << "PROVIDE: updated packet @ offset=" << offset << " added="
+                << std::boolalpha << have << " time=" << logging::FormatTime(testp.playtime)
+                << " providers=" << Printable(testp.provider));
+    }
+#endif
 
     // If provider buffer was empty, then m_RcvReadySeqNo has a singluar
     // value and m_RcvBaseSeqNo has the value of the sequence that is expected

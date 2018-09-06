@@ -1019,6 +1019,11 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
 
 std::string logging::FormatTime(uint64_t time)
 {
+    if (time == 0)
+    {
+        // Use special string for 0
+        return "00:00:00.000000";
+    }
     using namespace std;
 
     time_t sec = time/1000000;
