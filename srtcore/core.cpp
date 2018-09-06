@@ -5877,7 +5877,11 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
 
     int seqdistance = -1;
     if (uptoseq != CSeqNo::m_iMaxSeqNo)
+    {
         seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq)-1;
+        HLOGC(dlog.Debug, log << "receiveMessage: enforced SEQUENCE: %" << uptoseq << " with current top %" << m_iRcvLastSkipAck
+                << " - offset=" << seqdistance);
+    }
 
     if (!m_bSynRecving)
     {
