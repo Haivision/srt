@@ -50,7 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef WIN32
+#ifndef _WIN32
    #if __APPLE__
       #include "TargetConditionals.h"
    #endif
@@ -80,11 +80,11 @@ modified by
 #include "logging.h"
 #include "utilities.h"
 
-#ifdef WIN32
+#ifdef _WIN32
     typedef int socklen_t;
 #endif
 
-#ifndef WIN32
+#ifndef _WIN32
    #define NET_ERROR errno
 #else
    #define NET_ERROR WSAGetLastError()
@@ -131,7 +131,7 @@ void CChannel::open(const sockaddr* addr)
    // construct an socket
    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
 
-   #ifdef WIN32
+   #ifdef _WIN32
       if (INVALID_SOCKET == m_iSocket)
    #else
       if (m_iSocket < 0)
@@ -242,7 +242,7 @@ void CChannel::setUDPSockOpt()
       int opts = ::fcntl(m_iSocket, F_GETFL);
       if (-1 == ::fcntl(m_iSocket, F_SETFL, opts | O_NONBLOCK))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-   #elif defined(WIN32)
+   #elif defined(_WIN32)
       DWORD ot = 1; //milliseconds
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&ot, sizeof(DWORD)))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
@@ -255,7 +255,7 @@ void CChannel::setUDPSockOpt()
 
 void CChannel::close() const
 {
-   #ifndef WIN32
+   #ifndef _WIN32
       ::close(m_iSocket);
    #else
       ::closesocket(m_iSocket);
@@ -403,7 +403,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       ++ p;
    }
 
-   #ifndef WIN32
+   #ifndef _WIN32
       msghdr mh;
       mh.msg_name = (sockaddr*)addr;
       mh.msg_namelen = m_iSockAddrSize;
@@ -444,7 +444,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 {
     EReadStatus status = RST_OK;
 
-#ifndef WIN32
+#ifndef _WIN32
     msghdr mh;   
     mh.msg_name = addr;
     mh.msg_namelen = m_iSockAddrSize;

@@ -19,7 +19,7 @@
 #include <iterator>
 #include <map>
 #include <srt.h>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <sys/ioctl.h>
 #endif
 
@@ -1025,7 +1025,7 @@ protected:
             ip_mreq mreq;
             mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
             mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
-#ifdef WIN32
+#ifdef _WIN32
             const char* mreq_arg = (const char*)&mreq;
             const auto status_error = SOCKET_ERROR;
 #else
@@ -1033,7 +1033,7 @@ protected:
             const auto status_error = -1;
 #endif
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(__CYGWIN__)
             // On Windows it somehow doesn't work when bind()
             // is called with multicast address. Write the address
             // that designates the network device here.
@@ -1104,7 +1104,7 @@ protected:
 
     ~UdpCommon()
     {
-#ifdef WIN32
+#ifdef _WIN32
         if (m_sock != -1)
         {
             shutdown(m_sock, SD_BOTH);

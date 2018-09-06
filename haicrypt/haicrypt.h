@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 // setup exports
-#if defined WIN32 && !defined __MINGW__
+#if defined _WIN32 && !defined __MINGW__
 #ifdef HAICRYPT_DYNAMIC
 #ifdef HAICRYPT_EXPORTS
 #define HAICRYPT_API __declspec(dllexport)
