@@ -10792,7 +10792,9 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     if (nopackets)
     {
         // This turns the currently SINGULAR value of m_RcvLatestSeqNo
-        m_RcvLatestSeqNo = sequence;
+        // Also m_RcvBaseSeqNo must be lifted because it doesn't point
+        // to the exact packet that is at the lowest position YET.
+        m_RcvLatestSeqNo = m_RcvBaseSeqNo = sequence;
         isahead = true;
     }
     else
@@ -10809,6 +10811,9 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
         m_RcvReadySeqNo = sequence;
         cc_ahead.signal_locked(gl);
     }
+
+    HLOGC(mglog.Debug, log << "PROVIDE: updated seq: base=%" << m_RcvBaseSeqNo << " latest=%" << m_RcvLatestSeqNo
+            << " ready=%" << m_RcvReadySeqNo << (isahead ? " [NEW HEAD]" : ""));
 
     // Now provide as many bits as needed for the range between exp_range and sequence
     // with marks where the lost packets are. If they are equal, there are no loss.
@@ -10829,6 +10834,8 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     {
         since = -forgotten;
     }
+
+    HLOGC(mglog.Debug, log << "PROVIDE: checking loss since=" << since << " offset=" << offset << " forgotten=" << forgotten);
 
     for (int i = since; i < offset; ++i)
     {
