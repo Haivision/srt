@@ -232,6 +232,10 @@ public:
         uint64_t playtime;
         CPacket packet;
         SRT_MSGCTRL msgctrl;
+
+        Pending(): playtime(0), msgctrl(srt_msgctrl_default)
+        {
+        }
     };
 
     struct ConfigItem

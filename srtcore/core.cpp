@@ -10525,7 +10525,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     }
 
     len = m_Pending[0].packet.getLength();
-    memcpy(buf, m_Pending[0].packet.m_pcData, len);
+    memcpy(buf, m_Pending[0].packet.getData(), len);
     *r_mc = m_Pending[0].msgctrl;
     m_Pending.pop_front();
 
@@ -10975,7 +10975,7 @@ void CUDTGroup::readInterceptorThread()
                     CUDT* core = *ip;
                     try
                     {
-                        int nbytes = core->receiveMessage(p.packet.m_pcData, p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
+                        int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
                         p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
                         if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
@@ -10985,7 +10985,7 @@ void CUDTGroup::readInterceptorThread()
                         }
 
                         HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << m_RcvBaseSeqNo << " size=" << nbytes
-                                << " STAMP: " << BufferStamp(p.packet.m_pcData, p.packet.getLength()));
+                                << " STAMP: " << BufferStamp(p.packet.getData(), p.packet.getLength()));
                         break; // We have our data. 
                     }
                     catch (CUDTException&)

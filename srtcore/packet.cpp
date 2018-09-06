@@ -190,6 +190,11 @@ m_pcData((char*&)(m_PacketVector[PV_DATA].iov_base))
     m_PacketVector[PV_DATA].iov_len = 0;
 }
 
+char* CPacket::getData()
+{
+    return (char*)m_PacketVector[PV_DATA].iov_base;
+}
+
 void CPacket::allocate(size_t alloc_buffer_size)
 {
     m_PacketVector[PV_DATA].iov_base = new char[alloc_buffer_size];
