@@ -344,7 +344,7 @@ int main( int argc, char** argv )
     }
 
 
-#ifdef WIN32
+#ifdef _WIN32
 #define alarm(argument) (void)0
 
     if (stoptime != 0)

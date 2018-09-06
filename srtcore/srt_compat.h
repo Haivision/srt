@@ -21,7 +21,7 @@ written by
 #include <time.h>
 
 #ifndef SRT_API
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       #ifdef SRT_DYNAMIC
          #ifdef SRT_EXPORTS
@@ -40,7 +40,7 @@ written by
 #endif
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
    // https://msdn.microsoft.com/en-us/library/tcxf1dw6.aspx
    // printf() Format for ssize_t
    #if !defined(PRIzd)
@@ -88,7 +88,7 @@ inline struct tm SysLocalTime(time_t tt)
 {
     struct tm tms;
     memset(&tms, 0, sizeof tms);
-#ifdef WIN32
+#ifdef _WIN32
 	errno_t rr = localtime_s(&tms, &tt);
 	if (rr == 0)
 		return tms;

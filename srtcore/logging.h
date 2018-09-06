@@ -22,7 +22,7 @@ written by
 #include <set>
 #include <sstream>
 #include <cstdarg>
-#ifdef WIN32
+#ifdef _WIN32
 #include "win/wintime.h"
 #include <sys/timeb.h>
 #else
