@@ -386,6 +386,7 @@ private:
     bool m_bSynRecving;
     bool m_bTsbPd;
     bool m_bTLPktDrop;
+    int64_t m_iTsbPdDelay_us;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
     pthread_t m_RcvInterceptorThread;
 
@@ -454,6 +455,7 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, std::set<int>&, epollset, m_sPollID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
 
     // Required for SRT_tsbpdLoop
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);

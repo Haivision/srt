@@ -2959,6 +2959,8 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 
         // Synchronize also the initial sequence for receiving
         gp->setInitialRxSequence(s->core().m_iPeerISN);
+
+        gp->latency(s->core().m_iTsbPdDelay_ms*int64_t(1000));
     }
 
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
@@ -4671,7 +4673,7 @@ void* CUDT::tsbpd(void* param)
       }
       else
       {
-          rxready = self->m_pRcvBuffer->isRcvDataReady(Ref(tsbpdtime), Ref(current_pkt_seq));
+          rxready = self->m_pRcvBuffer->isRcvDataReady(Ref(tsbpdtime), Ref(current_pkt_seq), -1);
       }
       CGuard::leaveCS(self->m_AckLock);
 
@@ -5927,7 +5929,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     {
         uint64_t tstime SRT_ATR_UNUSED;
         int32_t seqno;
-        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady(Ref(tstime), Ref(seqno))))
+        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady(Ref(tstime), Ref(seqno), seqdistance)))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -9582,6 +9584,7 @@ CUDTGroup::CUDTGroup():
         m_bSynRecving(true),
         m_bTsbPd(true),
         m_bTLPktDrop(true),
+        m_iTsbPdDelay_us(0),
         m_iRcvTimeOut(-1),
         m_RcvInterceptorThread(),
         m_Providers(0), // Will be set later in CUDTGroup::add
@@ -9824,6 +9827,10 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
 
             // Synchronize also the initial sequence for receiving
             g.setInitialRxSequence(ns->core().m_iPeerISN);
+
+            // Get the latency (possibly fixed against the opposite side)
+            // from the first socket.
+            g.latency(ns->core().m_iTsbPdDelay_ms*int64_t(1000));
         }
 
         g.m_bOpened = true;
@@ -10969,7 +10976,7 @@ void CUDTGroup::readInterceptorThread()
                     try
                     {
                         int nbytes = core->receiveMessage(p.packet.m_pcData, p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
-                        p.playtime = p.msgctrl.srctime;
+                        p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
                         if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
                         {

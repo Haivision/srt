@@ -1231,13 +1231,13 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
 * used in the code (core.cpp) is expensive in TsbPD mode, hence this simpler function
 * that only check if first packet in queue is ready.
 */
-bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
+bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq, int32_t seqdistance)
 {
    *tsbpdtime = 0;
 
    if (m_bTsbPdMode)
    {
-       CPacket* pkt = getRcvReadyPacket();
+       CPacket* pkt = getRcvReadyPacket(seqdistance);
        if ( pkt )
        {
             /* 
@@ -1247,7 +1247,10 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             */
             *curpktseq = pkt->getSeqNo();
             *tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
-            if (*tsbpdtime <= CTimer::getTime())
+
+            // If seqdistance was passed, then return true no matter what the
+            // TSBPD time states.
+            if (seqdistance != -1 || *tsbpdtime <= CTimer::getTime())
                return true;
        }
        return false;
@@ -1258,8 +1261,25 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
 // XXX This function may be called only after checking
 // if m_bTsbPdMode.
-CPacket* CRcvBuffer::getRcvReadyPacket()
+CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
 {
+    // If asked for readiness of a packet at given sequence distance
+    // (that is, we need to extract the packet with given sequence number),
+    // only check if this cell is occupied in the buffer, and if so,
+    // if it's occupied with a "good" unit. That's all. It doesn't
+    // matter whether it's ready to play.
+    if (seqdistance != -1)
+    {
+        if (seqdistance >= getRcvDataSize())
+            return 0;
+
+        int i = shift(m_iStartPos, seqdistance);
+        if ( m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD )
+            return &m_pUnit[i]->m_Packet;
+
+        return 0;
+    }
+
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shift_forward(i))
     {
         /* 
@@ -1277,7 +1297,7 @@ bool CRcvBuffer::isRcvDataReady()
    uint64_t tsbpdtime;
    int32_t seq;
 
-   return isRcvDataReady(Ref(tsbpdtime), Ref(seq));
+   return isRcvDataReady(Ref(tsbpdtime), Ref(seq), -1);
 }
 
 int CRcvBuffer::getAvailBufSize() const

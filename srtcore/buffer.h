@@ -324,7 +324,7 @@ public:
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
-   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq, int32_t seqdistance);
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
    void debugJitter(uint64_t);
@@ -337,7 +337,7 @@ public:
    {
        return m_iLastAckPos != m_iStartPos;
    }
-   CPacket* getRcvReadyPacket();
+   CPacket* getRcvReadyPacket(int32_t seqdistance);
    bool isReadyToPlay(const CPacket* p, uint64_t& tsbpdtime);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
