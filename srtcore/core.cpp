@@ -10731,7 +10731,11 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     // First, notify the position.
     int offset = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo);
     if (offset < 0)
+    {
+        HLOGC(mglog.Debug, log << "PROVIDING IGNORED for %" << sequence << " - already provided up to %" << m_RcvBaseSeqNo
+                << " (offset=" << offset << ")");
         return loss_bitmap; // ignore; the packet is already extracted
+    }
 
     bool nopackets = m_Providers.empty();
 
