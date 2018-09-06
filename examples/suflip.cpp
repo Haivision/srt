@@ -86,7 +86,7 @@ protected:
             ip_mreq mreq;
             mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
             mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
-#ifdef WIN32
+#ifdef _WIN32
             int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char *)&mreq, sizeof(mreq));
             if ( res == SOCKET_ERROR || res == -1 )
             {
@@ -122,7 +122,7 @@ protected:
 
     ~UdpCommon()
     {
-#ifdef WIN32
+#ifdef _WIN32
         if (m_sock != -1)
         {
            shutdown(m_sock, SD_BOTH);

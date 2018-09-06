@@ -12,7 +12,7 @@
 #ifndef INC__APPCOMMON_H
 #define INC__APPCOMMON_H
  
-#if WIN32
+#if _WIN32
 
 // Keep this below commented out.
 // This is for a case when you need cpp debugging on Windows.
@@ -117,7 +117,7 @@ static inline int inet_pton(int af, const char * src, void * dst)
 }
 #endif // __MINGW__
 
-#ifdef WIN32
+#ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 #else
 inline int SysError() { return errno; }

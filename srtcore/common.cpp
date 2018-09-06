@@ -51,7 +51,7 @@ modified by
 *****************************************************************************/
 
 
-#ifndef WIN32
+#ifndef _WIN32
    #include <cstring>
    #include <cerrno>
    #include <unistd.h>
@@ -124,7 +124,7 @@ void CTimer::rdtsc(uint64_t &x)
       asm ("rdtsc" : "=a" (lval), "=d" (hval));
       x = hval;
       x = (x << 32) | lval;
-   #elif defined(WIN32)
+   #elif defined(_WIN32)
       //HANDLE hCurThread = ::GetCurrentThread(); 
       //DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1); 
       BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
@@ -155,7 +155,7 @@ uint64_t CTimer::readCPUFrequency()
 
       // CPU clocks per microsecond
       frequency = (t2 - t1) / 100000;
-   #elif defined(WIN32)
+   #elif defined(_WIN32)
       int64_t ccf;
       if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
          frequency = ccf / 1000000;
@@ -290,7 +290,7 @@ CTimer::EWait CTimer::waitForEvent()
 
 void CTimer::sleep()
 {
-   #ifndef WIN32
+   #ifndef _WIN32
       usleep(10);
    #else
       Sleep(1);
@@ -373,7 +373,7 @@ m_iMajor(major),
 m_iMinor(minor)
 {
    if (err == -1)
-      #ifndef WIN32
+      #ifndef _WIN32
          m_iErrno = errno;
       #else
          m_iErrno = GetLastError();
@@ -601,7 +601,7 @@ const char* CUDTException::getErrorMessage()
    }
 
    // period
-   #ifndef WIN32
+   #ifndef _WIN32
    m_strMsg += ".";
    #endif
 
@@ -847,7 +847,7 @@ std::string logging::FormatTime(uint64_t time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef WIN32
+#ifdef _WIN32
     strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
 #else
     strftime(tmp_buf, 512, "%T.", &tm);
@@ -896,7 +896,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         //
         // XXX Consider using %X everywhere, as it should work
         // on both systems.
-#ifdef WIN32
+#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
 #else
         strftime(tmp_buf, 512, "%T.", &tm);
