@@ -5782,48 +5782,29 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
 int CUDT::recv(char* data, int len)
 {
-    if (!m_bConnected || !m_Smoother.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-
-    if (len <= 0)
-    {
-        LOGC(dlog.Error, log << "Length of '" << len << "' supplied to srt_recv.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    if (m_bMessageAPI)
-    {
-        SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        return receiveMessage(data, len, Ref(mctrl));
-    }
-
-    return receiveBuffer(data, len);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    return recvmsg2(data, len, Ref(mctrl));
 }
 
 int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 {
-    if (!m_bConnected || !m_Smoother.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-
-    if (len <= 0)
-    {
-        LOGC(dlog.Error, log << "Length of '" << len << "' supplied to srt_recvmsg.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    if (m_bMessageAPI)
-    {
-        SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        int ret = receiveMessage(data, len, Ref(mctrl));
-        srctime = mctrl.srctime;
-        return ret;
-    }
-
-    return receiveBuffer(data, len);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    int res = recvmsg2(data, len, Ref(mctrl));
+    srctime = mctrl.srctime;
+    return res;
 }
 
 int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 {
+    // Check if the socket is a member of a receiver group.
+    // If so, then reading by receiveMessage is disallowed.
+
+    if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
+    {
+        LOGP(mglog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
+        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
+    }
+
     if (!m_bConnected || !m_Smoother.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
@@ -5847,15 +5828,6 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     // they come in, however you need to match the size of the buffer.
     if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
-
-    // Check if the socket is a member of a receiver group.
-    // If so, then reading by receiveMessage is disallowed.
-
-    if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
-    {
-        LOGP(mglog.Error, "recvmsg: This socket is a receiver group member. Use group ID, NOT socket ID.");
-        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
-    }
 
     CGuard recvguard(m_RecvLock);
     CCondDelegate tscond(m_RcvTsbPdCond, recvguard);
@@ -10994,9 +10966,9 @@ void CUDTGroup::readInterceptorThread()
                         ip != prov.provider.end(); ++ip)
                 {
                     CUDT* core = *ip;
-                    int nbytes = core->receiveMessage(p.packet.m_pcData, p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
-                    if (nbytes > 0)
+                    try
                     {
+                        int nbytes = core->receiveMessage(p.packet.m_pcData, p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
                         p.playtime = p.msgctrl.srctime;
                         p.packet.setLength(nbytes);
                         if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
@@ -11008,6 +10980,13 @@ void CUDTGroup::readInterceptorThread()
                         HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << m_RcvBaseSeqNo << " size=" << nbytes
                                 << " STAMP: " << BufferStamp(p.packet.m_pcData, p.packet.getLength()));
                         break; // We have our data. 
+                    }
+                    catch (CUDTException&)
+                    {
+                        // This is a "low class error" - still should not happen, but might happen in
+                        // case of an urgent link break; a predicted situation in redundancy.
+                        HLOGC(mglog.Debug, log << "ERROR: Socket #" << core->m_SocketID << ": despite provider, did not provide packet for %"
+                                << m_RcvBaseSeqNo);
                     }
                     ++ip;
                 }
