@@ -10881,6 +10881,11 @@ void CUDTGroup::readInterceptorThread()
 
         // Should be 0, if there's a packet at position 0.
         int firstready = CSeqNo::seqcmp(m_RcvReadySeqNo, m_RcvBaseSeqNo);
+
+        HLOGC(tslog.Debug, log << "GROUP: SEQ STATES: base=%" << m_RcvBaseSeqNo
+                << " ready=%" << m_RcvReadySeqNo << " latest=%" << m_RcvLatestSeqNo
+                << " firstready(offset)=" << firstready);
+
         Provider frp;
         bool have = m_Providers.get(firstready, Ref(frp));
 
