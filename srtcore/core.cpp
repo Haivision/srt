@@ -5878,7 +5878,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     int seqdistance = -1;
     if (uptoseq != CSeqNo::m_iMaxSeqNo)
     {
-        seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq)-1;
+        seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq);
         HLOGC(dlog.Debug, log << "receiveMessage: enforced SEQUENCE: %" << uptoseq << " with current top %" << m_iRcvLastSkipAck
                 << " - offset=" << seqdistance);
     }
@@ -10982,6 +10982,8 @@ void CUDTGroup::readInterceptorThread()
                     {
                         HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << m_RcvBaseSeqNo);
                         int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
+                        if (nbytes <= 0)
+                            continue;
                         p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
                         if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
@@ -11001,7 +11003,6 @@ void CUDTGroup::readInterceptorThread()
                         HLOGC(mglog.Debug, log << "ERROR: Socket #" << core->m_SocketID << ": despite provider, did not provide packet for %"
                                 << m_RcvBaseSeqNo);
                     }
-                    ++ip;
                 }
 
                 if (p.playtime == 0)
