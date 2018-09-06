@@ -2950,32 +2950,29 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
         HLOGC(mglog.Debug, log << "makeMePeerOf: no group has peer=%" << peergroup << " - creating new mirror group %" << gp->id());
     }
 
+
+    if (was_empty)
     {
         CGuard glock(*gp->exp_groupLock());
+        // The first socket connects
+        gp->currentSchedSequence(s->core().ISN());
 
-        if (was_empty)
-        {
-            // The first socket connects
-            gp->currentSchedSequence(s->core().ISN());
+        // Synchronize also the initial sequence for receiving
+        gp->setInitialRxSequence(s->core().m_iPeerISN);
+    }
 
-            // Synchronize also the initial sequence for receiving
-            gp->setInitialRxSequence(s->core().m_iPeerISN);
-        }
+    // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
-
-        // Copy of addSocketToGroup. No idea how many parts could be common, not much.
-
-        // Check if the socket already is in the group
-        CUDTGroup::gli_t f = gp->find(m_SocketID);
-        if (f != CUDTGroup::gli_NULL())
-        {
-            // XXX This is internal error. Report it, but continue
-            // (A newly created socket from acceptAndRespond should not have any group membership yet)
-            LOGC(mglog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-            s->m_IncludedGroup = gp;
-            s->m_IncludedIter = f;
-            return 0;
-        }
+    // Check if the socket already is in the group
+    CUDTGroup::gli_t f = gp->find(m_SocketID);
+    if (f != CUDTGroup::gli_NULL())
+    {
+        // XXX This is internal error. Report it, but continue
+        // (A newly created socket from acceptAndRespond should not have any group membership yet)
+        LOGC(mglog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
+        s->m_IncludedGroup = gp;
+        s->m_IncludedIter = f;
+        return 0;
     }
 
     s->m_IncludedGroup = gp;
