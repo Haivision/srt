@@ -9821,20 +9821,24 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
         throw;
     }
 
-    if (isn == 0)
-    {
-        // The first socket connects
-        g.currentSchedSequence(ns->core().ISN());
-    }
-
     SRT_SOCKSTATUS st;
     {
         CGuard grd(ns->m_ControlLock);
         st = ns->m_Status;
     }
 
+
     {
         CGuard grd(g.m_GroupLock);
+
+        if (isn == 0)
+        {
+            // The first socket connects
+            g.currentSchedSequence(ns->core().ISN());
+
+            // Synchronize also the initial sequence for receiving
+            g.setInitialRxSequence(ns->core().m_iPeerISN);
+        }
 
         g.m_bOpened = true;
 

@@ -295,6 +295,23 @@ public:
         if (f != m_Group.end())
         {
             m_Group.erase(f);
+
+            // Reset sequence numbers on a dead group so that they are
+            // initialized anew with the new alive connection within
+            // the group.
+            // XXX The problem is that this should be done after the
+            // socket is considered DISCONNECTED, not when it's being
+            // closed. After being disconnected, the sequence numbers
+            // are no longer valid, and will be reinitialized when the
+            // socket is connected again. This may stay as is for now
+            // as in SRT it's not predicted to do anything with the socket
+            // that was disconnected other than immediately closing it.
+            if (m_Group.empty())
+            {
+                m_iLastSchedSeqNo = 0;
+                setInitialRxSequence(1);
+            }
+            return true;
         }
 
         return false;
@@ -394,6 +411,7 @@ private:
     // and when the newly coming packet has a sequence less than this.
     volatile int32_t m_RcvReadySeqNo;
 
+    // Incremented with a new packet arriving
     volatile int32_t m_RcvLatestSeqNo;
 
     bool m_bOpened;                    // Set to true on a first use
@@ -422,6 +440,12 @@ public:
         return "";
 #endif
     }
+
+    void setInitialRxSequence(int32_t seq)
+    {
+        m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
+    }
+
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
@@ -586,6 +610,7 @@ public: // internal API
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
+    int32_t peerISN() { return m_iPeerISN; }
     sockaddr_any peerAddr() { return m_PeerAddr; }
 
     int minSndSize(int len = 0)
