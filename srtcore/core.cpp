@@ -10976,6 +10976,7 @@ void CUDTGroup::readInterceptorThread()
                     CUDT* core = *ip;
                     try
                     {
+                        HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << m_RcvBaseSeqNo);
                         int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
                         p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
