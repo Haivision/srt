@@ -5916,7 +5916,8 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         return res;
     }
 
-    HLOGC(dlog.Debug, log << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size=" << len);
+    HLOGC(dlog.Debug, log << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size max=" << len
+            << " EXP SEQUENCE: " << (seqdistance == -1 ? -1 : int(uptoseq)));
 
     int res = 0;
     bool timeout = false;
