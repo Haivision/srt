@@ -10742,16 +10742,25 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     CGuard gl(m_GroupLock);
     CCondDelegate cc_ahead(m_RcvPacketAhead, gl);
 
-    // First, notify the position.
-    int offset = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo);
-    if (offset < 0)
-    {
-        HLOGC(mglog.Debug, log << "PROVIDING IGNORED for %" << sequence << " - already provided up to %" << m_RcvBaseSeqNo
-                << " (offset=" << offset << ")");
-        return loss_bitmap; // ignore; the packet is already extracted
-    }
-
     bool nopackets = m_Providers.empty();
+    int offset;
+    if (nopackets)
+    {
+        m_RcvBaseSeqNo = sequence;
+        offset = 0;
+    }
+    else
+    {
+        // First, notify the position.
+        offset = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo);
+
+        if (offset < 0)
+        {
+            HLOGC(mglog.Debug, log << "PROVIDING IGNORED for %" << sequence << " - already provided up to %" << m_RcvBaseSeqNo
+                    << " (offset=" << offset << ")");
+            return loss_bitmap; // ignore; the packet is already extracted
+        }
+    }
 
     HLOGC(mglog.Debug, log << "PROVIDING PACKET %" << sequence << " AFTER %" << exp_sequence << " base=%"
             << m_RcvBaseSeqNo << " latest=%" << m_RcvLatestSeqNo << " ready=%" << m_RcvReadySeqNo);
@@ -10804,9 +10813,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     if (nopackets)
     {
         // This turns the currently SINGULAR value of m_RcvLatestSeqNo
-        // Also m_RcvBaseSeqNo must be lifted because it doesn't point
-        // to the exact packet that is at the lowest position YET.
-        m_RcvLatestSeqNo = m_RcvBaseSeqNo = sequence;
+        m_RcvLatestSeqNo = sequence;
         isahead = true;
     }
     else
