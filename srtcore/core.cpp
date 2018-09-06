@@ -2919,6 +2919,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     CGuard cg(s->m_ControlLock);
     // Check if there exists a group that this one is a peer of.
     CUDTGroup* gp = s_UDTUnited.findPeerGroup(peergroup);
+    bool was_empty = true;
     if (gp)
     {
         if (gp->type() != gtp)
@@ -2938,6 +2939,8 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
         // member.
         synchronizeGroupTime(gp);
 
+        if (!gp->empty())
+            was_empty = false;
     }
     else
     {
@@ -2947,18 +2950,32 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
         HLOGC(mglog.Debug, log << "makeMePeerOf: no group has peer=%" << peergroup << " - creating new mirror group %" << gp->id());
     }
 
-    // Copy of addSocketToGroup. No idea how many parts could be common, not much.
-
-    // Check if the socket already is in the group
-    CUDTGroup::gli_t f = gp->find(m_SocketID);
-    if (f != CUDTGroup::gli_NULL())
     {
-        // XXX This is internal error. Report it, but continue
-        // (A newly created socket from acceptAndRespond should not have any group membership yet)
-        LOGC(mglog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-        s->m_IncludedGroup = gp;
-        s->m_IncludedIter = f;
-        return 0;
+        CGuard glock(*gp->exp_groupLock());
+
+        if (was_empty)
+        {
+            // The first socket connects
+            gp->currentSchedSequence(s->core().ISN());
+
+            // Synchronize also the initial sequence for receiving
+            gp->setInitialRxSequence(s->core().m_iPeerISN);
+        }
+
+
+        // Copy of addSocketToGroup. No idea how many parts could be common, not much.
+
+        // Check if the socket already is in the group
+        CUDTGroup::gli_t f = gp->find(m_SocketID);
+        if (f != CUDTGroup::gli_NULL())
+        {
+            // XXX This is internal error. Report it, but continue
+            // (A newly created socket from acceptAndRespond should not have any group membership yet)
+            LOGC(mglog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
+            s->m_IncludedGroup = gp;
+            s->m_IncludedIter = f;
+            return 0;
+        }
     }
 
     s->m_IncludedGroup = gp;
