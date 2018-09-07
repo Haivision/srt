@@ -11,10 +11,10 @@
 #define INC__PLATFORM_SYS_H
 
 #ifdef WIN32
+   #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
-   #include <mswsock.h>
    #include <windows.h>
    #if defined(_MSC_VER)
       #include <stdint.h>

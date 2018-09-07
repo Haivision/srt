@@ -263,6 +263,7 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
+#ifndef _WIN32
     if (m_bBindMasked)
     {
         HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
@@ -271,6 +272,7 @@ void CChannel::setUDPSockOpt()
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
     }
+#endif
 }
 
 void CChannel::close() const

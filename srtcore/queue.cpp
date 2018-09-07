@@ -50,10 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifdef WIN32
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-#endif
+#include "platform_sys.h"
+
 #include <cstring>
 
 #include "common.h"

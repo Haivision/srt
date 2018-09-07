@@ -50,6 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
+/*
 #ifdef LINUX
    #include <sys/epoll.h>
    #include <unistd.h>
@@ -66,6 +69,8 @@ modified by
 #if defined(__ANDROID__) || defined(ANDROID)
    #include <sys/select.h>
 #endif
+*/
+
 #include <algorithm>
 #include <cerrno>
 #include <cstring>

@@ -191,6 +191,7 @@ private:
 
    mutable char m_acCmsgBuffer [CMSG_MAX_SPACE]; // Reserved space for ancillary data with pktinfo
 
+#ifndef _WIN32 // This feature is not enabled on Windows, for now.
    sockaddr_any getTargetAddress(const msghdr& msg) const
    {
        // Loop through IP header messages
@@ -261,6 +262,7 @@ private:
 
        return false;
    }
+#endif // _WIN32
 };
 
 

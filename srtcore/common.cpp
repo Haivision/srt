@@ -50,7 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
 
+/*
 #ifndef WIN32
    #include <cstring>
    #include <cerrno>
@@ -66,6 +68,7 @@ modified by
    #include <ws2tcpip.h>
    #include <win/wintime.h>
 #endif
+*/
 
 #include <string>
 #include <sstream>
