@@ -46,6 +46,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************
 written by
    Yunhong Gu, last updated 01/27/2011
+#ifdef unix
 modified by
    Haivision Systems Inc.
 *****************************************************************************/
@@ -53,7 +54,7 @@ modified by
 #ifndef __UDT_CHANNEL_H__
 #define __UDT_CHANNEL_H__
 
-
+#include "platform_sys.h"
 #include "udt.h"
 #include "packet.h"
 #include "netinet_any.h"

@@ -14,6 +14,7 @@
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
+   #include <mswsock.h>
    #include <windows.h>
    #if defined(_MSC_VER)
       #include <win/stdint.h>
@@ -24,14 +25,25 @@
       #include <stdint.h>
    #endif
 #else
+
+#if __APPLE__
+#define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
+#define __POSIX_C_SOURCE
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <netdb.h>
+#include <fcntl.h>
+
+#include <cerrno>
+#include <cstring>
+#include <cstdlib>
 #endif
 
 #endif
