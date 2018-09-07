@@ -20,6 +20,7 @@ written by
 #include <stddef.h>
 #include <time.h>
 
+#ifndef SRT_API
 #ifdef WIN32
    #ifndef __MINGW__
       #ifdef SRT_DYNAMIC
@@ -36,6 +37,7 @@ written by
    #endif
 #else
    #define SRT_API __attribute__ ((visibility("default")))
+#endif
 #endif
 
 #ifdef WIN32

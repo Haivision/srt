@@ -738,9 +738,13 @@ if ( ENABLE_CXX11 )
 		endmacro()
 
 		srt_add_testprogram(utility-test)
-		srt_add_testprogram(uriparser-test)
-		target_compile_options(uriparser-test PRIVATE -DTEST)
-		target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		if (NOT WIN32)
+		   # This program is symlinked under git-cygwin.
+		   # Avoid misleading syntax error.
+	       srt_add_testprogram(uriparser-test)
+	       target_compile_options(uriparser-test PRIVATE -DTEST)
+	       target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		endif()
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
