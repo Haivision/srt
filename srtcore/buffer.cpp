@@ -1251,8 +1251,15 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             // If seqdistance was passed, then return true no matter what the
             // TSBPD time states.
             if (seqdistance != -1 || *tsbpdtime <= CTimer::getTime())
+            {
+                HLOGC(dlog.Debug, log << "isRcvDataReady: packet extracted seqdistance=" << seqdistance
+                        << " TsbPdTime=" << logging::FormatTime(*tsbpdtime));
                return true;
+            }
        }
+
+       HLOGC(dlog.Debug, log << "isRcvDataReady: packet "
+               << (pkt ? "" : "NOT ") << "extracted, NOT READY.");
        return false;
    }
 
@@ -1271,14 +1278,24 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
     if (seqdistance != -1)
     {
         if (seqdistance >= getRcvDataSize())
+        {
+            HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " is in the past");
             return 0;
+        }
 
-        int i = shift(m_iStartPos, seqdistance);
+        int i = shift(m_iLastAckPos, -seqdistance);
         if ( m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD )
+        {
+            HLOGC(dlog.Debug, log << "getRcvReadyPacket: FOUND PACKET %" << m_pUnit[i]->m_Packet.getSeqNo());
             return &m_pUnit[i]->m_Packet;
+        }
 
+        HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " IS NOT RECEIVED.");
         return 0;
     }
+#if ENABLE_HEAVY_LOGGING
+    int nskipped = 0;
+#endif
 
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shift_forward(i))
     {
@@ -1286,7 +1303,14 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
          * Skip missing packets that did not arrive in time.
          */
         if ( m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD )
+        {
+            HLOGC(dlog.Debug, log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo()
+                    << " (" << nskipped << " empty cells skipped)");
             return &m_pUnit[i]->m_Packet;
+        }
+#if ENABLE_HEAVY_LOGGING
+        ++nskipped;
+#endif
     }
 
     return 0;
