@@ -10,12 +10,30 @@
 #ifndef INC__PLATFORM_SYS_H
 #define INC__PLATFORM_SYS_H
 
+// INFORMATION
+//
+// This file collects all required platform-specific declarations
+// required to provide everything that the SRT library needs from system.
+//
+// There's also semi-modular system implemented using SRT_IMPORT_* macros.
+// To require a module to be imported, #define SRT_IMPORT_* where * is
+// the module name. Currently handled module macros:
+//
+// SRT_IMPORT_TIME   (mach time on Mac, portability gettimeofday on WIN32)
+// SRT_IMPORT_EVENT  (includes kevent on Mac)
+
+
 #ifdef WIN32
    #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
+
+   #ifdef SRT_IMPORT_TIME
+   #include <win/wintime.h>
+   #endif
+
    #if defined(_MSC_VER)
       #include <stdint.h>
       #include <win/inttypes.h>
@@ -27,8 +45,41 @@
 #else
 
 #if __APPLE__
+// XXX Check if this condition doesn't require checking of
+// also other macros, like TARGET_OS_IOS etc.
+
+#include "TargetConditionals.h"
 #define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
-#define __POSIX_C_SOURCE
+
+
+#ifdef SRT_IMPORT_TIME
+      #include <mach/mach_time.h>
+#endif
+
+#ifdef SRT_IMPORT_EVENT
+   #include <sys/types.h>
+   #include <sys/event.h>
+   #include <sys/time.h>
+   #include <unistd.h>
+#endif
+
+#endif
+
+#ifdef LINUX
+
+#ifdef SRT_IMPORT_EVENT
+   #include <sys/epoll.h>
+   #include <unistd.h>
+#endif
+
+#endif
+
+#if defined(__ANDROID__) || defined(ANDROID)
+
+#ifdef SRT_IMPORT_EVENT
+   #include <sys/select.h>
+#endif
+
 #endif
 
 #include <sys/types.h>

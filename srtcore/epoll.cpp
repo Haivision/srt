@@ -50,26 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#define SRT_IMPORT_EVENT
 #include "platform_sys.h"
-
-/*
-#ifdef LINUX
-   #include <sys/epoll.h>
-   #include <unistd.h>
-#endif
-#if __APPLE__
-   #include "TargetConditionals.h"
-#endif
-#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-   #include <sys/types.h>
-   #include <sys/event.h>
-   #include <sys/time.h>
-   #include <unistd.h>
-#endif
-#if defined(__ANDROID__) || defined(ANDROID)
-   #include <sys/select.h>
-#endif
-*/
 
 #include <algorithm>
 #include <cerrno>
