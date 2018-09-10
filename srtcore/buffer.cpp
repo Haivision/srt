@@ -1280,7 +1280,19 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
     // matter whether it's ready to play.
     if (seqdistance != -1)
     {
-        if (seqdistance >= getRcvDataSize())
+        // Note: seqdistance is the value to to go BACKWARDS from m_iLastAckPos,
+        // which is the position that is in sync with CUDT::m_iRcvLastSkipAck. This
+        // position is the sequence number of a packet that is NOT received, but it's
+        // expected to be received as next. So the minimum value of seqdistance is 1.
+
+        // SANITY CHECK
+        if (seqdistance == 0)
+        {
+            LOGC(mglog.Fatal, log << "IPE: trying to extract packet past the last ACK-ed!");
+            return 0;
+        }
+
+        if (seqdistance > getRcvDataSize())
         {
             HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " is in the past (start=" << m_iStartPos
                     << " end=" << m_iLastAckPos << ")");

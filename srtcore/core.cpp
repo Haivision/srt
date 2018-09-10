@@ -5880,6 +5880,12 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     if (uptoseq != CSeqNo::m_iMaxSeqNo)
     {
         seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq);
+        if (seqdistance < 1)
+        {
+            LOGC(mglog.Error, log << "IPE: trying to read %" << uptoseq << " from a core where top is %" << m_iRcvLastSkipAck
+                    << " (requested packet is not delivered to @" << m_SocketID << ")");
+            return 0;
+        }
         HLOGC(dlog.Debug, log << "receiveMessage: enforced SEQUENCE: %" << uptoseq << " with current top %" << m_iRcvLastSkipAck
                 << " - offset=" << seqdistance);
     }
