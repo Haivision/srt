@@ -10510,6 +10510,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             if (!any)
             {
                 // Signal to unlock TSBPD and make it exit
+                HLOGC(mglog.Debug, log << "GROUP:recv: signal PACKET AT HEAD to release waiting");
                 cc_ahead.signal_locked(groupguard);
                 m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
                 throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -10988,6 +10989,14 @@ void CUDTGroup::readInterceptorThread()
                 continue;
             }
             m_Providers.get(firstready, Ref(frp));
+        }
+
+        // Check if this "first ready" is ready for extraction. If not, wait for the signal.
+        if (!frp.signedoff)
+        {
+            HLOGC(mglog.Debug, log << "GROUP: packet at ready @top is not yet signedoff, waiting for ACK first.");
+            cc_ahead.wait();
+            continue;
         }
 
         // If the first ready packet is not the one at position 0,
