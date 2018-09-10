@@ -1867,6 +1867,8 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
     if (!passack)
         m_iStartPos = past_q;
 
+    HLOGC(dlog.Debug, log << "rcvBuf/extractData: begin=" << m_iStartPos << " reporting extraction size=" << (len - rs));
+
     return len - rs;
 }
 

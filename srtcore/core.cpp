@@ -5988,6 +5988,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
                 */
 
         res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
+        HLOGC(dlog.Debug, log << "AFTER readMsg: result=" << res);
 
         if (m_bBroken || m_bClosing)
         {
@@ -11073,7 +11074,10 @@ void CUDTGroup::readInterceptorThread()
                         HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << m_RcvBaseSeqNo);
                         int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
                         if (nbytes <= 0)
+                        {
+                            LOGC(dlog.Error, log << "PACKET NOT EXTRACTED FROM @" << core->m_SocketID << ", trying the next one");
                             continue;
+                        }
                         p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
                         if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
