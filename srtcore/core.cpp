@@ -69,6 +69,7 @@ modified by
 
 #include <cmath>
 #include <sstream>
+#include <algorithm>
 #include "srt.h"
 #include "queue.h"
 #include "api.h"
@@ -6715,6 +6716,28 @@ void CUDT::releaseSynch()
     CGuard::leaveCS(m_RecvLock);
 }
 
+void CUDT::ackDataUpTo(int32_t ack)
+{
+    int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
+
+    m_iRcvLastAck = ack;
+    m_iRcvLastSkipAck = ack;
+
+    // NOTE: This is new towards UDT and prevents spurious
+    // wakeup of select/epoll functions when no new packets
+    // were signed off for extraction.
+    if (acksize > 0)
+    {
+        m_pRcvBuffer->ackData(acksize);
+        if (m_parent->m_IncludedGroup)
+            m_parent->m_IncludedGroup->readyPackets(this, ack);
+
+        // Signal threads waiting in CTimer::waitForEvent(),
+        // which are select(), selectEx() and epoll_wait().
+        CTimer::triggerEvent();
+    }
+}
+
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
 {
@@ -6811,19 +6834,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       // IF ack > m_iRcvLastAck
       if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
       {
-         int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
-
-         m_iRcvLastAck = ack;
-         m_iRcvLastSkipAck = ack;
-
-         // XXX Unknown as to whether it matters.
-         // This if (acksize) causes that ackData() won't be called.
-         // With size == 0 it wouldn't do anything except calling CTimer::triggerEvent().
-         // This, again, signals the condition, CTimer::m_EventCond.
-         // This releases CTimer::waitForEvent() call used in CUDTUnited::selectEx().
-         // Preventing to call this on zero size makes sense, if it prevents false alerts.
-         if (acksize > 0)
-             m_pRcvBuffer->ackData(acksize);
+         ackDataUpTo(ack);
          CGuard::leaveCS(m_AckLock);
 
          // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
@@ -10724,7 +10735,9 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     }
 
     CGuard gl(m_GroupLock);
-    CCondDelegate cc_ahead(m_RcvPacketAhead, gl);
+
+    // This can only be activated with immediate ACK, not yet implemented.
+    //CCondDelegate cc_ahead(m_RcvPacketAhead, gl);
 
     bool nopackets = m_Providers.empty();
     int offset;
@@ -10812,7 +10825,8 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     if (isahead)
     {
         m_RcvReadySeqNo = sequence;
-        cc_ahead.signal_locked(gl);
+        // This signal is currently thrown by ACK (until immediateACK)
+        //cc_ahead.signal_locked(gl);
     }
 
     HLOGC(mglog.Debug, log << "PROVIDE: updated seq: base=%" << m_RcvBaseSeqNo << " latest=%" << m_RcvLatestSeqNo
@@ -10849,6 +10863,64 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     }
 
     return loss_bitmap;
+}
+
+void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
+{
+    CGuard glock(m_GroupLock);
+    CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
+
+    int numack = CSeqNo::seqcmp(ack, m_RcvBaseSeqNo);
+    if (numack <= 0)
+    {
+        // ACK for that socket is in the past, skip.
+        return;
+    }
+
+    // Now set acknowledged all packets between the base
+    // and ack. Note that 'ack' points to past-the-end.
+    for (int i = 0; i < numack; ++i)
+    {
+        Provider* pp;
+        if (!m_Providers.access(i, Ref(pp)))
+        {
+            // No packet provider at this position - impossible. If the
+            // packet is ACKed, then it surely was earlier provided.
+            // The problem is that if this is acknowledged here and fix-added,
+            // then later there might be a demand to read from here.
+            // Simply skip this one counting on that if this was because
+            // the packet was fake-acked (TLPKTDROP, which should not work
+            // in this case - it's the group to take care of it), it will
+            // be removed later when the next packet supersedes it.
+            continue;
+        }
+
+        if (!pp->signedoff)
+        {
+            pp->signedoff = true;
+            if (!pp->provider.empty() && pp->provider[0] != core)
+            {
+                // Acknowledgement came from a different core than the 
+                // first providing it. Put this core at front so that
+                // the group reader interceptor retrieves the packet
+                // from this very core.
+                // Need to find this core, or in case when not found,
+                // just add it at the end first.
+                vector<CUDT*>::iterator ip = std::find(pp->provider.begin(), pp->provider.end(), core);
+                if (ip == pp->provider.end())
+                {
+                    LOGC(mglog.Error, log << "IPE: ACKed packet from core ID=" << core->m_SocketID
+                            << " which did not provide this packet! (fixing)");
+                    pp->provider.push_back(core);
+                    ip = pp->provider.end();
+                    --ip;
+                }
+                swap(*pp->provider.begin(), *ip);
+                HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed earlier, shifting to first.");
+            }
+        }
+    }
+    cc_ahead.signal_locked(glock);
 }
 
 void CUDTGroup::readInterceptorThread()

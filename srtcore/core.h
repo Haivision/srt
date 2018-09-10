@@ -196,8 +196,9 @@ public:
     {
         uint64_t playtime;
         std::vector<CUDT*> provider; // XXX may be not the most optimal
+        bool signedoff;
 
-        Provider(): playtime(0) {}
+        Provider(): playtime(0), signedoff(false) {}
 
         struct FUpdate
         {
@@ -218,7 +219,7 @@ public:
 
         struct FValid
         {
-            bool operator()(const Provider& p) { return !p.provider.empty(); }
+            bool operator()(const Provider& p) { return !p.provider.empty() && p.signedoff; }
         };
     };
 
@@ -354,7 +355,25 @@ public:
     void addEPoll(int eid);
     void removeEPoll(int eid);
 
+    /// Update the in-group array of packet providers per sequence number.
+    /// Also basing on the information already provided by possibly other sockets,
+    /// report the real status of packet loss, including packets maybe lost
+    /// by the caller provider, but already received from elsewhere. Note that
+    /// these packets are not ready for extraction until ACK-ed.
+    ///
+    /// @param exp_sequence The previously received sequence at this socket
+    /// @param sequence The sequence of this packet
+    /// @param provider The core of the socket for which the packet was dispatched
+    /// @param time TSBPD time of this packet
+    /// @return The bitmap that marks by 'false' packets lost since next to exp_sequence
     std::vector<bool> providePacket(int32_t exp_sequence, int32_t sequence, CUDT *provider, uint64_t time);
+
+    /// This is called from the ACK action by particular socket, which
+    /// actually signs off the packet for extraction.
+    ///
+    /// @param core The socket core for which the ACK was sent
+    /// @param ack The past-the-last-received ACK sequence number
+    void readyPackets(CUDT* core, int32_t ack);
 
 
 #if ENABLE_HEAVY_LOGGING
@@ -1174,6 +1193,8 @@ private: // Generation and processing of packets
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
+    void ackDataUpTo(int32_t seq);
+
 
 private: // Trace
     uint64_t m_StartTime;                        // timestamp when the UDT entity is started

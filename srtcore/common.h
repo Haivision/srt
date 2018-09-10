@@ -1031,22 +1031,55 @@ public:
         return size() - 1;
     }
 
+    bool access(int position, ref_t<Value*> r_v)
+    {
+        // This version doesn't require the boolean value to report
+        // whether the element is newly added because it never adds
+        // a new element.
+        int ipos, vend;
+
+        if (!INT_checkAccess(position, ipos, vend))
+            return false;
+        if (ipos >= vend) // exceeds
+            return false;
+
+        INT_access(ipos, false, r_v); // never exceeds
+        return true;
+    }
+
     // Ok, now it's the real deal.
     bool access(int position, ref_t<Value*> r_v, ref_t<bool> r_isnew)
+    {
+        int ipos, vend;
+
+        if (!INT_checkAccess(position, ipos, vend))
+            return false;
+        bool exceeds = (ipos >= vend);
+        *r_isnew = exceeds;
+
+        INT_access(ipos, exceeds, r_v);
+        return true;
+    }
+
+private:
+    bool INT_checkAccess(int position, int& ipos, int& vend)
     {
         // Reject if no space left.
         // Also INVAL if negative position.
         if (position >= (m_iSize-1) || position < 0)
             return false; // That's way to far, we can't even calculate
 
-        int ipos = m_xBegin + position;
+        ipos = m_xBegin + position;
 
-        int vend = m_xEnd;
+        vend = m_xEnd;
         if (m_xEnd < m_xBegin)
             vend += m_iSize;
 
-        bool exceeds = ipos >= vend;
+        return true;
+    }
 
+    void INT_access(int ipos, bool exceeds, ref_t<Value*> r_v)
+    {
         if (ipos >= m_iSize)
             ipos -= m_iSize; // wrap around
 
@@ -1078,10 +1111,10 @@ public:
             m_xEnd = nend;
         }
 
-        *r_isnew = exceeds;
         *r_v = &m_aStorage[ipos];
-        return true;
     }
+
+public:
 
     bool set(int position, const Value& newval, bool overwrite = true)
     {

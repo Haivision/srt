@@ -921,8 +921,6 @@ void CRcvBuffer::ackData(int len)
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
-
-   CTimer::triggerEvent();
 }
 
 void CRcvBuffer::skipData(int len)
