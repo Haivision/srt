@@ -2958,6 +2958,9 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
         gp->syncWithSocket(s->core());
     }
 
+    // Setting non-blocking reading for group socket.
+    s->core().m_bSynRecving = false;
+
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
@@ -5889,6 +5892,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         HLOGC(dlog.Debug, log << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
         int res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
+        HLOGC(dlog.Debug, log << "AFTER readMsg: (NON-BLOCKING) result=" << res);
         if (res == 0)
         {
             // read is not available any more
@@ -5982,7 +5986,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
                 */
 
         res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
-        HLOGC(dlog.Debug, log << "AFTER readMsg: result=" << res);
+        HLOGC(dlog.Debug, log << "AFTER readMsg: (BLOCKING) result=" << res);
 
         if (m_bBroken || m_bClosing)
         {
