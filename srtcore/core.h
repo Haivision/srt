@@ -375,6 +375,7 @@ public:
     /// @param ack The past-the-last-received ACK sequence number
     void readyPackets(CUDT* core, int32_t ack);
 
+    void syncWithSocket(const CUDT& core);
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
@@ -608,7 +609,7 @@ public: // internal API
 #endif
     }
 
-    SRTSOCKET socketID() { return m_SocketID; }
+    SRTSOCKET socketID() const { return m_SocketID; }
 
     static CUDT* getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET> existingSockets();
@@ -616,36 +617,36 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
 
-    bool isOPT_TsbPd() { return m_bOPT_TsbPd; }
-    int RTT() { return m_iRTT; }
-    int32_t sndSeqNo() { return m_iSndCurrSeqNo; }
-    int32_t schedSeqNo() { return m_iSndNextSeqNo; }
+    bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
+    int RTT() const { return m_iRTT; }
+    int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
+    int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
 
-    int32_t rcvSeqNo() { return m_iRcvCurrSeqNo; }
-    int flowWindowSize() { return m_iFlowWindowSize; }
-    int32_t deliveryRate() { return m_iDeliveryRate; }
-    int bandwidth() { return m_iBandwidth; }
-    int64_t maxBandwidth() { return m_llMaxBW; }
-    int MSS() { return m_iMSS; }
+    int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
+    int flowWindowSize() const { return m_iFlowWindowSize; }
+    int32_t deliveryRate() const { return m_iDeliveryRate; }
+    int bandwidth() const { return m_iBandwidth; }
+    int64_t maxBandwidth() const { return m_llMaxBW; }
+    int MSS() const { return m_iMSS; }
 
-    uint32_t latency_us() {return m_iTsbPdDelay_ms*1000; }
+    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
 
-    size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
-    uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
-    int32_t ISN() { return m_iISN; }
-    int32_t peerISN() { return m_iPeerISN; }
-    sockaddr_any peerAddr() { return m_PeerAddr; }
+    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
+    uint64_t minNAKInterval() const { return m_ullMinNakInt_tk; }
+    int32_t ISN() const { return m_iISN; }
+    int32_t peerISN() const { return m_iPeerISN; }
+    sockaddr_any peerAddr() const { return m_PeerAddr; }
 
-    int minSndSize(int len = 0)
+    int minSndSize(int len = 0) const
     {
         if (len == 0) // wierd, can't use non-static data member as default argument!
             len = m_iMaxSRTPayloadSize;
         return m_bMessageAPI ? (len+m_iMaxSRTPayloadSize-1)/m_iMaxSRTPayloadSize : 1;
     }
 
-    int makeTS(uint64_t from_time)
+    int makeTS(uint64_t from_time) const
     {
         // NOTE:
         // - This calculates first the time difference towards start time.

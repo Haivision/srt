@@ -2955,13 +2955,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     if (was_empty)
     {
         CGuard glock(*gp->exp_groupLock());
-        // The first socket connects
-        gp->currentSchedSequence(s->core().ISN());
-
-        // Synchronize also the initial sequence for receiving
-        gp->setInitialRxSequence(s->core().m_iPeerISN);
-
-        gp->latency(s->core().m_iTsbPdDelay_ms*int64_t(1000));
+        gp->syncWithSocket(s->core());
     }
 
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
@@ -9755,6 +9749,17 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
     return SRTS_BROKEN;
 }
 
+void CUDTGroup::syncWithSocket(const CUDT& core)
+{
+    // [[using locked(m_GroupLock)]];
+
+    currentSchedSequence(core.ISN());
+    setInitialRxSequence(core.m_iPeerISN);
+
+    // Get the latency (possibly fixed against the opposite side)
+    // from the first socket.
+    latency(core.m_iTsbPdDelay_ms*int64_t(1000));
+}
 
 int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_addr, const sockaddr_any& target_addr)
 {
@@ -9799,12 +9804,11 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
         throw;
     }
 
-    CUDTGroup::gli_t f;
 
     // Add socket to the group.
     // Do it after setting all stored options, as some of them may
     // influence some group data.
-    f = g.add(g.prepareData(ns));
+    CUDTGroup::gli_t f = g.add(g.prepareData(ns));
     ns->m_IncludedIter = f;
     ns->m_IncludedGroup = &g;
 
@@ -9840,6 +9844,9 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     {
         CGuard grd(ns->m_ControlLock);
         st = ns->m_Status;
+
+        // Turn off blocking mode. Reading will be done internally.
+        ns->core().m_bSynRecving = false;
     }
 
 
@@ -9848,15 +9855,7 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
 
         if (isn == 0)
         {
-            // The first socket connects
-            g.currentSchedSequence(ns->core().ISN());
-
-            // Synchronize also the initial sequence for receiving
-            g.setInitialRxSequence(ns->core().m_iPeerISN);
-
-            // Get the latency (possibly fixed against the opposite side)
-            // from the first socket.
-            g.latency(ns->core().m_iTsbPdDelay_ms*int64_t(1000));
+            g.syncWithSocket(ns->core());
         }
 
         g.m_bOpened = true;
