@@ -918,6 +918,10 @@ void CRcvBuffer::ackData(int len)
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
+
+   HLOGC(mglog.Debug, log << "ackData: shift by " << len << ", start=" << m_iStartPos
+           << " end=" << m_iLastAckPos << " -> " << end);
+
    m_iLastAckPos = end;
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
@@ -1278,7 +1282,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
     {
         if (seqdistance >= getRcvDataSize())
         {
-            HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " is in the past");
+            HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " is in the past (start=" << m_iStartPos
+                    << " end=" << m_iLastAckPos << ")");
             return 0;
         }
 
