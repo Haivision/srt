@@ -904,10 +904,11 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 
 void CRcvBuffer::ackData(int len)
 {
+   int end = shift(m_iLastAckPos, len);
    {
       int pkts = 0;
       int bytes = 0;
-      for (int i = m_iLastAckPos, n = (m_iLastAckPos + len) % m_iSize; i != n; i = (i + 1) % m_iSize)
+      for (int i = m_iLastAckPos; i != end; i = shift_forward(i))
       {
           if (m_pUnit[i] != NULL)
           {
@@ -917,7 +918,7 @@ void CRcvBuffer::ackData(int len)
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
-   m_iLastAckPos = (m_iLastAckPos + len) % m_iSize;
+   m_iLastAckPos = end;
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;

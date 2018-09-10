@@ -6720,6 +6720,9 @@ void CUDT::ackDataUpTo(int32_t ack)
 {
     int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
+    HLOGC(mglog.Debug, log << "ackDataUpTo: %" << ack << " vs. current %" << m_iRcvLastSkipAck
+            << " (signing off " << acksize << " packets)");
+
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
 
