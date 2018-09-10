@@ -5893,6 +5893,17 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
 
         int res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
         HLOGC(dlog.Debug, log << "AFTER readMsg: (NON-BLOCKING) result=" << res);
+
+        if (seqdistance != -1)
+        {
+            // This is called just to extract given packet for group receiver.
+            // Extract it then and return whatever it is.
+            // This function shall be called just once for a packet with given seq
+            // and the packet availability should be known prior to extraction.
+            HLOGC(dlog.Debug, log << "Returning immediately - request was from group");
+            return res;
+        }
+
         if (res == 0)
         {
             // read is not available any more
@@ -11043,12 +11054,20 @@ void CUDTGroup::readInterceptorThread()
             int lastready = CSeqNo::seqcmp(m_RcvLatestSeqNo, m_RcvBaseSeqNo);
             // Extract NOW, everything that is declared available.
             int lastextracted = -1;
+            int32_t reqseq;
             for (int i = 0; i <= lastready; ++i)
             {
                 Provider prov;
+                reqseq = CSeqNo::incseq(m_RcvBaseSeqNo, i);
                 if (!m_Providers.get(i, Ref(prov)))
                 {
-                    LOGC(tslog.Error, log << "IPE: No packet at %" << CSeqNo::incseq(m_RcvBaseSeqNo, i) << " - interrupting loop");
+                    LOGC(tslog.Error, log << "IPE: No packet at %" << reqseq << " - interrupting loop");
+                    break;
+                }
+
+                if (!prov.signedoff)
+                {
+                    HLOGC(tslog.Debug, log << "Packet at %" << reqseq << " not signed off - interrupting");
                     break;
                 }
 
@@ -11074,8 +11093,8 @@ void CUDTGroup::readInterceptorThread()
                     CUDT* core = *ip;
                     try
                     {
-                        HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << m_RcvBaseSeqNo);
-                        int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), m_RcvBaseSeqNo);
+                        HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << reqseq);
+                        int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), reqseq);
                         if (nbytes <= 0)
                         {
                             LOGC(dlog.Error, log << "PACKET NOT EXTRACTED FROM @" << core->m_SocketID << ", trying the next one");
@@ -11083,13 +11102,13 @@ void CUDTGroup::readInterceptorThread()
                         }
                         p.playtime = p.msgctrl.srctime + m_iTsbPdDelay_us;
                         p.packet.setLength(nbytes);
-                        if (p.msgctrl.pktseq != m_RcvBaseSeqNo)
+                        if (p.msgctrl.pktseq != reqseq)
                         {
-                            LOGC(mglog.Error, log << "SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << m_RcvBaseSeqNo);
+                            LOGC(mglog.Error, log << "SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << reqseq);
                             continue;
                         }
 
-                        HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << m_RcvBaseSeqNo << " size=" << nbytes
+                        HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << reqseq << " size=" << nbytes
                                 << " STAMP: " << BufferStamp(p.packet.getData(), p.packet.getLength()));
                         break; // We have our data. 
                     }
@@ -11098,7 +11117,7 @@ void CUDTGroup::readInterceptorThread()
                         // This is a "low class error" - still should not happen, but might happen in
                         // case of an urgent link break; a predicted situation in redundancy.
                         HLOGC(mglog.Debug, log << "ERROR: Socket #" << core->m_SocketID << ": despite provider, did not provide packet for %"
-                                << m_RcvBaseSeqNo);
+                                << reqseq);
                     }
                 }
 
@@ -11109,7 +11128,7 @@ void CUDTGroup::readInterceptorThread()
                     break;
                 }
 
-                int skiptoseqno = m_RcvBaseSeqNo;
+                int skiptoseqno = reqseq;
 
                 // Good. Now walk through all sockets in the group and request
                 // to skip packets up to this value.
@@ -11117,7 +11136,7 @@ void CUDTGroup::readInterceptorThread()
                 {
                     CUDT* self = sd->ps->m_pUDT;
                     size_t ns SRT_ATR_UNUSED = self->dropMessage(skiptoseqno);
-                    HLOGC(tslog.Debug, log << "By @" << self->m_SocketID << " skipping up to %" << m_RcvBaseSeqNo
+                    HLOGC(tslog.Debug, log << "By @" << self->m_SocketID << " skipping up to %" << reqseq
                             << ", skipped " << ns << " bytes");
                 }
                 ++lastextracted;
@@ -11127,7 +11146,9 @@ void CUDTGroup::readInterceptorThread()
             // is interrupted at the first non-contiguous cell.
             if (lastextracted >= 0)
             {
+                HLOGC(tslog.Debug, log << "LAST EXTRACTED X: " << lastextracted << " - removing from providers, sync base seq");
                 m_Providers.drop(lastextracted);
+                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, lastextracted+1);
             }
 
             if (m_Pending.empty())

@@ -1099,6 +1099,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
         int stretch = (m_iSize + m_iStartPos - m_iLastAckPos) % m_iSize;
         if (upto > stretch)
         {
+            HLOGC(dlog.Debug, log << "position back " << upto << " exceeds stretch " << stretch);
             // Do nothing. This position is already gone.
             return false;
         }
@@ -1107,6 +1108,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
         if (end < 0)
             end += m_iSize;
         past_end = shift_forward(end); // For in-loop comparison
+        HLOGC(dlog.Debug, log << "getRcvReadyMsg: will read from position " << end);
     }
 
     // NOTE: position m_iLastAckPos in the buffer represents the sequence number of
@@ -1184,6 +1186,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
                 // no matter if the time has come or not - although retrieve it.
                 if (i == end)
                 {
+                    HLOGC(dlog.Debug, log << "CAUGHT required seq position " << i);
                     // We have the packet we need. Extract its data.
                     *r_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
 
@@ -1203,6 +1206,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
                 }
                 else
                 {
+                    HLOGC(dlog.Debug, log << "SKIPPING position " << i);
                     // Continue the loop and remove the current packet because
                     // its sequence number is too old.
                     freeunit = true;
