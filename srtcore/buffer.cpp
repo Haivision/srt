@@ -961,9 +961,9 @@ size_t CRcvBuffer::dropData(int len)
         if (m_pUnit[p] && m_pUnit[p]->m_iFlag == CUnit::GOOD)
         {
             stats_bytes += m_pUnit[p]->m_Packet.getLength();
+            freeUnitAt(p);
         }
 
-        freeUnitAt(p);
         p = shift_forward(p);
     }
 
