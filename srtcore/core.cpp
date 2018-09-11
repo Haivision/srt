@@ -10967,10 +10967,10 @@ void CUDTGroup::readInterceptorThread()
             {
                 // Check if next playtime is now; if so, play. Otherwise sleep
                 // until this time.
-                if (next_playtime >= now)
+                if (next_playtime <= now)
                 {
                     HLOGC(tslog.Debug, log << CONID() << "GROUP tsbpd: PLAYING PACKET seq=" << next_playseq
-                            << " (belated " << ((CTimer::getTime() - next_playtime)/1000.0) << "ms)");
+                            << " time=" << logging::FormatTime(next_playtime) << " (belated " << ((now - next_playtime)/1000.0) << "ms)");
                     /*
                      * There are packets ready to be delivered
                      * signal a waiting "recv" call if there is any data available
