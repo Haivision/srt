@@ -10836,10 +10836,8 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     // So the sequence at ACK DOES NOT EXIST. The sequence
     // preceding ack is the last packet from the list of
     // contiguous packets.
-    int32_t lastcontig = CSeqNo::decseq(ack);
-
-    int numack = CSeqNo::seqcmp(lastcontig, m_RcvBaseSeqNo);
-    if (numack < 0)
+    int numack = CSeqNo::seqcmp(ack, m_RcvBaseSeqNo);
+    if (numack <= 0)
     {
         // NOTE that the packet at m_RcvBaseSeqNo NEED NOT EXIST.
         // This field only defines the sequence number of the packet
@@ -10848,6 +10846,8 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
         return;
     }
 
+    HLOGC(mglog.Debug, log << "readyPackets: ACK=" << ack << " last contiguous %" << CSeqNo::decseq(ack)
+            << " signoff to " << numack << " packets");
     // Now set acknowledged all packets between the base
     // and ack. Note that 'ack' points to past-the-end.
 
