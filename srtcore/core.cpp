@@ -10789,37 +10789,6 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     }
 #endif
 
-    // If provider buffer was empty, then m_RcvReadySeqNo has a singluar
-    // value and m_RcvBaseSeqNo has the value of the sequence that is expected
-    // to be stored at position 0 in the buffer (as usual, with the difference
-    // that we know for sure in this case that there is no element at this
-    // position).
-
-    //bool isahead;
-
-    if (nopackets)
-    {
-        // This turns the currently SINGULAR value of m_RcvLatestSeqNo
-        m_RcvLatestSeqNo = sequence;
-        //isahead = true;
-    }
-    else
-    {
-        //isahead = CSeqNo::seqcmp(sequence, m_RcvReadySeqNo) < 0;
-        if (CSeqNo::seqcmp(sequence, m_RcvLatestSeqNo) > 0)
-        {
-            m_RcvLatestSeqNo = sequence;
-        }
-    }
-    /*
-    if (isahead)
-    {
-        m_RcvReadySeqNo = sequence;
-        // This signal is currently thrown by ACK (until immediateACK)
-        cc_ahead.signal_locked(gl);
-    }
-    */
-
     HLOGC(mglog.Debug, log << "PROVIDE: updated seq: base=%" << m_RcvBaseSeqNo << " latest=%" << m_RcvLatestSeqNo
             << " ready=%" << m_RcvReadySeqNo);
 
@@ -10864,12 +10833,14 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     int numack = CSeqNo::seqcmp(ack, m_RcvBaseSeqNo);
     if (numack <= 0)
     {
-        // ACK for that socket is in the past, skip.
+        HLOGC(mglog.Debug, log << "readyPackets: ACK=" << ack << " is past to current base, skipping.");
         return;
     }
 
     // Now set acknowledged all packets between the base
     // and ack. Note that 'ack' points to past-the-end.
+
+    int readyshift = -1;
     int i;
     for (i = 0; i < numack; ++i)
     {
@@ -10886,30 +10857,42 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
             // be removed later when the next packet supersedes it.
             LOGC(mglog.Error, log << "IPE: NO PROVIDER AT POSITION " << i <<
                     " seq %" << CSeqNo::incseq(m_RcvBaseSeqNo, i) << " - breaking here");
+            continue;
         }
 
         if (!pp->signedoff)
         {
             pp->signedoff = true;
-            if (!pp->provider.empty() && pp->provider[0] != core)
+            if (!pp->provider.empty())
             {
-                // Acknowledgement came from a different core than the 
-                // first providing it. Put this core at front so that
-                // the group reader interceptor retrieves the packet
-                // from this very core.
-                // Need to find this core, or in case when not found,
-                // just add it at the end first.
-                vector<CUDT*>::iterator ip = std::find(pp->provider.begin(), pp->provider.end(), core);
-                if (ip == pp->provider.end())
+                if (pp->provider[0] != core)
                 {
-                    LOGC(mglog.Error, log << "IPE: ACKed packet from core ID=" << core->m_SocketID
-                            << " which did not provide this packet! (fixing)");
-                    pp->provider.push_back(core);
-                    ip = pp->provider.end();
-                    --ip;
+                    // Acknowledgement came from a different core than the 
+                    // first providing it. Put this core at front so that
+                    // the group reader interceptor retrieves the packet
+                    // from this very core.
+                    // Need to find this core, or in case when not found,
+                    // just add it at the end first.
+                    vector<CUDT*>::iterator ip = std::find(pp->provider.begin(), pp->provider.end(), core);
+                    if (ip == pp->provider.end())
+                    {
+                        LOGC(mglog.Error, log << "IPE: ACKed packet from core ID=" << core->m_SocketID
+                                << " which did not provide this packet! (fixing)");
+                        pp->provider.push_back(core);
+                    }
+                    else
+                    {
+                        HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed earlier, shifting to first.");
+                        swap(*pp->provider.begin(), *ip);
+                    }
                 }
-                swap(*pp->provider.begin(), *ip);
-                HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed earlier, shifting to first.");
+
+                if (readyshift == -1) // Not yet set
+                    readyshift = i; // Set to the first found valid provider
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "PROVIDER EMPTY at %" << m_RcvBaseSeqNo << "+" << i << " - notifying for TLPKTDROP");
             }
         }
     }
@@ -10919,9 +10902,16 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     // array is empty.
     if (i > 0)
     {
-        --i;
-        m_RcvReadySeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, i);
-        HLOGC(mglog.Debug, log << "readyPackets: " << i << " packets ready, shifting to %" << m_RcvReadySeqNo);
+        --i; // i == (ack -% base) if correctly signedoff until the end.
+        m_RcvLatestSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, i);
+
+        if (readyshift == 0)
+            m_RcvReadySeqNo = m_RcvBaseSeqNo;
+        else if (readyshift > 0)
+            m_RcvReadySeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, readyshift);
+
+        HLOGC(mglog.Debug, log << "readyPackets: " << i << " packets ready, latest -> %" << m_RcvLatestSeqNo
+                << ", ready -> %" << m_RcvReadySeqNo);
     }
     else
     {
@@ -10963,6 +10953,26 @@ void CUDTGroup::readInterceptorThread()
 
             uint64_t now = CTimer::getTime();
 
+            // Check if we still have a contiguous series of packets.
+            // Note that m_RcvBaseSeqNo was incremented after extraction and it points
+            // now to the subsequent packet. If this packet is ready for extraction,
+            // then Latest %> Base.
+            int stillhave = CSeqNo::seqcmp(m_RcvLatestSeqNo, m_RcvBaseSeqNo);
+
+            if (stillhave >= 0)
+            {
+                // 0 is when Latest == Base, that is we have the last packet ready.
+                // Base was incremented after last extraction, so move Ready to this
+                // position. If Ready points to a position earlier than Base, it means
+                // that no packets are ready for extraction.
+
+                // Make them equal because we have just "one next packet ready for extraction".
+                // Maybe there are more waiting, but this will be rechecked after extracting this
+                // one that is ready currently.
+                m_RcvReadySeqNo = m_RcvBaseSeqNo;
+            }
+
+            // Should be 0, if there's a packet at position 0.
             while (next_playtime)
             {
                 // Check if next playtime is now; if so, play. Otherwise sleep
@@ -10998,7 +11008,7 @@ void CUDTGroup::readInterceptorThread()
                     // First, we might have missed the fact that there are
                     // some packets ready for extraction. Wait for the next
                     // playtime only when there are no packets waiting.
-                    if (m_Providers.empty())
+                    if (m_Providers.empty() || stillhave < 0)
                     {
                         HLOGC(tslog.Debug, log << "GROUP: no packets provided, waiting for time to play or signal.");
                         // wait_until returns false if the exit was 
@@ -11070,10 +11080,9 @@ void CUDTGroup::readInterceptorThread()
                 continue; // re-check the initial loop-break condition
             }
 
-            // We have something in the providers.
-            // Should be 0, if there's a packet at position 0.
             int firstready = CSeqNo::seqcmp(m_RcvReadySeqNo, m_RcvBaseSeqNo);
 
+            // We have something in the providers.
             HLOGC(tslog.Debug, log << "GROUP: SEQ STATES: base=%" << m_RcvBaseSeqNo
                     << " ready=%" << m_RcvReadySeqNo << " latest=%" << m_RcvLatestSeqNo
                     << " firstready(offset)=" << firstready);
@@ -11081,7 +11090,18 @@ void CUDTGroup::readInterceptorThread()
             if (firstready < 0)
             {
                 // Ready was in the past. Wait for the next ready.
-                cc_ahead.wait();
+                // Wait only up to the next playtime, if this is still not reset
+                if (next_playtime)
+                {
+                    HLOGC(tslog.Debug, log << "GROUP: no more packets ready for extraction, waiting for ready to play T="
+                            << logging::FormatTime(next_playtime));
+                    cc_ahead.wait_until(next_playtime);
+                }
+                else
+                {
+                    HLOGC(tslog.Debug, log << "GROUP: no more packets ready for extraction, waiting for new ACK-ed packets");
+                    cc_ahead.wait();
+                }
                 continue;
             }
 
@@ -11125,7 +11145,6 @@ void CUDTGroup::readInterceptorThread()
             {
                 if (m_bTLPktDrop && frp.playtime < now)
                 {
-                    // XXX LOG DROP
                     // The time has come. Drop and forget all others.
                     int32_t new_base = CSeqNo::incseq(m_RcvBaseSeqNo, firstready);
                     LOGC(tslog.Error, log << "TLPKTDROP - dropping %" << m_RcvBaseSeqNo << "-" << new_base);
