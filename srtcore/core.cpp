@@ -10852,6 +10852,7 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     // and ack. Note that 'ack' points to past-the-end.
 
     int readyoffset = -1;
+    bool any = false;
     int i;
     for (i = 0; i < numack; ++i)
     {
@@ -10913,15 +10914,15 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
                 HLOGC(mglog.Debug, log << "PROVIDER EMPTY at %" << m_RcvBaseSeqNo << "+" << i << " - notifying for TLPKTDROP");
             }
         }
+        any = true;
     }
 
     // This may also result in (( m_RcvReadySeqNo = m_RcvBaseSeqNo -% 1 )), when broken @ i == 0.
     // When the ready position is back to base position it means that the provider
     // array is empty.
-    if (i > 0)
+    if (any)
     {
-        --i; // i == (ack -% base) if correctly signedoff until the end.
-        m_RcvLatestSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, i);
+        m_RcvLatestSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, i-1); // i is incremented before interrupting
 
         if (readyoffset == 0)
             m_RcvReadySeqNo = m_RcvBaseSeqNo;
