@@ -10959,6 +10959,10 @@ void CUDTGroup::readInterceptorThread()
             // then Latest %> Base.
             int stillhave = CSeqNo::seqcmp(m_RcvLatestSeqNo, m_RcvBaseSeqNo);
 
+            HLOGC(tslog.Debug, log << "GROUP: BEGIN SEQ: base=%" << m_RcvBaseSeqNo
+                    << " ready=%" << m_RcvReadySeqNo << " latest=%" << m_RcvLatestSeqNo
+                    << " still have " << stillhave);
+
             if (stillhave >= 0)
             {
                 // 0 is when Latest == Base, that is we have the last packet ready.
@@ -11010,7 +11014,10 @@ void CUDTGroup::readInterceptorThread()
                     // playtime only when there are no packets waiting.
                     if (m_Providers.empty() || stillhave < 0)
                     {
-                        HLOGC(tslog.Debug, log << "GROUP: no packets provided, waiting for time to play or signal.");
+                        HLOGC(tslog.Debug, log << "GROUP: no packets provided ("
+                                << boolalpha << m_Providers.empty() << ") or none ready ("
+                                << stillhave << "), waiting for signal or time to play "
+                                << logging::FormatTime(next_playtime));
                         // wait_until returns false if the exit was 
                         // on timeout, and true if on signal. If this
                         // function interrupted on timeout, check again
@@ -11154,7 +11161,7 @@ void CUDTGroup::readInterceptorThread()
                 }
                 else
                 {
-                    HLOGC(tslog.Debug, log << "GROUP: FUTURE PACKET %" << m_RcvBaseSeqNo << " to be played in "
+                    HLOGC(tslog.Debug, log << "GROUP: JUMP-OVER FUTURE PACKET %" << m_RcvBaseSeqNo << " to be played in "
                             << ((frp.playtime - now)/1000.0) << "ms T=" << logging::FormatTime(frp.playtime));
                     // Do a CV-sleep in this loop, then start again.
                     // This will restart the loop when the time passes
