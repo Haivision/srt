@@ -10902,19 +10902,28 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
                 {
                     HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed for offset=" << i);
                 }
-
-                if (readyoffset == -1) // Not yet set
-                {
-                    HLOGC(mglog.Debug, log << "NEW READY OFFSET: " << i);
-                    readyoffset = i; // Set to the first found valid provider
-                }
             }
             else
             {
                 HLOGC(mglog.Debug, log << "PROVIDER EMPTY at %" << m_RcvBaseSeqNo << "+" << i << " - notifying for TLPKTDROP");
+                continue;
             }
         }
+        else
+        {
+            HLOGC(mglog.Debug, log << "OFFSET: " << i << " already signed off");
+        }
         any = true;
+
+        // This will not be executed unless this above body gets executed
+        // up to this point. This catches the first position where a ready
+        // packet is found, when there are no losses, it should be 0.
+        //
+        // This will have a value more than 0 if there are some packets to be skipped.
+        if (readyoffset == -1)
+        {
+            readyoffset = i;
+        }
     }
 
     // This may also result in (( m_RcvReadySeqNo = m_RcvBaseSeqNo -% 1 )), when broken @ i == 0.
