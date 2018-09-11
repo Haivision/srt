@@ -989,7 +989,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
 
     // getRcvReadyMsg returns true if the time to play for the first message
     // (returned in r_tsbpdtime) is in the past.
-    if (getRcvReadyMsg(r_tsbpdtime, r_curpktseq))
+    if (getRcvReadyMsg(r_tsbpdtime, r_curpktseq, -1))
     {
         return true;
     }
@@ -1789,7 +1789,7 @@ bool CRcvBuffer::accessMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> r_passack
         passack = false;
         int seq = 0;
 
-        if (getRcvReadyMsg(r_playtime, Ref(seq)), upto)
+        if (getRcvReadyMsg(r_playtime, Ref(seq), upto))
         {
             empty = false;
             // In TSBPD mode you always read one message
