@@ -11016,6 +11016,13 @@ void CUDTGroup::readInterceptorThread()
                             HLOGC(tslog.Debug, log << "GROUP: time to play with NO PROVIDERS.");
                         }
                     }
+                    else
+                    {
+                        HLOGC(tslog.Debug, log << "GROUP: time to play "
+                                << logging::FormatTime(next_playtime)
+                                << ", but have providers, checking on");
+                        break;
+                    }
                 }
             }
 
