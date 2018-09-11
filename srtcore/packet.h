@@ -380,6 +380,7 @@ public:
 
    // Experimental: sometimes these references don't work!
    char* getData();
+   char* release();
 
    //static const int m_iPktHdrSize;	// packet header size
    static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = PH_SIZE * sizeof(uint32_t)

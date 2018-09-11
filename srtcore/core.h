@@ -234,6 +234,17 @@ public:
         CPacket packet;
         SRT_MSGCTRL msgctrl;
 
+        void move_from(Pending& sec)
+        {
+            playtime = sec.playtime;
+            msgctrl = sec.msgctrl;
+
+            // Move the allocated buffer to the new packet.
+            // Other data are not important, this is only for
+            // data passing.
+            packet.m_pcData = sec.packet.release();
+        }
+
         Pending(): playtime(0), msgctrl(srt_msgctrl_default)
         {
         }

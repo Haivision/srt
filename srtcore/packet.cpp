@@ -197,6 +197,14 @@ char* CPacket::getData()
 
 void CPacket::allocate(size_t alloc_buffer_size)
 {
+    if (m_data_owned)
+    {
+        if (m_PacketVector[PV_DATA].iov_len == alloc_buffer_size)
+            return; // already allocated
+
+        // Would be nice to reallocate; for now just allocate again.
+        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
+    }
     m_PacketVector[PV_DATA].iov_base = new char[alloc_buffer_size];
     m_PacketVector[PV_DATA].iov_len = alloc_buffer_size;
     m_data_owned = true;
@@ -208,6 +216,20 @@ void CPacket::deallocate()
         delete [] (char*)m_PacketVector[PV_DATA].iov_base;
     m_PacketVector[PV_DATA].iov_base = 0;
     m_PacketVector[PV_DATA].iov_len = 0;
+}
+
+char* CPacket::release()
+{
+    // When not owned, release returns NULL.
+    char* buffer = NULL;
+    if (m_data_owned)
+    {
+        buffer = getData();
+        m_data_owned = false;
+    }
+
+    deallocate(); // won't delete because m_data_owned == false
+    return buffer;
 }
 
 CPacket::~CPacket()
