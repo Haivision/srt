@@ -6850,7 +6850,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       /* tsbpd thread may also call ackData when skipping packet so protect code */
       CGuard::enterCS(m_AckLock);
 
-      // IF ack > m_iRcvLastAck
+      // IF ack %> m_iRcvLastAck
       if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
       {
          ackDataUpTo(ack);
@@ -10830,9 +10830,20 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     CGuard glock(m_GroupLock);
     CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
 
-    int numack = CSeqNo::seqcmp(ack, m_RcvBaseSeqNo);
-    if (numack <= 0)
+    // ACK is the number being
+    // - past the last received sequence
+    // - the first lost packet
+    // So the sequence at ACK DOES NOT EXIST. The sequence
+    // preceding ack is the last packet from the list of
+    // contiguous packets.
+    int32_t lastcontig = CSeqNo::decseq(ack);
+
+    int numack = CSeqNo::seqcmp(lastcontig, m_RcvBaseSeqNo);
+    if (numack < 0)
     {
+        // NOTE that the packet at m_RcvBaseSeqNo NEED NOT EXIST.
+        // This field only defines the sequence number of the packet
+        // that would be - also prospectively - at m_Providers[0] cell.
         HLOGC(mglog.Debug, log << "readyPackets: ACK=" << ack << " is past to current base, skipping.");
         return;
     }
@@ -10840,7 +10851,7 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
     // Now set acknowledged all packets between the base
     // and ack. Note that 'ack' points to past-the-end.
 
-    int readyshift = -1;
+    int readyoffset = -1;
     int i;
     for (i = 0; i < numack; ++i)
     {
@@ -10882,13 +10893,20 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
                     }
                     else
                     {
-                        HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed earlier, shifting to first.");
+                        HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed for offset " << i << " earlier, offseting to first.");
                         swap(*pp->provider.begin(), *ip);
                     }
                 }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "Core id=" << core->m_SocketID << " ACKed for offset=" << i);
+                }
 
-                if (readyshift == -1) // Not yet set
-                    readyshift = i; // Set to the first found valid provider
+                if (readyoffset == -1) // Not yet set
+                {
+                    HLOGC(mglog.Debug, log << "NEW READY OFFSET: " << i);
+                    readyoffset = i; // Set to the first found valid provider
+                }
             }
             else
             {
@@ -10905,12 +10923,12 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
         --i; // i == (ack -% base) if correctly signedoff until the end.
         m_RcvLatestSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, i);
 
-        if (readyshift == 0)
+        if (readyoffset == 0)
             m_RcvReadySeqNo = m_RcvBaseSeqNo;
-        else if (readyshift > 0)
-            m_RcvReadySeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, readyshift);
+        else if (readyoffset > 0)
+            m_RcvReadySeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, readyoffset);
 
-        HLOGC(mglog.Debug, log << "readyPackets: " << i << " packets ready, latest -> %" << m_RcvLatestSeqNo
+        HLOGC(mglog.Debug, log << "readyPackets: " << i << " packets ready, base=%" << m_RcvBaseSeqNo << " latest -> %" << m_RcvLatestSeqNo
                 << ", ready -> %" << m_RcvReadySeqNo);
     }
     else

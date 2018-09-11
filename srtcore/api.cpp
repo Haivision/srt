@@ -172,7 +172,7 @@ std::string CUDTUnited::CONID(SRTSOCKET sock)
         return "";
 
     std::ostringstream os;
-    os << "%" << sock << ":";
+    os << "@" << sock << ":";
     return os.str();
 }
 
