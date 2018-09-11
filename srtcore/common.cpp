@@ -368,8 +368,20 @@ CGuard::~CGuard()
 
 int CGuard::enterCS(pthread_mutex_t& lock, bool block)
 {
-    LOGS(cerr, log << "enterCS(" << (block?"block":"try") << "): { LOCK: " << (&lock) << " ...");
-    return block ? pthread_mutex_lock(&lock) : pthread_mutex_trylock(&lock);
+    int retval;
+    if (block)
+    {
+        LOGS(cerr, log << "enterCS(block) {  LOCK: " << (&lock) << " ...");
+        retval = pthread_mutex_lock(&lock);
+        LOGS(cerr, log << "... " << (&lock) << " locked.");
+    }
+    else
+    {
+        retval = pthread_mutex_trylock(&lock);
+        LOGS(cerr, log << "enterCS(block) {  LOCK: " << (&lock) << " "
+                << (retval == 0 ? " LOCKED." : " FAILED }"));
+    }
+    return retval;
 }
 
 int CGuard::leaveCS(pthread_mutex_t& lock)
@@ -513,7 +525,7 @@ void CCondDelegate::lock_signal()
     }
 #endif
     CGuard lk(*m_mutex);
-    LOGS(cerr, log << "Cond: SIGNAL:" << m_cond);
+    LOGS(cerr, log << "Cond: SIGNAL:" << m_cond << " (locking: " << m_mutex << ")");
     pthread_cond_signal(m_cond);
 }
 
@@ -532,7 +544,7 @@ void CCondDelegate::signal_locked(CGuard& lk SRT_ATR_UNUSED)
         LOGS(cerr, log << "Cond: IPE: signal declares CGuard.mutex=" << (&lk.m_Mutex) << " but Cond.mutex=" << m_mutex);
         return;
     }
-    LOGS(cerr, log << "Cond: SIGNAL:" << m_cond << " (with locked:" << (&m_mutex) << ")");
+    LOGS(cerr, log << "Cond: SIGNAL:" << m_cond << " (with locked:" << m_mutex << ")");
 #endif
 
     pthread_cond_signal(m_cond);
