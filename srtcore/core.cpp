@@ -10492,15 +10492,17 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 {
     HLOGP(mglog.Debug, "CUDTGroup::recv -- start, locking group");
 
+    CGuard readlock(m_RcvDataLock);
+    CCondDelegate rcvcond(m_RcvDataCond, readlock);
+
     for (;;)
     {
         if (m_bClosing)
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-        CGuard readlock(m_RcvDataLock);
-        CCondDelegate rcvcond(m_RcvDataCond, readlock);
         if (m_Pending.empty())
         {
+            HLOGC(dlog.Debug, log << "GROUP recv: no packets in the buffer, clear epoll-diode, wait on signal");
             m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
 
             // No data to read, report error if nonblocking
@@ -10518,12 +10520,18 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
         if (m_Pending[0].playtime > now)
         {
+            HLOGC(dlog.Debug, log << "GROUP recv: FUTURE PACKET: %" << m_Pending[0].msgctrl.pktseq << " playtime="
+                    << logging::FormatTime(m_Pending[0].playtime) << " - waiting");
             // Sleep by CV
             rcvcond.wait_until(m_Pending[0].playtime);
-            continue;
         }
-
+        else
+        {
+            HLOGC(dlog.Debug, log << "GROUP recv: PLAYING PACKET %" << m_Pending[0].msgctrl.pktseq);
+            break;
+        }
     }
+
     // Top packet is ready to play, extract it, if you have enough space.
     if (int(m_Pending[0].packet.getLength()) > len)
     {
