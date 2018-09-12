@@ -211,9 +211,18 @@ public:
                 {
                     accessed.playtime = playtime;
                     accessed.provider.clear();
+                    accessed.provider.push_back(provider);
                 }
-
-                accessed.provider.push_back(provider);
+                else
+                {
+                    std::vector<CUDT*>& ap = accessed.provider;
+                    // This might be called multiple times for the same packet,
+                    // so find the provider if it isn't there already
+                    std::vector<CUDT*>::iterator f = std::find(ap.begin(),
+                            ap.end(), provider);
+                    if (f == ap.end())
+                        ap.push_back(provider);
+                }
             }
         };
 

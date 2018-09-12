@@ -8820,7 +8820,7 @@ void CUDT::unlose(int32_t from, int32_t to)
     CGuard lg(m_RcvLossLock);
     m_pRcvLossList->remove(from, to);
 
-    HLOGF(mglog.Debug, "TLPKTDROP seq %d-%d (%d packets)", from, to, CSeqNo::seqoff(from, to));
+    HLOGF(mglog.Debug, "%sTLPKTDROP seq %d-%d (%d packets)", CONID().c_str(), from, to, CSeqNo::seqoff(from, to));
 
     // All code below concerns only "belated lossreport" feature.
 
@@ -11325,7 +11325,7 @@ void CUDTGroup::readInterceptorThread()
 
 size_t CUDT::dropMessage(int32_t skiptoseqno)
 {
-    int seqlen = CSeqNo::seqoff(m_iRcvLastSkipAck, skiptoseqno);
+    int seqlen = CSeqNo::seqoff(m_iRcvLastSkipAck, skiptoseqno) - 1;
     if (seqlen <= 0)
         return 0;
 
