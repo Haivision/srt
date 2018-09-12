@@ -10892,6 +10892,10 @@ void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
             continue;
         }
 
+        HLOGC(mglog.Debug, log << "readyPackets: will update @ offset=" << i
+                << " time=" << logging::FormatTime(pp->playtime)
+                << " providers=" << Printable(pp->provider));
+
         if (!pp->signedoff)
         {
             pp->signedoff = true;
