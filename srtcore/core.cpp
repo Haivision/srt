@@ -11332,8 +11332,8 @@ void CUDTGroup::readInterceptorThread()
                 pp = m_Pending.push();
                 if (m_Pending.empty())
                 {
-                    LOGC(tslog.Error, log << "IPE: CAN'T PUSH ON EMPTY?.");
-                    continue;
+                    LOGC(tslog.Fatal, log << "IPE: CAN'T PUSH ON EMPTY?.");
+                    return;
                 }
             }
 
@@ -11341,6 +11341,8 @@ void CUDTGroup::readInterceptorThread()
 
             // We don't have to check, the PENDING array is never empty here.
             // Otherwise the loop would be repeated.
+            // Get access to the very first item.
+            m_Pending.access(0, Ref(pp));
 
             // Now check if the packet at head is ready to play.
             // If not, fall asleep on a CV to be woken up by a new
