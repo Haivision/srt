@@ -9561,10 +9561,7 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
         // Set the size of providers buffer to the value identical
         // with the buffer size.
         m_Providers.set_capacity(data.ps->m_pUDT->m_iRcvBufSize);
-
-        // XXX In case when m_Pending is turned into some other
-        // container type, preallocate the memory here.
-        //m_Pending.reserve(data.ps->m_pUDT->m_iRcvBufSize);
+        m_Pending.set_capacity(data.ps->m_pUDT->m_iRcvBufSize);
     }
 
     m_Group.push_back(data);
@@ -9620,6 +9617,7 @@ CUDTGroup::CUDTGroup():
         m_iRcvTimeOut(-1),
         m_RcvInterceptorThread(),
         m_Providers(0), // Will be set later in CUDTGroup::add
+        m_Pending(0), // Will be set later in CUDTGroup::add
         m_bOpened(false),
         m_bClosing(false),
         m_iLastSchedSeqNo(0)
@@ -9908,26 +9906,34 @@ void CUDTGroup::close()
 {
     // Close all descriptors, then delete the group.
 
-    CGuard g(m_GroupLock);
-
-    // A non-managed group may only be closed if there are no
-    // sockets in the group.
-    if (!m_selfManaged && !m_Group.empty())
-        throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-    else
     {
-        // A managed group should first close all member sockets.
-        for (gli_t ig = m_Group.begin(), ig_next = ig; ig != m_Group.end(); ig = ig_next)
+        CGuard g(m_GroupLock);
+
+        // A non-managed group may only be closed if there are no
+        // sockets in the group.
+        if (!m_selfManaged && !m_Group.empty())
+            throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
+        else
         {
-            ++ig_next; // Increment before it WOULD BE deleted here.
-            m_pGlobal->close(ig->id);
-            m_Group.erase(ig);
+            // A managed group should first close all member sockets.
+            for (gli_t ig = m_Group.begin(), ig_next = ig; ig != m_Group.end(); ig = ig_next)
+            {
+                ++ig_next; // Increment before it WOULD BE deleted here.
+                m_pGlobal->close(ig->id);
+            }
+            m_Group.clear();
         }
+
+        m_PeerGroupID = -1;
+        // This takes care of the internal part.
+        // The external part will be done in Global (CUDTUnited)
     }
 
-    m_PeerGroupID = -1;
-    // This takes care of the internal part.
-    // The external part will be done in Global (CUDTUnited)
+    // Release blocked clients
+
+    CGuard rg(m_RcvDataLock);
+    CCondDelegate cc(m_RcvDataCond, rg);
+    cc.signal_locked(rg);
 }
 
 
@@ -10495,6 +10501,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     CGuard readlock(m_RcvDataLock);
     CCondDelegate rcvcond(m_RcvDataCond, readlock);
 
+    Pending* pp = 0;
     for (;;)
     {
         if (m_bClosing)
@@ -10518,30 +10525,35 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         // ready to deliver
         uint64_t now = CTimer::getTime();
 
-        if (m_Pending[0].playtime > now)
+        // using [[assert(m_Pending.empty())]];
+        m_Pending.access(0, Ref(pp));
+
+        if (pp->playtime > now)
         {
-            HLOGC(dlog.Debug, log << "GROUP recv: FUTURE PACKET: %" << m_Pending[0].msgctrl.pktseq << " playtime="
-                    << logging::FormatTime(m_Pending[0].playtime) << " - waiting");
+            HLOGC(dlog.Debug, log << "GROUP recv: FUTURE PACKET: %" << pp->msgctrl.pktseq << " playtime="
+                    << logging::FormatTime(pp->playtime) << " - waiting");
             // Sleep by CV
-            rcvcond.wait_until(m_Pending[0].playtime);
+            rcvcond.wait_until(pp->playtime);
         }
         else
         {
-            HLOGC(dlog.Debug, log << "GROUP recv: PLAYING PACKET %" << m_Pending[0].msgctrl.pktseq);
+            HLOGC(dlog.Debug, log << "GROUP recv: PLAYING PACKET %" << pp->msgctrl.pktseq);
             break;
         }
     }
 
+    // using [[assert(pp != nullptr)]];
+
     // Top packet is ready to play, extract it, if you have enough space.
-    if (int(m_Pending[0].packet.getLength()) > len)
+    if (int(pp->size) > len)
     {
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
-    len = m_Pending[0].packet.getLength();
-    memcpy(buf, m_Pending[0].packet.getData(), len);
-    *r_mc = m_Pending[0].msgctrl;
-    m_Pending.pop_front();
+    len = pp->size;
+    memcpy(buf, pp->buffer, len);
+    *r_mc = pp->msgctrl;
+    m_Pending.drop(0);
 
     return len;
 }
@@ -11234,7 +11246,7 @@ void CUDTGroup::readInterceptorThread()
             }
 
             // XXX The maximum payload value should be predefined for the group.
-            p.packet.allocate(frp.provider[0]->maxPayloadSize());
+            p.allocate(frp.provider[0]->maxPayloadSize());
 
             for (vector<CUDT*>::iterator ip = prov.provider.begin();
                     ip != prov.provider.end(); ++ip)
@@ -11243,22 +11255,22 @@ void CUDTGroup::readInterceptorThread()
                 try
                 {
                     HLOGC(dlog.Debug, log << "SOCKET BUF TO GROUP BUF: reading seq=" << reqseq);
-                    int nbytes = core->receiveMessage(p.packet.getData(), p.packet.getLength(), Ref(p.msgctrl), reqseq);
+                    int nbytes = core->receiveMessage(p.buffer, p.size, Ref(p.msgctrl), reqseq);
                     if (nbytes <= 0)
                     {
                         LOGC(dlog.Error, log << "PACKET NOT EXTRACTED FROM @" << core->m_SocketID << ", trying the next one");
                         continue;
                     }
                     p.playtime = p.msgctrl.srctime;
-                    p.packet.setLength(nbytes);
+                    p.size = nbytes;
                     if (p.msgctrl.pktseq != reqseq)
                     {
-                        LOGC(mglog.Error, log << "SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << reqseq);
+                        LOGC(mglog.Error, log << "IPE: SEQUENCE DISCREPANCY: read msg seq=" << p.msgctrl.pktseq << " expected=" << reqseq);
                         continue;
                     }
 
                     HLOGC(tslog.Debug, log << "EXTRACTED PACKET %" << reqseq << " size=" << nbytes
-                            << " STAMP: " << BufferStamp(p.packet.getData(), p.packet.getLength()));
+                            << " STAMP: " << BufferStamp(p.buffer, p.size));
                     break; // We have our data. 
                 }
                 catch (CUDTException&)
@@ -11306,13 +11318,22 @@ void CUDTGroup::readInterceptorThread()
             // This limit should be set to the value of the receiver buffer.
             if (m_Pending.size() > 8192)
             {
-                LOGC(tslog.Error, log << "Group buffer full! DROPPING ONE PACKET.");
-                m_Pending.pop_front();
             }
 
-            m_Pending.push_back(Pending());
-            Pending& pp = m_Pending.back();
-            pp.move_from(p);
+            Pending* pp = m_Pending.push();
+            while (!pp)
+            {
+                LOGC(tslog.Error, log << "Group buffer full! DROPPING ONE PACKET.");
+                m_Pending.drop(0);
+                pp = m_Pending.push();
+                if (m_Pending.empty())
+                {
+                    LOGC(tslog.Error, log << "IPE: CAN'T PUSH ON EMPTY?.");
+                    continue;
+                }
+            }
+
+            pp->move_from(p);
 
             // We don't have to check, the PENDING array is never empty here.
             // Otherwise the loop would be repeated.
@@ -11320,9 +11341,9 @@ void CUDTGroup::readInterceptorThread()
             // Now check if the packet at head is ready to play.
             // If not, fall asleep on a CV to be woken up by a new
             // packet signedoff, or when the packet becomes ready to play.
-            next_playtime = m_Pending[0].playtime;
+            next_playtime = pp->playtime;
 #if ENABLE_HEAVY_LOGGING
-            next_playseq = m_Pending[0].msgctrl.pktseq;
+            next_playseq = pp->msgctrl.pktseq;
 #endif
 
             HLOGC(tslog.Debug, log << "ADDED ONE PACKET (" << m_Pending.size() << " total) %" << next_playseq

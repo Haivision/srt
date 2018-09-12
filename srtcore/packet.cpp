@@ -199,23 +199,23 @@ void CPacket::allocate(size_t alloc_buffer_size)
 {
     if (m_data_owned)
     {
-        if (m_PacketVector[PV_DATA].iov_len == alloc_buffer_size)
+        if (getLength() == alloc_buffer_size)
             return; // already allocated
 
         // Would be nice to reallocate; for now just allocate again.
-        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
+        delete [] m_pcData;
     }
-    m_PacketVector[PV_DATA].iov_base = new char[alloc_buffer_size];
-    m_PacketVector[PV_DATA].iov_len = alloc_buffer_size;
+    m_pcData = new char[alloc_buffer_size];
+    setLength(alloc_buffer_size);
     m_data_owned = true;
 }
 
 void CPacket::deallocate()
 {
     if (m_data_owned)
-        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
-    m_PacketVector[PV_DATA].iov_base = 0;
-    m_PacketVector[PV_DATA].iov_len = 0;
+        delete [] m_pcData;
+    m_pcData = NULL;
+    setLength(0);
 }
 
 char* CPacket::release()
@@ -237,7 +237,7 @@ CPacket::~CPacket()
     // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
     // Delete the internal buffer only if it was declared as owned.
     if (m_data_owned)
-        delete [] (char*)m_PacketVector[PV_DATA].iov_base;
+        delete [] m_pcData;
 }
 
 

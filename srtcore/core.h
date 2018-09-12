@@ -240,8 +240,10 @@ public:
     struct Pending
     {
         uint64_t playtime;
-        CPacket packet;
         SRT_MSGCTRL msgctrl;
+        char* buffer;
+        int size;
+        bool owned;
 
         void move_from(Pending& sec)
         {
@@ -251,12 +253,51 @@ public:
             // Move the allocated buffer to the new packet.
             // Other data are not important, this is only for
             // data passing.
-            packet.m_pcData = sec.packet.release();
+            buffer = sec.buffer;
+            sec.buffer = NULL;
         }
 
-        Pending(): playtime(0), msgctrl(srt_msgctrl_default)
+        Pending(): playtime(0), msgctrl(srt_msgctrl_default), buffer(NULL), owned(false)
         {
         }
+
+        char* release()
+        {
+            char* b = buffer;
+            dispose();
+            buffer = NULL;
+            return b;
+        }
+
+        void dispose()
+        {
+            if (owned)
+            {
+                delete [] buffer;
+            }
+        }
+
+        ~Pending()
+        {
+            dispose();
+        }
+
+        void allocate(int bufsize)
+        {
+            if (owned)
+            {
+                if (bufsize == size)
+                    return;
+                delete [] buffer;
+            }
+
+            buffer = new char[bufsize];
+            size = bufsize;
+            owned = true;
+        }
+
+    private:
+        Pending(const Pending&);
     };
 
     struct ConfigItem
@@ -440,7 +481,7 @@ private:
     // other sockets in the group to know whether the packet recovery for jumped-over
     // sequences shall be undertaken or not.
     CircularBuffer<Provider> m_Providers;
-    std::deque<Pending> m_Pending;
+    CircularBuffer<Pending> m_Pending;
 
     // This condition shall be signaled when a packet arrives
     // at the position earlier than the current earliest sequence.

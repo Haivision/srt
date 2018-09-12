@@ -369,6 +369,7 @@ protected:
 
 protected:
    CPacket& operator=(const CPacket&);
+   CPacket(const CPacket&);
 
 public:
 

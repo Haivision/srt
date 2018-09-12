@@ -442,7 +442,10 @@ void CGuard::releaseCond(pthread_cond_t& cond)
     pthread_cond_destroy(&cond);
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_mutex(&g.m_Mutex), nolock(false)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_mutex(&g.m_Mutex)
+#if ENABLE_THREAD_LOGGING
+                                                               , nolock(false)
+#endif
 {
 #if ENABLE_THREAD_LOGGING
     // This constructor expects that the mutex is locked, and 'g' should designate
@@ -465,7 +468,10 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_
     // variable that you have used for construction as its argument.
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock): m_cond(&cond), m_mutex(&mutex), nolock(true)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock): m_cond(&cond), m_mutex(&mutex)
+#if ENABLE_THREAD_LOGGING
+                                                               , nolock(true)
+#endif
 {
     // We expect that the mutex is NOT locked at this moment by the current thread,
     // but it is perfectly ok, if the mutex is locked by another thread. We'll just wait.

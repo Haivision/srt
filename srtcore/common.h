@@ -53,7 +53,7 @@ modified by
 #ifndef __UDT_COMMON_H__
 #define __UDT_COMMON_H__
 
-
+#include <memory>
 #include <cstdlib>
 #include <cstdio>
 #ifndef WIN32
@@ -639,7 +639,9 @@ class CCondDelegate
 {
     pthread_cond_t* m_cond;
     pthread_mutex_t* m_mutex;
+#if ENABLE_THREAD_LOGGING
     bool nolock;
+#endif
 
 public:
 
@@ -910,6 +912,22 @@ public:
     int m_xBegin;
     int m_xEnd;
 
+    static void destr(Value& v)
+    {
+        v.~Value();
+    }
+
+    static void constr(Value& v)
+    {
+        new ((void*)&v) Value();
+    }
+
+    template <class V>
+    static void constr(Value& v, const V& source)
+    {
+        new ((void*)&v) Value(source);
+    }
+
 public:
 
     typedef Value value_type;
@@ -923,32 +941,48 @@ public:
         if (size == 0)
             m_aStorage = 0;
         else
-            m_aStorage = new Value[size+1];
+            m_aStorage = (Value*)::operator new (sizeof(Value) * m_iSize);
     }
 
     void set_capacity(int size)
     {
+        reset();
+
         // This isn't called resize (the size is 0 after the operation)
         // nor reserve (the existing elements are removed).
         if (size != m_iSize)
         {
             if (m_aStorage)
-                delete [] m_aStorage;
+                ::operator delete (m_aStorage);
             m_iSize = size+1;
-            m_aStorage = new Value[m_iSize];
+            m_aStorage = (Value*)::operator new (sizeof(Value) * m_iSize);
         }
-        reset();
     }
 
     void reset()
     {
+        if (m_xEnd < m_xBegin)
+        {
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                destr(m_aStorage[i]);
+            for (int i = 0; i < m_xEnd; ++i)
+                destr(m_aStorage[i]);
+        }
+        else
+        {
+            for (int i = m_xBegin; i < m_xEnd; ++i)
+                destr(m_aStorage[i]);
+
+        }
+
         m_xBegin = 0;
         m_xEnd = 0;
     }
 
     ~CircularBuffer()
     {
-        delete [] m_aStorage;
+        reset();
+        ::operator delete (m_aStorage);
     }
 
     // In the beginning, m_xBegin == m_xEnd, which
@@ -982,7 +1016,7 @@ public:
         return --basepos;
     }
 
-    size_t size() const
+    int size() const
     {
         // Count the distance between begin and end
         if (m_xEnd < m_xBegin)
@@ -1019,16 +1053,29 @@ public:
 
     // This is rather written for testing and rather won't
     // be used in the real code.
-    int push(const Value& v = Value())
+    template <class V>
+    int push(const V& v)
     {
         // Check if you can add
         int nend = shift_forward(m_xEnd);
         if ( nend == m_xBegin)
             return -1;
 
-        m_aStorage[m_xEnd] = v;
+        constr(m_aStorage[m_xEnd], v);
         m_xEnd = nend;
         return size() - 1;
+    }
+
+    Value* push()
+    {
+        int nend = shift_forward(m_xEnd);
+        if ( nend == m_xBegin)
+            return NULL;
+
+        Value* pos = &m_aStorage[m_xEnd];
+        constr(*pos);
+        m_xEnd = nend;
+        return pos;
     }
 
     bool access(int position, ref_t<Value*> r_v)
@@ -1095,14 +1142,14 @@ private:
                 // - from m_xEnd to m_iSize-1
                 // - from 0 to nend
                 for (int i = m_xEnd; i < m_iSize; ++i)
-                    m_aStorage[i] = Value();
+                    constr(m_aStorage[i]);
                 for (int i = 0; i < nend; ++i)
-                    m_aStorage[i] = Value();
+                    constr(m_aStorage[i]);
             }
             else
             {
                 for (int i = m_xEnd; i < nend; ++i)
-                    m_aStorage[i] = Value();
+                    constr(m_aStorage[i]);
             }
 
             if (nend == m_iSize)
@@ -1111,6 +1158,7 @@ private:
             m_xEnd = nend;
         }
 
+        constr(m_aStorage[ipos]);
         *r_v = &m_aStorage[ipos];
     }
 
@@ -1197,9 +1245,25 @@ public:
         }
 
         // Otherwise we have a new beginning.
-        m_xBegin = ipos;
-        if (m_xBegin >= m_iSize)
-            m_xBegin -= m_iSize;
+        int nbegin = ipos;
+
+        // Destroy the old elements
+        if (nbegin >= m_iSize)
+        {
+            nbegin -= m_iSize;
+
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                destr(m_aStorage[i]);
+            for (int i = 0; i < nbegin; ++i)
+                destr(m_aStorage[i]);
+        }
+        else
+        {
+            for (int i = m_xBegin; i < nbegin; ++i)
+                destr(m_aStorage[i]);
+        }
+
+        m_xBegin = nbegin;
 
         return true;
     }

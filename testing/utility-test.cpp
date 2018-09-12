@@ -22,6 +22,53 @@
 
 using namespace std;
 
+// To test CircularBuffer
+struct Double
+{
+    double d;
+    size_t instance;
+    static size_t sourceid;
+
+    Double(): d(0.0)
+    {
+        instance = ++sourceid;
+        cout << "(Double/" << instance << ": empty costruction)\n";
+    }
+
+    Double(double dd): d(dd)
+    {
+        instance = ++sourceid;
+        cout << "(Double:/" << instance << " init construction:" << dd << ")\n";
+    }
+
+    Double(const Double& dd): d(dd.d)
+    {
+        instance = ++sourceid;
+        cout << "(Double:/" << instance << " copy construction:" << dd.d << " object/" << dd.instance << ")\n";
+    }
+
+    operator double() { return d; }
+
+    ~Double()
+    {
+        cout << "(Double:/" << instance << " destruction:" << d << ")\n";
+    }
+
+    void operator=(double dd)
+    {
+        cout << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd << " value)\n";
+        d = dd;
+    }
+
+    void operator=(const Double& dd)
+    {
+        cout << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd.d << " object/" << dd.instance << ")\n";
+        d = dd.d;
+    }
+};
+
+size_t Double::sourceid = 0;
+
 
 template <class Val> inline
 void ShowCircularBuffer(const CircularBuffer<Val>& buf)
@@ -29,7 +76,7 @@ void ShowCircularBuffer(const CircularBuffer<Val>& buf)
     cout << "SIZE: " << buf.size() << " FREE:" << buf.spaceleft() << " BEGIN:" << buf.m_xBegin << " END: " << buf.m_xEnd << endl;
     for (int i = 0; i < buf.size(); ++i)
     {
-        double v;
+        Double v;
         if (buf.get(i, Ref(v)))
             cout << "[" << i << "] = " << v << endl;
         else
@@ -39,14 +86,14 @@ void ShowCircularBuffer(const CircularBuffer<Val>& buf)
 
 struct Add
 {
-    double v;
-    Add(double vv): v(vv) {}
-    void operator()(double& accessed, bool isnew)
+    Double v;
+    Add(const Double& vv): v(vv) {}
+    void operator()(Double& accessed, bool isnew)
     {
         if (isnew)
             accessed = v;
         else
-            accessed += v;
+            accessed = Double(accessed.d + v.d);
     }
 };
 
@@ -54,7 +101,9 @@ void TestCircularBuffer()
 {
     // Create some odd number of elements in a circular buffer.
 
-    CircularBuffer<double> buf(7);
+    CircularBuffer<Double> buf(7);
+
+    cout << dec;
 
     // Now, add 3 elements to it and check if succeeded.
     buf.push(11.2);
@@ -98,8 +147,11 @@ void TestCircularBuffer()
 
     cout << "Pushing 1 until there is capacity:\n";
     int i = 0;
-    while (buf.push(1))
+    while (buf.push(1) != -1)
+    {
+        cout << "Pushed, begin=" << buf.m_xBegin << " end=" << buf.m_xEnd << endl;
         ++i;
+    }
     cout << "Done " << i << " operations, buffer:\n";
     ShowCircularBuffer(buf);
 
