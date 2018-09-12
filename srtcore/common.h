@@ -1158,7 +1158,6 @@ private:
             m_xEnd = nend;
         }
 
-        constr(m_aStorage[ipos]);
         *r_v = &m_aStorage[ipos];
     }
 
