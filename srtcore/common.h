@@ -1224,10 +1224,10 @@ public:
     bool drop(int position)
     {
         // This function "deletes" items by shifting the
-        // given position + 1 to position 0. That is,
+        // given position to position 0. That is,
         // elements from the beginning are being deleted
         // up to (including) the given position.
-        if (position > m_iSize || position < 0)
+        if (position > m_iSize || position < 1)
             return false;
 
         int ipos = m_xBegin + position;

@@ -10569,7 +10569,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     HLOGC(dlog.Debug, log << "GROUP recv: DELIVERED %" << pp->msgctrl.pktseq
             << " #" << pp->msgctrl.msgno << " size=" << len << ", DROPPING FROM BUFFER");
 
-    m_Pending.drop(0);
+    m_Pending.drop(1);
 
     return len;
 }
@@ -11228,7 +11228,7 @@ void CUDTGroup::readInterceptorThread()
                     // The time has come. Drop and forget all others.
                     int32_t new_base = CSeqNo::incseq(m_RcvBaseSeqNo, firstready);
                     LOGC(tslog.Error, log << "TLPKTDROP - dropping %" << m_RcvBaseSeqNo << "-" << new_base);
-                    m_Providers.drop(firstready-1);
+                    m_Providers.drop(firstready);
                     m_RcvBaseSeqNo = new_base;
                     firstready = 0;
                 }
@@ -11260,7 +11260,7 @@ void CUDTGroup::readInterceptorThread()
             {
                 LOGC(tslog.Error, log << "IPE: No packet at %" << reqseq << " - going on");
                 m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
-                m_Providers.drop(0);
+                m_Providers.drop(1);
                 continue;
             }
 
@@ -11311,7 +11311,7 @@ void CUDTGroup::readInterceptorThread()
             {
                 LOGC(tslog.Error, log << "IPE: NO PACKET EXTRACTED - withdrawing added cell");
                 m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
-                m_Providers.drop(0);
+                m_Providers.drop(1);
 
                 // Reset the packet because it won't be used.
                 continue;
@@ -11329,7 +11329,7 @@ void CUDTGroup::readInterceptorThread()
                         << ", skipped " << ns << " bytes");
             }
 
-            m_Providers.drop(0);
+            m_Providers.drop(1);
             m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
         }
 
@@ -11343,7 +11343,7 @@ void CUDTGroup::readInterceptorThread()
             while (!pp)
             {
                 LOGC(tslog.Error, log << "Group buffer full! DROPPING ONE PACKET.");
-                m_Pending.drop(0);
+                m_Pending.drop(1);
                 pp = m_Pending.push();
                 if (m_Pending.empty())
                 {
