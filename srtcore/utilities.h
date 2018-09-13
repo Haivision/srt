@@ -446,6 +446,21 @@ public:
     operator bool () { return 0!= get(); }
 };
 
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type* map_getp(Map& m, const Key& key)
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? NULL : ref_t<typename Map::mapped_type>::adrof(it->second);
+}
+
+
 
 #endif
 

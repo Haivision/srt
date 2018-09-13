@@ -928,6 +928,9 @@ public:
         new ((void*)&v) Value(source);
     }
 
+    // Wipe the copy constructor
+    CircularBuffer(const CircularBuffer&);
+
 public:
 
     typedef Value value_type;

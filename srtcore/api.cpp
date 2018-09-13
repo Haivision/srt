@@ -1551,7 +1551,7 @@ CUDTGroup* CUDTUnited::locateGroup(SRTSOCKET u, ErrorHandling erh)
 {
    CGuard cg(m_ControlLock);
 
-   map<SRTSOCKET, CUDTGroup>::iterator i = m_Groups.find(u);
+   groups_t::iterator i = m_Groups.find(u);
    if ( i == m_Groups.end() )
    {
        if (erh == ERH_THROW)
@@ -1559,7 +1559,7 @@ CUDTGroup* CUDTUnited::locateGroup(SRTSOCKET u, ErrorHandling erh)
        return NULL;
    }
 
-   return &i->second;
+   return i->second;
 }
 
 CUDTSocket* CUDTUnited::locatePeer(

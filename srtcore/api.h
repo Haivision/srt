@@ -232,14 +232,36 @@ public:
    {
        CGuard cg(m_ControlLock);
        // This only ensures that the element exists.
-       CUDTGroup& g = m_Groups[id];
-       g.m_pGlobal = this;
-       return g;
+       // If the element was newly added, it will be NULL.
+       CUDTGroup*& g = m_Groups[id];
+       if (!g)
+       {
+           // This is a reference to the cell, so it will
+           // rewrite it into the map.
+           g = new CUDTGroup;
+           g->m_pGlobal = this;
+       }
+
+       // Now we are sure that g is not NULL,
+       // and persistence of this object is in the map.
+       // The reference to the object can be safely returned here.
+       return *g;
    }
 
    void deleteGroup(CUDTGroup* g)
    {
        CGuard cg(m_ControlLock);
+
+       CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
+       if (pg)
+           delete pg;
+       else
+       {
+           LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+           // still delete it.
+           delete g;
+       }
+
        m_Groups.erase(g->m_GroupID);
    }
 
@@ -250,8 +272,8 @@ public:
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)
        {
-           if (i->second.peerid() == peergroup)
-               return &i->second;
+           if (i->second->peerid() == peergroup)
+               return i->second;
        }
        return NULL;
    }
@@ -265,7 +287,7 @@ private:
 
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
-   typedef std::map<SRTSOCKET, CUDTGroup> groups_t;
+   typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
 
    sockets_t m_Sockets;
    groups_t m_Groups;
