@@ -11003,8 +11003,6 @@ void CUDTGroup::readInterceptorThread()
             CGuard glock(m_GroupLock);
             CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
 
-            uint64_t now = CTimer::getTime();
-
             // Check if we still have a contiguous series of packets.
             // Note that m_RcvBaseSeqNo was incremented after extraction and it points
             // now to the subsequent packet. If this packet is ready for extraction,
@@ -11031,6 +11029,7 @@ void CUDTGroup::readInterceptorThread()
             // Should be 0, if there's a packet at position 0.
             while (next_playtime)
             {
+                uint64_t now = CTimer::getTime();
                 // Check if next playtime is now; if so, play. Otherwise sleep
                 // until this time.
                 if (next_playtime <= now)
@@ -11078,11 +11077,17 @@ void CUDTGroup::readInterceptorThread()
                         if (cc_ahead.wait_until(next_playtime))
                         {
                             HLOGC(tslog.Debug, log << "GROUP: received signal, attempting to extract a new packet");
+                            // JUMPS TO THE PROCEDURE THAT will extract packets from sockets,
+                            // AND THEN possibly deliver packets that are ready to play.
                             break;
                         }
                         else
                         {
-                            HLOGC(tslog.Debug, log << "GROUP: time to play with NO PROVIDERS.");
+                            HLOGC(tslog.Debug, log << "GROUP: time to play with NO PROVIDERS - SHOULD PLAY PACKET NOW.");
+                            // This will jump back to the condition that checks if the time to
+                            // play is now, which normally SHOULD BE satisifed now that the waiting
+                            // up to this time on CV exited with timeout.
+                            continue;
                         }
                     }
                     else
@@ -11194,7 +11199,7 @@ void CUDTGroup::readInterceptorThread()
 
             // Get the time from the nearest provider.
             // Compare it with current time.
-            now = CTimer::getTime();
+            uint64_t now = CTimer::getTime();
 
             // If the first ready packet is not the one at position 0,
             // it means that we have to wait for that packet to be available,
