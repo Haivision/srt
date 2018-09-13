@@ -10502,6 +10502,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     CCondDelegate rcvcond(m_RcvDataCond, readlock);
 
     Pending* pp = 0;
+
     for (;;)
     {
         if (m_bClosing)
@@ -10521,38 +10522,53 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             continue;
         }
 
-        // The buffer isn't empty, but the packet on top may be not yet
-        // ready to deliver
-        uint64_t now = CTimer::getTime();
-
         // using [[assert(m_Pending.empty())]];
         m_Pending.access(0, Ref(pp));
 
+        // Don't even check if the packet is ready to play if the
+        // packet that would be delivered next (no matter if now or later)
+        // is bigger than the buffer to which it would be copied.
+        if (int(pp->size) > len)
+        {
+            throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+        }
+
+
+        uint64_t now = CTimer::getTime();
+
+        // This might have been an attempt to read a packet in non-blocking mode
+        // without checking first if the diode for that socket's reading is lit.
+        // This must check packet play readiness.
         if (pp->playtime > now)
         {
             HLOGC(dlog.Debug, log << "GROUP recv: FUTURE PACKET: %" << pp->msgctrl.pktseq << " playtime="
-                    << logging::FormatTime(pp->playtime) << " - waiting");
-            // Sleep by CV
+                    << logging::FormatTime(pp->playtime) << " - clear epoll-diode, wait on signal");
+
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+
+            // No data to read, report error if nonblocking
+            if (!m_bSynRecving)
+                throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+
+            // Sleep by CV until this time, or get interrupted by a signal.
             rcvcond.wait_until(pp->playtime);
         }
-        else
-        {
-            HLOGC(dlog.Debug, log << "GROUP recv: PLAYING PACKET %" << pp->msgctrl.pktseq);
-            break;
-        }
+
+        // No matter if the above variable was exited on timeout or on signal, both
+        // mean that the packet at top is ready to play.
+        HLOGC(dlog.Debug, log << "GROUP recv: PLAYING PACKET %" << pp->msgctrl.pktseq);
+        break;
     }
 
     // using [[assert(pp != nullptr)]];
 
-    // Top packet is ready to play, extract it, if you have enough space.
-    if (int(pp->size) > len)
-    {
-        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
-    }
-
     len = pp->size;
     memcpy(buf, pp->buffer, len);
     *r_mc = pp->msgctrl;
+
+    HLOGC(dlog.Debug, log << "GROUP recv: DELIVERED %" << pp->msgctrl.pktseq
+            << " #" << pp->msgctrl.msgno << " size=" << len << ", DROPPING FROM BUFFER");
+
     m_Pending.drop(0);
 
     return len;
