@@ -11339,12 +11339,6 @@ void CUDTGroup::readInterceptorThread()
             CGuard recv_gl(m_RcvDataLock);
             CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl);
 
-            // XXX hardcode the limit, for now.
-            // This limit should be set to the value of the receiver buffer.
-            if (m_Pending.size() > 8192)
-            {
-            }
-
             Pending* pp = m_Pending.push();
             while (!pp)
             {
@@ -11374,7 +11368,7 @@ void CUDTGroup::readInterceptorThread()
 #endif
 
             HLOGC(tslog.Debug, log << "ADDED ONE PACKET (" << m_Pending.size() << " total) %" << next_playseq
-                    << " PLAYTIME=" << logging::FormatTime(next_playtime));
+                    << " PLAYTIME=" << logging::FormatTime(next_playtime) << " size=" << pp->size);
         }
     }
 }
