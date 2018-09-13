@@ -11352,6 +11352,8 @@ void CUDTGroup::readInterceptorThread()
                 }
             }
 
+            HLOGC(tslog.Debug, log << "PREPARING PACKET TO ADD: size=" << p.size << " %" << p.msgctrl.pktseq
+                    << " STAMP: " << BufferStamp(p.buffer, p.size));
             pp->move_from(p);
 
             // We don't have to check, the PENDING array is never empty here.

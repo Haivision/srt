@@ -254,7 +254,11 @@ public:
             // Other data are not important, this is only for
             // data passing.
             buffer = sec.buffer;
+            size = sec.size;
+            owned = true;
+
             sec.buffer = NULL;
+            sec.owned = false;
         }
 
         Pending(): playtime(0), msgctrl(srt_msgctrl_default), buffer(NULL), owned(false)
