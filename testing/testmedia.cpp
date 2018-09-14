@@ -1056,7 +1056,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
         // BLOCKING MODE - temporary the only one
         {
             // Poll on this descriptor until reading is available, indefinitely.
-            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) != SRT_ERROR)
+            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
             {
                 Error(UDT::getlasterror(), "srt_epoll_wait");
             }
