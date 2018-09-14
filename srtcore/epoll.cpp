@@ -73,9 +73,12 @@ modified by
 
 #include "common.h"
 #include "epoll.h"
+#include "logging.h"
 #include "udt.h"
 
 using namespace std;
+
+extern logging::Logger mglog;
 
 CEPoll::CEPoll():
 m_iIDSeed(0)
@@ -410,6 +413,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if (p == m_mPolls.end())
       {
          CGuard::leaveCS(m_EPollLock);
+         LOGC(mglog.Error, log << "EID:" << eid << " INVALID.");
          throw CUDTException(MJ_NOTSUP, MN_EIDINVAL, 0);
       }
 
@@ -417,6 +421,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       {
          // no socket is being monitored, this may be a deadlock
          CGuard::leaveCS(m_EPollLock);
+         LOGC(mglog.Error, log << "EID:" << eid << " no sockets to check, this would deadlock");
          throw CUDTException(MJ_NOTSUP, MN_EEMPTY, 0);
       }
 
@@ -534,7 +539,10 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
          return total;
 
       if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
-         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+      {
+          HLOGC(mglog.Debug, log << "EID:" << eid << ": TIMEOUT.");
+          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+      }
 
       #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       #else
