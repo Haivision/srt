@@ -1062,7 +1062,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
             }
             Verb() << "EPOLL: read-ready sockets: " << VerbNoEOL;
             for (int i = 0; i < ready_len; ++i)
-                Verb() << "@" << sready[i] << " ";
+                Verb() << "@" << sready[i] << " " << VerbNoEOL;
             Verb() << "(total " << ready_len << ")";
         }
 
@@ -1089,6 +1089,12 @@ bytevector SrtSource::GroupRead(size_t chunk)
             stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
             if (stat == SRT_ERROR)
             {
+                int err = srt_getlasterror(0);
+                if (err == SRT_EASYNCRCV)
+                {
+                    Verb() << "Spurious wakeup on @" << id << " - ignoring";
+                    continue;
+                }
                 Verb() << "Error @" << id << ": " << srt_getlasterror_str();
                 ++nbroken;
                 continue;
