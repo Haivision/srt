@@ -421,6 +421,12 @@ void SrtCommon::AcceptNewClient()
         // Don't add any sockets, they will have to be added
         // anew every time again.
         srt_epoll = srt_epoll_create();
+
+        // Group data must have a size of at least 1
+        // otherwise the srt_group_data() call will fail
+        if (m_group_data.empty())
+            m_group_data.resize(1);
+
         Verb() << " connected(group).";
     }
     else
