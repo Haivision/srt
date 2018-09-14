@@ -1023,6 +1023,22 @@ bytevector SrtSource::GroupRead(size_t chunk)
         }
     }
 
+    // Setup epoll every time anew, the socket set
+    // might be updated.
+    srt_epoll_clear_usocks(srt_epoll);
+
+    bool any = false;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        SRT_SOCKGROUPDATA& d = m_group_data[i];
+        if (d.status != SRTS_CONNECTED)
+            continue; // don't read over a failed socket
+
+        int modes = SRT_EPOLL_IN;
+        srt_epoll_add_usock(srt_epoll, d.id, &modes);
+    }
+
     for (;;)
     {
         // This loop should be normally passed once.
@@ -1034,34 +1050,20 @@ bytevector SrtSource::GroupRead(size_t chunk)
         // Don't set up data info in this 
         SRT_MSGCTRL mctrl = srt_msgctrl_default;
 
-        // Setup epoll every time anew, the socket set
-        // might be updated.
-        srt_epoll_clear_usocks(srt_epoll);
-
-        bool any = false;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            SRT_SOCKGROUPDATA& d = m_group_data[i];
-            if (d.status != SRTS_CONNECTED)
-                continue; // don't read over a failed socket
-
-            int modes = SRT_EPOLL_IN;
-            srt_epoll_add_usock(srt_epoll, d.id, &modes);
-        }
-
         vector<SRTSOCKET> sready(size);
         int ready_len = size;
 
         // BLOCKING MODE - temporary the only one
         {
             // Poll on this descriptor until reading is available, indefinitely.
-            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) != -1)
+            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) != SRT_ERROR)
             {
+                Error(UDT::getlasterror(), "srt_epoll_wait");
             }
         }
 
         set<SRTSOCKET> aheads;
+        int nbroken = 0;
 
         for (size_t i = 0; i < size_t(ready_len); ++i)
         {
@@ -1084,6 +1086,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
             if (stat == SRT_ERROR)
             {
                 Verb() << "Error @" << id << ": " << srt_getlasterror_str();
+                ++nbroken;
                 continue;
             }
 
@@ -1125,6 +1128,12 @@ bytevector SrtSource::GroupRead(size_t chunk)
                     return data;
                 }
             }
+        }
+
+        if (nbroken == ready_len)
+        {
+            // All broken
+            Error("All sockets broken");
         }
 
         if (!any)
