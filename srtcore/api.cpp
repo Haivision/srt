@@ -498,6 +498,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         << " ISN=" << ns->m_iISN);
 
     int error = 0;
+    bool should_submit_to_accept = true;
 
     // These can throw exception only when the memory allocation failed.
     // CUDT::connect() translates exception into CUDTException.
@@ -565,48 +566,32 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     CGuard::leaveCS(m_ControlLock);
 
-    CGuard::enterCS(ls->m_AcceptLock);
-    try
-    {
-        ls->m_pQueuedSockets->insert(ns->m_SocketID);
-    }
-    catch (...)
-    {
-        LOGC(mglog.Error, log << "newConnection: error when queuing socket!");
-        error = 3;
-    }
-    CGuard::leaveCS(ls->m_AcceptLock);
-
-    // acknowledge users waiting for new connections on the listening socket
-    m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, true);
-
-    CTimer::triggerEvent();
-
-ERR_ROLLBACK:
-    // XXX the exact value of 'error' is ignored
-    if (error > 0)
-    {
-#if ENABLE_LOGGING
-        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
-        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
-#endif
-        ns->m_pUDT->close();
-        ns->m_Status = SRTS_CLOSED;
-        ns->m_TimeStamp = CTimer::getTime();
-
-        return -1;
-    }
-
     if (ns->m_IncludedGroup)
     {
         // XXX this might require another check of group type.
         // For redundancy group, at least, update the status in the group
         CUDTGroup* g = ns->m_IncludedGroup;
         CGuard glock(g->m_GroupLock);
+        CUDTGroup::gli_t gi;
+
+        // Check if this is the first socket in the group.
+        // If so, give it up to accept, otherwise just do nothing
+        // The client will be informed about the newly added connection at the
+        // first moment when attempting to get the group status.
+        for (gi = g->m_Group.begin(); gi != g->m_Group.end(); ++gi)
+        {
+            if (gi->laststatus == SRTS_CONNECTED)
+            {
+                HLOGC(mglog.Debug, log << "Found another connected socket in the group: @"
+                        << gi->id << " - socket will be NOT given up for accepting");
+                should_submit_to_accept = false;
+                break;
+            }
+        }
 
         // Update the status in the group so that the next
         // operation can include the socket in the group operation.
-        CUDTGroup::gli_t gi = ns->m_IncludedIter;
+        gi = ns->m_IncludedIter;
         gi->sndstate = CUDTGroup::GST_IDLE;
         gi->rcvstate = CUDTGroup::GST_IDLE;
         gi->laststatus = SRTS_CONNECTED;
@@ -614,10 +599,53 @@ ERR_ROLLBACK:
         ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
     }
 
-    // wake up a waiting accept() call
-    pthread_mutex_lock(&(ls->m_AcceptLock));
-    pthread_cond_signal(&(ls->m_AcceptCond));
-    pthread_mutex_unlock(&(ls->m_AcceptLock));
+    if (should_submit_to_accept)
+    {
+        CGuard::enterCS(ls->m_AcceptLock);
+        try
+        {
+            ls->m_pQueuedSockets->insert(ns->m_SocketID);
+        }
+        catch (...)
+        {
+            LOGC(mglog.Error, log << "newConnection: error when queuing socket!");
+            error = 3;
+        }
+        CGuard::leaveCS(ls->m_AcceptLock);
+
+        HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
+        // acknowledge users waiting for new connections on the listening socket
+        m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, true);
+
+        CTimer::triggerEvent();
+
+ERR_ROLLBACK:
+        // XXX the exact value of 'error' is ignored
+        if (error > 0)
+        {
+#if ENABLE_LOGGING
+            static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
+            LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+#endif
+            ns->m_pUDT->close();
+            ns->m_Status = SRTS_CLOSED;
+            ns->m_TimeStamp = CTimer::getTime();
+
+            return -1;
+        }
+
+        // wake up a waiting accept() call
+        pthread_mutex_lock(&(ls->m_AcceptLock));
+        pthread_cond_signal(&(ls->m_AcceptCond));
+        pthread_mutex_unlock(&(ls->m_AcceptLock));
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
+                << " NOT submitted to acceptance, another socket in the group is already connected");
+        CGuard cg(ls->m_AcceptLock);
+        ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
+    }
 
     return 1;
 }
@@ -1072,7 +1100,7 @@ int CUDTUnited::close(CUDTSocket* s)
        s->m_pUDT->close();
 
        // synchronize with garbage collection.
-       HLOGC(mglog.Debug, log << "%" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
+       HLOGC(mglog.Debug, log << "@" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
        CGuard manager_cg(m_ControlLock);
 
        // since "s" is located before m_ControlLock, locate it again in case
@@ -1096,7 +1124,7 @@ int CUDTUnited::close(CUDTSocket* s)
        CTimer::triggerEvent();
    }
 
-   HLOGC(mglog.Debug, log << "%" << id << ": GLOBAL: CLOSING DONE");
+   HLOGC(mglog.Debug, log << "@" << id << ": GLOBAL: CLOSING DONE");
 
    // Check if the ID is still in closed sockets before you access it
    // (the last triggerEvent could have deleted it).
@@ -1104,7 +1132,7 @@ int CUDTUnited::close(CUDTSocket* s)
    {
 #if SRT_ENABLE_CLOSE_SYNCH
 
-       HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
+       HLOGC(mglog.Debug, log << "@" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
        for (;;)
        {
            CSndBuffer* sb = s->m_pUDT->m_pSndBuffer;
@@ -1112,14 +1140,14 @@ int CUDTUnited::close(CUDTSocket* s)
            // Disconnected from buffer - nothing more to check.
            if (!sb)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.");
+               HLOGC(mglog.Debug, log << "@" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.");
                break;
            }
 
            // Sender buffer empty
            if (sb->getCurrBufSize() == 0)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
+               HLOGC(mglog.Debug, log << "@" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
                break;
            }
 
@@ -1139,11 +1167,11 @@ int CUDTUnited::close(CUDTSocket* s)
            }
            if (isgone)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().");
+               HLOGC(mglog.Debug, log << "@" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().");
                break;
            }
 
-           HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: ... still waiting for any update.");
+           HLOGC(mglog.Debug, log << "@" << id << " GLOBAL CLOSING: ... still waiting for any update.");
            CTimer::EWait wt = CTimer::waitForEvent();
 
            if ( wt == CTimer::WT_ERROR )
@@ -1426,6 +1454,11 @@ int CUDTUnited::selectEx(
 int CUDTUnited::epoll_create()
 {
    return m_EPoll.create();
+}
+
+int CUDTUnited::epoll_clear_usocks(int eid)
+{
+    return m_EPoll.clear_usocks(eid);
 }
 
 int CUDTUnited::epoll_add_usock(
@@ -2233,6 +2266,22 @@ SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
     return s->m_IncludedGroup->id();
 }
 
+int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
+{
+    if ( (groupid & SRTGROUP_MASK) == 0)
+    {
+        return setError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
+    if (!g || !pdata || !psize)
+    {
+        return setError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return g->getGroupData(pdata, psize);
+}
+
 int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
 {
    try
@@ -2752,6 +2801,26 @@ int CUDT::epoll_create()
    }
 }
 
+int CUDT::epoll_clear_usocks(int eid)
+{
+   try
+   {
+      return s_UDTUnited.epoll_clear_usocks(eid);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "epoll_clear_usocks: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
 int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
 {
    try
@@ -3207,6 +3276,11 @@ int selectEx(
 int epoll_create()
 {
    return CUDT::epoll_create();
+}
+
+int epoll_clear_usocks(int eid)
+{
+    return CUDT::epoll_clear_usocks(eid);
 }
 
 int epoll_add_usock(int eid, SRTSOCKET u, const int* events)

@@ -14,6 +14,7 @@
 #include <string>
 #include <map>
 #include <stdexcept>
+#include <deque>
 
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
@@ -60,9 +61,19 @@ protected:
     map<string, string> m_options; // All other options, as provided in the URI
     vector<Connection> m_group_nodes;
     string m_group_type;
+    int32_t m_group_seqno = -1;
     vector<SRT_SOCKGROUPDATA> m_group_data;
+
+    struct Ahead
+    {
+        bytevector packet;
+        SRTSOCKET id;
+        int32_t seqno;
+    };
+    deque<Ahead> m_group_ahead_packets;
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
+    bool m_listener_group = false;
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
 
@@ -124,6 +135,7 @@ public:
     }
 
     bytevector Read(size_t chunk) override;
+    bytevector GroupRead(size_t chunk);
 
     /*
        In this form this isn't needed.

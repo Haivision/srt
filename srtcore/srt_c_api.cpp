@@ -40,6 +40,8 @@ SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
 int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
+int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
 // int srt_bind_multicast()
 
 // Binding and connection management
@@ -197,6 +199,8 @@ SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::
 
 // event mechanism
 int srt_epoll_create() { return CUDT::epoll_create(); }
+
+int srt_epoll_clear_usocks(int eit) { return CUDT::epoll_clear_usocks(eit); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.

@@ -91,6 +91,9 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
+# XXX EXPERIMENTAL: Use application-defined group reader
+add_definitions(-DSRT_ENABLE_APP_READER)
+
 set (DISPLAY_LOGGING DISABLED)
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)

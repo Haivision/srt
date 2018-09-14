@@ -546,10 +546,19 @@ SRT_API extern SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API extern SRTSOCKET srt_create_socket();
 
 // Group management
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+
 SRT_API extern SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
 SRT_API extern int srt_include(SRTSOCKET socket, SRTSOCKET group);
 SRT_API extern int srt_exclude(SRTSOCKET socket);
 SRT_API extern SRTSOCKET srt_groupof(SRTSOCKET socket);
+SRT_API extern int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 
 SRT_API extern int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API extern int srt_bind_acquire(SRTSOCKET u, int sys_udp_sock);
@@ -572,14 +581,6 @@ SRT_API extern int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOP
 SRT_API extern int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API extern int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API extern int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-
-typedef struct SRT_SocketGroupData_
-{
-    SRTSOCKET id;
-    SRT_SOCKSTATUS status;
-    int result;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-} SRT_SOCKGROUPDATA;
 
 // XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
@@ -661,6 +662,7 @@ SRT_API extern int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, i
 SRT_API extern SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
 SRT_API extern int srt_epoll_create(void);
+SRT_API extern int srt_epoll_clear_usocks(int eid);
 SRT_API extern int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
 SRT_API extern int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
 SRT_API extern int srt_epoll_remove_usock(int eid, SRTSOCKET u);

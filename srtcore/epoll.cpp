@@ -123,6 +123,24 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return desc.m_iID;
 }
 
+int CEPoll::clear_usocks(int eid)
+{
+    // This should remove all SRT sockets from given eid.
+   CGuard pg(m_EPollLock);
+
+   map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+   if (p == m_mPolls.end())
+      throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+
+   CEPollDesc& d= p->second;
+
+   d.m_sUDTSocksIn.clear();
+   d.m_sUDTSocksOut.clear();
+   d.m_sUDTSocksEx.clear();
+
+   return 0;
+}
+
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
    CGuard pg(m_EPollLock);

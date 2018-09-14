@@ -441,6 +441,7 @@ public:
     void readyPackets(CUDT* core, int32_t ack);
 
     void syncWithSocket(const CUDT& core);
+    int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
@@ -591,6 +592,7 @@ public: //API
     static int addSocketToGroup(SRTSOCKET socket, SRTSOCKET group);
     static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
+    static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, int udpsock);
@@ -614,6 +616,7 @@ public: //API
     static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
     static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
+    static int epoll_clear_usocks(int eid);
     static int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
     static int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     static int epoll_remove_usock(const int eid, const SRTSOCKET u);

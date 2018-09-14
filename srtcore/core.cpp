@@ -5799,11 +5799,14 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
     // Check if the socket is a member of a receiver group.
     // If so, then reading by receiveMessage is disallowed.
 
+#ifndef SRT_ENABLE_APP_READER
+
     if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
     {
         LOGP(mglog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
     }
+#endif
 
     if (!m_bConnected || !m_Smoother.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -5847,7 +5850,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
 
     if (m_bBroken || m_bClosing)
     {
-        HLOGC(mglog.Debug, log << "recvmsg: CONNECTION BROKEN - reading from recv buffer just for formality");
+        HLOGC(mglog.Debug, log << CONID() << "receiveMessage: CONNECTION BROKEN - reading from recv buffer just for formality");
         int res = m_pRcvBuffer->readMsg(data, len);
         mctrl.srctime = 0;
 
@@ -5879,20 +5882,20 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         seqdistance = CSeqNo::seqcmp(m_iRcvLastSkipAck, uptoseq);
         if (seqdistance < 1)
         {
-            LOGC(mglog.Error, log << "IPE: trying to read %" << uptoseq << " from a core where top is %" << m_iRcvLastSkipAck
+            LOGC(mglog.Error, log << CONID() << "IPE: trying to read %" << uptoseq << " from a core where top is %" << m_iRcvLastSkipAck
                     << " (requested packet is not delivered to @" << m_SocketID << ")");
             return 0;
         }
-        HLOGC(dlog.Debug, log << "receiveMessage: enforced SEQUENCE: %" << uptoseq << " with current top %" << m_iRcvLastSkipAck
+        HLOGC(dlog.Debug, log << CONID() << "receiveMessage: enforced SEQUENCE: %" << uptoseq << " with current top %" << m_iRcvLastSkipAck
                 << " - offset=" << seqdistance);
     }
 
     if (!m_bSynRecving)
     {
-        HLOGC(dlog.Debug, log << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
+        HLOGC(dlog.Debug, log << CONID() << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
         int res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
-        HLOGC(dlog.Debug, log << "AFTER readMsg: (NON-BLOCKING) result=" << res);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
 
         if (seqdistance != -1)
         {
@@ -5900,7 +5903,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
             // Extract it then and return whatever it is.
             // This function shall be called just once for a packet with given seq
             // and the packet availability should be known prior to extraction.
-            HLOGC(dlog.Debug, log << "Returning immediately - request was from group");
+            HLOGC(dlog.Debug, log << CONID() << "Returning immediately - request was from group");
             return res;
         }
 
@@ -5936,7 +5939,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         return res;
     }
 
-    HLOGC(dlog.Debug, log << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size max=" << len
+    HLOGC(dlog.Debug, log << CONID() << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size max=" << len
             << " EXP SEQUENCE: " << (seqdistance == -1 ? -1 : int(uptoseq)));
 
     int res = 0;
@@ -5963,7 +5966,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
                 // of kicking TSBPD.
                 // bool spurious = (tstime != 0);
 
-                HLOGC(tslog.Debug, log << "receiveMessage: KICK tsbpd" << (tstime ? " (SPURIOUS!)" : ""));
+                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd" << (tstime ? " (SPURIOUS!)" : ""));
                 tscond.signal_locked(recvguard);
             }
 
@@ -5971,7 +5974,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
             {
                 uint64_t exptime = CTimer::getTime() + (recvtmo * uint64_t(1000));
 
-                HLOGC(tslog.Debug, log << "receiveMessage: fall asleep up to TS="
+                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: fall asleep up to TS="
                     << logging::FormatTime(exptime) << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
 
                 if (!recv_cond.wait_until(exptime))
@@ -5986,7 +5989,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
                 }
             } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
 
-            HLOGC(tslog.Debug, log << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
+            HLOGC(tslog.Debug, log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
                 << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady());
         }
 
@@ -5997,7 +6000,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
                 */
 
         res = m_pRcvBuffer->readMsg(data, len, r_mctrl, seqdistance);
-        HLOGC(dlog.Debug, log << "AFTER readMsg: (BLOCKING) result=" << res);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
         if (m_bBroken || m_bClosing)
         {
@@ -8223,8 +8226,14 @@ int CUDT::processData(CUnit* unit)
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
 
-   /* We are receiver, start tsbpd thread if TsbPd is enabled */
-   if (m_bTsbPd && !CGuard::isthread(m_RcvTsbPdThread))
+#ifdef SRT_ENABLE_APP_READER
+   bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
+#else
+   bool need_tsbpd = m_bTsbPd;
+#endif
+
+   /* We are receiver, start tsbpd thread if TsbPd is need_tsbpd */
+   if (need_tsbpd && !CGuard::isthread(m_RcvTsbPdThread))
    {
        HLOGP(mglog.Debug, "Spawning Socket TSBPD thread");
        int st = 0;
@@ -10184,6 +10193,39 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     return rstat;
 }
 
+int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+{
+    CGuard gl(m_GroupLock);
+
+    size_t size = *psize;
+    // Rewrite correct size
+    *psize = m_Group.size();
+
+    if (m_Group.size() > size)
+    {
+        // Not enough space to retrieve the data.
+        return SRT_ERROR;
+    }
+
+    size_t i = 0;
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
+    {
+        pdata[i].id = d->id;
+        pdata[i].status = d->laststatus;
+
+        if (d->sndstate == GST_RUNNING)
+            pdata[i].result = 0; // Just "success", no operation was performed
+        else if (d->sndstate == GST_IDLE)
+            pdata[i].result = 0;
+        else
+            pdata[i].result = -1;
+
+        memcpy(&pdata[i].peeraddr, &d->peer, d->peer.size());
+    }
+
+    return 0;
+}
+
 /* Temporarily eclipsed
 
 void CUDTGroup::tsbpd()
@@ -10745,6 +10787,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
 
     vector<bool> loss_bitmap;
 
+#ifndef SRT_ENABLE_APP_READER
     if (!CGuard::isthread(m_RcvInterceptorThread))
     {
         HLOGP(mglog.Debug, "Spawning GROUP TSBPD thread");
@@ -10759,6 +10802,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
             return loss_bitmap;
         }
     }
+#endif
 
     CGuard gl(m_GroupLock);
 
@@ -10802,7 +10846,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
         int dropshift = offset - (m_Providers.capacity()-1);
         if (dropshift > 0)
         {
-            LOGC(mglog.Error, log << "PROVIDE: space exceeded in Providers - dropping " << dropshift << " providers");
+            HLOGC(mglog.Debug, log << "PROVIDE: space exceeded in Providers - dropping " << dropshift << " providers");
             offset -= dropshift; // should be same as: offset = capacity()-1
             m_Providers.drop(dropshift);
             m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo, dropshift);
@@ -10819,9 +10863,16 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     {
         Provider testp;
         bool have = m_Providers.get(offset, Ref(testp));
+        ostringstream prinfo;
+        prinfo << "[ ";
+        for ( vector<CUDT*>::iterator p = testp.provider.begin(); p != testp.provider.end(); ++p)
+        {
+            prinfo << "@" << (*p)->m_SocketID << " ";
+        }
+        prinfo << "]";
         HLOGC(mglog.Debug, log << "PROVIDE: updated packet @ offset=" << offset << " added="
                 << std::boolalpha << have << " time=" << logging::FormatTime(testp.playtime)
-                << " providers=" << Printable(testp.provider));
+                << " providers=" << prinfo.str());
     }
 #endif
 
@@ -11369,7 +11420,7 @@ void CUDTGroup::readInterceptorThread()
             next_playseq = pp->msgctrl.pktseq;
 #endif
 
-            HLOGC(tslog.Debug, log << "ADDED ONE PACKET (" << m_Pending.size() << " total) %" << next_playseq
+            HLOGC(tslog.Debug, log << "ADDED ONE PACKET (" << m_Pending.size() << " total), FIRST TO PLAY: %" << next_playseq
                     << " PLAYTIME=" << logging::FormatTime(next_playtime) << " size=" << pp->size);
         }
     }

@@ -91,6 +91,12 @@ public: // for CUDTUnited API
 
    int create();
 
+
+   /// delete all user sockets (SRT sockets) from an EPoll
+   /// @param [in] eid EPoll ID.
+   /// @return 0 
+   int clear_usocks(int eid);
+
       /// add a UDT socket to an EPoll.
       /// @param [in] eid EPoll ID.
       /// @param [in] u UDT Socket ID.

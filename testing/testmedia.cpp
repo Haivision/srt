@@ -23,7 +23,10 @@
 #include <sys/ioctl.h>
 #endif
 
+// SRT protected includes
 #include "netinet_any.h"
+#include "common.h"
+
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -404,7 +407,26 @@ void SrtCommon::AcceptNewClient()
         Error(UDT::getlasterror(), "srt_accept");
     }
 
-    Verb() << " connected.";
+    if (m_sock & SRTGROUP_MASK)
+    {
+        m_listener_group = true;
+        // There might be added a poller, remove it.
+        // We need it work different way.
+
+        if (srt_epoll != -1)
+        {
+            srt_epoll_release(srt_epoll);
+        }
+
+        // Don't add any sockets, they will have to be added
+        // anew every time again.
+        srt_epoll = srt_epoll_create();
+        Verb() << " connected(group).";
+    }
+    else
+    {
+        Verb() << " connected.";
+    }
     ::transmit_throw_on_interrupt = false;
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
@@ -697,7 +719,12 @@ void SrtCommon::OpenGroupClient()
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
         int len = 2;
         SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
+        if ( srt_epoll_wait(srt_conn_epoll,
+                    NULL, NULL,
+                    ready, &len,
+                    -1, // Wait infinitely
+                    NULL, NULL,
+                    NULL, NULL) != -1 )
         {
             Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
         }
@@ -914,15 +941,205 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
     hostport_copy = os.str();
 }
 
+bytevector SrtSource::GroupRead(size_t chunk)
+{
+    // Read the current group status. m_sock is here the group id.
+    bytevector output;
+
+    size_t size = m_group_data.size();
+    int stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    if (stat == -1 && size > m_group_data.size())
+    {
+        // Just too small buffer. Resize and continue.
+        m_group_data.resize(size);
+        stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    }
+
+    if (stat == -1) // Also after the above fix
+    {
+        Error(UDT::getlasterror(), "FAILURE when reading group data");
+    }
+
+    // Check first the ahead packets if you have any to deliver.
+    if (!m_group_ahead_packets.empty())
+    {
+        for (size_t i = 0; i < m_group_ahead_packets.size(); ++i)
+        {
+            Ahead& a = m_group_ahead_packets[i];
+
+            int seqdiff = CSeqNo::seqcmp(a.seqno, m_group_seqno);
+            if ( seqdiff == 1)
+            {
+                // The very next packet. Return it.
+                m_group_seqno = a.seqno;
+                Verb() << " (SRT group: ahead delivery %" << a.seqno << ")";
+                return move(a.packet);
+            }
+            else if (seqdiff < 1)
+            {
+                Verb() << " (SRT group: dropping %" << a.seqno << ")";
+                // Drop all packets that are earlier
+                m_group_ahead_packets.erase(m_group_ahead_packets.begin()+i);
+
+                // This is iterating using index instead of iterator
+                // because all iterators are invalidated in a deque when
+                // modifying the number of items anyhow. Index can only be
+                // invalidated if it's no longer within the size range.
+                // Erasing one element decreased the container in number
+                // by 1, so decrease the index accordingly (the current
+                // value is pointing to the removed element, so this
+                // simply changes the index to the previous element so
+                // that the next iteration picks up the next one.
+                //
+                // (This should survive even if i == 0).
+                --i;
+            }
+        }
+    }
+
+    for (;;)
+    {
+        // This loop should be normally passed once.
+        bool again = false;
+
+        // The group data contains information about the socket we want to use
+        // for reading. Perform the e-polling.
+
+        // Don't set up data info in this 
+        SRT_MSGCTRL mctrl = srt_msgctrl_default;
+
+        // Setup epoll every time anew, the socket set
+        // might be updated.
+        srt_epoll_clear_usocks(srt_epoll);
+
+        bool any = false;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            SRT_SOCKGROUPDATA& d = m_group_data[i];
+            if (d.status != SRTS_CONNECTED)
+                continue; // don't read over a failed socket
+
+            int modes = SRT_EPOLL_IN;
+            srt_epoll_add_usock(srt_epoll, d.id, &modes);
+        }
+
+        vector<SRTSOCKET> sready(size);
+        int ready_len = size;
+
+        // BLOCKING MODE - temporary the only one
+        {
+            // Poll on this descriptor until reading is available, indefinitely.
+            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) != -1)
+            {
+            }
+        }
+
+        set<SRTSOCKET> aheads;
+
+        for (size_t i = 0; i < size_t(ready_len); ++i)
+        {
+            // Check if this socket is in aheads
+            // If so, don't read from it, wait until the ahead is flushed.
+
+            SRTSOCKET id = sready[i];
+            auto x = find_if(m_group_ahead_packets.begin(), m_group_ahead_packets.end(),
+                    [id](Ahead& a) { return a.id == id; } );
+            if (x != m_group_ahead_packets.end())
+            {
+                Verb() << "Socket @" << id << " is still ahead, NOT READING";
+                aheads.insert(id);
+                continue;
+            }
+
+            // Read from a socket that reported readiness
+            bytevector data(chunk);
+            stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
+            if (stat == SRT_ERROR)
+            {
+                Verb() << "Error @" << id << " - skipping";
+                continue;
+            }
+
+            // Ok, we have the buffer, now check the sequence number.
+            // If this is the first time we read it, take it as a good deal.
+
+            any = true;
+            if (m_group_seqno == -1)
+            {
+                m_group_seqno = mctrl.pktseq;
+            }
+            else
+            {
+                // Trace the sequence number whether it is monotonic.
+                int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_group_seqno);
+                if (seqdiff > 1)
+                {
+                    // Ahead packet. Store.
+                    m_group_ahead_packets.push_back( Ahead { data, id, mctrl.pktseq } );
+                    aheads.insert(id);
+                    Verb() << "Socket @" << id << " jumps ahead to %" << mctrl.pktseq << " - AHEAD.";
+                }
+                else if (seqdiff < 1)
+                {
+                    // Behind packet. Discard
+                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " already delivered - discarding";
+                }
+                else
+                {
+                    // Update the sequence number and deliver packet
+                    m_group_seqno = mctrl.pktseq;
+                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " DELIVERING";
+                    return data;
+                }
+            }
+        }
+
+        if (!any)
+            again = false;
+
+        if (aheads.size() >= size)
+        {
+            // All sockets are ahead, meaning a packet was really lost.
+            // Take the first one as a good deal.
+            Ahead& a = m_group_ahead_packets[0];
+            Verb() << "DROPPED %" << m_group_seqno << " --> skipping up to %" << mctrl.pktseq;
+            m_group_seqno = mctrl.pktseq;
+            output = move(a.packet);
+            m_group_ahead_packets.pop_front();
+
+            return output;
+        }
+
+        if (!again)
+            break;
+
+        Verb() << "NO DATA READ %" << m_group_seqno << " - trying again";
+    }
+
+    Verb() << "NO DATA EXTRCTED";
+    return bytevector();
+}
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool have_group = !m_group_nodes.empty();
+
+    // EXPERIMENTAL
+#ifdef SRT_ENABLE_APP_READER
+    if (have_group || m_listener_group)
+    {
+        return GroupRead(chunk);
+    }
+#endif
+
     bytevector data(chunk);
     bool ready = true;
     int stat;
+
     do
     {
         if (have_group)
@@ -1029,7 +1246,7 @@ void SrtTarget::Write(const bytevector& data)
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool have_group = !m_group_nodes.empty();
-    if (have_group)
+    if (have_group || m_listener_group)
     {
         mctrl.grpdata = m_group_data.data();
         mctrl.grpdata_size = m_group_data.size();
@@ -1047,6 +1264,8 @@ void SrtTarget::Write(const bytevector& data)
 
     if (have_group)
     {
+        // For listener group this is not necessary. The group information
+        // is updated in mctrl.
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
 }
