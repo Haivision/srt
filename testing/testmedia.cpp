@@ -1089,11 +1089,13 @@ bytevector SrtSource::GroupRead(size_t chunk)
                     m_group_ahead_packets.push_back( Ahead { data, id, mctrl.pktseq } );
                     aheads.insert(id);
                     Verb() << "Socket @" << id << " jumps ahead to %" << mctrl.pktseq << " - AHEAD.";
+                    again = true;
                 }
                 else if (seqdiff < 1)
                 {
                     // Behind packet. Discard
                     Verb() << "Socket @" << id << " %" << mctrl.pktseq << " already delivered - discarding";
+                    again = true;
                 }
                 else
                 {
