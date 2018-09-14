@@ -48,13 +48,28 @@ connection that attempts to be redundant will be rejected. The caller should
 also require minimum version from the peer, otherwise it simply won't understand
 the handshake extension information concerning redundancy.
 
-When a listener is connected, and the group ID is passed in the handshake,
+Just note that the "listener socket" isn't usually a socket used like other
+sockets for reading and writing data, although the logics of the socket
+creation as well as setting it epoll flags to define readiness for particular
+operation are still use on it, the logics of these has completely nothing
+to do with what you do for the connection establishment. Therefore even
+in case of group connection you have to make a "listener socket", just with
+the groupconnect flag set, out of which there will be accepted a group.
+
+So, when a listener is connected, and the group ID is passed in the handshake,
 the resulting accepted socket isn't returned in `srt_accept`. The returned
-value is the group ID of the group that is a local group mirroring the group
-which's ID is received in the handshake. This group is always returned by the
-`srt_accept` in such a case, although it may be an existing or newly created
-local group. Note that logically it's the exact ID that you should next use
-for sending or receiving data.
+value is the group ID of the group that is a local group mirroring the remote
+group which's ID is received in the handshake. This group is always returned by
+the `srt_accept` in such a case, although it may be an existing or newly
+created local group (although an existing group may only be in a very rare
+edge case when one socket in the group was just connected after the last
+socket in the existing group has disconnected - in practice there's no
+need to bother with it). Note that logically it's the exact ID that you should
+next use for sending or receiving data. Note that `srt_accept` returns the
+group only once upon connection - once there exist at least one connected
+socket in the group, there will be no new connections reported in `srt_accept`,
+just rather a new socket will suddenly appear in the group data next time you
+anywhow read them.
 
 When a socket for accept is being created, and the group in the handshake
 information **is already mirrored** in the application anywhere (there's a
@@ -64,24 +79,9 @@ this group, otherwise the group is newly created. It doesn't matter then,
 on how many sockets you listen at a time, and whether you listen on different
 network devices.
 
-Normally when your `srt_accept` returns with a value, all you have to do is
-to check if this is some existing group (returned already earlier by
-`srt_accept`), or a new group. This may matter for the statistics and when
-you can see a "second connection" with an existing group, you can simply
-ignore it - all required things that make the link added to the redundancy
-group is done automatically.
-
 You rather don't have to maintain the list of redundant connections at the
 listener side because still you have no influence on who and when will connect
 to you.
-
-POSSIBLE EXTENSION: `srt_group_accept` might be created for a case when
-you have multiple listener sockets, possibly each one on a different 
-network device an port, and you want to get returned when a socket was
-accepted from whichever of them, and automatically added to the group.
-This would be useful only in blocking mode because in non-blocking mode
-you simply receive `SRT_EPOLL_OUT` bit set for the exact listener socket that
-received the connection, so then you simply do `srt_accept` on that very socket.
 
 On the caller the matter is a little bit more complicated.
 
