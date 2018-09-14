@@ -1027,8 +1027,6 @@ bytevector SrtSource::GroupRead(size_t chunk)
     // might be updated.
     srt_epoll_clear_usocks(srt_epoll);
 
-    bool any = false;
-
     for (size_t i = 0; i < size; ++i)
     {
         SRT_SOCKGROUPDATA& d = m_group_data[i];
@@ -1043,6 +1041,8 @@ bytevector SrtSource::GroupRead(size_t chunk)
     {
         // This loop should be normally passed once.
         bool again = false;
+
+        bool any = false;
 
         // The group data contains information about the socket we want to use
         // for reading. Perform the e-polling.
