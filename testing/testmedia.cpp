@@ -1060,6 +1060,10 @@ bytevector SrtSource::GroupRead(size_t chunk)
             {
                 Error(UDT::getlasterror(), "srt_epoll_wait");
             }
+            Verb() << "EPOLL: read-ready sockets: " << VerbNoEOL;
+            for (int i = 0; i < ready_len; ++i)
+                Verb() << "@" << sready[i] << " ";
+            Verb() << "(total " << ready_len << ")";
         }
 
         set<SRTSOCKET> aheads;
