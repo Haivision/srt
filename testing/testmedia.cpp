@@ -1100,9 +1100,9 @@ bytevector SrtSource::GroupRead(size_t chunk)
                 continue;
             }
 
-            chunk = size_t(stat);
-            if ( chunk < data.size() )
-                data.resize(chunk);
+            size_t datasize = size_t(stat);
+            if ( datasize < data.size() )
+                data.resize(datasize);
 
             // Ok, we have the buffer, now check the sequence number.
             // If this is the first time we read it, take it as a good deal.
