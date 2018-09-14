@@ -966,6 +966,26 @@ bytevector SrtSource::GroupRead(size_t chunk)
         Error(UDT::getlasterror(), "FAILURE when reading group data");
     }
 
+    if (size == 0)
+    {
+        Error( "No sockets in the group - disconnected");
+    }
+
+    bool connected = false;
+    for (auto& d: m_group_data)
+    {
+        if (d.status == SRTS_CONNECTED)
+        {
+            connected = true;
+            break;
+        }
+    }
+    if (!connected)
+    {
+        Error("All sockets in the group disconnected");
+    }
+
+
     // Check first the ahead packets if you have any to deliver.
     if (!m_group_ahead_packets.empty())
     {
@@ -1063,7 +1083,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
             stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
             if (stat == SRT_ERROR)
             {
-                Verb() << "Error @" << id << " - skipping";
+                Verb() << "Error @" << id << ": " << srt_getlasterror_str();
                 continue;
             }
 
@@ -1108,7 +1128,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
         }
 
         if (!any)
-            again = false;
+            again = true;
 
         if (aheads.size() >= size)
         {
