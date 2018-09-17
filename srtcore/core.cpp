@@ -6751,8 +6751,10 @@ void CUDT::ackDataUpTo(int32_t ack)
     if (acksize > 0)
     {
         m_pRcvBuffer->ackData(acksize);
+#ifndef SRT_ENABLE_APP_READER
         if (m_parent->m_IncludedGroup)
             m_parent->m_IncludedGroup->readyPackets(this, ack);
+#endif
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
@@ -9465,6 +9467,10 @@ void CUDTGroup::addEPoll(int eid)
    // Check all member sockets
    CGuard gl(m_GroupLock);
 
+   // XXX This function doesn't work at all this way.
+   // Check it again now to use epoll on a group.
+#ifndef SRT_ENABLE_APP_READER
+
    bool any = false;
    bool all_in = true;
    bool all_out = true;
@@ -9479,6 +9485,7 @@ void CUDTGroup::addEPoll(int eid)
 
        any = true;
    }
+
    if (!any || m_Pending.empty())
        all_in = false;
 
@@ -9490,6 +9497,7 @@ void CUDTGroup::addEPoll(int eid)
        if (all_out)
            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
    }
+#endif
 }
 
 void CUDTGroup::removeEPoll(const int eid)
@@ -9564,6 +9572,7 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
 {
     CGuard g(m_GroupLock);
 
+#ifndef SRT_ENABLE_APP_READER
     if (m_Group.empty())
     {
         // First socket (or the group has somehow become empty).
@@ -9572,6 +9581,7 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
         m_Providers.set_capacity(data.ps->m_pUDT->m_iRcvBufSize);
         m_Pending.set_capacity(data.ps->m_pUDT->m_iRcvBufSize);
     }
+#endif
 
     m_Group.push_back(data);
     gli_t end = m_Group.end();
@@ -9624,9 +9634,11 @@ CUDTGroup::CUDTGroup():
         m_bTLPktDrop(true),
         m_iTsbPdDelay_us(0),
         m_iRcvTimeOut(-1),
+#ifndef SRT_ENABLE_APP_READER
         m_RcvInterceptorThread(),
         m_Providers(0), // Will be set later in CUDTGroup::add
         m_Pending(0), // Will be set later in CUDTGroup::add
+#endif
         m_bOpened(false),
         m_bClosing(false),
         m_iLastSchedSeqNo(0)
@@ -9831,7 +9843,9 @@ int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_ad
     ns->m_IncludedIter = f;
     ns->m_IncludedGroup = &g;
 
+#ifndef SRT_ENABLE_APP_READER
     ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
+#endif
 
     int isn = g.currentSchedSequence();
 
@@ -10536,6 +10550,7 @@ void CUDTGroup::getMemberStatus(ref_t< vector<SRT_SOCKGROUPDATA> > r_gd, SRTSOCK
     }
 }
 
+#ifndef SRT_ENABLE_APP_READER
 int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 {
     HLOGP(mglog.Debug, "CUDTGroup::recv -- start, locking group");
@@ -10787,7 +10802,6 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
 
     vector<bool> loss_bitmap;
 
-#ifndef SRT_ENABLE_APP_READER
     if (!CGuard::isthread(m_RcvInterceptorThread))
     {
         HLOGP(mglog.Debug, "Spawning GROUP TSBPD thread");
@@ -10802,7 +10816,6 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
             return loss_bitmap;
         }
     }
-#endif
 
     CGuard gl(m_GroupLock);
 
@@ -11444,4 +11457,5 @@ size_t CUDT::dropMessage(int32_t skiptoseqno)
     return dd;
 }
 
+#endif
 

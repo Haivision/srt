@@ -985,42 +985,50 @@ bytevector SrtSource::GroupRead(size_t chunk)
         Error("All sockets in the group disconnected");
     }
 
-
     // Check first the ahead packets if you have any to deliver.
-    if (!m_group_ahead_packets.empty())
+    if (!m_group_ahead.empty())
     {
-        for (size_t i = 0; i < m_group_ahead_packets.size(); ++i)
+        vector<SRTSOCKET> past_ahead;
+        bytevector ahead_packet;
+        for (auto i = m_group_ahead.begin(); i != m_group_ahead.end(); ++i)
         {
-            Ahead& a = m_group_ahead_packets[i];
+            // i->first: socket ID
+            // i->second: Ahead { sequence, packet }
+            // We are not interested with the socket ID because we
+            // aren't going to read from it - we have the packet already.
+            Ahead& a = i->second;
 
-            int seqdiff = CSeqNo::seqcmp(a.seqno, m_group_seqno);
+            int seqdiff = CSeqNo::seqcmp(a.sequence, m_group_seqno);
             if ( seqdiff == 1)
             {
                 // The very next packet. Return it.
-                m_group_seqno = a.seqno;
-                Verb() << " (SRT group: ahead delivery %" << a.seqno << ")";
-                return move(a.packet);
+                m_group_seqno = a.sequence;
+                Verb() << " (SRT group: ahead delivery %" << a.sequence << ")";
+                ahead_packet = move(a.packet);
+                past_ahead.push_back(i->first);
             }
             else if (seqdiff < 1)
             {
-                Verb() << " (SRT group: dropping %" << a.seqno << ")";
+                Verb() << " (SRT group: dropping collected ahead %" << a.sequence << ")";
                 // Drop all packets that are earlier
-                m_group_ahead_packets.erase(m_group_ahead_packets.begin()+i);
-
-                // This is iterating using index instead of iterator
-                // because all iterators are invalidated in a deque when
-                // modifying the number of items anyhow. Index can only be
-                // invalidated if it's no longer within the size range.
-                // Erasing one element decreased the container in number
-                // by 1, so decrease the index accordingly (the current
-                // value is pointing to the removed element, so this
-                // simply changes the index to the previous element so
-                // that the next iteration picks up the next one.
-                //
-                // (This should survive even if i == 0).
-                --i;
+                // Here only register for later drop because
+                // if you delete directly from the container,
+                // the loop would have to be interrupted.
+                past_ahead.push_back(i->first);
             }
         }
+
+        // Erasing must rely on IDs, this is maybe less
+        // efficient than removing by iterators, however
+        // iterators would be invalidated after removal and
+        // the loop would have to start anew after every erasure.
+        for (auto id: past_ahead)
+            m_group_ahead.erase(id);
+
+        // Check if any packet from aheads was found with the monotonic
+        // sequence, if so, return it now.
+        if (!ahead_packet.empty())
+            return move(ahead_packet);
     }
 
     // Setup epoll every time anew, the socket set
@@ -1066,8 +1074,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
             Verb() << "(total " << ready_len << ")";
         }
 
-        set<SRTSOCKET> aheads;
-        int nbroken = 0;
+        vector<SRTSOCKET> broken;
 
         for (size_t i = 0; i < size_t(ready_len); ++i)
         {
@@ -1075,12 +1082,11 @@ bytevector SrtSource::GroupRead(size_t chunk)
             // If so, don't read from it, wait until the ahead is flushed.
 
             SRTSOCKET id = sready[i];
-            auto x = find_if(m_group_ahead_packets.begin(), m_group_ahead_packets.end(),
-                    [id](Ahead& a) { return a.id == id; } );
-            if (x != m_group_ahead_packets.end())
+            auto x = m_group_ahead.find(id);
+
+            if (x != m_group_ahead.end())
             {
                 Verb() << "Socket @" << id << " is still ahead, NOT READING";
-                aheads.insert(id);
                 continue;
             }
 
@@ -1096,7 +1102,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
                     continue;
                 }
                 Verb() << "Error @" << id << ": " << srt_getlasterror_str();
-                ++nbroken;
+                broken.push_back(id);
                 continue;
             }
 
@@ -1119,8 +1125,10 @@ bytevector SrtSource::GroupRead(size_t chunk)
                 if (seqdiff > 1)
                 {
                     // Ahead packet. Store.
-                    m_group_ahead_packets.push_back( Ahead { data, id, mctrl.pktseq } );
-                    aheads.insert(id);
+                    // We state that this is ALWAYS INSERTING the id to
+                    // the ahead map - the check if it's already in the map
+                    // was done before and reading was therefore prevented from.
+                    m_group_ahead[id] = Ahead { move(data), mctrl.pktseq };
                     Verb() << "Socket @" << id << " jumps ahead to %" << mctrl.pktseq << " - AHEAD.";
                     again = true;
                 }
@@ -1135,37 +1143,78 @@ bytevector SrtSource::GroupRead(size_t chunk)
                     // Update the sequence number and deliver packet
                     m_group_seqno = mctrl.pktseq;
                     Verb() << "Socket @" << id << " %" << mctrl.pktseq << " DELIVERING";
+
+                    // Just quit here and don't research any other parts.
+                    // If any sockets were broken, they'll be removed from
+                    // the group anyway, so they won't be seen next time.
                     return data;
                 }
             }
         }
 
-        if (nbroken == ready_len)
+        if (int(broken.size()) == ready_len)
         {
             // All broken
             Error("All sockets broken");
         }
 
-        if (!any)
-            again = true;
+        // Now remove all broken sockets from aheads, if any.
+        // Even if they have already delivered a packet.
+        // NOTE: if the control passed to here, it means that
+        // NO SOCKETS DELIVERED THE NEXT SEQUENCE, so this was
+        // either nothing read from any socket (even if because of
+        // ahead), or those that were read, were gone ahead.
+        for (SRTSOCKET d: broken)
+            m_group_ahead.erase(d);
 
-        if (aheads.size() >= size)
+        if (m_group_ahead.empty())
         {
-            // All sockets are ahead, meaning a packet was really lost.
-            // Take the first one as a good deal.
-            Ahead& a = m_group_ahead_packets[0];
-            Verb() << "DROPPED %" << m_group_seqno << " --> skipping up to %" << mctrl.pktseq;
-            m_group_seqno = mctrl.pktseq;
-            output = move(a.packet);
-            m_group_ahead_packets.pop_front();
-
-            return output;
+            Verb() << "WEIRD: %" << m_group_seqno << ", some sockets are open, nothing read from any, ahead is empty. TRY AGAIN.";
+            continue;
         }
 
-        if (!again)
-            break;
+        // CURRENT STATE:
+        // 1. No sockets have delivered any data.
+        // 2. Those from which any reading was done, delivered ahead.
 
-        Verb() << "NO DATA READ %" << m_group_seqno << " - trying again";
+
+        auto it = m_group_ahead.begin();
+        Ahead* pa = &it->second;
+        ++it;
+        bool isone = true;
+
+        // This will be skipped, if there's only one element
+        if (it != m_group_ahead.end())
+        {
+            isone = false;
+            // ACTION:
+            // Find the least possible sequence out of all aheads, deliver it,
+            // update the latest sequence, continue.
+
+            // Start from the second element and find the earliest sequence
+            for (; it != m_group_ahead.end(); ++it)
+            {
+                int diff = CSeqNo::seqcmp(pa->sequence, it->second.sequence);
+                if (diff > 0)
+                {
+                    pa = &it->second;
+                }
+            }
+        }
+
+        Verb() << "DROPPED %" << m_group_seqno << " --> skipping up to %" << pa->sequence;
+        bytevector output = move(pa->packet);
+        m_group_seqno = pa->sequence;
+
+        if (isone)
+            m_group_ahead.clear(); // deleting one item always clears anyway
+        else
+        {
+            // Remove only this one
+            m_group_ahead.erase(it);
+        }
+
+        return output;
     }
 
     Verb() << "NO DATA EXTRCTED";

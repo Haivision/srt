@@ -398,7 +398,9 @@ public:
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
     int send(const char* buf, int len, ref_t<SRT_MSGCTRL> mc);
+#ifndef SRT_ENABLE_APP_READER
     int recv(char* buf, int len, ref_t<SRT_MSGCTRL> mc);
+#endif
 
     void close();
 
@@ -478,6 +480,8 @@ private:
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
+
+#ifndef SRT_ENABLE_APP_READER
     pthread_t m_RcvInterceptorThread;
 
     // This buffer gets updated when a packet with some seq number has come.
@@ -487,6 +491,7 @@ private:
     // sequences shall be undertaken or not.
     CircularBuffer<Provider> m_Providers;
     CircularBuffer<Pending> m_Pending;
+#endif
 
     // This condition shall be signaled when a packet arrives
     // at the position earlier than the current earliest sequence.

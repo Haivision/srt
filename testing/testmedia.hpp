@@ -67,10 +67,9 @@ protected:
     struct Ahead
     {
         bytevector packet;
-        SRTSOCKET id;
-        int32_t seqno;
+        int32_t sequence;
     };
-    deque<Ahead> m_group_ahead_packets;
+    map<SRTSOCKET, Ahead> m_group_ahead;
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
     bool m_listener_group = false;

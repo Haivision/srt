@@ -596,7 +596,12 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         gi->rcvstate = CUDTGroup::GST_IDLE;
         gi->laststatus = SRTS_CONNECTED;
 
+        // With app reader, do not set groupPacketArrival (block the
+        // provider array feature completely for now).
+
+#ifndef SRT_ENABLE_APP_READER
         ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
+#endif
     }
 
     if (should_submit_to_accept)
@@ -2640,7 +2645,12 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
     {
         if (u & SRTGROUP_MASK)
         {
+#ifdef SRT_ENABLE_APP_READER
+            setError(MJ_NOTSUP, MN_SIDINVAL, 0);
+            return ERROR;
+#else
             return s_UDTUnited.locateGroup(u, CUDTUnited::ERH_THROW)->recv(buf, len, r_m);
+#endif
         }
 
         return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, r_m);
