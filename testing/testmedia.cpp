@@ -685,6 +685,9 @@ void SrtCommon::OpenGroupClient()
 
     Verb() << "REDUNDANT connections with " << m_group_nodes.size() << " nodes:";
 
+    if (m_group_data.empty())
+        m_group_data.resize(1);
+
     int i = 1;
     for (Connection& c: m_group_nodes)
     {
