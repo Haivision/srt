@@ -525,6 +525,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     int result = 0;
     if ( m_direction & SRT_EPOLL_OUT )
     {
+        Verb() << "Setting SND blocking mode: " << boolalpha << yes;
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
@@ -535,6 +536,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
     if ( m_direction & SRT_EPOLL_IN )
     {
+        Verb() << "Setting RCV blocking mode: " << boolalpha << yes;
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
