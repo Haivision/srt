@@ -26,6 +26,7 @@
 // SRT protected includes
 #include "netinet_any.h"
 #include "common.h"
+#include "api.h"
 
 #include "apputil.hpp"
 #include "socketoptions.hpp"
@@ -698,20 +699,49 @@ void SrtCommon::OpenGroupClient()
         }
         else
         {
-            int stat = ConfigurePost(insock);
-            if (stat == -1)
-            {
-                // This kind of error must reject the whole operation.
-                // Usually you'll get this error on the first socket,
-                // and doing this on the others would result in the same.
-                Error(UDT::getlasterror(), "ConfigurePost");
-            }
-
             // Have socket, store it into the group socket array.
             c.socket = insock;
             c.status = 0;
             any_node = true;
         }
+    }
+
+    if (any_node)
+    {
+        int stat = ConfigurePost(m_sock);
+        if (stat == -1)
+        {
+            // This kind of error must reject the whole operation.
+            // Usually you'll get this error on the first socket,
+            // and doing this on the others would result in the same.
+            Error(UDT::getlasterror(), "ConfigurePost");
+        }
+    }
+    else
+    {
+        Error("All connections failed");
+    }
+
+    size_t size = m_group_data.size();
+    stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    if (stat == -1 && size > m_group_data.size())
+    {
+        // Just too small buffer. Resize and continue.
+        m_group_data.resize(size);
+        stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    }
+
+    if (stat == -1)
+    {
+        Error("srt_group_data");
+    }
+
+    Verb() << "Group connection report:";
+    for (auto& d: m_group_data)
+    {
+        // id, status, result, peeraddr
+        Verb() << "@" << d.id << " <" << d.status << "> (" << d.result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
     }
 
     // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
@@ -1049,7 +1079,6 @@ bytevector SrtSource::GroupRead(size_t chunk)
     {
         // This loop should be normally passed once.
         bool again = false;
-
         bool any = false;
 
         // The group data contains information about the socket we want to use
