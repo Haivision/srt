@@ -367,7 +367,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if ( !m_blocking_mode )
     {
-        Verb() << "[ASYNC] ";
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
 
         int len = 2;
         SRTSOCKET ready[2];
@@ -416,6 +416,7 @@ void SrtCommon::AcceptNewClient()
 
         if (srt_epoll != -1)
         {
+            Verb() << "(Group: erasing epoll " << srt_epoll << ") " << VerbNoEOL;
             srt_epoll_release(srt_epoll);
         }
 
@@ -428,7 +429,7 @@ void SrtCommon::AcceptNewClient()
         if (m_group_data.empty())
             m_group_data.resize(1);
 
-        Verb() << " connected(group).";
+        Verb() << " connected(group epoll " << srt_epoll <<").";
     }
     else
     {
@@ -504,8 +505,10 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
         << ") PBKEYLEN=" << pbkeylen;
 
-    if ( !m_blocking_mode )
+    if ( !m_blocking_mode && srt_epoll == -1 )
     {
+        // Don't add new epoll if already created as a part
+        // of group management.
         srt_epoll = AddPoller(m_sock, dir);
     }
 }
@@ -673,6 +676,9 @@ void SrtCommon::OpenGroupClient()
     {
         // Note: here the GROUP is added to the poller.
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+
+        // Don't check this. Should this fail, the above would already.
+        srt_epoll = srt_epoll_create();
     }
 
     // ConnectClient can't be used here, the code must
@@ -719,7 +725,7 @@ void SrtCommon::OpenGroupClient()
                 // in the direction used for this medium.
                 int modes = m_direction;
                 srt_epoll_add_usock(srt_epoll, insock, &modes);
-                Verb() << "Added @" << insock << " to epoll in modes: " << modes;
+                Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
             }
 
             // Have socket, store it into the group socket array.

@@ -151,6 +151,24 @@ int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+#if ENABLE_HEAVY_LOGGING
+   string modes;
+   if (!events)
+       modes = "all ";
+   else
+   {
+       int mx[3] = {UDT_EPOLL_IN, UDT_EPOLL_OUT, UDT_EPOLL_ERR};
+       string nam[3] = { "in", "out", "err" };
+       for (int i = 0; i < 3; ++i)
+           if (*events & mx[i])
+           {
+               modes += nam[i];
+               modes += " ";
+           }
+   }
+
+   LOGC(mglog.Debug, log << "srt_epoll_add_usock(" << eid << ") @" << u << " modes:" << modes);
+#endif
 
    if (!events || (*events & UDT_EPOLL_IN))
       p->second.m_sUDTSocksIn.insert(u);
@@ -238,6 +256,8 @@ int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+
+   HLOGC(mglog.Debug, log << "srt_epoll_remove_usock(" << eid << "): removed @" << u);
 
    p->second.m_sUDTSocksIn.erase(u);
    p->second.m_sUDTSocksOut.erase(u);
