@@ -713,6 +713,14 @@ void SrtCommon::OpenGroupClient()
                 Error(UDT::getlasterror(), "ConfigurePost");
             }
 
+            if (!m_blocking_mode)
+            {
+                // EXPERIMENTAL version. Add all sockets to epoll
+                // in the direction used for this medium.
+                int modes = m_direction;
+                srt_epoll_add_usock(srt_epoll, insock, &modes);
+            }
+
             // Have socket, store it into the group socket array.
             c.socket = insock;
             c.status = 0;
@@ -738,9 +746,14 @@ void SrtCommon::OpenGroupClient()
     for (auto& d: m_group_data)
     {
         // id, status, result, peeraddr
-        Verb() << "@" << d.id << " <" << d.status << "> (" << d.result << ") PEER:"
+        Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
             << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
     }
+
+    /*
+
+       XXX Temporarily disabled, until the nonblocking mode
+       is added to groups.
 
     // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
     if ( !m_blocking_mode )
@@ -767,6 +780,7 @@ void SrtCommon::OpenGroupClient()
             Error(UDT::getlasterror(), "srt_epoll_wait");
         }
     }
+    */
 
     if (!any_node)
     {
