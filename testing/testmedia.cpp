@@ -372,7 +372,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         int len = 2;
         SRTSOCKET ready[2];
         if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -719,6 +719,7 @@ void SrtCommon::OpenGroupClient()
                 // in the direction used for this medium.
                 int modes = m_direction;
                 srt_epoll_add_usock(srt_epoll, insock, &modes);
+                Verb() << "Added @" << insock << " to epoll in modes: " << modes;
             }
 
             // Have socket, store it into the group socket array.
@@ -849,7 +850,7 @@ void SrtCommon::ConnectClient(string host, int port)
         }
         else
         {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
         }
     }
 
@@ -1107,7 +1108,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
             // Poll on this descriptor until reading is available, indefinitely.
             if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
             {
-                Error(UDT::getlasterror(), "srt_epoll_wait");
+                Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll, group)");
             }
             Verb() << "EPOLL: read-ready sockets: " << VerbNoEOL;
             for (int i = 0; i < ready_len; ++i)
@@ -1382,7 +1383,7 @@ void SrtTarget::Write(const bytevector& data)
         int ready[2];
         int len = 2;
         if ( srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll)");
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
