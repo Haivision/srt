@@ -1033,6 +1033,11 @@ bytevector SrtSource::GroupRead(size_t chunk)
         m_group_data.resize(size);
         stat = srt_group_data(m_sock, m_group_data.data(), &size);
     }
+    else
+    {
+        // Downsize if needed.
+        m_group_data.resize(size);
+    }
 
     if (stat == -1) // Also after the above fix
     {
@@ -1224,7 +1229,9 @@ bytevector SrtSource::GroupRead(size_t chunk)
             }
         }
 
-        if (int(broken.size()) == ready_len)
+        // ready_len is only the length of currently reported
+        // ready sockets, NOT NECESSARILY containing all sockets from the group.
+        if (int(broken.size()) == size)
         {
             // All broken
             Error("All sockets broken");

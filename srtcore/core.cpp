@@ -10050,10 +10050,14 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         {
             HLOGC(dlog.Debug, log << "CUDTGroup::send: socket in BROKEN state: @" << d->id);
             // Check if broken permanently
-            if (!d->ps || d->ps->m_Status == SRTS_BROKEN)
+            if (!d->ps || d->ps->getStatus() == SRTS_BROKEN)
             {
                 HLOGC(dlog.Debug, log << "... permanently. Will delete it from group $" << id());
                 wipeme.push_back(d);
+            }
+            else
+            {
+                HLOGC(dlog.Debug, log << "... socket still " << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             }
             continue;
         }
@@ -10221,9 +10225,13 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // delete all sockets that were broken at the entrance
     for (vector<gli_t>::iterator i = wipeme.begin(); i != wipeme.end(); ++i)
     {
-        CUDT::s_UDTUnited.close((*i)->ps);
-        m_Group.erase(*i);
+        gli_t d = *i;
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET " << d->id << " - CLOSING AND REMOVING.");
+        CUDT::s_UDTUnited.close(d->ps);
+        m_Group.erase(d);
     }
+
+    HLOGC(dlog.Debug, log << "CUDTGroup::send: - wiped " << wipeme.size() << " broken sockets");
 
     // We'll need you again.
     wipeme.clear();
