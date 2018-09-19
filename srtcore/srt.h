@@ -499,7 +499,15 @@ enum SRT_EPOLL_OPT
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN = 0x1,
    SRT_EPOLL_OUT = 0x4,
-   SRT_EPOLL_ERR = 0x8
+   SRT_EPOLL_ERR = 0x8,
+   // Repeat these values to avoid confusion;
+   // This actually is a kinda "dumb reusing" of
+   // the signals that do not come in the same order,
+   // but this exists also in all system select/epoll,
+   // so there's actually no choice here. But at least
+   // some new names can be added to improve clarity.
+   SRT_EPOLL_CONNECT = SRT_EPOLL_OUT,
+   SRT_EPOLL_ACCEPT = SRT_EPOLL_IN,
 };
 
 #ifdef __cplusplus

@@ -610,6 +610,7 @@ int main( int argc, char** argv )
             {
                 alarm(timeout);
             }
+            Verb() << " << ... " << VerbNoEOL;
             const bytevector& data = src->Read(chunk);
             Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
             if ( data.empty() && src->End() )
@@ -622,13 +623,15 @@ int main( int argc, char** argv )
             {
                 alarm(0);
             }
+
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken\n";
+                Verb() << " OUTPUT broken";
                 break;
             }
 
-            Verb() << " sent";
+            Verb() << "sent";
+
             if ( int_state )
             {
                 cerr << "\n (interrupted on request)\n";
@@ -652,6 +655,7 @@ int main( int argc, char** argv )
 
     } catch (Source::ReadEOF&) {
         alarm(0);
+        Verb() << "INTERRUPTED (EOF)!";
 
         if (!skip_flushing)
         {
@@ -671,18 +675,24 @@ int main( int argc, char** argv )
         }
     } catch (std::exception& x) { // Catches TransmissionError and AlarmExit
 
+        Verb() << "INTERRUPTED (TransmissionError/Alarm)!";
+
         if (stoptime != 0 && ::timer_state)
         {
             cerr << "Exit on timeout.\n";
         }
         else if (::int_state)
         {
+            cerr << "Exit on interrupt.\n";
             // Do nothing.
         }
         else
         {
             cerr << "STD EXCEPTION: " << x.what() << endl;
         }
+
+        if ( crashonx )
+            throw;
 
         if (final_delay > 0)
         {
@@ -695,6 +705,8 @@ int main( int argc, char** argv )
         return 255;
 
     } catch (...) {
+
+        Verb() << "INTERRUPTED (unknown)!";
 
         cerr << "UNKNOWN type of EXCEPTION\n";
         if ( crashonx )

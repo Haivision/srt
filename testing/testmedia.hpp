@@ -44,10 +44,9 @@ protected:
     {
         string host;
         int port;
-        SRTSOCKET socket;
-        int status;
+        SRTSOCKET socket = SRT_INVALID_SOCK;
 
-        Connection(string h, int p): host(h), port(p), socket(-1), status(-1) {}
+        Connection(string h, int p): host(h), port(p) {}
     };
 
     int srt_epoll = -1;

@@ -54,6 +54,7 @@ modified by
 #include <stdexcept>
 #include <typeinfo>
 #include <iterator>
+#include <vector>
 
 #include <cstring>
 #include "platform_sys.h"
@@ -902,10 +903,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
     // the group.
     if (u & SRTGROUP_MASK)
     {
-        CUDTGroup* g = locateGroup(u);
-        if (!g)
-            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
+        CUDTGroup* g = locateGroup(u, ERH_THROW);
         // Note: forced_isn is ignored when connecting a group.
         // The group manages the ISN by itself ALWAYS, that is,
         // it's generated anew for the very first socket, and then
@@ -940,7 +938,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t 
         // The group manages the ISN by itself ALWAYS, that is,
         // it's generated anew for the very first socket, and then
         // derived by all sockets in the group.
-        sockaddr_any any;
+        sockaddr_any any(target_addr.family());
         return groupConnect(Ref(*g), any, target_addr);
     }
 

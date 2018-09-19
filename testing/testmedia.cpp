@@ -730,7 +730,6 @@ void SrtCommon::OpenGroupClient()
 
             // Have socket, store it into the group socket array.
             c.socket = insock;
-            c.status = 0;
             any_node = true;
         }
     }
@@ -942,31 +941,57 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         Error("Too many unpredicted sockets in the group");
     }
 
+    // Clear the active flag in all nodes so that they are reactivated
+    // if they are in the group list, REGARDLESS OF THE STATUS. We need to
+    // see all connections that are in the nodes, but not in the group,
+    // and this one would have to be activated.
+    const SRT_SOCKGROUPDATA* gend = grpdata + grpdata_size;
+    for (auto& n: m_group_nodes)
+    {
+        bool active = (find_if(grpdata, gend,
+                    [&n] (const SRT_SOCKGROUPDATA& sg) { return sg.id == n.socket; }) != gend);
+        if (!active)
+            n.socket = SRT_INVALID_SOCK;
+    }
+
     // Note: sockets are not necessarily in the same order. Find
     // the socket by id.
     for (size_t i = 0; i < grpdata_size; ++i)
     {
-        SRTSOCKET id = grpdata[i].id;
+        const SRT_SOCKGROUPDATA& d = grpdata[i];
+        SRTSOCKET id = d.id;
 
-        SRT_SOCKSTATUS status = grpdata[i].status;
-        int result = grpdata[i].result;
+        SRT_SOCKSTATUS status = d.status;
+        int result = d.result;
 
         if (result != -1 && status == SRTS_CONNECTED)
         {
             // Everything's ok. Don't do anything.
             continue;
         }
+        // id, status, result, peeraddr
+        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
 
-        auto pgi = find_if(m_group_nodes.begin(), m_group_nodes.end(), [id](Connection& c) { return c.socket == id; });
-        if (pgi == m_group_nodes.end())
+        if (status >= SRTS_BROKEN)
         {
-            // A new socket appeared out of the blue. Internal error?
-            Error("Unregisterred socket ID appeared in the status. INTERNAL ERROR.");
+            Verb() << "NOTE: socket @" << id << " is pending for destruction, waiting for it.";
         }
+    }
 
-        sockaddr_in sa = CreateAddrInet(pgi->host, pgi->port);
+    // This was only informative. Now we check all nodes if they
+    // are not active
+
+    int i = 1;
+    for (auto& n: m_group_nodes)
+    {
+        // Check which nodes are no longer active and activate them.
+        if (n.socket != SRT_INVALID_SOCK)
+            continue;
+
+        sockaddr_in sa = CreateAddrInet(n.host, n.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "[" << i << "] RECONNECTING to node " << pgi->host << ":" << pgi->port << " ... " << VerbNoEOL;
+        Verb() << "[" << i << "] RECONNECTING to node " << n.host << ":" << n.port << " ... " << VerbNoEOL;
         ++i;
 
         int insock = srt_connect(m_sock, psa, sizeof sa);
@@ -982,8 +1007,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
             // will pop up at the time of reconnecting.
 
             // Have socket, store it into the group socket array.
-            pgi->socket = insock;
-            pgi->status = 0;
+            n.socket = insock;
         }
     }
 }

@@ -178,6 +178,8 @@ public:
         SRT_SOCKSTATUS laststatus;
         GroupState sndstate;
         GroupState rcvstate;
+        int sndresult;
+        int rcvresult;
         sockaddr_any agent;
         sockaddr_any peer;
         bool ready_read;
@@ -326,6 +328,15 @@ public:
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator gli_t;
+
+    struct Sendstate
+    {
+        gli_t d;
+        int stat;
+        int code;
+    };
+
+
     CUDTGroup();
     ~CUDTGroup();
 
@@ -476,10 +487,12 @@ private:
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
     bool m_bSynRecving;
+    bool m_bSynSending;
     bool m_bTsbPd;
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
+    int m_epoll;
 
 #ifndef SRT_ENABLE_APP_READER
     pthread_t m_RcvInterceptorThread;
