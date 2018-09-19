@@ -138,6 +138,9 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
+   // This function shall be called always wherever
+   // you'd like to call cudtsocket->m_pUDT->close().
+   void makeClosed();
    void removeFromGroup();
 
 private:

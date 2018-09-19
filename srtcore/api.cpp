@@ -112,6 +112,20 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
     return m_Status;
 }
 
+void CUDTSocket::makeClosed()
+{
+    if (m_IncludedGroup)
+    {
+        HLOGC(mglog.Debug, log << "@" << m_SocketID << " IS MEMBER OF $" << m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+        removeFromGroup();
+    }
+
+    HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
+    m_pUDT->m_bBroken = true;
+    m_pUDT->close();
+    m_Status = SRTS_CLOSED;
+    m_TimeStamp = CTimer::getTime();
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -633,10 +647,8 @@ ERR_ROLLBACK:
             static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
             LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
-            ns->m_pUDT->close();
-            ns->m_Status = SRTS_CLOSED;
-            ns->m_TimeStamp = CTimer::getTime();
 
+            ns->makeClosed();
             return -1;
         }
 
@@ -1098,12 +1110,7 @@ int CUDTUnited::close(CUDTSocket* s)
    }
    else
    {
-       if (s->m_IncludedGroup)
-       {
-           HLOGC(mglog.Debug, log << "@" << id << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
-           s->removeFromGroup(); // m_ControlLock already locked by socket_cg
-       }
-       s->m_pUDT->close();
+       s->makeClosed();
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
@@ -1111,6 +1118,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
        // since "s" is located before m_ControlLock, locate it again in case
        // it became invalid
+       // XXX Seriously? Why not do all things necessary on s prior to deletion?
        sockets_t::iterator i = m_Sockets.find(id);
        if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
            return 0;
@@ -1768,10 +1776,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
            CUDTSocket* as = si->second;
 
-           as->m_pUDT->m_bBroken = true;
-           as->m_pUDT->close();
-           as->m_TimeStamp = CTimer::getTime();
-           as->m_Status = SRTS_CLOSED;
+           as->makeClosed();
            m_ClosedSockets[*q] = as;
            m_Sockets.erase(*q);
        }
@@ -1797,11 +1802,12 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       UDT_EPOLL_IN|UDT_EPOLL_OUT|UDT_EPOLL_ERR, false);
 
    // delete this one
+   m_ClosedSockets.erase(i);
+
    HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
-   s->m_pUDT->close();
+   s->makeClosed();
    HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
    delete s;
-   m_ClosedSockets.erase(i);
 
    map<int, CMultiplexer>::iterator m;
    m = m_mMultiplexer.find(mid);
@@ -2058,10 +2064,7 @@ void* CUDTUnited::garbageCollect(void* p)
    for (sockets_t::iterator i = self->m_Sockets.begin();
       i != self->m_Sockets.end(); ++ i)
    {
-      i->second->m_pUDT->m_bBroken = true;
-      i->second->m_pUDT->close();
-      i->second->m_Status = SRTS_CLOSED;
-      i->second->m_TimeStamp = CTimer::getTime();
+      i->second->makeClosed();
       self->m_ClosedSockets[i->first] = i->second;
 
       // remove from listener's queue
