@@ -634,7 +634,7 @@ int main( int argc, char** argv )
 
             if ( int_state )
             {
-                cerr << "\n (interrupted on request)\n";
+                Verror() << "\n (interrupted on request)";
                 break;
             }
 
@@ -646,7 +646,7 @@ int main( int argc, char** argv )
                 int remain = stoptime - final_delay - elapsed;
                 if (remain < 0)
                 {
-                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
+                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -655,40 +655,37 @@ int main( int argc, char** argv )
 
     } catch (Source::ReadEOF&) {
         alarm(0);
-        Verb() << "INTERRUPTED (EOF)!";
 
         if (!skip_flushing)
         {
-            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    cerr << "(DEBUG) DEPLETED. Done.\n";
+                    Verror() << "(DEBUG) DEPLETED. Done.\n";
                     break;
                 }
 
-                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
     } catch (std::exception& x) { // Catches TransmissionError and AlarmExit
 
-        Verb() << "INTERRUPTED (TransmissionError/Alarm)!";
-
         if (stoptime != 0 && ::timer_state)
         {
-            cerr << "Exit on timeout.\n";
+            Verror() << "Exit on timeout.";
         }
         else if (::int_state)
         {
-            cerr << "Exit on interrupt.\n";
+            Verror() << "Exit on interrupt.";
             // Do nothing.
         }
         else
         {
-            cerr << "STD EXCEPTION: " << x.what() << endl;
+            Verror() << "STD EXCEPTION: " << x.what();
         }
 
         if ( crashonx )
@@ -696,7 +693,7 @@ int main( int argc, char** argv )
 
         if (final_delay > 0)
         {
-            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
+            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -706,9 +703,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        Verb() << "INTERRUPTED (unknown)!";
-
-        cerr << "UNKNOWN type of EXCEPTION\n";
+        Verror() << "UNKNOWN type of EXCEPTION";
         if ( crashonx )
             throw;
 
