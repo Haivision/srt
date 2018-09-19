@@ -10110,7 +10110,12 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // Possible return values are only 0, in case when len was passed 0, or a positive
             // >0 value that defines the size of the data that it has sent, that is, in case
             // of Live mode, equal to 'len'.
-            stat = d->ps->core().sendmsg2(buf, len, r_mc);
+
+            CUDTSocket* ps = d->ps;
+
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedGuard ug(&m_GroupLock);
+            stat = ps->core().sendmsg2(buf, len, r_mc);
         }
         catch (CUDTException& e)
         {
@@ -10227,8 +10232,15 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     {
         gli_t d = *i;
         HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET " << d->id << " - CLOSING AND REMOVING.");
-        CUDT::s_UDTUnited.close(d->ps);
-        m_Group.erase(d);
+        {
+            CUDTSocket* ps = d->ps;
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedGuard ug(&m_GroupLock);
+
+            // NOTE: This does inside: ps->removeFromGroup().
+            // After this call, 'd' is no longer valid and *i is singular.
+            CUDT::s_UDTUnited.close(ps);
+        }
     }
 
     HLOGC(dlog.Debug, log << "CUDTGroup::send: - wiped " << wipeme.size() << " broken sockets");
@@ -10320,13 +10332,20 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         vector<SRTSOCKET> outd(blocked.size());
         int len = blocked.size();
 
-        int blst = srt_epoll_wait(eid,
-                NULL, NULL,  // IN/ACCEPT
-                &outd[0], &len, // OUT/CONNECT
-                -1, // indefinitely (XXX REGARD CONNECTION TIMEOUT!)
-                NULL, NULL,
-                NULL, NULL
-                );
+        int blst = 0;
+
+        {
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedGuard ug(&m_GroupLock);
+
+            blst = srt_epoll_wait(eid,
+                    NULL, NULL,  // IN/ACCEPT
+                    &outd[0], &len, // OUT/CONNECT
+                    -1, // indefinitely (XXX REGARD CONNECTION TIMEOUT!)
+                    NULL, NULL,
+                    NULL, NULL
+                    );
+        }
 
         if (blst == -1)
         {

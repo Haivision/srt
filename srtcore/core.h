@@ -150,8 +150,6 @@ class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 
-class CUDTSocket;
-
 template <class ExecutorType>
 void SRT_tsbpdLoop(
         ExecutorType* self,

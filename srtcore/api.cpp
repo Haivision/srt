@@ -1099,7 +1099,10 @@ int CUDTUnited::close(CUDTSocket* s)
    else
    {
        if (s->m_IncludedGroup)
+       {
+           HLOGC(mglog.Debug, log << "@" << id << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
            s->removeFromGroup(); // m_ControlLock already locked by socket_cg
+       }
        s->m_pUDT->close();
 
        // synchronize with garbage collection.
