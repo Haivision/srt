@@ -403,6 +403,13 @@ endif()
 # Make the OBJECT library for haicrypt and srt. Then they'll be bound into
 # real libraries later, either one common, or separate.
 
+# This is needed for Xcode to properly handle CMake OBJECT Libraries
+# From docs (https://cmake.org/cmake/help/latest/command/add_library.html#object-libraries):
+#
+# ... Some native build systems (such as Xcode) may not like targets that have only object files,
+# so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>.
+set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
+
 add_library(haicrypt_virtual OBJECT ${SOURCES_haicrypt} ${SOURCES_common})
 
 # NOTE: The "virtual library" is a library specification that cmake
@@ -444,7 +451,7 @@ endif()
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
     set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
@@ -458,7 +465,7 @@ if (srt_libspec_shared)
 endif()
 
 if (srt_libspec_static)
-	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
