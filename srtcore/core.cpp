@@ -5809,14 +5809,14 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->msRTT = m_iRTT/1000.0;
    perf->mbpsBandwidth = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
 
-   if (CGuard::enterCS(m_ConnectionLock, false) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, "socket.connection", false) == 0)
    {
       perf->byteAvailSndBuf = (m_pSndBuffer == NULL) ? 0 
           : sndBuffersLeft() * m_iMSS;
       perf->byteAvailRcvBuf = (m_pRcvBuffer == NULL) ? 0 
           : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
 
-      CGuard::leaveCS(m_ConnectionLock);
+      CGuard::leaveCS(m_ConnectionLock, "socket.connection");
    }
    else
    {
@@ -5943,7 +5943,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 
    perf->mbpsBandwidth = Bps2Mbps( availbw * (m_iMaxSRTPayloadSize + pktHdrSize) );
 
-   if (CGuard::enterCS(m_ConnectionLock, false) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, "socket.connection", false) == 0)
    {
       if (m_pSndBuffer)
       {

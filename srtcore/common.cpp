@@ -335,19 +335,28 @@ struct CGuardLogMutex
 #endif
 
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
+CGuard::CGuard(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool shouldwork):
     m_Mutex(lock),
     m_iLocked(-1)
 {
+#if ENABLE_THREAD_LOGGING
+    std::ostringstream cv;
+    cv << &m_Mutex;
+    if (ln)
+    {
+        cv << "(" << ln << ")";
+    }
+    lockname = cv.str();
+#endif
     if (shouldwork)
     {
-        LOGS(cerr, log << "CGuard: { LOCK:" << &m_Mutex << " ...");
+        LOGS(cerr, log << "CGuard: { LOCK:" << lockname << " ...");
         Lock();
-        LOGS(cerr, log << "... " << &m_Mutex << " locked.");
+        LOGS(cerr, log << "... " << lockname << " locked.");
     }
     else
     {
-        LOGS(cerr, log << "CGuard: LOCK NOT DONE (not required):" << &m_Mutex);
+        LOGS(cerr, log << "CGuard: LOCK NOT DONE (not required):" << lockname);
     }
 }
 
@@ -356,36 +365,54 @@ CGuard::~CGuard()
 {
     if (m_iLocked == 0)
     {
-        LOGS(cerr, log << "CGuard: } UNLOCK:" << &m_Mutex);
+        LOGS(cerr, log << "CGuard: } UNLOCK:" << lockname);
         Unlock();
     }
     else
     {
-        LOGS(cerr, log << "CGuard: UNLOCK NOT DONE (not locked):" << &m_Mutex);
+        LOGS(cerr, log << "CGuard: UNLOCK NOT DONE (not locked):" << lockname);
     }
 }
 
-int CGuard::enterCS(pthread_mutex_t& lock, bool block)
+int CGuard::enterCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool block)
 {
+#if ENABLE_THREAD_LOGGING
+    std::ostringstream cv;
+    cv << &lock;
+    if (ln)
+    {
+        cv << "(" << ln << ")";
+    }
+    string lockname = cv.str();
+#endif
     int retval;
     if (block)
     {
-        LOGS(cerr, log << "enterCS(block) {  LOCK: " << (&lock) << " ...");
+        LOGS(cerr, log << "enterCS(block) {  LOCK: " << lockname << " ...");
         retval = pthread_mutex_lock(&lock);
-        LOGS(cerr, log << "... " << (&lock) << " locked.");
+        LOGS(cerr, log << "... " << lockname << " locked.");
     }
     else
     {
         retval = pthread_mutex_trylock(&lock);
-        LOGS(cerr, log << "enterCS(block) {  LOCK: " << (&lock) << " "
+        LOGS(cerr, log << "enterCS(try) {  LOCK: " << lockname << " "
                 << (retval == 0 ? " LOCKED." : " FAILED }"));
     }
     return retval;
 }
 
-int CGuard::leaveCS(pthread_mutex_t& lock)
+int CGuard::leaveCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED)
 {
-    LOGS(cerr, log << "leaveCS: } UNLOCK: " << (&lock));
+#if ENABLE_THREAD_LOGGING
+    std::ostringstream cv;
+    cv << &lock;
+    if (ln)
+    {
+        cv << "(" << ln << ")";
+    }
+    string lockname = cv.str();
+#endif
+    LOGS(cerr, log << "leaveCS: } UNLOCK: " << lockname);
     return pthread_mutex_unlock(&lock);
 }
 
@@ -441,7 +468,10 @@ void CGuard::releaseCond(pthread_cond_t& cond)
     pthread_cond_destroy(&cond);
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_mutex(&g.m_Mutex), nolock(false)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_mutex(&g.m_Mutex)
+#if ENABLE_THREAD_LOGGING
+                                                               , nolock(false)
+#endif
 {
 #if ENABLE_THREAD_LOGGING
     // This constructor expects that the mutex is locked, and 'g' should designate
@@ -464,7 +494,10 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g): m_cond(&cond), m_
     // variable that you have used for construction as its argument.
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock): m_cond(&cond), m_mutex(&mutex), nolock(true)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock): m_cond(&cond), m_mutex(&mutex)
+#if ENABLE_THREAD_LOGGING
+                                                               , nolock(true)
+#endif
 {
     // We expect that the mutex is NOT locked at this moment by the current thread,
     // but it is perfectly ok, if the mutex is locked by another thread. We'll just wait.

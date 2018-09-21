@@ -831,7 +831,7 @@ void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, int ipv, const socka
 
 void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 {
-   CGuard vg(m_RIDVectorLock, should_lock);
+   CGuard vg(m_RIDVectorLock, "RcvId", should_lock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -851,7 +851,7 @@ void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
 {
-   CGuard vg(m_RIDVectorLock);
+   CGuard vg(m_RIDVectorLock, "RdvId");
    SRTSOCKET& id = *r_id;
 
    // TODO: optimize search
