@@ -694,46 +694,44 @@ void SrtCommon::OpenGroupClient()
     if (m_group_data.empty())
         m_group_data.resize(1);
 
+    vector<SRT_SOCKGROUPDATA> targets;
+    int namelen = sizeof (sockaddr_in);
+
+    Verb() << "Connecting to nodes:";
     int i = 1;
     for (Connection& c: m_group_nodes)
     {
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "[" << i << "] Connecting to node " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
         ++i;
+        targets.push_back(srt_prepare_endpoint(psa, namelen));
+    }
 
-        int insock = srt_connect(m_sock, psa, sizeof sa);
-        if (insock == SRT_ERROR)
+    int fisock = srt_connect_group(m_sock, 0, namelen, targets.data(), targets.size());
+    if (fisock == SRT_ERROR)
+    {
+        Error(UDT::getlasterror(), "srt_connect_group");
+    }
+
+    // Configuration change applied on a group should
+    // spread the setting on all sockets.
+    ConfigurePost(m_sock);
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        // As m_group_nodes is simply transformed into 'targets',
+        // one index can be used to index them all. You don't
+        // have to check if they have equal addresses because they
+        // are equal by definition.
+        if (targets[i].id != -1 && targets[i].status < SRTS_BROKEN)
         {
-            // Whatever. Skip the node.
-            Verb() << "FAILED: ";
-        }
-        else
-        {
-            int stat = ConfigurePost(insock);
-            if (stat == -1)
-            {
-                // This kind of error must reject the whole operation.
-                // Usually you'll get this error on the first socket,
-                // and doing this on the others would result in the same.
-                Error(UDT::getlasterror(), "ConfigurePost");
-            }
-
-            if (!m_blocking_mode)
-            {
-                // EXPERIMENTAL version. Add all sockets to epoll
-                // in the direction used for this medium.
-                int modes = m_direction;
-                srt_epoll_add_usock(srt_epoll, insock, &modes);
-                Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
-            }
-
-            // Have socket, store it into the group socket array.
-            c.socket = insock;
-            any_node = true;
+            m_group_nodes[i].socket = targets[i].id;
         }
     }
 
+    // Now check which sockets were successful, only those
+    // should be added to epoll.
     size_t size = m_group_data.size();
     stat = srt_group_data(m_sock, m_group_data.data(), &size);
     if (stat == -1 && size > m_group_data.size())
@@ -746,6 +744,38 @@ void SrtCommon::OpenGroupClient()
     if (stat == -1)
     {
         Error("srt_group_data");
+    }
+    m_group_data.resize(size);
+
+    for (size_t i = 0; i < m_group_nodes.size(); ++i)
+    {
+        SRTSOCKET insock = m_group_nodes[i].socket;
+        if (insock == -1)
+        {
+            Verb() << "TARGET '" << SockaddrToString(targets[i].peeraddr) << "' connection failed.";
+            continue;
+        }
+
+        if (!m_blocking_mode)
+        {
+            // EXPERIMENTAL version. Add all sockets to epoll
+            // in the direction used for this medium.
+            int modes = m_direction;
+            srt_epoll_add_usock(srt_epoll, insock, &modes);
+            Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
+        }
+
+        int stat = ConfigurePost(insock);
+        if (stat == -1)
+        {
+            // This kind of error must reject the whole operation.
+            // Usually you'll get this error on the first socket,
+            // and doing this on the others would result in the same.
+            Error(UDT::getlasterror(), "ConfigurePost");
+        }
+
+        // Have socket, store it into the group socket array.
+        any_node = true;
     }
 
     Verb() << "Group connection report:";
@@ -1231,7 +1261,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
 
         // ready_len is only the length of currently reported
         // ready sockets, NOT NECESSARILY containing all sockets from the group.
-        if (int(broken.size()) == size)
+        if (broken.size() == size)
         {
             // All broken
             Error("All sockets broken");

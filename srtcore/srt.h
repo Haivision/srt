@@ -580,6 +580,12 @@ SRT_API extern int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, i
 SRT_API extern int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* source, int source_len,
         const struct sockaddr* target, int target_len);
+
+SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
+SRT_API int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source /*nullable*/, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize);
+
 SRT_API extern int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen);
 SRT_API extern int srt_close(SRTSOCKET u);

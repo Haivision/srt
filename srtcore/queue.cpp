@@ -834,7 +834,7 @@ void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& 
 
 void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 {
-   CGuard vg(m_RIDVectorLock, should_lock);
+   CGuard vg(m_RIDVectorLock, "RdvQId", should_lock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {

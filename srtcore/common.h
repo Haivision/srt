@@ -531,12 +531,15 @@ private:
 
 class CGuard
 {
+#if ENABLE_THREAD_LOGGING
+    std::string lockname;
+#endif
 public:
    /// Constructs CGuard, which locks the given mutex for
    /// the scope where this object exists.
    /// @param lock Mutex to lock
    /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
+   CGuard(pthread_mutex_t& lock, const char* ln = 0, bool if_condition = true);
    ~CGuard();
 
 public:
@@ -568,8 +571,8 @@ public:
        }
    }
 
-   static int enterCS(pthread_mutex_t& lock, bool block = true);
-   static int leaveCS(pthread_mutex_t& lock);
+   static int enterCS(pthread_mutex_t& lock, const char* ln = 0, bool block = true);
+   static int leaveCS(pthread_mutex_t& lock, const char* ln = 0);
 
    static bool isthread(const pthread_t& thrval);
 

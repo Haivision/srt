@@ -369,6 +369,7 @@ public:
     // PRIOR TO calling this function.
     bool remove(SRTSOCKET id)
     {
+        bool s = false;
         CGuard g(m_GroupLock);
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
@@ -390,10 +391,16 @@ public:
                 m_iLastSchedSeqNo = 0;
                 setInitialRxSequence(1);
             }
-            return true;
+            s = true;
         }
 
-        return false;
+        if (m_Group.empty())
+        {
+            m_bOpened = false;
+            m_bConnected = false;
+        }
+
+        return s;
     }
 
     bool empty()
@@ -402,7 +409,7 @@ public:
         return m_Group.empty();
     }
 
-    void resetStateOn(CUDTSocket* sock);
+    void setFreshConnected(CUDTSocket* sock);
 
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
@@ -521,7 +528,8 @@ private:
     // Incremented with a new packet arriving
     volatile int32_t m_RcvLatestSeqNo;
 
-    bool m_bOpened;                    // Set to true on a first use
+    bool m_bOpened;    // Set to true when at least one link is at least pending
+    bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
 
     // There's no simple way of transforming config
@@ -616,6 +624,8 @@ public: //API
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen);
+    static int connectLinks(SRTSOCKET grp, const sockaddr* source /*[[nullable]]*/, int namelen,
+            SRT_SOCKGROUPDATA links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);

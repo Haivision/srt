@@ -204,7 +204,7 @@ public:
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
    int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn, CUDTGroup* pg);
-   int groupConnect(ref_t<CUDTGroup> g, const sockaddr_any& source, const sockaddr_any& target);
+   int groupConnect(CUDTGroup* g, const sockaddr_any& source, SRT_SOCKGROUPDATA targets [], int arraysize);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -234,7 +234,7 @@ public:
 
    CUDTGroup& addGroup(SRTSOCKET id)
    {
-       CGuard cg(m_ControlLock);
+       CGuard cg(m_ControlLock, "glob.control");
        // This only ensures that the element exists.
        // If the element was newly added, it will be NULL.
        CUDTGroup*& g = m_Groups[id];
