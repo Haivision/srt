@@ -3508,7 +3508,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
         */
     }
 
-    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
+    HLOGC(mglog.Debug, log << "processAsyncConnectRequest: setting REQ-TIME HIGH, SENDING HS:" << m_ConnReq.show());
     m_llLastReqTime = CTimer::getTime();
     m_pSndQueue->sendto(serv_addr, request, m_SourceAddr);
     return status;
@@ -4955,11 +4955,9 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
        // data that have been just written into the buffer.
        CHandShake debughs;
        debughs.load_from(response.m_pcData, response.getLength());
-       HLOGC(mglog.Debug, log << CONID() << "acceptAndRespond: sending HS to peer, reqtype="
-           << RequestTypeStr(debughs.m_iReqType) << " version=" << debughs.m_iVersion
-           << " (connreq:" << RequestTypeStr(m_ConnReq.m_iReqType)
-           << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID
-           << " sourceIP=" << SockaddrToString(m_SourceAddr));
+       HLOGC(mglog.Debug, log << CONID() << "acceptAndRespond: sending HS from agent @"
+               << debughs.m_iID << " to peer @" << response.m_iID
+               << "HS:" << debughs.show() << " sourceIP=" << SockaddrToString(m_SourceAddr));
    }
 #endif
    m_pSndQueue->sendto(peer, response, m_SourceAddr);
@@ -9045,6 +9043,10 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
       setPacketTS(packet, CTimer::getTime());
+
+      // Display the HS before sending it to peer
+      HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (i): " << hs.show());
+
       m_pSndQueue->sendto(addr, packet, use_source_addr);
       return URQ_INDUCTION;
    }
@@ -9116,6 +9118,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
        setPacketTS(packet, CTimer::getTime());
+       HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (e): " << hs.show());
        m_pSndQueue->sendto(addr, packet, use_source_addr);
    }
    else
@@ -9164,6 +9167,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
            setPacketTS(packet, CTimer::getTime());
+           HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
            m_pSndQueue->sendto(addr, packet, use_source_addr);
        }
        else
