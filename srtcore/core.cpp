@@ -4184,7 +4184,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         }
     }
 
-    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
+    LOGC(mglog.Note, log << CONID() << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
     return CONN_ACCEPT;
 }
@@ -9169,7 +9169,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
        else
        {
            // a new connection has been created, enable epoll for write
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
+           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
        }
    }
    LOGC(mglog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -9682,6 +9682,10 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bSynRecving = bool_int_value(optval, optlen);
         break;
 
+    case SRTO_SNDSYN:
+        m_bSynSending = bool_int_value(optval, optlen);
+
+        /*
     case SRTO_TLPKTDROP:
         m_bTLPktDrop = bool_int_value(optval, optlen);
         break;
@@ -9689,6 +9693,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_TSBPDMODE:
         m_bTsbPd = bool_int_value(optval, optlen);
         break;
+        */
 
         // Other options to be specificallty interpreted by group may follow.
         // All others must be simply stored for setting on a socket.

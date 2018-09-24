@@ -696,7 +696,7 @@ public: // internal API
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "%" << m_SocketID << ":";
+        os << "@" << m_SocketID << ":";
         return os.str();
 #else
         return "";

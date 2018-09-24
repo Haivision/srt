@@ -606,6 +606,9 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         // Update the status in the group so that the next
         // operation can include the socket in the group operation.
         gi = ns->m_IncludedIter;
+
+        HLOGC(mglog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
+                << " - will " << (should_submit_to_accept? "" : "NOT") << " report in accept");
         gi->sndstate = CUDTGroup::GST_IDLE;
         gi->rcvstate = CUDTGroup::GST_IDLE;
         gi->laststatus = SRTS_CONNECTED;
@@ -616,6 +619,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 #ifndef SRT_ENABLE_APP_READER
         ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
 #endif
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " is not in a group");
     }
 
     if (should_submit_to_accept)
@@ -638,17 +645,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
         CTimer::triggerEvent();
 
-ERR_ROLLBACK:
         // XXX the exact value of 'error' is ignored
         if (error > 0)
         {
-#if ENABLE_LOGGING
-            static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
-            LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
-#endif
-
-            ns->makeClosed();
-            return -1;
+            goto ERR_ROLLBACK;
         }
 
         // wake up a waiting accept() call
@@ -662,6 +662,19 @@ ERR_ROLLBACK:
                 << " NOT submitted to acceptance, another socket in the group is already connected");
         CGuard cg(ls->m_AcceptLock);
         ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
+    }
+
+ERR_ROLLBACK:
+    // XXX the exact value of 'error' is ignored
+    if (error > 0)
+    {
+#if ENABLE_LOGGING
+        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
+        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+#endif
+
+        ns->makeClosed();
+        return -1;
     }
 
     return 1;
@@ -1068,11 +1081,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
             bind(ns, source_addr);
 
         // Set it the groupconnect option, as all in-group sockets should have.
-        ns->core().m_bOPT_GroupConnect = true;
+        ns->m_pUDT->m_bOPT_GroupConnect = true;
 
-        // Every group member will have always nonblocking on receive.
-        // (this implies also non-blocking connect).
+        // Every group member will have always nonblocking
+        // (this implies also non-blocking connect/accept).
+        // The group facility functions will block when necessary
+        // using epoll_wait.
         ns->m_pUDT->m_bSynRecving = false;
+        ns->m_pUDT->m_bSynSending = false;
 
         // And connect
         try

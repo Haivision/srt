@@ -675,11 +675,15 @@ void SrtCommon::OpenGroupClient()
     if ( !m_blocking_mode )
     {
         // Note: here the GROUP is added to the poller.
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT);
 
-        // Don't check this. Should this fail, the above would already.
-        srt_epoll = srt_epoll_create();
     }
+
+    // Don't check this. Should this fail, the above would already.
+
+    // XXX Now do it regardless whether it's blocking or non-blocking
+    // mode - reading from group is currently manually from every socket.
+    srt_epoll = srt_epoll_create();
 
     // ConnectClient can't be used here, the code must
     // be more-less repeated. In this case the situation
@@ -1093,6 +1097,17 @@ bytevector SrtSource::GroupRead(size_t chunk)
         Error("All sockets in the group disconnected");
     }
 
+    if (Verbose::on)
+    {
+        for (auto& d: m_group_data)
+        {
+            if (d.status != SRTS_CONNECTED)
+                // id, status, result, peeraddr
+                Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+                    << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+        }
+    }
+
     // Check first the ahead packets if you have any to deliver.
     if (!m_group_ahead.empty())
     {
@@ -1151,6 +1166,7 @@ bytevector SrtSource::GroupRead(size_t chunk)
 
         int modes = SRT_EPOLL_IN;
         srt_epoll_add_usock(srt_epoll, d.id, &modes);
+        Verb() << "Added @" << d.id << " to epoll (" << srt_epoll << ") in modes: " << modes;
     }
 
     for (;;)
