@@ -1960,6 +1960,12 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             {
                 if (len_out == 1)
                 {
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                                << " - rejecting per strict encryption");
+                        return false;
+                    }
                     HLOGC(mglog.Debug, log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
                 }
                 else
@@ -1968,6 +1974,8 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
+            // XXX Dead code. processSrtMsg_KMREQ now doesn't return any other value now.
+            // Please review later.
             else
             {
                 LOGC(mglog.Error, log << "KMREQ failed to process the request - ignoring");
@@ -2492,6 +2500,16 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     // Something went wrong.
                     HLOGC(mglog.Debug, log << "interpretSrtHandshake: KMREQ processing failed - returned " << res);
                     return false;
+                }
+                if (*out_len == 1)
+                {
+                    // This means that there was an abnormal encryption situation occurred.
+                    // By default this is acceptable.
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
+                        return false;
+                    }
                 }
                 encrypted = true;
             }

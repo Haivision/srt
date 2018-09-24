@@ -286,6 +286,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     return SRT_CMD_KMRSP;
 
 HSv4_ErrorReport:
+    srtlen = 1;
 
     if (bidirectional && hasPassphrase())
     {
