@@ -15,13 +15,10 @@
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
+   #include <stdint.h>
+   #include <inttypes.h>
    #if defined(_MSC_VER)
-      #include <stdint.h>
-      #include <win/inttypes.h>
       #pragma warning(disable:4251)
-   #elif defined(__MINGW32__)
-      #include <inttypes.h>
-      #include <stdint.h>
    #endif
 #else
 #include <sys/types.h>
