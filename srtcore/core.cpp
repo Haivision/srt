@@ -379,6 +379,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     CGuard sendguard(m_SendLock, "send");
     CGuard recvguard(m_RecvLock, "recv");
 
+    HLOGC(mglog.Debug, log << CONID() << "OPTION: #" << optName
+            << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
+
     switch (optName)
     {
     case SRTO_MSS:
@@ -3055,7 +3058,8 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     CGuard cg(m_ConnectionLock);
 
-    HLOGC(mglog.Debug, log << "startConnect: -> " << SockaddrToString(serv_addr) << "...");
+    HLOGC(mglog.Debug, log << CONID() << "startConnect: -> " << SockaddrToString(serv_addr)
+            << (m_bSynRecving ? " (SYNCHRONOUS)" : "(ASYNCHRONOUS)") << "...");
 
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
@@ -3430,7 +3434,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
     cst = processConnectResponse(pkt, &e, COM_ASYNCHRO);
 
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
-        << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
+        << ConnectStatusStr(cst) << " - REQ-TIME LOW to enforce immediate response");
     m_llLastReqTime = 0;
 
     return cst;
@@ -9688,6 +9692,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_SNDSYN:
         m_bSynSending = bool_int_value(optval, optlen);
+        break;
 
         /*
     case SRTO_TLPKTDROP:

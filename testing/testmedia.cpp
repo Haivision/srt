@@ -534,7 +534,9 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return result;
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+            return result;
     }
 
     if ( m_direction & SRT_EPOLL_IN )
@@ -545,7 +547,9 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return result;
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+            return result;
     }
 
     SrtConfigurePost(sock, m_options);
@@ -769,18 +773,19 @@ void SrtCommon::OpenGroupClient()
             Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
         }
 
-        int stat = ConfigurePost(insock);
-        if (stat == -1)
-        {
-            // This kind of error must reject the whole operation.
-            // Usually you'll get this error on the first socket,
-            // and doing this on the others would result in the same.
-            Error(UDT::getlasterror(), "ConfigurePost");
-        }
-
         // Have socket, store it into the group socket array.
         any_node = true;
     }
+
+    stat = ConfigurePost(m_sock);
+    if (stat == -1)
+    {
+        // This kind of error must reject the whole operation.
+        // Usually you'll get this error on the first socket,
+        // and doing this on the others would result in the same.
+        Error(UDT::getlasterror(), "ConfigurePost");
+    }
+
 
     Verb() << "Group connection report:";
     for (auto& d: m_group_data)

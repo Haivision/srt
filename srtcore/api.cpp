@@ -1043,7 +1043,10 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         try
         {
             for (size_t i = 0; i < g.m_config.size(); ++i)
+            {
+                HLOGC(mglog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
+            }
         }
         catch (...)
         {
@@ -1126,9 +1129,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         {
             CGuard grd(ns->m_ControlLock, "control");
             st = ns->getStatus();
-
-            // Turn off blocking mode. Reading will be done internally.
-            ns->core().m_bSynRecving = false;
         }
 
         {

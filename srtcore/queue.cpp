@@ -838,7 +838,7 @@ void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& 
 void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 {
    CGuard vg(m_RIDVectorLock, "RdvQId", should_lock);
-   HLOGC(mglog.Debug, log << "RID: removing socket @" << id);
+   HLOGC(mglog.Debug, log << "RID: socket @" << id << " removed");
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -861,7 +861,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> r_id
       if (i->m_PeerAddr == addr && ((id == 0) || (id == i->m_iID)))
       {
           HLOGC(mglog.Debug, log << "RID: found id @" << i->m_iID << " while looking for "
-                  << (id ? "THIS ID FROM" : "A NEW CONNECTION FROM")
+                  << (id ? "THIS ID FROM " : "A NEW CONNECTION FROM ")
                   << SockaddrToString(i->m_PeerAddr));
          id = i->m_iID;
          return i->m_pUDT;
@@ -875,7 +875,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> r_id
    else
        spec << " AGENT @" << id;
    HLOGC(mglog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << SockaddrToString(addr)
-           << " while looking for " << spec.str());
+           << " while looking for " << spec.str() << " (" << m_lRendezvousID.size() << " connectors total)");
 #endif
 
    return NULL;
@@ -947,9 +947,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // done when "it's not the time"?
             if (CTimer::getTime() >= i->m_ullTTL)
             {
-                HLOGC(mglog.Debug, log << "RID: EXPIRED ("
-                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL)")
-                        << ". socket @" << i->m_iID << " removed");
+                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
+                        << " removed - EXPIRED ("
+                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
+                        << "). ");
                 // connection timer expired, acknowledge app via epoll
                 i->m_pUDT->m_bConnecting = false;
                 CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
@@ -1287,7 +1288,9 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
     if (rst == RST_OK)
     {
         *r_id = r_unit->m_Packet.m_iID;
-        HLOGC(mglog.Debug, log << "INCOMING PACKET: BOUND=" << SockaddrToString(m_pChannel->bindAddressAny()) << " " << PacketInfo(r_unit->m_Packet));
+        HLOGC(mglog.Debug, log << "INCOMING PACKET: BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
+                << " DEST=" << SockaddrToString(r_unit->m_Packet.m_DestAddr)
+                << " " << PacketInfo(r_unit->m_Packet));
     }
     return rst;
 }
