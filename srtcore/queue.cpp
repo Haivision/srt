@@ -830,11 +830,15 @@ void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& 
    r.m_ullTTL = ttl;
 
    m_lRendezvousID.push_back(r);
+   HLOGC(mglog.Debug, log << "RID: adding socket @" << id << " for address: " << SockaddrToString(addr)
+           << " expires: " << logging::FormatTime(ttl)
+           << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
 
 void CRendezvousQueue::remove(const SRTSOCKET& id, bool should_lock)
 {
    CGuard vg(m_RIDVectorLock, "RdvQId", should_lock);
+   HLOGC(mglog.Debug, log << "RID: removing socket @" << id);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -856,10 +860,23 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> r_id
    {
       if (i->m_PeerAddr == addr && ((id == 0) || (id == i->m_iID)))
       {
+          HLOGC(mglog.Debug, log << "RID: found id @" << i->m_iID << " while looking for "
+                  << (id ? "THIS ID FROM" : "A NEW CONNECTION FROM")
+                  << SockaddrToString(i->m_PeerAddr));
          id = i->m_iID;
          return i->m_pUDT;
       }
    }
+
+#if ENABLE_HEAVY_LOGGING
+   std::ostringstream spec;
+   if (id == 0)
+       spec << "A NEW CONNECTION REQUEST";
+   else
+       spec << " AGENT @" << id;
+   HLOGC(mglog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << SockaddrToString(addr)
+           << " while looking for " << spec.str());
+#endif
 
    return NULL;
 }
@@ -930,9 +947,9 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // done when "it's not the time"?
             if (CTimer::getTime() >= i->m_ullTTL)
             {
-                HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
-                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
-                        << ". removing from queue");
+                HLOGC(mglog.Debug, log << "RID: EXPIRED ("
+                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL)")
+                        << ". socket @" << i->m_iID << " removed");
                 // connection timer expired, acknowledge app via epoll
                 i->m_pUDT->m_bConnecting = false;
                 CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
