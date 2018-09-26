@@ -339,12 +339,10 @@ if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	link_libraries(-g -pg)
 endif()
 
-if (MINGW)
-	find_library(PTHREAD_LIBRARY NAMES pthread pthreadGC2 pthreadGC)
-elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
+if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-elseif (WIN32)
+elseif (WIN32 AND NOT MINGW)
 	# find pthread
 	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
 	if (PTHREAD_INCLUDE_DIR)
@@ -623,13 +621,6 @@ else()
 	set (srt_link_library ${TARGET_srt}_shared)
 endif()
 
-if (ENABLE_CXX11 AND MINGW)
-	# FIXME: with MINGW, it fails to build apps that require C++11
-	# https://github.com/Haivision/srt/issues/177
-	message(WARNING "On MinGW, C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-	set (ENABLE_CXX11 0)
-endif()
-
 macro(srt_add_program name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
@@ -719,7 +710,14 @@ if ( ENABLE_CXX11 )
 	if (NOT WIN32)
 		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 	endif()
-	srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+
+	if (MINGW)
+		# FIXME: with MINGW, it fails to build apps that require C++11
+		# https://github.com/Haivision/srt/issues/177
+		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
+   else()
+		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+	endif()
 
 	if (ENABLE_TESTING)
 
