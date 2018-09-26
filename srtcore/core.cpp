@@ -244,7 +244,7 @@ CUDT::CUDT()
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
-   m_bOPT_StrictEncryption = false;
+   m_bOPT_StrictEncryption = true;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -1093,6 +1093,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_PAYLOADSIZE:
       optlen = sizeof (int);
       *(int*)optval = m_zOPT_ExpPayloadSize;
+      break;
+
+   case SRTO_STRICTENC:
+      optlen = sizeof (int32_t); // also with TSBPDMODE and SENDER
+      *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;
 
    default:
