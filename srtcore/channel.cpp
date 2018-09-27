@@ -405,7 +405,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_a
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID << " sourceIP="
+        << " target=@" << packet.m_iID << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(source_addr) : "default")
         << spec.str());
 #endif

@@ -922,12 +922,12 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // If no packet has been received from the peer,
             // avoid sending too many requests, at most 1 request per 250ms
             nowstime = (now - then) > 250000;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+            HLOGC(mglog.Debug, log << "RID:@" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
                     <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
         }
         else
         {
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+            HLOGC(mglog.Debug, log << "RID:@" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
         }
 
 #if ENABLE_HEAVY_LOGGING
@@ -1359,7 +1359,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     {
         // Pass this to either async rendezvous connection,
         // or store the packet in the queue.
-        HLOGC(mglog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket %" << id);
+        HLOGC(mglog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
         return worker_TryAsyncRend_OrStore(id, unit, addr);
     }
 
@@ -1441,12 +1441,27 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     // otherwise wait for the UDT socket to retrieve this packet
     if (!u->m_bSynRecving)
     {
-        HLOGC(mglog.Debug, log << "AsyncOrRND: packet RESOLVED TO ID=" << id << " -- continuing as ASYNC CONNECT");
+        HLOGC(mglog.Debug, log << "AsyncOrRND: packet RESOLVED TO @" << id << " -- continuing as ASYNC CONNECT");
         // This is practically same as processConnectResponse, just this applies
         // appropriate mutex lock - which can't be done here because it's intentionally private.
         // OTOH it can't be applied to processConnectResponse because the synchronous
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
         EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_PeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
 
         // It might be that this is a data packet, which has turned the connection
         // into "connected" state, removed the connector (so since now every next packet
@@ -1601,13 +1616,13 @@ void CRcvQueue::removeListener(const CUDT* u)
 
 void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, uint64_t ttl)
 {
-   HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << ttl);
+   HLOGC(mglog.Debug, log << "registerConnector: adding @" << id << " addr=" << SockaddrToString(addr) << " TTL=" << ttl);
    m_pRendezvousQueue->insert(id, u, addr, ttl);
 }
 
 void CRcvQueue::removeConnector(const SRTSOCKET& id, bool should_lock)
 {
-    HLOGC(mglog.Debug, log << "removeConnector: removing %" << id);
+    HLOGC(mglog.Debug, log << "removeConnector: removing @" << id);
     m_pRendezvousQueue->remove(id, should_lock);
 
     CGuard bufferlock(m_PassLock);

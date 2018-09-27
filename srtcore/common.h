@@ -156,6 +156,7 @@ enum EConnectStatus
     CONN_REJECT = -1,    //< Error during processing handshake.
     CONN_CONTINUE = 1,   //< induction->conclusion phase
     CONN_RENDEZVOUS = 2, //< pass to a separate rendezvous processing (HSv5 only)
+    CONN_CONFUSED = 3,   //< listener thinks it's connected, but caller missed conclusion
     CONN_RUNNING = 10,   //< no connection in progress, already connected
     CONN_AGAIN = -2      //< No data was read, don't change any state.
 };
@@ -644,6 +645,8 @@ class CCondDelegate
     pthread_mutex_t* m_mutex;
 #if ENABLE_THREAD_LOGGING
     bool nolock;
+    std::string cvname;
+    std::string lockname;
 #endif
 
 public:
@@ -654,11 +657,11 @@ public:
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_until() can be used only with this socket.
-    CCondDelegate(pthread_cond_t& cond, CGuard& g);
+    CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln = 0);
 
     // This is only for one-shot signaling. This doesn't need a CGuard
     // variable, only the mutex itself. Only lock_signal() can be used.
-    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock);
+    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* ln = 0);
 
     // Wait indefinitely, until getting a signal on CV.
     void wait();

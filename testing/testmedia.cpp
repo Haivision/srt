@@ -1177,7 +1177,6 @@ bytevector SrtSource::GroupRead(size_t chunk)
     for (;;)
     {
         // This loop should be normally passed once.
-        bool again = false;
         bool any = false;
 
         // The group data contains information about the socket we want to use
@@ -1258,26 +1257,34 @@ bytevector SrtSource::GroupRead(size_t chunk)
                     // was done before and reading was therefore prevented from.
                     m_group_ahead[id] = Ahead { move(data), mctrl.pktseq };
                     Verb() << "Socket @" << id << " jumps ahead to %" << mctrl.pktseq << " - AHEAD.";
-                    again = true;
                 }
                 else if (seqdiff < 1)
                 {
                     // Behind packet. Discard
                     Verb() << "Socket @" << id << " %" << mctrl.pktseq << " already delivered - discarding";
-                    again = true;
                 }
-                else
+                else if (output.empty())
                 {
                     // Update the sequence number and deliver packet
                     m_group_seqno = mctrl.pktseq;
                     Verb() << "Socket @" << id << " %" << mctrl.pktseq << " DELIVERING";
 
-                    // Just quit here and don't research any other parts.
-                    // If any sockets were broken, they'll be removed from
-                    // the group anyway, so they won't be seen next time.
-                    return data;
+                    // Remember this one, but read from every ready socket.
+                    output = data;
+                }
+                else
+                {
+                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " - should have received already, discarding";
                 }
             }
+        }
+
+        // Just quit here and don't research any other parts.
+        // If any sockets were broken, they'll be removed from
+        // the group anyway, so they won't be seen next time.
+        if (!output.empty())
+        {
+            return output;
         }
 
         // ready_len is only the length of currently reported
