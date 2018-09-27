@@ -544,7 +544,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         // These below errors are treated as "fatal", all others are treated as "again".
         static const int fatals [] =
         {
-            WSAECONNRESET,
             WSAEFAULT,
             WSAEINVAL,
             WSAENETDOWN,
