@@ -3473,12 +3473,21 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        return postConnect(response, hsv5, eout, synchro);
    }
 
-   if ( !response.isControl(UMSG_HANDSHAKE) )
+   if (!response.isControl(UMSG_HANDSHAKE))
    {
-       LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
-           << MessageTypeStr(response.getType(), response.getExtendedType()));
-       return CONN_REJECT;
+       if (!response.isControl())
+       {
+           LOGC(mglog.Error, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
+       }
+       else
+       {
+           LOGC(mglog.Error, log << CONID()
+                   << "processConnectResponse: received NOT UMSG_HANDSHAKE before connection established: "
+                   << MessageTypeStr(response.getType(), response.getExtendedType()));
+       }
+       return CONN_CONFUSED;
    }
+
 
    if ( m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1 )
    {
@@ -3692,6 +3701,16 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
+
+    // XXX Problem around CONN_CONFUSED!
+    // If some too-eager packets were received from a listener
+    // that thinks it's connected, but his last handshake was missed,
+    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // function will want to delete them all, so it would be nice
+    // if these packets can be re-delivered. Of course the listener
+    // should be prepared to resend them (as every packet can be lost
+    // on UDP), but it's kinda overkill when we have them already and
+    // can dispatch them.
 
     // Remove from rendezvous queue (in this particular case it's
     // actually removing the socket that undergoes asynchronous HS processing).
@@ -4468,7 +4487,10 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
            << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID);
    }
 #endif
+
+#ifndef TEST_DISABLE_FINAL_HANDSHAKE
    m_pSndQueue->sendto(peer, response);
+#endif
 }
 
 
