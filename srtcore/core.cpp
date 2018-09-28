@@ -2865,14 +2865,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                 break;
             }
 
-            if ( cst != CONN_CONTINUE )
+            if (cst != CONN_CONTINUE && cst != CONN_CONFUSED)
                 break; // --> OUTSIDE-LOOP
 
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
 
             // new request/response should be sent out immediately on receving a response
-            HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW, should resend request quickly.");
+            HLOGC(mglog.Debug, log << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst) << ", REQ-TIME: LOW.");
             m_llLastReqTime = 0;
 
             // Now serialize the handshake again to the existing buffer so that it's
@@ -2913,6 +2913,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
+
+        HLOGC(mglog.Debug, log << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
 
 #if ENABLE_HEAVY_LOGGING
         // Non-fatal assertion
@@ -3269,7 +3271,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // when HSREQ was interpreted (to store HSRSP extension).
         m_ConnReq.m_extension = true;
 
-        HLOGC(mglog.Debug, log << "processConnectResponse: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
+        HLOGC(mglog.Debug, log << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
         rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
