@@ -67,6 +67,15 @@ using namespace std;
 
 // Debug support
 #if ENABLE_HEAVY_LOGGING
+
+inline void SprintSpecialWord(ostream& os, int32_t val)
+{
+    if (val & LOSSDATA_SEQNO_RANGE_FIRST)
+        os << "<" << (val & (~LOSSDATA_SEQNO_RANGE_FIRST)) << ">";
+    else
+        os << val;
+}
+
 static string PacketInfo(const CPacket& pkt)
 {
     ostringstream os;
@@ -89,7 +98,9 @@ static string PacketInfo(const CPacket& pkt)
             // This is a value that some messages use for some purposes.
             // The "ack seq no" is one of the purposes, used by UMSG_ACK and UMSG_ACKACK.
             // This is simply the PH_MSGNO field used as a message number in data packets.
-            os << " ARG: " << pkt.getAckSeqNo();
+            os << " ARG: 0x";
+            os << hex << pkt.getAckSeqNo() << " ";
+            os << dec << pkt.getAckSeqNo();
 
             // It would be nice to see the extended packet data, but this
             // requires strictly a message-dependent interpreter. So let's simply
@@ -101,14 +112,7 @@ static string PacketInfo(const CPacket& pkt)
             os << " [ ";
             for (size_t i = 0; i < wordlen; ++i)
             {
-                bool sign = array[i] & LOSSDATA_SEQNO_RANGE_FIRST;
-
-                if (sign)
-                    os << "<";
-                os << (array[i] & ~LOSSDATA_SEQNO_RANGE_FIRST);
-                if (sign)
-                    os << ">";
-
+                SprintSpecialWord(os, array[i]);
                 os << " ";
 
             }

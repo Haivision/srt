@@ -254,7 +254,10 @@ void CPacket::setLength(size_t len)
 void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
-    setControl(pkttype);
+   setControl(pkttype);
+   HLOGC(mglog.Debug, log << "pack: type=" << MessageTypeStr(pkttype)
+           << " ARG=" << (lparam ? Sprint(*(int32_t*)lparam) : std::string("NULL"))
+           << " [ " << (rparam ? Sprint(*(int32_t*)rparam) : std::string()) << " ]");
 
    // Set additional information and control information field
    switch (pkttype)
