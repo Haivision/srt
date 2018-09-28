@@ -3021,7 +3021,7 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, ref_t<SRTSOCKET> r_mpeer, ref_t<u
             // the Master-to-Slave start time difference.
             *r_mpeer = gi->ps->m_PeerID;
             *r_st = gi->ps->core().socketStartTime();
-            HLOGC(mglog.Debug, log << "getMasterData: found RUNNING master $" << gi->id
+            HLOGC(mglog.Debug, log << "getMasterData: found RUNNING master @" << gi->id
                 << " - reporting master's peer $" << *r_mpeer << " starting at "
                 << logging::FormatTime(*r_st));
             return true;
@@ -3044,8 +3044,8 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, ref_t<SRTSOCKET> r_mpeer, ref_t<u
         // the Master-to-Slave start time difference.
         *r_mpeer = gi->ps->core().m_PeerID;
         *r_st = gi->ps->core().socketStartTime();
-        HLOGC(mglog.Debug, log << "getMasterData: found IDLE/PENDING master $" << gi->id
-            << " - reporting master's peer $" << *r_mpeer << " starting at "
+        HLOGC(mglog.Debug, log << "getMasterData: found IDLE/PENDING master @" << gi->id
+            << " - reporting master's peer @" << *r_mpeer << " starting at "
             << logging::FormatTime(*r_st));
         return true;
     }
@@ -7903,7 +7903,8 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
          seqpair[1] = m_iSndLastDataAck;
 
           HLOGC(mglog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
-              << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+                  << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
+                  << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
          sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
          return 0;
       }
@@ -7917,6 +7918,10 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
          int32_t seqpair[2];
          seqpair[0] = packet.m_iSeqNo;
          seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
+
+         HLOGC(mglog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
+                  << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
+                  << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
          sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
          // only one msg drop request is necessary
@@ -8001,8 +8006,9 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
                      int32_t seqpair[2];
                      seqpair[0] = m_iSndCurrSeqNo;
                      seqpair[1] = packet.m_iSeqNo;
-                     HLOGC(mglog.Debug, log << "... sending INITIAL PACKET DROP due to ISN fix: "
-                         << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
+                     HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
+                             << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
+                             << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
                      sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
                      // In case when this message is lost, the peer will still get the
@@ -10134,7 +10140,8 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // Note: this will override the sequence number
             // for all next iterations in this loop.
             curseq = mc.pktseq;
-            HLOGC(dlog.Debug, log << "... sending SUCCESSFUL, seq=" << curseq);
+            HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL, seq=" << curseq
+                    << " MEMBER STATUS: RUNNING");
         }
 
         d->sndresult = stat;
