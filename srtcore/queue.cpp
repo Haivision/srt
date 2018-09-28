@@ -1223,6 +1223,34 @@ static string PacketInfo(const CPacket& pkt)
     if (pkt.isControl())
     {
         os << "CONTROL: " << MessageTypeStr(pkt.getType(), pkt.getExtendedType()) << " size=" << pkt.getLength();
+
+        // This is a value that some messages use for some purposes.
+        // The "ack seq no" is one of the purposes, used by UMSG_ACK and UMSG_ACKACK.
+        // This is simply the PH_MSGNO field used as a message number in data packets.
+        os << "ARG: " << pkt.getAckSeqNo();
+
+        // It would be nice to see the extended packet data, but this
+        // requires strictly a message-dependent interpreter. So let's simply
+        // display all numbers in the array with the following restrictions:
+        // - all data contained in the buffer are considered 32-bit integer
+        // - sign flag will be cleared before displaying, with additional mark
+        size_t wordlen = pkt.getLength()/4; // drop any remainder if present
+        int32_t* array = (int32_t*)pkt.m_pcData;
+        os << " [ ";
+        for (size_t i = 0; i < wordlen; ++i)
+        {
+            bool sign = array[i] & LOSSDATA_SEQNO_RANGE_FIRST;
+
+            if (sign)
+                os << "<";
+            os << (array[i] & ~LOSSDATA_SEQNO_RANGE_FIRST);
+            if (sign)
+                os << ">";
+
+            os << " ";
+
+        }
+        os << "]";
     }
     else
     {

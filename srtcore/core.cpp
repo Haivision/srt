@@ -7406,7 +7406,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
       if (rtt <= 0)
       {
-          LOGC(mglog.Error, log << "IPE: ACK node overwritten when acknowledging " <<
+          LOGC(mglog.Error, log << CONID() << "IPE: ACK node overwritten when acknowledging " <<
               ctrlpkt.getAckSeqNo() << " (ack extracted: " << ack << ")");
           break;
       }
@@ -7457,7 +7457,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             // <lo, hi> specification means that the consecutive cell has been already interpreted.
             ++ i;
 
-            HLOGF(mglog.Debug, "received UMSG_LOSSREPORT: %d-%d (%d packets)...", losslist_lo, losslist_hi, CSeqNo::seqcmp(losslist_hi, losslist_lo)+1);
+            HLOGF(mglog.Debug, "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...",
+                    CONID().c_str(),
+                    losslist_lo, losslist_hi, CSeqNo::seqcmp(losslist_hi, losslist_lo)+1);
 
             if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) || (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
             {
@@ -7489,7 +7491,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          }
          else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
          {
-            HLOGF(mglog.Debug, "received UMSG_LOSSREPORT: %d (1 packet)...", losslist[i]);
+            HLOGF(mglog.Debug, "%sreceived UMSG_LOSSREPORT: %d (1 packet)...", CONID().c_str(), losslist[i]);
 
             if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
             {
@@ -7509,7 +7511,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       if (!secure)
       {
-         HLOGF(mglog.Debug, "WARNING: out-of-band LOSSREPORT received; considered bug or attack");
+         HLOGC(mglog.Debug, log << CONID() << "WARNING: out-of-band LOSSREPORT received; considered bug or attack");
          //this should not happen: attack or bug
          m_bBroken = true;
          m_iBrokenCounter = 0;
@@ -7550,7 +7552,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       CHandShake req;
       req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
 
-      HLOGC(mglog.Debug, log << "processCtrl: got HS: " << req.show());
+      HLOGC(mglog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
 
       if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
               || (m_bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
@@ -7581,7 +7583,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
              int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
              if ( hs_flags != 0 ) // has SRT extensions
              {
-                 HLOGC(mglog.Debug, log << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType) << " WITH SRT ext");
+                 HLOGC(mglog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType) << " WITH SRT ext");
                  have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
                  if ( !have_hsreq )
                  {
@@ -7598,19 +7600,19 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
                      // Sanity check - according to the rules, there should be no such situation
                      if (m_bRendezvous && m_SrtHsSide == HSD_RESPONDER)
                      {
-                         LOGC(mglog.Error, log << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in handshake phase.");
+                         LOGC(mglog.Error, log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in handshake phase.");
                      }
 
                      // The 'extension' flag will be set from this variable; set it to false
                      // in case when the AGREEMENT response is to be sent.
                      have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
-                     HLOGC(mglog.Debug, log << "processCtrl/HS: processing ok, reqtype="
+                     HLOGC(mglog.Debug, log << CONID() << "processCtrl/HS: processing ok, reqtype="
                              << RequestTypeStr(initdata.m_iReqType) << " kmdatasize=" << kmdatasize);
                  }
              }
              else
              {
-                 HLOGC(mglog.Debug, log << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
+                 HLOGC(mglog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
              }
          }
          else
@@ -7647,7 +7649,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       }
       else
       {
-          HLOGC(mglog.Debug, log << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
+          HLOGC(mglog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
       }
 
       break;
@@ -7710,7 +7712,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       break;
 
    case UMSG_EXT: //0x7FFF - reserved and user defined messages
-      HLOGF(mglog.Debug, "CONTROL EXT MSG RECEIVED: %08X\n", ctrlpkt.getExtendedType());
+      HLOGC(mglog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
+              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+              << ", value=" << ctrlpkt.getExtendedType());
       {
           // This has currently two roles in SRT:
           // - HSv4 (legacy) handshake
