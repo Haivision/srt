@@ -478,7 +478,7 @@ if (srt_libspec_static)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
-		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32.lib ws2_32.lib)
+		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
 	endif()
 endif()
 
@@ -504,7 +504,7 @@ endif()
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 elseif (MINGW)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} wsock32.lib ws2_32.lib)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32 -lstdc++)
 endif()
 
 # ---
