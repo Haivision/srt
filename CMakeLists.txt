@@ -19,6 +19,7 @@ include(haiUtil)
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
+include(CheckFunctionExists)
 
 # Platform shortcuts
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -87,6 +88,7 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
+option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
@@ -144,6 +146,22 @@ endif()
 
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
+
+# symbol exists in win32, but function does not.
+if(WIN32)
+	if(ENABLE_INET_PTON)
+		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
+		check_function_exists(inet_pton HAVE_INET_PTON)
+		add_definitions(-D_WIN32_WINNT=0x0600)
+	else()
+		add_definitions(-D_WIN32_WINNT=0x0501)
+	endif()
+else()
+	check_function_exists(inet_pton HAVE_INET_PTON)
+endif()
+if (DEFINED HAVE_INET_PTON)
+	add_definitions(-DHAVE_INET_PTON=1)
+endif()
 
 # find OpenSSL
 if ( USE_GNUTLS )
