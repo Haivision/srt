@@ -76,7 +76,7 @@ inline void SysCleanupNetwork() {}
 // See:
 //    https://msdn.microsoft.com/en-us/library/windows/desktop/ms742214(v=vs.85).aspx
 //    http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-#ifdef __MINGW32__
+#if defined(_WIN32) && !defined(HAVE_INET_PTON)
 static inline int inet_pton(int af, const char * src, void * dst)
 {
    struct sockaddr_storage ss;
@@ -115,7 +115,7 @@ static inline int inet_pton(int af, const char * src, void * dst)
 
    return 0;
 }
-#endif // __MINGW__
+#endif // _WIN32 && !HAVE_INET_PTON
 
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
