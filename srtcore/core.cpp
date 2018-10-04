@@ -4622,8 +4622,8 @@ void* CUDT::tsbpd(void* param)
    THREAD_STATE_INIT("SRT:TsbPd");
 
    CGuard recv_gl(self->m_RecvLock, "recv");
-   CCondDelegate recvdata_cc(self->m_RecvDataCond, recv_gl);
-   CCondDelegate tsbpd_cc(self->m_RcvTsbPdCond, recv_gl);
+   CCondDelegate recvdata_cc(self->m_RecvDataCond, recv_gl, "RecvDataCond");
+   CCondDelegate tsbpd_cc(self->m_RcvTsbPdCond, recv_gl, "RcvTsbPdCond");
 
    self->m_bTsbPdAckWakeup = true;
    while (!self->m_bClosing)
@@ -5419,8 +5419,8 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    CCondDelegate rcond(m_RecvDataCond, recvguard);
-    CCondDelegate tscond(m_RcvTsbPdCond, recvguard);
+    CCondDelegate rcond(m_RecvDataCond, recvguard, "RecvDataCond");
+    CCondDelegate tscond(m_RcvTsbPdCond, recvguard, "RcvTsbPdCond");
 
     if (!m_pRcvBuffer->isRcvDataReady())
     {
@@ -5681,7 +5681,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             {
                 // wait here during a blocking sending
                 CGuard sendblock_lock(m_SendBlockLock, "sendblock");
-                CCondDelegate sendcond(m_SendBlockCond, sendblock_lock);
+                CCondDelegate sendcond(m_SendBlockCond, sendblock_lock, "SendBlockCond");
 
                 if (m_iSndTimeOut < 0)
                 {
@@ -5855,7 +5855,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard(m_RecvLock, "recv");
-    CCondDelegate tscond(m_RcvTsbPdCond, recvguard);
+    CCondDelegate tscond(m_RcvTsbPdCond, recvguard, "RcvTsbPdCond");
 
     /* XXX DEBUG STUFF - enable when required
        char charbool[2] = {'0', '1'};
@@ -5969,7 +5969,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     //Do not block forever, check connection status each 1 sec.
     uint64_t recvtmo = m_iRcvTimeOut < 0 ? 1000 : m_iRcvTimeOut;
 
-    CCondDelegate recv_cond(m_RecvDataCond, recvguard);
+    CCondDelegate recv_cond(m_RecvDataCond, recvguard, "RecvDataCond");
 
     do
     {
@@ -6138,7 +6138,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
         {
             CGuard lk(m_SendBlockLock, "sendblock");
-            CCondDelegate sendcond(m_SendBlockCond, lk);
+            CCondDelegate sendcond(m_SendBlockCond, lk, "SendBlockCond");
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
                 sendcond.wait();
@@ -6264,7 +6264,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
 
         {
             CGuard gl(m_RecvDataLock, "recvdata");
-            CCondDelegate rcond(m_RecvDataCond, gl);
+            CCondDelegate rcond(m_RecvDataCond, gl, "RecvDataCond");
 
             while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 rcond.wait();
@@ -6907,7 +6907,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          {
              /* Newly acknowledged data, signal TsbPD thread */
              CGuard rlock(m_RecvLock, "recv");
-             CCondDelegate cc(m_RcvTsbPdCond, rlock);
+             CCondDelegate cc(m_RcvTsbPdCond, rlock, "RcvTsbPdCond");
              if (m_bTsbPdAckWakeup)
                  cc.signal_locked(rlock);
          }
@@ -6917,7 +6917,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
              {
                  // signal a waiting "recv" call if there is any data available
                  CGuard rlock(m_RecvDataLock, "recvdata");
-                 CCondDelegate cc(m_RecvDataCond, rlock);
+                 CCondDelegate cc(m_RecvDataCond, rlock, "RecvDataCond");
                  cc.signal_locked(rlock);
              }
              // acknowledge any waiting epolls to read
@@ -7444,70 +7444,106 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       bool secure = true;
 
       // protect packet retransmission
-      CGuard::enterCS(m_AckLock, "ack");
-
-      // decode loss list message and insert loss into the sender loss list
-      for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++ i)
       {
-         if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
-         {
-             // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-            int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-            int32_t losslist_hi = losslist[i+1];
-            // <lo, hi> specification means that the consecutive cell has been already interpreted.
-            ++ i;
+          CGuard ack_lock(m_AckLock, "ack");
 
-            HLOGF(mglog.Debug, "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...",
-                    CONID().c_str(),
-                    losslist_lo, losslist_hi, CSeqNo::seqcmp(losslist_hi, losslist_lo)+1);
+          // decode loss list message and insert loss into the sender loss list
+          for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++ i)
+          {
+              if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
+              {
+                  // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
+                  int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                  int32_t losslist_hi = losslist[i+1];
+                  // <lo, hi> specification means that the consecutive cell has been already interpreted.
+                  ++ i;
 
-            if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) || (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
-            {
-               // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
-               secure = false;
-               // XXX leaveCS: really necessary? 'break' will break the 'for' loop, not the 'switch' statement.
-               // and the leaveCS is done again next to the 'for' loop end.
-               CGuard::leaveCS(m_AckLock, "ack");
-               break;
-            }
+                  HLOGF(mglog.Debug, "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...",
+                          CONID().c_str(),
+                          losslist_lo, losslist_hi, CSeqNo::seqcmp(losslist_hi, losslist_lo)+1);
 
-            int num = 0;
-            if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
-               num = m_pSndLossList->insert(losslist_lo, losslist_hi);
-            else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
-            {
-                // This should be theoretically impossible because this would mean
-                // that the received packet loss report informs about the loss that predates
-                // the ACK sequence.
-                // However, this can happen if the packet reordering has caused the earlier sent
-                // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
-                // more important, so simply drop the part that predates ACK.
-               num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
-            }
+                  if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) || (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
+                  {
+                      LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
+                              << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
+                      // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
+                      secure = false;
+                      break;
+                  }
 
-            m_iTraceSndLoss += num;
-            m_iSndLossTotal += num;
+                  int num = 0;
+                  //   IF losslist_lo %>= m_iSndLastAck
+                  if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
+                  {
+                      HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
+                              << losslist_lo << " - " << losslist_hi << " to loss list");
+                      num = m_pSndLossList->insert(losslist_lo, losslist_hi);
+                  }
+                  // ELSE IF losslist_hi %>= m_iSndLastAck
+                  else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                  {
+                      // This should be theoretically impossible because this would mean
+                      // that the received packet loss report informs about the loss that predates
+                      // the ACK sequence.
+                      // However, this can happen if the packet reordering has caused the earlier sent
+                      // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
+                      // more important, so simply drop the part that predates ACK.
+                      HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
+                              << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
+                      num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                  }
+                  else
+                  {
+                      // This should be treated as IPE, but this may happen in one situtation:
+                      // - redundancy second link (ISN was screwed up initially, but late towards last sent)
+                      // - initial DROPREQ was lost
+                      // This just causes repeating DROPREQ as when the receiver continues sending
+                      // LOSSREPORT it's probably UNAWARE OF THE SITUATION.
+                      //
+                      // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
+                      // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
+                      // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
+                      //   TSBPD wake up should it still wait for new packets to get ACK-ed)
 
-         }
-         else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
-         {
-            HLOGF(mglog.Debug, "%sreceived UMSG_LOSSREPORT: %d (1 packet)...", CONID().c_str(), losslist[i]);
+                      HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
+                              << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
+                              << " - sending DROPREQ");
 
-            if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
-            {
-               //seq_a must not be greater than the most recent sent seq
-               secure = false;
-               CGuard::leaveCS(m_AckLock, "ack");
-               break;
-            }
+                      // This means that the loss touches upon a range that wasn't ever sent.
+                      // Normally this should never happen, but this might be a case when the
+                      // ISN FIX for redundant connection was missed.
 
-            int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+                      // In distinction to losslist, DROPREQ has always a range
+                      // always just one range, and the data are <LO, HI>, with no range bit.
+                      int32_t seqpair[2] = {losslist_lo, losslist_hi};
+                      int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+                      sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                  }
 
-            m_iTraceSndLoss += num;
-            m_iSndLossTotal += num;
-         }
+                  m_iTraceSndLoss += num;
+                  m_iSndLossTotal += num;
+
+              }
+              else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
+              {
+                  if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                  {
+                      LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT pkt " << losslist[i]
+                              << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
+                      //seq_a must not be greater than the most recent sent seq
+                      secure = false;
+                      break;
+                  }
+
+                  HLOGC(mglog.Debug, log << CONID() << "received UMSG_LOSSREPORT: "
+                          << losslist[i] << " (1 packet)");
+                  int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                  m_iTraceSndLoss += num;
+                  m_iSndLossTotal += num;
+              }
+          }
       }
-      CGuard::leaveCS(m_AckLock, "ack");
 
       if (!secure)
       {
@@ -7671,9 +7707,20 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       break;
 
    case UMSG_DROPREQ: //111 - Msg drop request
-      CGuard::enterCS(m_RecvLock, "recv");
-      m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-      CGuard::leaveCS(m_RecvLock, "recv");
+      {
+          CGuard rlock(m_RecvLock, "recv");
+          m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+
+          // When the drop request was received, it means that there are
+          // packets for which there will never be ACK sent; if the TSBPD thread
+          // is currently in the ACK-waiting state, it may never exit.
+          if (m_bTsbPd)
+          {
+              HLOGP(mglog.Debug, "DROPREQ: signal TSBPD");
+              CCondDelegate cc(m_RcvTsbPdCond, rlock, "RcvTsbPdCond");
+              cc.signal_locked(rlock);
+          }
+      }
 
       {
           int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;
@@ -7696,6 +7743,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
               HLOGC(mglog.Debug, log << CONID() << "DROPREQ: dropping %"
                       << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
           }
+
       }
 
       break;
@@ -9274,7 +9322,7 @@ void CUDT::checkTimers()
 #endif
 
 #if ENABLE_HEAVY_LOGGING
-    std::string decision = "NOTHING";
+    std::string decision;
 #endif
 
     if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
@@ -9348,6 +9396,8 @@ void CUDT::checkTimers()
 
     // VERY HEAVY LOGGING
 #if 1
+    if (decision == "")
+        decision = "NOTHING";
     HLOGC(mglog.Debug, log << CONID() << "checkTimer: ACTIVITIES PERFORMED: " << decision);
 #endif
 
@@ -9930,7 +9980,7 @@ void CUDTGroup::close()
     // Release blocked clients
 
     CGuard rg(m_RcvDataLock, "rcvdata");
-    CCondDelegate cc(m_RcvDataCond, rg);
+    CCondDelegate cc(m_RcvDataCond, rg, "RcvDataCond");
     cc.signal_locked(rg);
 }
 
@@ -10737,7 +10787,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     HLOGP(mglog.Debug, "CUDTGroup::recv -- start, locking group");
 
     CGuard readlock(m_RcvDataLock, "rcvdata");
-    CCondDelegate rcvcond(m_RcvDataCond, readlock);
+    CCondDelegate rcvcond(m_RcvDataCond, readlock, "RcvDataCond");
 
     Pending* pp = 0;
 
@@ -11001,7 +11051,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
     CGuard gl(m_GroupLock, "group");
 
     // This can only be activated with immediate ACK, not yet implemented.
-    //CCondDelegate cc_ahead(m_RcvPacketAhead, gl);
+    //CCondDelegate cc_ahead(m_RcvPacketAhead, gl, "RcvPacketAhead");
 
     bool nopackets = m_Providers.empty();
     int offset;
@@ -11109,7 +11159,7 @@ vector<bool> CUDTGroup::providePacket(int32_t exp_sequence, int32_t sequence, CU
 void CUDTGroup::readyPackets(CUDT* core, int32_t ack)
 {
     CGuard glock(m_GroupLock, "group");
-    CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
+    CCondDelegate cc_ahead(m_RcvPacketAhead, glock, "RcvPacketAhead");
 
     // ACK is the number being
     // - past the last received sequence
@@ -11262,7 +11312,7 @@ void CUDTGroup::readInterceptorThread()
 
         {
             CGuard glock(m_GroupLock, "group");
-            CCondDelegate cc_ahead(m_RcvPacketAhead, glock);
+            CCondDelegate cc_ahead(m_RcvPacketAhead, glock, "RcvPacketAhead");
 
             // Check if we still have a contiguous series of packets.
             // Note that m_RcvBaseSeqNo was incremented after extraction and it points
@@ -11309,7 +11359,7 @@ void CUDTGroup::readInterceptorThread()
 
                         HLOGC(tslog.Debug, log << "SYNC MODE: signaling data rx cv");
                         CGuard recv_gl(m_RcvDataLock, "rcvdata");
-                        CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl);
+                        CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl, "RcvDataCond");
                         recvdata_cc.signal_locked(recv_gl);
                     }
                     /*
@@ -11379,7 +11429,7 @@ void CUDTGroup::readInterceptorThread()
                 glock.forceUnlock();
 
                 CGuard recv_gl(m_RcvDataLock, "rcvdata");
-                CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl);
+                CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl, "RcvDataCond");
                 HLOGC(mglog.Debug, log << "GROUP:recv: signal PACKET RECV READY to release waiting, EXITTING");
                 recvdata_cc.signal_locked(recv_gl);
                 m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
@@ -11582,7 +11632,7 @@ void CUDTGroup::readInterceptorThread()
 
         {
             CGuard recv_gl(m_RcvDataLock, "rcvdata");
-            CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl);
+            CCondDelegate recvdata_cc(m_RcvDataCond, recv_gl, "RcvDataCond");
 
             Pending* pp = m_Pending.push();
             while (!pp)

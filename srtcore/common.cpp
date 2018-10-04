@@ -605,7 +605,7 @@ void CCondDelegate::signal_locked(CGuard& lk SRT_ATR_UNUSED)
 
 void CCondDelegate::signal_relaxed()
 {
-    LOGS(cerr, log << "Cond: SIGNAL:" << cvname << " (no lock checking)");
+    LOGS(cerr, log << "Cond: SIGNAL:" << cvname << " (NOT locking " << lockname << ")");
     pthread_cond_signal(m_cond);
 }
 

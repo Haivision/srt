@@ -1000,7 +1000,10 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
         return false;
     }
 
-    // getRcvReadyMsg returned false and tsbpdtime == 0.
+    // Falling here means that there are NO PACKETS in the ACK-ed region
+    // (m_iStartPos - m_iLastAckPos), but we may have something in the
+    // region (m_iLastAckPos - (m_iLastAckPos+m_iMaxPos)), that is, packets
+    // that may be separated from the last ACK-ed by lost ones.
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
