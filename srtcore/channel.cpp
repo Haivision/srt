@@ -472,7 +472,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     // reported by recvmsg():
 
     // 1. Temporary error, can't get the data, but you can try again.
-    // Codes: EAGAIN/EWOULDBLOCK, EINTR
+    // Codes: EAGAIN/EWOULDBLOCK, EINTR, ECONNREFUSED
     // Return: RST_AGAIN.
     //
     // 2. Problems that should never happen due to unused configurations.
@@ -492,7 +492,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     if (res == -1)
     {
         int err = NET_ERROR;
-        if (err == EAGAIN || err == EINTR) // For EAGAIN, this isn't an error, just a useless call.
+        if (err == EAGAIN || err == EINTR || err == ECONNREFUSED) // For EAGAIN, this isn't an error, just a useless call.
         {
             status = RST_AGAIN;
         }
