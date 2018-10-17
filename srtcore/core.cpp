@@ -7507,7 +7507,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
                       HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
                               << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
-                              << " - sending DROPREQ");
+                              << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
 
                       // This means that the loss touches upon a range that wasn't ever sent.
                       // Normally this should never happen, but this might be a case when the
@@ -7517,7 +7517,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
                       // always just one range, and the data are <LO, HI>, with no range bit.
                       int32_t seqpair[2] = {losslist_lo, losslist_hi};
                       int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
                       sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+#endif
                   }
 
                   m_iTraceSndLoss += num;
@@ -7941,6 +7943,10 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
 
       // XXX See comment at m_iSndLastDataAck field.
       int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
+
+      // XXX Likely that this will never be executed because if the upper
+      // sequence is not in the sender buffer, then most likely the loss 
+      // was completely ignored.
       if (offset < 0)
       {
           // No matter whether this is right or not (maybe the attack case should be
@@ -7953,7 +7959,9 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
           HLOGC(mglog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                   << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
                   << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
          sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
+#endif
          return 0;
       }
 
@@ -7970,7 +7978,9 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
          HLOGC(mglog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
                   << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
                   << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
          sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
+#endif
 
          // only one msg drop request is necessary
          m_pSndLossList->remove(seqpair[1]);
@@ -8057,7 +8067,9 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
                      HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
                              << "msg=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo) << " SEQ:"
                              << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
+#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
                      sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, sizeof(seqpair));
+#endif
 
                      // In case when this message is lost, the peer will still get the
                      // UMSG_DROPREQ message when the agent realizes that the requested
