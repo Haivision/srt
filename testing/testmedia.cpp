@@ -1041,10 +1041,6 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
         else
         {
-            ConfigurePost(insock);
-            // Ignore error this time. It's unlikely that an error
-            // will pop up at the time of reconnecting.
-
             // Have socket, store it into the group socket array.
             n.socket = insock;
         }

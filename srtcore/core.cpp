@@ -370,6 +370,20 @@ static bool bool_int_value(const void* optval, int optlen)
     return false;
 }
 
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
+	SRTO_SNDSYN,
+	SRTO_RCVSYN,
+	SRTO_LINGER,
+	SRTO_SNDTIMEO,
+	SRTO_RCVTIMEO,
+	SRTO_MAXBW,
+	SRTO_INPUTBW,
+	SRTO_OHEADBW,
+	SRTO_SNDDROPDELAY,
+	SRTO_CONNTIMEO,
+    SRTO_LOSSMAXTTL
+};
+
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     if (m_bBroken || m_bClosing)
@@ -9855,38 +9869,58 @@ CUDTGroup::~CUDTGroup()
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
+
+    HLOGC(mglog.Debug, log << "GROUP $" << id() << " OPTION: #" << optName
+            << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
     switch (optName)
     {
     case SRTO_RCVSYN:
         m_bSynRecving = bool_int_value(optval, optlen);
-        break;
+        return;
 
     case SRTO_SNDSYN:
         m_bSynSending = bool_int_value(optval, optlen);
-        break;
+        return;
 
 #ifndef SRT_ENABLE_APP_READER
     case SRTO_TLPKTDROP:
         m_bTLPktDrop = bool_int_value(optval, optlen);
-        break;
+        return;
 
     case SRTO_TSBPDMODE:
         m_bTsbPd = bool_int_value(optval, optlen);
-        break;
+        return;
 #endif
 
-        // Other options to be specifically interpreted by group may follow.
-        // All others must be simply stored for setting on a socket.
+    // Other options to be specifically interpreted by group may follow.
 
     default:
-        if (m_bOpened)
-        {
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        }
-
-        m_config.push_back(ConfigItem(optName, optval, optlen));
-        break;
+        ;
     }
+
+    // All others must be simply stored for setting on a socket.
+    // If the group is already open and any post-option is about
+    // to be modified, it must be allowed and applied on all sockets.
+
+    if (m_bOpened)
+    {
+        // There's at least one socket in the group, so only
+        // post-options are allowed.
+        if (!std::binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+        HLOGC(mglog.Debug, log << "... SPREADING to existing sockets.");
+        // This means that there are sockets already, so apply
+        // this option on them.
+        CGuard gg(m_GroupLock, "group");
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            gi->ps->core().setOpt(optName, optval, optlen);
+        }
+    }
+
+    // Store the option regardless if pre or post. This will apply
+    m_config.push_back(ConfigItem(optName, optval, optlen));
 }
 
 void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen)
@@ -9900,31 +9934,21 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen)
         optlen = sizeof(bool);
         break;
 
+    case SRTO_SNDSYN:
+        *(bool*)optval = m_bSynSending;
+        optlen = sizeof(bool);
+        break;
+
     default:
-        // Extract the "wishful thining" from the storage.
-        // XXX What about default values, not stored before?
 
-        {
-            for (vector<ConfigItem>::iterator i = m_config.begin(); i != m_config.end(); ++i)
-            {
-                if (i->so == optname)
-                {
-                    if (optlen >= int(i->value.size()))
-                    {
-                        copy(i->value.begin(), i->value.end(), (unsigned char*)optval);
-                    }
-                    optlen = i->value.size();
-                    return;
-                }
-            }
-
-            // Not set before, simply fill in zeros
-            // XXX This is just a stub implementation!
-            memset(optval, 0, optlen);
-            return;
-        }
+        // We state that only some sets of options can
+        // be read on a group, those that are groupwise.
+        // Others simply can't be read and should be
+        // read only on individual socket.
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 }
+
 
 struct HaveState: public unary_function< pair<SRTSOCKET, SRT_SOCKSTATUS>, bool >
 {
