@@ -984,7 +984,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // avoid sending too many requests, at most 1 request per 250ms
             nowstime = (now - then) > 250000;
             HLOGC(mglog.Debug, log << "RID:@" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+                    <<  " <=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
         }
         else
         {
@@ -1025,6 +1025,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 i_next = m_lRendezvousID.erase(i);
                 continue;
             }
+            else
+            {
+                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active...");
+            }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
             // Synchronous connection requests are handled in startConnect() completely.
@@ -1058,6 +1062,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 // NOTE: safe loop, the incrementation was done before the loop body,
                 // so the `i' node can be safely deleted. Just the body must end here.
                 continue;
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " deemed SYNCHRONOUS, NOT UPDATING");
             }
         }
     }

@@ -1059,10 +1059,51 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
     hostport_copy = os.str();
 }
 
+// NOTE: 'output' is expected to be EMPTY here.
+bool SrtSource::GroupCheckPacketAhead(bytevector& output)
+{
+    bool status = false;
+    vector<SRTSOCKET> past_ahead;
+
+    // This map no longer maps only ahead links.
+    // Here are all links, and whether ahead, it's defined by the sequence.
+    for (auto i = m_group_positions.begin(); i != m_group_positions.end(); ++i)
+    {
+        // i->first: socket ID
+        // i->second: ReadPos { sequence, packet }
+        // We are not interested with the socket ID because we
+        // aren't going to read from it - we have the packet already.
+        ReadPos& a = i->second;
+
+        int seqdiff = CSeqNo::seqcmp(a.sequence, m_group_seqno);
+        if ( seqdiff == 1)
+        {
+            // The very next packet. Return it.
+            m_group_seqno = a.sequence;
+            Verb() << " (SRT group: ahead delivery %" << a.sequence << " from @" << i->first << ")";
+            swap(output, a.packet);
+            status = true;
+        }
+        else if (seqdiff < 1 && !a.packet.empty())
+        {
+            Verb() << " (@" << i->first << " dropping collected ahead %" << a.sequence << ")";
+            a.packet.clear();
+        }
+        // In case when it's >1, keep it in ahead
+    }
+
+    return status;
+}
+
 bytevector SrtSource::GroupRead(size_t chunk)
 {
     // Read the current group status. m_sock is here the group id.
     bytevector output;
+
+    // Later iteration over it might be less efficient than
+    // by vector, but we'll also often try to check a single id
+    // if it was ever seen broken, so that it's skipped.
+    set<SRTSOCKET> broken;
 
     size_t size = m_group_data.size();
     int stat = srt_group_data(m_sock, m_group_data.data(), &size);
@@ -1085,8 +1126,11 @@ bytevector SrtSource::GroupRead(size_t chunk)
 
     if (size == 0)
     {
-        Error( "No sockets in the group - disconnected");
+        Error("No sockets in the group - disconnected");
     }
+
+RETRY_READING:
+
 
     bool connected = false;
     for (auto& d: m_group_data)
@@ -1114,266 +1158,496 @@ bytevector SrtSource::GroupRead(size_t chunk)
     }
 
     // Check first the ahead packets if you have any to deliver.
-    if (!m_group_ahead.empty())
+    if (m_group_seqno != -1 && !m_group_positions.empty())
     {
-        vector<SRTSOCKET> past_ahead;
         bytevector ahead_packet;
-        for (auto i = m_group_ahead.begin(); i != m_group_ahead.end(); ++i)
-        {
-            // i->first: socket ID
-            // i->second: Ahead { sequence, packet }
-            // We are not interested with the socket ID because we
-            // aren't going to read from it - we have the packet already.
-            Ahead& a = i->second;
 
-            int seqdiff = CSeqNo::seqcmp(a.sequence, m_group_seqno);
-            if ( seqdiff == 1)
-            {
-                // The very next packet. Return it.
-                m_group_seqno = a.sequence;
-                Verb() << " (SRT group: ahead delivery %" << a.sequence << ")";
-                ahead_packet = move(a.packet);
-                past_ahead.push_back(i->first);
-            }
-            else if (seqdiff < 1)
-            {
-                Verb() << " (SRT group: dropping collected ahead %" << a.sequence << ")";
-                // Drop all packets that are earlier
-                // Here only register for later drop because
-                // if you delete directly from the container,
-                // the loop would have to be interrupted.
-                past_ahead.push_back(i->first);
-            }
-        }
-
-        // Erasing must rely on IDs, this is maybe less
-        // efficient than removing by iterators, however
-        // iterators would be invalidated after removal and
-        // the loop would have to start anew after every erasure.
-        for (auto id: past_ahead)
-            m_group_ahead.erase(id);
-
-        // Check if any packet from aheads was found with the monotonic
-        // sequence, if so, return it now.
-        if (!ahead_packet.empty())
+        // This function also updates the group sequence pointer.
+        if (GroupCheckPacketAhead(ahead_packet))
             return move(ahead_packet);
     }
 
-    // Setup epoll every time anew, the socket set
-    // might be updated.
+    // LINK QUALIFICATION NAMES:
+    //
+    // HORSE: Correct link, which delivers the very next sequence.
+    // Not necessarily this link is currently active.
+    //
+    // KANGAROO: Got some packets dropped and the sequence number
+    // of the packet jumps over the very next sequence and delivers
+    // an ahead packet.
+    //
+    // ELEPHANT: Is not ready to read, while others are, or reading
+    // up to the current latest delivery sequence number does not
+    // reach this sequence and the link becomes non-readable earlier.
+
+    // The above condition has ruled out one kangaroo and turned it
+    // into a horse.
+
+    // Below there's a loop that will try to extract packets. Kangaroos
+    // will be among the polled ones because skipping them risks that
+    // the elephants will take over the reading. Links already known as
+    // elephants will be also polled in an attempt to revitalize the
+    // connection that experienced just a short living choking.
+    //
+    // After polling we attempt to read from every link that reported
+    // read-readiness and read at most up to the sequence equal to the
+    // current delivery sequence.
+
+    // Links that deliver a packet below that sequence will be retried
+    // until they deliver no more packets or deliver the packet of
+    // expected sequence. Links that don't have a record in m_group_positions
+    // and report readiness will be always read, at least to know what
+    // sequence they currently stand on.
+    //
+    // Links that are already known as kangaroos will be polled, but
+    // no reading attempt will be done. If after the reading series
+    // it will turn out that we have no more horses, the slowest kangaroo
+    // will be "advanced to a horse" (the ahead link with a sequence
+    // closest to the current delivery sequence will get its sequence
+    // set as current delivered and its recorded ahead packet returned
+    // as the read packet).
+
+    // If we find at least one horse, the packet read from that link
+    // will be delivered. All other link will be just ensured update
+    // up to this sequence number, or at worst all available packets
+    // will be read. In this case all kangaroos remain kangaroos,
+    // until the current delivery sequence m_group_seqno will be lifted
+    // to the sequence recorded for these links in m_group_positions,
+    // during the next time ahead check, after which they will become
+    // horses.
+
+    // Setup epoll every time anew, the socket set might be updated.
     srt_epoll_clear_usocks(srt_epoll);
+    Verb() << "E(" << srt_epoll << ") " << VerbNoEOL;
 
     for (size_t i = 0; i < size; ++i)
     {
         SRT_SOCKGROUPDATA& d = m_group_data[i];
         if (d.status != SRTS_CONNECTED)
-            continue; // don't read over a failed socket
-
-        int modes = SRT_EPOLL_IN;
-        srt_epoll_add_usock(srt_epoll, d.id, &modes);
-        Verb() << "Added @" << d.id << " to epoll (" << srt_epoll << ") in modes: " << modes;
-    }
-
-    for (;;)
-    {
-        // This loop should be normally passed once.
-        bool any = false;
-
-        // The group data contains information about the socket we want to use
-        // for reading. Perform the e-polling.
-
-        // Don't set up data info in this 
-        SRT_MSGCTRL mctrl = srt_msgctrl_default;
-
-        vector<SRTSOCKET> sready(size);
-        int ready_len = size;
-
-        // BLOCKING MODE - temporary the only one
         {
-            // Poll on this descriptor until reading is available, indefinitely.
-            if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
-            {
-                Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll, group)");
-            }
-            Verb() << "EPOLL: read-ready sockets: " << VerbNoEOL;
-            for (int i = 0; i < ready_len; ++i)
-                Verb() << "@" << sready[i] << " " << VerbNoEOL;
-            Verb() << "(total " << ready_len << ")";
+            Verb() << "@" << d.id << "<pending> " << VerbNoEOL;
+            continue; // don't read over a failed or pending socket
         }
 
-        vector<SRTSOCKET> broken;
-
-        for (size_t i = 0; i < size_t(ready_len); ++i)
+        if (broken.count(d.id))
         {
-            // Check if this socket is in aheads
-            // If so, don't read from it, wait until the ahead is flushed.
-
-            SRTSOCKET id = sready[i];
-            auto x = m_group_ahead.find(id);
-
-            if (x != m_group_ahead.end())
-            {
-                Verb() << "Socket @" << id << " is still ahead, NOT READING";
-                continue;
-            }
-
-            // Read from a socket that reported readiness
-            bytevector data(chunk);
-            stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
-            if (stat == SRT_ERROR)
-            {
-                int err = srt_getlasterror(0);
-                if (err == SRT_EASYNCRCV)
-                {
-                    Verb() << "Spurious wakeup on @" << id << " - ignoring";
-                    continue;
-                }
-                Verb() << "Error @" << id << ": " << srt_getlasterror_str();
-                broken.push_back(id);
-                continue;
-            }
-
-            size_t datasize = size_t(stat);
-            if ( datasize < data.size() )
-                data.resize(datasize);
-
-            // Ok, we have the buffer, now check the sequence number.
-            // If this is the first time we read it, take it as a good deal.
-
-            any = true;
-            if (m_group_seqno == -1)
-            {
-                m_group_seqno = mctrl.pktseq;
-            }
-            else
-            {
-                // Trace the sequence number whether it is monotonic.
-                int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_group_seqno);
-                if (seqdiff > 1)
-                {
-                    // Ahead packet. Store.
-                    // We state that this is ALWAYS INSERTING the id to
-                    // the ahead map - the check if it's already in the map
-                    // was done before and reading was therefore prevented from.
-                    m_group_ahead[id] = Ahead { move(data), mctrl.pktseq };
-                    Verb() << "Socket @" << id << " jumps ahead to %" << mctrl.pktseq << " - AHEAD.";
-                }
-                else if (seqdiff < 1)
-                {
-                    // Behind packet. Discard
-                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " already delivered - discarding";
-                }
-                else if (output.empty())
-                {
-                    // Update the sequence number and deliver packet
-                    m_group_seqno = mctrl.pktseq;
-                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " DELIVERING";
-
-                    // Remember this one, but read from every ready socket.
-                    output = data;
-                }
-                else
-                {
-                    Verb() << "Socket @" << id << " %" << mctrl.pktseq << " - should have received already, discarding";
-                }
-            }
-        }
-
-        // Just quit here and don't research any other parts.
-        // If any sockets were broken, they'll be removed from
-        // the group anyway, so they won't be seen next time.
-        if (!output.empty())
-        {
-            return output;
-        }
-
-        // ready_len is only the length of currently reported
-        // ready sockets, NOT NECESSARILY containing all sockets from the group.
-        if (broken.size() == size)
-        {
-            // All broken
-            Error("All sockets broken");
-        }
-
-        // Now remove all broken sockets from aheads, if any.
-        // Even if they have already delivered a packet.
-        // NOTE: if the control passed to here, it means that
-        // NO SOCKETS DELIVERED THE NEXT SEQUENCE, so this was
-        // either nothing read from any socket (even if because of
-        // ahead), or those that were read, were gone ahead.
-        for (SRTSOCKET d: broken)
-            m_group_ahead.erase(d);
-
-        if (m_group_ahead.empty())
-        {
-            Verb() << "WEIRD: %" << m_group_seqno << ", some sockets are open, nothing read from any, ahead is empty. TRY AGAIN.";
+            Verb() << "@" << d.id << "<broken> " << VerbNoEOL;
             continue;
         }
 
-        // CURRENT STATE:
-        // 1. No sockets have delivered any data.
-        // 2. Those from which any reading was done, delivered ahead.
+        // Don't skip packets that are ahead because if we have a situation
+        // that all links are either "elephants" (do not report read readiness)
+        // and "kangaroos" (have already delivered an ahead packet) then
+        // omiting kangaroos will result in only elephants to be polled for
+        // reading. Elephants, due to the strict timing requirements and
+        // ensurance that TSBPD on every link will result in exactly the same
+        // delivery time for a packet of given sequence, having an elephant
+        // and kangaroo in one cage means that the elephant is simply a broken
+        // or half-broken link (the data are not delivered, but it will get
+        // repaired soon, enough for SRT to maintain the connection, but it
+        // will still drop packets that didn't arrive in time), in both cases
+        // it may potentially block the reading for an indefinite time, while
+        // simultaneously a kangaroo might be a link that got some packets
+        // dropped, but then it's still capable to deliver packets on time.
 
+        // Note also that about the fact that some links turn out to be
+        // elephants we'll learn only after we try to poll and read them.
 
-        auto it = m_group_ahead.begin();
-        Ahead* pa = &it->second;
-        ++it;
-        bool isone = true;
+        int modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+        srt_epoll_add_usock(srt_epoll, d.id, &modes);
+        Verb() << "@" << d.id << "[READ] " << VerbNoEOL;
+    }
 
-        // This will be skipped, if there's only one element
-        if (it != m_group_ahead.end())
+    Verb() << "";
+
+    // Here we need to make an additional check.
+    // There might be a possibility that all sockets that
+    // were added to the reader group, are ahead. At least
+    // surely we don't have a situation that any link contains
+    // an ahead-read subsequent packet, because GroupCheckPacketAhead
+    // already handled that case.
+    //
+    // What we can have is that every link has:
+    // - no known seq position yet (is not registered in the position map yet)
+    // - the position equal to the latest delivered sequence
+    // - the ahead position
+
+    // Now the situation is that we don't have any packets
+    // waiting for delivery so we need to wait for any to report one.
+    // XXX We support blocking mode only at the moment.
+    // The non-blocking mode would need to simply check the readiness
+    // with only immediate report, and read-readiness would have to
+    // be done in background.
+
+    vector<SRTSOCKET> sready(size);
+    int ready_len = size;
+
+    {
+        // Poll on this descriptor until reading is available, indefinitely.
+        if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
         {
-            isone = false;
-            // ACTION:
-            // Find the least possible sequence out of all aheads, deliver it,
-            // update the latest sequence, continue.
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll, group)");
+        }
+        Verb() << "RDY: " << VerbNoEOL;
+        for (int i = 0; i < ready_len; ++i)
+            Verb() << "@" << sready[i] << " " << VerbNoEOL;
+        Verb() << "(total " << ready_len << ")";
+    }
 
-            // Start from the second element and find the earliest sequence
-            for (; it != m_group_ahead.end(); ++it)
+    // Ok, now we need to have some extra qualifications:
+    // 1. If a socket has no registry yet, we read anyway, just
+    // to notify the current position. We read ONLY ONE PACKET this time,
+    // we'll worry later about adjusting it to the current group sequence
+    // position.
+    // 2. If a socket is already position ahead, DO NOT read from it, even
+    // if it is ready.
+
+    // The state of things whether we were able to extract the very next
+    // sequence will be simply defined by the fact that `output` is nonempty.
+
+    int32_t next_seq = m_group_seqno;
+
+    for (size_t i = 0; i < size_t(ready_len); ++i)
+    {
+        // Check if this socket is in aheads
+        // If so, don't read from it, wait until the ahead is flushed.
+
+        SRTSOCKET id = sready[i];
+        ReadPos* p = nullptr;
+        auto pe = m_group_positions.find(id);
+        if (pe != m_group_positions.end())
+        {
+            p = &pe->second;
+            // Possible results of comparison:
+            // x < 0: the sequence is in the past, the socket should be adjusted FIRST
+            // x = 0: the socket should be ready to get the exactly next packet
+            // x = 1: the case is already handled by GroupCheckPacketAhead.
+            // x > 1: AHEAD. DO NOT READ.
+            int seqdiff = CSeqNo::seqcmp(p->sequence, m_group_seqno);
+            if (seqdiff > 1)
             {
-                int diff = CSeqNo::seqcmp(pa->sequence, it->second.sequence);
-                if (diff > 0)
+                Verb() << "EPOLL: @" << id << " %" << p->sequence << " AHEAD, not reading.";
+                continue;
+            }
+        }
+
+
+        // Read from this socket stubbornly, until:
+        // - reading is no longer possible (AGAIN)
+        // - the sequence difference is >= 1
+
+        int fi = 1; // marker for Verb to display flushing
+        for (;;)
+        {
+            bytevector data(chunk);
+            SRT_MSGCTRL mctrl = srt_msgctrl_default;
+            stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
+            if (stat == SRT_ERROR)
+            {
+                if (fi == 0)
                 {
-                    pa = &it->second;
+                    Verb() << ".)";
+                    fi = 1;
+                }
+                int err = srt_getlasterror(0);
+                if (err == SRT_EASYNCRCV)
+                {
+                    // Do not treat this as spurious, just stop reading.
+                    break;
+                }
+                Verb() << "Error @" << id << ": " << srt_getlasterror_str();
+                broken.insert(id);
+                break;
+            }
+
+            // NOTE: checks against m_group_seqno and decisions based on it
+            // must NOT be done if m_group_seqno is -1, which means that we
+            // are about to deliver the very first packet and we take its
+            // sequence number as a good deal.
+
+            // The order must be:
+            // - check discrepancy
+            // - record the sequence
+            // - check ordering.
+            // The second one must be done always, but failed discrepancy
+            // check should exclude the socket from any further checks.
+            // That's why the common check for m_group_seqno != -1 can't
+            // embrace everything below.
+
+            // We need to first qualify the sequence, just for a case
+            if (m_group_seqno != -1 && abs(m_group_seqno - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+            {
+                // This error should be returned if the link turns out
+                // to be the only one, or set to the group data.
+                // err = SRT_ESECFAIL;
+                if (fi == 0)
+                {
+                    Verb() << ".)";
+                    fi = 1;
+                }
+                Verb() << "Error @" << id << ": SEQUENCE DISCREPANCY: base=%" << m_group_seqno << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL";
+                broken.insert(id);
+                break;
+            }
+
+            // Rewrite it to the state for a case when next reading
+            // would not succeed. Do not insert the buffer here because
+            // this is only required when the sequence is ahead; for that
+            // it will be fixed later.
+            if (!p)
+            {
+                p = &(m_group_positions[id] = ReadPos { mctrl.pktseq, {} });
+            }
+            else
+            {
+                p->sequence = mctrl.pktseq;
+            }
+
+            if (m_group_seqno != -1)
+            {
+                // Now we can safely check it.
+                int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_group_seqno);
+
+                if (seqdiff <= 0)
+                {
+                    if (fi == 1)
+                    {
+                        Verb() << "(@" << id << " FLUSH:" << VerbNoEOL;
+                        fi = 0;
+                    }
+
+                    Verb() << "." << VerbNoEOL;
+
+                    // The sequence is recorded, the packet has to be discarded.
+                    // That's all.
+                    continue;
+                }
+
+                // Finish flush reporting if fallen into here
+                if (fi == 0)
+                {
+                    Verb() << ".)";
+                    fi = 1;
+                }
+
+                // Now we have only two possibilities:
+                // seqdiff == 1: The very next sequence, we want to read and return the packet.
+                // seqdiff > 1: The packet is ahead - record the ahead packet, but continue with the others.
+
+                if (seqdiff > 1)
+                {
+                    Verb() << "@" << id << " %" << mctrl.pktseq << " AHEAD";
+                    p->packet = move(data);
+                    break; // Don't read from that socket anymore.
+                }
+            }
+
+            // We have seqdiff = 1, or we simply have the very first packet
+            // which's sequence is taken as a good deal. Update the sequence
+            // and record output.
+
+            if (!output.empty())
+            {
+                Verb() << "@" << id << " %" << mctrl.pktseq << " REDUNDANT";
+                break;
+            }
+
+
+            Verb() << "@" << id << " %" << mctrl.pktseq << " DELIVERING";
+            output = move(data);
+
+            // Record, but do not update yet, until all sockets are handled.
+            next_seq = mctrl.pktseq;
+            break;
+        }
+    }
+
+    // ready_len is only the length of currently reported
+    // ready sockets, NOT NECESSARILY containing all sockets from the group.
+    if (broken.size() == size)
+    {
+        // All broken
+        Error("All sockets broken");
+    }
+
+    // Now remove all broken sockets from aheads, if any.
+    // Even if they have already delivered a packet.
+    for (SRTSOCKET d: broken)
+        m_group_positions.erase(d);
+
+    if (!output.empty())
+    {
+        // We have extracted something, meaning that we have the sequence shift.
+        // Update it now and don't do anything else with the sockets.
+
+        // Sanity check
+        if (next_seq == -1)
+        {
+            Error("IPE: next_seq not set after output extracted!");
+        }
+        m_group_seqno = next_seq;
+        return output;
+    }
+
+    // Check if we have any sockets left :D
+
+    // Here we surely don't have any more HORSES,
+    // only ELEPHANTS and KANGAROOS. Qualify them and
+    // attempt to at least take advantage of KANGAROOS.
+
+    // In this position all links are either:
+    // - updated to the current position
+    // - updated to the newest possible possition available
+    // - not yet ready for extraction (not present in the group)
+
+    // If we haven't extracted the very next sequence position,
+    // it means that we might only have the ahead packets read,
+    // that is, the next sequence has been dropped by all links.
+
+    if (!m_group_positions.empty())
+    {
+        // This might notify both lingering links, which didn't
+        // deliver the required sequence yet, and links that have
+        // the sequence ahead. Review them, and if you find at
+        // least one packet behind, just wait for it to be ready.
+        // Use again the waiting function because we don't want
+        // the general waiting procedure to skip others.
+        set<SRTSOCKET> elephants;
+
+        // const because it's `typename decltype(m_group_positions)::value_type`
+        pair<const SRTSOCKET, ReadPos>* slowest_kangaroo = nullptr;
+
+        for (auto& sock_rp: m_group_positions)
+        {
+            // NOTE that m_group_seqno in this place wasn't updated
+            // because we haven't successfully extracted anything.
+            if (CSeqNo::seqcmp(sock_rp.second.sequence, m_group_seqno) < 0)
+            {
+                elephants.insert(sock_rp.first);
+            }
+            else
+            {
+                if (!slowest_kangaroo)
+                {
+                    slowest_kangaroo = &sock_rp;
+                }
+                else
+                {
+                    // Update to find the slowest kangaroo.
+                    int seqdiff = CSeqNo::seqcmp(slowest_kangaroo->second.sequence, sock_rp.second.sequence);
+                    if (seqdiff > 0)
+                    {
+                        slowest_kangaroo = &sock_rp;
+                    }
                 }
             }
         }
 
-        Verb() << "DROPPED %" << m_group_seqno << " --> skipping up to %" << pa->sequence;
-        bytevector output = move(pa->packet);
-        m_group_seqno = pa->sequence;
-
-        if (isone)
-            m_group_ahead.clear(); // deleting one item always clears anyway
-        else
+        // Note that if no "slowest_kangaroo" was found, it means
+        // that we don't have kangaroos.
+        if (slowest_kangaroo)
         {
-            // Remove only this one
-            m_group_ahead.erase(it);
+            // We have a slowest kangaroo. Elephants must be ignored.
+            // Best case, they will get revived, worst case they will be
+            // soon broken.
+            //
+            // As we already have the packet delivered by the slowest
+            // kangaroo, we can simply return it.
+
+            m_group_seqno = slowest_kangaroo->second.sequence;
+            Verb() << "@" << slowest_kangaroo->first << " %" << m_group_seqno << " KANGAROO->HORSE";
+            swap(output, slowest_kangaroo->second.packet);
+            return output;
         }
 
-        return output;
+        // Here ALL LINKS ARE ELEPHANTS, stating that we still have any.
+        if (!elephants.empty())
+        {
+            // If we don't have kangaroos, then simply reattempt to
+            // poll all elephants again anyway (at worst they are all
+            // broken and we'll learn about it soon).
+            Verb() << "ALL LINKS ELEPHANTS. Re-polling.";
+            goto RETRY_READING;
+        }
     }
 
-    Verb() << "NO DATA EXTRCTED";
-    return bytevector();
+    // We have checked so far only links that were ready to poll.
+    // Links that are not ready should be re-checked.
+    // Links that were not ready at the entrance should be checked
+    // separately, and probably here is the best moment to do it.
+    // After we make sure that at least one link is ready, we can
+    // reattempt to read a packet from it.
+
+    // Ok, so first collect all sockets that are in
+    // connecting state, make a poll for connection.
+    srt_epoll_clear_usocks(srt_epoll);
+    bool have_connectors = false, have_ready = false;
+    for (auto& d: m_group_data)
+    {
+        if (d.status < SRTS_CONNECTED)
+        {
+            // Not sure anymore if IN or OUT signals the connect-readiness,
+            // but no matter. The signal will be cleared once it is used,
+            // while it will be always on when there's anything ready to read.
+            int modes = SRT_EPOLL_IN | SRT_EPOLL_OUT;
+            srt_epoll_add_usock(srt_epoll, d.id, &modes);
+            have_connectors = true;
+        }
+        else if (d.status == SRTS_CONNECTED)
+        {
+            have_ready = true;
+        }
+    }
+
+    if (have_ready)
+    {
+        Verb() << "(connected in the meantime)";
+        // Some have connected in the meantime, don't
+        // waste time on the pending ones.
+        goto RETRY_READING;
+    }
+
+    if (have_connectors)
+    {
+        Verb() << "(waiting for pending connectors to connect)";
+        // Wait here for them to be connected.
+        vector<SRTSOCKET> sready;
+        sready.resize(m_group_data.size());
+        int ready_len = m_group_data.size();
+        if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
+        {
+            Error("All sockets in the group disconnected");
+        }
+
+        goto RETRY_READING;
+    }
+
+    Error("No data extracted");
+    return output; // Just a marker - this above function throws an exception
 }
 
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
-    SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool have_group = !m_group_nodes.empty();
 
+    bytevector data(chunk);
     // EXPERIMENTAL
 #ifdef SRT_ENABLE_APP_READER
     if (have_group || m_listener_group)
     {
-        return GroupRead(chunk);
+        data = GroupRead(chunk);
     }
-#endif
 
-    bytevector data(chunk);
+    if (have_group)
+    {
+        // This is to be done for caller mode only
+        UpdateGroupStatus(m_group_data.data(), m_group_data.size());
+    }
+#else
+
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool ready = true;
     int stat;
 
@@ -1421,10 +1695,11 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    if (have_group)
+    if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
+#endif
 
     CBytePerfMon perf;
     srt_bstats(m_sock, &perf, true);

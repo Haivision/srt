@@ -80,9 +80,9 @@ void CUDTSocket::construct()
 {
     m_IncludedGroup = NULL;
     m_IncludedIter = CUDTGroup::gli_NULL();
-    pthread_mutex_init(&m_AcceptLock, NULL);
-    pthread_cond_init(&m_AcceptCond, NULL);
-    pthread_mutex_init(&m_ControlLock, NULL);
+    CGuard::createMutex(m_AcceptLock);
+    CGuard::createCond(m_AcceptCond);
+    CGuard::createMutex(m_ControlLock);
 }
 
 CUDTSocket::~CUDTSocket()
@@ -94,9 +94,9 @@ CUDTSocket::~CUDTSocket()
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
 
-   pthread_mutex_destroy(&m_AcceptLock);
-   pthread_cond_destroy(&m_AcceptCond);
-   pthread_mutex_destroy(&m_ControlLock);
+   CGuard::releaseMutex(m_AcceptLock);
+   CGuard::releaseCond(m_AcceptCond);
+   CGuard::releaseMutex(m_ControlLock);
 }
 
 
@@ -131,7 +131,7 @@ void CUDTSocket::makeClosed()
 
 CUDTUnited::CUDTUnited():
 m_Sockets(),
-m_ControlLock(),
+m_GlobControlLock(),
 m_IDLock(),
 m_TLSError(),
 m_mMultiplexer(),
@@ -153,9 +153,9 @@ m_ClosedSockets()
    m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
-   pthread_mutex_init(&m_ControlLock, NULL);
-   pthread_mutex_init(&m_IDLock, NULL);
-   pthread_mutex_init(&m_InitLock, NULL);
+   CGuard::createMutex(m_GlobControlLock);
+   CGuard::createMutex(m_IDLock);
+   CGuard::createMutex(m_InitLock);
 
    pthread_key_create(&m_TLSError, TLSDestroy);
 
@@ -172,9 +172,9 @@ CUDTUnited::~CUDTUnited()
         cleanup();
     }
 
-    pthread_mutex_destroy(&m_ControlLock);
-    pthread_mutex_destroy(&m_IDLock);
-    pthread_mutex_destroy(&m_InitLock);
+    CGuard::releaseMutex(m_GlobControlLock);
+    CGuard::releaseMutex(m_IDLock);
+    CGuard::releaseMutex(m_InitLock);
 
     pthread_key_delete(m_TLSError);
 
@@ -193,7 +193,7 @@ std::string CUDTUnited::CONID(SRTSOCKET sock)
 
 int CUDTUnited::startup()
 {
-   CGuard gcinit(m_InitLock);
+   CGuard gcinit(m_InitLock, "init");
 
    if (m_iInstanceCount++ > 0)
       return 0;
@@ -214,8 +214,8 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-   pthread_mutex_init(&m_GCStopLock, NULL);
-   pthread_cond_init(&m_GCStopCond, NULL);
+   CGuard::createMutex(m_GCStopLock);
+   CGuard::createCond(m_GCStopCond);
 
    {
        ThreadName tn("SRT:GC");
@@ -229,7 +229,7 @@ int CUDTUnited::startup()
 
 int CUDTUnited::cleanup()
 {
-   CGuard gcinit(m_InitLock);
+   CGuard gcinit(m_InitLock, "init");
 
    if (--m_iInstanceCount > 0)
       return 0;
@@ -250,8 +250,8 @@ int CUDTUnited::cleanup()
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
 #ifndef WIN32
-   pthread_mutex_destroy(&m_GCStopLock);
-   pthread_cond_destroy(&m_GCStopCond);
+   CGuard::releaseMutex(m_GCStopLock);
+   CGuard::releaseCond(m_GCStopCond);
 #endif
 
    m_bGCStatus = false;
@@ -307,7 +307,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
         {
             bool exists = false;
             {
-                CGuard cg(m_ControlLock, "glob.control");
+                CGuard cg(m_GlobControlLock, "GlobControl");
                 exists = for_group ?
                     m_Groups.count(sockval | SRTGROUP_MASK)
                  :
@@ -389,7 +389,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
     ns->m_pUDT->m_pCache = m_pCache;
 
     // protect the m_Sockets structure.
-    CGuard cs(m_ControlLock, "glob.control");
+    CGuard cs(m_GlobControlLock, "GlobControl");
     try
     {
         HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
@@ -529,7 +529,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                 "newConnection: incoming %s, mapping socket %d",
                 SockaddrToString(peer).c_str(), ns->m_SocketID);
         {
-            CGuard cg(m_ControlLock, "glob.control");
+            CGuard cg(m_GlobControlLock, "GlobControl");
             m_Sockets[ns->m_SocketID] = ns;
         }
 
@@ -546,7 +546,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         // connect() in UDT code) may fail, in which case this socket should not be
         // further processed and should be removed.
         {
-            CGuard cg(m_ControlLock, "glob.control");
+            CGuard cg(m_GlobControlLock, "GlobControl");
             m_Sockets.erase(ns->m_SocketID);
         }
         error = 1;
@@ -565,7 +565,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     CIPAddress::pton(Ref(ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
     // protect the m_Sockets structure.
-    CGuard::enterCS(m_ControlLock, "glob.control");
+    CGuard::enterCS(m_GlobControlLock, "GlobControl");
     try
     {
         HLOGF(mglog.Debug, 
@@ -578,14 +578,14 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
         error = 2;
     }
-    CGuard::leaveCS(m_ControlLock);
+    CGuard::leaveCS(m_GlobControlLock, "GlobControl");
 
     if (ns->m_IncludedGroup)
     {
         // XXX this might require another check of group type.
         // For redundancy group, at least, update the status in the group
         CUDTGroup* g = ns->m_IncludedGroup;
-        CGuard glock(g->m_GroupLock);
+        CGuard glock(g->m_GroupLock, "Group");
         CUDTGroup::gli_t gi;
 
         // Check if this is the first socket in the group.
@@ -627,7 +627,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
     if (should_submit_to_accept)
     {
-        CGuard::enterCS(ls->m_AcceptLock);
+        CGuard::enterCS(ls->m_AcceptLock, "Accept");
         try
         {
             ls->m_pQueuedSockets->insert(ns->m_SocketID);
@@ -637,7 +637,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
             LOGC(mglog.Error, log << "newConnection: error when queuing socket!");
             error = 3;
         }
-        CGuard::leaveCS(ls->m_AcceptLock);
+        CGuard::leaveCS(ls->m_AcceptLock, "Accept");
 
         HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
         // acknowledge users waiting for new connections on the listening socket
@@ -660,7 +660,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     {
         HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
                 << " NOT submitted to acceptance, another socket in the group is already connected");
-        CGuard cg(ls->m_AcceptLock);
+        CGuard cg(ls->m_AcceptLock, "Accept");
         ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
     }
 
@@ -683,7 +683,7 @@ ERR_ROLLBACK:
 SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure
-    CGuard cg(m_ControlLock, "glob.control");
+    CGuard cg(m_GlobControlLock, "GlobControl");
 
     sockets_t::iterator i = m_Sockets.find(u);
 
@@ -699,7 +699,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 
 int CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
 {
-   CGuard cg(s->m_ControlLock);
+   CGuard cg(s->m_ControlLock, "Control");
 
    // cannot bind a socket more than once
    if (s->m_Status != SRTS_INIT)
@@ -717,7 +717,7 @@ int CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
 
 int CUDTUnited::bind(CUDTSocket* s, int udpsock)
 {
-   CGuard cg(s->m_ControlLock);
+   CGuard cg(s->m_ControlLock, "Control");
 
    // cannot bind a socket more than once
    if (s->m_Status != SRTS_INIT)
@@ -758,7 +758,7 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-   CGuard cg(s->m_ControlLock);
+   CGuard cg(s->m_ControlLock, "Control");
 
    // NOTE: since now the socket is protected against simultaneous access.
    // In the meantime the socket might have been closed, which means that
@@ -829,7 +829,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
    // !!only one conection can be set up each time!!
    while (!accepted)
    {
-       CGuard cg(ls->m_AcceptLock);
+       CGuard cg(ls->m_AcceptLock, "Accept");
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -898,7 +898,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
           u = s->m_IncludedGroup->m_GroupID;
       }
 
-      CGuard cg(s->m_ControlLock);
+      CGuard cg(s->m_ControlLock, "Control");
 
       // Check if the length of the buffer to fill the name in
       // was large enough.
@@ -1051,7 +1051,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         catch (...)
         {
             LOGC(mglog.Error, log << "groupConnect: Error during setting options - propagating error");
-            CGuard cl(m_ControlLock, "glob.control");
+            CGuard cl(m_GlobControlLock, "GlobControl");
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
@@ -1108,7 +1108,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
             ns->removeFromGroup();
             erc_rloc = e.getErrorCode();
 
-            CGuard cl(m_ControlLock, "glob.control");
+            CGuard cl(m_GlobControlLock, "GlobControl");
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
@@ -1118,7 +1118,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         {
             LOGC(mglog.Fatal, log << "groupConnect: UNKNOWN EXCEPTION from connectIn");
             ns->removeFromGroup();
-            CGuard cl(m_ControlLock, "glob.control");
+            CGuard cl(m_GlobControlLock, "GlobControl");
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
@@ -1423,7 +1423,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
-       CGuard manager_cg(m_ControlLock, "glob.control", "global.control");
+       CGuard manager_cg(m_GlobControlLock, "GlobControl", "global.control");
 
        // since "s" is located before m_ControlLock, locate it again in case
        // it became invalid
@@ -1481,7 +1481,7 @@ int CUDTUnited::close(CUDTSocket* s)
            // Done the other way, but still done. You can stop waiting.
            bool isgone = false;
            {
-               CGuard manager_cg(m_ControlLock, "glob.control");
+               CGuard manager_cg(m_GlobControlLock, "GlobControl");
                isgone = m_ClosedSockets.count(id) == 0;
            }
            if (!isgone)
@@ -1889,7 +1889,7 @@ int CUDTUnited::epoll_release(const int eid)
 
 CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
-    CGuard cg(m_ControlLock, "glob.control");
+    CGuard cg(m_GlobControlLock, "GlobControl");
 
     sockets_t::iterator i = m_Sockets.find(u);
 
@@ -1905,7 +1905,7 @@ CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 
 CUDTGroup* CUDTUnited::locateGroup(SRTSOCKET u, ErrorHandling erh)
 {
-   CGuard cg(m_ControlLock, "glob.control");
+   CGuard cg(m_GlobControlLock, "GlobControl");
 
    groups_t::iterator i = m_Groups.find(u);
    if ( i == m_Groups.end() )
@@ -1923,7 +1923,7 @@ CUDTSocket* CUDTUnited::locatePeer(
    const SRTSOCKET id,
    int32_t isn)
 {
-   CGuard cg(m_ControlLock, "glob.control");
+   CGuard cg(m_GlobControlLock, "GlobControl");
 
    map<int64_t, set<SRTSOCKET> >::iterator i = m_PeerRec.find(
       CUDTSocket::getPeerSpec(id, isn));
@@ -1949,7 +1949,7 @@ CUDTSocket* CUDTUnited::locatePeer(
 
 void CUDTUnited::checkBrokenSockets()
 {
-   CGuard cg(m_ControlLock, "glob.control");
+   CGuard cg(m_GlobControlLock, "GlobControl");
 
    // set of sockets To Be Closed and To Be Removed
    vector<SRTSOCKET> tbc;
@@ -2009,10 +2009,10 @@ void CUDTUnited::checkBrokenSockets()
                continue;
          }
 
-         CGuard::enterCS(ls->second->m_AcceptLock);
+         CGuard::enterCS(ls->second->m_AcceptLock, "Accept");
          ls->second->m_pQueuedSockets->erase(s->m_SocketID);
          ls->second->m_pAcceptSockets->erase(s->m_SocketID);
-         CGuard::leaveCS(ls->second->m_AcceptLock);
+         CGuard::leaveCS(ls->second->m_AcceptLock, "Accept");
       }
    }
 
@@ -2068,7 +2068,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    if (s->m_pQueuedSockets)
    {
-       CGuard cg(s->m_AcceptLock);
+       CGuard cg(s->m_AcceptLock, "Accept");
 
        // if it is a listener, close all un-accepted sockets in its queue
        // and remove them later
@@ -2160,7 +2160,7 @@ CUDTException* CUDTUnited::getError()
 void CUDTUnited::updateMux(
    CUDTSocket* s, const sockaddr_any& addr, const int* udpsock /*[[nullable]]*/)
 {
-   CGuard cg(m_ControlLock, "glob.control");
+   CGuard cg(m_GlobControlLock, "GlobControl");
 
    // Don't try to reuse given address, if udpsock was given.
    // In such a case rely exclusively on that very socket and
@@ -2320,7 +2320,7 @@ void CUDTUnited::updateMux(
 // socket.
 void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
-   CGuard cg(m_ControlLock, "glob.control");
+   CGuard cg(m_GlobControlLock, "GlobControl");
    int port = ls->m_SelfAddr.hport();
 
    // find the listener's address
@@ -2347,7 +2347,7 @@ void* CUDTUnited::garbageCollect(void* p)
 
    THREAD_STATE_INIT("SRT:GC");
 
-   CGuard gcguard(self->m_GCStopLock);
+   CGuard gcguard(self->m_GCStopLock, "GCStop");
 
    while (!self->m_bClosing)
    {
@@ -2369,7 +2369,7 @@ void* CUDTUnited::garbageCollect(void* p)
    }
 
    // remove all sockets and multiplexers
-   CGuard::enterCS(self->m_ControlLock);
+   CGuard::enterCS(self->m_GlobControlLock, "GlobControl");
    for (sockets_t::iterator i = self->m_Sockets.begin();
       i != self->m_Sockets.end(); ++ i)
    {
@@ -2386,10 +2386,10 @@ void* CUDTUnited::garbageCollect(void* p)
             continue;
       }
 
-      CGuard::enterCS(ls->second->m_AcceptLock);
+      CGuard::enterCS(ls->second->m_AcceptLock, "Accept");
       ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
       ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
-      CGuard::leaveCS(ls->second->m_AcceptLock);
+      CGuard::leaveCS(ls->second->m_AcceptLock, "Accept");
    }
    self->m_Sockets.clear();
 
@@ -2398,15 +2398,15 @@ void* CUDTUnited::garbageCollect(void* p)
    {
       j->second->m_TimeStamp = 0;
    }
-   CGuard::leaveCS(self->m_ControlLock);
+   CGuard::leaveCS(self->m_GlobControlLock, "GlobControl");
 
    while (true)
    {
       self->checkBrokenSockets();
 
-      CGuard::enterCS(self->m_ControlLock);
+      CGuard::enterCS(self->m_GlobControlLock, "GlobControl");
       bool empty = self->m_ClosedSockets.empty();
-      CGuard::leaveCS(self->m_ControlLock);
+      CGuard::leaveCS(self->m_GlobControlLock, "GlobControl");
 
       if (empty)
          break;
@@ -2533,7 +2533,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         g->managed(false);
     }
 
-    CGuard cg(s->m_ControlLock);
+    CGuard cg(s->m_ControlLock, "Control");
 
     // Check if the socket already is in the group
     CUDTGroup::gli_t f = g->find(socket);
@@ -2560,7 +2560,7 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
     if (!s->m_IncludedGroup)
         return setError(MJ_NOTSUP, MN_INVAL, 0);
 
-    CGuard grd(s->m_ControlLock);
+    CGuard grd(s->m_ControlLock, "Control");
     s->removeFromGroup();
     return 0;
 }
@@ -3837,32 +3837,32 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 
 void setloglevel(logging::LogLevel::type ll)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.max_level = ll;
 }
 
 void addlogfa(logging::LogFA fa)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.enabled_fa.set(fa, true);
 }
 
 void dellogfa(logging::LogFA fa)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.enabled_fa.set(fa, false);
 }
 
 void resetlogfa(set<logging::LogFA> fas)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
@@ -3870,20 +3870,20 @@ void resetlogfa(const int* fara, size_t fara_size)
 
 void setlogstream(std::ostream& stream)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.log_stream = &stream;
 }
 
 void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.loghandler_opaque = opaque;
     srt_logger_config.loghandler_fn = handler;
 }
 
 void setlogflags(int flags)
 {
-    CGuard gg(srt_logger_config.mutex);
+    CGuard gg(srt_logger_config.mutex, "config");
     srt_logger_config.flags = flags;
 }
 

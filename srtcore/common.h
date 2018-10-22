@@ -661,7 +661,7 @@ public:
 
     // This is only for one-shot signaling. This doesn't need a CGuard
     // variable, only the mutex itself. Only lock_signal() can be used.
-    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* ln = 0);
+    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn = 0, const char* ln = 0);
 
     // Wait indefinitely, until getting a signal on CV.
     void wait();

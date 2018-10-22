@@ -63,12 +63,14 @@ protected:
     int32_t m_group_seqno = -1;
     vector<SRT_SOCKGROUPDATA> m_group_data;
 
-    struct Ahead
+    struct ReadPos
     {
-        bytevector packet;
         int32_t sequence;
+        bytevector packet;
     };
-    map<SRTSOCKET, Ahead> m_group_ahead;
+    map<SRTSOCKET, ReadPos> m_group_positions;
+    SRTSOCKET m_group_active; // The link from which the last packet was delivered
+
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
     bool m_listener_group = false;
@@ -134,6 +136,8 @@ public:
 
     bytevector Read(size_t chunk) override;
     bytevector GroupRead(size_t chunk);
+    bool GroupCheckPacketAhead(bytevector& output);
+
 
     /*
        In this form this isn't needed.

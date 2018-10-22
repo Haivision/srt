@@ -504,7 +504,7 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln SRT
     // variable that you have used for construction as its argument.
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* ln)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn, const char* ln)
     : m_cond(&cond), m_mutex(&mutex)
 #if ENABLE_THREAD_LOGGING
       , nolock(true)
@@ -513,13 +513,17 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Noloc
 #if ENABLE_THREAD_LOGGING
     std::ostringstream cv;
     cv << &m_cond;
-    if (ln)
+    if (cn)
     {
-        cv << "(" << ln << ")";
+        cv << "(" << cn << ")";
     }
     cvname = cv.str();
     std::ostringstream lv;
     lv << &mutex;
+    if (ln)
+    {
+        lv << "(" << ln << ")";
+    }
     lockname = lv.str();
 #endif
     // We expect that the mutex is NOT locked at this moment by the current thread,
@@ -578,10 +582,16 @@ void CCondDelegate::lock_signal()
         LOGS(cerr, log << "Cond: IPE: lock_signal done on LOCKED Cond.");
     }
 #endif
-    LOGS(cerr, log << "Cond: SIGNAL:" << cvname << " locking: " << lockname << "...");
-    CGuard lk(*m_mutex);
-    LOGS(cerr, log << "Cond: ... locked: " << lockname);
+    LOGS(cerr, log << "Cond: SIGNAL:" << cvname << " { LOCKING: " << lockname << "...");
+
+    // Not using CGuard here because it would be logged
+    // and this will result in unnecessary excessive logging.
+    pthread_mutex_lock(m_mutex);
+    LOGS(cerr, log << "Cond: ... locked: " << lockname << " - SIGNAL!");
     pthread_cond_signal(m_cond);
+    pthread_mutex_unlock(m_mutex);
+
+    LOGS(cerr, log << "Cond: } UNLOCK:" << lockname);
 }
 
 void CCondDelegate::signal_locked(CGuard& lk SRT_ATR_UNUSED)

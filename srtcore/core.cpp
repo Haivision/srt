@@ -3059,7 +3059,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     CGuard cg(m_ConnectionLock, "conn");
 
     HLOGC(mglog.Debug, log << CONID() << "startConnect: -> " << SockaddrToString(serv_addr)
-            << (m_bSynRecving ? " (SYNCHRONOUS)" : "(ASYNCHRONOUS)") << "...");
+            << (m_bSynRecving ? " (SYNCHRONOUS)" : " (ASYNCHRONOUS)") << "...");
 
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
@@ -4186,7 +4186,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
     {
-        CGuard cl(s_UDTUnited.m_ControlLock, "control");
+        CGuard cl(s_UDTUnited.m_GlobControlLock, "GlobControl");
         CUDTGroup* g = m_parent->m_IncludedGroup;
         if (g)
         {
@@ -5477,6 +5477,10 @@ int CUDT::receiveBuffer(char* data, int len)
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
         tscond.signal_locked(recvguard);
     }
+    else
+    {
+        HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
+    }
 
 
     if (!m_pRcvBuffer->isRcvDataReady())
@@ -5879,7 +5883,12 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
         {
+            HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
             tscond.signal_locked(recvguard);
+        }
+        else
+        {
+            HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
         }
 
         if (!m_pRcvBuffer->isRcvDataReady())
@@ -5932,10 +5941,16 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         if (res == 0)
         {
             // read is not available any more
-            HLOGP(dlog.Debug, "receiveMessage: nothing to read, kicking TSBPD, return AGAIN");
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
+            {
+                HLOGP(dlog.Debug, "receiveMessage: nothing to read, kicking TSBPD, return AGAIN");
                 tscond.signal_locked(recvguard);
+            }
+            else
+            {
+                HLOGP(dlog.Debug, "receiveMessage: nothing to read, return AGAIN");
+            }
 
             // Shut up EPoll if no more messages in non-blocking mode
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
@@ -5944,10 +5959,16 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
 
         if (!m_pRcvBuffer->isRcvDataReady())
         {
-            HLOGP(dlog.Debug, "receiveMessage: DATA READ, but nothing more - kicking TSBPD.");
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
+            {
+                HLOGP(dlog.Debug, "receiveMessage: DATA READ, but nothing more - kicking TSBPD.");
                 tscond.signal_locked(recvguard);
+            }
+            else
+            {
+                HLOGP(dlog.Debug, "receiveMessage: DATA READ, but nothing more");
+            }
 
             // Shut up EPoll if no more messages in non-blocking mode
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
@@ -6737,16 +6758,16 @@ void CUDT::destroySynch()
 void CUDT::releaseSynch()
 {
     // wake up user calls
-    CCondDelegate sndblock(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK);
+    CCondDelegate sndblock(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK, "SendBlock", "SendBlock");
     sndblock.lock_signal();
 
     CGuard::enterCS(m_SendLock, "send");
     CGuard::leaveCS(m_SendLock, "send");
 
-    CCondDelegate rdcond(m_RecvDataCond, m_RecvDataLock, CCondDelegate::NOLOCK);
+    CCondDelegate rdcond(m_RecvDataCond, m_RecvDataLock, CCondDelegate::NOLOCK, "RecvData", "RecvData");
     rdcond.lock_signal();
 
-    CCondDelegate tscond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+    CCondDelegate tscond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK, "RcvTsbPd", "Recv");
     tscond.lock_signal();
 
     if (CGuard::isthread(m_RcvTsbPdThread))
@@ -7307,7 +7328,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       CGuard::leaveCS(m_AckLock, "ack");
       if (m_bSynSending)
       {
-          CCondDelegate sc(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK);
+          CCondDelegate sc(m_SendBlockCond, m_SendBlockLock, CCondDelegate::NOLOCK, "SendBlock", "SendBlock");
           sc.lock_signal();
       }
 
@@ -7846,6 +7867,12 @@ void CUDT::updateSrtSndSettings()
 
 void CUDT::updateAfterSrtHandshake(int hsv)
 {
+
+    // This is blocked from being run in the "app reader" version because here
+    // every socket does its TsbPd independently, just the sequence screwup is
+    // done and the application reader sorts out packets by sequence numbers,
+    // but only when they are signed off by TsbPd.
+#ifndef SRT_ENABLE_APP_READER
     // Update settings from options. This is to prevent TSBPD thread from
     // starting too early when HSv4 is in use. Must be done here though
     // before the buffers are created and get settings from here.
@@ -7855,6 +7882,7 @@ void CUDT::updateAfterSrtHandshake(int hsv)
         m_bTsbPd = false;
         m_bGroupTsbPd = true;
     }
+#endif
 
     // The only possibility here is one of these two:
     // - Agent is RESPONDER and it receives HSREQ.
@@ -8246,7 +8274,7 @@ void CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
-        CCondDelegate cc(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+        CCondDelegate cc(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK, "RcvTsbPd", "Recv");
         cc.lock_signal();
     }
 
@@ -8608,8 +8636,12 @@ int CUDT::processData(CUnit* unit)
            if (m_bTsbPd)
            {
                HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
-               CCondDelegate cond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK);
+               CCondDelegate cond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK, "RcvTsbPd", "Recv");
                cond.lock_signal();
+           }
+           else
+           {
+               HLOGC(mglog.Debug, log << "loss: socket is not TSBPD, not signaling");
            }
        }
 
@@ -9833,7 +9865,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bSynSending = bool_int_value(optval, optlen);
         break;
 
-        /*
+#ifndef SRT_ENABLE_APP_READER
     case SRTO_TLPKTDROP:
         m_bTLPktDrop = bool_int_value(optval, optlen);
         break;
@@ -9841,9 +9873,9 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_TSBPDMODE:
         m_bTsbPd = bool_int_value(optval, optlen);
         break;
-        */
+#endif
 
-        // Other options to be specificallty interpreted by group may follow.
+        // Other options to be specifically interpreted by group may follow.
         // All others must be simply stored for setting on a socket.
 
     default:

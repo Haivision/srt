@@ -234,7 +234,7 @@ public:
 
    CUDTGroup& addGroup(SRTSOCKET id)
    {
-       CGuard cg(m_ControlLock, "glob.control");
+       CGuard cg(m_GlobControlLock, "GlobControl");
        // This only ensures that the element exists.
        // If the element was newly added, it will be NULL.
        CUDTGroup*& g = m_Groups[id];
@@ -254,7 +254,7 @@ public:
 
    void deleteGroup(CUDTGroup* g)
    {
-       CGuard cg(m_ControlLock);
+       CGuard cg(m_GlobControlLock, "GlobControl");
 
        CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
        if (pg)
@@ -271,7 +271,7 @@ public:
 
    CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
    {
-       CGuard cg(m_ControlLock);
+       CGuard cg(m_GlobControlLock, "GlobControl");
 
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)
@@ -296,7 +296,7 @@ private:
    sockets_t m_Sockets;
    groups_t m_Groups;
 
-   pthread_mutex_t m_ControlLock;                    // used to synchronize UDT API
+   pthread_mutex_t m_GlobControlLock;              // used to synchronize UDT API
 
    pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
 
