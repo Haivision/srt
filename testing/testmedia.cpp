@@ -1101,6 +1101,8 @@ bytevector SrtSource::GroupRead(size_t chunk)
     // if it was ever seen broken, so that it's skipped.
     set<SRTSOCKET> broken;
 
+RETRY_READING:
+
     size_t size = m_group_data.size();
     int stat = srt_group_data(m_sock, m_group_data.data(), &size);
     if (stat == -1 && size > m_group_data.size())
@@ -1124,9 +1126,6 @@ bytevector SrtSource::GroupRead(size_t chunk)
     {
         Error("No sockets in the group - disconnected");
     }
-
-RETRY_READING:
-
 
     bool connected = false;
     for (auto& d: m_group_data)
@@ -1342,7 +1341,19 @@ RETRY_READING:
             {
                 if (fi == 0)
                 {
-                    Verb() << ".)";
+                    if (Verbose::on)
+                    {
+                        if (p)
+                        {
+                            int32_t pktseq = p->sequence;
+                            int seqdiff = CSeqNo::seqcmp(p->sequence, m_group_seqno);
+                            Verb() << ". %" << pktseq << " " << seqdiff << ")";
+                        }
+                        else
+                        {
+                            Verb() << ".)";
+                        }
+                    }
                     fi = 1;
                 }
                 int err = srt_getlasterror(0);
@@ -1422,7 +1433,7 @@ RETRY_READING:
                 // Finish flush reporting if fallen into here
                 if (fi == 0)
                 {
-                    Verb() << ".)";
+                    Verb() << ". %" << mctrl.pktseq << " " << (-seqdiff) << ")";
                     fi = 1;
                 }
 
@@ -1469,7 +1480,13 @@ RETRY_READING:
     // Now remove all broken sockets from aheads, if any.
     // Even if they have already delivered a packet.
     for (SRTSOCKET d: broken)
+    {
         m_group_positions.erase(d);
+        srt_close(d);
+    }
+
+    // May be required to be re-read.
+    broken.clear();
 
     if (!output.empty())
     {
@@ -1517,11 +1534,13 @@ RETRY_READING:
         {
             // NOTE that m_group_seqno in this place wasn't updated
             // because we haven't successfully extracted anything.
-            if (CSeqNo::seqcmp(sock_rp.second.sequence, m_group_seqno) < 0)
+            int seqdiff = CSeqNo::seqcmp(sock_rp.second.sequence, m_group_seqno);
+            if (seqdiff < 0)
             {
                 elephants.insert(sock_rp.first);
             }
-            else
+            // If seqdiff == 0, we have a socket ON TRACK.
+            else if (seqdiff > 0)
             {
                 if (!slowest_kangaroo)
                 {
@@ -1557,14 +1576,21 @@ RETRY_READING:
         }
 
         // Here ALL LINKS ARE ELEPHANTS, stating that we still have any.
-        if (!elephants.empty())
+        if (Verbose::on)
         {
-            // If we don't have kangaroos, then simply reattempt to
-            // poll all elephants again anyway (at worst they are all
-            // broken and we'll learn about it soon).
-            Verb() << "ALL LINKS ELEPHANTS. Re-polling.";
-            goto RETRY_READING;
+            if (!elephants.empty())
+            {
+                // If we don't have kangaroos, then simply reattempt to
+                // poll all elephants again anyway (at worst they are all
+                // broken and we'll learn about it soon).
+                Verb() << "ALL LINKS ELEPHANTS. Re-polling.";
+            }
+            else
+            {
+                Verb() << "ONLY BROKEN WERE REPORTED. Re-polling.";
+            }
         }
+        goto RETRY_READING;
     }
 
     // We have checked so far only links that were ready to poll.

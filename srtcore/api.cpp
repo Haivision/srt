@@ -1423,7 +1423,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
-       CGuard manager_cg(m_GlobControlLock, "GlobControl", "global.control");
+       CGuard manager_cg(m_GlobControlLock, "GlobControl");
 
        // since "s" is located before m_ControlLock, locate it again in case
        // it became invalid
