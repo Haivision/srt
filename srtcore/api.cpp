@@ -3003,12 +3003,7 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
     {
         if (u & SRTGROUP_MASK)
         {
-#ifdef SRT_ENABLE_APP_READER
-            setError(MJ_NOTSUP, MN_SIDINVAL, 0);
-            return ERROR;
-#else
             return s_UDTUnited.locateGroup(u, CUDTUnited::ERH_THROW)->recv(buf, len, r_m);
-#endif
         }
 
         return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, r_m);

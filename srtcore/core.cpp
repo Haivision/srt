@@ -5839,14 +5839,11 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
     // Check if the socket is a member of a receiver group.
     // If so, then reading by receiveMessage is disallowed.
 
-#ifndef SRT_ENABLE_APP_READER
-
     if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
     {
         LOGP(mglog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
     }
-#endif
 
     if (!m_bConnected || !m_Smoother.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
