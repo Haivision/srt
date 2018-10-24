@@ -85,7 +85,7 @@ option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
-option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
+option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
@@ -504,7 +504,7 @@ endif()
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 elseif (MINGW)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32 -lstdc++)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32)
 endif()
 
 # ---
@@ -579,19 +579,18 @@ if (NOT DEFINED INSTALLDIR)
 	get_filename_component(INSTALLDIR ${INSTALLDIR} ABSOLUTE)
 endif()
 
-# XXX
-# These two flags are required if compiling a C application
-# The problem is that pkg-config cannot return flags that are
-# suitable for C or C++ only - just "cflags", and for C by default.
+# Required if linking a C application.
 # This may cause trouble when you want to compile your app with static libstdc++;
 # if your build requires it, you'd probably remove -lstdc++ from the list
 # obtained by `pkg-config --libs`.
-#
-# Some sensible solution for that is desired. Currently turned on only on demand.
-if (ENABLE_C_DEPS)
-if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
-endif()
+if(ENABLE_CXX_DEPS)
+   foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
+      if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+      else()
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+      endif()
+   endforeach()
 endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
