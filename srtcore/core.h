@@ -397,7 +397,7 @@ public:
             if (m_Group.empty())
             {
                 m_iLastSchedSeqNo = 0;
-                setInitialRxSequence(1);
+                setInitialRxSequence(-1);
             }
             s = true;
         }
@@ -584,7 +584,12 @@ public:
     void setInitialRxSequence(int32_t seq)
     {
 #if SRT_ENABLE_APP_READER
-        m_RcvBaseSeqNo = CSeqNo::decseq(seq);
+
+        // The app-reader doesn't care about the real sequence number.
+        // The first provided one will be taken as a good deal; even if
+        // this is going to be past the ISN, at worst it will be caused
+        // by TLPKTDROP.
+        m_RcvBaseSeqNo = -1;
 #else
         m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
 #endif

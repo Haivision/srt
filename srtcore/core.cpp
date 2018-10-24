@@ -11808,7 +11808,6 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     size_t output_size = 0;
 
-
 RETRY_READING:
 
     {
@@ -11820,7 +11819,7 @@ RETRY_READING:
     }
 
     // Check first the ahead packets if you have any to deliver.
-    if (!m_Positions.empty())
+    if (m_RcvBaseSeqNo != -1 && !m_Positions.empty())
     {
         // This function also updates the group sequence pointer.
         ReadPos* pos = checkPacketAhead();
@@ -11829,6 +11828,7 @@ RETRY_READING:
             if (size_t(len) < pos->packet.size())
                 throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
+            HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet");
             memcpy(buf, &pos->packet[0], pos->packet.size());
             *r_mc = pos->mctrl;
             len = pos->packet.size();
@@ -11971,6 +11971,8 @@ RETRY_READING:
     set<SRTSOCKET> sready;
     m_pGlobal->m_EPoll.wait(m_epoll, &sready, 0, -1, 0, 0);
 
+    HLOGC(dlog.Debug, log << "group/recv: " << sready.size() << " sockets read-ready: " << Printable(sready));
+
     // Ok, now we need to have some extra qualifications:
     // 1. If a socket has no registry yet, we read anyway, just
     // to notify the current position. We read ONLY ONE PACKET this time,
@@ -12004,7 +12006,7 @@ RETRY_READING:
             int seqdiff = CSeqNo::seqcmp(p->sequence, m_RcvBaseSeqNo);
             if (seqdiff > 1)
             {
-                HLOGC(dlog.Debug, log << "EPOLL: @" << id << " %" << p->sequence << " AHEAD, not reading.");
+                HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->sequence << " AHEAD, not reading.");
                 continue;
             }
         }
@@ -12014,6 +12016,7 @@ RETRY_READING:
             // the socket is currently standing.
             pair<pit_t, bool> ee = m_Positions.insert(make_pair(id, ReadPos(ps->core().m_iRcvLastSkipAck)));
             p = &(ee.first->second);
+            HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->sequence << " NEW SOCKET INSERTED");
         }
 
         // Read from this socket stubbornly, until:
@@ -12031,6 +12034,7 @@ RETRY_READING:
             int stat = ps->core().receiveMessage(buf, len, Ref(mctrl), CUDTUnited::ERH_RETURN);
             if (stat == 0)
             {
+                HLOGC(dlog.Debug, log << "group/recv: SPURIOUS epoll, ignoring");
                 // This is returned in case of "again". In case of errors, we have SRT_ERROR.
                 // Do not treat this as spurious, just stop reading.
                 break;
@@ -12038,7 +12042,7 @@ RETRY_READING:
 
             if (stat == SRT_ERROR)
             {
-                HLOGC(dlog.Debug, log << "Error @" << id << ": " << srt_getlasterror_str());
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << ": " << srt_getlasterror_str());
                 broken.insert(ps);
                 break;
             }
@@ -12081,6 +12085,7 @@ RETRY_READING:
 
                 if (seqdiff <= 0)
                 {
+                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " BEHIND - discarding");
                     // The sequence is recorded, the packet has to be discarded.
                     // That's all.
                     continue;
