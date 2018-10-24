@@ -60,8 +60,9 @@ protected:
     map<string, string> m_options; // All other options, as provided in the URI
     vector<Connection> m_group_nodes;
     string m_group_type;
-    int32_t m_group_seqno = -1;
     vector<SRT_SOCKGROUPDATA> m_group_data;
+#ifdef SRT_OLD_APP_READER
+    int32_t m_group_seqno = -1;
 
     struct ReadPos
     {
@@ -70,6 +71,7 @@ protected:
     };
     map<SRTSOCKET, ReadPos> m_group_positions;
     SRTSOCKET m_group_active; // The link from which the last packet was delivered
+#endif
 
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;

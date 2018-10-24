@@ -414,6 +414,8 @@ void SrtCommon::AcceptNewClient()
         // There might be added a poller, remove it.
         // We need it work different way.
 
+#ifndef SRT_OLD_APP_READER
+
         if (srt_epoll != -1)
         {
             Verb() << "(Group: erasing epoll " << srt_epoll << ") " << VerbNoEOL;
@@ -423,6 +425,7 @@ void SrtCommon::AcceptNewClient()
         // Don't add any sockets, they will have to be added
         // anew every time again.
         srt_epoll = srt_epoll_create();
+#endif
 
         // Group data must have a size of at least 1
         // otherwise the srt_group_data() call will fail
@@ -1055,6 +1058,8 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
     hostport_copy = os.str();
 }
 
+#ifdef SRT_OLD_APP_READER
+
 // NOTE: 'output' is expected to be EMPTY here.
 bool SrtSource::GroupCheckPacketAhead(bytevector& output)
 {
@@ -1648,6 +1653,8 @@ RETRY_READING:
     return output; // Just a marker - this above function throws an exception
 }
 
+#endif
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
@@ -1656,7 +1663,7 @@ bytevector SrtSource::Read(size_t chunk)
 
     bytevector data(chunk);
     // EXPERIMENTAL
-#ifdef SRT_ENABLE_APP_READER
+#ifdef SRT_OLD_APP_READER
     if (have_group || m_listener_group)
     {
         data = GroupRead(chunk);

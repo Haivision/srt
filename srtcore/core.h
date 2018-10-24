@@ -188,6 +188,9 @@ public:
         bool ready_error;
     };
 
+#ifdef SRT_ENABLE_APP_READER
+#else
+
     // This object will be placed at the position in the
     // buffer assigned to packet's sequence number. When extracting
     // the data to be delivered to the output, this defines, from
@@ -307,6 +310,8 @@ public:
         Pending(const Pending&);
     };
 
+#endif
+
     struct ConfigItem
     {
         SRT_SOCKOPT so;
@@ -417,9 +422,7 @@ public:
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
     int send(const char* buf, int len, ref_t<SRT_MSGCTRL> mc);
-#ifndef SRT_ENABLE_APP_READER
     int recv(char* buf, int len, ref_t<SRT_MSGCTRL> mc);
-#endif
 
     void close();
 
@@ -474,6 +477,8 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(ref_t<size_t> r_size, ref_t<bool> r_still_alive);
     void getMemberStatus(ref_t< std::vector<SRT_SOCKGROUPDATA> > r_gd, SRTSOCKET wasread, int result, bool again);
+
+    // XXX UNUSED
     void readInterceptorThread();
     static void* readInterceptorThread_FWD(void* vself)
     {
@@ -500,9 +505,26 @@ private:
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
+#ifdef SRT_ENABLE_APP_READER
     int m_epoll;
 
-#ifndef SRT_ENABLE_APP_READER
+    struct ReadPos
+    {
+        int32_t sequence;
+        std::vector<char> packet;
+        SRT_MSGCTRL mctrl;
+        ReadPos(int32_t s): sequence(s) {}
+    };
+    std::map<SRTSOCKET, ReadPos> m_Positions;
+
+    ReadPos* checkPacketAhead();
+
+    // This is the sequence number of a packet that has been previously
+    // delivered. Initially it should be set to -1 so that the sequence read
+    // from the first delivering socket will be taken as a good deal.
+    volatile int32_t m_RcvBaseSeqNo;
+
+#else
     pthread_t m_RcvInterceptorThread;
 
     // This buffer gets updated when a packet with some seq number has come.
@@ -512,7 +534,6 @@ private:
     // sequences shall be undertaken or not.
     CircularBuffer<Provider> m_Providers;
     CircularBuffer<Pending> m_Pending;
-#endif
 
     // This condition shall be signaled when a packet arrives
     // at the position earlier than the current earliest sequence.
@@ -530,6 +551,7 @@ private:
 
     // Incremented with a new packet arriving
     volatile int32_t m_RcvLatestSeqNo;
+#endif
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
@@ -561,7 +583,11 @@ public:
 
     void setInitialRxSequence(int32_t seq)
     {
+#if SRT_ENABLE_APP_READER
+        m_RcvBaseSeqNo = CSeqNo::decseq(seq);
+#else
         m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
+#endif
     }
 
 
@@ -921,7 +947,11 @@ private:
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
+#ifdef SRT_ENABLE_APP_READER
+    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int erh = 1 /*throw exception*/);
+#else
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int32_t uptoseq = CSeqNo::m_iMaxSeqNo);
+#endif
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
     size_t dropMessage(int32_t seqtoskip);
