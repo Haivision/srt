@@ -12185,13 +12185,13 @@ RETRY_READING:
                 // We have already the data, so this must fall on the floor
                 char lostbuf[SRT_LIVE_MAX_PLSIZE];
                 stat = ps->core().receiveMessage(lostbuf, SRT_LIVE_MAX_PLSIZE, Ref(mctrl), CUDTUnited::ERH_RETURN);
-                HLOGC(dlog.Debug, log << "group/recv: IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
                         << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
             }
             else
             {
                 stat = ps->core().receiveMessage(buf, len, Ref(mctrl), CUDTUnited::ERH_RETURN);
-                HLOGC(dlog.Debug, log << "group/recv: EXTRACTED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " EXTRACTED data with %" << mctrl.pktseq << " #" << mctrl.msgno
                         << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(buf, stat)));
             }
             if (stat == 0)
