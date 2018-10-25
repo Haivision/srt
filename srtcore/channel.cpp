@@ -243,9 +243,9 @@ void CChannel::setUDPSockOpt()
       if (-1 == ::fcntl(m_iSocket, F_SETFL, opts | O_NONBLOCK))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #elif defined(_WIN32)
-      DWORD ot = 1; //milliseconds
-      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&ot, sizeof(DWORD)))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      u_long nonBlocking = 1;
+      if (0 != ioctlsocket (m_iSocket, FIONBIO, &nonBlocking))
+         throw CUDTException (MJ_SETUP, MN_NORES, NET_ERROR);
    #else
       // Set receiving time-out value
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(timeval)))
