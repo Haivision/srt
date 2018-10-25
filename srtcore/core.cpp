@@ -221,19 +221,19 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
    (void)SRT_DEF_VERSION;
 
    // Default UDT configurations
-   m_iMSS = 1500;
+   m_iMSS = DEF_MSS;
    m_bSynSending = true;
    m_bSynRecving = true;
-   m_iFlightFlagSize = 25600;
-   m_iSndBufSize = 8192;
-   m_iRcvBufSize = 8192; //Rcv buffer MUST NOT be bigger than Flight Flag size
+   m_iFlightFlagSize = DEF_FLIGHT_SIZE;
+   m_iSndBufSize = DEF_BUFFER_SIZE;
+   m_iRcvBufSize = DEF_BUFFER_SIZE;
    m_Linger.l_onoff = 1;
-   m_Linger.l_linger = 180;
-   m_iUDPSndBufSize = 65536;
+   m_Linger.l_linger = DEF_LINGER;
+   m_iUDPSndBufSize = DEF_UDP_BUFFER_SIZE;
    m_iUDPRcvBufSize = m_iRcvBufSize * m_iMSS;
    m_bRendezvous = false;
 #ifdef SRT_ENABLE_CONNTIMEO
-   m_iConnTimeOut = 3000;
+   m_iConnTimeOut = DEF_CONNTIMEO;
 #endif
    m_iSndTimeOut = -1;
    m_iRcvTimeOut = -1;
@@ -5861,6 +5861,10 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 }
 
 #ifdef SRT_ENABLE_APP_READER
+// int by_exception: accepts values of CUDTUnited::ErrorHandling:
+// - 0 - by return value
+// - 1 - by exception
+// - 2 - by abort (unused)
 int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int by_exception)
 #else
 int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_t uptoseq)
@@ -9962,30 +9966,140 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     m_config.push_back(ConfigItem(optName, optval, optlen));
 }
 
+template <class Type>
+struct Value
+{
+    static int fill(void* optval, int, Type value)
+    {
+        // XXX assert size >= sizeof(Type) ?
+        *(Type*)optval = value;
+        return sizeof(Type);
+    }
+};
+
+template<> inline
+int Value<std::string>::fill(void* optval, int len, std::string value)
+{
+    if (size_t(len) < value.size())
+        return 0;
+    memcpy(optval, value.c_str(), value.size());
+    return value.size();
+}
+
+template <class V> inline
+int fillValue(void* optval, int len, V value)
+{
+    return Value<V>::fill(optval, len, value);
+}
+
+
+static bool getOptDefault(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen)
+{
+    switch (optname)
+    {
+    default: return false;
+
+#define RD(value) *r_optlen = fillValue(optval, *r_optlen, value); break
+
+    case SRTO_KMSTATE:
+    case SRTO_SNDKMSTATE:
+    case SRTO_RCVKMSTATE: RD(SRT_KM_S_UNSECURED);
+    case SRTO_PBKEYLEN:   RD(16);
+
+    case SRTO_MSS: RD(CUDT::DEF_MSS);
+
+    case SRTO_SNDSYN: RD(true);
+    case SRTO_RCVSYN: RD(true);
+    case SRTO_ISN: RD(-1);
+    case SRTO_FC: RD(CUDT::DEF_FLIGHT_SIZE);
+
+    case SRTO_SNDBUF:
+    case SRTO_RCVBUF:
+                  *r_optlen = fillValue(optval, *r_optlen,
+                          CUDT::DEF_BUFFER_SIZE * (CUDT::DEF_MSS - CPacket::UDP_HDR_SIZE));
+                  break;
+
+    case SRTO_LINGER: RD(( (linger){1, CUDT::DEF_LINGER} ));
+    case SRTO_UDP_SNDBUF:
+    case SRTO_UDP_RCVBUF:  RD(CUDT::DEF_UDP_BUFFER_SIZE);
+    case SRTO_RENDEZVOUS: RD(false);
+    case SRTO_SNDTIMEO: RD(-1);
+    case SRTO_RCVTIMEO: RD(-1);
+    case SRTO_REUSEADDR: RD(true);
+    case SRTO_MAXBW: RD(int64_t(-1));
+    case SRTO_STATE: RD(SRTS_INIT);
+    case SRTO_EVENT: RD(0);
+    case SRTO_SNDDATA: RD(0);
+    case SRTO_RCVDATA: RD(0);
+
+#ifdef SRT_ENABLE_IPOPTS
+    case SRTO_IPTTL: RD(0);
+    case SRTO_IPTOS: RD(0);
+#endif
+
+    case SRTO_SENDER: RD(false);
+    case SRTO_TSBPDMODE: RD(false);
+    case SRTO_TSBPDDELAY:
+    case SRTO_RCVLATENCY:
+    case SRTO_PEERLATENCY: RD(SRT_LIVE_DEF_LATENCY_MS);
+    case SRTO_TLPKTDROP: RD(true);
+    case SRTO_SNDDROPDELAY: RD(-1);
+    case SRTO_NAKREPORT: RD(true);
+    case SRTO_VERSION: RD(SRT_DEF_VERSION);
+    case SRTO_PEERVERSION: RD(0);
+
+#ifdef SRT_ENABLE_CONNTIMEO
+    case SRTO_CONNTIMEO: RD(-1);
+#endif
+
+    case SRTO_MINVERSION: RD(0);
+    case SRTO_STREAMID: RD(std::string());
+    case SRTO_SMOOTHER: RD(std::string());
+    case SRTO_MESSAGEAPI: RD(true);
+    case SRTO_PAYLOADSIZE: RD(0);
+    }
+
+#undef RD
+    return true;
+}
+
 void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen)
 {
     int& optlen = *r_optlen;
 
+    // Options handled in group
     switch (optname)
     {
     case SRTO_RCVSYN:
         *(bool*)optval = m_bSynRecving;
         optlen = sizeof(bool);
-        break;
+        return;
 
     case SRTO_SNDSYN:
         *(bool*)optval = m_bSynSending;
         optlen = sizeof(bool);
-        break;
+        return;
 
-    default:
-
-        // We state that only some sets of options can
-        // be read on a group, those that are groupwise.
-        // Others simply can't be read and should be
-        // read only on individual socket.
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    default: ;// pass on
     }
+
+    // In sockets. All sockets should have all options
+    // set the same and should represent the group state
+    // well enough. If there are no sockets, just use default.
+    CGuard lg(m_GroupLock, "Group");
+    if (m_Group.empty())
+    {
+        if (!getOptDefault(optname, optval, r_optlen))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        return;
+    }
+
+    CUDTSocket* ps = m_Group.begin()->ps;
+    if (!ps)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    return ps->core().getOpt(optname, optval, r_optlen);
 }
 
 
@@ -10264,16 +10378,16 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         if (curseq != -1 && curseq != lastseq)
         {
             HLOGC(mglog.Debug, log << "CUDTGroup::send: socket @" << d->id
-                << ": override snd sequence " << lastseq
-                << " with " << curseq << " (diff by "
-                << CSeqNo::seqcmp(curseq, lastseq) << "); SENDING PAYLOAD");
+                << ": override snd sequence %" << lastseq
+                << " with %" << curseq << " (diff by "
+                << CSeqNo::seqcmp(curseq, lastseq) << "); SENDING PAYLOAD: " << BufferStamp(buf, len));
             d->ps->core().overrideSndSeqNo(curseq);
         }
         else
         {
             HLOGC(mglog.Debug, log << "CUDTGroup::send: socket @" << d->id
-                << ": sequence remains with original value: " << lastseq
-                << "; SENDING PAYLOAD");
+                << ": sequence remains with original value: %" << lastseq
+                << "; SENDING PAYLOAD " << BufferStamp(buf, len));
         }
 
         // Now send and check the status
@@ -10281,6 +10395,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
         try
         {
+            InvertedGuard ug(&m_GroupLock, "Group");
             stat = d->ps->core().sendmsg2(buf, len, r_mc);
         }
         catch (CUDTException& e)
@@ -10297,7 +10412,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // Note: this will override the sequence number
             // for all next iterations in this loop.
             curseq = mc.pktseq;
-            HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL, seq=" << curseq
+            HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL %" << curseq
                     << " MEMBER STATUS: RUNNING");
         }
 
@@ -10309,7 +10424,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     if (curseq != -1)
     {
-        HLOGC(dlog.Debug, log << "CUDTGroup::send: updating current scheduling sequence=" << curseq);
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: updating current scheduling sequence %" << curseq);
         m_iLastSchedSeqNo = curseq;
     }
 
@@ -10317,7 +10432,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     for (vector<gli_t>::iterator i = wipeme.begin(); i != wipeme.end(); ++i)
     {
         gli_t d = *i;
-        HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET " << d->id << " - CLOSING AND REMOVING.");
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET @" << d->id << " - CLOSING AND REMOVING.");
         {
             CUDTSocket* ps = d->ps;
             // Lift the group lock for a while, to avoid possible deadlocks.
@@ -11797,7 +11912,33 @@ size_t CUDT::dropMessage(int32_t skiptoseqno)
 
 #else
 
+void CUDTGroup::fillGroupData(
+        ref_t<SRT_MSGCTRL> r_out, // MSGCTRL to be written
+        const SRT_MSGCTRL& in, // MSGCTRL read from the data-providing socket
+        SRT_SOCKGROUPDATA* out_grpdata, // grpdata as passed in MSGCTRL
+        size_t out_grpdata_size) // grpdata_size as passed in MSGCTRL
+{
+    SRT_MSGCTRL& out = *r_out;
+    out = in;
 
+    // User did not wish to read the group data at all.
+    if (!out_grpdata)
+    {
+        out.grpdata = NULL;
+        out.grpdata_size = 0;
+        return;
+    }
+
+    int st = getGroupData(out_grpdata, &out_grpdata_size);
+    out.grpdata_size = out_grpdata_size;
+    // On error, rewrite NULL.
+    out.grpdata = st == 0 ? out_grpdata : NULL;
+}
+
+// The "app reader" version of the reading function.
+// This reads the packets from every socket treating them as independent
+// and prepared to work with the application. Then packets are sorted out
+// by getting the sequence number.
 int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 {
     typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
@@ -11805,6 +11946,12 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // by vector, but we'll also often try to check a single id
     // if it was ever seen broken, so that it's skipped.
     set<CUDTSocket*> broken;
+
+    SRT_MSGCTRL& out_mctrl = *r_mc;
+
+    // Remember them now because they will be overwritten.
+    SRT_SOCKGROUPDATA* out_grpdata = out_mctrl.grpdata;
+    size_t out_grpdata_size = out_mctrl.grpdata_size;
 
     size_t output_size = 0;
 
@@ -11828,9 +11975,10 @@ RETRY_READING:
             if (size_t(len) < pos->packet.size())
                 throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-            HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet");
+            HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet %" << pos->mctrl.pktseq << " #" << pos->mctrl.msgno
+                    << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
             memcpy(buf, &pos->packet[0], pos->packet.size());
-            *r_mc = pos->mctrl;
+            fillGroupData(r_mc, pos->mctrl, out_grpdata, out_grpdata_size);
             len = pos->packet.size();
             pos->packet.clear();
             return len;
@@ -12031,7 +12179,21 @@ RETRY_READING:
             // prediction that we'll read the right data. This will be overwritten
             // by "more correct data" if found more appropriate later. But we have to
             // copy these data anyway anywhere, even if they need to fall on the floor later.
-            int stat = ps->core().receiveMessage(buf, len, Ref(mctrl), CUDTUnited::ERH_RETURN);
+            int stat;
+            if (output_size)
+            {
+                // We have already the data, so this must fall on the floor
+                char lostbuf[SRT_LIVE_MAX_PLSIZE];
+                stat = ps->core().receiveMessage(lostbuf, SRT_LIVE_MAX_PLSIZE, Ref(mctrl), CUDTUnited::ERH_RETURN);
+                HLOGC(dlog.Debug, log << "group/recv: IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                        << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
+            }
+            else
+            {
+                stat = ps->core().receiveMessage(buf, len, Ref(mctrl), CUDTUnited::ERH_RETURN);
+                HLOGC(dlog.Debug, log << "group/recv: EXTRACTED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                        << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(buf, stat)));
+            }
             if (stat == 0)
             {
                 HLOGC(dlog.Debug, log << "group/recv: SPURIOUS epoll, ignoring");
@@ -12067,7 +12229,7 @@ RETRY_READING:
                 // This error should be returned if the link turns out
                 // to be the only one, or set to the group data.
                 // err = SRT_ESECFAIL;
-                LOGC(dlog.Error, log << "@" << id << ": SEQUENCE DISCREPANCY: base=%" << m_RcvBaseSeqNo << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
+                LOGC(dlog.Error, log << "group/recv: @" << id << ": SEQUENCE DISCREPANCY: base=%" << m_RcvBaseSeqNo << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
                 broken.insert(ps);
                 break;
             }
@@ -12085,7 +12247,7 @@ RETRY_READING:
 
                 if (seqdiff <= 0)
                 {
-                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " BEHIND - discarding");
+                    HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " BEHIND - discarding");
                     // The sequence is recorded, the packet has to be discarded.
                     // That's all.
                     continue;
@@ -12097,7 +12259,7 @@ RETRY_READING:
 
                 if (seqdiff > 1)
                 {
-                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " AHEAD");
+                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " AHEAD");
                     p->packet.assign(buf, buf+stat);
                     p->mctrl = mctrl;
                     break; // Don't read from that socket anymore.
@@ -12110,13 +12272,13 @@ RETRY_READING:
 
             if (output_size)
             {
-                HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " REDUNDANT");
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " REDUNDANT");
                 break;
             }
 
-            HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " DELIVERING");
+            HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " DELIVERING");
             output_size = stat;
-            *r_mc = mctrl;
+            fillGroupData(r_mc, mctrl, out_grpdata, out_grpdata_size);
 
             // Record, but do not update yet, until all sockets are handled.
             next_seq = mctrl.pktseq;
@@ -12129,7 +12291,7 @@ RETRY_READING:
     if (broken.size() == size)
     {
         // All broken
-        HLOGC(dlog.Debug, log << "All sockets broken");
+        HLOGC(dlog.Debug, log << "group/recv: All sockets broken");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -12154,8 +12316,16 @@ RETRY_READING:
         if (next_seq == -1)
         {
             LOGP(dlog.Error, "IPE: next_seq not set after output extracted!");
+
+            // This should never happen, but the only way to keep the code
+            // safe an recoverable is to use the incremented sequence. By
+            // leaving the sequence as is there's a risk of hangup.
+            m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
         }
-        m_RcvBaseSeqNo = next_seq;
+        else
+        {
+            m_RcvBaseSeqNo = next_seq;
+        }
         return output_size;
     }
 
@@ -12221,18 +12391,25 @@ RETRY_READING:
             // kangaroo, we can simply return it.
 
             m_RcvBaseSeqNo = slowest_kangaroo->second.sequence;
-            HLOGC(dlog.Debug, log << "@" << slowest_kangaroo->first << " %" << m_RcvBaseSeqNo << " KANGAROO->HORSE");
             vector<char>& pkt = slowest_kangaroo->second.packet;
             if (size_t(len) < pkt.size())
                 throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+
+            HLOGC(dlog.Debug, log << "@" << slowest_kangaroo->first << " KANGAROO->HORSE %"
+                    << slowest_kangaroo->second.mctrl.pktseq
+                    << " #" << slowest_kangaroo->second.mctrl.msgno
+                    << ": " << BufferStamp(&pkt[0], pkt.size()));
+
             memcpy(buf, &pkt[0], pkt.size());
-            *r_mc = slowest_kangaroo->second.mctrl;
+            fillGroupData(r_mc, slowest_kangaroo->second.mctrl, out_grpdata, out_grpdata_size);
             len = pkt.size();
             pkt.clear();
             return len;
         }
 
-        HLOGP(dlog.Debug, (elephants.empty() ? "ONLY BROKEN WERE REPORTED. Re-polling." : "ALL LINKS ELEPHANTS. Re-polling."));
+        HLOGC(dlog.Debug, log << "group/recv: "
+                << (elephants.empty() ? "ONLY BROKEN WERE REPORTED." : "ALL LINKS ELEPHANTS.")
+                << " Re-polling.");
         goto RETRY_READING;
     }
 
@@ -12270,7 +12447,7 @@ RETRY_READING:
 
     if (have_ready)
     {
-        HLOGP(dlog.Debug, "(connected in the meantime)");
+        HLOGP(dlog.Debug, "group/recv: (connected in the meantime)");
         // Some have connected in the meantime, don't
         // waste time on the pending ones.
         goto RETRY_READING;
@@ -12278,7 +12455,7 @@ RETRY_READING:
 
     if (have_connectors)
     {
-        HLOGP(dlog.Debug, "(waiting for pending connectors to connect)");
+        HLOGP(dlog.Debug, "group/recv: (waiting for pending connectors to connect)");
         set<SRTSOCKET> sready;
         // Wait here for them to be connected.
         m_pGlobal->m_EPoll.wait(m_epoll, &sready, 0, -1, 0, 0);
@@ -12307,12 +12484,14 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         {
             // The very next packet. Return it.
             m_RcvBaseSeqNo = a.sequence;
-            HLOGC(dlog.Debug, log << " (SRT group: ahead delivery %" << a.sequence << " from @" << i->first << ")");
+            HLOGC(dlog.Debug, log << "group/recv: ahead delivery %"
+                    << a.sequence << "#" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
         {
-            HLOGC(dlog.Debug, log << " (@" << i->first << " dropping collected ahead %" << a.sequence << ")");
+            HLOGC(dlog.Debug, log << "group/recv: @" << i->first << " dropping collected ahead %"
+                    << a.sequence << "#" << a.mctrl.msgno << ")");
             a.packet.clear();
         }
         // In case when it's >1, keep it in ahead

@@ -467,6 +467,15 @@ public:
     void syncWithSocket(const CUDT& core);
     int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
 
+    /// Predicted to be called from the reading function to fill
+    /// the group data array as requested.
+    void fillGroupData(
+            ref_t<SRT_MSGCTRL> r_out, //< MSGCTRL to be written
+            const SRT_MSGCTRL& in, //< MSGCTRL read from the data-providing socket
+            SRT_SOCKGROUPDATA* out_grpdata, //< grpdata as passed in MSGCTRL
+            size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
+            );
+
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
 #else
@@ -513,7 +522,7 @@ private:
         int32_t sequence;
         std::vector<char> packet;
         SRT_MSGCTRL mctrl;
-        ReadPos(int32_t s): sequence(s) {}
+        ReadPos(int32_t s): sequence(s), mctrl(srt_msgctrl_default) {}
     };
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
@@ -581,19 +590,21 @@ public:
 #endif
     }
 
-    void setInitialRxSequence(int32_t seq)
-    {
 #if SRT_ENABLE_APP_READER
-
+    void setInitialRxSequence(int32_t)
+    {
         // The app-reader doesn't care about the real sequence number.
         // The first provided one will be taken as a good deal; even if
         // this is going to be past the ISN, at worst it will be caused
         // by TLPKTDROP.
         m_RcvBaseSeqNo = -1;
-#else
-        m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
-#endif
     }
+#else
+    void setInitialRxSequence(int32_t seq)
+    {
+        m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
+    }
+#endif
 
 
     // Property accessors
@@ -720,6 +731,15 @@ public: // internal API
         SND_INPUTRATE_RUNNING_US = 1*1000*1000;
     static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
     static const int SND_INPUTRATE_INITIAL_BPS = 10000000/8;  // 10 Mbps (1.25 MBps)
+
+    static const int
+        DEF_MSS = 1500,
+        DEF_FLIGHT_SIZE = 25600,
+        DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
+        DEF_LINGER = 180,
+        DEF_UDP_BUFFER_SIZE = 65536,
+        DEF_CONNTIMEO = 3000;
+
 
     int handshakeVersion()
     {

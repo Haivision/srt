@@ -1713,6 +1713,8 @@ bytevector SrtSource::Read(size_t chunk)
             Error(UDT::getlasterror(), "srt_recvmsg2");
         }
 
+        Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << ") " << VerbNoEOL;
+
         if ( stat == 0 )
         {
             throw ReadEOF(hostport_copy);
