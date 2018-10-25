@@ -594,7 +594,9 @@ std::string CPacket::Info()
         // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
         // Declaring that the peer supports rexmit flag cuts off the highest bit from
         // the displayed number.
-        os << "DATA: size=" << getLength() << " #" << getMsgSeq(true) << " %" << getSeqNo()
+        os << "DATA: size=" << getLength()
+            << " " << BufferStamp(m_pcData, getLength())
+            << " #" << getMsgSeq(true) << " %" << getSeqNo()
             << " " << MessageFlagStr();
     }
 
