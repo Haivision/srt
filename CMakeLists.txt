@@ -60,7 +60,11 @@ else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
+
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
+message(STATUS "BINARY_DIR: ${CMAKE_BINARY_DIR}")
+message(STATUS "EXECUTABLE_OUTPUT_PATH: ${EXECUTABLE_OUTPUT_PATH}")
 
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
@@ -85,6 +89,7 @@ option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
+option(ENABLE_UNITTESTS "Enable unit tests" ON)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -296,6 +301,7 @@ set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
@@ -370,7 +376,7 @@ elseif (WIN32 AND NOT MINGW)
 		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
 	endif()
 
-	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
+	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
 	if (PTHREAD_LIBRARY)
 		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	else()
@@ -797,6 +803,37 @@ if (ENABLE_EXAMPLES)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
 endif()
+
+
+if (ENABLE_UNITTESTS)
+	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+	include(googletest)
+	fetch_googletest(
+		${PROJECT_SOURCE_DIR}/scripts
+		${PROJECT_BINARY_DIR}/googletest
+	)
+
+	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp)
+	srt_make_application(test_srt)
+
+	target_link_libraries(
+		test_srt
+		gtest_main
+		${srt_link_library}
+		${PTHREAD_LIBRARY}
+		)
+
+	add_test(
+		NAME
+			test_srt
+		COMMAND
+			${CMAKE_BINARY_DIR}/test_srt
+	)
+
+	enable_testing()
+
+endif()
+
 
 install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
 
