@@ -398,12 +398,17 @@ public:
    // And derived
    static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
 
-   std::string MessageFlagStr()
 #if ENABLE_LOGGING
-       ;
+    #define LOGGING_DEPENDENT ;
 #else
-   { return ""; }
+    #define LOGGING_DEPENDENT {return "";}
 #endif
+
+   std::string MessageFlagStr() LOGGING_DEPENDENT
+   std::string Info() LOGGING_DEPENDENT
+
+#undef LOGGING_DEPENDENT
+
 };
 
 

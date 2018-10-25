@@ -35,6 +35,8 @@
 #include "srt_compat.h"
 #include "verbose.hpp"
 
+#include "../srtcore/utilities.h"
+
 using namespace std;
 
 std::ostream* transmit_cverb = nullptr;
@@ -1713,12 +1715,12 @@ bytevector SrtSource::Read(size_t chunk)
             Error(UDT::getlasterror(), "srt_recvmsg2");
         }
 
-        Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << ") " << VerbNoEOL;
-
         if ( stat == 0 )
         {
             throw ReadEOF(hostport_copy);
         }
+
+        Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
     }
     while (!ready);
 

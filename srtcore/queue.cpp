@@ -65,75 +65,6 @@ modified by
 
 using namespace std;
 
-// Debug support
-#if ENABLE_HEAVY_LOGGING
-
-inline void SprintSpecialWord(ostream& os, int32_t val)
-{
-    if (val & LOSSDATA_SEQNO_RANGE_FIRST)
-        os << "<" << (val & (~LOSSDATA_SEQNO_RANGE_FIRST)) << ">";
-    else
-        os << val;
-}
-
-static string PacketInfo(const CPacket& pkt)
-{
-    ostringstream os;
-    os << "TARGET=@" << pkt.m_iID << " ";
-
-    if (pkt.isControl())
-    {
-        os << "CONTROL: type=" << MessageTypeStr(pkt.getType(), pkt.getExtendedType()) << " size=" << pkt.getLength();
-
-        if (pkt.getType() == UMSG_HANDSHAKE)
-        {
-            os << "HS: ";
-            // For handshake we already have a parsing method
-            CHandShake hs;
-            hs.load_from(pkt.m_pcData, pkt.getLength());
-            os << hs.show();
-        }
-        else
-        {
-            // This is a value that some messages use for some purposes.
-            // The "ack seq no" is one of the purposes, used by UMSG_ACK and UMSG_ACKACK.
-            // This is simply the PH_MSGNO field used as a message number in data packets.
-            os << " ARG: 0x";
-            os << hex << pkt.getAckSeqNo() << " ";
-            os << dec << pkt.getAckSeqNo();
-
-            // It would be nice to see the extended packet data, but this
-            // requires strictly a message-dependent interpreter. So let's simply
-            // display all numbers in the array with the following restrictions:
-            // - all data contained in the buffer are considered 32-bit integer
-            // - sign flag will be cleared before displaying, with additional mark
-            size_t wordlen = pkt.getLength()/4; // drop any remainder if present
-            int32_t* array = (int32_t*)pkt.m_pcData;
-            os << " [ ";
-            for (size_t i = 0; i < wordlen; ++i)
-            {
-                SprintSpecialWord(os, array[i]);
-                os << " ";
-
-            }
-            os << "]";
-        }
-    }
-    else
-    {
-        // It's hard to extract the information about peer's supported rexmit flag.
-        // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
-        // Declaring that the peer supports rexmit flag cuts off the highest bit from
-        // the displayed number.
-        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength();
-    }
-
-    return os.str();
-}
-#else
-static string PacketInfo(const CPacket&) { return string(); }
-#endif
-
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),
@@ -647,7 +578,7 @@ void* CSndQueue::worker(void* param)
 #endif      /* SRT_DEBUG_SNDQ_HIGHRATE */
             }
 
-            HLOGC(mglog.Debug, log << self->CONID() << "chn:SENDING: " << PacketInfo(pkt));
+            HLOGC(mglog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
             self->m_pChannel->sendto(addr, pkt, source_addr);
 
 #if      defined(SRT_DEBUG_SNDQ_HIGHRATE)
@@ -1311,10 +1242,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         THREAD_PAUSED();
         EReadStatus rst = m_pChannel->recvfrom(r_addr, temp);
         THREAD_RESUMED();
-#if ENABLE_LOGGING
         // Note: this will print nothing about the packet details unless heavy logging is on.
-        LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << PacketInfo(temp));
-#endif
+        LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
         delete [] temp.m_pcData;
 
         // Be transparent for RST_ERROR, but ignore the correct
@@ -1334,7 +1263,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         *r_id = r_unit->m_Packet.m_iID;
         HLOGC(mglog.Debug, log << "INCOMING PACKET: BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
                 << " DEST=" << SockaddrToString(r_unit->m_Packet.m_DestAddr)
-                << " " << PacketInfo(r_unit->m_Packet));
+                << " " << r_unit->m_Packet.Info());
     }
     return rst;
 }
