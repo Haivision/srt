@@ -1225,21 +1225,14 @@ private: // Sending related data
     //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileSmoother, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
 
-    void setInitialSndSeq(int32_t isn, bool initial = true)
+    void setInitialSndSeq(int32_t isn)
     {
         // m_iLastDecSeq = isn - 1; <-- purpose unknown; duplicate from FileSmoother?
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = isn - 1;
-
-        // This should NOT be done at the "in the flight" situation
-        // because after the initial stage there are more threads using
-        // these fields, and this field has a different affinity than
-        // the others, and is practically a source of this value, just
-        // pushed through a queue barrier.
-        if (initial)
-            m_iSndNextSeqNo = isn;
+        m_iSndNextSeqNo = isn;
         m_iSndLastAck2 = isn;
     }
 

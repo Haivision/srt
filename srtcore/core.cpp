@@ -8155,13 +8155,6 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
                      // UMSG_DROPREQ message when the agent realizes that the requested
                      // packet are not present in the buffer (preadte the send buffer).
                  }
-                 //
-                 // The peer will have to do the same, as a reaction on perceived
-                 // packet loss. When it recognizes that this initial screwing up
-                 // has happened, it should simply ignore the loss and go on.
-                 // ISN isn't being changed here - it doesn't make much sense now.
-                 setInitialSndSeq(CSeqNo::incseq(packet.m_iSeqNo), false);
-
              }
              else
              {
@@ -8364,9 +8357,19 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     // towards what is currently in m_iSndCurrSeqNo.
     int diff = CSeqNo::seqcmp(seq, m_iSndNextSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
+    {
+        LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
         return false;
+    }
 
-    m_iSndNextSeqNo = seq;
+    //
+    // The peer will have to do the same, as a reaction on perceived
+    // packet loss. When it recognizes that this initial screwing up
+    // has happened, it should simply ignore the loss and go on.
+    // ISN isn't being changed here - it doesn't make much sense now.
+
+    setInitialSndSeq(seq);
+
     // m_iSndCurrSeqNo will be most likely lower than m_iSndNextSeqNo because
     // the latter is ahead with the number of packets already scheduled, but
     // not yet sent.
