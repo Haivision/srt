@@ -454,6 +454,7 @@ MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
 	PUBLIC_HEADERS HEADERS_srt
 	PROTECTED_HEADERS HEADERS_srt
+	PRIVATE_HEADERS HEADERS_srt_private
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
@@ -817,6 +818,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	MafReadDir(test filelist.maf
 		SOURCES SOURCES_unittests
 	)
+	
+	MafReadDir(test filelist.maf
+		SOURCES SOURCES_unittests
+	)
+	
+	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
 	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
