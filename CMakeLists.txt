@@ -732,10 +732,7 @@ if ( ENABLE_CXX11 )
 		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 
-	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
-	if (NOT WIN32)
-		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
-	endif()
+	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
