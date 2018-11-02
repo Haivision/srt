@@ -5916,6 +5916,14 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
     // Recvmsg isn't restricted to the smoother type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
+
+    // Note: if by_exception = ERH_RETURN, this would still break it
+    // by exception. The intention of by_exception isn't to prevent
+    // exceptions here, but to intercept the erroneous situation should
+    // it be handled by the caller in a less than general way. As this
+    // is only used internally, we state that the problem that would be
+    // handled by exception here should not happen, and in case if it does,
+    // it's a bug to fix, so the exception is nothing wrong.
     if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
@@ -5962,6 +5970,11 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int32_
         {
             if (!m_bMessageAPI && m_bShutdown)
                 return 0;
+#ifdef SRT_ENABLE_APP_READER
+            // Forced to return error instead of throwing exception.
+            if (!by_exception)
+                return setError(MJ_CONNECTION, MN_CONNLOST, 0);
+#endif
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
         else
