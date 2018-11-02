@@ -1787,6 +1787,9 @@ bytevector SrtSource::Read(size_t chunk)
             throw ReadEOF(hostport_copy);
         }
 
+        LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
+                << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+
         Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
     }
     while (!ready);

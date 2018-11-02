@@ -12049,8 +12049,7 @@ int CUDTGroup::recv(char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 RETRY_READING:
 
     {
-        CGuard glock(m_GroupLock, "Group");
-        if (m_Group.empty() || !m_bConnected)
+        if (!m_bOpened || !m_bConnected)
         {
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
@@ -12135,7 +12134,15 @@ RETRY_READING:
 
     bool still_alive = false;
     size_t size = 0;
+
+    // You can't lock the whole group for that
+    // action because this will result in a deadlock.
+    // Prepare first the list of sockets to be added as connect-pending
+    // and as read-ready, then unlock the group, and then add them to epoll.
+    vector<SRTSOCKET> read_ready, connect_pending;
+
     {
+        HLOGC(dlog.Debug, log << "group/recv: Reviewing member sockets to epoll-add (locking)");
         CGuard glock(m_GroupLock, "Group");
         for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
         {
@@ -12143,8 +12150,8 @@ RETRY_READING:
             if (gi->laststatus == SRTS_CONNECTING)
             {
                 HCLOG(ds << "@" << gi->id << "<pending> ");
-                int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-                srt_epoll_add_usock(m_epoll, gi->id, &modes);
+                connect_pending.push_back(gi->id);
+
                 continue; // don't read over a failed or pending socket
             }
 
@@ -12190,20 +12197,32 @@ RETRY_READING:
             // on write, when it's attempting to connect, but now it's connected.
             // This will update the socket with the new event set.
 
-            int modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-            srt_epoll_add_usock(m_epoll, gi->id, &modes);
+            read_ready.push_back(gi->id);
             HCLOG(ds << "@" << gi->id << "[READ] ");
         }
+
     }
+
+    int connect_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
+    for (vector<SRTSOCKET>::iterator i = connect_pending.begin(); i != connect_pending.end(); ++i)
+    {
+        srt_epoll_add_usock(m_epoll, *i, &connect_modes);
+    }
+
+    for (vector<SRTSOCKET>::iterator i = read_ready.begin(); i != read_ready.end(); ++i)
+    {
+        srt_epoll_add_usock(m_epoll, *i, &read_modes);
+    }
+
+    HLOGC(dlog.Debug, log << "group/recv: " << ds.str() << " --> EPOLL/SWAIT");
+#undef HCLOG
 
     if (!still_alive)
     {
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     }
-
-    HLOGC(dlog.Debug, log << "group/recv: " << ds.str());
-
-#undef HCLOG
 
     // Here we need to make an additional check.
     // There might be a possibility that all sockets that
@@ -12247,6 +12266,8 @@ RETRY_READING:
             /*TO*/ std::inserter(broken, broken.begin()),
             /*VIA*/ FLookupSocket(m_pGlobal));
 
+    broken.erase((CUDTSocket*)0); // for any case
+
     // Ok, now we need to have some extra qualifications:
     // 1. If a socket has no registry yet, we read anyway, just
     // to notify the current position. We read ONLY ONE PACKET this time,
@@ -12263,6 +12284,9 @@ RETRY_READING:
     // If this set is empty, it won't roll even once, therefore output
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
+
+    HLOGC(dlog.Debug, log << "group/recv: Reviewing read-ready sockets: " << Printable(sready.rd()));
+
     for (fset_t::const_iterator i = sready.rd().begin(); i != sready.rd().end(); ++i)
     {
         // Check if this socket is in aheads
@@ -12465,8 +12489,12 @@ RETRY_READING:
         {
             m_RcvBaseSeqNo = next_seq;
         }
+
+        HLOGC(dlog.Debug, log << "group/recv: successfully extacted packet size=" << output_size << " - returning");
         return output_size;
     }
+
+    HLOGC(dlog.Debug, log << "group/recv: NOT extracted anything - checking for a need to kick kangaroos");
 
     // Check if we have any sockets left :D
 
@@ -12549,6 +12577,10 @@ RETRY_READING:
         HLOGC(dlog.Debug, log << "group/recv: "
                 << (elephants.empty() ? "NO LINKS REPORTED ANY FRESHER PACKET." : "ALL LINKS ELEPHANTS.")
                 << " Re-polling.");
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "group/recv: POSITIONS EMPTY - Re-polling.");
     }
 
     goto RETRY_READING;
