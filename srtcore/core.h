@@ -516,6 +516,14 @@ private:
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
 #ifdef SRT_ENABLE_APP_READER
     int m_epoll;
+    class CEPollDesc* m_epolld;
+
+    // Start times for TsbPd. These times shall be synchronized
+    // between all sockets in the group. The first connected one
+    // defines it, others shall derive it. The value 0 decides if
+    // this has been already set.
+    uint64_t m_StartTime;
+    uint64_t m_RcvPeerStartTime;
 
     struct ReadPos
     {
@@ -607,6 +615,31 @@ public:
 #endif
 
 
+    bool applyGroupTime(ref_t<uint64_t> r_start_time, ref_t<uint64_t> r_peer_start_time)
+    {
+        if (m_StartTime == 0)
+        {
+            // The first socket, defines the group time for the whole group.
+            m_StartTime = *r_start_time;
+            m_RcvPeerStartTime = *r_peer_start_time;
+            return true;
+        }
+
+        // Sanity check. This should never happen, fix the bug if found!
+        if (m_RcvPeerStartTime == 0)
+        {
+            LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
+            // Kinda fallback, but that's not too safe.
+            m_RcvPeerStartTime = *r_peer_start_time;
+        }
+
+        // The redundant connection, derive the times
+        *r_start_time = m_StartTime;
+        *r_peer_start_time = m_RcvPeerStartTime;
+
+        return false;
+    }
+
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
@@ -694,7 +727,9 @@ public: //API
     static int epoll_remove_ssock(const int eid, const SYSSOCKET s);
     static int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
     static int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
+    static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds,
+            int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
+    static int epoll_swait(const int eid, SrtPollState& socks, int64_t msTimeOut);
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);

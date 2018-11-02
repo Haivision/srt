@@ -36,8 +36,6 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const logging::LogFA SRT_LOGFA_APP = 10;
-
 static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 

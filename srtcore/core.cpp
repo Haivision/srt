@@ -2957,14 +2957,6 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 
         HLOGC(mglog.Debug, log << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
 
-        // Time synchronization. If there already is a group, there's
-        // at least one socket here. Copy its m_StartTime (time base for sending)
-        // and m_ullRcvPeerStartTime (time base for receiving).
-
-        // THIS socket is not yet member of the group. Simply take the first found
-        // member.
-        synchronizeGroupTime(gp);
-
         if (!gp->empty())
             was_empty = false;
     }
@@ -3010,11 +3002,33 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 void CUDT::synchronizeGroupTime(CUDTGroup* gp)
 {
     CGuard gl(*gp->exp_groupLock(), "group");
-    CUDTGroup::gli_t first = gp->begin();
-    if (first != gp->end())
+
+    // We have blocked here the process of connecting a new
+    // socket and adding anything new to the group, so no such
+    // thing may happen in the meantime.
+    uint64_t start_time, peer_start_time;
+
+    start_time = m_StartTime;
+    peer_start_time = m_ullRcvPeerStartTime;
+
+    if (!gp->applyGroupTime(Ref(start_time), Ref(peer_start_time)))
     {
-        m_StartTime = first->ps->core().m_StartTime;
-        m_ullRcvPeerStartTime = first->ps->core().m_ullRcvPeerStartTime;
+        HLOGC(mglog.Debug, log << "synchronizeGroupTime: @" << m_SocketID
+                << " DERIVED: ST="
+                << logging::FormatTime(m_StartTime) << " -> "
+                << logging::FormatTime(start_time) << " PST="
+                << logging::FormatTime(m_ullRcvPeerStartTime) << " -> "
+                << logging::FormatTime(peer_start_time));
+        m_StartTime = start_time;
+        m_ullRcvPeerStartTime = peer_start_time;
+    }
+    else
+    {
+        // This was the first connected socket and it defined start time.
+        HLOGC(mglog.Debug, log << "synchronizeGroupTime: @" << m_SocketID
+                << " DEFINED: ST="
+                << logging::FormatTime(m_StartTime)
+                << " PST=" << logging::FormatTime(m_ullRcvPeerStartTime));
     }
 }
 
@@ -4157,6 +4171,19 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
+    {
+        CUDTGroup* g = m_parent->m_IncludedGroup;
+        if (g)
+        {
+            CGuard cl(s_UDTUnited.m_GlobControlLock, "GlobControl");
+            // This is the last moment when this can be done.
+            // The updateAfterSrtHandshake call will copy the receiver
+            // start time to the receiver buffer data, so the correct
+            // value must be set before this happens.
+            synchronizeGroupTime(g);
+        }
+    }
+
     updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     CInfoBlock ib;
     ib.m_iFamily = m_PeerAddr.family();
@@ -4935,6 +4962,21 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
        // socket should be deleted.
        hs->m_iReqType = URQ_ERROR_REJECT;
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+   }
+
+   // Synchronize the time NOW because the following function is about
+   // to use the start time to pass it to the receiver buffer data.
+   {
+       CUDTGroup* g = m_parent->m_IncludedGroup;
+       if (g)
+       {
+           CGuard cl(s_UDTUnited.m_GlobControlLock, "GlobControl");
+           // This is the last moment when this can be done.
+           // The updateAfterSrtHandshake call will copy the receiver
+           // start time to the receiver buffer data, so the correct
+           // value must be set before this happens.
+           synchronizeGroupTime(g);
+       }
    }
 
    updateAfterSrtHandshake(m_ConnRes.m_iVersion);
@@ -7878,6 +7920,8 @@ void CUDT::updateSrtRcvSettings()
     // the packet can be retrieved from the buffer before its time to play comes
     // (unlike in normal situation when reading directly from socket), however
     // its time to play shall be properly defined.
+
+    // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
     if (m_bTsbPd || m_bGroupTsbPd)
     {
         /* We are TsbPd receiver */
@@ -7885,10 +7929,11 @@ void CUDT::updateSrtRcvSettings()
         m_pRcvBuffer->setRcvTsbPdMode(m_ullRcvPeerStartTime, m_iTsbPdDelay_ms * 1000);
         CGuard::leaveCS(m_RecvLock, "recv");
 
-        HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode%s: delay=%u.%03u secs",
+        HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode%s: delay=%u.%03us RCV START: %s",
                 (m_bGroupTsbPd ? " (AS GROUP MEMBER)" : ""),
                 m_iTsbPdDelay_ms/1000,
-                m_iTsbPdDelay_ms%1000);
+                m_iTsbPdDelay_ms%1000,
+                logging::FormatTime(m_ullRcvPeerStartTime).c_str());
     }
     else
     {
@@ -7907,9 +7952,10 @@ void CUDT::updateSrtSndSettings()
          * For sender to apply Too-Late Packet Drop
          * option (m_bTLPktDrop) must be enabled and receiving peer shall support it
          */
-        HLOGF(mglog.Debug,  "AFTER HS: Set Snd TsbPd mode %s: delay=%d.%03d secs",
-                m_bPeerTLPktDrop ? "with TLPktDrop" : "without TLPktDrop",
-                m_iPeerTsbPdDelay_ms/1000, m_iPeerTsbPdDelay_ms%1000);
+        HLOGF(mglog.Debug,  "AFTER HS: Set Snd TsbPd mode %s TLPktDrop: delay=%d.%03ds START TIME: %s",
+                m_bPeerTLPktDrop ? "with" : "without",
+                m_iPeerTsbPdDelay_ms/1000, m_iPeerTsbPdDelay_ms%1000,
+                logging::FormatTime(m_StartTime).c_str());
     }
     else
     {
@@ -9868,7 +9914,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
 }
 
 CUDTGroup::CUDTGroup():
-        m_pGlobal(), // will be set after creation
+        m_pGlobal(&CUDT::s_UDTUnited),
         m_GroupID(-1),
         m_PeerGroupID(-1),
         m_selfManaged(true),
@@ -9881,6 +9927,8 @@ CUDTGroup::CUDTGroup():
         m_bTLPktDrop(true),
         m_iTsbPdDelay_us(0),
         m_iRcvTimeOut(-1),
+        m_StartTime(0),
+        m_RcvPeerStartTime(0),
 #ifndef SRT_ENABLE_APP_READER
         m_RcvInterceptorThread(),
         m_Providers(0), // Will be set later in CUDTGroup::add
@@ -9895,7 +9943,7 @@ CUDTGroup::CUDTGroup():
     CGuard::createMutex(m_RcvDataLock);
     CGuard::createCond(m_RcvDataCond);
 #ifdef SRT_ENABLE_APP_READER
-    m_epoll = srt_epoll_create();
+    m_epoll = m_pGlobal->m_EPoll.create(&m_epolld);
 #else
     CGuard::createCond(m_RcvPacketAhead);
 #endif
@@ -11938,6 +11986,33 @@ void CUDTGroup::fillGroupData(
     out.grpdata = st == 0 ? out_grpdata : NULL;
 }
 
+static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
+{
+    typedef set<SRTSOCKET> fset_t;
+    ostringstream os;
+    os << prefix << " ";
+    for (fset_t::const_iterator i = sockset.begin(); i != sockset.end(); ++i)
+    {
+        os << "@" << *i << " ";
+    }
+
+    return os.str();
+}
+
+struct FLookupSocket
+{
+    CUDTUnited* glob;
+    FLookupSocket(CUDTUnited* g): glob(g) {}
+
+    CUDTSocket* operator()(SRTSOCKET s)
+    {
+        // Allow to return NULL on error.
+        // NULLs will be simply deleted afterwards
+        return glob->locateSocket(s, glob->ERH_RETURN);
+    }
+};
+
+
 // The "app reader" version of the reading function.
 // This reads the packets from every socket treating them as independent
 // and prepared to work with the application. Then packets are sorted out
@@ -12037,8 +12112,6 @@ RETRY_READING:
     // during the next time ahead check, after which they will become
     // horses.
 
-    // Setup epoll every time anew, the socket set might be updated.
-    srt_epoll_clear_usocks(m_epoll);
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream ds;
     ds << "E(" << m_epoll << ") ";
@@ -12054,16 +12127,33 @@ RETRY_READING:
         for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
         {
             ++size; // list::size loops over all elements anyway
-            if (gi->laststatus != SRTS_CONNECTED)
+            if (gi->laststatus == SRTS_CONNECTING)
             {
                 HCLOG(ds << "@" << gi->id << "<pending> ");
+                int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+                srt_epoll_add_usock(m_epoll, gi->id, &modes);
                 continue; // don't read over a failed or pending socket
+            }
+
+            if (gi->laststatus >= SRTS_BROKEN)
+            {
+                broken.insert(gi->ps);
             }
 
             if (broken.count(gi->ps))
             {
                 HCLOG(ds << "@" << gi->id << "<broken> ");
                 continue;
+            }
+
+            if (gi->laststatus != SRTS_CONNECTED)
+            {
+                HCLOG(ds << "@" << gi->id << "<idle:" << SockStatusStr(gi->laststatus) << "> ");
+                // Sockets in this state are ignored. We are waiting until it
+                // achieves CONNECTING state, then it's added to write.
+                // Or gets broken and closed in the next step.
+                continue;
+
             }
 
             still_alive = true;
@@ -12082,6 +12172,10 @@ RETRY_READING:
             // potentially block the reading for an indefinite time, while
             // simultaneously a kangaroo might be a link that got some packets
             // dropped, but then it's still capable to deliver packets on time.
+
+            // Note that gi->id might be a socket that was previously being polled
+            // on write, when it's attempting to connect, but now it's connected.
+            // This will update the socket with the new event set.
 
             int modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             srt_epoll_add_usock(m_epoll, gi->id, &modes);
@@ -12119,10 +12213,26 @@ RETRY_READING:
     // be done in background.
 
     // Poll on this descriptor until reading is available, indefinitely.
-    set<SRTSOCKET> sready;
-    m_pGlobal->m_EPoll.wait(m_epoll, &sready, 0, -1, 0, 0);
+    SrtPollState sready;
+    m_pGlobal->m_EPoll.swait(*m_epolld, sready, -1); // -1: BLOCKING. MIND timeout/nonblocking.
 
-    HLOGC(dlog.Debug, log << "group/recv: " << sready.size() << " sockets read-ready: " << Printable(sready));
+    HLOGC(dlog.Debug, log << "group/recv: RDY: "
+            << DisplayEpollResults(sready.rd(), "[R]")
+            << DisplayEpollResults(sready.wr(), "[W]")
+            << DisplayEpollResults(sready.ex(), "[E]"));
+
+    typedef set<SRTSOCKET> fset_t;
+
+    // Handle sockets of pending connection and with errors.
+
+    // Nice to have something like:
+
+    // broken = Transform(sready.ex(), [] (auto s) { return g->locateSocket(s, ERH_RETURN); });
+
+    std::transform(
+            /*FROM*/ sready.ex().begin(), sready.ex().end(),
+            /*TO*/ std::inserter(broken, broken.begin()),
+            /*VIA*/ FLookupSocket(m_pGlobal));
 
     // Ok, now we need to have some extra qualifications:
     // 1. If a socket has no registry yet, we read anyway, just
@@ -12137,7 +12247,10 @@ RETRY_READING:
 
     int32_t next_seq = m_RcvBaseSeqNo;
 
-    for (set<SRTSOCKET>::iterator i = sready.begin(); i != sready.end(); ++i)
+    // If this set is empty, it won't roll even once, therefore output
+    // will be surely empty. This will be checked then same way as when
+    // reading from every socket resulted in error.
+    for (fset_t::const_iterator i = sready.rd().begin(); i != sready.rd().end(); ++i)
     {
         // Check if this socket is in aheads
         // If so, don't read from it, wait until the ahead is flushed.
@@ -12298,6 +12411,16 @@ RETRY_READING:
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+#if ENABLE_HEAVY_LOGGING
+    if (!broken.empty())
+    {
+        std::ostringstream brks;
+        for (set<CUDTSocket*>::iterator b = broken.begin(); b != broken.end(); ++b)
+            brks << "@" << (*b)->m_SocketID << " ";
+        LOGC(dlog.Debug, log << "group/recv: REMOVING BROKEN: " << brks.str());
+    }
+#endif
+
     // Now remove all broken sockets from aheads, if any.
     // Even if they have already delivered a packet.
     for (set<CUDTSocket*>::iterator di = broken.begin(); di != broken.end(); ++di)
@@ -12411,57 +12534,8 @@ RETRY_READING:
         }
 
         HLOGC(dlog.Debug, log << "group/recv: "
-                << (elephants.empty() ? "ONLY BROKEN WERE REPORTED." : "ALL LINKS ELEPHANTS.")
+                << (elephants.empty() ? "NO LINKS REPORTED ANY FRESHER PACKET." : "ALL LINKS ELEPHANTS.")
                 << " Re-polling.");
-        goto RETRY_READING;
-    }
-
-    // We have checked so far only links that were ready to poll.
-    // Links that are not ready should be re-checked.
-    // Links that were not ready at the entrance should be checked
-    // separately, and probably here is the best moment to do it.
-    // After we make sure that at least one link is ready, we can
-    // reattempt to read a packet from it.
-
-    // Ok, so first collect all sockets that are in
-    // connecting state, make a poll for connection.
-    srt_epoll_clear_usocks(m_epoll);
-    bool have_connectors = false, have_ready = false;
-
-    {
-        CGuard glock(m_GroupLock, "Group");
-        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-        {
-            if (gi->laststatus < SRTS_CONNECTED)
-            {
-                // Not sure anymore if IN or OUT signals the connect-readiness,
-                // but no matter. The signal will be cleared once it is used,
-                // while it will be always on when there's anything ready to read.
-                int modes = SRT_EPOLL_IN | SRT_EPOLL_OUT;
-                srt_epoll_add_usock(m_epoll, gi->id, &modes);
-                have_connectors = true;
-            }
-            else if (gi->laststatus == SRTS_CONNECTED)
-            {
-                have_ready = true;
-            }
-        }
-    }
-
-    if (have_ready)
-    {
-        HLOGP(dlog.Debug, "group/recv: (connected in the meantime)");
-        // Some have connected in the meantime, don't
-        // waste time on the pending ones.
-        goto RETRY_READING;
-    }
-
-    if (have_connectors)
-    {
-        HLOGP(dlog.Debug, "group/recv: (waiting for pending connectors to connect)");
-        set<SRTSOCKET> sready;
-        // Wait here for them to be connected.
-        m_pGlobal->m_EPoll.wait(m_epoll, &sready, 0, -1, 0, 0);
     }
 
     goto RETRY_READING;

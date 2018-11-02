@@ -941,7 +941,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             {
                 HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
                         << " removed - EXPIRED ("
-                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
+                        // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
+                        << (i->m_ullTTL == 0 ? "enforced on FAILURE" : "passed TTL")
                         << "). ");
                 // connection timer expired, acknowledge app via epoll
                 i->m_pUDT->m_bConnecting = false;

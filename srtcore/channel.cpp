@@ -388,9 +388,9 @@ void CChannel::getPeerAddr(ref_t<sockaddr_any> addr) const
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr) const
 {
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=@" << packet.m_iID << " sourceIP="
+        << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(source_addr) : "default")
-        << packet.Info());
+        << " " << packet.Info());
 
    // convert control information into network order
    // XXX USE HtoNLA!

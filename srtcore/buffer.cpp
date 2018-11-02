@@ -178,7 +178,9 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         if (pktlen > m_iMSS)
             pktlen = m_iMSS;
 
-        HLOGC(dlog.Debug, log << "addBuffer: seq=" << seqno << " spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+        HLOGC(dlog.Debug, log << "addBuffer: %" << seqno << " #" << msgno
+                << " spreading from=" << (i*m_iMSS) << " size=" << pktlen
+                << " TO BUFFER:" << (void*)s->m_pcData);
         memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
         s->m_iLength = pktlen;
 
@@ -487,7 +489,9 @@ int CSndBuffer::readData(const int offset, ref_t<CPacket> r_packet, ref_t<uint64
       p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
       p->m_ullOriginTime_us;
 
-   HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]");
+   HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: getting packet %"
+           << p->m_iSeqNo << " as per %" << r_packet.get().m_iSeqNo
+           << " size=" << readlen << " to send [REXMIT]");
 
    return readlen;
 }

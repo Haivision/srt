@@ -121,6 +121,36 @@ typedef std::set<SRTSOCKET> ud_set;
 #define UD_ISSET(u, uset) ((uset)->find(u) != (uset)->end())
 #define UD_SET(u, uset) ((uset)->insert(u))
 #define UD_ZERO(uset) ((uset)->clear())
+
+// This is for the new poll method, also C++ only.
+struct SrtPollState
+{
+    // Must block private because these fields will be used
+    // by CEPollET<> template and the only way to friend it
+    // would be to announce all instantiations here. This would
+    // be both too noisy and exposing private definitions here.
+//private:
+    std::set<SRTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
+    std::set<SRTSOCKET> m_sUDTReads;          // UDT sockets ready for read
+    std::set<SRTSOCKET> m_sUDTExcepts;        // UDT sockets with exceptions (connection broken, etc.)
+
+    friend class CEPoll;
+
+public:
+
+    const std::set<SRTSOCKET>& rd() const { return m_sUDTReads; }
+    const std::set<SRTSOCKET>& wr() const { return m_sUDTWrites; }
+    const std::set<SRTSOCKET>& ex() const { return m_sUDTExcepts; }
+
+    void clear_state()
+    {
+        m_sUDTReads.clear();
+        m_sUDTWrites.clear();
+        m_sUDTExcepts.clear();
+    }
+};
+
+
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -379,6 +409,7 @@ UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET
                        std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
 UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                         SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
+UDT_API int epoll_swait(const int eid, SrtPollState& socks, int64_t msTimeOut);
 UDT_API int epoll_release(int eid);
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();

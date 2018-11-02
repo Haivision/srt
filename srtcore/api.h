@@ -203,7 +203,7 @@ public:
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
    int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn, CUDTGroup* pg);
+   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
    int groupConnect(CUDTGroup* g, const sockaddr_any& source, SRT_SOCKGROUPDATA targets [], int arraysize);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
@@ -219,7 +219,6 @@ public:
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-   int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
    int epoll_release(const int eid);
 
       /// record the UDT exception.
@@ -243,7 +242,6 @@ public:
            // This is a reference to the cell, so it will
            // rewrite it into the map.
            g = new CUDTGroup;
-           g->m_pGlobal = this;
        }
 
        // Now we are sure that g is not NULL,
@@ -282,7 +280,7 @@ public:
        return NULL;
    }
 
-   CEPoll& epolmg() { return m_EPoll; }
+   CEPoll& epollmg() { return m_EPoll; }
 
 private:
 //   void init();
@@ -312,6 +310,8 @@ private:
    static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
 
 private:
+   friend struct FLookupSocket;
+
    void connect_complete(SRTSOCKET u);
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);

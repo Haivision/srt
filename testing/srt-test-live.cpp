@@ -68,7 +68,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmediabase.hpp"
+#include "testmedia.hpp"
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -475,6 +475,9 @@ int main( int argc, char** argv )
     set<logging::LogFA> fas = SrtParseLogFA(logfa);
     for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
+
+
+    UDT::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )

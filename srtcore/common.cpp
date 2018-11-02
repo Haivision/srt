@@ -336,7 +336,7 @@ struct CGuardLogMutex
 #endif
 
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, const char* ln, bool shouldwork):
+CGuard::CGuard(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool shouldwork):
     m_Mutex(lock),
     m_iLocked(-1)
 {
@@ -375,7 +375,7 @@ CGuard::~CGuard()
     }
 }
 
-int CGuard::enterCS(pthread_mutex_t& lock, const char* ln, bool block)
+int CGuard::enterCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool block)
 {
 #if ENABLE_THREAD_LOGGING
     std::ostringstream cv;
@@ -402,7 +402,7 @@ int CGuard::enterCS(pthread_mutex_t& lock, const char* ln, bool block)
     return retval;
 }
 
-int CGuard::leaveCS(pthread_mutex_t& lock, const char* ln)
+int CGuard::leaveCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED)
 {
 #if ENABLE_THREAD_LOGGING
     std::ostringstream cv;
@@ -504,7 +504,8 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln SRT
     // variable that you have used for construction as its argument.
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn, const char* ln)
+CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock,
+        const char* cn SRT_ATR_UNUSED, const char* ln SRT_ATR_UNUSED)
     : m_cond(&cond), m_mutex(&mutex)
 #if ENABLE_THREAD_LOGGING
       , nolock(true)

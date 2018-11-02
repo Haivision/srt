@@ -62,6 +62,7 @@ modified by
 #include "netinet_any.h"
 #include "api.h"
 #include "core.h"
+#include "epoll.h"
 #include "logging.h"
 #include "threadname.h"
 #include "srt.h"
@@ -596,7 +597,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         {
             if (gi->laststatus == SRTS_CONNECTED)
             {
-                HLOGC(mglog.Debug, log << "Found another connected socket in the group: @"
+                HLOGC(mglog.Debug, log << "Found another connected socket in the group: $"
                         << gi->id << " - socket will be NOT given up for accepting");
                 should_submit_to_accept = false;
                 break;
@@ -946,7 +947,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
     // For a single socket, just do bind, then connect
 
     bind(s, source_addr);
-    return connectIn(s, target_addr, 0, 0);
+    return connectIn(s, target_addr, 0);
 }
 
 int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
@@ -975,7 +976,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t 
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    return connectIn(s, target_addr, forced_isn, 0);
+    return connectIn(s, target_addr, forced_isn);
 }
 
 int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT_SOCKGROUPDATA* targets, int arraysize)
@@ -999,7 +1000,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
     SRTSOCKET retval = -1;
 
     int eid = -1;
-    int modes = SRT_EPOLL_CONNECT;
+    int modes = SRT_EPOLL_CONNECT | SRT_EPOLL_ERR;
     if (block_new_opened)
     {
         // Create this eid only to block-wait for the first
@@ -1097,7 +1098,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         try
         {
             HLOGC(mglog.Debug, log << "groupConnect: connecting a new socket with ISN=" << isn);
-            connectIn(ns, target_addr, isn, &g);
+            connectIn(ns, target_addr, isn);
         }
         catch (CUDTException& e)
         {
@@ -1258,7 +1259,10 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
     }
     // Finished, delete epoll.
     if (eid != -1)
+    {
+        HLOGC(mglog.Debug, log << "connect FIRST IN THE GROUP finished, removing EID " << eid);
         srt_epoll_release(eid);
+    }
 
     // XXX This is wrong code probably, get that better.
     if (retval == -1)
@@ -1271,7 +1275,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
 }
 
 
-int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn, CUDTGroup* pg)
+int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
 {
     CGuard cg(s->m_ControlLock, "control");
 
@@ -1298,14 +1302,6 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
         // -> C(Snd|Rcv)Queue::init
         // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
         s->m_Status = SRTS_OPENED;
-
-        if (pg)
-        {
-            // This overrides the value of m_StartTime
-            // and m_ullRcvPeerStartTime before this socket sends
-            // or receives anything.
-            s->m_pUDT->synchronizeGroupTime(pg);
-        }
     }
     else if (s->m_Status != SRTS_OPENED)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -1869,17 +1865,6 @@ int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 int CUDTUnited::epoll_remove_ssock(const int eid, const SYSSOCKET s)
 {
    return m_EPoll.remove_ssock(eid, s);
-}
-
-int CUDTUnited::epoll_wait(
-   const int eid,
-   set<SRTSOCKET>* readfds,
-   set<SRTSOCKET>* writefds,
-   int64_t msTimeOut,
-   set<SYSSOCKET>* lrfds,
-   set<SYSSOCKET>* lwfds)
-{
-   return m_EPoll.wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
 }
 
 int CUDTUnited::epoll_release(const int eid)
@@ -3317,8 +3302,30 @@ int CUDT::epoll_wait(
 {
    try
    {
-      return s_UDTUnited.epoll_wait(
-         eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+      return s_UDTUnited.epollmg().wait(
+              eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::epoll_swait(const int eid, SrtPollState& socks, int64_t msTimeOut)
+{
+   try
+   {
+       const CEPollDesc& d = s_UDTUnited.epollmg().access(eid);
+       HLOGC(mglog.Debug, log << "epoll_swait polls on " << eid);
+       return s_UDTUnited.epollmg().swait(d, socks, msTimeOut);
    }
    catch (CUDTException e)
    {
@@ -3685,6 +3692,11 @@ int epoll_wait(
    set<SYSSOCKET>* lwfds)
 {
    return CUDT::epoll_wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+}
+
+int epoll_swait(int eid, SrtPollState& st, int64_t msTimeOut)
+{
+    return CUDT::epoll_swait(eid, st, msTimeOut);
 }
 
 /*

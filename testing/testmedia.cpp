@@ -27,6 +27,9 @@
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
+#include "udt.h"
+#include "logging.h"
+#include "utilities.h"
 
 #include "apputil.hpp"
 #include "socketoptions.hpp"
@@ -34,8 +37,6 @@
 #include "testmedia.hpp"
 #include "srt_compat.h"
 #include "verbose.hpp"
-
-#include "../srtcore/utilities.h"
 
 using namespace std;
 
@@ -45,6 +46,7 @@ int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
+logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
 string DirectionName(SRT_EPOLL_OPT direction)
 {
@@ -1098,6 +1100,19 @@ bool SrtSource::GroupCheckPacketAhead(bytevector& output)
     return status;
 }
 
+static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
+{
+    typedef set<SRTSOCKET> fset_t;
+    ostringstream os;
+    os << prefix << " ";
+    for (fset_t::const_iterator i = sockset.begin(); i != sockset.end(); ++i)
+    {
+        os << "@" << *i << " ";
+    }
+
+    return os.str();
+}
+
 bytevector SrtSource::GroupRead(size_t chunk)
 {
     // Read the current group status. m_sock is here the group id.
@@ -1218,22 +1233,35 @@ RETRY_READING:
     // during the next time ahead check, after which they will become
     // horses.
 
-    // Setup epoll every time anew, the socket set might be updated.
-    srt_epoll_clear_usocks(srt_epoll);
     Verb() << "E(" << srt_epoll << ") " << VerbNoEOL;
 
     for (size_t i = 0; i < size; ++i)
     {
         SRT_SOCKGROUPDATA& d = m_group_data[i];
-        if (d.status != SRTS_CONNECTED)
+        if (d.status == SRTS_CONNECTING)
         {
             Verb() << "@" << d.id << "<pending> " << VerbNoEOL;
+            int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+            srt_epoll_add_usock(srt_epoll, d.id, &modes);
             continue; // don't read over a failed or pending socket
+        }
+
+        if (d.status >= SRTS_BROKEN)
+        {
+            broken.insert(d.id);
         }
 
         if (broken.count(d.id))
         {
             Verb() << "@" << d.id << "<broken> " << VerbNoEOL;
+            continue;
+        }
+
+        if (d.status != SRTS_CONNECTED)
+        {
+            Verb() << "@" << d.id << "<idle:" << SockStatusStr(d.status) << "> " << VerbNoEOL;
+            // Sockets in this state are ignored. We are waiting until it
+            // achieves CONNECTING state, then it's added to write.
             continue;
         }
 
@@ -1254,6 +1282,10 @@ RETRY_READING:
 
         // Note also that about the fact that some links turn out to be
         // elephants we'll learn only after we try to poll and read them.
+
+        // Note that d.id might be a socket that was previously being polled
+        // on write, when it's attempting to connect, but now it's connected.
+        // This will update the socket with the new event set.
 
         int modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         srt_epoll_add_usock(srt_epoll, d.id, &modes);
@@ -1281,20 +1313,40 @@ RETRY_READING:
     // with only immediate report, and read-readiness would have to
     // be done in background.
 
-    vector<SRTSOCKET> sready(size);
-    int ready_len = size;
+    SrtPollState sready;
 
+    // Poll on this descriptor until reading is available, indefinitely.
+    if (UDT::epoll_swait(srt_epoll, sready, -1) == SRT_ERROR)
     {
-        // Poll on this descriptor until reading is available, indefinitely.
-        if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
-        {
-            Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll, group)");
-        }
-        Verb() << "RDY: " << VerbNoEOL;
-        for (int i = 0; i < ready_len; ++i)
-            Verb() << "@" << sready[i] << " " << VerbNoEOL;
-        Verb() << "(total " << ready_len << ")";
+        Error(UDT::getlasterror(), "UDT::epoll_swait(srt_epoll, group)");
     }
+    if (Verbose::on)
+    {
+        Verb() << "RDY: {"
+            << DisplayEpollResults(sready.rd(), "[R]")
+            << DisplayEpollResults(sready.wr(), "[W]")
+            << DisplayEpollResults(sready.ex(), "[E]")
+            << "} " << VerbNoEOL;
+
+    }
+
+    LOGC(applog.Debug, log << "epoll_swait: "
+            << DisplayEpollResults(sready.rd(), "[R]")
+            << DisplayEpollResults(sready.wr(), "[W]")
+            << DisplayEpollResults(sready.ex(), "[E]"));
+
+    typedef set<SRTSOCKET> fset_t;
+
+    // Handle sockets of pending connection and with errors.
+    broken = sready.ex();
+
+    // We don't do anything about sockets that have been configured to
+    // poll on writing (that is, pending for connection). What we need
+    // is that the epoll_swait call exit on that fact. Probably if this
+    // was the only socket reported, no broken and no read-ready, this
+    // will later check on output if still empty, if so, repeat the whole
+    // function. This write-ready socket will be there already in the
+    // connected state and will be added to read-polling.
 
     // Ok, now we need to have some extra qualifications:
     // 1. If a socket has no registry yet, we read anyway, just
@@ -1309,12 +1361,15 @@ RETRY_READING:
 
     int32_t next_seq = m_group_seqno;
 
-    for (size_t i = 0; i < size_t(ready_len); ++i)
+    // If this set is empty, it won't roll even once, therefore output
+    // will be surely empty. This will be checked then same way as when
+    // reading from every socket resulted in error.
+    for (fset_t::const_iterator i = sready.rd().begin(); i != sready.rd().end(); ++i)
     {
         // Check if this socket is in aheads
         // If so, don't read from it, wait until the ahead is flushed.
 
-        SRTSOCKET id = sready[i];
+        SRTSOCKET id = *i;
         ReadPos* p = nullptr;
         auto pe = m_group_positions.find(id);
         if (pe != m_group_positions.end())
@@ -1484,6 +1539,11 @@ RETRY_READING:
         Error("All sockets broken");
     }
 
+    if (Verbose::on && !broken.empty())
+    {
+        Verb() << "BROKEN: " << Printable(broken) << " - removing";
+    }
+
     // Now remove all broken sockets from aheads, if any.
     // Even if they have already delivered a packet.
     for (SRTSOCKET d: broken)
@@ -1626,6 +1686,13 @@ RETRY_READING:
         {
             have_ready = true;
         }
+    }
+
+    if (have_ready || have_connectors)
+    {
+        Verb() << "(still have: " << (have_ready ? "+" : "-") << "ready, "
+            << (have_connectors ? "+" : "-") << "conenctors).";
+        goto RETRY_READING;
     }
 
     if (have_ready)
