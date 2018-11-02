@@ -3046,7 +3046,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
     else
     {
         HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << "DEFINED ISN: RCV=%" << m_iRcvLastAck
+                << " DEFINED ISN: RCV=%" << m_iRcvLastAck
                 << " SND=%" << m_iSndLastAck);
     }
 }
@@ -3073,8 +3073,19 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, ref_t<int32_t> r_snd_isn, 
             HLOGC(dlog.Debug, log << "applyGroupSequences: @" << target << " gets seq from @"
                     << gi->id);
 
-            *r_snd_isn = se.m_iSndCurrSeqNo;
-            *r_rcv_isn = se.m_iRcvCurrSeqNo;
+            // SndCurrSeqNo is initially set to ISN-1, this next one is
+            // the sequence that is about to be stamped on the next sent packet
+            // over that socket. Using this field is safer because it is volatile
+            // and its affinity is to the same thread as the sending function.
+            *r_snd_isn = se.m_iSndNextSeqNo;
+
+            // RcvCurrSeqNo is increased by one because it happens that at the
+            // synchronization moment it's already past reading and delivery.
+            // This is redundancy, so the redundant socket is connected at the moment
+            // when the other one is already transmitting, so skipping one packet
+            // even if later transmitted is less troublesome than requesting a
+            // "mistakenly seen as lost" packet.
+            *r_rcv_isn = CSeqNo::incseq(se.m_iRcvCurrSeqNo);
 
             return false;
         }
