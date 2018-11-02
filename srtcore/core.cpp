@@ -2999,7 +2999,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     return gp->id();
 }
 
-void CUDT::synchronizeGroupTime(CUDTGroup* gp)
+void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 {
     CGuard gl(*gp->exp_groupLock(), "group");
 
@@ -3013,7 +3013,7 @@ void CUDT::synchronizeGroupTime(CUDTGroup* gp)
 
     if (!gp->applyGroupTime(Ref(start_time), Ref(peer_start_time)))
     {
-        HLOGC(mglog.Debug, log << "synchronizeGroupTime: @" << m_SocketID
+        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
                 << " DERIVED: ST="
                 << logging::FormatTime(m_StartTime) << " -> "
                 << logging::FormatTime(start_time) << " PST="
@@ -3030,6 +3030,61 @@ void CUDT::synchronizeGroupTime(CUDTGroup* gp)
                 << logging::FormatTime(m_StartTime)
                 << " PST=" << logging::FormatTime(m_ullRcvPeerStartTime));
     }
+
+    // These are the values that are normally set initially by setters.
+    int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
+    if (!gp->applyGroupSequences(m_SocketID, Ref(snd_isn), Ref(rcv_isn)))
+    {
+        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
+                << " DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck)
+                << ") SND=%" << m_iSndLastAck << " -> %" << snd_isn
+                << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+        setInitialRcvSeq(rcv_isn);
+        setInitialSndSeq(snd_isn);
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
+                << "DEFINED ISN: RCV=%" << m_iRcvLastAck
+                << " SND=%" << m_iSndLastAck);
+    }
+}
+
+// [[using locked(this->m_GroupLock)]];
+bool CUDTGroup::applyGroupSequences(SRTSOCKET target, ref_t<int32_t> r_snd_isn, ref_t<int32_t> r_rcv_isn)
+{
+    if (m_bConnected) // You are the first one, no need to change.
+    {
+        // Find a socket that is declared connected and is not
+        // the socket that caused the call.
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            if (gi->id == target)
+                continue;
+
+            CUDT& se = gi->ps->core();
+            if (!se.m_bConnected)
+                continue;
+
+            // Found it. Get the following sequences:
+            // For sending, the sequence that is about to be sent next.
+            // For receiving, the sequence of the latest received packet.
+            HLOGC(dlog.Debug, log << "applyGroupSequences: @" << target << " gets seq from @"
+                    << gi->id);
+
+            *r_snd_isn = se.m_iSndCurrSeqNo;
+            *r_rcv_isn = se.m_iRcvCurrSeqNo;
+
+            return false;
+        }
+
+    }
+
+    HLOGC(dlog.Debug, log << "applyGroupSequences: no socket found connected and transmitting, @"
+            << target << " not changing sequences");
+
+    return true;
 }
 
 bool CUDTGroup::getMasterData(SRTSOCKET slave, ref_t<SRTSOCKET> r_mpeer, ref_t<uint64_t> r_st)
@@ -4180,7 +4235,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             // The updateAfterSrtHandshake call will copy the receiver
             // start time to the receiver buffer data, so the correct
             // value must be set before this happens.
-            synchronizeGroupTime(g);
+            synchronizeWithGroup(g);
         }
     }
 
@@ -4975,7 +5030,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
            // The updateAfterSrtHandshake call will copy the receiver
            // start time to the receiver buffer data, so the correct
            // value must be set before this happens.
-           synchronizeGroupTime(g);
+           synchronizeWithGroup(g);
        }
    }
 
