@@ -87,12 +87,20 @@ public:
    ~CSndBuffer();
 
       /// Insert a user buffer into the sending list.
+      /// For Message control data the following data are used:
+      /// INPUT:
+      /// - msgttl: timeout for scheduling the messsage for sending
+      /// - inorder: request to deliver the message in order of sending
+      /// - srctime: local time as a base for packet's timestamp (0 if unused)
+      /// - pktseq: sequence number to be stamped on the packet (0 if unused)
+      /// OUTPUT:
+      /// - srctime: local time that was used to stamp the packet
+      /// - pktseq: sequence number to be stamped on the next packet
+      /// - msgno: message number stamped on the packet
       /// @param [in] data pointer to the user data block.
       /// @param [in] len size of the block.
-      /// @param [in] ttl time to live in milliseconds
-      /// @param [in] order if the block should be delivered in order, for DGRAM only
-
-   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_seqno, ref_t<int32_t> r_msgno);
+      /// @param [inout] r_mctrl Message control data
+   void addBuffer(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl);
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.

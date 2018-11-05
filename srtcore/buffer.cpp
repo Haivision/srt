@@ -140,10 +140,12 @@ CSndBuffer::~CSndBuffer()
    pthread_mutex_destroy(&m_BufLock);
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_seqno, ref_t<int32_t> r_msgno)
+void CSndBuffer::addBuffer(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
-    int32_t& msgno = *r_msgno;
-    int32_t& seqno = *r_seqno;
+    int32_t& msgno = r_mctrl.get().msgno;
+    int32_t& seqno = r_mctrl.get().pktseq;
+    uint64_t& srctime = r_mctrl.get().srctime;
+    int& ttl = r_mctrl.get().msgttl;
 
     int size = len / m_iMSS;
     if ((len % m_iMSS) != 0)
@@ -159,7 +161,12 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     }
 
     uint64_t time = CTimer::getTime();
-    int32_t inorder = order ? MSGNO_PACKET_INORDER::mask : 0;
+    if (srctime == 0)
+    {
+        HLOGC(dlog.Debug, log << CONID() << "addBuffer: DEFAULT SRCTIME - overriding with current time.");
+        srctime = time;
+    }
+    int32_t inorder = r_mctrl.get().inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     HLOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
         << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo

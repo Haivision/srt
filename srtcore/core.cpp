@@ -5898,15 +5898,19 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     // have one packet per buffer (as it's in live mode).
     mctrl.pktseq = seqno;
 
+    // Now seqno is the sequence to which it was scheduled
     HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << logging::FormatTime(mctrl.srctime)
         << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
         << " STAMP: " << BufferStamp(data, size));
 
-    // seqno is INPUT-OUTPUT value:
+    // mctrl.seqno is INPUT-OUTPUT value:
     // - INPUT: the current sequence number to be placed for the next scheduled packet
     // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
-    m_pSndBuffer->addBuffer(data, size, mctrl.msgttl, mctrl.inorder, mctrl.srctime, Ref(seqno), Ref(mctrl.msgno));
-    m_iSndNextSeqNo = seqno;
+    // We need to supply to the output the value that was STAMPED ON THE PACKET,
+    // which is seqno. In the output we'll get the next sequence number.
+    m_pSndBuffer->addBuffer(data, size, Ref(mctrl));
+    m_iSndNextSeqNo = mctrl.pktseq;
+    mctrl.pktseq = seqno;
 
     HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << logging::FormatTime(mctrl.srctime)
         << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
@@ -8638,6 +8642,7 @@ int CUDT::processData(CUnit* unit)
 
        HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
            << " seq=" << packet.getSeqNo()
+           << " OTS=" << logging::FormatTime(packet.getMsgTimeStamp())
            << " ETS=" << logging::FormatTime(ets)
            << " PTS=" << logging::FormatTime(pts));
    }
