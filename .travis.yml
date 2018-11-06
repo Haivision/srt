@@ -47,7 +47,7 @@ matrix:
             - export CXX="x86_64-w64-mingw32-g++"
           env: BUILD_TYPE=Release
 script:
-    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_SYSTEM_NAME="$CMAKE_SYSTEM_NAME"; fi
-    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl; fi
+    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_UNITTESTS="ON" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_SYSTEM_NAME="$CMAKE_SYSTEM_NAME"; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_UNITTESTS="ON" -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl; fi
     - make
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
