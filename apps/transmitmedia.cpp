@@ -20,6 +20,9 @@
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
+#else
+#include <fcntl.h> 
+#include <io.h>
 #endif
 
 #include "netinet_any.h"
@@ -766,6 +769,11 @@ public:
 
     ConsoleSource()
     {
+#ifdef _WIN32
+        // The default stdin mode on windows is text.
+        // We have to set it to the binary mode
+        _setmode(_fileno(stdin), _O_BINARY);
+#endif
     }
 
     bool Read(size_t chunk, bytevector& data) override
@@ -800,6 +808,11 @@ public:
 
     ConsoleTarget()
     {
+#ifdef _WIN32
+        // The default stdout mode on windows is text.
+        // We have to set it to the binary mode
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
     }
 
     bool Write(const bytevector& data) override
