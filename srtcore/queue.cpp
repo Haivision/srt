@@ -213,11 +213,34 @@ CUnit* CUnitQueue::getNextAvailUnit()
 
    CQEntry* entrance = m_pCurrQueue;
 
+#if ENABLE_HEAVY_LOGGING
+   struct PerfStats
+   {
+       int iterations;
+       bool found;
+       PerfStats(): iterations(0), found(true)
+       {
+       }
+
+       ~PerfStats()
+       {
+           LOGC(mglog.Debug, log << "getNextAvailUnit: PROF: Unit "
+                   << (found ? "" : "NOT ") << "found; done " << iterations << " iterations");
+       }
+   } l_perf_stats;
+#endif
+
    do
    {
       for (CUnit* sentinel = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize - 1; m_pAvailUnit != sentinel; ++ m_pAvailUnit)
+      {
          if (m_pAvailUnit->m_iFlag == CUnit::FREE)
             return m_pAvailUnit;
+#if ENABLE_HEAVY_LOGGING
+         ++l_perf_stats.iterations;
+#endif
+
+      }
 
       if (m_pCurrQueue->m_pUnit->m_iFlag == CUnit::FREE)
       {
@@ -227,10 +250,17 @@ CUnit* CUnitQueue::getNextAvailUnit()
 
       m_pCurrQueue = m_pCurrQueue->m_pNext;
       m_pAvailUnit = m_pCurrQueue->m_pUnit;
+
+      // Count this as one extra iteration.
+#if ENABLE_HEAVY_LOGGING
+         ++l_perf_stats.iterations;
+#endif
    } while (m_pCurrQueue != entrance);
 
    increase();
-
+#if ENABLE_HEAVY_LOGGING
+         l_perf_stats.found = false;
+#endif
    return NULL;
 }
 

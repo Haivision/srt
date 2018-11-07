@@ -5304,6 +5304,23 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
+#if ENABLE_HEAVY_LOGGING
+    struct PerfStats
+    {
+        int iterations;
+        bool found;
+        PerfStats(): iterations(0), found(true)
+        {
+        }
+
+        ~PerfStats()
+        {
+            LOGC(mglog.Debug, log << "receiveMessage: PROF: Ready packet "
+                    << (found ? "" : "NOT ") << "found; done " << iterations << " iterations");
+        }
+    } l_perf_stats;
+#endif
+
     CGuard recvguard(m_RecvLock);
 
     /* XXX DEBUG STUFF - enable when required
@@ -5397,6 +5414,9 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
             do
             {
+#if ENABLE_HEAVY_LOGGING
+                l_perf_stats.iterations++;
+#endif
                 if (CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, recvtmo * 1000ULL) == ETIMEDOUT)
                 {
                     if (!(m_iRcvTimeOut < 0))
