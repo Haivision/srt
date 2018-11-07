@@ -1,4 +1,3 @@
-
 // MSVS likes to complain about lots of standard C functions being unsafe.
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -13,6 +12,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <deque>
 #include <memory>
 #include <algorithm>
 #include <iterator>
@@ -35,23 +35,13 @@
 #include <srt.h>
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
-
+#include <api.h>
 
 using namespace std;
 
 class Medium
 {
-    UriParser uri;
-    size_t chunk;
-
 public:
-
-    Medium(UriParser u, size_t ch): uri(u), chunk(ch) {}
-
-    virtual bool IsOpen() = 0;
-    virtual void Close() {}
-    virtual bool End() = 0;
-
     enum ReadStatus
     {
         RD_DATA, RD_AGAIN, RD_EOF, RD_ERROR
@@ -62,10 +52,35 @@ public:
         LISTENER, CALLER
     };
 
-    virtual ReadStatus Read(ref_t<bytevector> output) = 0;
+protected:
+    UriParser m_uri;
+    size_t m_chunk = 0;
+    map<string, string> m_options;
+    Mode m_mode;
+
+    bool m_listener = false;
+    bool m_open = false;
+    bool m_eof = false;
+    bool m_broken = false;
+public:
+
+    Medium(UriParser u, size_t ch): m_uri(u), m_chunk(ch) {}
+    Medium() {}
+
+    virtual bool IsOpen() = 0;
+    virtual void Close() {}
+    virtual bool End() = 0;
+
+    virtual int ReadInternal(char* output, int size) = 0;
+    virtual bool IsErrorAgain() = 0;
+
+    ReadStatus Read(ref_t<bytevector> output);
     virtual void Write(ref_t<bytevector> portion) = 0;
-    virtual void CreateListener(UriParser uri) = 0;
-    virtual void CreateCaller(UriParser uri) = 0;
+
+    virtual void CreateListener() = 0;
+    virtual void CreateCaller() = 0;
+    virtual unique_ptr<Medium> Accept() = 0;
+    virtual void Connect() = 0;
 
     static std::unique_ptr<Medium> Create(const std::string& url, Mode);
 
@@ -80,13 +95,40 @@ public:
         }
     };
 
-    virtual void addToEpoll(int eid) = 0;
+    class TransmissionError: public std::runtime_error
+    {
+    public:
+        TransmissionError(const std::string& fn): std::runtime_error( fn )
+        {
+        }
+    };
 
-    virtual std::pair<std::unique_ptr<Medium>,
-        std::unique_ptr<Medium>> Establish() = 0;
+    static void Error(const string& text)
+    {
+        throw TransmissionError("ERROR (internal): " + text);
+    }
 
 protected:
-    virtual void Init(const UriParser& uri) = 0;
+    void InitMode(Mode m)
+    {
+        m_mode = m;
+        Init();
+
+        if (m_mode == LISTENER)
+        {
+            CreateListener();
+            m_listener = true;
+        }
+        else
+        {
+            CreateCaller();
+        }
+
+        m_open = true;
+    }
+
+    virtual void Init() {}
+
 };
 
 class Engine
@@ -189,7 +231,7 @@ void Engine::Worker()
         case Medium::RD_AGAIN:
         case Medium::RD_ERROR:
             status = -1;
-            Error(errno, "Error while reading");
+            Medium::Error("Error while reading");
         }
     }
 
@@ -198,74 +240,120 @@ void Engine::Worker()
 
 class SrtMedium: public Medium
 {
-    SRTSOCKET m_socket;
-
-    bool m_listener = false;
-    bool m_open = false;
-    bool m_eof = false;
-    bool m_broken = false;
+    SRTSOCKET m_socket = SRT_ERROR;
 public:
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    virtual bytevector Read(size_t chunk) override;
+    virtual int ReadInternal(char* output, int size) override;
+    virtual bool IsErrorAgain() override;
+
     virtual void Write(ref_t<bytevector> portion) override;
-    virtual void CreateListener(UriParser uri) override;
-    virtual void CreateCaller(UriParser uri) override;
+    virtual void CreateListener() override;
+    virtual void CreateCaller() override;
+    virtual unique_ptr<Medium> Accept() override;
+    virtual void Connect() override;
 
-    virtual int addToEpoll(int eid, int modes) override
-    {
-        return srt_epoll_add_usock(eid, m_socket, modes);
-    }
-
-    virtual std::pair<std::unique_ptr<Medium>,
-        std::unique_ptr<Medium>> Establish() = 0;
 protected:
-    virtual void Init(const UriParser& uri) override;
+    virtual void Init() override;
 
+    void ConfigurePre(SRTSOCKET socket);
+    void ConfigurePost(SRTSOCKET socket);
+
+    using Medium::Error;
+
+    static void Error(UDT::ERRORINFO& ri, const string& text)
+    {
+        throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
+    }
 };
 
 class TcpMedium: public Medium
 {
-    int m_socket;
-
-    bool m_listener = false;
-    bool m_open = false;
-    bool m_eof = false;
-    bool m_broken = false;
+    int m_socket = -1;
 public:
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    virtual bytevector Read(size_t chunk) override;
+    virtual int ReadInternal(char* output, int size) override;
+    virtual bool IsErrorAgain() override;
     virtual void Write(ref_t<bytevector> portion) override;
-    virtual void CreateListener(UriParser uri) override;
-    virtual void CreateCaller(UriParser uri) override;
-
-    virtual int addToEpoll(int eid, int modes) override
-    {
-        return srt_epoll_add_ssock(eid, m_socket, modes);
-    }
-
-    virtual std::pair<std::unique_ptr<Medium>,
-        std::unique_ptr<Medium>> Establish() = 0;
+    virtual void CreateListener() override;
+    virtual void CreateCaller() override;
+    virtual unique_ptr<Medium> Accept() override;
+    virtual void Connect() override;
 
 protected:
-    virtual void Init(const UriParser& uri) override;
 
+    // Just models. No options are predicted for now.
+    void ConfigurePre(int )
+    {
+    }
+
+    void ConfigurePost(int)
+    {
+    }
+
+    using Medium::Error;
+
+    static void Error(int verrno, const string& text)
+    {
+        char rbuf[1024];
+        throw TransmissionError("ERROR: " + text + ": " + SysStrError(verrno, rbuf, 1024));
+    }
 };
 
-void SrtMedium::CreateListener(UriParser uri)
+void SrtMedium::Init()
 {
+    // This function is required due to extra option
+    // check need
+
+    if (m_options.count("mode"))
+        Error("No option 'mode' is required, it defaults to position of the argument");
+
+    if (m_options.count("blocking"))
+        Error("Blocking is not configurable here.");
+
+    // XXX
+    // Look also for other options that should not be here.
+
+    // Enforce the transtype = file
+    m_options["transtype"] = "file";
+}
+
+void SrtMedium::ConfigurePre(SRTSOCKET so)
+{
+    vector<string> fails;
+    SrtConfigurePre(so, "--", m_options, &fails);
+    if (!fails.empty())
+    {
+        cerr << "Failed options: " << Printable(fails) << endl;
+    }
+}
+
+void SrtMedium::ConfigurePost(SRTSOCKET so)
+{
+    vector<string> fails;
+    SrtConfigurePost(so, m_options, &fails);
+    if (!fails.empty())
+    {
+        cerr << "Failed options: " << Printable(fails) << endl;
+    }
+}
+
+void SrtMedium::CreateListener()
+{
+    int backlog = 5; // hardcoded!
+
     m_socket = srt_create_socket();
 
     ConfigurePre(m_socket);
 
-    sockaddr_in sa = CreateAddrInet(uri.host(), uri.hport());
+    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
     int stat = srt_bind(m_socket, (sockaddr*)&sa, sizeof sa);
 
@@ -285,12 +373,14 @@ void SrtMedium::CreateListener(UriParser uri)
     m_listener = true;
 };
 
-void TcpMedium::CreateListener(UriParser uri)
+void TcpMedium::CreateListener()
 {
+    int backlog = 5; // hardcoded!
+
     m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre(m_socket);
 
-    sockaddr_in sa = CreateAddrInet(uri.host(), uri.hport());
+    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
     int stat = bind(m_socket, (sockaddr*)&sa, sizeof sa);
 
@@ -310,23 +400,246 @@ void TcpMedium::CreateListener(UriParser uri)
     m_listener = true;
 }
 
-static std::unique_ptr<Medium> Medium::Create(const std::string& url, Medium::Mode mode)
+unique_ptr<Medium> SrtMedium::Accept()
 {
-    std::unique_ptr<Medium> out;
-    if (url.scheme() == "srt")
+    sockaddr_in sa;
+    int salen = sizeof sa;
+    SRTSOCKET s = srt_accept(m_socket, (sockaddr*)&sa, &salen);
+    if (s == SRT_ERROR)
     {
-        out = new SrtMedium;
+        Error(UDT::getlasterror(), "srt_accept");
     }
-    else if (url.scheme() == "tcp")
+
+    Verb() << "accepted a connection from " << SockaddrToString((sockaddr*)&sa);
+
+    ConfigurePost(s);
+
+    SrtMedium* m = new SrtMedium;
+    m->m_socket = s;
+    m->m_chunk = m_chunk;
+
+    unique_ptr<Medium> med(m);
+    return move(med);
+}
+
+unique_ptr<Medium> TcpMedium::Accept()
+{
+    sockaddr_in sa;
+    int salen = sizeof sa;
+    int s = ::accept(m_socket, (sockaddr*)&sa, &salen);
+    if (s == -1)
     {
-        out = new TcpMedium;
+        Error(errno, "accept");
+    }
+
+    Verb() << "accepted a connection from " << SockaddrToString((sockaddr*)&sa);
+
+    ConfigurePost(s);
+
+    TcpMedium* m = new TcpMedium;
+    m->m_socket = s;
+    m->m_chunk = m_chunk;
+
+    unique_ptr<Medium> med(m);
+    return move(med);
+}
+
+void SrtMedium::CreateCaller()
+{
+    m_socket = srt_create_socket();
+    ConfigurePre(m_socket);
+
+    // XXX setting up outgoing port not supported
+}
+
+void TcpMedium::CreateCaller()
+{
+    m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ConfigurePre(m_socket);
+}
+
+void SrtMedium::Connect()
+{
+    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+
+    int st = srt_connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    if (st == SRT_ERROR)
+        Error(UDT::getlasterror(), "srt_connect");
+
+    ConfigurePost(m_socket);
+}
+
+void TcpMedium::Connect()
+{
+    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+
+    int st = ::connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    if (st == -1)
+        Error(errno, "connect");
+
+    ConfigurePost(m_socket);
+}
+
+int SrtMedium::ReadInternal(char* buffer, int size)
+{
+    int st = srt_recv(m_socket, buffer, size);
+    if (st == SRT_ERROR)
+        return -1;
+    return st;
+}
+
+int TcpMedium::ReadInternal(char* buffer, int size)
+{
+    return read(m_socket, buffer, size);
+}
+
+bool SrtMedium::IsErrorAgain()
+{
+    return srt_getlasterror(NULL) == SRT_EASYNCRCV;
+}
+
+bool TcpMedium::IsErrorAgain()
+{
+    return errno == EAGAIN;
+}
+
+// The idea of Read function is to get the buffer that
+// possibly contains some data not written to the output yet,
+// but the time has come to read. We can't let the buffer expand
+// more than the size of the chunk, so if the buffer size already
+// exceeds it, don't return any data, but behave as if they were read.
+// This will cause the worker loop to redirect to Write immediately
+// thereafter and possibly will flush out the remains of the buffer.
+// It's still possible that the buffer won't be completely purged
+Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
+{
+    bytevector& output = *r_output;
+
+    // Don't read, but fake that you read
+    if (output.size() > m_chunk)
+    {
+        Verb() << "BUFFER EXCEEDED";
+        return RD_DATA;
+    }
+
+    // Resize to maximum first
+    size_t shift = output.size();
+    if (shift && m_eof)
+    {
+        // You have nonempty buffer, but eof was already
+        // encountered. Report as if something was read.
+        //
+        // Don't read anything because this will surely
+        // result in error since now.
+        return RD_DATA;
+    }
+
+    size_t pred_size = shift + m_chunk;
+
+    output.resize(pred_size);
+    int st = ReadInternal(output.data() + shift, m_chunk);
+    if (st == -1)
+    {
+        if (IsErrorAgain())
+            return RD_AGAIN;
+
+        return RD_ERROR;
+    }
+
+    if (st == 0)
+    {
+        m_eof = true;
+        if (shift)
+        {
+            // If there's 0 (eof), but you still have data
+            // in the buffer, fake that they were read. Only
+            // when the buffer was empty at entrance should this
+            // result with EOF.
+            //
+            // Set back the size this buffer had before we attempted
+            // to read into it.
+            output.resize(shift);
+            return RD_DATA;
+        }
+        output.clear();
+        return RD_EOF;
+    }
+
+    output.resize(shift+st);
+    return RD_DATA;
+}
+
+void SrtMedium::Write(ref_t<bytevector> r_buffer)
+{
+    bytevector& buffer = *r_buffer;
+
+    int st = srt_send(m_socket, buffer.data(), buffer.size());
+    if (st == SRT_ERROR)
+    {
+        Error(UDT::getlasterror(), "srt_send");
+    }
+
+    // This should be ==, whereas > is not possible, but
+    // this should simply embrace this case as a sanity check.
+    if (st >= int(buffer.size()))
+        buffer.clear();
+    else if (st == 0)
+    {
+        Error("Unexpected EOF on Write");
+    }
+    else
+    {
+        // Remove only those bytes that were sent
+        buffer.erase(buffer.begin(), buffer.begin()+st);
+    }
+}
+
+void TcpMedium::Write(ref_t<bytevector> r_buffer)
+{
+    bytevector& buffer = *r_buffer;
+
+    int st = ::write(m_socket, buffer.data(), buffer.size());
+    if (st == -1)
+    {
+        Error(errno, "send");
+    }
+
+    // This should be ==, whereas > is not possible, but
+    // this should simply embrace this case as a sanity check.
+    if (st >= int(buffer.size()))
+        buffer.clear();
+    else if (st == 0)
+    {
+        Error("Unexpected EOF on Write");
+    }
+    else
+    {
+        // Remove only those bytes that were sent
+        buffer.erase(buffer.begin(), buffer.begin()+st);
+    }
+}
+
+std::unique_ptr<Medium> Medium::Create(const std::string& url, Medium::Mode mode)
+{
+    UriParser uri(url);
+    std::unique_ptr<Medium> out;
+    if (uri.scheme() == "srt")
+    {
+        out.reset(new SrtMedium);
+    }
+    else if (uri.scheme() == "tcp")
+    {
+        out.reset(new TcpMedium);
     }
     else
     {
         Error("Medium not supported");
     }
 
-    out->Init(url, mode);
+    out->m_uri = uri;
+    out->InitMode(mode);
+
+    return move(out);
 }
 
 struct Tunnelbox
@@ -336,7 +649,7 @@ struct Tunnelbox
 
     void install(size_t chunk, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
-        unique_lock lk(access);
+        lock_guard<mutex> lk(access);
         tunnels.push_back(Tunnel(this, chunk, move(acp), move(clr)));
         Tunnel& it = tunnels.back();
         it.Start();
@@ -346,7 +659,7 @@ struct Tunnelbox
     {
         // Instead of putting the iterator into Tunnel,
         // simply search for the address
-        unique_lock lk(access);
+        lock_guard<mutex> lk(access);
 
         for (auto i = tunnels.begin(); i != tunnels.end(); ++i)
         {
@@ -365,12 +678,18 @@ void Tunnel::decommission()
     clr_to_acp.Stop();
 
     // Threads stopped. Now you can delete yourself.
-    master->decommission();
+    master->decommission(this);
 }
+
+Tunnelbox g_tunnels;
+
+size_t default_chunk = 4096;
+
+const logging::LogFA SRT_LOGFA_APP = 10;
 
 int main( int argc, char** argv )
 {
-    size_t chunk = 4096; // XXX option-configurable!
+    size_t chunk = default_chunk;
 
     set<string>
         o_loglevel = { "ll", "loglevel" },
@@ -420,19 +739,19 @@ int main( int argc, char** argv )
     string listen_node = args[0];
     string call_node = args[1];
 
-    UriParser us(listen_node), ut(call_node);
+    UriParser ul(listen_node), uc(call_node);
 
     // It is allowed to use both media of the same type,
     // but only srt and tcp are allowed.
 
     set<string> allowed = {"srt", "tcp"};
-    if (!allowed.count(listen_node.scheme())|| !allowed.count(call_node.scheme()))
+    if (!allowed.count(ul.scheme())|| !allowed.count(uc.scheme()))
     {
         cerr << "ERROR: only tcp and srt schemes supported";
         return -1;
     }
 
-    Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
+    Verb() << "LISTEN type=" << ul.scheme() << ", CALL type=" << uc.scheme();
 
     std::unique_ptr<Medium> main_listener = Medium::Create(listen_node, Medium::LISTENER);
 
@@ -442,15 +761,22 @@ int main( int argc, char** argv )
 
     for (;;)
     {
-        std::unique_ptr<Medium> accepted = main_listener.Accept();
-        Verb() << "Connection accepted.";
+        try
+        {
+            std::unique_ptr<Medium> accepted = main_listener->Accept();
+            Verb() << "Connection accepted.";
 
-        // Now call the target address.
-        std::unique_ptr<Medium> caller = Medium::Create(call_node, Medium::CALLER);
-        caller.Connect();
+            // Now call the target address.
+            std::unique_ptr<Medium> caller = Medium::Create(call_node, Medium::CALLER);
+            caller->Connect();
 
-        // No exception, we are free to pass :)
-        tunnels.install(chunk, move(accepted), move(caller));
+            // No exception, we are free to pass :)
+            g_tunnels.install(chunk, move(accepted), move(caller));
+        }
+        catch (...)
+        {
+            Verb() << "Connection reported, but failed";
+        }
     }
 }
 

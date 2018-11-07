@@ -780,6 +780,8 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
+		srt_add_testprogram(srt-test-tunnel)
+		srt_make_application(srt-test-tunnel)
 		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
