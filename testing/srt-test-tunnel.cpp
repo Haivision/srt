@@ -433,7 +433,7 @@ unique_ptr<Medium> SrtMedium::Accept()
 unique_ptr<Medium> TcpMedium::Accept()
 {
     sockaddr_in sa;
-    socklen_t salen = sizeof sa;
+    int salen = sizeof sa;
     int s = ::accept(m_socket, (sockaddr*)&sa, &salen);
     if (s == -1)
     {
