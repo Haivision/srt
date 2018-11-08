@@ -70,7 +70,7 @@ public:
     Medium() {}
 
     virtual bool IsOpen() = 0;
-    virtual void Close() {}
+    virtual void Close() = 0;
     virtual bool End() = 0;
 
     virtual int ReadInternal(char* output, int size) = 0;
@@ -108,6 +108,10 @@ public:
     static void Error(const string& text)
     {
         throw TransmissionError("ERROR (internal): " + text);
+    }
+
+    virtual ~Medium()
+    {
     }
 
 protected:
@@ -255,6 +259,11 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
+    void Close() override
+    {
+        srt_close(m_socket);
+    }
+
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
 
@@ -276,6 +285,11 @@ protected:
     {
         throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
     }
+
+    virtual ~SrtMedium() override
+    {
+        Close();
+    }
 };
 
 class TcpMedium: public Medium
@@ -286,6 +300,11 @@ public:
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
+
+    void Close() override
+    {
+        ::close(m_socket);
+    }
 
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
@@ -312,6 +331,11 @@ protected:
     {
         char rbuf[1024];
         throw TransmissionError("ERROR: " + text + ": " + SysStrError(verrno, rbuf, 1024));
+    }
+
+    virtual ~TcpMedium()
+    {
+        Close();
     }
 };
 
