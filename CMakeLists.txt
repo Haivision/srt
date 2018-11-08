@@ -60,11 +60,7 @@ else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
-message(STATUS "BINARY_DIR: ${CMAKE_BINARY_DIR}")
-message(STATUS "EXECUTABLE_OUTPUT_PATH: ${EXECUTABLE_OUTPUT_PATH}")
 
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
@@ -459,7 +455,7 @@ configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra})
+add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt})
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
@@ -760,20 +756,19 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(utility-test)
 		if (NOT WIN32)
-		   # This program is symlinked under git-cygwin.
-		   # Avoid misleading syntax error.
-	       srt_add_testprogram(uriparser-test)
-	       target_compile_options(uriparser-test PRIVATE -DTEST)
-	       target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		    # This program is symlinked under git-cygwin.
+		    # Avoid misleading syntax error.
+	        srt_add_testprogram(uriparser-test)
+	        target_compile_options(uriparser-test PRIVATE -DTEST)
+	        target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
-		if (NOT WIN32)
-			# Still portability problem on Windows
-			srt_add_testprogram(srt-test-file)
-			srt_make_application(srt-test-file)
-		endif()
+
+		# Still portability problem on Windows
+		srt_add_testprogram(srt-test-file)
+		srt_make_application(srt-test-file)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
