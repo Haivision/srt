@@ -64,6 +64,8 @@ protected:
     bool m_broken = false;
 public:
 
+    string uri() { return m_uri.uri(); }
+
     Medium(UriParser u, size_t ch): m_uri(u), m_chunk(ch) {}
     Medium() {}
 
@@ -153,6 +155,7 @@ public:
 
     void Start()
     {
+        Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
         thr = thread([this]() { Worker(); });
     }
 
@@ -190,6 +193,11 @@ class Tunnel
     Engine acp_to_clr, clr_to_acp;
 
 public:
+
+    string show()
+    {
+        return med_acp->uri() + " <-> " + med_clr->uri();
+    }
 
     Tunnel(Tunnelbox* m, size_t ch, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         master(m),
@@ -652,6 +660,8 @@ struct Tunnelbox
         lock_guard<mutex> lk(access);
         tunnels.push_back(Tunnel(this, chunk, move(acp), move(clr)));
         Tunnel& it = tunnels.back();
+
+        Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
         it.Start();
     }
 
@@ -660,6 +670,8 @@ struct Tunnelbox
         // Instead of putting the iterator into Tunnel,
         // simply search for the address
         lock_guard<mutex> lk(access);
+
+        Verb() << "Tunnelbox: decommissioning: " << tnl->show();
 
         for (auto i = tunnels.begin(); i != tunnels.end(); ++i)
         {
@@ -763,12 +775,15 @@ int main( int argc, char** argv )
     {
         try
         {
+            Verb() << "Waiting for connection...";
             std::unique_ptr<Medium> accepted = main_listener->Accept();
-            Verb() << "Connection accepted.";
+            Verb() << "Connection accepted. Connecting to the relay...";
 
             // Now call the target address.
             std::unique_ptr<Medium> caller = Medium::Create(call_node, Medium::CALLER);
             caller->Connect();
+
+            Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
             g_tunnels.install(chunk, move(accepted), move(caller));
