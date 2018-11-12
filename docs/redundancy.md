@@ -60,16 +60,13 @@ So, when a listener is connected, and the group ID is passed in the handshake,
 the resulting accepted socket isn't returned in `srt_accept`. The returned
 value is the group ID of the group that is a local group mirroring the remote
 group which's ID is received in the handshake. This group is always returned by
-the `srt_accept` in such a case, although it may be an existing or newly
-created local group (although an existing group may only be in a very rare
-edge case when one socket in the group was just connected after the last
-socket in the existing group has disconnected - in practice there's no
-need to bother with it). Note that logically it's the exact ID that you should
-next use for sending or receiving data. Note that `srt_accept` returns the
-group only once upon connection - once there exist at least one connected
-socket in the group, there will be no new connections reported in `srt_accept`,
-just rather a new socket will suddenly appear in the group data next time you
-anywhow read them.
+the `srt_accept` in such a case. Note that logically it's the exact ID that you
+should next use for sending or receiving data. Note also that `srt_accept`
+returns the group only once upon connection - once there exist at least one
+connected socket in the group, there will be no new connections reported in
+`srt_accept`, just rather a new socket will suddenly appear in the group data
+next time you anywhow read them (data reported from `srt_recvmsg2`,
+`srt_sendmsg2` or `srt_group_data`).
 
 When a socket for accept is being created, and the group in the handshake
 information **is already mirrored** in the application anywhere (there's a
@@ -138,8 +135,23 @@ a new connection to the redundancy group at any time by calling `srt_connect`,
 and when a connection is dead, you'll be informed about it, but the link won't
 be automatically revived.
 
-Note: for convenience, there has been introduced a new API function,
-`srt_connect_bind`, which does the same as calling first `srt_bind` on the
+There are some convenience function added though because of inability to do
+operations on a single socket in case of groups at the moment when they are
+required.
+
+1. `srt_connect_group`. This does something similar to calling `srt_connect`
+in a loop for multiple endpoints. However the latter is inappropriate in case
+when you use the blocking mode because this would block on the first connection
+attempt and will not try the next one until the previous one is connected or
+the connection finally fails. This function will then try to connect to all
+given endpoints at once and will block until any of them reports connected.
+Without blocking mode it will simply behave the same as `srt_connect` run
+in a loop.
+
+You have to make yourself an array with endpoints, then prepare every endpoint
+using `srt_prepare_endpoint` function.
+
+2. `srt_connect_bind`. It does the same as calling first `srt_bind` on the
 source address, then `srt_connect` on the destination address, when it's
 called for a single socket. When it's called for a group, then the binding
 procedure is done on the newly created socket for that connection (and that's
@@ -161,7 +173,7 @@ to this address again using `srt_connect`.
 
 The simplest way to maintain the status of the sockets in the group is to call:
 
-	srt_group_sockets(grpid, &sockdata, &sockdata_size);
+	srt_group_data(grpid, &sockdata, &sockdata_size);
 
 You have to prepare an array of `SRT_SOCKGROUPDATA` type by yourself, and the size
 must be properly set to `sockdata_size` before calling to at least the number of 
@@ -172,7 +184,7 @@ will not be modified at all.
 
 That's why you should remember values from `srt_connect`. If you get the socket
 ID from this, you should remember it as a member of the group. When you call
-`srt_group_sockets` and the size of the group is less than your last remembered
+`srt_group_data` and the size of the group is less than your last remembered
 one, it means that one of the sockets got broken, which one, you can check by
 seeing which of the sockets that you remembered at the time of connection, is
 lacking in the socket group data. Note that socket IDs are created using a random
@@ -186,7 +198,7 @@ functions, which require `SRT_MSGCTRL` structure. You should place a
 size in `SRT_MSGCTRL::grpdata_size`, and the socket information for every
 socket will be placed there, including (just once) sockets that were lately
 broken and have been deleted. This last information is not present in the
-result returned by `srt_group_sockets` and no sockets with result -1, that is,
+result returned by `srt_group_data` and no sockets with result -1, that is,
 last time seen as broken, will be present in this case.
 
 
