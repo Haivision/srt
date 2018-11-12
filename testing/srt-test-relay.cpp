@@ -103,8 +103,16 @@ struct Medium
 
     void quit()
     {
+        if (!med)
+            return;
+
         if (thr.joinable())
+        {
+            Verb() << "Joining medium thread...";
             thr.join();
+            Verb() << "... done";
+        }
+        med->Close();
 
         if (xp)
         {
@@ -122,6 +130,9 @@ struct Medium
                     cerr << "UNKNOWN EXCEPTION on medium\n";
             }
         }
+
+        // Prevent further quits from running
+        med = nullptr;
     }
 
     void Setup(SrtMainLoop* mst, MediumDir* t)
@@ -639,6 +650,7 @@ void SrtMainLoop::run()
     }
 
     Verb() << "MEDIA LOOP EXIT";
+    m_srt_source.quit();
 
     if (m_input_xp)
     {
