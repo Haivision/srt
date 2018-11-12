@@ -105,14 +105,17 @@ struct Medium
     {
         if (!med)
             return;
+        string name;
+        if (Verbose::on)
+            name = typeid(*med).name();
 
+        med->Close();
         if (thr.joinable())
         {
-            Verb() << "Joining medium thread...";
+            Verb() << "Joining medium thread (" << name << ") ...";
             thr.join();
             Verb() << "... done";
         }
-        med->Close();
 
         if (xp)
         {
@@ -300,11 +303,15 @@ void TargetMedium::Runner()
         bytevector val;
         {
             unique_lock<mutex> lg(buffer_lock);
-            if (!running)
-                return;
-
             if (buffer.empty())
             {
+                if (!running)
+                {
+                    Verb() << "TargetMedium: buffer empty, medium stopped, exitting.";
+                    return;
+                }
+
+                Verb() << "TargetMedium: buffer empty, waiting for new data";
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return running && !buffer.empty(); } );
                 if (!running || !med || med->Broken())
                     return;
