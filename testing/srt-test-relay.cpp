@@ -62,6 +62,7 @@ OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
 template<class MediumDir>
 struct Medium
 {
+    class SrtMainLoop* master = nullptr;
     MediumDir* med = nullptr;
     unique_ptr<MediumDir> pinned_med;
     list<bytevector> buffer;
@@ -123,16 +124,18 @@ struct Medium
         }
     }
 
-    void Setup(MediumDir* t)
+    void Setup(SrtMainLoop* mst, MediumDir* t)
     {
         med = t;
+        master = mst;
         // Leave pinned_med as 0
     }
 
-    void Setup(unique_ptr<MediumDir>&& medbase)
+    void Setup(SrtMainLoop* mst, unique_ptr<MediumDir>&& medbase)
     {
         pinned_med = move(medbase);
         med = pinned_med.get();
+        master = mst;
     }
 
     virtual ~Medium()
@@ -147,94 +150,15 @@ size_t g_chunksize = 1316;
 struct SourceMedium: Medium<Source>
 {
     // Source Runner: read payloads and put on the buffer
-    void Runner() override
-    {
-        auto on_return_set = OnReturnSet(running, false);
-
-        Verb() << "Starting SourceMedium: " << this;
-        for (;;)
-        {
-            bytevector input = med->Read(g_chunksize);
-            if (input.empty() && med->End())
-            {
-                Verb() << "Exitting SourceMedium: " << this;
-                return;
-            }
-
-            lock_guard<mutex> g(buffer_lock);
-            buffer.push_back(input);
-            ready.notify_one();
-        }
-    }
+    void Runner() override;
 
     // External user: call this to get the buffer.
-    bytevector Extract()
-    {
-        unique_lock<mutex> g(buffer_lock);
-        for (;;)
-        {
-            if (!running)
-            {
-                //Verb() << "SourceMedium " << this << " not running";
-                return {};
-            }
-
-            if (!buffer.empty())
-            {
-                bytevector top;
-                swap(top, *buffer.begin());
-                buffer.pop_front();
-                return top;
-            }
-
-            // Block until ready
-            //Verb() << VerbLock << "Extract: " << this << " wait-->";
-            ready.wait_for(g, chrono::seconds(1), [this] { return running && !buffer.empty(); });
-            //Verb() << VerbLock << "Extract: " << this << " <-- notified.";
-        }
-    }
+    bytevector Extract();
 };
 
 struct TargetMedium: Medium<Target>
 {
-    void Runner() override
-    {
-        auto on_return_set = OnReturnSet(running, false);
-        Verb() << "Starting TargetMedium: " << this;
-        for (;;)
-        {
-            bytevector val;
-            {
-                unique_lock<mutex> lg(buffer_lock);
-                if (!running)
-                    return;
-
-                if (buffer.empty())
-                {
-                    bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return running && !buffer.empty(); } );
-                    if (!running || !med || med->Broken())
-                        return;
-                    if (!gotsomething) // exit on timeout
-                        continue;
-                }
-                swap(val, *buffer.begin());
-
-                //Verb() << "TargetMedium: EXTRACTING for sending";
-                buffer.pop_front();
-            }
-
-            // Check before writing
-            if (med->Broken())
-            {
-                running = false;
-                return;
-            }
-
-            // You get the data to send, send them.
-            med->Write(val);
-        }
-    }
-
+    void Runner() override;
 
     bool Schedule(const bytevector& data)
     {
@@ -281,7 +205,10 @@ public:
     SrtMainLoop(const string& srt_uri, bool input_echoback, const string& input_spec, const vector<string>& output_spec);
 
     void run();
-    
+
+    void MakeStop() { m_input_running = false; }
+    bool IsRunning() { return m_input_running; }
+
     ~SrtMainLoop()
     {
         if (m_input_thr.joinable())
@@ -290,6 +217,106 @@ public:
 };
 
 
+void SourceMedium::Runner()
+{
+    if (!master)
+    {
+        cerr << "IPE: incorrect setup, master empty\n";
+        return;
+    }
+
+    struct OnReturn
+    {
+        SrtMainLoop* m;
+        OnReturn(SrtMainLoop* mst): m(mst) {}
+        ~OnReturn()
+        {
+            m->MakeStop();
+        }
+    } on_return(master);
+
+    Verb() << "Starting SourceMedium: " << this;
+    for (;;)
+    {
+        bytevector input = med->Read(g_chunksize);
+        if (input.empty() && med->End())
+        {
+            Verb() << "Exitting SourceMedium: " << this;
+            return;
+        }
+
+        lock_guard<mutex> g(buffer_lock);
+        buffer.push_back(input);
+        ready.notify_one();
+    }
+}
+
+bytevector SourceMedium::Extract()
+{
+    if (!master)
+        return {};
+
+    unique_lock<mutex> g(buffer_lock);
+    for (;;)
+    {
+        if (!running || !master->IsRunning())
+        {
+            //Verb() << "SourceMedium " << this << " not running";
+            return {};
+        }
+
+        if (!buffer.empty())
+        {
+            bytevector top;
+            swap(top, *buffer.begin());
+            buffer.pop_front();
+            return top;
+        }
+
+        // Block until ready
+        //Verb() << VerbLock << "Extract: " << this << " wait-->";
+        ready.wait_for(g, chrono::seconds(1), [this] { return running && master->IsRunning() && !buffer.empty(); });
+        //Verb() << VerbLock << "Extract: " << this << " <-- notified.";
+    }
+}
+
+void TargetMedium::Runner()
+{
+    auto on_return_set = OnReturnSet(running, false);
+    Verb() << "Starting TargetMedium: " << this;
+    for (;;)
+    {
+        bytevector val;
+        {
+            unique_lock<mutex> lg(buffer_lock);
+            if (!running)
+                return;
+
+            if (buffer.empty())
+            {
+                bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return running && !buffer.empty(); } );
+                if (!running || !med || med->Broken())
+                    return;
+                if (!gotsomething) // exit on timeout
+                    continue;
+            }
+            swap(val, *buffer.begin());
+
+            //Verb() << "TargetMedium: EXTRACTING for sending";
+            buffer.pop_front();
+        }
+
+        // Check before writing
+        if (med->Broken())
+        {
+            running = false;
+            return;
+        }
+
+        // You get the data to send, send them.
+        med->Write(val);
+    }
+}
 
 
 int main( int argc, char** argv )
@@ -457,9 +484,9 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     m_srt_relay.reset(new SrtRelay);
     m_srt_relay->StealFrom(m);
 
-    m_srt_source.Setup(m_srt_relay.get());
+    m_srt_source.Setup(this, m_srt_relay.get());
 
-    string transtype = srtspec["transtype"].exists() ? srtspec["transtype"] : string();
+    string transtype = srtspec["transtype"].deflt("live");
 
     bool file_mode = (transtype == "file");
 
@@ -470,7 +497,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
         // Add SRT medium to output targets, and keep input medium empty.
         unique_ptr<TargetMedium> m { new TargetMedium };
-        m->Setup(m_srt_relay.get());
+        m->Setup(this, m_srt_relay.get());
         m_output_media.push_back(move(m));
     }
     else
@@ -479,7 +506,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         // to the output list, as this will be fed directly
         // by the data from this input medium in a spearate engine.
         Verb() << "Setting up input: " << input_spec;
-        m_input_medium.Setup(Source::Create(input_spec));
+        m_input_medium.Setup(this, Source::Create(input_spec));
 
         if (!file_mode)
         {
@@ -495,7 +522,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     {
         Verb() << "Setting up output: " << spec;
         unique_ptr<TargetMedium> m { new TargetMedium };
-        m->Setup(Target::Create(spec));
+        m->Setup(this, Target::Create(spec));
         m_output_media.push_back(move(m));
     }
 
