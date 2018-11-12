@@ -21,6 +21,8 @@
 #include <csignal>
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 
 #include "apputil.hpp"  // CreateAddrInet
 #include "uriparser.hpp"  // UriParser
@@ -41,6 +43,8 @@ using namespace std;
 
 class Medium
 {
+    static int s_counter;
+    int m_counter;
 public:
     enum ReadStatus
     {
@@ -62,13 +66,22 @@ protected:
     bool m_open = false;
     bool m_eof = false;
     bool m_broken = false;
+
+    mutex access; // For closing
 public:
 
     string uri() { return m_uri.uri(); }
+    string id()
+    {
+        std::ostringstream os;
+        os << type() << m_counter;
+        return os.str();
+    }
 
-    Medium(UriParser u, size_t ch): m_uri(u), m_chunk(ch) {}
-    Medium() {}
+    Medium(UriParser u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
+    Medium(): m_counter(s_counter++) {}
 
+    virtual const char* type() = 0;
     virtual bool IsOpen() = 0;
     virtual void Close() = 0;
     virtual bool End() = 0;
@@ -160,6 +173,9 @@ public:
     void Start()
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
+        std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
+        ThreadName tn(thrn.c_str());
+
         thr = thread([this]() { Worker(); });
     }
 
@@ -195,6 +211,8 @@ class Tunnel
     size_t chunk;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
+    bool running = true;
+    mutex access;
 
 public:
 
@@ -207,8 +225,8 @@ public:
         master(m),
         chunk(ch),
         med_acp(move(acp)), med_clr(move(clr)),
-        acp_to_clr(this, ch, acp.get(), clr.get()),
-        clr_to_acp(this, ch, clr.get(), acp.get())
+        acp_to_clr(this, ch, med_acp.get(), med_clr.get()),
+        clr_to_acp(this, ch, med_clr.get(), med_acp.get())
     {
     }
 
@@ -218,7 +236,9 @@ public:
         clr_to_acp.Start();
     }
 
-    void decommission();
+    void Stop(); // [[affinity = acp_to_clr.thr || clr_to_acp.thr]]
+
+    bool decommission_if_dead(bool forced); // [[affinity = g_tunnels.thr]]
 };
 
 void Engine::Worker()
@@ -227,27 +247,55 @@ void Engine::Worker()
 
     for (;;)
     {
-        rdst = media[DIR_IN]->Read(Ref(outbuf));
-        switch (rdst)
+        try
         {
-        case Medium::RD_DATA:
+            rdst = media[DIR_IN]->Read(Ref(outbuf));
+            switch (rdst)
             {
-                // We get the data, write them to the output
-                media[DIR_OUT]->Write(Ref(outbuf));
+            case Medium::RD_DATA:
+                {
+                    // We get the data, write them to the output
+                    media[DIR_OUT]->Write(Ref(outbuf));
+                }
+                break;
+
+            case Medium::RD_EOF:
+                throw Medium::ReadEOF("");
+
+            case Medium::RD_AGAIN:
+            case Medium::RD_ERROR:
+                status = -1;
+                Medium::Error("Error while reading");
             }
+        }
+        catch (Medium::ReadEOF&)
+        {
+            Verb() << "EOF. Exitting engine.";
             break;
-
-        case Medium::RD_EOF:
-            throw Medium::ReadEOF("");
-
-        case Medium::RD_AGAIN:
-        case Medium::RD_ERROR:
-            status = -1;
-            Medium::Error("Error while reading");
+        }
+        catch (Medium::TransmissionError& er)
+        {
+            Verb() << "ERROR: " << er.what() << " - interrupting engine";
+            break;
         }
     }
 
-    master->decommission();
+    // Close both media so that the closed socket on
+    // one of them will cause error during attempt to
+    // read or write and fall in here.
+
+    // Note that Close() is protected against simultaneous
+    // access only to Close() (in case when both engine
+    // threads get here at the same time), but not to Read/Write.
+    // These should be simply interrupted internally.
+
+    // Closing a closed media simply does nothing.
+    for (int i = 0; i < 2; ++i)
+        media[i]->Close();
+
+    // This is an engine thread and it should simply
+    // tell the master Tunnel to shutdown.
+    master->Stop();
 }
 
 class SrtMedium: public Medium
@@ -261,9 +309,15 @@ public:
 
     void Close() override
     {
+        Verb() << "Closing SRT socket for " << uri();
+        lock_guard<mutex> lk(access);
+        if (m_socket == SRT_ERROR)
+            return;
         srt_close(m_socket);
+        m_socket = SRT_ERROR;
     }
 
+    virtual const char* type() override { return "srt"; }
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
 
@@ -303,9 +357,15 @@ public:
 
     void Close() override
     {
+        Verb() << "Closing TCP socket for " << uri();
+        lock_guard<mutex> lk(access);
+        if (m_socket == -1)
+            return;
         ::close(m_socket);
+        m_socket = -1;
     }
 
+    virtual const char* type() override { return "tcp"; }
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
     virtual void Write(ref_t<bytevector> portion) override;
@@ -442,13 +502,16 @@ unique_ptr<Medium> SrtMedium::Accept()
         Error(UDT::getlasterror(), "srt_accept");
     }
 
-    Verb() << "accepted a connection from " << SockaddrToString((sockaddr*)&sa);
+    string reparse = "srt://" + SockaddrToString((sockaddr*)&sa);
+
+    Verb() << "accepted a connection from " << reparse;
 
     ConfigurePost(s);
 
     SrtMedium* m = new SrtMedium;
     m->m_socket = s;
     m->m_chunk = m_chunk;
+    m->m_uri = UriParser(reparse);
 
     unique_ptr<Medium> med(m);
     return move(med);
@@ -464,13 +527,16 @@ unique_ptr<Medium> TcpMedium::Accept()
         Error(errno, "accept");
     }
 
-    Verb() << "accepted a connection from " << SockaddrToString((sockaddr*)&sa);
+    string reparse = "tcp://" + SockaddrToString((sockaddr*)&sa);
+
+    Verb() << "accepted a connection from " << reparse;
 
     ConfigurePost(s);
 
     TcpMedium* m = new TcpMedium;
     m->m_socket = s;
     m->m_chunk = m_chunk;
+    m->m_uri = UriParser(reparse);
 
     unique_ptr<Medium> med(m);
     return move(med);
@@ -676,52 +742,121 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, Medium::Mode mode
 
 struct Tunnelbox
 {
-    list<Tunnel> tunnels;
+    list<unique_ptr<Tunnel>> tunnels;
     mutex access;
+    condition_variable decom_ready;
+    bool main_running = true;
+    thread thr;
+
+    void signal_decommission()
+    {
+        lock_guard<mutex> lk(access);
+        decom_ready.notify_one();
+    }
 
     void install(size_t chunk, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
         lock_guard<mutex> lk(access);
-        tunnels.push_back(Tunnel(this, chunk, move(acp), move(clr)));
-        Tunnel& it = tunnels.back();
-
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
-        it.Start();
+
+        tunnels.emplace_back(new Tunnel(this, chunk, move(acp), move(clr)));
+        // Note: after this instruction, acp and clr are no longer valid!
+        auto& it = tunnels.back();
+
+        it->Start();
     }
 
-    void decommission(Tunnel* tnl)
+    void start_cleaner()
     {
-        // Instead of putting the iterator into Tunnel,
-        // simply search for the address
-        lock_guard<mutex> lk(access);
+        thr = thread( [this]() { CleanupWorker(); } );
+    }
 
-        Verb() << "Tunnelbox: decommissioning: " << tnl->show();
+    void stop_cleaner()
+    {
+        if (thr.joinable())
+            thr.join();
+    }
 
-        for (auto i = tunnels.begin(); i != tunnels.end(); ++i)
+private:
+
+    void CleanupWorker()
+    {
+        unique_lock<mutex> lk(access);
+
+        while (main_running)
         {
-            if (&*i == tnl)
+            decom_ready.wait(lk);
+
+            // Got a signal, find a tunnel ready to cleanup.
+            // We just get the signal, but we don't know which
+            // tunnel has generated it.
+            for (auto i = tunnels.begin(), i_next = i; i != tunnels.end(); i = i_next)
             {
-                tunnels.erase(i);
-                break;
+                ++i_next;
+                // Bound in one call the check if the tunnel is dead
+                // and decommissioning because this must be done in
+                // the one critical section - make sure no other thread
+                // is accessing it at the same time and also make join all
+                // threads that might have been accessing it. After
+                // exitting as true (meaning that it was decommissioned
+                // as expected) it can be safely deleted.
+                if ((*i)->decommission_if_dead(main_running))
+                {
+                    tunnels.erase(i);
+                }
             }
         }
     }
+
 };
 
-void Tunnel::decommission()
+void Tunnel::Stop()
 {
+    lock_guard<mutex> lk(access);
+    if (!running)
+        return; // already stopped
+
+    // Ok, you are the first to make the tunnel
+    // not running and inform the tunnelbox.
+    running = false;
+    master->signal_decommission();
+}
+
+bool Tunnel::decommission_if_dead(bool forced)
+{
+    lock_guard<mutex> lk(access);
+    if (running && !forced)
+        return false; // working, not to be decommissioned
+
+    // Join the engine threads, make sure nothing
+    // is running that could use the data.
     acp_to_clr.Stop();
     clr_to_acp.Stop();
 
-    // Threads stopped. Now you can delete yourself.
-    master->decommission(this);
+    // Done. The tunnelbox after calling this can
+    // safely delete the decommissioned tunnel.
+    return true;
 }
 
+int Medium::s_counter = 1;
+
 Tunnelbox g_tunnels;
+std::unique_ptr<Medium> main_listener;
 
 size_t default_chunk = 4096;
 
 const logging::LogFA SRT_LOGFA_APP = 10;
+
+int OnINT_StopService(int)
+{
+    g_tunnels.main_running = false;
+    g_tunnels.signal_decommission();
+
+    // Will cause the Accept() block to exit.
+    main_listener->Close();
+
+    return 0;
+}
 
 int main( int argc, char** argv )
 {
@@ -789,7 +924,9 @@ int main( int argc, char** argv )
 
     Verb() << "LISTEN type=" << ul.scheme() << ", CALL type=" << uc.scheme();
 
-    std::unique_ptr<Medium> main_listener = Medium::Create(listen_node, Medium::LISTENER);
+    g_tunnels.start_cleaner();
+
+    main_listener = Medium::Create(listen_node, Medium::LISTENER);
 
     // The main program loop is only to catch
     // new connections and manage them. Also takes care
@@ -801,6 +938,11 @@ int main( int argc, char** argv )
         {
             Verb() << "Waiting for connection...";
             std::unique_ptr<Medium> accepted = main_listener->Accept();
+            if (!g_tunnels.main_running)
+            {
+                Verb() << "Service stopped. Exitting.";
+                break;
+            }
             Verb() << "Connection accepted. Connecting to the relay...";
 
             // Now call the target address.
@@ -817,6 +959,10 @@ int main( int argc, char** argv )
             Verb() << "Connection reported, but failed";
         }
     }
+
+    g_tunnels.stop_cleaner();
+
+    return 0;
 }
 
 
