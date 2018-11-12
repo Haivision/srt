@@ -142,10 +142,10 @@ struct Medium
     }
 };
 
+size_t g_chunksize = 1316;
+
 struct SourceMedium: Medium<Source>
 {
-    size_t chunksize = 1316;
-
     // Source Runner: read payloads and put on the buffer
     void Runner() override
     {
@@ -154,8 +154,8 @@ struct SourceMedium: Medium<Source>
         Verb() << "Starting SourceMedium: " << this;
         for (;;)
         {
-            bytevector input = med->Read(chunksize);
-            if (med->End())
+            bytevector input = med->Read(g_chunksize);
+            if (input.empty() && med->End())
             {
                 Verb() << "Exitting SourceMedium: " << this;
                 return;
@@ -299,13 +299,16 @@ int main( int argc, char** argv )
         o_verbose = {"v", "verbose" },
         o_input = {"i", "input"},
         o_output = {"o", "output"},
-        o_echo = {"e", "io", "input-echoback"};
+        o_echo = {"e", "io", "input-echoback"},
+        o_chunksize = {"c", "chunk"}
+    ;
 
     // Options that expect no arguments (ARG_NONE) need not be mentioned.
     vector<OptionScheme> optargs = {
         { o_loglevel, OptionScheme::ARG_ONE },
         { o_input, OptionScheme::ARG_ONE },
-        { o_output, OptionScheme::ARG_VAR }
+        { o_output, OptionScheme::ARG_VAR },
+        { o_chunksize, OptionScheme::ARG_ONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
 
@@ -323,6 +326,10 @@ int main( int argc, char** argv )
     if ( args.size() != 1 )
     {
         cerr << "Usage: " << argv[0] << " <srt-endpoint> [ -i <input> | -e ] [ -o <output> ]\n";
+        cerr << "Options:\n";
+        cerr << "\t-v\tVerbose mode\n";
+        cerr << "\t-ll <level=error>\tLog level for SRT\n";
+        cerr << "\t-c <size=1316>\tSingle reading buffer size\n";
         return 1;
     }
 
@@ -452,6 +459,10 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
     m_srt_source.Setup(m_srt_relay.get());
 
+    string transtype = srtspec["transtype"].exists() ? srtspec["transtype"] : string();
+
+    bool file_mode = (transtype == "file");
+
     // Now check the input medium
     if (input_echoback)
     {
@@ -470,9 +481,12 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         Verb() << "Setting up input: " << input_spec;
         m_input_medium.Setup(Source::Create(input_spec));
 
-        // Also set writing to SRT non-blocking always.
-        bool no = false;
-        srt_setsockflag(m_srt_relay->Socket(), SRTO_SNDSYN, &no, sizeof no);
+        if (!file_mode)
+        {
+            // Also set writing to SRT non-blocking always.
+            bool no = false;
+            srt_setsockflag(m_srt_relay->Socket(), SRTO_SNDSYN, &no, sizeof no);
+        }
     }
 
     // And the output media
