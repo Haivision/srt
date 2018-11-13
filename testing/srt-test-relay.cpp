@@ -45,6 +45,13 @@ bool Download(UriParser& srt, UriParser& file);
 const logging::LogFA SRT_LOGFA_APP = 10;
 logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
+bool g_program_interrupted = false;
+
+void OnINT_SetIntState(int)
+{
+    ::g_program_interrupted = true;
+}
+
 using namespace std;
 
 template <class VarType, class ValType>
@@ -164,7 +171,9 @@ struct Medium
     }
 };
 
-size_t g_chunksize = 1316;
+size_t g_chunksize = 0;
+size_t g_default_live_chunksize = 1316;
+size_t g_default_file_chunksize = 1456;
 
 struct SourceMedium: Medium<Source>
 {
@@ -182,7 +191,7 @@ struct TargetMedium: Medium<Target>
     bool Schedule(const bytevector& data)
     {
         lock_guard<mutex> lg(buffer_lock);
-        if (!running)
+        if (!running || ::g_program_interrupted)
             return false;
 
         applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << data.size() << "] CLIENT -> BUFFER";
@@ -218,6 +227,7 @@ class SrtMainLoop
     list<unique_ptr<TargetMedium>> m_output_media;
     thread m_input_thr;
     std::exception_ptr m_input_xp;
+
     void InputRunner();
     volatile bool m_input_running = false;
 
@@ -295,7 +305,7 @@ bytevector SourceMedium::Extract()
         {
             // Don't worry about the media status as long as you have somthing in the buffer.
             // Purge the buffer first, then worry about the other things.
-            if (!running)
+            if (!running || ::g_program_interrupted)
             {
                 applog.Debug() << "Extract(" << typeid(*med).name() << "): INTERRUPTED READING ("
                                                                                 << (!running ? "local" : (!master->IsRunning() ? "master" : "unknown")) << ")";
@@ -427,30 +437,36 @@ int main( int argc, char** argv )
             UDT::addlogfa(SRT_LOGFA_APP);
     }
 
-   string verbo = Option<OutString>(params, "no", o_verbose);
-   if ( verbo == "" || !false_names.count(verbo) )
-   {
-       Verbose::on = true;
-       int verboch = atoi(verbo.c_str());
-       if (verboch <= 0)
-       {
-           verboch = 1;
-       }
-       else if (verboch > 2)
-       {
-           cerr << "ERROR: -v option accepts value 1 (stdout, default) or 2 (stderr)\n";
-           return 1;
-       }
+    string verbo = Option<OutString>(params, "no", o_verbose);
+    if ( verbo == "" || !false_names.count(verbo) )
+    {
+        Verbose::on = true;
+        int verboch = atoi(verbo.c_str());
+        if (verboch <= 0)
+        {
+            verboch = 1;
+        }
+        else if (verboch > 2)
+        {
+            cerr << "ERROR: -v option accepts value 1 (stdout, default) or 2 (stderr)\n";
+            return 1;
+        }
 
-       if (verboch == 1)
-       {
-           Verbose::cverb = &std::cout;
-       }
-       else
-       {
-           Verbose::cverb = &std::cerr;
-       }
-   }
+        if (verboch == 1)
+        {
+            Verbose::cverb = &std::cout;
+        }
+        else
+        {
+            Verbose::cverb = &std::cerr;
+        }
+    }
+
+    string chunk = Option<OutString>(params, "", o_chunksize);
+    if (chunk != "")
+    {
+        ::g_chunksize = stoi(chunk);
+    }
 
     string srt_endpoint = args[0];
 
@@ -503,6 +519,8 @@ int main( int argc, char** argv )
     }
     for (auto& s: output_spec)
         Verb() << "\t" << s;
+
+    signal(SIGINT, OnINT_SetIntState);
 
     try
     {
@@ -563,6 +581,14 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     string transtype = srtspec["transtype"].deflt("live");
 
     bool file_mode = (transtype == "file");
+
+    if (g_chunksize == 0)
+    {
+        if (file_mode)
+            g_chunksize = g_default_live_chunksize;
+        else
+            g_chunksize = g_default_file_chunksize;
+    }
 
     // Now check the input medium
     if (input_echoback)

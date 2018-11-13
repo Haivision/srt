@@ -101,6 +101,12 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
+#undef PLEASE_LOG
+
+#ifdef PLEASE_LOG
+#include "logging.h"
+#endif
+
 class FileTarget: public virtual Target
 {
     ofstream ofile;
@@ -111,12 +117,23 @@ public:
     void Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+#endif
     }
 
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() override { ofile.close(); }
+    void Close() override
+    {
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Close";
+#endif
+        ofile.close();
+    }
 };
 
 // Can't base this class on FileSource and FileTarget classes because they use two
