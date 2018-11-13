@@ -74,7 +74,7 @@ logging::LogLevel::type SrtParseLogLevel(string level)
     return LogLevel::type(i->second);
 }
 
-set<logging::LogFA> SrtParseLogFA(string fa)
+set<logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 {
     using namespace logging;
 
@@ -126,7 +126,10 @@ set<logging::LogFA> SrtParseLogFA(string fa)
         string* names_p = find(names, names + names_s, fa);
         if ( names_p == names + names_s )
         {
-            cerr << "ERROR: Invalid log functional area spec: '" << fa << "' - skipping\n";
+            if (punknown)
+                punknown->insert(fa); // If requested, add it back silently
+            else
+                cerr << "ERROR: Invalid log functional area spec: '" << fa << "' - skipping\n";
             continue;
         }
 
