@@ -3,6 +3,9 @@
 set server_running 0
 set theend 0
 
+set nread 0
+set nwritten 0
+
 proc ReadBack {fd} {
 
 	set r [read $fd 4096]
@@ -24,12 +27,13 @@ proc ReadBack {fd} {
 
 	# --- puts stderr "REPRINTING [string bytelength $r] bytes"
 	puts -nonewline stdout $r
+	incr ::nwritten [string bytelength $r]
 	# --- puts stderr "DONE"
 
 	if {[fblocked $fd]} {
 		# Nothing more to read
-		if {!$::server_running} {
-			puts "NOTHING MORE TO BE READ - exitting"
+		if {$::nread < $::nwritten && !$::server_running} {
+			puts stderr "NOTHING MORE TO BE READ - exitting"
 			set ::theend 1
 		}
 		return
@@ -63,6 +67,7 @@ proc SendToSocket {fd} {
 	# in order to prevent losing data that must wait
 	fconfigure $fd -blocking yes
 	puts -nonewline $fd $r
+	incr ::nread [string bytelength $r]
 	fconfigure $fd -blocking no
 
 	if {[fblocked stdin]} {

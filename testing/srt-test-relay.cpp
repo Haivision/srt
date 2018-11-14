@@ -575,6 +575,8 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     // Start with SRT.
 
     UriParser srtspec(srt_uri);
+    string transtype = srtspec["transtype"].deflt("live");
+
     SrtModel m(srtspec.host(), srtspec.portno(), srtspec.parameters());
 
     // Just to keep it unchanged.
@@ -593,16 +595,16 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
     m_srt_source.Setup(this, m_srt_relay.get());
 
-    string transtype = srtspec["transtype"].deflt("live");
-
     bool file_mode = (transtype == "file");
 
     if (g_chunksize == 0)
     {
         if (file_mode)
-            g_chunksize = g_default_live_chunksize;
-        else
             g_chunksize = g_default_file_chunksize;
+        else
+            g_chunksize = g_default_live_chunksize;
+
+        Verb() << "DEFAULT CHUNKSIZE used: " << g_chunksize;
     }
 
     // Now check the input medium
