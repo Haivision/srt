@@ -101,8 +101,6 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
-#undef PLEASE_LOG
-
 #ifdef PLEASE_LOG
 #include "logging.h"
 #endif

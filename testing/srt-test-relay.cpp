@@ -48,7 +48,7 @@ logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
 bool g_program_interrupted = false;
 
-void OnINT_SetIntState(int)
+static void OnINT_SetInterrupted(int)
 {
     Verb() << VerbLock << "SIGINT: Setting interrupt state.";
     ::g_program_interrupted = true;
@@ -522,7 +522,14 @@ int main( int argc, char** argv )
     for (auto& s: output_spec)
         Verb() << "\t" << s;
 
-    signal(SIGINT, OnINT_SetIntState);
+    struct sigaction sigIntHandler;
+
+    sigIntHandler.sa_handler = OnINT_SetInterrupted;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+
+    sigaction(SIGINT, &sigIntHandler, NULL);
+
 
     try
     {

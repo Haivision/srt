@@ -66,6 +66,20 @@ message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 message(STATUS "BINARY_DIR: ${CMAKE_BINARY_DIR}")
 message(STATUS "EXECUTABLE_OUTPUT_PATH: ${EXECUTABLE_OUTPUT_PATH}")
 
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
+
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
 # use ENABLE_LOGGING=NO in cmake or
