@@ -346,10 +346,16 @@ void TargetMedium::Runner()
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
                 applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER update (timeout:"
                                 << boolalpha << gotsomething << " running: " << running << ")";
-                if (!running || !med || med->Broken())
+                if (::g_program_interrupted || !running || !med || med->Broken())
                 {
                     applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium "
-                                   << (running ? (med ? (med->Broken() ? "broken" : "UNKNOWN") : "deleted") : "stopped");
+                                   << (!::g_program_interrupted ?
+                                           (running ?
+                                                (med ?
+                                                    (med->Broken() ? "broken" : "UNKNOWN")
+                                                : "deleted")
+                                           : "stopped")
+                                      : "killed");
                     return;
                 }
                 if (!gotsomething) // exit on timeout

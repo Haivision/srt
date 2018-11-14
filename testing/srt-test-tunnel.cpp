@@ -68,6 +68,15 @@ protected:
     bool m_broken = false;
 
     mutex access; // For closing
+
+    template <class DerivedMedium, class SocketType>
+    static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
+    {
+        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + SockaddrToString((sockaddr*)&sa)), chunk);
+        m->m_socket = sock;
+        return m;
+    }
+
 public:
 
     string uri() { return m_uri.uri(); }
@@ -97,7 +106,7 @@ public:
     virtual unique_ptr<Medium> Accept() = 0;
     virtual void Connect() = 0;
 
-    static std::unique_ptr<Medium> Create(const std::string& url, Mode);
+    static std::unique_ptr<Medium> Create(const std::string& url, size_t chunk, Mode);
 
     virtual bool Broken() = 0;
     virtual size_t Still() { return 0; }
@@ -152,8 +161,6 @@ protected:
 
 class Engine
 {
-    size_t chunk;
-
     enum { DIR_IN, DIR_OUT };
     Medium* media[2];
     std::thread thr;
@@ -165,8 +172,8 @@ class Engine
 
 public:
 
-    Engine(Tunnel* p, size_t ch, Medium* m1, Medium* m2)
-        : chunk(ch), media {m1, m2}, master(p)
+    Engine(Tunnel* p, Medium* m1, Medium* m2)
+        : media {m1, m2}, master(p)
     {
     }
 
@@ -208,7 +215,6 @@ class Tunnelbox;
 class Tunnel
 {
     Tunnelbox* master;
-    size_t chunk;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
     bool running = true;
@@ -221,12 +227,11 @@ public:
         return med_acp->uri() + " <-> " + med_clr->uri();
     }
 
-    Tunnel(Tunnelbox* m, size_t ch, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
+    Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         master(m),
-        chunk(ch),
         med_acp(move(acp)), med_clr(move(clr)),
-        acp_to_clr(this, ch, med_acp.get(), med_clr.get()),
-        clr_to_acp(this, ch, med_clr.get(), med_acp.get())
+        acp_to_clr(this, med_acp.get(), med_clr.get()),
+        clr_to_acp(this, med_clr.get(), med_acp.get())
     {
     }
 
@@ -301,7 +306,10 @@ void Engine::Worker()
 class SrtMedium: public Medium
 {
     SRTSOCKET m_socket = SRT_ERROR;
+    friend class Medium;
 public:
+
+    using Medium::Medium;
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
@@ -349,7 +357,10 @@ protected:
 class TcpMedium: public Medium
 {
     int m_socket = -1;
+    friend class Medium;
 public:
+
+    using Medium::Medium;
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
@@ -502,18 +513,10 @@ unique_ptr<Medium> SrtMedium::Accept()
         Error(UDT::getlasterror(), "srt_accept");
     }
 
-    string reparse = "srt://" + SockaddrToString((sockaddr*)&sa);
-
-    Verb() << "accepted a connection from " << reparse;
-
     ConfigurePost(s);
+    unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
+    Verb() << "accepted a connection from " << med->uri();
 
-    SrtMedium* m = new SrtMedium;
-    m->m_socket = s;
-    m->m_chunk = m_chunk;
-    m->m_uri = UriParser(reparse);
-
-    unique_ptr<Medium> med(m);
     return move(med);
 }
 
@@ -527,18 +530,9 @@ unique_ptr<Medium> TcpMedium::Accept()
         Error(errno, "accept");
     }
 
-    string reparse = "tcp://" + SockaddrToString((sockaddr*)&sa);
+    unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
+    Verb() << "accepted a connection from " << med->uri();
 
-    Verb() << "accepted a connection from " << reparse;
-
-    ConfigurePost(s);
-
-    TcpMedium* m = new TcpMedium;
-    m->m_socket = s;
-    m->m_chunk = m_chunk;
-    m->m_uri = UriParser(reparse);
-
-    unique_ptr<Medium> med(m);
     return move(med);
 }
 
@@ -717,24 +711,25 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
     }
 }
 
-std::unique_ptr<Medium> Medium::Create(const std::string& url, Medium::Mode mode)
+std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Medium::Mode mode)
 {
     UriParser uri(url);
     std::unique_ptr<Medium> out;
+
+    // Might be something smarter, but there are only 2 types.
     if (uri.scheme() == "srt")
     {
-        out.reset(new SrtMedium);
+        out.reset(new SrtMedium(uri, chunk));
     }
     else if (uri.scheme() == "tcp")
     {
-        out.reset(new TcpMedium);
+        out.reset(new TcpMedium(uri, chunk));
     }
     else
     {
         Error("Medium not supported");
     }
 
-    out->m_uri = uri;
     out->InitMode(mode);
 
     return move(out);
@@ -754,12 +749,12 @@ struct Tunnelbox
         decom_ready.notify_one();
     }
 
-    void install(size_t chunk, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
+    void install(std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
         lock_guard<mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
-        tunnels.emplace_back(new Tunnel(this, chunk, move(acp), move(clr)));
+        tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
@@ -864,6 +859,7 @@ int main( int argc, char** argv )
 
     set<string>
         o_loglevel = { "ll", "loglevel" },
+        o_logfa = { "lf", "logfa" },
         o_chunk = {"c", "chunk" },
         o_verbose = {"v", "verbose" },
         o_noflush = {"s", "skipflush" };
@@ -871,6 +867,7 @@ int main( int argc, char** argv )
     // Options that expect no arguments (ARG_NONE) need not be mentioned.
     vector<OptionScheme> optargs = {
         { o_loglevel, OptionScheme::ARG_ONE },
+        { o_logfa, OptionScheme::ARG_ONE },
         { o_chunk, OptionScheme::ARG_ONE }
     };
     options_t params = ProcessOptions(argv, argc, optargs);
@@ -893,13 +890,31 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
+    string logfa = Option<OutString>(params, "", o_logfa);
     logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    if (logfa == "")
+    {
+        UDT::addlogfa(SRT_LOGFA_APP);
+    }
+    else
+    {
+        // Add only selected FAs
+        set<string> unknown_fas;
+        set<logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        UDT::resetlogfa(fas);
+
+        // The general parser doesn't recognize the "app" FA, we check it here.
+        if (unknown_fas.count("app"))
+            UDT::addlogfa(SRT_LOGFA_APP);
+    }
 
     string verbo = Option<OutString>(params, "no", o_verbose);
     if ( verbo == "" || !false_names.count(verbo) )
+    {
         Verbose::on = true;
+        Verbose::cverb = &std::cout;
+    }
 
     string chunks = Option<OutString>(params, "", o_chunk);
     if ( chunks!= "" )
@@ -926,7 +941,7 @@ int main( int argc, char** argv )
 
     g_tunnels.start_cleaner();
 
-    main_listener = Medium::Create(listen_node, Medium::LISTENER);
+    main_listener = Medium::Create(listen_node, chunk, Medium::LISTENER);
 
     // The main program loop is only to catch
     // new connections and manage them. Also takes care
@@ -946,13 +961,13 @@ int main( int argc, char** argv )
             Verb() << "Connection accepted. Connecting to the relay...";
 
             // Now call the target address.
-            std::unique_ptr<Medium> caller = Medium::Create(call_node, Medium::CALLER);
+            std::unique_ptr<Medium> caller = Medium::Create(call_node, chunk, Medium::CALLER);
             caller->Connect();
 
             Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
-            g_tunnels.install(chunk, move(accepted), move(caller));
+            g_tunnels.install(move(accepted), move(caller));
         }
         catch (...)
         {
