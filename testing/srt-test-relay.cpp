@@ -26,6 +26,7 @@ written by
 #include <deque>
 #include <mutex>
 #include <condition_variable>
+#include <csignal>
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
@@ -49,6 +50,7 @@ bool g_program_interrupted = false;
 
 void OnINT_SetIntState(int)
 {
+    Verb() << VerbLock << "SIGINT: Setting interrupt state.";
     ::g_program_interrupted = true;
 }
 
