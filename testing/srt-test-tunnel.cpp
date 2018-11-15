@@ -217,7 +217,7 @@ class Tunnel
     Tunnelbox* master;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
-    bool running = true;
+    volatile bool running = true;
     mutex access;
 
 public:
@@ -807,9 +807,12 @@ private:
 
 void Tunnel::Stop()
 {
-    lock_guard<mutex> lk(access);
+    // Check for running must be done without locking
+    // because if the tunnel isn't running
     if (!running)
         return; // already stopped
+
+    lock_guard<mutex> lk(access);
 
     // Ok, you are the first to make the tunnel
     // not running and inform the tunnelbox.
@@ -827,6 +830,7 @@ bool Tunnel::decommission_if_dead(bool forced)
     // is running that could use the data.
     acp_to_clr.Stop();
     clr_to_acp.Stop();
+
 
     // Done. The tunnelbox after calling this can
     // safely delete the decommissioned tunnel.
