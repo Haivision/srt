@@ -446,9 +446,14 @@ int main( int argc, char** argv )
     {
         cerr << "Usage: " << argv[0] << " <srt-endpoint> [ -i <input> | -e ] [ -o <output> ]\n";
         cerr << "Options:\n";
-        cerr << "\t-v\tVerbose mode\n";
-        cerr << "\t-ll <level=error>\tLog level for SRT\n";
-        cerr << "\t-c <size=1316>\tSingle reading buffer size\n";
+        cerr << "\t-v  .  .  .  .  .  .  .  .  .  .  Verbose mode\n";
+        cerr << "\t-ll <level=error>  .  .  .  .  .  Log level for SRT\n";
+		cerr << "\t-lf <logfa=all>    .  .  .  .  .  Log Functional Areas enabled\n";
+        cerr << "\t-c  <size=1316[live]|1456[file]>  Single reading buffer size\n";
+		cerr << "\t-i  <URI> .  .  .  .  .  .  .  .  Input medium spec\n";
+		cerr << "\t-o  <URI> .  .  .  .  .  .  .  .  Output medium spec\n";
+		cerr << "\t-e  .  .  .  (conflicts with -i)  Feed SRT output back to SRT input\n";
+		cerr << "\nNote: specify `transtype=file` for using TCP-like stream mode\n";
         return 1;
     }
 
