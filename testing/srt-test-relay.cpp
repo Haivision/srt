@@ -46,12 +46,39 @@ bool Download(UriParser& srt, UriParser& file);
 const logging::LogFA SRT_LOGFA_APP = 10;
 logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
-bool g_program_interrupted = false;
+volatile bool g_program_interrupted = false;
+volatile bool g_program_established = false;
+
+SrtModel* g_pending_model = nullptr;
+
+thread::id g_root_thread = std::this_thread::get_id();
 
 static void OnINT_SetInterrupted(int)
 {
     Verb() << VerbLock << "SIGINT: Setting interrupt state.";
     ::g_program_interrupted = true;
+
+    // Just for a case, forcefully close all active SRT sockets.
+    SrtModel* pm = ::g_pending_model;
+    if (pm)
+    {
+        // The program is hanged on accepting a new SRT connection.
+        // We need to check which thread we've fallen into.
+        if (this_thread::get_id() == g_root_thread)
+        {
+            // Throw an exception, it will be caught in a predicted place.
+            throw std::runtime_error("Interrupted on request");
+        }
+        else
+        {
+            // This is some other thread, so close the listener socket.
+            // This will cause the accept block to be interrupted.
+            for (SRTSOCKET i: { pm->Socket(), pm->Listener() })
+                if (i != SRT_INVALID_SOCK)
+                    srt_close(i);
+        }
+    }
+
 }
 
 using namespace std;
@@ -584,7 +611,11 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
     Verb() << "Establishing SRT connection: " << srt_uri;
 
+    ::g_pending_model = &m;
     m.Establish(Ref(id));
+
+    ::g_program_established = true;
+    ::g_pending_model = nullptr;
 
     Verb() << "... Established. configuring other pipes:";
 
