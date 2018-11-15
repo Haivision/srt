@@ -50,7 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef WIN32
+#ifndef _WIN32
    #include <unistd.h>
    #include <netdb.h>
    #include <arpa/inet.h>
@@ -4705,7 +4705,7 @@ void CUDT::close()
             return;
          }
 
-         #ifndef WIN32
+         #ifndef _WIN32
             timespec ts;
             ts.tv_sec = 0;
             ts.tv_nsec = 1000000;

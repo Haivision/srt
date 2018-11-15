@@ -58,7 +58,7 @@ modified by
 #include "common.h"
 #include "utilities.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 
 // XXX REFACTOR THIS.
 

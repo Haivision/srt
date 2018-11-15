@@ -63,7 +63,7 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <win/wintime.h>
 #endif
 
@@ -190,7 +190,7 @@ int CUDTUnited::startup()
       return 0;
 
    // Global initialization code
-   #ifdef WIN32
+   #ifdef _WIN32
       WORD wVersionRequested;
       WSADATA wsaData;
       wVersionRequested = MAKEWORD(2, 2);
@@ -240,7 +240,7 @@ int CUDTUnited::cleanup()
    // the application cleanup section, this can be temporarily
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
-#ifndef WIN32
+#ifndef _WIN32
    pthread_mutex_destroy(&m_GCStopLock);
    pthread_cond_destroy(&m_GCStopCond);
 #endif
@@ -248,7 +248,7 @@ int CUDTUnited::cleanup()
    m_bGCStatus = false;
 
    // Global destruction code
-   #ifdef WIN32
+   #ifdef _WIN32
       WSACleanup();
    #endif
 
@@ -1807,7 +1807,7 @@ void* CUDTUnited::garbageCollect(void* p)
        INCREMENT_THREAD_ITERATIONS();
        self->checkBrokenSockets();
 
-       //#ifdef WIN32
+       //#ifdef _WIN32
        //      self->checkTLSValue();
        //#endif
 

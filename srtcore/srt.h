@@ -35,7 +35,7 @@ written by
 //use -D_WIN32_WINNT=0x0501
 
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
@@ -95,7 +95,7 @@ extern "C" {
 
 typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       typedef SOCKET SYSSOCKET;
    #else
