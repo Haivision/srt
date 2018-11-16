@@ -306,7 +306,7 @@ void SourceMedium::Runner()
             Verb() << VerbLock << "Exitting SourceMedium: " << this;
             return;
         }
-        applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.size() << "] MEDIUM -> BUFFER";
+        applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
 
         lock_guard<mutex> g(buffer_lock);
         buffer.push_back(input);
@@ -345,7 +345,7 @@ bytevector SourceMedium::Extract()
         }
 
         // Block until ready
-        applog.Debug() << "Extract(" << typeid(*med).name() << "): " << this << " wait-->";
+        applog.Debug() << "Extract(" << typeid(*med).name() << "): " << this << " wait(" << &ready << ") -->";
         ready.wait_for(g, chrono::seconds(1), [this] { return running && master->IsRunning() && !buffer.empty(); });
         applog.Debug() << "Extract(" << typeid(*med).name() << "): " << this << " <-- notified (running:"
             << boolalpha << running << " master:" << master->IsRunning() << " buffer:" << buffer.size() << ")";
@@ -388,8 +388,8 @@ void TargetMedium::Runner()
                 if (!gotsomething) // exit on timeout
                     continue;
             }
-            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER extraction";
             swap(val, *buffer.begin());
+            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER extraction";
 
             buffer.pop_front();
         }
