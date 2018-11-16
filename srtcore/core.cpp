@@ -244,6 +244,7 @@ CUDT::CUDT()
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
+   m_bOPT_StrictEncryption = true;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -305,6 +306,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
+   m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -819,6 +821,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       }
       break;
 
+   case SRTO_STRICTENC:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+        m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
+        break;
+
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -1084,6 +1093,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_PAYLOADSIZE:
       optlen = sizeof (int);
       *(int*)optval = m_zOPT_ExpPayloadSize;
+      break;
+
+   case SRTO_STRICTENC:
+      optlen = sizeof (int32_t); // also with TSBPDMODE and SENDER
+      *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;
 
    default:
@@ -1951,6 +1965,12 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             {
                 if (len_out == 1)
                 {
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                                << " - rejecting per strict encryption");
+                        return false;
+                    }
                     HLOGC(mglog.Debug, log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
                 }
                 else
@@ -1959,6 +1979,8 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
+            // XXX Dead code. processSrtMsg_KMREQ now doesn't return any other value now.
+            // Please review later.
             else
             {
                 LOGC(mglog.Error, log << "KMREQ failed to process the request - ignoring");
@@ -2445,7 +2467,13 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
         if (!m_pCryptoControl->hasPassphrase())
         {
-            LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not.");
+            if (m_bOPT_StrictEncryption)
+            {
+                LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per strict requirement");
+                return false;
+            }
+
+            LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
             // Also normally allow the key to be processed; worst case it will send the failure response.
@@ -2478,12 +2506,26 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     HLOGC(mglog.Debug, log << "interpretSrtHandshake: KMREQ processing failed - returned " << res);
                     return false;
                 }
+                if (*out_len == 1)
+                {
+                    // This means that there was an abnormal encryption situation occurred.
+                    // This is inacceptable in case of strict encryption.
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
+                        return false;
+                    }
+                }
                 encrypted = true;
             }
             else if ( cmd == SRT_CMD_KMRSP )
             {
-                m_pCryptoControl->processSrtMsg_KMRSP(begin+1, bytelen, HS_VERSION_SRT1);
-                // XXX Possible to check status?
+                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin+1, bytelen, HS_VERSION_SRT1);
+                if (m_bOPT_StrictEncryption && res == -1)
+                {
+                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per strict encryption.");
+                    return false;
+                }
                 encrypted = true;
             }
             else if ( cmd == SRT_CMD_NONE )
@@ -2587,6 +2629,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     // Check if peer declared encryption
     if (!encrypted && m_CryptoSecret.len > 0)
     {
+        if (m_bOPT_StrictEncryption)
+        {
+            LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per strict requirement.");
+            return false;
+        }
+
         LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets from Peer).");
 
         // This is required so that the sender is still allowed to send data, when encryption is required,
