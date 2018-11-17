@@ -8693,7 +8693,6 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-
           int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
@@ -8709,9 +8708,14 @@ int CUDT::processData(CUnit* unit)
                   // that exceeds the buffer size. Receiving data in this situation
                   // is no longer possible and this is a point of no return.
 
-                  LOGC(mglog.Error,
-                          log << CONID() <<
-                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+                  LOGC(mglog.Error, log << CONID() <<
+                          "SEQUENCE DISCREPANCY, "
+                             "incoming=" << packet.m_iSeqNo
+                          << " buffer=(" << m_iRcvLastSkipAck
+                          << ":" << m_iRcvCurrSeqNo
+                          << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity())
+                          << "), " << (offset-avail_bufsize+1)
+                          << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
                   // This is a scoped lock with AckLock, but for the moment
                   // when processClose() is called this lock must be taken out,
@@ -8730,7 +8734,6 @@ int CUDT::processData(CUnit* unit)
                           );
                   return -1;
               }
-
           }
 
           if (m_pRcvBuffer->addData(unit, offset) < 0)
@@ -8741,10 +8744,21 @@ int CUDT::processData(CUnit* unit)
               excessive = true;
           }
       }
+#if ENABLE_HEAVY_LOGGING
+      std::ostringstream timebufspec;
+      if (m_bTsbPd)
+      {
+          int dsize = m_pRcvBuffer->getRcvDataSize();
+          timebufspec << "DLVTM=(" << m_pRcvBuffer->debugGetDeliveryTime(0)
+              << "-" << m_pRcvBuffer->debugGetDeliveryTime(dsize-1) << ")";
+      }
+#endif
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
           << (excessive ? " EXCESSIVE" : " ACCEPTED")
-          << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+          << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ")"
+          << timebufspec.str()
+          << " FLAGS: "
           << packet.MessageFlagStr());
 
       if ( excessive )

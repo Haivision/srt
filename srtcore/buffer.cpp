@@ -1101,6 +1101,21 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     return false;
 }
 
+uint64_t CRcvBuffer::debugGetDeliveryTime(int offset)
+{
+    int i;
+    if (offset > 0)
+        i = shift(m_iStartPos, offset);
+    else
+        i = m_iStartPos;
+
+    CUnit* u = m_pUnit[i];
+    if (!u || u->m_iFlag != CUnit::GOOD)
+        return 0;
+
+    return getPktTsbPdTime(u->m_Packet.getMsgTimeStamp());
+}
+
 bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curpktseq, int upto)
 {
     *r_tsbpdtime = 0;
@@ -1860,8 +1875,19 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
-                    "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
+                int next_p = shift_forward(p);
+                CUnit* u = m_pUnit[next_p];
+                string next_playtime = "NONE";
+                if (u && u->m_iFlag == CUnit::GOOD)
+                {
+                    next_playtime = logging::FormatTime(getPktTsbPdTime(u->m_Packet.getMsgTimeStamp()));
+                }
+
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq
+                        << " T=" << logging::FormatTime(srctime)
+                        << " in " << (timediff/1000.0) << "ms - TIME-PREVIOUS: PKT: "
+                        << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0)
+                        << " NEXT pkt T=" << next_playtime);
 
                 prev_now = nowtime;
                 prev_srctime = srctime;
