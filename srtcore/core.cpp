@@ -8749,8 +8749,8 @@ int CUDT::processData(CUnit* unit)
       if (m_bTsbPd)
       {
           int dsize = m_pRcvBuffer->getRcvDataSize();
-          timebufspec << "DLVTM=(" << m_pRcvBuffer->debugGetDeliveryTime(0)
-              << "-" << m_pRcvBuffer->debugGetDeliveryTime(dsize-1) << ")";
+          timebufspec << "DLVTM=(" << logging::FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
+              << "-" << logging::FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
       }
 #endif
 
@@ -12392,7 +12392,8 @@ RETRY_READING:
             int seqdiff = CSeqNo::seqcmp(p->sequence, m_RcvBaseSeqNo);
             if (seqdiff > 1)
             {
-                HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->sequence << " AHEAD, not reading.");
+                HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->sequence
+						<< " AHEAD %" << m_RcvBaseSeqNo << ", not reading.");
                 continue;
             }
         }
@@ -12467,7 +12468,8 @@ RETRY_READING:
                 // This error should be returned if the link turns out
                 // to be the only one, or set to the group data.
                 // err = SRT_ESECFAIL;
-                LOGC(dlog.Error, log << "group/recv: @" << id << ": SEQUENCE DISCREPANCY: base=%" << m_RcvBaseSeqNo << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
+                LOGC(dlog.Error, log << "group/recv: @" << id << ": SEQUENCE DISCREPANCY: base=%"
+						<< m_RcvBaseSeqNo << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
                 broken.insert(ps);
                 break;
             }
@@ -12485,7 +12487,8 @@ RETRY_READING:
 
                 if (seqdiff <= 0)
                 {
-                    HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " BEHIND - discarding");
+                    HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
+							<< " BEHIND base=%" << m_RcvBaseSeqNo << " - discarding");
                     // The sequence is recorded, the packet has to be discarded.
                     // That's all.
                     continue;
@@ -12497,7 +12500,8 @@ RETRY_READING:
 
                 if (seqdiff > 1)
                 {
-                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " AHEAD");
+                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
+							<< " AHEAD base=%" << m_RcvBaseSeqNo);
                     p->packet.assign(buf, buf+stat);
                     p->mctrl = mctrl;
                     break; // Don't read from that socket anymore.
