@@ -161,19 +161,21 @@ protected:
 
 class Engine
 {
-    enum { DIR_IN, DIR_OUT };
     Medium* media[2];
     std::thread thr;
-    class Tunnel* master;
+    class Tunnel* parent_tunnel;
 
     int status = 0;
     Medium::ReadStatus rdst = Medium::RD_ERROR;
     UDT::ERRORINFO srtx;
 
 public:
+    enum Dir { DIR_IN, DIR_OUT };
+
+    int stat() { return status; }
 
     Engine(Tunnel* p, Medium* m1, Medium* m2)
-        : media {m1, m2}, master(p)
+        : media {m1, m2}, parent_tunnel(p)
     {
     }
 
@@ -214,7 +216,7 @@ class Tunnelbox;
 
 class Tunnel
 {
-    Tunnelbox* master;
+    Tunnelbox* parent_box;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
     volatile bool running = true;
@@ -228,7 +230,7 @@ public:
     }
 
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
-        master(m),
+        parent_box(m),
         med_acp(move(acp)), med_clr(move(clr)),
         acp_to_clr(this, med_acp.get(), med_clr.get()),
         clr_to_acp(this, med_clr.get(), med_acp.get())
@@ -241,7 +243,37 @@ public:
         clr_to_acp.Start();
     }
 
-    void Stop(); // [[affinity = acp_to_clr.thr || clr_to_acp.thr]]
+    // This is to be called by an Engine from Engine::Worker
+    // thread.
+    // [[affinity = acp_to_clr.thr || clr_to_acp.thr]];
+    void decommission_engine()
+    {
+        bool stop = false;
+        {
+            lock_guard<mutex> lk(access);
+            if (acp_to_clr.stat() == -1 && clr_to_acp.stat() == -1)
+            {
+                // Both engines are down, decommission the tunnel.
+                // Note that the status -1 means that particular engine
+                // is not currently running and you can safely
+                // join its thread.
+                stop = true;
+            }
+        }
+
+        if (stop)
+        {
+            // First, stop all media.
+            med_acp->Close();
+            med_clr->Close();
+
+            // Then stop the tunnel (this is only a signal
+            // to a cleanup thread to delete it).
+            Stop();
+        }
+    }
+
+    void Stop();
 
     bool decommission_if_dead(bool forced); // [[affinity = g_tunnels.thr]]
 };
@@ -265,6 +297,7 @@ void Engine::Worker()
                 break;
 
             case Medium::RD_EOF:
+                status = -1;
                 throw Medium::ReadEOF("");
 
             case Medium::RD_AGAIN:
@@ -285,22 +318,14 @@ void Engine::Worker()
         }
     }
 
-    // Close both media so that the closed socket on
-    // one of them will cause error during attempt to
-    // read or write and fall in here.
-
-    // Note that Close() is protected against simultaneous
-    // access only to Close() (in case when both engine
-    // threads get here at the same time), but not to Read/Write.
-    // These should be simply interrupted internally.
-
-    // Closing a closed media simply does nothing.
-    for (int i = 0; i < 2; ++i)
-        media[i]->Close();
-
     // This is an engine thread and it should simply
-    // tell the master Tunnel to shutdown.
-    master->Stop();
+    // tell the parent_box Tunnel that it is no longer
+    // operative. It's not necessary to inform it which
+    // of two engines is decommissioned - it should only
+    // know that one of them got down. It will then check
+    // if both are down here and decommission the whole
+    // tunnel if so.
+    parent_tunnel->decommission_engine();
 }
 
 class SrtMedium: public Medium
@@ -817,7 +842,7 @@ void Tunnel::Stop()
     // Ok, you are the first to make the tunnel
     // not running and inform the tunnelbox.
     running = false;
-    master->signal_decommission();
+    parent_box->signal_decommission();
 }
 
 bool Tunnel::decommission_if_dead(bool forced)
