@@ -1,6 +1,8 @@
 #!/usr/bin/tclsh
 
-set server_running 0
+set read_running 0
+set write_running 0
+set read_eof 0 
 set theend 0
 
 set nread 0
@@ -8,17 +10,19 @@ set nwritten 0
 
 proc ReadBack {fd} {
 
+	if { !$::write_running } {
+		puts stderr "ERROR: connection closed unexpectedly!"
+		set ::theend 1
+		return
+	}
+
 	set r [read $fd 4096]
 	if {$r == ""} {
 
 		if {[eof $fd]} {
-			set ::server_running 0
-			close $fd
+			puts stderr "EOF on socket"
+			set ::read_running 0
 			return
-		}
-		if {!$::server_running} {
-			# --- puts stderr "NOTHING MORE TO BE READ - exitting"
-			set ::theend 1
 		}
 
 		# --- puts stderr "SPURIOUS, not reading"
@@ -30,12 +34,15 @@ proc ReadBack {fd} {
 	incr ::nwritten [string bytelength $r]
 	# --- puts stderr "DONE"
 
-	if {[fblocked $fd]} {
-		# Nothing more to read
-		if {$::nread < $::nwritten && !$::server_running} {
-			puts stderr "NOTHING MORE TO BE READ - exitting"
-			set ::theend 1
-		}
+	set remain [expr {$::nread - $::nwritten}]
+	if { $::read_eof } {
+		puts stderr "Finishing... read=$::nread written=$::nwritten diff=[expr {$::nwritten - $::nread}] - [expr {100.0*$remain/$::nread}]%"
+	}
+
+	# Nothing more to read
+	if {$remain == 0} {
+		puts stderr "NOTHING MORE TO BE WRITTEN - exitting"
+		set ::theend 1
 		return
 	}
 
@@ -45,17 +52,26 @@ proc ReadBack {fd} {
 proc SendToSocket {fd} {
 	global theend
 
-	if { !$::server_running } {
+	if { !$::write_running } {
 		# --- puts stderr "SERVER DOWN, not reading"
 		fileevent stdin readable {}
 		return
+	}
+
+	if { $::read_eof } {
+		# Don't read, already EOF.
+
 	}
 	# --- puts stderr "READING cin"
 	set r [read stdin 4096]
 	if {$r == ""} {
 		if {[eof stdin]} {
-			# --- puts stderr "EOF, setting server off"
-			set ::server_running 0
+			if {!$::read_eof} {
+				puts stderr "EOF, setting server off"
+				set ::read_eof 1
+			}
+			# Just enough when the next SendToSocket will
+			# not be scheduled.
 			return
 		}
 		# --- puts stderr "SPURIOUS, not reading"
@@ -70,10 +86,10 @@ proc SendToSocket {fd} {
 	incr ::nread [string bytelength $r]
 	fconfigure $fd -blocking no
 
-	if {[fblocked stdin]} {
-		# Nothing more to read
-		return
-	}
+    # --- if {[fblocked stdin]} {
+    # --- 	# Nothing more to read
+    # --- 	return
+    # --- }
 	after idle "SendToSocket $fd"
 }
 
@@ -86,7 +102,8 @@ fconfigure stdout -encoding binary -translation binary
 fileevent stdin readable "SendToSocket $fd"
 
 # --- puts stderr "READY, sending"
-set server_running 1
+set read_running 1
+set write_running 1
 
 vwait theend
 
