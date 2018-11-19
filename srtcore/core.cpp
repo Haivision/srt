@@ -3031,6 +3031,44 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
                 << " PST=" << logging::FormatTime(m_ullRcvPeerStartTime));
     }
 
+    uint64_t rcv_buffer_time_base = 0;
+    bool rcv_buffer_wrap_period = false;
+    if (m_bTsbPd && gp->getBufferTimeBase(Ref(rcv_buffer_time_base), Ref(rcv_buffer_wrap_period)))
+    {
+        // We have at least one socket in the group, each socket should have
+        // the value of the timebase set exactly THE SAME.
+
+        // In case when we have the following situation:
+
+        // - the existing link is before [LAST30] (so wrap period is off)
+        // - the new link gets the timestamp from [LAST30] range
+        // --> this will be recognized as entering the wrap period, next
+        //     timebase will get added a segment to this value
+        //
+        // The only dangerous situations could be when one link gets
+        // timestamps from the [FOLLOWING30] and the other in [FIRST30],
+        // but between them there's a 30s distance, considered large enough
+        // time to not fill a network window.
+        CGuard::enterCS(m_RecvLock, "recv");
+        m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000);
+        CGuard::leaveCS(m_RecvLock, "recv");
+
+        HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03us GROUP TIME BASE: %s%s",
+                m_iTsbPdDelay_ms/1000,
+                m_iTsbPdDelay_ms%1000,
+                logging::FormatTime(rcv_buffer_time_base).c_str(),
+                rcv_buffer_wrap_period ? " (WRAP PERIOD)" : " (NOT WRAP PERIOD)");
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "AFTER HS: (GROUP, but " << (m_bTsbPd ? "FIRST SOCKET is initialized normally)" : "no TSBPD set)"));
+        updateSrtRcvSettings();
+    }
+
+    // This function currently does nothing, just left for consistency
+    // with updateAfterSrtHandshake().
+    updateSrtSndSettings();
+
     // These are the values that are normally set initially by setters.
     int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
     if (!gp->applyGroupSequences(m_SocketID, Ref(snd_isn), Ref(rcv_isn)))
@@ -3049,6 +3087,21 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
                 << " DEFINED ISN: RCV=%" << m_iRcvLastAck
                 << " SND=%" << m_iSndLastAck);
     }
+}
+
+// [[using locked(this->m_GroupLock)]];
+bool CUDTGroup::getBufferTimeBase(ref_t<uint64_t> tb, ref_t<bool> wp)
+{
+    gli_t gi = m_Group.begin();
+
+    // We don't have any sockets in the group, so can't get
+    // the buffer timebase. This should be then initialized
+    // the usual way.
+    if (gi == m_Group.end())
+        return false;
+
+    *wp = gi->ps->core().m_pRcvBuffer->getInternalTimeBase(tb);
+    return true;
 }
 
 // [[using locked(this->m_GroupLock)]];
@@ -4248,9 +4301,14 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
             // value must be set before this happens.
             synchronizeWithGroup(g);
         }
+       else
+       {
+           // This function will be called internally inside
+           // synchronizeWithGroup(). This is just more complicated.
+           updateAfterSrtHandshake(m_ConnRes.m_iVersion);
+       }
     }
 
-    updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     CInfoBlock ib;
     ib.m_iFamily = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
@@ -5043,9 +5101,13 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
            // value must be set before this happens.
            synchronizeWithGroup(g);
        }
+       else
+       {
+           // This function will be called internally inside
+           // synchronizeWithGroup(). This is just more complicated.
+           updateAfterSrtHandshake(m_ConnRes.m_iVersion);
+       }
    }
-
-   updateAfterSrtHandshake(m_ConnRes.m_iVersion);
 
    setupCC();
 

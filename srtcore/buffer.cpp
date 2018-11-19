@@ -1603,6 +1603,30 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    return(m_ullTsbPdTimeBase + carryover);
 }
 
+void CRcvBuffer::applyGroupTime(uint64_t timebase, bool wrp, uint32_t delay)
+{
+    // Same as setRcvTsbPdMode, but predicted to be used for group members.
+    // This synchronizes the time from the INTERNAL TIMEBASE of an existing
+    // socket's internal timebase. This is required because the initial time
+    // base stays always the same, whereas the internal timebase undergoes
+    // adjustment as the 32-bit timestamps in the sockets wrap. The socket
+    // newly added to the group must get EXACTLY the same internal timebase
+    // or otherwise the TsbPd time calculation will ship different results
+    // on different sockets.
+
+    m_bTsbPdMode = true;
+
+    m_ullTsbPdTimeBase = timebase;
+    m_bTsbPdWrapCheck = wrp;
+    m_uTsbPdDelay = delay;
+}
+
+bool CRcvBuffer::getInternalTimeBase(ref_t<uint64_t> r_timebase)
+{
+    *r_timebase = m_ullTsbPdTimeBase;
+    return m_bTsbPdWrapCheck;
+}
+
 uint64_t CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
    return(getTsbPdTimeBase(timestamp) + m_uTsbPdDelay + timestamp + m_DriftTracer.drift());

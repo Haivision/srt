@@ -423,6 +423,11 @@ private:
       /// @return local delivery time (usec)
 
 public:
+
+   // @return Wrap check value
+   bool getInternalTimeBase(ref_t<uint64_t> tb);
+
+   void applyGroupTime(uint64_t timebase, bool wrapcheck, uint32_t delay);
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
 

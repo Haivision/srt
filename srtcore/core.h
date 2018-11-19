@@ -640,6 +640,8 @@ public:
         return false;
     }
 
+    bool getBufferTimeBase(ref_t<uint64_t> tb, ref_t<bool> wp);
+
     bool applyGroupSequences(SRTSOCKET, ref_t<int32_t> r_snd_isn, ref_t<int32_t> r_rcv_isn);
 
     // Property accessors
