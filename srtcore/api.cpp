@@ -608,11 +608,17 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         // operation can include the socket in the group operation.
         gi = ns->m_IncludedIter;
 
-        HLOGC(mglog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
-                << " - will " << (should_submit_to_accept? "" : "NOT") << " report in accept");
+        HLOGC(mglog.Debug, log << "newConnection(GROUP): Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
+                << " - will " << (should_submit_to_accept? "" : "NOT ") << "report in accept");
         gi->sndstate = CUDTGroup::GST_IDLE;
         gi->rcvstate = CUDTGroup::GST_IDLE;
         gi->laststatus = SRTS_CONNECTED;
+
+        if (!g->m_bConnected)
+        {
+            HLOGC(mglog.Debug, log << "newConnection(GROUP): First socket connected, SETTING GROUP CONNECTED");
+            g->m_bConnected = true;
+        }
 
         // With app reader, do not set groupPacketArrival (block the
         // provider array feature completely for now).

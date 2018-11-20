@@ -587,6 +587,11 @@ private:
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
 public:
 
+    // Required after the call on newGroup on the listener side.
+    // On the listener side the group is lazily created just before
+    // accepting a new socket and therefore always open.
+    void setOpen() { m_bOpened = true; }
+
     std::string CONID() const
     {
 #if ENABLE_LOGGING

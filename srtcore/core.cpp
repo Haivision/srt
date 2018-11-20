@@ -2965,6 +2965,11 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
         gp = &newGroup(gtp);
         gp->peerid(peergroup);
 
+        // This can only happen on a listener (it's only called on a site that is
+        // HSD_RESPONDER), so it was a response for a groupwise connection.
+        // Therefore such a group shall always be considered opened.
+        gp->setOpen();
+
         HLOGC(mglog.Debug, log << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $" << gp->id());
     }
 
