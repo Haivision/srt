@@ -12214,6 +12214,7 @@ RETRY_READING:
     {
         if (!m_bOpened || !m_bConnected)
         {
+            LOGC(dlog.Error, log << boolalpha << "group/recv: ERROR opened=" << m_bOpened << " connected=" << m_bConnected);
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
     }
@@ -12384,6 +12385,7 @@ RETRY_READING:
 
     if (!still_alive)
     {
+        LOGC(dlog.Error, log << "group/recv: all links broken");
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     }
 
