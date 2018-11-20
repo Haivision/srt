@@ -3099,6 +3099,9 @@ bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<
         if (u == forthesakeof)
             continue; // skip the member if it's the target itself
 
+        if (!u->m_pRcvBuffer)
+            continue; // Not initialized yet
+
         master = u;
         break; // found
     }
