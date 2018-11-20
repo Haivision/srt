@@ -3033,7 +3033,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     uint64_t rcv_buffer_time_base = 0;
     bool rcv_buffer_wrap_period = false;
-    if (m_bTsbPd && gp->getBufferTimeBase(Ref(rcv_buffer_time_base), Ref(rcv_buffer_wrap_period)))
+    if (m_bTsbPd && gp->getBufferTimeBase(this, Ref(rcv_buffer_time_base), Ref(rcv_buffer_wrap_period)))
     {
         // We have at least one socket in the group, each socket should have
         // the value of the timebase set exactly THE SAME.
@@ -3090,17 +3090,33 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 }
 
 // [[using locked(this->m_GroupLock)]];
-bool CUDTGroup::getBufferTimeBase(ref_t<uint64_t> tb, ref_t<bool> wp)
+bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp)
 {
-    gli_t gi = m_Group.begin();
+    CUDT* master = 0;
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        CUDT* u = &gi->ps->core();
+        if (u == forthesakeof)
+            continue; // skip the member if it's the target itself
+
+        master = u;
+        break; // found
+    }
 
     // We don't have any sockets in the group, so can't get
     // the buffer timebase. This should be then initialized
     // the usual way.
-    if (gi == m_Group.end())
+    if (!master)
         return false;
 
-    *wp = gi->ps->core().m_pRcvBuffer->getInternalTimeBase(tb);
+    *wp = master->m_pRcvBuffer->getInternalTimeBase(tb);
+    
+    // Sanity check
+    if (*tb == 0)
+    {
+        LOGC(mglog.Error, log << "IPE: existing previously socket has no time base set yet!");
+        return false; // this will enforce initializing the time base normal way
+    }
     return true;
 }
 
