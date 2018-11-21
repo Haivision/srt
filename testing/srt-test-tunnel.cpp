@@ -164,6 +164,7 @@ class Engine
     Medium* media[2];
     std::thread thr;
     class Tunnel* parent_tunnel;
+    std::string nameid;
 
     int status = 0;
     Medium::ReadStatus rdst = Medium::RD_ERROR;
@@ -174,8 +175,8 @@ public:
 
     int stat() { return status; }
 
-    Engine(Tunnel* p, Medium* m1, Medium* m2)
-        : media {m1, m2}, parent_tunnel(p)
+    Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
+        : media {m1, m2}, parent_tunnel(p), nameid(nid)
     {
     }
 
@@ -232,8 +233,8 @@ public:
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         parent_box(m),
         med_acp(move(acp)), med_clr(move(clr)),
-        acp_to_clr(this, med_acp.get(), med_clr.get()),
-        clr_to_acp(this, med_clr.get(), med_acp.get())
+        acp_to_clr(this, med_acp.get(), med_clr.get(), med_acp->id() + ">" + med_clr->id()),
+        clr_to_acp(this, med_clr.get(), med_acp.get(), med_clr->id() + ">" + med_acp->id())
     {
     }
 
@@ -246,20 +247,33 @@ public:
     // This is to be called by an Engine from Engine::Worker
     // thread.
     // [[affinity = acp_to_clr.thr || clr_to_acp.thr]];
-    void decommission_engine()
+    void decommission_engine(Medium* which_medium)
     {
-        bool stop = false;
+        // which_medium is the medium that failed.
+        // Upon breaking of one medium from the pair,
+        // the other needs to be closed as well.
+        Verb() << "Medium broken: " << which_medium->uri();
+
+        bool stop = true;
+
+        /*
         {
             lock_guard<mutex> lk(access);
             if (acp_to_clr.stat() == -1 && clr_to_acp.stat() == -1)
             {
+                Verb() << "Tunnel: Both engine decommissioned, will stop the tunnel.";
                 // Both engines are down, decommission the tunnel.
                 // Note that the status -1 means that particular engine
                 // is not currently running and you can safely
                 // join its thread.
                 stop = true;
             }
+            else
+            {
+                Verb() << "Tunnel: Decommissioned one engine, waiting for the other one to report";
+            }
         }
+        */
 
         if (stop)
         {
@@ -282,15 +296,19 @@ void Engine::Worker()
 {
     bytevector outbuf;
 
+    Medium* which_medium = media[DIR_IN];
+
     for (;;)
     {
         try
         {
+            which_medium = media[DIR_IN];
             rdst = media[DIR_IN]->Read(Ref(outbuf));
             switch (rdst)
             {
             case Medium::RD_DATA:
                 {
+                    which_medium = media[DIR_OUT];
                     // We get the data, write them to the output
                     media[DIR_OUT]->Write(Ref(outbuf));
                 }
@@ -313,7 +331,7 @@ void Engine::Worker()
         }
         catch (Medium::TransmissionError& er)
         {
-            Verb() << "ERROR: " << er.what() << " - interrupting engine";
+            Verb() << er.what() << " - interrupting engine: " << nameid;
             break;
         }
     }
@@ -325,7 +343,7 @@ void Engine::Worker()
     // know that one of them got down. It will then check
     // if both are down here and decommission the whole
     // tunnel if so.
-    parent_tunnel->decommission_engine();
+    parent_tunnel->decommission_engine(which_medium);
 }
 
 class SrtMedium: public Medium
