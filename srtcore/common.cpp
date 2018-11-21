@@ -71,7 +71,7 @@ modified by
 #include <iostream>
 #endif
 
-#define ENABLE_THREAD_ASSERT 1
+// #undef ENABLE_THREAD_ASSERT 1
 
 #include <string>
 #include <sstream>
