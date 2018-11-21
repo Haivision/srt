@@ -791,6 +791,9 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(recvfile.cpp apps/logsupport.cpp)
 	srt_make_application(recvfile)
 
+	srt_add_example(recvlive.cpp apps/logsupport.cpp)
+	srt_make_application(recvlive)
+
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
