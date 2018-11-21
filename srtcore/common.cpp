@@ -71,6 +71,8 @@ modified by
 #include <iostream>
 #endif
 
+#define ENABLE_THREAD_ASSERT 1
+
 #include <string>
 #include <sstream>
 #include <cmath>
@@ -348,12 +350,19 @@ CGuard::CGuard(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool should
         cv << "(" << ln << ")";
     }
     lockname = cv.str();
+    char errbuf[256];
 #endif
     if (shouldwork)
     {
         LOGS(cerr, log << "CGuard: { LOCK:" << lockname << " ...");
         Lock();
-        LOGS(cerr, log << "... " << lockname << " locked.");
+
+#if ENABLE_THREAD_ASSERT
+        if (m_iLocked != 0)
+            abort();
+#endif
+        LOGS(cerr, log << "... " << lockname << " lock state:" <<
+                (m_iLocked == 0 ? "locked successfully" : SysStrError(m_iLocked, errbuf, 256)));
     }
     else
     {
