@@ -964,7 +964,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             else
             {
                 HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
-                        << std::fixed << ((i->m_ullTTL - now)/1000000.0) "s of TTL)...");
+                        << std::fixed << ((i->m_ullTTL - now)/1000000.0) << "s of TTL)...");
             }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
