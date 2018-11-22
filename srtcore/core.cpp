@@ -12868,7 +12868,7 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
 
 string CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
-    static string states = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
+    static string states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
     if (int(st) < 5)
         return states[st];
     return string("UNKNOWN");
