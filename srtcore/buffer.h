@@ -386,7 +386,7 @@ public:
 
    bool empty() { return m_iStartPos == m_iLastAckPos; }
    bool full() { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
-   int capacity() { return m_iSize; }
+   int capacity() { return m_iSize-1; }
 
 
 private:

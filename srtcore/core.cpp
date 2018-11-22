@@ -8683,8 +8683,10 @@ int CUDT::processData(CUnit* unit)
    // in different place.
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+#if ENABLE_HEAVY_LOGGING
    static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
+#endif
 
 
    if ( pktrexmitflag == 1 ) // rexmitted
@@ -8700,7 +8702,7 @@ int CUDT::processData(CUnit* unit)
            rexmit_reason += "REQUEST";
        else
        {
-           rexmit_reason += "ACK-TMOUT";
+           rexmit_reason += "NAKREPORT";
            /*
            if ( !m_DebugLossRecords.exists(packet.m_iSeqNo) )
            {
@@ -8766,6 +8768,7 @@ int CUDT::processData(CUnit* unit)
 
       bool excessive = false;
       string exc_type = "EXPECTED";
+      int avail_bufsize = -1; // This is later required for logging.
       if (offset < 0)
       {
           exc_type = "BELATED";
@@ -8779,7 +8782,7 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // This is already a sequence discrepancy. Probably there could be found
@@ -8796,10 +8799,10 @@ int CUDT::processData(CUnit* unit)
 
                   LOGC(mglog.Error, log << CONID() <<
                           "SEQUENCE DISCREPANCY, "
-                             "incoming=" << packet.m_iSeqNo
+                             "seq=" << packet.m_iSeqNo
                           << " buffer=(" << m_iRcvLastSkipAck
-                          << ":" << m_iRcvCurrSeqNo
-                          << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity())
+                          << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                          << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
                           << "), " << (offset-avail_bufsize+1)
                           << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
@@ -8835,17 +8838,29 @@ int CUDT::processData(CUnit* unit)
       if (m_bTsbPd)
       {
           int dsize = m_pRcvBuffer->getRcvDataSize();
-          timebufspec << "DLVTM=(" << logging::FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
+          timebufspec << "(" << logging::FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
               << "-" << logging::FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
       }
+
+      std::ostringstream expectspec;
+      if (excessive)
+          expectspec << "EXCESSIVE(" << exc_type << rexmit_reason << ")";
+      else
+          expectspec << "ACCEPTED";
 #endif
 
-      HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
-          << (excessive ? " EXCESSIVE" : " ACCEPTED")
-          << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ")"
-          << timebufspec.str()
-          << " FLAGS: "
-          << packet.MessageFlagStr());
+      HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
+              << " offset=" << offset
+              << " avail=" << avail_bufsize
+              << " buffer=(" << m_iRcvLastSkipAck
+              << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
+              << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
+              << ") "
+              << " RSL=" << expectspec.str()
+              << " SN=" << rexmitstat[pktrexmitflag]
+              << " DLVTM=" << timebufspec.str()
+              << " FLAGS: "
+              << packet.MessageFlagStr());
 
       if ( excessive )
       {
@@ -10482,7 +10497,15 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         // Check socket sndstate before sending
         if (d->sndstate == GST_BROKEN)
         {
-            HLOGC(dlog.Debug, log << "CUDTGroup::send: socket in BROKEN state: @" << d->id);
+            HLOGC(dlog.Debug, log << "CUDTGroup::send: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
+            wipeme.push_back(d);
+
+            /*
+               This distinction is now blocked - it has led to blocking removal of
+               authentically broken sockets that just got only incorrect state update.
+               (XXX This problem has to be fixed either, but when epoll is rewritten it
+                will be fixed from the start anyway).
+
             // Check if broken permanently
             if (!d->ps || d->ps->getStatus() == SRTS_BROKEN)
             {
@@ -10493,19 +10516,20 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             {
                 HLOGC(dlog.Debug, log << "... socket still " << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             }
+            */
             continue;
         }
 
         if (d->sndstate == GST_IDLE)
         {
-            SRT_SOCKSTATUS st = SRTS_BROKEN;
+            SRT_SOCKSTATUS st = SRTS_NONEXIST;
             if (d->ps)
                 st = d->ps->getStatus();
             // If the socket is already broken, move it to broken.
             if (int(st) >= int(SRTS_BROKEN))
             {
-                LOGC(dlog.Debug, log << "CUDTGroup::send. @" << d->id << " became "
-                        << SockStatusStr(st) << ", Will delete from group $" << id());
+                LOGC(dlog.Debug, log << "CUDTGroup::send.$" << id() << ": @" << d->id << " became "
+                        << SockStatusStr(st) << ", WILL BE CLOSED.");
                 wipeme.push_back(d);
                 continue;
             }
@@ -10663,15 +10687,37 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         m_iLastSchedSeqNo = curseq;
     }
 
+    // Review the wipeme sockets.
+    // The reason why 'wipeme' is kept separately to 'broken_sockets' is that
+    // it might theoretically happen that ps becomes NULL while the item still exists.
+    vector<CUDTSocket*> broken_sockets;
+
     // delete all sockets that were broken at the entrance
     for (vector<gli_t>::iterator i = wipeme.begin(); i != wipeme.end(); ++i)
     {
         gli_t d = *i;
-        HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET @" << d->id << " - CLOSING AND REMOVING.");
+        CUDTSocket* ps = d->ps;
+        if (!ps)
         {
-            CUDTSocket* ps = d->ps;
-            // Lift the group lock for a while, to avoid possible deadlocks.
-            InvertedGuard ug(&m_GroupLock, "Group");
+            LOGC(dlog.Error, log << "CUDTGroup::send: IPE: socket NULL at id=" << d->id << " - removing from group list");
+            // Closing such socket is useless, it simply won't be found in the map and
+            // the internal facilities won't know what to do with it anyway.
+            // Simply delete the entry.
+            m_Group.erase(d);
+            continue;
+        }
+        broken_sockets.push_back(ps);
+    }
+
+    if (!broken_sockets.empty()) // Prevent unlock-lock cycle if no broken sockets found
+    {
+        // Lift the group lock for a while, to avoid possible deadlocks.
+        InvertedGuard ug(&m_GroupLock, "Group");
+
+        for (vector<CUDTSocket*>::iterator x = broken_sockets.begin(); x != broken_sockets.end(); ++x)
+        {
+            CUDTSocket* ps = *x;
+            HLOGC(dlog.Debug, log << "CUDTGroup::send: BROKEN SOCKET @" << ps->m_SocketID << " - CLOSING AND REMOVING.");
 
             // NOTE: This does inside: ps->removeFromGroup().
             // After this call, 'd' is no longer valid and *i is singular.
@@ -10683,6 +10729,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     // We'll need you again.
     wipeme.clear();
+    broken_sockets.clear();
 
     // Alright, we've made an attempt to send a packet over every link.
     // Every operation was done through a non-blocking attempt, so
@@ -10733,6 +10780,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // First, check the most optimistic scenario: at least one link succeeded.
 
     bool was_blocked = false;
+    bool none_succeeded = false;
 
     if (!successful.empty())
     {
@@ -10747,6 +10795,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     }
     else
     {
+        none_succeeded = true;
         was_blocked = !blocked.empty();
     }
 
@@ -10837,6 +10886,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
                     successful.push_back(is->d);
                     rstat = is->stat;
                     was_blocked = false;
+                    none_succeeded = false;
                     continue;
                 }
 #if ENABLE_HEAVY_LOGGING
@@ -10851,13 +10901,15 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         srt_epoll_release(eid);
     }
 
-    if (rstat == -1)
+    if (none_succeeded)
     {
-        // Reparse error code
-        CodeMajor major = CodeMajor(ercode/1000);
-        CodeMinor minor = CodeMinor(ercode%1000);
+        // Reparse error code, if set.
+        // It might be set, if the last operation was failed.
+        // If any operation succeeded, this will not be executed anyway.
+        CodeMajor major = CodeMajor(ercode ? ercode/1000 : MJ_CONNECTION);
+        CodeMinor minor = CodeMinor(ercode ? ercode%1000 : MN_CONNLOST);
 
-        m_pGlobal->setError(new CUDTException(major, minor, 0));
+        throw CUDTException(major, minor, 0);
     }
 
     // Now fill in the socket table. Check if the size is enough, if not,
