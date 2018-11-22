@@ -10425,6 +10425,8 @@ void CUDTGroup::close()
 {
     // Close all descriptors, then delete the group.
 
+    vector<SRTSOCKET> ids;
+
     {
         CGuard g(m_GroupLock, "group");
 
@@ -10432,17 +10434,21 @@ void CUDTGroup::close()
         // sockets in the group.
         if (!m_selfManaged && !m_Group.empty())
             throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-        else
-        {
-            // A managed group should first close all member sockets.
-            for (gli_t ig = m_Group.begin(), ig_next = ig; ig != m_Group.end(); ig = ig_next)
-            {
-                ++ig_next; // Increment before it WOULD BE deleted here.
-                m_pGlobal->close(ig->id);
-            }
-            m_Group.clear();
-        }
 
+        // Copy the list of IDs into the array.
+        for (gli_t ig = m_Group.begin(); ig != m_Group.end(); ++ig)
+            ids.push_back(ig->id);
+    }
+
+    // Close all sockets with unlocked GroupLock
+    for (vector<SRTSOCKET>::iterator i = ids.begin(); i != ids.end(); ++i)
+        m_pGlobal->close(*i);
+
+    // Lock the group again to clear the group data
+    {
+        CGuard g(m_GroupLock, "group");
+
+        m_Group.clear();
         m_PeerGroupID = -1;
         // This takes care of the internal part.
         // The external part will be done in Global (CUDTUnited)
