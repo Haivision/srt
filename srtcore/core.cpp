@@ -10561,9 +10561,11 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         {
             HLOGC(dlog.Debug, log << "CUDTGroup::send: socket in RUNNING state: @" << d->id << " - will send a payload");
             sendable.push_back(d);
+            continue;
         }
 
-        HLOGC(dlog.Debug, log << "CUDTGroup::send: IPE UNKNOWN sending socket state: " << int(d->sndstate) << " submitted for sending!");
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: IPE UNKNOWN sending socket state: "
+                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") submitted for sending!");
     }
 
     vector<Sendstate> sendstates;
@@ -12863,4 +12865,12 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
 }
 
 #endif
+
+string CUDTGroup::StateStr(CUDTGroup::GroupState st)
+{
+    static string states = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
+    if (int(st) < 5)
+        return states[st];
+    return string("UNKNOWN");
+}
 

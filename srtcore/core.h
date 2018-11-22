@@ -172,6 +172,8 @@ public:
         GST_BROKEN    // The last operation broke the socket, it should be closed.
     };
 
+    static std::string StateStr(GroupState);
+
     struct SocketData
     {
         SRTSOCKET id;
