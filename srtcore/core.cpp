@@ -2934,7 +2934,8 @@ void CUDTGroup::debugGroup()
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        HLOGC(mglog.Debug, log << " ... id=$" << gi->id << " peer=$" << gi->ps->m_PeerID);
+        HLOGC(mglog.Debug, log << " ... id=@" << gi->id << " peer=@" << gi->ps->m_PeerID
+                << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
     }
 }
 #endif
@@ -4393,6 +4394,8 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
 void CUDTGroup::setFreshConnected(CUDTSocket* sock)
 {
     CGuard glock(m_GroupLock, "group");
+
+    HLOGC(mglog.Debug, log << "group: Socket @" << sock->m_SocketID << " fresh connected, setting IDLE");
 
     gli_t gi = sock->m_IncludedIter;
     gi->sndstate = CUDTGroup::GST_IDLE;
@@ -10564,8 +10567,8 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             continue;
         }
 
-        HLOGC(dlog.Debug, log << "CUDTGroup::send: IPE UNKNOWN sending socket state: "
-                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") submitted for sending!");
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: socket @" << d->id << " not ready, state: "
+                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") - NOT sending");
     }
 
     vector<Sendstate> sendstates;

@@ -940,7 +940,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             //
             // Maybe the time should be simply checked once and the whole loop not
             // done when "it's not the time"?
-            if (CTimer::getTime() >= i->m_ullTTL)
+            uint64_t now = CTimer::getTime();
+            if (now >= i->m_ullTTL)
             {
                 HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
                         << " removed - EXPIRED ("
@@ -962,7 +963,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             }
             else
             {
-                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active...");
+                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
+                        << std::fixed << ((i->m_ullTTL - now)/1000000.0) "s of TTL)...");
             }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
