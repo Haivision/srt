@@ -470,7 +470,10 @@ CSndQueue::~CSndQueue()
    pthread_cond_signal(&m_WindowCond);
    pthread_mutex_unlock(&m_WindowLock);
    if (!pthread_equal(m_WorkerThread, pthread_t()))
+   {
+       HLOGC(mglog.Debug, log << "SndQueue: EXIT");
        pthread_join(m_WorkerThread, NULL);
+   }
    pthread_cond_destroy(&m_WindowCond);
    pthread_mutex_destroy(&m_WindowLock);
 
@@ -1038,7 +1041,11 @@ CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
 	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+
+        HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
     pthread_mutex_destroy(&m_LSLock);
@@ -1511,6 +1518,7 @@ void CRcvQueue::stopWorker()
         return; // do nothing else, this would cause a hangup or crash.
     }
 
+    HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
     pthread_join(m_WorkerThread, NULL);
 }

@@ -241,6 +241,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
+   HLOGC(mglog.Debug, log << "GarbageCollector: thread EXIT");
    pthread_cond_signal(&m_GCStopCond);
    pthread_join(m_GCThread, NULL);
    
@@ -541,15 +542,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     catch (...)
     {
-        // The mapped socket should be now unmapped to preserve the situation that
-        // was in the original UDT code.
-        // In SRT additionally the acceptAndRespond() function (it was called probably
-        // connect() in UDT code) may fail, in which case this socket should not be
-        // further processed and should be removed.
-        {
-            CGuard cg(m_GlobControlLock, "GlobControl");
-            m_Sockets.erase(ns->m_SocketID);
-        }
         error = 1;
         goto ERR_ROLLBACK;
     }
@@ -680,7 +672,19 @@ ERR_ROLLBACK:
         LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
 
+        SRTSOCKET id = ns->m_SocketID;
         ns->makeClosed();
+
+        // The mapped socket should be now unmapped to preserve the situation that
+        // was in the original UDT code.
+        // In SRT additionally the acceptAndRespond() function (it was called probably
+        // connect() in UDT code) may fail, in which case this socket should not be
+        // further processed and should be removed.
+        {
+            CGuard cg(m_GlobControlLock, "GlobControl");
+            m_Sockets.erase(ns->m_SocketID);
+            m_ClosedSockets[id] = ns;
+        }
         return -1;
     }
 
