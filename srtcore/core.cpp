@@ -10556,7 +10556,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // If the socket is already broken, move it to broken.
             if (int(st) >= int(SRTS_BROKEN))
             {
-                LOGC(dlog.Debug, log << "CUDTGroup::send.$" << id() << ": @" << d->id << " became "
+                HLOGC(dlog.Debug, log << "CUDTGroup::send.$" << id() << ": @" << d->id << " became "
                         << SockStatusStr(st) << ", WILL BE CLOSED.");
                 wipeme.push_back(d);
                 continue;
@@ -10588,7 +10588,9 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         }
 
         HLOGC(dlog.Debug, log << "CUDTGroup::send: socket @" << d->id << " not ready, state: "
-                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") - NOT sending");
+                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
+
+        pending.push_back(d);
     }
 
     vector<Sendstate> sendstates;
