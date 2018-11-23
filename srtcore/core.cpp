@@ -10743,7 +10743,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         {
             {
                 InvertedGuard ug(&m_GroupLock, "Group");
-                m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0); // Just check if anything happened
+                m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
             }
 
             HLOGC(dlog.Debug, log << "CUDTGroup::send: RDY: "
@@ -10915,6 +10915,8 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // NOTE EXCEPTIONS:
             // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
             // - XTIMEOUT: will be propagated as this what should be reported to API
+            // This is the only reason why here the errors are allowed to be handled
+            // by exceptions.
         }
 
         if (blst == -1)
@@ -12555,7 +12557,8 @@ RETRY_READING:
 
     // Poll on this descriptor until reading is available, indefinitely.
     SrtPollState sready;
-    m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, -1); // -1: BLOCKING. XXX MIND timeout/nonblocking.
+    m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, -1, // -1: BLOCKING. XXX MIND timeout/nonblocking.
+            false /*report by retval*/);
 
     HLOGC(dlog.Debug, log << "group/recv: RDY: "
             << DisplayEpollResults(sready.rd(), "[R]")

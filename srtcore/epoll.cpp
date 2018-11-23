@@ -647,7 +647,7 @@ const CEPollDesc& CEPoll::access(int eid)
     return p->second;
 }
 
-int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut)
+int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
         CGuard lg(m_EPollLock, "EPoll");
@@ -655,7 +655,9 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut)
         {
             // no socket is being monitored, this may be a deadlock
             LOGC(mglog.Error, log << "EID:" << d.m_iID << " no sockets to check, this would deadlock");
-            throw CUDTException(MJ_NOTSUP, MN_EEMPTY, 0);
+            if (report_by_exception)
+                throw CUDTException(MJ_NOTSUP, MN_EEMPTY, 0);
+            return -1;
         }
     }
 
@@ -676,8 +678,11 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut)
             // with unstable reading. 
             CGuard lg(m_EPollLock, "EPoll");
             total = d.rd().size() + d.wr().size() + d.ex().size();
-            if (total > 0)
+            if (total > 0 || msTimeOut == 0)
             {
+                // If msTimeOut == 0, it means that we need the information
+                // immediately, we don't want to wait. Therefore in this case
+                // report also when none is ready.
                 st = d;
 
                 HLOGC(dlog.Debug, log << "EID " << d.m_iID << "[R]("
@@ -693,7 +698,9 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut)
         if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
         {
             HLOGC(mglog.Debug, log << "EID:" << d.m_iID << ": TIMEOUT.");
-            throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+            if (report_by_exception)
+                throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+            return 0; // meaning "none is ready"
         }
 
 #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)

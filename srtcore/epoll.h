@@ -173,7 +173,7 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
-   int swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut);
+   int swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception = true);
 
    // Could be a template directly, but it's now hidden in the imp file.
    void clear_usocks(CEPollDesc& d, int direction);
