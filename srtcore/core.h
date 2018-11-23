@@ -515,8 +515,10 @@ private:
     int64_t m_iTsbPdDelay_us;
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
 #ifdef SRT_ENABLE_APP_READER
-    int m_epoll;
-    class CEPollDesc* m_epolld;
+    int m_RcvEID;
+    class CEPollDesc* m_RcvEpolld;
+    int m_SndEID;
+    class CEPollDesc* m_SndEpolld;
 
     // Start times for TsbPd. These times shall be synchronized
     // between all sockets in the group. The first connected one

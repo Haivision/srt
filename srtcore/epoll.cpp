@@ -172,6 +172,29 @@ inline void prv_update_usock(CEPollDesc& d, SRTSOCKET u, int flags)
         eventsinks.erase(u);
     }
 }
+
+template<int event_type>
+inline void prv_clear_usocks(CEPollDesc& d)
+{
+    set<SRTSOCKET>& subscribers = d.*(CEPollET<event_type>::subscribers());
+    set<SRTSOCKET>& eventsinks = d.*(CEPollET<event_type>::eventsinks());
+
+    subscribers.clear();
+    eventsinks.clear();
+}
+
+}
+
+void CEPoll::clear_usocks(CEPollDesc& d, int direction)
+{
+    switch (direction)
+    {
+#define CASEFOR(dir) case dir: prv_clear_usocks< dir > (d)
+        CASEFOR(SRT_EPOLL_IN);
+        CASEFOR(SRT_EPOLL_OUT);
+        CASEFOR(SRT_EPOLL_ERR);
+#undef CASEFOR
+    }
 }
 
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
@@ -628,7 +651,7 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut)
 {
     {
         CGuard lg(m_EPollLock, "EPoll");
-        if (d.m_sUDTSocksIn.empty() && d.m_sUDTSocksOut.empty() && msTimeOut < 0)
+        if (d.empty() && msTimeOut < 0)
         {
             // no socket is being monitored, this may be a deadlock
             LOGC(mglog.Error, log << "EID:" << d.m_iID << " no sockets to check, this would deadlock");

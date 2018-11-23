@@ -1179,7 +1179,18 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
                 spawned[sid] = ns;
                 if (block_new_opened)
                 {
+                    HLOGC(mglog.Debug, log << "groupConnect: WILL BLOCK on @" << sid << " until connected");
                     srt_epoll_add_usock(eid, sid, &modes);
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
+                    // If this socket is not to block the current connect process,
+                    // it may still be needed for the further check if the redundant
+                    // connection succeeded or failed and whether the new socket is
+                    // ready to use or needs to be closed.
+                    srt_epoll_add_usock(g.m_SndEID, sid, &modes);
+                    srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
                 }
 
                 sid_rloc = sid;

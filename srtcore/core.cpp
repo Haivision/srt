@@ -2939,6 +2939,8 @@ void CUDTGroup::debugGroup()
 }
 #endif
 
+// NOTE: This function is called only in one place and it's done
+// exclusively on the listener side (HSD_RESPONDER, HSv5+).
 SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 {
     CUDTSocket* s = m_parent;
@@ -10142,7 +10144,8 @@ CUDTGroup::CUDTGroup():
     CGuard::createMutex(m_RcvDataLock);
     CGuard::createCond(m_RcvDataCond);
 #ifdef SRT_ENABLE_APP_READER
-    m_epoll = m_pGlobal->m_EPoll.create(&m_epolld);
+    m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
+    m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
 #else
     CGuard::createCond(m_RcvPacketAhead);
 #endif
@@ -10151,13 +10154,28 @@ CUDTGroup::CUDTGroup():
 CUDTGroup::~CUDTGroup()
 {
 #ifdef SRT_ENABLE_APP_READER
-    srt_epoll_release(m_epoll);
+    srt_epoll_release(m_RcvEID);
+    srt_epoll_release(m_SndEID);
 #else
     CGuard::releaseCond(m_RcvPacketAhead);
 #endif
     CGuard::releaseMutex(m_GroupLock);
     CGuard::releaseMutex(m_RcvDataLock);
     CGuard::releaseCond(m_RcvDataCond);
+}
+
+// Debug use only.
+static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
+{
+    typedef set<SRTSOCKET> fset_t;
+    ostringstream os;
+    os << prefix << " ";
+    for (fset_t::const_iterator i = sockset.begin(); i != sockset.end(); ++i)
+    {
+        os << "@" << *i << " ";
+    }
+
+    return os.str();
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -10477,6 +10495,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // iterator has been removed, except for that iterator itself.
     vector<gli_t> wipeme;
     vector<gli_t> idlers;
+    vector<gli_t> pending;
     SRT_MSGCTRL& mc = *r_mc;
 
     int32_t curseq = -1;
@@ -10543,6 +10562,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             if (st != SRTS_CONNECTED)
             {
                 HLOGC(dlog.Debug, log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
+                pending.push_back(d);
                 continue;
             }
 
@@ -10693,6 +10713,55 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         m_iLastSchedSeqNo = curseq;
     }
 
+    if (!pending.empty())
+    {
+        HLOGC(dlog.Debug, log << "CUDTGroup::send: found pending sockets, polling them.");
+
+        // These sockets if they are in pending state, they should be added to m_SndEID
+        // at the connecting stage.
+        SrtPollState sready;
+
+        if (m_SndEpolld->empty())
+        {
+            // Sanity check - weird pending reported.
+            LOGC(dlog.Error, log << "CUDTGroup::send: IPE: reported pending sockets, but EID is empty - wiping pending!");
+            copy(pending.begin(), pending.end(), back_inserter(wipeme));
+        }
+        else
+        {
+            {
+                InvertedGuard ug(&m_GroupLock, "Group");
+                m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0); // Just check if anything happened
+            }
+
+            HLOGC(dlog.Debug, log << "CUDTGroup::send: RDY: "
+                    << DisplayEpollResults(sready.rd(), "[R]")
+                    << DisplayEpollResults(sready.wr(), "[W]")
+                    << DisplayEpollResults(sready.ex(), "[E]"));
+
+            // sockets in EX: should be moved to wipeme.
+            for (vector<gli_t>::iterator i = pending.begin(); i != pending.end(); ++i)
+            {
+                gli_t d = *i;
+                if (sready.ex().count(d->id))
+                {
+                    HLOGC(dlog.Debug, log << "CUDTGroup::send: Socket @" << d->id << " reported FAILURE - moved to wiped.");
+                    // Failed socket. Move d to wipeme. Remove from eid.
+                    wipeme.push_back(d);
+                    m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
+                }
+            }
+
+            // After that, all sockets that have been reported
+            // as ready to write should be removed from EID. This
+            // will also remove those sockets that have been added
+            // as redundant links at the connecting stage and became
+            // writable (connected) before this function had a chance
+            // to check them.
+            m_pGlobal->m_EPoll.clear_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+        }
+    }
+
     // Review the wipeme sockets.
     // The reason why 'wipeme' is kept separately to 'broken_sockets' is that
     // it might theoretically happen that ps becomes NULL while the item still exists.
@@ -10813,29 +10882,27 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         // None was successful, but some were blocked. It means that we
         // haven't sent the payload over any link so far, so we still have
         // a chance to retry.
-        int eid = srt_epoll_create();
-        int modes = SRT_EPOLL_OUT;
+        int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
         for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
         {
-            srt_epoll_add_usock(eid, (*b)->id, &modes);
+            HLOGC(dlog.Debug, log << "Will block on blocked socket @" << (*b)->id << " as only blocked socket remained");
+            srt_epoll_add_usock(m_SndEID, (*b)->id, &modes);
         }
 
-        vector<SRTSOCKET> outd(blocked.size());
         int len = blocked.size();
 
         int blst = 0;
+        SrtPollState sready;
 
         {
             // Lift the group lock for a while, to avoid possible deadlocks.
             InvertedGuard ug(&m_GroupLock, "Group");
+            HLOGC(dlog.Debug, log << "CUDTGroup::send: blocking on any of blocked sockets to allow sending");
+            blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, -1); // -1: BLOCKING. XXX MIND timeout/nonblocking.
 
-            blst = srt_epoll_wait(eid,
-                    NULL, NULL,  // IN/ACCEPT
-                    &outd[0], &len, // OUT/CONNECT
-                    -1, // indefinitely (XXX REGARD CONNECTION TIMEOUT!)
-                    NULL, NULL,
-                    NULL, NULL
-                    );
+            // NOTE EXCEPTIONS:
+            // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
+            // - XTIMEOUT: will be propagated as this what should be reported to API
         }
 
         if (blst == -1)
@@ -10845,13 +10912,16 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         }
         else
         {
-            outd.resize(len);
             sendable.clear();
             sendstates.clear();
             // Extract gli's from the whole group that have id found in the array.
             for (gli_t dd = m_Group.begin(); dd != m_Group.end(); ++dd)
             {
-                if (std::find(outd.begin(), outd.end(), dd->id) != outd.end())
+                if (sready.ex().count(dd->id))
+                {
+                    dd->sndstate = GST_BROKEN;
+                }
+                else if (sready.wr().count(dd->id))
                     sendable.push_back(dd);
             }
 
@@ -10903,8 +10973,6 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
                 is->d->sndstate = GST_BROKEN;
             }
         }
-
-        srt_epoll_release(eid);
     }
 
     if (none_succeeded)
@@ -12228,19 +12296,6 @@ void CUDTGroup::fillGroupData(
     out.grpdata = st == 0 ? out_grpdata : NULL;
 }
 
-static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
-{
-    typedef set<SRTSOCKET> fset_t;
-    ostringstream os;
-    os << prefix << " ";
-    for (fset_t::const_iterator i = sockset.begin(); i != sockset.end(); ++i)
-    {
-        os << "@" << *i << " ";
-    }
-
-    return os.str();
-}
-
 struct FLookupSocket
 {
     CUDTUnited* glob;
@@ -12356,7 +12411,7 @@ RETRY_READING:
 
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream ds;
-    ds << "E(" << m_epoll << ") ";
+    ds << "E(" << m_RcvEID << ") ";
 #define HCLOG(expr) expr
 #else
 #define HCLOG(x) if (false) {}
@@ -12380,7 +12435,9 @@ RETRY_READING:
             if (gi->laststatus == SRTS_CONNECTING)
             {
                 HCLOG(ds << "@" << gi->id << "<pending> ");
+                /*
                 connect_pending.push_back(gi->id);
+                */
 
                 continue; // don't read over a failed or pending socket
             }
@@ -12433,17 +12490,26 @@ RETRY_READING:
 
     }
 
-    int connect_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
 
+    /* Done at the connecting stage so that it won't be missed.
+
+    int connect_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     for (vector<SRTSOCKET>::iterator i = connect_pending.begin(); i != connect_pending.end(); ++i)
     {
-        srt_epoll_add_usock(m_epoll, *i, &connect_modes);
+        srt_epoll_add_usock(m_RcvEID, *i, &connect_modes);
     }
 
+    AND this below additionally for sockets that were so far pending connection,
+    will be now "upgraded" to readable sockets. The epoll adding function for a
+    socket that already is in the eid container will only change the poll flags,
+    but will not re-add it, that is, event reports that are both in old and new
+    flags will survive the operation.
+
+    */
     for (vector<SRTSOCKET>::iterator i = read_ready.begin(); i != read_ready.end(); ++i)
     {
-        srt_epoll_add_usock(m_epoll, *i, &read_modes);
+        srt_epoll_add_usock(m_RcvEID, *i, &read_modes);
     }
 
     HLOGC(dlog.Debug, log << "group/recv: " << ds.str() << " --> EPOLL/SWAIT");
@@ -12477,7 +12543,7 @@ RETRY_READING:
 
     // Poll on this descriptor until reading is available, indefinitely.
     SrtPollState sready;
-    m_pGlobal->m_EPoll.swait(*m_epolld, sready, -1); // -1: BLOCKING. MIND timeout/nonblocking.
+    m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, -1); // -1: BLOCKING. XXX MIND timeout/nonblocking.
 
     HLOGC(dlog.Debug, log << "group/recv: RDY: "
             << DisplayEpollResults(sready.rd(), "[R]")
