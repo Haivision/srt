@@ -1104,6 +1104,24 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         ns->m_pUDT->m_bSynRecving = false;
         ns->m_pUDT->m_bSynSending = false;
 
+        HLOGC(mglog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
+        // If this socket is not to block the current connect process,
+        // it may still be needed for the further check if the redundant
+        // connection succeeded or failed and whether the new socket is
+        // ready to use or needs to be closed.
+        srt_epoll_add_usock(g.m_SndEID, sid, &modes);
+        srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
+
+        // Adding a socket on which we need to block to BOTH these tracking EIDs
+        // and the blocker EID. We'll simply remove from them later all sockets that
+        // got connected state or were broken.
+
+        if (block_new_opened)
+        {
+            HLOGC(mglog.Debug, log << "groupConnect: WILL BLOCK on @" << sid << " until connected");
+            srt_epoll_add_usock(eid, sid, &modes);
+        }
+
         // And connect
         try
         {
@@ -1175,30 +1193,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
             {
                 f->sndstate = CUDTGroup::GST_BROKEN;
                 f->rcvstate = CUDTGroup::GST_BROKEN;
+                srt_epoll_remove_usock(g.m_SndEID, sid);
+                srt_epoll_remove_usock(g.m_RcvEID, sid);
             }
             else
             {
                 f->sndstate = CUDTGroup::GST_PENDING;
                 f->rcvstate = CUDTGroup::GST_PENDING;
                 spawned[sid] = ns;
-
-                HLOGC(mglog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
-                // If this socket is not to block the current connect process,
-                // it may still be needed for the further check if the redundant
-                // connection succeeded or failed and whether the new socket is
-                // ready to use or needs to be closed.
-                srt_epoll_add_usock(g.m_SndEID, sid, &modes);
-                srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
-
-                // Adding a socket on which we need to block to BOTH these tracking EIDs
-                // and the blocker EID. We'll simply remove from them later all sockets that
-                // got connected state or were broken.
-
-                if (block_new_opened)
-                {
-                    HLOGC(mglog.Debug, log << "groupConnect: WILL BLOCK on @" << sid << " until connected");
-                    srt_epoll_add_usock(eid, sid, &modes);
-                }
 
                 sid_rloc = sid;
                 erc_rloc = 0;
