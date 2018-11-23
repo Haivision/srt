@@ -470,7 +470,10 @@ CSndQueue::~CSndQueue()
    pthread_cond_signal(&m_WindowCond);
    pthread_mutex_unlock(&m_WindowLock);
    if (!pthread_equal(m_WorkerThread, pthread_t()))
+   {
+       HLOGC(mglog.Debug, log << "SndQueue: EXIT");
        pthread_join(m_WorkerThread, NULL);
+   }
    pthread_cond_destroy(&m_WindowCond);
    pthread_mutex_destroy(&m_WindowLock);
 
@@ -937,7 +940,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             //
             // Maybe the time should be simply checked once and the whole loop not
             // done when "it's not the time"?
-            if (CTimer::getTime() >= i->m_ullTTL)
+            uint64_t now = CTimer::getTime();
+            if (now >= i->m_ullTTL)
             {
                 HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
                         << " removed - EXPIRED ("
@@ -959,7 +963,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             }
             else
             {
-                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active...");
+                HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
+                        << std::fixed << ((i->m_ullTTL - now)/1000000.0) << "s of TTL)...");
             }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
@@ -1038,7 +1043,11 @@ CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
 	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+
+        HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
     pthread_mutex_destroy(&m_LSLock);
@@ -1511,6 +1520,7 @@ void CRcvQueue::stopWorker()
         return; // do nothing else, this would cause a hangup or crash.
     }
 
+    HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
     pthread_join(m_WorkerThread, NULL);
 }
