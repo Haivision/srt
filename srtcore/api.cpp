@@ -1181,20 +1181,23 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
                 f->sndstate = CUDTGroup::GST_PENDING;
                 f->rcvstate = CUDTGroup::GST_PENDING;
                 spawned[sid] = ns;
+
+                HLOGC(mglog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
+                // If this socket is not to block the current connect process,
+                // it may still be needed for the further check if the redundant
+                // connection succeeded or failed and whether the new socket is
+                // ready to use or needs to be closed.
+                srt_epoll_add_usock(g.m_SndEID, sid, &modes);
+                srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
+
+                // Adding a socket on which we need to block to BOTH these tracking EIDs
+                // and the blocker EID. We'll simply remove from them later all sockets that
+                // got connected state or were broken.
+
                 if (block_new_opened)
                 {
                     HLOGC(mglog.Debug, log << "groupConnect: WILL BLOCK on @" << sid << " until connected");
                     srt_epoll_add_usock(eid, sid, &modes);
-                }
-                else
-                {
-                    HLOGC(mglog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
-                    // If this socket is not to block the current connect process,
-                    // it may still be needed for the further check if the redundant
-                    // connection succeeded or failed and whether the new socket is
-                    // ready to use or needs to be closed.
-                    srt_epoll_add_usock(g.m_SndEID, sid, &modes);
-                    srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
                 }
 
                 sid_rloc = sid;
@@ -1209,6 +1212,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         HLOGC(mglog.Debug, log << "groupConnect: none succeeded as background-spawn, exit with error");
         block_new_opened = false;
     }
+
+    vector<SRTSOCKET> broken;
 
     while (block_new_opened)
     {
@@ -1256,25 +1261,35 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
             }
             if (st >= SRTS_BROKEN)
             {
-                HLOGC(mglog.Debug, log << "connectLinks: Socket @" << sid << " got BROKEN during background connect, remove & TRY AGAIN");
+                HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got BROKEN during background connect, remove & TRY AGAIN");
                 // Remove from spawned and try again
                 spawned.erase(sid);
+                broken.push_back(sid);
                 srt_epoll_remove_usock(eid, sid);
+                srt_epoll_remove_usock(g.m_SndEID, sid);
+                srt_epoll_remove_usock(g.m_RcvEID, sid);
 
                 continue;
             }
 
             if (st == SRTS_CONNECTED)
             {
-                HLOGC(mglog.Debug, log << "connectLinks: Socket @" << sid << " got CONNECTED as first in the group - reporting");
+                HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got CONNECTED as first in the group - reporting");
                 retval = sid;
                 g.m_bConnected = true;
                 block_new_opened = false; // Interrupt also rolling epoll (outer loop)
+
+                // Remove this socket from SND EID because it doesn't need to
+                // be connection-tracked anymore. Don't remove from the RCV EID
+                // however because RCV procedure relies on epoll also for reading
+                // and when found this socket connected it will "upgrade" it to
+                // read-ready tracking only.
+                srt_epoll_remove_usock(g.m_SndEID, sid);
                 break;
             }
 
             // Spurious?
-            HLOGC(mglog.Debug, log << "connectLinks: Socket @" << sid << " got spurious wakeup in "
+            HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got spurious wakeup in "
                     << SockStatusStr(st) << " TRY AGAIN");
         }
     }
@@ -1285,13 +1300,20 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         srt_epoll_release(eid);
     }
 
+    for (vector<SRTSOCKET>::iterator b = broken.begin(); b != broken.end(); ++b)
+    {
+        CUDTSocket* s = locateSocket(*b, ERH_RETURN);
+        if (!s)
+            continue;
+
+        // This will also automatically remove it from the group and all eids
+        close(s);
+    }
+
     // XXX This is wrong code probably, get that better.
     if (retval == -1)
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
 
-    // Leave broken for later cleanup.
-    // Actually this shouldn't ever happen because all errors
-    // are handled above.
     return retval;
 }
 
