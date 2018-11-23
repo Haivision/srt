@@ -174,22 +174,26 @@ inline void prv_update_usock(CEPollDesc& d, SRTSOCKET u, int flags)
 }
 
 template<int event_type>
-inline void prv_clear_usocks(CEPollDesc& d)
+inline void prv_clear_ready_usocks(CEPollDesc& d)
 {
     set<SRTSOCKET>& subscribers = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& eventsinks = d.*(CEPollET<event_type>::eventsinks());
 
-    subscribers.clear();
+    // Remove from subscribers all sockets that were found in eventsinks
+    set<SRTSOCKET> without;
+    std::set_difference(subscribers.begin(), subscribers.end(),
+            eventsinks.begin(), eventsinks.end(), std::inserter(without, without.begin()));
+
     eventsinks.clear();
 }
 
 }
 
-void CEPoll::clear_usocks(CEPollDesc& d, int direction)
+void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
     switch (direction)
     {
-#define CASEFOR(dir) case dir: prv_clear_usocks< dir > (d)
+#define CASEFOR(dir) case dir: prv_clear_ready_usocks< dir > (d)
         CASEFOR(SRT_EPOLL_IN);
         CASEFOR(SRT_EPOLL_OUT);
         CASEFOR(SRT_EPOLL_ERR);

@@ -176,7 +176,7 @@ public: // for CUDTUnited API
    int swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception = true);
 
    // Could be a template directly, but it's now hidden in the imp file.
-   void clear_usocks(CEPollDesc& d, int direction);
+   void clear_ready_usocks(CEPollDesc& d, int direction);
 
       /// close and release an EPoll.
       /// @param [in] eid EPoll ID.

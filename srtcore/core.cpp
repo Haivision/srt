@@ -10770,7 +10770,7 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // as redundant links at the connecting stage and became
             // writable (connected) before this function had a chance
             // to check them.
-            m_pGlobal->m_EPoll.clear_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
         }
     }
 
