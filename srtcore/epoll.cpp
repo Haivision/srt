@@ -184,13 +184,19 @@ inline void prv_clear_ready_usocks(CEPollDesc& d)
     std::set_difference(subscribers.begin(), subscribers.end(),
             eventsinks.begin(), eventsinks.end(), std::inserter(without, without.begin()));
 
+    HLOGC(mglog.Debug, log << "EID " << d.m_iID << ": removing " << CEPollET<event_type>::name() << "-ready socekts: "
+            << Printable(eventsinks));
+
     eventsinks.clear();
+    swap(subscribers, without);
 }
 
 }
 
 void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
+   CGuard pg(m_EPollLock, "EPoll");
+
     switch (direction)
     {
 #define CASEFOR(dir) case dir: prv_clear_ready_usocks< dir > (d)
@@ -199,6 +205,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         CASEFOR(SRT_EPOLL_ERR);
 #undef CASEFOR
     }
+
 }
 
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
@@ -689,10 +696,13 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool
                 // report also when none is ready.
                 st = d;
 
-                HLOGC(dlog.Debug, log << "EID " << d.m_iID << "[R]("
-                        << Printable(st.rd()) << ") [W]("
-                        << Printable(st.wr()) << ") [E]("
-                        << Printable(st.ex()) << ")");
+                HLOGC(dlog.Debug, log << "EID " << d.m_iID << " rdy=" << total << ": [R]"
+                        << Printable(st.rd()) << " [W]"
+                        << Printable(st.wr()) << " [E]"
+                        << Printable(st.ex()) << " TRACKED: [R]"
+                        << Printable(d.m_sUDTSocksIn) << " [W]"
+                        << Printable(d.m_sUDTSocksOut) << " [E]"
+                        << Printable(d.m_sUDTSocksEx));
                 return total;
             }
             // Don't report any updates because this check happens
@@ -739,13 +749,14 @@ int CEPoll::release(const int eid)
 namespace
 {
 template <int event_type> inline
-void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int flags, bool enable, const char* px SRT_ATR_UNUSED)
+void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int flags, bool enable)
 {
     if (!IsSet(flags, event_type))
         return;
 
     set<SRTSOCKET>& watch = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& result = d.*(CEPollET<event_type>::eventsinks());
+    const char* px = CEPollET<event_type>::name();
 
     if (enable && watch.count(uid))
     {
@@ -762,7 +773,9 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
     if (false)
     {
 Updated: ;
-        HLOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid << " [" << (enable?"+":"-") << px << "]");
+        HLOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid
+                << " [" << (enable?"+":"-") << px << "] TRACKED:"
+                << Printable(watch));
     }
 }
 }  // namespace
@@ -784,9 +797,9 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
       }
       else
       {
-          update_epoll_sets<SRT_EPOLL_IN >(*i, uid, p->second, events, enable, "RD");
-          update_epoll_sets<SRT_EPOLL_OUT>(*i, uid, p->second, events, enable, "WR");
-          update_epoll_sets<SRT_EPOLL_ERR>(*i, uid, p->second, events, enable, "EX");
+          update_epoll_sets<SRT_EPOLL_IN >(*i, uid, p->second, events, enable);
+          update_epoll_sets<SRT_EPOLL_OUT>(*i, uid, p->second, events, enable);
+          update_epoll_sets<SRT_EPOLL_ERR>(*i, uid, p->second, events, enable);
       }
    }
 

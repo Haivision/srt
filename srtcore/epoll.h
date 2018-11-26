@@ -78,18 +78,19 @@ struct CEPollDesc: public SrtPollState
 template <int event_type>
 class CEPollET;
 
-#define CEPOLL_BIND(event_type, subscriber, eventsink) \
+#define CEPOLL_BIND(event_type, subscriber, eventsink, descname) \
 template<> \
 class CEPollET<event_type> \
 { \
 public: \
     static std::set<SRTSOCKET> CEPollDesc::*subscribers() { return &CEPollDesc:: subscriber; } \
     static std::set<SRTSOCKET> CEPollDesc::*eventsinks() { return &CEPollDesc:: eventsink; } \
+    static const char* name() { return descname; } \
 }
 
-CEPOLL_BIND(SRT_EPOLL_IN, m_sUDTSocksIn, m_sUDTReads);
-CEPOLL_BIND(SRT_EPOLL_OUT, m_sUDTSocksOut, m_sUDTWrites);
-CEPOLL_BIND(SRT_EPOLL_ERR, m_sUDTSocksEx, m_sUDTExcepts);
+CEPOLL_BIND(SRT_EPOLL_IN, m_sUDTSocksIn, m_sUDTReads, "IN");
+CEPOLL_BIND(SRT_EPOLL_OUT, m_sUDTSocksOut, m_sUDTWrites, "OUT");
+CEPOLL_BIND(SRT_EPOLL_ERR, m_sUDTSocksEx, m_sUDTExcepts, "ERR");
 
 #undef CEPOLL_BIND
 
