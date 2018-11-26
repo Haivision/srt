@@ -174,8 +174,11 @@ inline void prv_update_usock(CEPollDesc& d, SRTSOCKET u, int flags)
 }
 
 template<int event_type>
-inline void prv_clear_ready_usocks(CEPollDesc& d)
+inline void prv_clear_ready_usocks(CEPollDesc& d, int event_type_match)
 {
+    if (event_type_match != event_type)
+        return;
+
     set<SRTSOCKET>& subscribers = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& eventsinks = d.*(CEPollET<event_type>::eventsinks());
 
@@ -197,14 +200,20 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
    CGuard pg(m_EPollLock, "EPoll");
 
-    switch (direction)
-    {
-#define CASEFOR(dir) case dir: prv_clear_ready_usocks< dir > (d)
-        CASEFOR(SRT_EPOLL_IN);
-        CASEFOR(SRT_EPOLL_OUT);
-        CASEFOR(SRT_EPOLL_ERR);
+#define CASEFOR(dir) prv_clear_ready_usocks<dir>(d, direction);
+
+   // The call encloses both checking if direction == SRT_EPOLL_*
+   // and the actual activity to perform. The function is inline so
+   // this series should expand into a condition check and execution
+   // only when the direction matches given symbol.
+   //
+   // This can be also further optimized by making an array where only
+   // index of 1, 4 and 8 are filled, others are zero.
+   CASEFOR(SRT_EPOLL_IN);
+   CASEFOR(SRT_EPOLL_OUT);
+   CASEFOR(SRT_EPOLL_ERR);
+
 #undef CASEFOR
-    }
 
 }
 
@@ -756,7 +765,9 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
 
     set<SRTSOCKET>& watch = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& result = d.*(CEPollET<event_type>::eventsinks());
+#if ENABLE_HEAVY_LOGGING
     const char* px = CEPollET<event_type>::name();
+#endif
 
     if (enable && watch.count(uid))
     {
@@ -770,13 +781,17 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
         goto Updated;
     }
 
+#if ENABLE_HEAVY_LOGGING
     if (false)
     {
 Updated: ;
-        HLOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid
+        LOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid
                 << " [" << (enable?"+":"-") << px << "] TRACKED:"
                 << Printable(watch));
     }
+#else
+Updated: ;
+#endif
 }
 }  // namespace
 
