@@ -200,7 +200,6 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
    CGuard pg(m_EPollLock, "EPoll");
 
-#define CASEFOR(dir) prv_clear_ready_usocks<dir>(d, direction);
 
    // The call encloses both checking if direction == SRT_EPOLL_*
    // and the actual activity to perform. The function is inline so
@@ -209,12 +208,10 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
    //
    // This can be also further optimized by making an array where only
    // index of 1, 4 and 8 are filled, others are zero.
-   CASEFOR(SRT_EPOLL_IN);
-   CASEFOR(SRT_EPOLL_OUT);
-   CASEFOR(SRT_EPOLL_ERR);
 
-#undef CASEFOR
-
+   prv_clear_ready_usocks<SRT_EPOLL_IN>(d, direction);
+   prv_clear_ready_usocks<SRT_EPOLL_OUT>(d, direction);
+   prv_clear_ready_usocks<SRT_EPOLL_ERR>(d, direction);
 }
 
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
