@@ -439,15 +439,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
    catch (...)
    {
-       // The mapped socket should be now unmapped to preserve the situation that
-       // was in the original UDT code.
-       // In SRT additionally the acceptAndRespond() function (it was called probably
-       // connect() in UDT code) may fail, in which case this socket should not be
-       // further processed and should be removed.
-       {
-           CGuard cg(m_ControlLock);
-           m_Sockets.erase(ns->m_SocketID);
-       }
        error = 1;
        goto ERR_ROLLBACK;
    }
@@ -497,9 +488,20 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
+      SRTSOCKET id = ns->m_SocketID;
       ns->m_pUDT->close();
       ns->m_Status = SRTS_CLOSED;
       ns->m_TimeStamp = CTimer::getTime();
+      // The mapped socket should be now unmapped to preserve the situation that
+      // was in the original UDT code.
+      // In SRT additionally the acceptAndRespond() function (it was called probably
+      // connect() in UDT code) may fail, in which case this socket should not be
+      // further processed and should be removed.
+      {
+          CGuard cg(m_ControlLock);
+          m_Sockets.erase(id);
+          m_ClosedSockets[id] = ns;
+      }
 
       return -1;
    }
