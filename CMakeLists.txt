@@ -663,14 +663,6 @@ macro(srt_make_application name)
 	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-	if (LINUX)
-		# This is only needed on Linux, on Windows (including Cygwin) the library file will
-		# be placed into the binrary directory anyway.
-		# XXX not sure about Mac.
-		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
-		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
-	endif()
-
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
