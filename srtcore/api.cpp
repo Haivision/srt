@@ -128,6 +128,30 @@ void CUDTSocket::makeClosed()
     m_TimeStamp = CTimer::getTime();
 }
 
+bool CUDTSocket::readReady()
+{
+    if (m_pUDT->m_bConnected && m_pUDT->m_pRcvBuffer->isRcvDataReady())
+        return true;
+    if (m_pUDT->m_bListening)
+    {
+        return m_pQueuedSockets->size() > 0;
+    }
+
+    return broken();
+}
+
+bool CUDTSocket::writeReady()
+{
+    return (m_pUDT->m_bConnected
+                && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_iSndBufSize))
+        || broken();
+}
+
+bool CUDTSocket::broken()
+{
+    return m_pUDT->m_bBroken || !m_pUDT->m_bConnected;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 CUDTUnited::CUDTUnited():
@@ -1686,13 +1710,7 @@ int CUDTUnited::select(
       {
          s = *j1;
 
-         if ((s->m_pUDT->m_bConnected
-               && s->m_pUDT->m_pRcvBuffer->isRcvDataReady()
-            )
-            || (!s->m_pUDT->m_bListening
-               && (s->m_pUDT->m_bBroken || !s->m_pUDT->m_bConnected))
-            || (s->m_pUDT->m_bListening && (s->m_pQueuedSockets->size() > 0))
-            || (s->m_Status == SRTS_CLOSED))
+         if (s->readReady() || s->m_Status == SRTS_CLOSED)
          {
             rs.insert(s->m_SocketID);
             ++ count;
@@ -1704,12 +1722,7 @@ int CUDTUnited::select(
       {
          s = *j2;
 
-         if ((s->m_pUDT->m_bConnected
-               && (s->m_pUDT->m_pSndBuffer->getCurrBufSize()
-                  < s->m_pUDT->m_iSndBufSize))
-            || s->m_pUDT->m_bBroken
-            || !s->m_pUDT->m_bConnected
-            || (s->m_Status == SRTS_CLOSED))
+         if (s->writeReady() || s->m_Status == SRTS_CLOSED)
          {
             ws.insert(s->m_SocketID);
             ++ count;

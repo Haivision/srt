@@ -370,6 +370,8 @@ static bool bool_int_value(const void* optval, int optlen)
     return false;
 }
 
+
+
 extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
 	SRTO_SNDSYN,
 	SRTO_RCVSYN,
@@ -2967,6 +2969,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     {
         gp = &newGroup(gtp);
         gp->peerid(peergroup);
+        gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
         // HSD_RESPONDER), so it was a response for a groupwise connection.
@@ -4909,6 +4912,13 @@ void* CUDT::tsbpd(void* param)
          * Set EPOLL_IN to wakeup any thread waiting on epoll
          */
          self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
+         if (self->m_parent->m_IncludedGroup)
+         {
+             // The current "APP reader" needs to simply decide as to whether
+             // the next CUDTGroup::recv() call should return with no blocking or not.
+             // When the group is read-ready, it should update its pollers as it sees fit.
+             self->m_parent->m_IncludedGroup->updateReadState(self->m_SocketID, current_pkt_seq);
+         }
          CTimer::triggerEvent();
          tsbpdtime = 0;
       }
@@ -7046,7 +7056,7 @@ void CUDT::releaseSynch()
     CGuard::leaveCS(m_RecvLock, "recv");
 }
 
-void CUDT::ackDataUpTo(int32_t ack)
+int32_t CUDT::ackDataUpTo(int32_t ack)
 {
     int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
@@ -7061,7 +7071,7 @@ void CUDT::ackDataUpTo(int32_t ack)
     // were signed off for extraction.
     if (acksize > 0)
     {
-        m_pRcvBuffer->ackData(acksize);
+        int distance = m_pRcvBuffer->ackData(acksize);
 #ifndef SRT_ENABLE_APP_READER
         if (m_parent->m_IncludedGroup)
             m_parent->m_IncludedGroup->readyPackets(this, ack);
@@ -7070,7 +7080,15 @@ void CUDT::ackDataUpTo(int32_t ack)
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
         CTimer::triggerEvent();
+
+        return CSeqNo::decseq(ack, distance);
     }
+
+    // If nothing was confirmed, then use the current buffer span
+    int distance = m_pRcvBuffer->getRcvDataSize();
+    if (distance > 0)
+        return CSeqNo::decseq(ack, distance);
+    return ack;
 }
 
 #if ENABLE_HEAVY_LOGGING
@@ -7184,7 +7202,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       // IF ack %> m_iRcvLastAck
       if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
       {
-         ackDataUpTo(ack);
+         int32_t first_seq = ackDataUpTo(ack);
          CGuard::leaveCS(m_AckLock, "ack");
 
          // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
@@ -7211,6 +7229,13 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
              }
              // acknowledge any waiting epolls to read
              s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
+             if (m_parent->m_IncludedGroup)
+             {
+                 // The current "APP reader" needs to simply decide as to whether
+                 // the next CUDTGroup::recv() call should return with no blocking or not.
+                 // When the group is read-ready, it should update its pollers as it sees fit.
+                 m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
+             }
          }
          CGuard::enterCS(m_AckLock, "ack");
       }
@@ -7602,6 +7627,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       // acknowledde any waiting epolls to write
       s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+      if (m_parent->m_IncludedGroup)
+      {
+          m_parent->m_IncludedGroup->updateWriteState();
+      }
 
       // insert this socket to snd list if it is not on the list yet
       m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
@@ -9632,7 +9661,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
        else
        {
            // a new connection has been created, enable epoll for write
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
        }
    }
    LOGC(mglog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -10130,6 +10159,7 @@ CUDTGroup::CUDTGroup():
         m_bTsbPd(true),
         m_bTLPktDrop(true),
         m_iTsbPdDelay_us(0),
+        m_iSndTimeOut(-1),
         m_iRcvTimeOut(-1),
         m_StartTime(0),
         m_RcvPeerStartTime(0),
@@ -10168,6 +10198,7 @@ CUDTGroup::~CUDTGroup()
 }
 
 // Debug use only.
+#if ENABLE_HEAVY_LOGGING
 static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
 {
     typedef set<SRTSOCKET> fset_t;
@@ -10180,6 +10211,7 @@ static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::strin
 
     return os.str();
 }
+#endif
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
@@ -10205,6 +10237,13 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bTsbPd = bool_int_value(optval, optlen);
         return;
 #endif
+    case SRTO_SNDTIMEO:
+        m_iSndTimeOut = *(int*)optval;
+        break;
+
+    case SRTO_RCVTIMEO:
+        m_iRcvTimeOut = *(int*)optval;
+        break;
 
     // Other options to be specifically interpreted by group may follow.
 
@@ -10235,6 +10274,125 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));
+}
+
+static bool getOptDefault(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen);
+
+// unfortunately this is required to properly handle th 'default_opt != opt'
+// operation in the below importOption. Not required simultaneously operator==.
+static bool operator !=(const struct linger& l1, const struct linger& l2)
+{
+    return l1.l_onoff != l2.l_onoff || l1.l_linger != l2.l_linger;
+}
+
+template <class ValueType> static
+void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
+{
+    ValueType default_opt;
+    int default_opt_size = sizeof(ValueType);
+    ValueType opt = field;
+    if (!getOptDefault(optname, &default_opt, Ref(default_opt_size)) || default_opt != opt)
+    {
+        // Store the option when:
+        // - no default for this option is found
+        // - the option value retrieved from the field is different than default
+        storage.push_back(CUDTGroup::ConfigItem(optname, &opt, default_opt_size));
+    }
+}
+
+// This function is called by the same premises as the CUDT::CUDT(const CUDT&) (copy constructor).
+// The intention is to rewrite the part that comprises settings from the socket
+// into the group. Note that some of the settings concern group, some others concern
+// only target socket, and there are also options that can't be set on a socket.
+void CUDTGroup::deriveSettings(CUDT* u)
+{
+    // !!! IMPORTANT !!!
+    //
+    // This function shall ONLY be called on a newly created group
+    // for the sake of the newly accepted socket from the group-enabled listener,
+    // which is lazy-created for the first ever accepted socket.
+    // Once the group is created, it should stay with the options
+    // state as initialized here, and be changeable only in case when
+    // the option is altered on the group.
+
+    // SRTO_RCVSYN
+    m_bSynRecving = u->m_bSynRecving;
+
+    // SRTO_SNDSYN
+    m_bSynSending = u->m_bSynSending;
+
+    // SRTO_RCVTIMEO
+    m_iRcvTimeOut = u->m_iRcvTimeOut;
+
+    // SRTO_SNDTIMEO
+    m_iSndTimeOut = u->m_iSndTimeOut;
+
+
+    // Ok, this really is disgusting, but there's only one way
+    // to properly do it. Would be nice to have some more universal
+    // connection between an option symbolic name and the internals
+    // in CUDT class, but until this is done, since now every new
+    // option will have to be handled both in the CUDT::setOpt/getOpt
+    // functions, and here as well.
+
+    // This is about moving options from listener to the group,
+    // to be potentially replicated on the socket. So both pre
+    // and post options apply.
+
+#define IM(option, field) importOption(m_config, option, u-> field)
+
+    IM(SRTO_MSS, m_iMSS);
+    IM(SRTO_FC, m_iFlightFlagSize);
+
+    // Nonstandard
+    importOption(m_config, SRTO_SNDBUF, u->m_iSndBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_RCVBUF, u->m_iRcvBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
+
+    IM(SRTO_LINGER, m_Linger);
+    IM(SRTO_UDP_SNDBUF, m_iUDPSndBufSize);
+    IM(SRTO_UDP_RCVBUF, m_iUDPRcvBufSize);
+    // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
+    // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
+    IM(SRTO_CONNTIMEO, m_iConnTimeOut);
+    // Reuseaddr: true by default and should only be true.
+    IM(SRTO_MAXBW, m_llMaxBW);
+    IM(SRTO_INPUTBW, m_llInputBW);
+    IM(SRTO_OHEADBW, m_iOverheadBW);
+    IM(SRTO_IPTOS, m_iIpToS);
+    IM(SRTO_IPTTL, m_iIpTTL);
+    IM(SRTO_TSBPDMODE, m_bOPT_TsbPd);
+    IM(SRTO_RCVLATENCY, m_iOPT_TsbPdDelay);
+    IM(SRTO_PEERLATENCY, m_iOPT_PeerTsbPdDelay);
+    IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
+    IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
+    IM(SRTO_TLPKTDROP, m_bTLPktDrop);
+    IM(SRTO_MESSAGEAPI, m_bMessageAPI);
+    IM(SRTO_NAKREPORT, m_bRcvNakReport);
+
+    importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
+
+    // Passphrase is empty by default. Decipher the passphrase and
+    // store as passphrase option
+    if (u->m_CryptoSecret.len)
+    {
+        string password ((const char*)u->m_CryptoSecret.str, u->m_CryptoSecret.len);
+        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), password.size()));
+    }
+
+    IM(SRTO_KMREFRESHRATE, m_uKmRefreshRatePkt);
+    IM(SRTO_KMPREANNOUNCE, m_uKmPreAnnouncePkt);
+
+    string smoother = u->m_Smoother.selected_name();
+    if (smoother != "live")
+    {
+        m_config.push_back(ConfigItem(SRTO_SMOOTHER, smoother.c_str(), smoother.size()));
+    }
+
+    // NOTE: This is based on information extracted from the "semi-copy-constructor" of CUDT class.
+    // Here should be handled all things that are options that modify the socket, but not all options
+    // are assigned to configurable items.
+
+#undef IM
 }
 
 template <class Type>
@@ -10298,6 +10456,8 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* optval, ref_t<int> r_optlen
     case SRTO_RCVTIMEO: RD(-1);
     case SRTO_REUSEADDR: RD(true);
     case SRTO_MAXBW: RD(int64_t(-1));
+    case SRTO_INPUTBW: RD(int64_t(-1));
+    case SRTO_OHEADBW: RD(0);
     case SRTO_STATE: RD(SRTS_INIT);
     case SRTO_EVENT: RD(0);
     case SRTO_SNDDATA: RD(0);
@@ -10888,8 +11048,14 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     int ercode = 0;
 
-    if (was_blocked && m_bSynSending)
+    if (was_blocked)
     {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        if (!m_bSynSending)
+        {
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+        }
+
         HLOGC(dlog.Debug, log << "CUDTGroup::send: all blocked, trying to common-block on epoll...");
         // None was successful, but some were blocked. It means that we
         // haven't sent the payload over any link so far, so we still have
@@ -10910,7 +11076,9 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // Lift the group lock for a while, to avoid possible deadlocks.
             InvertedGuard ug(&m_GroupLock, "Group");
             HLOGC(dlog.Debug, log << "CUDTGroup::send: blocking on any of blocked sockets to allow sending");
-            blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, -1); // -1: BLOCKING. XXX MIND timeout/nonblocking.
+
+            // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
+            blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
 
             // NOTE EXCEPTIONS:
             // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
@@ -10991,6 +11159,8 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     if (none_succeeded)
     {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
         // Reparse error code, if set.
         // It might be set, if the last operation was failed.
         // If any operation succeeded, this will not be executed anyway.
@@ -10999,6 +11169,10 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
         throw CUDTException(major, minor, 0);
     }
+
+    // Pity that the blocking mode only determines as to whether this function should
+    // block or not, but the epoll flags must be updated regardless of the mode.
+
 
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.
@@ -11010,28 +11184,46 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     if (mc.grpdata_size < grpsize)
     {
-        mc.grpdata_size = grpsize;
         mc.grpdata = NULL;
-        return rstat;
     }
 
-    // Enough space to fill
     size_t i = 0;
+
+    bool ready_again = false;
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
     {
-        mc.grpdata[i].id = d->id;
-        mc.grpdata[i].status = d->laststatus;
+        if (mc.grpdata)
+        {
+            // Enough space to fill
+            mc.grpdata[i].id = d->id;
+            mc.grpdata[i].status = d->laststatus;
 
-        if (d->sndstate == GST_RUNNING)
-            mc.grpdata[i].result = rstat; // The same result for all sockets, if running
-        else if (d->sndstate == GST_IDLE)
-            mc.grpdata[i].result = 0;
-        else
-            mc.grpdata[i].result = -1;
+            if (d->sndstate == GST_RUNNING)
+                mc.grpdata[i].result = rstat; // The same result for all sockets, if running
+            else if (d->sndstate == GST_IDLE)
+                mc.grpdata[i].result = 0;
+            else
+                mc.grpdata[i].result = -1;
 
-        memcpy(&mc.grpdata[i].peeraddr, &d->peer, d->peer.size());
+            memcpy(&mc.grpdata[i].peeraddr, &d->peer, d->peer.size());
+        }
+
+        // We perform this loop anyway because we still need to check if any
+        // socket is writable. Note that the group lock will hold any write ready
+        // updates that are performed just after a single socket update for the
+        // group, so if any socket is actually ready at the moment when this
+        // is performed, and this one will result in none-write-ready, this will
+        // be fixed just after returning from this function.
+
+        ready_again = ready_again | d->ps->writeReady();
     }
     mc.grpdata_size = i;
+
+    if (!ready_again)
+    {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+    }
+
     return rstat;
 }
 
@@ -12323,6 +12515,61 @@ struct FLookupSocket
     }
 };
 
+void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequence)
+{
+    bool ready = false;
+    CGuard lg(m_GroupLock, "Group");
+    int seqdiff = 0;
+
+    if (m_RcvBaseSeqNo == -1)
+    {
+        // One socket reported readiness, while no reading operation
+        // has ever been done. Whatever the sequence number is, it will
+        // be taken as a good deal and reading will be accepted.
+        ready = true;
+    }
+    else if ( (seqdiff = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo)) > 0 )
+    {
+        // Case diff == 1: The very next. Surely read-ready.
+
+        // Case diff > 1:
+        // We have an ahead packet. There's one strict condition in which
+        // we may believe it needs to be delivered - when KANGAROO->HORSE
+        // transition is allowed. Stating that the time calculation is done
+        // exactly the same way on every link in the redundancy group, when
+        // it came to a situation that a packet from one link is ready for
+        // extraction while it has jumped over some packet, it has surely
+        // happened due to TLPKTDROP, and if it happened on at least one link,
+        // we surely don't have this packet ready on any other link.
+
+        // This might prove not exactly true, especially when at the moment
+        // when this happens another link may surprisinly receive this lacking
+        // packet, so the situation gets suddenly repaired after this function
+        // is called, the only result of it would be that it will really get
+        // the very next sequence, even though this function doesn't know it
+        // yet, but surely in both cases the situation is the same: the medium
+        // is ready for reading, no matter what packet will turn out to be
+        // returned when reading is done.
+
+        ready = true;
+    }
+
+    // When the sequence number is behind the current one,
+    // stating that the readines wasn't checked otherwise, the reading
+    // function will not retrieve anything ready to read just by this premise.
+    // Even though this packet would have to be eventually extracted (and discarded).
+
+    if (ready)
+    {
+         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
+    }
+}
+
+void CUDTGroup::updateWriteState()
+{
+    CGuard lg(m_GroupLock, "Group");
+    m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
+}
 
 // The "app reader" version of the reading function.
 // This reads the packets from every socket treating them as independent
@@ -12370,6 +12617,11 @@ RETRY_READING:
             fillGroupData(r_mc, pos->mctrl, out_grpdata, out_grpdata_size);
             len = pos->packet.size();
             pos->packet.clear();
+
+            // We predict to have only one packet ahead, others are pending to be reported by tsbpd.
+            // This will be "re-enabled" if the later check puts any new packet into ahead.
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+
             return len;
         }
     }
@@ -12445,7 +12697,7 @@ RETRY_READING:
         CGuard glock(m_GroupLock, "Group");
         for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
         {
-            ++size; // list::size loops over all elements anyway
+            ++size; // list::size loops over all elements anyway, so this hits two birds with one stone
             if (gi->laststatus == SRTS_CONNECTING)
             {
                 HCLOG(ds << "@" << gi->id << "<pending> ");
@@ -12557,13 +12809,25 @@ RETRY_READING:
 
     // Poll on this descriptor until reading is available, indefinitely.
     SrtPollState sready;
-    m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, -1, // -1: BLOCKING. XXX MIND timeout/nonblocking.
-            false /*report by retval*/);
+
+    // In blocking mode, use m_iRcvTimeOut, which's default value -1
+    // means to block indefinitely, also in swait().
+    // In non-blocking mode use 0, which means to always return immediately.
+    int timeout = m_bSynRecving ? m_iRcvTimeOut : 0;
+    int nready = m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
 
     HLOGC(dlog.Debug, log << "group/recv: RDY: "
             << DisplayEpollResults(sready.rd(), "[R]")
             << DisplayEpollResults(sready.wr(), "[W]")
             << DisplayEpollResults(sready.ex(), "[E]"));
+
+    if (nready == 0)
+    {
+        // This can only happen when 0 is passed as timeout and none is ready.
+        // And 0 is passed only in non-blocking mode. So this is none ready in
+        // non-blocking mode.
+        throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+    }
 
     typedef set<SRTSOCKET> fset_t;
 
@@ -12755,15 +13019,6 @@ RETRY_READING:
         }
     }
 
-    // ready_len is only the length of currently reported
-    // ready sockets, NOT NECESSARILY containing all sockets from the group.
-    if (broken.size() == size)
-    {
-        // All broken
-        HLOGC(dlog.Debug, log << "group/recv: All sockets broken");
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    }
-
 #if ENABLE_HEAVY_LOGGING
     if (!broken.empty())
     {
@@ -12782,6 +13037,16 @@ RETRY_READING:
         m_Positions.erase(ps->m_SocketID);
         m_pGlobal->close(ps);
     }
+
+    if (broken.size() >= size) // This > is for sanity check
+    {
+        // All broken
+        HLOGC(dlog.Debug, log << "group/recv: All sockets broken");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
 
     // May be required to be re-read.
     broken.clear();
@@ -12804,6 +13069,14 @@ RETRY_READING:
         else
         {
             m_RcvBaseSeqNo = next_seq;
+        }
+
+        ReadPos* pos = checkPacketAhead();
+        if (!pos)
+        {
+            // Don't clear the read-readinsess state if you have a packet ahead because
+            // if you have, the next read call will return it.
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
         }
 
         HLOGC(dlog.Debug, log << "group/recv: successfully extacted packet size=" << output_size << " - returning");
@@ -12887,6 +13160,18 @@ RETRY_READING:
             fillGroupData(r_mc, slowest_kangaroo->second.mctrl, out_grpdata, out_grpdata_size);
             len = pkt.size();
             pkt.clear();
+
+            // It is unlikely to have a packet ahead because usually having one packet jumped-ahead
+            // clears the possibility of having aheads at all.
+            // XXX Research if this is possible at all; if it isn't, then don't waste time on
+            // looking for it.
+            ReadPos* pos = checkPacketAhead();
+            if (!pos)
+            {
+                // Don't clear the read-readinsess state if you have a packet ahead because
+                // if you have, the next read call will return it.
+                m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+            }
             return len;
         }
 

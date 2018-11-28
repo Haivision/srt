@@ -430,6 +430,7 @@ public:
 
     void setOpt(SRT_SOCKOPT optname, const void* optval, int optlen);
     void getOpt(SRT_SOCKOPT optName, void* optval, ref_t<int> optlen);
+    void deriveSettings(CUDT* source);
 
     SRT_SOCKSTATUS getStatus();
 
@@ -445,6 +446,8 @@ public:
     pthread_mutex_t* exp_groupLock() { return &m_GroupLock; }
     void addEPoll(int eid);
     void removeEPoll(int eid);
+    void updateReadState(SRTSOCKET sock, int32_t sequence);
+    void updateWriteState();
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,
@@ -515,12 +518,14 @@ private:
     bool m_bTsbPd;
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
-    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
 #ifdef SRT_ENABLE_APP_READER
     int m_RcvEID;
     class CEPollDesc* m_RcvEpolld;
     int m_SndEID;
     class CEPollDesc* m_SndEpolld;
+
+    int m_iSndTimeOut;                           // sending timeout in milliseconds
+    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
 
     // Start times for TsbPd. These times shall be synchronized
     // between all sockets in the group. The first connected one
@@ -1387,7 +1392,7 @@ private: // Generation and processing of packets
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
-    void ackDataUpTo(int32_t seq);
+    int32_t ackDataUpTo(int32_t seq);
 
 
 private: // Trace

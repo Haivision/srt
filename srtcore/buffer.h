@@ -264,7 +264,7 @@ public:
       /// @param [in] len size of data to be acknowledged.
       /// @return 1 if a user buffer is fulfilled, otherwise 0.
 
-   void ackData(int len);
+   int ackData(int len);
 
       /// Query how many buffer space left for data receiving.
       /// @return size of available buffer space (including user buffer) for data receiving.

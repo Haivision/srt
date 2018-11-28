@@ -143,6 +143,12 @@ public:
    void makeClosed();
    void removeFromGroup();
 
+    // Instrumentally used by select() and also required for non-blocking
+    // mode check in groups
+    bool readReady();
+    bool writeReady();
+    bool broken();
+
 private:
    CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);

@@ -913,7 +913,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
    return len - rs;
 }
 
-void CRcvBuffer::ackData(int len)
+int CRcvBuffer::ackData(int len)
 {
    int end = shift(m_iLastAckPos, len);
    {
@@ -937,6 +937,15 @@ void CRcvBuffer::ackData(int len)
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
+
+   // Returned value is the distance towards the starting
+   // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
+   // This should help determine the sequence number at first read-ready position.
+
+   int dist = m_iLastAckPos - m_iStartPos;
+   if (dist < 0)
+       return dist + m_iSize;
+   return dist;
 }
 
 void CRcvBuffer::skipData(int len)
