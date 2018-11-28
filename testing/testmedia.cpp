@@ -51,7 +51,7 @@ logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 string DirectionName(SRT_EPOLL_OPT direction)
 {
     string dir_name;
-    if (direction)
+    if (direction & ~SRT_EPOLL_ERR)
     {
         if (direction & SRT_EPOLL_IN)
         {
@@ -64,6 +64,11 @@ string DirectionName(SRT_EPOLL_OPT direction)
                 dir_name = "relay";
             else
                 dir_name = "target";
+        }
+
+        if (direction & SRT_EPOLL_ERR)
+        {
+            dir_name += "+error";
         }
     }
     else
@@ -534,18 +539,9 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
 
     if ( !m_blocking_mode )
     {
-        if ( srt_epoll == -1 )
-        {
-            // Don't add new epoll if already created as a part
-            // of group management.
-            srt_epoll = AddPoller(m_sock, dir);
-        }
-        else
-        {
-            // Add to existing eid
-            int modes = dir;
-            srt_epoll_add_usock(srt_epoll, m_sock, &modes);
-        }
+        // Don't add new epoll if already created as a part
+        // of group management: if (srt_epoll == -1)...
+        srt_epoll = AddPoller(m_sock, dir);
     }
 }
 
@@ -554,6 +550,8 @@ int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
     int pollid = srt_epoll_create();
     if ( pollid == -1 )
         throw std::runtime_error("Can't create epoll in nonblocking mode");
+    Verb() << "EPOLL: creating eid=" << pollid << " and adding @" << socket
+        << " in " << DirectionName(SRT_EPOLL_OPT(modes)) << " mode";
     srt_epoll_add_usock(pollid, socket, &modes);
     return pollid;
 }
@@ -800,6 +798,7 @@ void SrtCommon::OpenGroupClient()
             continue;
         }
 
+        /*
         if (!m_blocking_mode)
         {
             // EXPERIMENTAL version. Add all sockets to epoll
@@ -808,6 +807,7 @@ void SrtCommon::OpenGroupClient()
             srt_epoll_add_usock(srt_epoll, insock, &modes);
             Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
         }
+        */
 
         // Have socket, store it into the group socket array.
         any_node = true;
