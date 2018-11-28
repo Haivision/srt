@@ -1796,7 +1796,7 @@ bytevector SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
                 {
-                    Verb() << "AGAIN: - waiting for data by epoll...";
+                    Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
                     SRTSOCKET sready[2];
