@@ -512,6 +512,26 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
         << ") PBKEYLEN=" << pbkeylen;
 
+    // Display some selected options on the socket.
+    if (Verbose::on)
+    {
+        int64_t bandwidth = 0;
+        int latency = 0;
+        bool blocking_snd = false, blocking_rcv = false;
+        int dropdelay = 0;
+        int size_int = sizeof (int), size_int64 = sizeof (int64_t), size_bool = sizeof (bool);
+
+        srt_getsockflag(m_sock, SRTO_MAXBW, &bandwidth, &size_int64);
+        srt_getsockflag(m_sock, SRTO_RCVLATENCY, &latency, &size_int);
+        srt_getsockflag(m_sock, SRTO_RCVSYN, &blocking_rcv, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDSYN, &blocking_snd, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDDROPDELAY, &dropdelay, &size_int);
+
+        Verb() << "OPTIONS: maxbw=" << bandwidth << " rcvlatency=" << latency << boolalpha
+            << " blocking{rcv=" << blocking_rcv << " snd=" << blocking_snd
+            << "} snddropdelay=" << dropdelay;
+    }
+
     if ( !m_blocking_mode && srt_epoll == -1 )
     {
         // Don't add new epoll if already created as a part
@@ -535,7 +555,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     int result = 0;
     if ( m_direction & SRT_EPOLL_OUT )
     {
-        Verb() << "Setting SND blocking mode: " << boolalpha << yes;
+        Verb() << "Setting SND blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
@@ -548,7 +568,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
     if ( m_direction & SRT_EPOLL_IN )
     {
-        Verb() << "Setting RCV blocking mode: " << boolalpha << yes;
+        Verb() << "Setting RCV blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
