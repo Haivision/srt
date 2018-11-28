@@ -1841,18 +1841,19 @@ int CUDTUnited::epoll_clear_usocks(int eid)
 int CUDTUnited::epoll_add_usock(
    const int eid, const SRTSOCKET u, const int* events)
 {
+    int ret = -1;
     if (u & SRTGROUP_MASK)
     {
         CUDTGroup* g = locateGroup(u);
         if (!g)
             throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
+        ret = m_EPoll.add_usock(eid, u, events);
         g->addEPoll(eid);
         return 0;
     }
 
     CUDTSocket* s = locateSocket(u);
-    int ret = -1;
     if (s)
     {
         ret = m_EPoll.add_usock(eid, u, events);
