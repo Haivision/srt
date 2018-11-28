@@ -9989,40 +9989,50 @@ void CUDTGroup::addEPoll(int eid)
    m_sPollID.insert(eid);
    CGuard::leaveCS(m_pGlobal->m_EPoll.m_EPollLock, "glob.epoll");
 
-   // Check all member sockets
-   CGuard gl(m_GroupLock, "group");
+   bool any_read = false;
+   bool any_write = false;
+   bool any_broken = false;
+   bool any_pending = false;
 
-   // XXX This function doesn't work at all this way.
-   // Check it again now to use epoll on a group.
-#ifndef SRT_ENABLE_APP_READER
-
-   bool any = false;
-   bool all_in = true;
-   bool all_out = true;
-
-   for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
    {
-       if (!i->ps->m_pUDT->stillConnected())
-           continue;
+       // Check all member sockets
+       CGuard gl(m_GroupLock, "group");
 
-       if (i->ps->m_pUDT->sndBuffersLeft() < i->ps->m_pUDT->minSndSize())
-           all_out = false;
+       // We only need to know if there is any socket that is
+       // ready to get a payload and ready to receive from.
 
-       any = true;
+       for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
+       {
+           if (i->sndstate == GST_IDLE || i->sndstate == GST_RUNNING)
+           {
+               any_write |= i->ps->writeReady();
+           }
+
+           if (i->rcvstate == GST_IDLE || i->rcvstate == GST_RUNNING)
+           {
+               any_read |= i->ps->readReady();
+           }
+
+           if (i->ps->broken())
+               any_broken |= true;
+           else
+               any_pending |= true;
+       }
    }
 
-   if (!any || m_Pending.empty())
-       all_in = false;
+   // This is stupid, but we don't have any other interface to epoll
+   // internals. Actually we don't have to check if id() is in m_sPollID
+   // because we know it is, as we just added it. But it's not performance
+   // critical, sockets are not being often added during transmission.
+   if (any_read)
+       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
 
-   if (any)
-   {
-       if (all_in)
-           m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
+   if (any_write)
+       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
 
-       if (all_out)
-           m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
-   }
-#endif
+   // Set broken if none is non-broken (pending, read-ready or write-ready)
+   if (any_broken && !any_pending)
+       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
 }
 
 void CUDTGroup::removeEPoll(const int eid)
