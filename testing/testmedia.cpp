@@ -532,11 +532,20 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             << "} snddropdelay=" << dropdelay;
     }
 
-    if ( !m_blocking_mode && srt_epoll == -1 )
+    if ( !m_blocking_mode )
     {
-        // Don't add new epoll if already created as a part
-        // of group management.
-        srt_epoll = AddPoller(m_sock, dir);
+        if ( srt_epoll == -1 )
+        {
+            // Don't add new epoll if already created as a part
+            // of group management.
+            srt_epoll = AddPoller(m_sock, dir);
+        }
+        else
+        {
+            // Add to existing eid
+            int modes = dir;
+            srt_epoll_add_usock(srt_epoll, m_sock, &modes);
+        }
     }
 }
 
