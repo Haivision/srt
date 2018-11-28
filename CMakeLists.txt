@@ -805,7 +805,7 @@ if (ENABLE_UNITTESTS)
 		${PROJECT_BINARY_DIR}/googletest
 	)
 
-	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp)
+	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp test/test_strict_encription.cpp)
 	srt_make_application(test_srt)
 
 	target_link_libraries(
