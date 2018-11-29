@@ -549,7 +549,7 @@ struct MapProxy
 
     MapProxy(std::map<KeyType, ValueType>& m, const KeyType& k): mp(m), key(k) {}
 
-    void operator=(const KeyType& val)
+    void operator=(const ValueType& val)
     {
         mp[key] = val;
     }
@@ -569,6 +569,14 @@ struct MapProxy
         typename std::map<KeyType, ValueType>::const_iterator p = find();
         if (p == mp.end())
             return "";
+        return p->second;
+    }
+
+    ValueType deflt(const ValueType& defval) const
+    {
+        typename std::map<KeyType, ValueType>::const_iterator p = find();
+        if (p == mp.end())
+            return defval;
         return p->second;
     }
 
