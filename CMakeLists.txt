@@ -695,8 +695,8 @@ macro(srt_make_application name)
 	target_link_libraries(${name} ${srt_link_library})
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
@@ -755,8 +755,10 @@ if ( ENABLE_CXX11 )
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+    else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -794,10 +796,7 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
-		srt_add_testprogram(srt-test-tunnel)
-		srt_make_application(srt-test-tunnel)
 		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
-		target_compile_definitions(srt-test-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 endif()

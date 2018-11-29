@@ -28,7 +28,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmediabase.hpp"
+#include "transmitbase.hpp" // bytevector typedef to avoid collisions
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -38,6 +38,21 @@
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 #include <api.h>
+
+/*
+# MAF contents for this file. Note that not every file from the support
+# library is used, but to simplify the build definition it links against
+# the whole srtsupport library.
+
+SOURCES
+srt-test-tunnel.cpp
+testmedia.cpp
+../apps/verbose.cpp
+../apps/socketoptions.cpp
+../apps/uriparser.cpp
+../apps/logsupport.cpp
+
+*/
 
 using namespace std;
 
