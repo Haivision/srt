@@ -228,7 +228,7 @@ public:
 };
 
 
-class Tunnelbox;
+struct Tunnelbox;
 
 class Tunnel
 {
@@ -543,7 +543,7 @@ void TcpMedium::CreateListener()
 
     sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
-    int stat = bind(m_socket, (sockaddr*)&sa, sizeof sa);
+    int stat = ::bind(m_socket, (sockaddr*)&sa, sizeof sa);
 
     if (stat == -1)
     {
@@ -575,7 +575,7 @@ unique_ptr<Medium> SrtMedium::Accept()
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
 
-    return move(med);
+    return med;
 }
 
 unique_ptr<Medium> TcpMedium::Accept()
@@ -591,7 +591,7 @@ unique_ptr<Medium> TcpMedium::Accept()
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
 
-    return move(med);
+    return med;
 }
 
 void SrtMedium::CreateCaller()
@@ -790,7 +790,7 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
 
     out->InitMode(mode);
 
-    return move(out);
+    return out;
 }
 
 struct Tunnelbox
