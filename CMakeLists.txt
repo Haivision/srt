@@ -60,11 +60,7 @@ else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
-message(STATUS "BINARY_DIR: ${CMAKE_BINARY_DIR}")
-message(STATUS "EXECUTABLE_OUTPUT_PATH: ${EXECUTABLE_OUTPUT_PATH}")
 
 getVarsWith(ENFORCE_ enforcers)
 foreach(ef ${enforcers})
@@ -103,7 +99,7 @@ option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
-option(ENABLE_UNITTESTS "Enable unit tests" ON)
+option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -473,7 +469,7 @@ configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra})
+add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt})
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
@@ -746,10 +742,7 @@ if ( ENABLE_CXX11 )
 		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 
-	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
-	if (NOT WIN32)
-		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
-	endif()
+	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
@@ -779,20 +772,19 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(utility-test)
 		if (NOT WIN32)
-		   # This program is symlinked under git-cygwin.
-		   # Avoid misleading syntax error.
-	       srt_add_testprogram(uriparser-test)
-	       target_compile_options(uriparser-test PRIVATE -DTEST)
-	       target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		    # This program is symlinked under git-cygwin.
+		    # Avoid misleading syntax error.
+	        srt_add_testprogram(uriparser-test)
+	        target_compile_options(uriparser-test PRIVATE -DTEST)
+	        target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
-		if (NOT WIN32)
-			# Still portability problem on Windows
-			srt_add_testprogram(srt-test-file)
-			srt_make_application(srt-test-file)
-		endif()
+
+		# Still portability problem on Windows
+		srt_add_testprogram(srt-test-file)
+		srt_make_application(srt-test-file)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
