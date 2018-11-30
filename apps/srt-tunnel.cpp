@@ -1,7 +1,10 @@
 // MSVS likes to complain about lots of standard C functions being unsafe.
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS 1
+#include <io.h>
 #endif
+
+#include "platform_sys.h"
 
 #define REQUIRE_CXX11 1
 
@@ -191,8 +194,20 @@ public:
     int stat() { return status; }
 
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
-        : media {m1, m2}, parent_tunnel(p), nameid(nid)
+        :
+#ifndef _MSC_VER
+		media {m1, m2},
+#endif
+		parent_tunnel(p), nameid(nid)
     {
+#ifdef _MSC_VER
+		// MSVC is not exactly C++11 compliant and complains around
+		// initialization of an array.
+		// Leaving this method of initialization for clarity and
+		// possibly more preferred performance.
+		media[0] = m1;
+		media[1] = m2;
+#endif
     }
 
     void Start()
@@ -367,7 +382,14 @@ class SrtMedium: public Medium
     friend class Medium;
 public:
 
+#ifndef _MSC_VER
     using Medium::Medium;
+
+#else // MSVC not exactly supports C++11
+
+    SrtMedium(UriParser u, size_t ch): Medium(u, ch) {}
+
+#endif
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
@@ -418,7 +440,14 @@ class TcpMedium: public Medium
     friend class Medium;
 public:
 
+#ifndef _MSC_VER
     using Medium::Medium;
+
+#else // MSVC not exactly supports C++11
+
+    TcpMedium(UriParser u, size_t ch): Medium(u, ch) {}
+
+#endif
 
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }

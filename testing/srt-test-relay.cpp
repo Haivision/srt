@@ -13,6 +13,7 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "platform_sys.h"
 
 #include <iostream>
 #include <iterator>
@@ -560,6 +561,12 @@ int main( int argc, char** argv )
     for (auto& s: output_spec)
         Verb() << "\t" << s;
 
+#ifdef _MSC_VER
+	// Replacement for sigaction, just use 'signal'
+	// This may make this working kinda impaired and unexpected,
+	// but still better that not compiling at all.
+	signal(SIGINT, OnINT_SetInterrupted);
+#else
     struct sigaction sigIntHandler;
 
     sigIntHandler.sa_handler = OnINT_SetInterrupted;
@@ -567,7 +574,7 @@ int main( int argc, char** argv )
     sigIntHandler.sa_flags = 0;
 
     sigaction(SIGINT, &sigIntHandler, NULL);
-
+#endif
 
     try
     {
