@@ -2913,6 +2913,9 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                 break;
             }
 
+            if (cst == CONN_REJECT)
+                sendCtrl(UMSG_SHUTDOWN);
+
             if ( cst != CONN_CONTINUE )
                 break; // --> OUTSIDE-LOOP
 
