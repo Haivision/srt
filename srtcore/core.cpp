@@ -194,6 +194,7 @@ void CUDT::construct()
     m_bPeerTsbPd = false;
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
+    m_bTsbPdAckWakeup = false;
     m_bPeerTLPktDrop = false;
 
     m_uKmRefreshRatePkt = 0;

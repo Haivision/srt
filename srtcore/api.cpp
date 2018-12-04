@@ -167,6 +167,7 @@ CUDTUnited::~CUDTUnited()
     pthread_mutex_destroy(&m_IDLock);
     pthread_mutex_destroy(&m_InitLock);
 
+    delete (CUDTException*)pthread_getspecific(m_TLSError);
     pthread_key_delete(m_TLSError);
 
     delete m_pCache;
