@@ -79,7 +79,8 @@ extern logging::Logger
     mglog,
     dlog,
     tslog,
-    rxlog;
+    rxlog,
+    perflog;
 
 
 // XXX Utility function - to be moved to utilities.h?

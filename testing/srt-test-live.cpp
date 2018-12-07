@@ -290,7 +290,7 @@ int main( int argc, char** argv )
 
     bool crashonx = Option("no", "k", "crash") != "no";
     string loglevel = Option("error", "loglevel");
-    string logfa = Option("general", "logfa");
+    string logfa = Option("", "logfa");
     string logfile = Option("", "logfile");
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
@@ -315,9 +315,17 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
-        srt_addlogfa(*i);
+
+    // Without logfa option, use the defaults of the library.
+    // With logfa, enable those selected only.
+    if (logfa != "")
+    {
+        set<logging::LogFA> fas = SrtParseLogFA(logfa);
+
+        // Stupid, but that's how you link C and C++ API.
+        vector<int> falist(fas.begin(), fas.end());
+        srt_resetlogfa(falist.data(), falist.size());
+    }
 
     char NAME[] = "SRTLIB";
     if ( internal_log )

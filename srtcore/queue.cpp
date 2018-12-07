@@ -1163,7 +1163,9 @@ void* CRcvQueue::worker(void* param)
    while (!self->m_bClosing)
    {
        bool have_received SRT_ATR_UNUSED = false; // used in HLOG only
+       HLOGP(perflog.Debug, "worker_RetrieveUnit - START");
        EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa, uptime_us);
+       HLOGC(perflog.Debug, log << "worker_RetrieveUnit - FINISHED. return=" << rst << ", " << (rst ? (rst == -1 ? "ERROR" : "AGAIN") : "RETRIEVED"));
        uint64_t currtime_tk;
 
        // take care of the timing event for all UDT sockets
@@ -1192,6 +1194,7 @@ void* CRcvQueue::worker(void* param)
            // Note to rendezvous connection. This can accept:
            // - ID == 0 - take the first waiting rendezvous socket
            // - ID > 0  - find the rendezvous socket that has this ID.
+           HLOGC(perflog.Debug, log << "PROCESSING PACKET: START");
            if (id == 0)
            {
                // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
@@ -1204,6 +1207,7 @@ void* CRcvQueue::worker(void* param)
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
            }
+           HLOGC(perflog.Debug, log << "PROCESSING PACKET: END");
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
            if (cst == CONN_AGAIN)
            {
@@ -1240,6 +1244,7 @@ void* CRcvQueue::worker(void* param)
        // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
 Handle_timer_events:
+       HLOGC(perflog.Debug, log << "TIMER CHECK: START");
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
        uint64_t ctime_tk = currtime_tk - TIMER_UPDATE_INTERVAL_US * CTimer::getCPUFrequency();
@@ -1327,6 +1332,7 @@ Handle_timer_events:
        uint64_t now_us = currtime_tk/CTimer::getCPUFrequency();
        bool timely = self->m_tConnUpTime_us < now_us;  // (including when m_tConnUpTime_us == 0)
 
+       HLOGC(perflog.Debug, log << "TIMER CHECK: END. DOING updateConnStatus");
        if (timely || rst == RST_OK)
        {
            // If this is the beginning (m_tConnUpTime_us == 0), it will be always called.
@@ -1375,6 +1381,7 @@ Handle_timer_events:
        {
            HLOGC(mglog.Debug, log << "worker: NO updateConnStatus - no packet and T=" << logging::FormatTime(self->m_tConnUpTime_us));
        }
+       HLOGC(perflog.Debug, log << "TIMER CHECK: END. updateConnStatus FINISHED. LOOP ROLLING.");
 
        // Use the time reported by updateConnStatus as a next processing time
        // (time until when the next reading operation should wait at maximum),
