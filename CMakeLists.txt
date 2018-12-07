@@ -189,8 +189,10 @@ else()
 		# if OPENSSL_ROOT_DIR or USE_OPENSSL_PC are set, we assume
 		# that the user wants to use find_package(OpenSSL) method to
 		# find OpenSSL package. Otherwise default to pkg-config.
-		if (NOT OPENSSL_ROOT_DIR OR USE_OPENSSL_PC)
-			pkg_check_modules(SSL "openssl libcrypto")
+		if (NOT IOS)
+			if (NOT OPENSSL_ROOT_DIR OR USE_OPENSSL_PC)
+				pkg_check_modules(SSL "openssl libcrypto")
+			endif()
 		endif()
 		if (SSL_FOUND)
 			set (SSL_REQUIRED_MODULES "openssl libcrypto")
