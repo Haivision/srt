@@ -533,7 +533,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     // protects the m_Sockets structure
     CGuard cg(m_ControlLock);
 
-    map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+    map<SRTSOCKET, CUDTSocket*>::const_iterator i = m_Sockets.find(u);
 
     if (i == m_Sockets.end())
     {
@@ -542,7 +542,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 
         return SRTS_NONEXIST;
     }
-    CUDTSocket* s = i->second;
+    const CUDTSocket* s = i->second;
 
     if (s->m_pUDT->m_bBroken)
         return SRTS_BROKEN;

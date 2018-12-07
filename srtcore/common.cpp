@@ -81,7 +81,7 @@ modified by
 #include <srt_compat.h> // SysStrError
 
 bool CTimer::m_bUseMicroSecond = false;
-uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
+uint64_t CTimer::s_ullCPUFrequency = 0;
 
 pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
@@ -130,7 +130,7 @@ void CTimer::rdtsc(uint64_t &x)
       BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
       //SetThreadAffinityMask(hCurThread, dwOldMask);
       if (!ret)
-         x = getTime() * s_ullCPUFrequency;
+         x = getTime() * getCPUFrequency();
    #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
@@ -176,6 +176,10 @@ uint64_t CTimer::readCPUFrequency()
 
 uint64_t CTimer::getCPUFrequency()
 {
+   if (s_ullCPUFrequency)
+       return s_ullCPUFrequency;
+
+   s_ullCPUFrequency = CTimer::readCPUFrequency();
    return s_ullCPUFrequency;
 }
 
@@ -252,7 +256,7 @@ uint64_t CTimer::getTime()
 #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     uint64_t x;
     rdtsc(x);
-    return x / s_ullCPUFrequency;
+    return x / getCPUFrequency();
     //Specific fix may be necessary if rdtsc is not available either.
 #else
     timeval t;
