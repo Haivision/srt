@@ -83,6 +83,7 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
@@ -663,7 +664,7 @@ macro(srt_make_application name)
 	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-	if (LINUX)
+	if (LINUX AND ENABLE_RELATIVE_LIBPATH)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
 		# be placed into the binrary directory anyway.
 		# XXX not sure about Mac.
