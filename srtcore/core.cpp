@@ -2844,9 +2844,10 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         // Note that some procedures inside may set m_llLastReqTime to 0,
         // which will result of this condition to trigger immediately in
         // the next iteration.
-        if (tdiff > 250000)
+        if (tdiff > CRcvQueue::CONN_UPDATE_INTERVAL_US)
         {
-            HLOGC(mglog.Debug, log << "startConnect: LOOP: time to send (" << tdiff << " > 250000). size=" << reqpkt.getLength());
+            HLOGC(mglog.Debug, log << "startConnect: LOOP: time to send (" << tdiff
+                    << " > " << CRcvQueue::CONN_UPDATE_INTERVAL_US << "). size=" << reqpkt.getLength());
 
             if (m_bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
@@ -2871,6 +2872,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
         cst = CONN_CONTINUE;
         response.setLength(m_iMaxSRTPayloadSize);
+
         if (m_pRcvQueue->recvfrom(m_SocketID, Ref(response)) > 0)
         {
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
@@ -2973,10 +2975,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
         if (CTimer::getTime() > ttl)
         {
+            HLOGC(mglog.Debug, log << "startConnect: CONNECTION TIMEOUT - exitting");
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             break;
         }
+
+        HLOGC(mglog.Debug, log << "startConnect: still no response, waiting up to T="
+                << logging::FormatTime(ttl) << " (" << (ttl - CTimer::getTime()) << "us to expire)");
     }
 
     // <--- OUTSIDE-LOOP
@@ -2985,6 +2991,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // CONN_ACCEPT will skip this and pass on.
     if ( cst == CONN_REJECT )
     {
+        LOGC(mglog.Note, log << "startConnect: connection rejected");
         e = CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
@@ -3030,6 +3037,9 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
         << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
     m_llLastReqTime = 0;
+    // REQ-TIME LOW shall request the waiting to be interrupted
+    // in the packet-reading function, but it's not necessary here,
+    // as this function has the affinity of RcvQ:worker.
 
     return cst;
 }
@@ -8392,14 +8402,15 @@ void CUDT::checkTimers()
             // OR the number of sent packets since last ACK has reached
             // the smoother-defined value of ACK Interval
             // (note that none of the builtin smoothers defines ACK Interval)
-            || (m_Smoother->ACKInterval() > 0 && m_iPktCount >= m_Smoother->ACKInterval()))
+            || (m_Smoother->ACKInterval() == 0 ? false : (m_iPktCount >= m_Smoother->ACKInterval())))
     {
         // ACK timer expired or ACK interval is reached
+        HLOGC(mglog.Debug, log << "checkTimer: sending FAT ACK");
 
         sendCtrl(UMSG_ACK);
         CTimer::rdtsc(currtime_tk);
 
-        int ack_interval_tk = m_Smoother->ACKPeriod() > 0 ? m_Smoother->ACKPeriod() * m_ullCPUFrequency : m_ullACKInt_tk;
+        int ack_interval_tk = m_Smoother->ACKPeriod() == 0 ? m_ullACKInt_tk : m_Smoother->ACKPeriod() * m_ullCPUFrequency ;
         m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
 
         m_iPktCount = 0;
@@ -8413,6 +8424,7 @@ void CUDT::checkTimers()
     // normally according to the timely rules.
     else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
     {
+        HLOGC(mglog.Debug, log << "checkTimer: sending LITE ACK");
         //send a "light" ACK
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++ m_iLightACKCount;
@@ -8429,6 +8441,7 @@ void CUDT::checkTimers()
          */
         if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
         {
+            HLOGC(mglog.Debug, log << "checkTimer: sending PERIODIC NAK");
             // NAK timer expired, and there is loss to be reported.
             sendCtrl(UMSG_LOSSREPORT);
 

@@ -106,6 +106,7 @@ m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:u
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536)
 {
+    pipe(m_fdTrigger);
 }
 
 CChannel::CChannel(int version):
@@ -120,10 +121,56 @@ m_iRcvBufSize(65536),
 m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+   pipe(m_fdTrigger);
 }
 
 CChannel::~CChannel()
 {
+    ::close(m_fdTrigger[PIPE_IN]);
+    ::close(m_fdTrigger[PIPE_OUT]);
+}
+
+int CChannel::signalReading(char val) const
+{
+    char data[2] = { val, 0 }; // could be 0, but this sounds bad.
+    return ::write(m_fdTrigger[PIPE_OUT], data, 1);
+}
+
+int CChannel::clearSignalReading(bool checked) const
+{
+    int value = -1;
+    if (!checked)
+    {
+        int sock = m_fdTrigger[PIPE_IN];
+        fd_set in_set;
+        FD_ZERO(&in_set);
+        FD_SET(sock, &in_set);
+
+        // Use timeout 0 - this is to check if the read end of
+        // the pipe is ready to read. If so, read one byte.
+        timeval tv = {0, 0};
+        int ret = ::select(sock+1, &in_set, 0, 0, &tv);
+        if (ret == -1)
+            return -1;
+        checked = FD_ISSET(sock, &in_set);
+    }
+
+    if (checked)
+    {
+        char onebyte[2];
+
+        // Don't check any errors. This is in order to purge
+        // the pipe of the data that were stuffed into it just
+        // to cause a signal on the select that is waiting for
+        // read-readiness of the UDP socket.
+        int ret = ::read(m_fdTrigger[PIPE_IN], onebyte, 1);
+        if (ret == -1)
+            return -1;
+
+        value = onebyte[0];
+    }
+
+    return value;
 }
 
 void CChannel::open(const sockaddr* addr)
@@ -255,11 +302,14 @@ void CChannel::setUDPSockOpt()
 
 void CChannel::close() const
 {
+   int ret SRT_ATR_UNUSED = signalReading(PSG_CLOSE);
+   HLOGC(mglog.Debug, log << "CChannel::close: sendt TRIGGER signal first, ret=" << ret);
    #ifndef _WIN32
       ::close(m_iSocket);
    #else
       ::closesocket(m_iSocket);
    #endif
+
 }
 
 int CChannel::getSndBufSize()
@@ -440,12 +490,12 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
    return res;
 }
 
-EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
+EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref_t<int> r_msg_flags, sockaddr* addr) const
+#ifndef _WIN32  // POSIX/fallback version
 {
-    EReadStatus status = RST_OK;
+    CPacket& packet = *r_pkt;
 
-#ifndef _WIN32
-    msghdr mh;   
+    msghdr mh;
     mh.msg_name = addr;
     mh.msg_namelen = m_iSockAddrSize;
     mh.msg_iov = packet.m_PacketVector;
@@ -454,19 +504,8 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     mh.msg_controllen = 0;
     mh.msg_flags = 0;
 
-#ifdef UNIX
-    fd_set set;
-    timeval tv;
-    FD_ZERO(&set);
-    FD_SET(m_iSocket, &set);
-    tv.tv_sec = 0;
-    tv.tv_usec = 10000;
-    ::select(m_iSocket+1, &set, NULL, &set, &tv);
-#endif
-
-    int res = ::recvmsg(m_iSocket, &mh, 0);
-    int msg_flags = mh.msg_flags;
-
+    *r_result = ::recvmsg(m_iSocket, &mh, 0);
+    *r_msg_flags = mh.msg_flags;
 
     // Note that there are exactly four groups of possible errors
     // reported by recvmsg():
@@ -489,23 +528,22 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     // Return: RST_ERROR. This will simply make the worker thread exit, which is
     // expected to happen after CChannel::close() is called by another thread.
 
-    if (res == -1)
+    if (*r_result == -1)
     {
         int err = NET_ERROR;
         if (err == EAGAIN || err == EINTR || err == ECONNREFUSED) // For EAGAIN, this isn't an error, just a useless call.
         {
-            status = RST_AGAIN;
-        }
-        else
-        {
-            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
-            status = RST_ERROR;
+            return RST_AGAIN;
         }
 
-        goto Return_error;
+        HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+        return RST_ERROR;
     }
 
-#else
+    return RST_OK;
+}
+#else // WIN32 version
+{
     // XXX REFACTORING NEEDED!
     // This procedure uses the WSARecvFrom function that just reads
     // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
@@ -521,6 +559,10 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     // so that it can be checked independently, however it won't have any other
     // value one Windows than 0, unless this procedure below is rewritten
     // to use WSARecvMsg().
+
+    CPacket& packet = *r_pkt;
+    int& res = *r_result;
+    int& msg_flags = *r_msg_flags;
 
     DWORD size = CPacket::HDR_SIZE + packet.getLength();
     DWORD flag = 0;
@@ -562,14 +604,101 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
             status = RST_AGAIN;
         }
 
-        goto Return_error;
+        return status;
     }
 
     // Not sure if this problem has ever occurred on Windows, just a sanity check.
     if (flag & MSG_PARTIAL)
         msg_flags = 1;
+
+    return RST_OK;
+}
 #endif
 
+EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_us) const
+{
+    EReadStatus status = RST_OK;
+
+    fd_set in_set, err_set;
+    timeval tv;
+
+    FD_ZERO(&in_set);
+    FD_ZERO(&err_set);
+
+    // Add the UDP socket
+    FD_SET(m_iSocket, &in_set);
+    FD_SET(m_iSocket, &err_set);
+    int nsockets;
+    FD_SET(m_fdTrigger[PIPE_IN], &in_set);
+    nsockets = std::max(m_iSocket, m_fdTrigger[PIPE_IN]) + 1;
+
+    // uptime_us specifies the absolute time to wait. select uses
+    // relative time. As absolute time, it might happen that the
+    // uptime is in the past.
+
+    uint64_t currtime_tk;
+    CTimer::rdtsc(currtime_tk);
+    uint64_t now = currtime_tk/CTimer::getCPUFrequency();
+
+    if (!uptime_us)
+    {
+        // Waiting forever is risky, so in case of this
+        // simply wait longer time - 0.5s
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+    }
+    else if (now >= uptime_us) // up time is in the past, so don't wait
+    {
+        // return immediately
+        tv.tv_usec = 0;
+        tv.tv_sec = 0;
+    }
+    else
+    {
+        uint64_t timeout_us;
+        timeout_us = uptime_us - now;
+        tv.tv_usec = timeout_us%1000000;
+        tv.tv_sec = timeout_us/1000000;
+    }
+
+    HLOGC(mglog.Debug, log << "CChannel::recvfrom: waiting for event: usec=" << tv.tv_usec);
+
+    ::select(nsockets, &in_set, NULL, &err_set, &tv);
+
+    int psg = FD_ISSET(m_fdTrigger[PIPE_IN], &in_set) ? clearSignalReading(true) : PSG_NONE;
+
+#if ENABLE_HEAVY_LOGGING
+    {
+        static const char* type [] = {"none", "read", "error"};
+        static const char* psgname [] = {"none", "close", "newunit", "newconn"};
+
+        const char* sock_state = type[ FD_ISSET(m_iSocket, &in_set) + 2*FD_ISSET(m_iSocket, &err_set) ];
+        const char* signal_state = psgname[psg+1];
+
+        LOGC(mglog.Debug, log << "CChannel::recvfrom: select-ready: socket="
+                << sock_state << " trigger=" << signal_state);
+    }
+
+#endif
+
+    // If the select DID NOT report read-readiness of the UDP socket,
+    // do not call the ::recvmsg function - it's useless and won't read
+    // anything, but it will still take some CPU.
+    if ( (!FD_ISSET(m_iSocket, &in_set) && !FD_ISSET(m_iSocket, &err_set)) || psg == PSG_CLOSE )
+    {
+        HLOGC(mglog.Debug, log << "CChannel::recvfrom: socket "
+                << (psg == PSG_CLOSE ? "TO BE CLOSED" : "not ready")
+                << ", possibly trigger or timeout. NOT READING.");
+        status = psg == PSG_CLOSE ? RST_ERROR : RST_AGAIN;
+        goto Return_error;
+    }
+    // NOTE: allowed to call reading in case when select reported error.
+    // This should probably repeat this same error when ::recvfrom is called.
+    // The handler of the error will decide what to do with this. It is not
+    // expected that the error be reported every time at the call.
+
+    int res, msg_flags;
+    status = sys_recvmsg(Ref(packet), Ref(res), Ref(msg_flags), addr);
 
     // Sanity check for a case when it didn't fill in even the header
     if ( size_t(res) < CPacket::HDR_SIZE )
@@ -608,8 +737,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 
     // convert back into local host order
     // XXX use NtoHLA().
-    //for (int i = 0; i < 4; ++ i)
-    //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
     {
         uint32_t* p = packet.m_nHeader;
         for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)

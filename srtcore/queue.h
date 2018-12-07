@@ -135,8 +135,8 @@ private:
 
 struct CSNode
 {
-   CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp_tk;      // Time Stamp
+   CUDT* m_pUDT;               // Pointer to the instance of CUDT socket
+   uint64_t m_llTimeStamp_tk;  // Next send event Time Stamp
 
    int m_iHeapLoc;		// location on the heap, -1 means not on the heap
 };
@@ -208,7 +208,7 @@ private:
 struct CRNode
 {
    CUDT* m_pUDT;                // Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp_tk;      // Time Stamp
+   uint64_t m_llTimeStamp_tk;   // Next receiver event Time Stamp
 
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link
@@ -312,7 +312,7 @@ public:
    void remove(const SRTSOCKET& id, bool should_lock);
    CUDT* retrieve(const sockaddr* addr, ref_t<SRTSOCKET> id);
 
-   void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
+   uint64_t updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response, bool timely);
 
 private:
    struct CRL
@@ -417,6 +417,9 @@ public:
    CRcvQueue();
    ~CRcvQueue();
 
+   static const int TIMER_UPDATE_INTERVAL_US = 100000;
+   static const int CONN_UPDATE_INTERVAL_US = 250000;
+
 public:
 
    // XXX There's currently no way to access the socket ID set for
@@ -446,15 +449,20 @@ private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
    // Subroutines of worker
-   EReadStatus worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr* sa);
+   EReadStatus worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr* sa, uint64_t uptime_us);
    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr* sa);
    EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr* sa);
    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr* sa);
+
+   void addProcessingUnit(CUDT* ne);
+   void withdrawProcessingUnit(CUDT* u);
 
 private:
    CUnitQueue m_UnitQueue;		// The received packet queue
 
    CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
+
+   // XXX See comment at CRcvQueue::worker_ProcessAddressedPacket.
    CHash* m_pHash;			// Hash table for UDT socket looking up
    CChannel* m_pChannel;		// UDP channel for receving packets
    CTimer* m_pTimer;			// shared timer with the snd queue
@@ -464,7 +472,17 @@ private:
    volatile bool m_bClosing;            // closing the worker
    pthread_cond_t m_ExitCond;
 
+   uint64_t m_tRcvUpTime_us;
+   uint64_t m_tConnUpTime_us;
+
+   void signalReading(char val);
+   void clearSignalReading();
+
 private:
+
+   void insertSocketCore(CUDT* u);
+   void removeSocketCore(CUDT* u);
+
    int setListener(CUDT* u);
    void removeListener(const CUDT* u);
 

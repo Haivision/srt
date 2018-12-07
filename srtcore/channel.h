@@ -128,7 +128,7 @@ public:
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   EReadStatus recvfrom(sockaddr* addr, CPacket& packet) const;
+   EReadStatus recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_us) const;
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
@@ -160,14 +160,30 @@ public:
    const sockaddr* bindAddress() { return &m_BindAddr; }
    const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
+   enum {PIPE_IN, PIPE_OUT};
+
+   // Constants used for signal reading that passes
+   // extra information
+   static const int
+                PSG_CLOSE = 0,
+                PSG_NEWUNIT = 1,
+                PSG_NEWCONN = 2,
+                PSG_NONE = -1;
+
+   int signalReading(char val) const;
+   int clearSignalReading(bool checked = false) const;
+
 private:
    void setUDPSockOpt();
+
+   EReadStatus sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref_t<int> r_msg_flags, sockaddr* addr) const;
 
 private:
    int m_iIPversion;                    // IP version
    int m_iSockAddrSize;                 // socket address structure size (pre-defined to avoid run-time test)
 
    UDPSOCKET m_iSocket;                 // socket descriptor
+   int m_fdTrigger[2];                      // descriptor for read-end of the pipe used to break reading
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;

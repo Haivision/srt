@@ -839,6 +839,8 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
 std::string logging::FormatTime(uint64_t time)
 {
     using namespace std;
+    if (!time)
+        return "NO-TIME-DEFINED";
 
     time_t sec = time/1000000;
     time_t usec = time%1000000;
