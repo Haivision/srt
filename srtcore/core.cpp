@@ -8406,7 +8406,7 @@ void CUDT::checkTimers()
             || (m_Smoother->ACKInterval() == 0 ? false : (m_iPktCount >= m_Smoother->ACKInterval())))
     {
         // ACK timer expired or ACK interval is reached
-        HLOGC(mglog.Debug, log << "checkTimer: sending FAT ACK");
+        HLOGC(mglog.Debug, log << "checkTimer: sending FAT ACK (slip: " << (m_ullNextACKTime_tk-currtime_tk) << "tk)");
 
         sendCtrl(UMSG_ACK);
         CTimer::rdtsc(currtime_tk);
@@ -8442,7 +8442,7 @@ void CUDT::checkTimers()
          */
         if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
         {
-            HLOGC(mglog.Debug, log << "checkTimer: sending PERIODIC NAK");
+            HLOGC(mglog.Debug, log << "checkTimer: sending PERIODIC NAK (slip: " << (m_ullNextNAKTime_tk-currtime_tk) << "tk)");
             // NAK timer expired, and there is loss to be reported.
             sendCtrl(UMSG_LOSSREPORT);
 
@@ -8601,7 +8601,7 @@ void CUDT::checkTimers()
                     << " (" << CSeqNo::seqcmp(csn, m_iSndLastAck) << " packets)");
 
                 HLOGC(mglog.Debug, log << "timeout lost: pkts=" <<  num << " rtt+4*var=" <<
-                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " diff="
+                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " slip="
                         << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
 
                 if (num > 0) {
