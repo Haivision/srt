@@ -932,7 +932,7 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
 
             nowstime = then == 0 || now > ontime;
             HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                    <<  "<=> " << CRcvQueue::CONN_UPDATE_INTERVAL_US << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
+                    <<  "<=> " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
             if (!nowstime)
             {
                 // The time is not now, add this processing time to the list

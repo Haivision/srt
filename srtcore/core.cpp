@@ -2848,7 +2848,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
         if (tdiff > CRcvQueue::CONN_UPDATE_INTERVAL_US)
         {
             HLOGC(mglog.Debug, log << "startConnect: LOOP: time to send (" << tdiff
-                    << " > " << CRcvQueue::CONN_UPDATE_INTERVAL_US << "). size=" << reqpkt.getLength());
+                    << " > " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << "). size=" << reqpkt.getLength());
 
             if (m_bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
