@@ -90,6 +90,7 @@ option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
@@ -186,13 +187,10 @@ if ( USE_GNUTLS )
 else()
 		message(STATUS "SSL Dependency: using OpenSSL (default)")
 
-		# if OPENSSL_ROOT_DIR or USE_OPENSSL_PC are set, we assume
-		# that the user wants to use find_package(OpenSSL) method to
-		# find OpenSSL package. Otherwise default to pkg-config.
-		if (NOT IOS)
-			if (NOT OPENSSL_ROOT_DIR OR USE_OPENSSL_PC)
-				pkg_check_modules(SSL "openssl libcrypto")
-			endif()
+		# Try using pkg-config method first if enabled,
+		# fall back to find_package method otherwise
+		if (USE_OPENSSL_PC)
+			pkg_check_modules(SSL "openssl libcrypto")
 		endif()
 		if (SSL_FOUND)
 			set (SSL_REQUIRED_MODULES "openssl libcrypto")
