@@ -474,6 +474,10 @@ CSndQueue::~CSndQueue()
    delete m_pSndUList;
 }
 
+#if ENABLE_LOGGING
+    int CSndQueue::m_counter = 0;
+#endif
+
 void CSndQueue::init(CChannel* c, CTimer* t)
 {
    m_pChannel = c;
@@ -483,7 +487,12 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    m_pSndUList->m_pWindowCond = &m_WindowCond;
    m_pSndUList->m_pTimer = m_pTimer;
 
-   ThreadName tn("SRT:SndQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::ostringstream thrname;
+    thrname << "SRT:SndQ:w" << m_counter;
+    ThreadName tn(thrname.str().c_str());
+#endif
    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
    {
 	   m_WorkerThread = pthread_t();
@@ -1165,7 +1174,11 @@ CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
 	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+
+        HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
     pthread_mutex_destroy(&m_LSLock);
@@ -1188,6 +1201,11 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
+#if ENABLE_LOGGING
+    int CRcvQueue::m_counter = 0;
+#endif
+
+
 void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* cc, CTimer* t)
 {
     m_iPayloadSize = payload;
@@ -1203,7 +1221,13 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     m_pRcvUList = new CRcvUList;
     m_pRendezvousQueue = new CRendezvousQueue;
 
-    ThreadName tn("SRT:RcvQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::ostringstream thrname;
+    thrname << "SRT:RcvQ:w" << m_counter;
+    ThreadName tn(thrname.str().c_str());
+#endif
+
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
 		m_WorkerThread = pthread_t();

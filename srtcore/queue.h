@@ -405,6 +405,10 @@ private:
    } m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
+
 private:
    CSndQueue(const CSndQueue&);
    CSndQueue& operator=(const CSndQueue&);
@@ -476,6 +480,10 @@ private:
 
    uint64_t m_tRcvUpTime_us;
    uint64_t m_tConnUpTime_us;
+
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
 
    void signalReading(char val);
    void clearSignalReading();
