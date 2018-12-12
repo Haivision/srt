@@ -546,11 +546,50 @@ int main( int argc, char** argv )
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
     logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
 
-    string verbo = Option<OutString>(params, "no", "v", "verbose");
-    if ( verbo == "" || !false_names.count(verbo) )
+    string logfa = Option<OutString>(params, "", "logfa");
+    // Without logfa option, use the defaults of the library.
+    // With logfa, enable those selected only.
+    if (logfa != "")
+    {
+        set<logging::LogFA> fas = SrtParseLogFA(logfa);
+
+        // Stupid, but that's how you link C and C++ API.
+        vector<int> falist(fas.begin(), fas.end());
+        srt_resetlogfa(falist.data(), falist.size());
+    }
+    else
+    {
+        UDT::addlogfa(SRT_LOGFA_APP);
+    }
+
+    string verbose_val = Option<OutString>(params, "no", "v", "verbose");
+    int verbch = 1; // default cout
+    if (verbose_val != "no")
+    {
         Verbose::on = true;
+        try
+        {
+            verbch = stoi(verbose_val);
+        }
+        catch (...)
+        {
+            verbch = 1;
+        }
+        if (verbch != 1)
+        {
+            if (verbch != 2)
+            {
+                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                return 1;
+            }
+            Verbose::cverb = &std::cerr;
+        }
+        else
+        {
+            Verbose::cverb = &std::cout;
+        }
+    }
 
 
     string srt_uri = params[""][0];

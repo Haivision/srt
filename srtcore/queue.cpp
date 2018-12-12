@@ -727,7 +727,9 @@ void CRcvUList::update(const CUDT* u, uint64_t nextevent)
         // node still happens earlier.
         if (n->m_pNext->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
         {
-            HLOGC(mglog.Debug, log << "CRcvUList::update: node still freshest");
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node still freshest next="
+                    << logging::FormatTime(CTimer::tk2us(n->m_pNext->m_tNextEventTime_tk))
+                    << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk)));
             return;
         }
 
@@ -735,7 +737,9 @@ void CRcvUList::update(const CUDT* u, uint64_t nextevent)
         if (m_pLast->m_tNextEventTime_tk < n->m_tNextEventTime_tk)
         {
             // Do nothing, the below procedure with swipe it to the last position
-            HLOGC(mglog.Debug, log << "CRcvUList::update: node is stalest anyway");
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node is stalest anyway. last="
+                    << logging::FormatTime(CTimer::tk2us(m_pLast->m_tNextEventTime_tk))
+                    << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk)));
         }
         else
         {
@@ -761,7 +765,10 @@ void CRcvUList::update(const CUDT* u, uint64_t nextevent)
                 // one that still satisfies this condition, but one past it).
                 if (nb->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
                 {
-                    HLOGC(mglog.Debug, log << "CRcvUList::update: node falls in between");
+                    HLOGC(mglog.Debug, log << "CRcvUList::update: node falls in between,"
+                            << " prev=" << logging::FormatTime(CTimer::tk2us(nb->m_pPrev->m_tNextEventTime_tk))
+                            << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk))
+                            << " next=" << logging::FormatTime(CTimer::tk2us(nb->m_tNextEventTime_tk)));
                     break;
                 }
                 nb = nb->m_pNext;
