@@ -511,7 +511,7 @@ void* CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
+    self->m_ullDbgPeriod = CTimer::us2tk(5000000);
     self->m_ullDbgTime += self->m_ullDbgPeriod;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
@@ -626,7 +626,10 @@ CRcvUList::~CRcvUList()
 void CRcvUList::insert(const CUDT* u)
 {
    CRNode* n = u->m_pRNode;
-   CTimer::rdtsc(n->m_llTimeStamp_tk);
+
+   uint64_t timestamp_tk;
+   CTimer::rdtsc(timestamp_tk);
+   n->m_tNextEventTime_tk = timestamp_tk + CTimer::us2tk(CRcvQueue::TIMER_UPDATE_INTERVAL_US);
 
    if (NULL == m_pUList)
    {
@@ -675,34 +678,113 @@ void CRcvUList::remove(const CUDT* u)
    n->m_pNext = n->m_pPrev = NULL;
 }
 
-void CRcvUList::update(const CUDT* u)
+void CRcvUList::update(const CUDT* u, uint64_t nextevent)
 {
-   CRNode* n = u->m_pRNode;
+    CRNode* n = u->m_pRNode;
 
-   if (!n->m_bOnList)
-      return;
+    if (!n->m_bOnList)
+        return;
 
-   CTimer::rdtsc(n->m_llTimeStamp_tk);
+    bool find_next = false;
+    uint64_t timestamp_tk;
+    CTimer::rdtsc(timestamp_tk);
+    n->m_tNextEventTime_tk = timestamp_tk + CTimer::us2tk(CRcvQueue::TIMER_UPDATE_INTERVAL_US);
 
-   // if n is the last node, do not need to change
-   if (NULL == n->m_pNext)
-      return;
+    // If nextevent is nonzero and earlier than the predicted next 
+    // periodic event, find the most appropriate place to keep items
+    // ordered by m_tNextEventTime_tk.
+    if (nextevent && nextevent < n->m_tNextEventTime_tk)
+    {
+        find_next = true;
+        n->m_tNextEventTime_tk = nextevent;
+    }
 
-   if (NULL == n->m_pPrev)
-   {
-      m_pUList = n->m_pNext;
-      m_pUList->m_pPrev = NULL;
-   }
-   else
-   {
-      n->m_pPrev->m_pNext = n->m_pNext;
-      n->m_pNext->m_pPrev = n->m_pPrev;
-   }
+    // if n is the last node, do not need to change
+    if (!n->m_pNext)
+    {
+        HLOGC(mglog.Debug, log << "CRcvUList::update: the only node, nothing to be moved");
+        return;
+    }
 
-   n->m_pPrev = m_pLast;
-   n->m_pNext = NULL;
-   m_pLast->m_pNext = n;
-   m_pLast = n;
+    // New BEFORE NODE (node before which this node should be inserted).
+    // NULL means that the node should be moved to the very end.
+    CRNode* nb = NULL;
+    if (find_next)
+    {
+        // Check if the next node has the later time.
+        // If so, don't move the node. It is possible that
+        // the next packet is pending to handling in some time,
+        // but might be that the ACK/PNACK event on the current
+        // node still happens earlier.
+        if (n->m_pNext->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
+        {
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node still freshest");
+            return;
+        }
+
+        // Before searching for the node in the middle, check the last one.
+        if (m_pLast->m_tNextEventTime_tk < n->m_tNextEventTime_tk)
+        {
+            // Do nothing, the below procedure with swipe it to the last position
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node is stalest anyway");
+        }
+        else
+        {
+            // Need to find the most appropriate position to shift to.
+
+            // 1. We know that n->m_pNext exists.
+            // 2. We don't know if n->m_pNext->m_pNext exists, but at worst
+            // it will not execute the following while loop at all.
+            // 3. But this shall never happen because if (n->m_pNext->m_pNext == NULL)
+            // then n->m_pNext == m_pLast, and node has been already checked.
+            nb = n->m_pNext->m_pNext;
+            while (nb)
+            {
+                // XXX This is linear searching since the second following node
+                // until the butlast one (the last one is checked already).
+                // This isn't too efficient, possibly the list shall be replaced
+                // by std::map ordered by time. The only operations being done here
+                // are insertion and removal at the earliest position, fortunately
+                // not linear iteration.
+
+                // Find first node that DOES NOT satisfy the condition that its
+                // next event time happens earlier than the n node's (NOTE: not last
+                // one that still satisfies this condition, but one past it).
+                if (nb->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
+                {
+                    HLOGC(mglog.Debug, log << "CRcvUList::update: node falls in between");
+                    break;
+                }
+                nb = nb->m_pNext;
+            }
+        }
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "CRcvUList::update: next formal update still earliest - moving to the end");
+    }
+
+    // 1. TEARING OFF this node
+
+    // is first
+    if (!n->m_pPrev)
+    {
+        m_pUList = n->m_pNext;
+        m_pUList->m_pPrev = NULL;
+    }
+    else
+    {
+        n->m_pPrev->m_pNext = n->m_pNext;
+        n->m_pNext->m_pPrev = n->m_pPrev;
+    }
+
+    // 2. INSERTING the node into correct place
+    CRNode*& lastref = nb ? nb->m_pPrev : m_pLast;
+
+    n->m_pPrev = lastref;
+    n->m_pNext = nb;
+    lastref->m_pNext = n;
+    lastref = n;
 }
 
 //
@@ -1160,6 +1242,9 @@ void* CRcvQueue::worker(void* param)
    uint64_t uptime_us = 0;
    self->m_tConnUpTime_us = 0;
 
+#if ENABLE_HEAVY_LOGGING
+       int npupdated = 0;
+#endif
    while (!self->m_bClosing)
    {
        bool have_received SRT_ATR_UNUSED = false; // used in HLOG only
@@ -1181,7 +1266,7 @@ void* CRcvQueue::worker(void* param)
 
                // Check if the exit was at the time when an event needs to be handled.
                // If not, just repeat reading
-               if (currtime_tk*CTimer::getCPUFrequency() > uptime_us)
+               if (CTimer::tk2us(currtime_tk) > uptime_us)
                    goto Handle_timer_events;
 
                continue;
@@ -1206,6 +1291,10 @@ void* CRcvQueue::worker(void* param)
                // - an enqueued rendezvous socket
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+#if ENABLE_HEAVY_LOGGING
+               if (cst == CONN_CONTINUE)
+                   ++npupdated;
+#endif
            }
            HLOGC(perflog.Debug, log << "PROCESSING PACKET: END");
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
@@ -1215,7 +1304,7 @@ void* CRcvQueue::worker(void* param)
 
                // Check if the exit was at the time when an event needs to be handled.
                // If not, just repeat reading
-               if (currtime_tk*CTimer::getCPUFrequency() > uptime_us)
+               if (CTimer::tk2us(currtime_tk) > uptime_us)
                    goto Handle_timer_events;
 
                continue;
@@ -1247,20 +1336,29 @@ Handle_timer_events:
        HLOGC(perflog.Debug, log << "TIMER CHECK: START");
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
-       uint64_t ctime_tk = currtime_tk - TIMER_UPDATE_INTERVAL_US * CTimer::getCPUFrequency();
 
-       // True logical condition:
-       //
-       //  IF  currtime_tk > ul->m_llTimeStamp_tk + 100'000 * US_IN_TK
-       //
-       // This is differently written due to optimization - decreasing
-       // current time by 100 000 would be done once, increasing storage
-       // timestamp by 100 000 would have to be done for each item.
 #if ENABLE_HEAVY_LOGGING
        int nuupdated = 0;
+       string whichone = "neither";
 #endif
 
-       while (ul && (ul->m_llTimeStamp_tk < ctime_tk))
+       uint64_t next_xktimer_tk = 0;
+
+#if ENABLE_HEAVY_LOGGING
+       if (ul)
+       {
+           LOGC(mglog.Debug, log << "FIRST RCVUnit next event time:"
+                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextEventTime_tk))
+                   << " PN/ACK time:"
+                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextPNACKTime_tk)));
+       }
+       else
+       {
+           LOGP(mglog.Debug, "NO RCVUnit ready to update");
+       }
+#endif
+
+       while (ul && currtime_tk > ul->m_tNextEventTime_tk)
        {
            CUDT* u = ul->m_pUDT;
 
@@ -1270,11 +1368,41 @@ Handle_timer_events:
                LOGC(mglog.Debug, log << "UPDATING SOCKET: @" << u->m_SocketID);
                ++nuupdated;
 #endif
-               u->checkTimers();
 
+               // Grab the earliest update time that arise after checkTimers.
                // update: saves current time in the UList node and
                // moves it to the end of list.
-               self->m_pRcvUList->update(u);
+               self->m_pRcvUList->update(u, u->checkTimers());
+
+               /*
+
+                  XXX Move to update
+
+               uint64_t next_update_tk;
+               next_update_tk = u->m_bRcvNakReport ? min(u->m_ullNextACKTime_tk, u->m_ullNextNAKTime_tk) : u->m_ullNextACKTime_tk;
+
+               // Use nextNAKtime if:
+               // - m_bRcvNakReport (NAKREPORT is in)
+               // - m_ullNextNAKTime_tk is in future (otherwise it probably wasn't set due to no loss)
+               // - nextNAKtime is earlier than nextACKtime.
+               if (u->m_bRcvNakReport && u->m_ullNextNAKTime_tk > currtime_tk && u->m_ullNextNAKTime_tk < u->m_ullNextACKTime_tk)
+               {
+                   next_update_tk = u->m_ullNextNAKTime_tk;
+                   HLOGC(mglog.Debug, log << "UPDATED, next event time (NAK):" << logging::FormatTime(CTimer::tk2us(next_update_tk))
+                           << " update time:" << logging::FormatTime(CTimer::getTime()+TIMER_UPDATE_INTERVAL_US));
+                   whichone = "ack-timer";
+               }
+               else
+               {
+                   next_update_tk = u->m_ullNextACKTime_tk;
+                   HLOGC(mglog.Debug, log << "UPDATED, next event time (ACK):" << logging::FormatTime(CTimer::tk2us(next_update_tk))
+                           << " update time:" << logging::FormatTime(CTimer::getTime()+TIMER_UPDATE_INTERVAL_US));
+                   whichone = "pnak-timer";
+               }
+
+               next_xktimer_tk = next_xktimer_tk ? min(next_xktimer_tk, next_update_tk) : next_update_tk;
+               */
+
            }
            else
            {
@@ -1287,18 +1415,37 @@ Handle_timer_events:
            //
            // Processing time 
            ul = self->m_pRcvUList->m_pUList;
+           HLOGC(mglog.Debug, log << "NEXT UPDATE HEAD: @" << (ul? ul->m_pUDT->m_SocketID : 0)
+                   << " TS=" << logging::FormatTime(ul? CTimer::tk2us(ul->m_tNextEventTime_tk) : 0));
        }
 
        if (ul)
        {
            // We have the unit for next processing.
-           uptime_us = ul->m_llTimeStamp_tk/CTimer::getCPUFrequency() + TIMER_UPDATE_INTERVAL_US;
+           uptime_us = CTimer::tk2us(ul->m_tNextEventTime_tk);
+           HLOGC(mglog.Debug, log << "FIRST UNIT TO UPDATE: @" << ul->m_pUDT->m_SocketID << " AT: "
+                   << logging::FormatTime(uptime_us));
        }
        else
        {
            // We don't have time of the next processing.
+           HLOGC(mglog.Debug, log << "NO CONNECTED UNITS TO UPDATE - waiting maximum time.");
            uptime_us = 0;
        }
+
+       // Can be also 0!
+       uint64_t next_xktimer_us = CTimer::tk2us(next_xktimer_tk);
+
+       if (uptime_us == 0 || (next_xktimer_tk && uptime_us > next_xktimer_us) )
+       {
+           uptime_us = next_xktimer_us;
+       }
+#if ENABLE_HEAVY_LOGGING
+       else
+       {
+           whichone = "receiver";
+       }
+#endif
 
        // This records the update time as defined by the receiver entities (m_pRcvUList).
        self->m_tRcvUpTime_us = uptime_us;
@@ -1315,11 +1462,12 @@ Handle_timer_events:
            pktinfo = info.str();
        }
 
-       LOGC(mglog.Debug, log << "worker: UPDATED " << nuupdated << " units. "
+       LOGC(mglog.Debug, log << "worker: UPDATED " << nuupdated << "+" << npupdated << " units. "
                << pktinfo
                << ". NEXT RCV EVENT: " << logging::FormatTime(uptime_us)
                << " cst=" << ConnectStatusStr(cst));
 
+       npupdated = 0; // this variable is outside the loop
 #endif
 
        // Check connection requests status for all sockets in the RendezvousQueue.
@@ -1329,7 +1477,7 @@ Handle_timer_events:
        // CUDT::processAsyncConnectResponse --->
        // CUDT::processConnectResponse 
 
-       uint64_t now_us = currtime_tk/CTimer::getCPUFrequency();
+       uint64_t now_us = CTimer::tk2us(currtime_tk);
        bool timely = self->m_tConnUpTime_us < now_us;  // (including when m_tConnUpTime_us == 0)
 
        HLOGC(perflog.Debug, log << "TIMER CHECK: END. DOING updateConnStatus");
@@ -1393,9 +1541,6 @@ Handle_timer_events:
 
        // Note that m_tConnUpTime_us == 0 may be either triggered from registerConnector
        // or by returning from updateConnStatus when there are no pending connections.
-#if ENABLE_HEAVY_LOGGING
-       string whichone = uptime_us ? "receiver" : "neither";
-#endif
 
        if (uptime_us == 0 || (self->m_tConnUpTime_us && self->m_tConnUpTime_us < uptime_us))
        {
@@ -1596,8 +1741,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     else
         u->processData(unit);
 
-    u->checkTimers();
-    m_pRcvUList->update(u);
+    m_pRcvUList->update(u, u->checkTimers());
 
     return CONN_CONTINUE;
 }

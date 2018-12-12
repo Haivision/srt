@@ -207,8 +207,10 @@ private:
 
 struct CRNode
 {
-   CUDT* m_pUDT;                // Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp_tk;   // Next receiver event Time Stamp
+   CUDT* m_pUDT;                  // Pointer to the instance of CUDT socket
+   uint64_t m_tNextEventTime_tk;  // Next receiver event Time Stamp
+
+   uint64_t m_tNextPNACKTime_tk; // XXX TEMPORARY to see how it works
 
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link
@@ -237,7 +239,7 @@ public:
       /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
       /// @param [in] u pointer to the UDT instance
 
-   void update(const CUDT* u);
+   void update(const CUDT* u, uint64_t nextevent);
 
 public:
    CRNode* m_pUList;		// the head node

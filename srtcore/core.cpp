@@ -1215,7 +1215,7 @@ void CUDT::open()
    if (m_pRNode == NULL)
       m_pRNode = new CRNode;
    m_pRNode->m_pUDT = this;
-   m_pRNode->m_llTimeStamp_tk = 1;
+   m_pRNode->m_tNextEventTime_tk = 1 + CTimer::us2tk(CRcvQueue::TIMER_UPDATE_INTERVAL_US);
    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
    m_pRNode->m_bOnList = false;
 
@@ -4261,6 +4261,9 @@ void* CUDT::tsbpd(void* param)
       }
       CGuard::leaveCS(self->m_AckLock);
 
+#if ENABLE_HEAVY_LOGGING
+      bool enforced = false;
+#endif
       if (rxready)
       {
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << current_pkt_seq
@@ -4279,6 +4282,9 @@ void* CUDT::tsbpd(void* param)
          self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, UDT_EPOLL_IN, true);
          CTimer::triggerEvent();
          tsbpdtime = 0;
+#if ENABLE_HEAVY_LOGGING
+         enforced = true;
+#endif
       }
 
       if (tsbpdtime != 0)
@@ -4289,11 +4295,14 @@ void* CUDT::tsbpd(void* param)
          * Schedule wakeup when it will be.
          */
           self->m_bTsbPdAckWakeup = false;
+          int reason SRT_ATR_UNUSED;
           THREAD_PAUSED();
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
               << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
-          CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
+          reason = CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
+          HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKEUP REASON: " << (reason == 0? "SIGNAL"
+                      : (reason == ETIMEDOUT ? "TIMEOUT" : "ERROR")));
       }
       else
       {
@@ -4307,11 +4316,13 @@ void* CUDT::tsbpd(void* param)
          * - New buffers ACKed
          * - Closing the connection
          */
-         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
+         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: scheduling WAKEUP AT ACK, reason: "
+                 << (enforced ? "FORCED after signing off payload" : "NO next packet, sleeping until have one"));
          self->m_bTsbPdAckWakeup = true;
          THREAD_PAUSED();
          pthread_cond_wait(&self->m_RcvTsbPdCond, &self->m_RecvLock);
          THREAD_RESUMED();
+         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKEUP AT ACK.");
       }
    }
    CGuard::leaveCS(self->m_RecvLock);
@@ -5473,8 +5484,15 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
             {
-                HLOGP(tslog.Debug, "recvmsg: KICK tsbpd()");
-                pthread_cond_signal(&m_RcvTsbPdCond);
+                if (m_bTsbPdAckWakeup)
+                {
+                    HLOGP(tslog.Debug, "recvmsg: KICKING tsbpd (sleeps on ACK waiting)");
+                    pthread_cond_signal(&m_RcvTsbPdCond);
+                }
+                else
+                {
+                    HLOGP(tslog.Debug, "recvmsg: NOT KICKING tsbpd - it sleeps until the next packet anyway");
+                }
             }
 
             do
@@ -8380,7 +8398,7 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
     }
 }
 
-void CUDT::checkTimers()
+uint64_t CUDT::checkTimers()
 {
     // update CC parameters
     updateCC(TEV_CHECKTIMER, TEV_CHT_INIT);
@@ -8399,6 +8417,8 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
+    uint64_t nexttime_tk = 0;
+
     if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
             // OR the number of sent packets since last ACK has reached
             // the smoother-defined value of ACK Interval
@@ -8406,7 +8426,7 @@ void CUDT::checkTimers()
             || (m_Smoother->ACKInterval() == 0 ? false : (m_iPktCount >= m_Smoother->ACKInterval())))
     {
         // ACK timer expired or ACK interval is reached
-        HLOGC(mglog.Debug, log << "checkTimer: sending FAT ACK (slip: " << (m_ullNextACKTime_tk-currtime_tk) << "tk)");
+        HLOGC(mglog.Debug, log << "checkTimers: sending FAT ACK (slip: " << (currtime_tk-m_ullNextACKTime_tk) << "tk)");
 
         sendCtrl(UMSG_ACK);
         CTimer::rdtsc(currtime_tk);
@@ -8425,12 +8445,18 @@ void CUDT::checkTimers()
     // normally according to the timely rules.
     else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
     {
-        HLOGC(mglog.Debug, log << "checkTimer: sending LITE ACK");
+        HLOGC(mglog.Debug, log << "checkTimers: sending LITE ACK");
         //send a "light" ACK
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++ m_iLightACKCount;
     }
 
+
+    HLOGC(mglog.Debug, log << "checkTimers: NEXT ACK T=" << logging::FormatTime(CTimer::tk2us(m_ullNextACKTime_tk)));
+
+    // It's updated or not. Might be that this wasn't executed at all
+    // and the next ACK time is unchanged.
+    nexttime_tk = m_ullNextACKTime_tk;
 
     if (m_bRcvNakReport)
     {
@@ -8440,14 +8466,29 @@ void CUDT::checkTimers()
          * not knowing what to retransmit when the only NAK sent by receiver is lost,
          * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
          */
-        if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
+        if (m_pRcvLossList->getLossLength() > 0)
         {
-            HLOGC(mglog.Debug, log << "checkTimer: sending PERIODIC NAK (slip: " << (m_ullNextNAKTime_tk-currtime_tk) << "tk)");
-            // NAK timer expired, and there is loss to be reported.
-            sendCtrl(UMSG_LOSSREPORT);
+            if (currtime_tk > m_ullNextNAKTime_tk)
+            {
+                HLOGC(mglog.Debug, log << "checkTimers: sending PERIODIC NAK (slip: " << (currtime_tk-m_ullNextNAKTime_tk) << "tk)");
+                // NAK timer expired, and there is loss to be reported.
+                sendCtrl(UMSG_LOSSREPORT);
 
-            CTimer::rdtsc(currtime_tk);
-            m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+                CTimer::rdtsc(currtime_tk);
+                m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+            }
+
+            // Update the next event time, no matter if this time was updated.
+            // DO NOT read this time because in case of no loss and no SRTO_NAKREPORT
+            // this value is not regarded and doesn't mean anything.
+            // At least when we are here we can be sure that m_ullNextNAKTime_tk
+            // is either unchanged, but still in future, or just set to be in future.
+
+            HLOGC(mglog.Debug, log << "checkTimers: NEXT PNAK T=" << logging::FormatTime(CTimer::tk2us(m_ullNextNAKTime_tk)));
+
+            // (Ah, ok, sanity check)
+            if (currtime_tk < m_ullNextNAKTime_tk)
+                nexttime_tk = nexttime_tk ? min(m_ullNextNAKTime_tk, nexttime_tk) : m_ullNextNAKTime_tk;
         }
     } // ELSE {
     // we are not sending back repeated NAK anymore and rely on the sender's EXP for retransmission
@@ -8464,18 +8505,19 @@ void CUDT::checkTimers()
     // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
     // There's nothing in the original code that alters these values.
 
-    uint64_t next_exp_time_tk;
+    uint64_t exp_int_tk;
     if (m_Smoother->RTO())
     {
-        next_exp_time_tk = m_ullLastRspTime_tk + m_Smoother->RTO() * m_ullCPUFrequency;
+        exp_int_tk = m_Smoother->RTO() * m_ullCPUFrequency;
     }
     else
     {
-        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+        exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
         if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
             exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
-        next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
     }
+
+    uint64_t next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
 
     if (currtime_tk > next_exp_time_tk)
     {
@@ -8504,7 +8546,9 @@ void CUDT::checkTimers()
 
             CTimer::triggerEvent();
 
-            return;
+            // It doesn't matter what it returns here. This is a "connection expired"
+            // situation so the socket is about to be closed.
+            return 0;
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
@@ -8573,7 +8617,24 @@ void CUDT::checkTimers()
         // Reset last response time since we just sent a heart-beat.
         // (fixed) m_ullLastRspTime_tk = currtime_tk;
 
+        // Update nexttime_tk if next exp time to be used at next time
+        // is about to happen earlier than the latest estimated value
+
+        HLOGC(mglog.Debug, log << "checkTimers: NEXT EXP T=" << logging::FormatTime(CTimer::tk2us(next_exp_time_tk + exp_int_tk)) << " (FOLLOWING)");
+        if (next_exp_time_tk + exp_int_tk < nexttime_tk)
+            nexttime_tk = next_exp_time_tk + exp_int_tk;
     }
+    else
+    {
+        HLOGC(mglog.Debug, log << "checkTimers: NEXT EXP T=" << logging::FormatTime(CTimer::tk2us(next_exp_time_tk)));
+        // EXP timer did not expire, so use CURRENT (not NEXT) exp timer
+        if (next_exp_time_tk < nexttime_tk)
+            nexttime_tk = next_exp_time_tk;
+
+    }
+
+    HLOGC(mglog.Debug, log << "checkTimers: RESULTING NEXT EVENT T=" << logging::FormatTime(CTimer::tk2us(nexttime_tk)));
+
     // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
     //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
     //         Not required if peer send Periodic NAK Reports.
@@ -8628,6 +8689,11 @@ void CUDT::checkTimers()
         sendCtrl(UMSG_KEEPALIVE);
         HLOGP(mglog.Debug, "KEEPALIVE");
     }
+
+    // This may also return 0 in case when no event is distilled with
+    // a predicted next execution time. In this case this unit will be next
+    // updated in 100ms, default way.
+    return nexttime_tk;
 }
 
 void CUDT::addEPoll(const int eid)
