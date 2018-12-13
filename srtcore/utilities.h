@@ -647,9 +647,6 @@ struct VoidType
     template <class T>
     VoidType operator+(const T&) const { return *this; }
     VoidType operator+(const VoidType&) const { return *this; }
-
-    template <class T>
-    friend VoidType operator+(const T&, const VoidType&) { return *this;}
 };
 
 typedef VoidType DebugString;
