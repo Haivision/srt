@@ -6249,11 +6249,11 @@ void CUDT::releaseSynch()
 }
 
 #if ENABLE_HEAVY_LOGGING
-static void DebugAck(string hdr, CUDT* u, int prev, int ack)
+static void DebugAck(const char* hdr, CUDT* u, int prev, int ack)
 {
     if ( !prev )
     {
-        HLOGC(mglog.Debug, log << hdr << "ACK " << ack);
+        HLOGC(mglog.Debug, log << hdr << u->CONID() << "ACK " << ack);
         return;
     }
 
@@ -6277,7 +6277,7 @@ static void DebugAck(string hdr, CUDT* u, int prev, int ack)
     HLOGC(mglog.Debug, log << hdr << u->CONID() << "ACK (" << (diff+1) << "): " << ackv.str() << ack);
 }
 #else
-static inline void DebugAck(string, CUDT*, int, int) {}
+static inline void DebugAck(const char*, CUDT*, int, int) {}
 #endif
 
 void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size)
