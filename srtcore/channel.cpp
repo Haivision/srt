@@ -273,31 +273,31 @@ void CChannel::setUDPSockOpt()
       }
 #endif
 
-
-#ifdef UNIX
-   // Set non-blocking I/O
-   // UNIX does not support SO_RCVTIMEO
-   int opts = ::fcntl(m_iSocket, F_GETFL);
-   if (-1 == ::fcntl(m_iSocket, F_SETFL, opts | O_NONBLOCK))
-      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-#elif defined(_WIN32)
-   u_long nonBlocking = 1;
-   if (0 != ioctlsocket (m_iSocket, FIONBIO, &nonBlocking))
-      throw CUDTException (MJ_SETUP, MN_NORES, NET_ERROR);
-#else
    timeval tv;
    tv.tv_sec = 0;
-#if defined (BSD) || defined (OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-   // Known BSD bug as the day I wrote this code.
-   // A small time out value will cause the socket to block forever.
-   tv.tv_usec = 10000;
-#else
-   tv.tv_usec = 100;
-#endif
-   // Set receiving time-out value
-   if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(timeval)))
-      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-#endif
+   #if defined (BSD) || defined (OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+      // Known BSD bug as the day I wrote this code.
+      // A small time out value will cause the socket to block forever.
+      tv.tv_usec = 10000;
+   #else
+      tv.tv_usec = 100;
+   #endif
+
+   #ifdef UNIX
+      // Set non-blocking I/O
+      // UNIX does not support SO_RCVTIMEO
+      int opts = ::fcntl(m_iSocket, F_GETFL);
+      if (-1 == ::fcntl(m_iSocket, F_SETFL, opts | O_NONBLOCK))
+         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+   #elif defined(_WIN32)
+      u_long nonBlocking = 1;
+      if (0 != ioctlsocket (m_iSocket, FIONBIO, &nonBlocking))
+         throw CUDTException (MJ_SETUP, MN_NORES, NET_ERROR);
+   #else
+      // Set receiving time-out value
+      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(timeval)))
+         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+   #endif
 }
 
 void CChannel::close() const
@@ -415,7 +415,7 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
-#if ENABLE_LOGGING
+#if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
 
     if (packet.isControl())
@@ -432,7 +432,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
             spec << " [REXMIT]";
     }
 
-    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=%" << packet.m_iID
         << spec.str());
 #endif
@@ -440,7 +440,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
    // convert control information into network order
    // XXX USE HtoNLA!
    if (packet.isControl())
-      for (ptrdiff_t i = 0, n = packet.getLength() / 4; i < n; ++i)
+      for (int i = 0, n = packet.getLength() / 4; i < n; ++ i)
          *((uint32_t *)packet.m_pcData + i) = htonl(*((uint32_t *)packet.m_pcData + i));
 
    // convert packet header into network order
@@ -483,7 +483,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
    if (packet.isControl())
    {
-      for (ptrdiff_t l = 0, n = packet.getLength() / 4; l < n; ++ l)
+      for (int l = 0, n = packet.getLength() / 4; l < n; ++ l)
          *((uint32_t *)packet.m_pcData + l) = ntohl(*((uint32_t *)packet.m_pcData + l));
    }
 

@@ -1049,7 +1049,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
     int rmpkts = 0; 
     int rmbytes = 0;
 
-    string reason = "NOT RECEIVED";
+    DebugString reason = "NOT RECEIVED";
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
     {
         bool freeunit = false;

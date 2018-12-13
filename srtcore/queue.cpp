@@ -1102,7 +1102,6 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
                 {
                     LOGC(mglog.Error, log << "Async: @" << i->m_pUDT->m_SocketID
                             << ": processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
-                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
 #if ENABLE_HEAVY_LOGGING
                     ++debug_nfail;
@@ -1290,7 +1289,7 @@ void* CRcvQueue::worker(void* param)
 
        if (rst == RST_OK)
        {
-           if (id < 0)
+           if ( id < 0 )
            {
                // User error on peer. May log something, but generally can only ignore it.
                // XXX Think maybe about sending some "connection rejection response".

@@ -353,7 +353,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
         target = Target::Create(medium);
 
         os << m.m_host << ":" << m.m_port << "[" << id << "]%" << sock << "  ->  " << medium;
-        thread_name = "TL>" + medium;
+        thread_name = "TL>" + id;
     }
     else
     {
@@ -364,7 +364,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
         target.reset(t);
 
         os << medium << "  ->  " << m.m_host << ":" << m.m_port << "[" << id << "]%" << sock;
-        thread_name = "TL<" + medium;
+        thread_name = "TL<" + id;
     }
 
     bytevector dummy_initial_portion;

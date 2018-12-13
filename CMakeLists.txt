@@ -83,7 +83,6 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
-option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
@@ -91,7 +90,6 @@ option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
-option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
@@ -188,9 +186,10 @@ if ( USE_GNUTLS )
 else()
 		message(STATUS "SSL Dependency: using OpenSSL (default)")
 
-		# Try using pkg-config method first if enabled,
-		# fall back to find_package method otherwise
-		if (USE_OPENSSL_PC)
+		# if OPENSSL_ROOT_DIR or USE_OPENSSL_PC are set, we assume
+		# that the user wants to use find_package(OpenSSL) method to
+		# find OpenSSL package. Otherwise default to pkg-config.
+		if (NOT OPENSSL_ROOT_DIR OR USE_OPENSSL_PC)
 			pkg_check_modules(SSL "openssl libcrypto")
 		endif()
 		if (SSL_FOUND)
@@ -302,26 +301,26 @@ set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
-	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
+    add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
 elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1; MACOSX_RPATH=OFF")
-	add_definitions(-DOSX=1)
+    message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1; MACOSX_RPATH=OFF")
+    add_definitions(-DOSX=1)
 	set(MACOSX_RPATH OFF)
 elseif(LINUX)
-	add_definitions(-DLINUX=1)
-	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
+    add_definitions(-DLINUX=1)
+    message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
 elseif(CYGWIN)
-	add_definitions(-DCYGWIN=1)
+    add_definitions(-DCYGWIN=1)
 	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
 else()
-	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
+    message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 add_definitions(
-	-D_GNU_SOURCE
-	-DHAI_PATCH=1
-	-DHAI_ENABLE_SRT=1
-	-DSRT_VERSION="${SRT_VERSION}"
+   -D_GNU_SOURCE
+   -DHAI_PATCH=1
+   -DHAI_ENABLE_SRT=1
+   -DSRT_VERSION="${SRT_VERSION}"
 )
 
 # This is obligatory include directory for all targets. This is only
@@ -329,7 +328,7 @@ add_definitions(
 include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 
 if (ENABLE_LOGGING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
+    list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
 	if (ENABLE_HEAVY_LOGGING)
 		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
 	endif()
@@ -348,16 +347,16 @@ if (ENABLE_GETNAMEINFO)
 endif()
 
 if (ENABLE_THREAD_CHECK)
-	add_definitions(
-		-DSRT_ENABLE_THREADCHECK=1
-		-DFUGU_PLATFORM=1
-		-I${WITH_THREAD_CHECK_INCLUDEDIR}
-	)
+      add_definitions(
+               -DSRT_ENABLE_THREADCHECK=1
+               -DFUGU_PLATFORM=1
+               -I${WITH_THREAD_CHECK_INCLUDEDIR}
+        )
 endif()
 
 if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
-	# They are actually cflags, not definitions, but CMake is stupid enough.
-	add_definitions(-g -pg)
+    # They are actually cflags, not definitions, but CMake is stupid enough.
+    add_definitions(-g -pg)
 	link_libraries(-g -pg)
 endif()
 
@@ -475,7 +474,7 @@ if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
-	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+    set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	if (MICROSOFT)
@@ -563,7 +562,7 @@ endif()
 
 if (srt_libspec_shared)
 if (MICROSOFT)
-	target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
+    target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
 endif()
 endif()
 
@@ -608,13 +607,13 @@ endif()
 # if your build requires it, you'd probably remove -lstdc++ from the list
 # obtained by `pkg-config --libs`.
 if(ENABLE_CXX_DEPS)
-	foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
-		if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
-			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
-		else()
-			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
-		endif()
-	endforeach()
+   foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
+      if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+      else()
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+      endif()
+   endforeach()
 endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
@@ -640,13 +639,8 @@ endif()
 
 if (srt_libspec_static)
 	set (srt_link_library ${TARGET_srt}_static)
-	if (ENABLE_RELATIVE_LIBPATH)
-		message(STATUS "ENABLE_RELATIVE_LIBPATH=ON will be ignored due to static linking.")
-	endif()
-elseif(srt_libspec_shared)
-	set (srt_link_library ${TARGET_srt}_shared)
 else()
-	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
+	set (srt_link_library ${TARGET_srt}_shared)
 endif()
 
 macro(srt_add_program name)
@@ -669,7 +663,7 @@ macro(srt_make_application name)
 	# set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# set (FORCE_RPATH BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-	if (LINUX AND ENABLE_RELATIVE_LIBPATH AND NOT srt_libspec_static)
+	if (LINUX)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
 		# be placed into the binrary directory anyway.
 		# XXX not sure about Mac.
@@ -762,11 +756,11 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(utility-test)
 		if (NOT WIN32)
-			# This program is symlinked under git-cygwin.
-			# Avoid misleading syntax error.
-			srt_add_testprogram(uriparser-test)
-			target_compile_options(uriparser-test PRIVATE -DTEST)
-			target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		    # This program is symlinked under git-cygwin.
+		    # Avoid misleading syntax error.
+	        srt_add_testprogram(uriparser-test)
+	        target_compile_options(uriparser-test PRIVATE -DTEST)
+	        target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
 		endif()
 		
 		srt_add_testprogram(srt-test-live)

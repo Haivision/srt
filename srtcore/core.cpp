@@ -195,7 +195,6 @@ void CUDT::construct()
     m_bPeerTsbPd = false;
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
-    m_bTsbPdAckWakeup = false;
     m_bPeerTLPktDrop = false;
 
     m_uKmRefreshRatePkt = 0;
@@ -2916,9 +2915,6 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                     continue;
                 break;
             }
-
-            if (cst == CONN_REJECT)
-                sendCtrl(UMSG_SHUTDOWN);
 
             if ( cst != CONN_CONTINUE )
                 break; // --> OUTSIDE-LOOP
@@ -6253,7 +6249,7 @@ void CUDT::releaseSynch()
 }
 
 #if ENABLE_HEAVY_LOGGING
-static void DebugAck(string hdr, int prev, int ack)
+static void DebugAck(string hdr, CUDT* u, int prev, int ack)
 {
     if ( !prev )
     {
@@ -6265,7 +6261,7 @@ static void DebugAck(string hdr, int prev, int ack)
     int diff = CSeqNo::seqcmp(ack, prev);
     if ( diff < 0 )
     {
-        HLOGC(mglog.Debug, log << hdr << "ACK ERROR: " << prev << "-" << ack << "(diff " << CSeqNo::seqcmp(ack, prev) << ")");
+        HLOGC(mglog.Debug, log << hdr << u->CONID() << "ACK ERROR: " << prev << "-" << ack << "(diff " << CSeqNo::seqcmp(ack, prev) << ")");
         return;
     }
 
@@ -6278,10 +6274,10 @@ static void DebugAck(string hdr, int prev, int ack)
         ackv << prev << " ";
     if ( shorted )
         ackv << "...";
-    HLOGC(mglog.Debug, log << hdr << "ACK (" << (diff+1) << "): " << ackv.str() << ack);
+    HLOGC(mglog.Debug, log << hdr << u->CONID() << "ACK (" << (diff+1) << "): " << ackv.str() << ack);
 }
 #else
-static inline void DebugAck(string, int, int) {}
+static inline void DebugAck(string, CUDT*, int, int) {}
 #endif
 
 void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size)
@@ -6334,7 +6330,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.pack(pkttype, NULL, &ack, size);
          ctrlpkt.m_iID = m_PeerID;
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
+         DebugAck("sendCtrl(lite): ", this, local_prevack, ack);
          break;
       }
 
@@ -6464,7 +6460,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          ctrlpkt.m_iID = m_PeerID;
          ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
-         DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
+         DebugAck("sendCtrl: ", this, local_prevack, ack);
 
          m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
@@ -7619,7 +7615,7 @@ int CUDT::processData(CUnit* unit)
       int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
-      string exc_type = "EXPECTED";
+      DebugString exc_type = "EXPECTED";
       if ((offset < 0))
       {
           exc_type = "BELATED";
