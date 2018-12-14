@@ -1370,7 +1370,7 @@ Handle_timer_events:
 
 #if ENABLE_HEAVY_LOGGING
        int nuupdated = 0;
-       string whichone = "neither";
+       DebugString whichone = "neither";
 #endif
 
        uint64_t next_xktimer_tk = 0;
@@ -1379,9 +1379,7 @@ Handle_timer_events:
        if (ul)
        {
            LOGC(mglog.Debug, log << "FIRST RCVUnit next event time:"
-                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextEventTime_tk))
-                   << " PN/ACK time:"
-                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextPNACKTime_tk)));
+                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextEventTime_tk)));
        }
        else
        {
@@ -1402,38 +1400,10 @@ Handle_timer_events:
 
                // Grab the earliest update time that arise after checkTimers.
                // update: saves current time in the UList node and
-               // moves it to the end of list.
+               // moves it to the end of list, or if the checkTimers()
+               // reported any earlier time than this, move it to the
+               // appropriate place in time ordering.
                self->m_pRcvUList->update(u, u->checkTimers());
-
-               /*
-
-                  XXX Move to update
-
-               uint64_t next_update_tk;
-               next_update_tk = u->m_bRcvNakReport ? min(u->m_ullNextACKTime_tk, u->m_ullNextNAKTime_tk) : u->m_ullNextACKTime_tk;
-
-               // Use nextNAKtime if:
-               // - m_bRcvNakReport (NAKREPORT is in)
-               // - m_ullNextNAKTime_tk is in future (otherwise it probably wasn't set due to no loss)
-               // - nextNAKtime is earlier than nextACKtime.
-               if (u->m_bRcvNakReport && u->m_ullNextNAKTime_tk > currtime_tk && u->m_ullNextNAKTime_tk < u->m_ullNextACKTime_tk)
-               {
-                   next_update_tk = u->m_ullNextNAKTime_tk;
-                   HLOGC(mglog.Debug, log << "UPDATED, next event time (NAK):" << logging::FormatTime(CTimer::tk2us(next_update_tk))
-                           << " update time:" << logging::FormatTime(CTimer::getTime()+TIMER_UPDATE_INTERVAL_US));
-                   whichone = "ack-timer";
-               }
-               else
-               {
-                   next_update_tk = u->m_ullNextACKTime_tk;
-                   HLOGC(mglog.Debug, log << "UPDATED, next event time (ACK):" << logging::FormatTime(CTimer::tk2us(next_update_tk))
-                           << " update time:" << logging::FormatTime(CTimer::getTime()+TIMER_UPDATE_INTERVAL_US));
-                   whichone = "pnak-timer";
-               }
-
-               next_xktimer_tk = next_xktimer_tk ? min(next_xktimer_tk, next_update_tk) : next_update_tk;
-               */
-
            }
            else
            {
@@ -1471,12 +1441,10 @@ Handle_timer_events:
        {
            uptime_us = next_xktimer_us;
        }
-#if ENABLE_HEAVY_LOGGING
        else
        {
            whichone = "receiver";
        }
-#endif
 
        // This records the update time as defined by the receiver entities (m_pRcvUList).
        self->m_tRcvUpTime_us = uptime_us;
@@ -1576,9 +1544,7 @@ Handle_timer_events:
        if (uptime_us == 0 || (self->m_tConnUpTime_us && self->m_tConnUpTime_us < uptime_us))
        {
            uptime_us = self->m_tConnUpTime_us;
-#if ENABLE_HEAVY_LOGGING
            whichone = uptime_us ? "connector" : "neither";
-#endif
        }
 
        HLOGC(mglog.Debug, log << "worker: NEXT PROC TIME: " << logging::FormatTime(uptime_us)

@@ -195,6 +195,7 @@ void CUDT::construct()
     m_bPeerTsbPd = false;
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
+    m_bTsbPdAckWakeup = false;
     m_bPeerTLPktDrop = false;
 
     m_uKmRefreshRatePkt = 0;
@@ -2915,6 +2916,9 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
                     continue;
                 break;
             }
+
+            if (cst == CONN_REJECT)
+                sendCtrl(UMSG_SHUTDOWN);
 
             if ( cst != CONN_CONTINUE )
                 break; // --> OUTSIDE-LOOP

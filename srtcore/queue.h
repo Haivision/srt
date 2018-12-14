@@ -210,8 +210,6 @@ struct CRNode
    CUDT* m_pUDT;                  // Pointer to the instance of CUDT socket
    uint64_t m_tNextEventTime_tk;  // Next receiver event Time Stamp
 
-   uint64_t m_tNextPNACKTime_tk; // XXX TEMPORARY to see how it works
-
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link
 

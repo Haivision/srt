@@ -17,24 +17,34 @@ extern "C" {
 #include "srt.h"
 
 
-TEST(SRT, ConnectionTimeoutTest) {
+TEST(Core, ConnectionTimeout) {
     ASSERT_EQ(srt_startup(), 0);
+
+    const SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+
+    // First let's check the default connection timeout value.
+    // It should be 3 seconds (3000 ms)
+    int conn_timeout     = 0;
+    int conn_timeout_len = sizeof conn_timeout;
+    EXPECT_EQ(srt_getsockopt(client_sock, 0, SRTO_CONNTIMEO, &conn_timeout, &conn_timeout_len), SRT_SUCCESS);
+    EXPECT_EQ(conn_timeout, 3000);
+
+    // Set connection timeout to 500 ms to reduce the test execution time
+    const int connection_timeout_ms = 500;
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
     const int yes = 1;
     const int no = 0;
-
-    SRTSOCKET m_client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
-    ASSERT_NE(m_client_sock, SRT_ERROR);
-
-    ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockflag(m_client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
-    ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_SUCCESS);
+    ASSERT_EQ(srt_setsockflag(client_sock,   SRTO_SENDER,    &yes, sizeof yes), SRT_SUCCESS);
 
     const int pollid = srt_epoll_create();
     ASSERT_GE(pollid, 0);
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(srt_epoll_add_usock(pollid, m_client_sock, &epoll_out), SRT_ERROR);
+    ASSERT_NE(srt_epoll_add_usock(pollid, client_sock, &epoll_out), SRT_ERROR);
 
     sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
@@ -44,12 +54,9 @@ TEST(SRT, ConnectionTimeoutTest) {
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     sockaddr* psa = (sockaddr*)&sa;
-
-    ASSERT_NE(srt_connect(m_client_sock, psa, sizeof sa), SRT_ERROR);
-
+    ASSERT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
 
     // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-
     {
         int rlen = 2;
         SRTSOCKET read[2];
@@ -57,18 +64,25 @@ TEST(SRT, ConnectionTimeoutTest) {
         int wlen = 2;
         SRTSOCKET write[2];
 
-        ASSERT_NE(srt_epoll_wait(pollid, read, &rlen,
+        // Here we check the connection timeout.
+        // Epoll timeout is set 100 ms greater than socket's TTL
+        EXPECT_EQ(srt_epoll_wait(pollid, read, &rlen,
                                  write, &wlen,
-                                 -1,
-                                 0, 0, 0, 0), SRT_ERROR);
+                                 connection_timeout_ms + 100,   // +100 ms
+                                 0, 0, 0, 0)
+        /* Expected return value is 2. We have only 1 socket, but
+         * sockets with exceptions are returned to both read and write sets.
+        */
+                 , 2);
 
-        ASSERT_EQ(rlen, 1);
-        ASSERT_EQ(read[0], m_client_sock);
-
+        EXPECT_EQ(rlen, 1);
+        EXPECT_EQ(read[0], client_sock);
+        EXPECT_EQ(wlen, 1);
+        EXPECT_EQ(write[0], client_sock);
     }
 
-    ASSERT_NE(srt_epoll_remove_usock(pollid, m_client_sock), SRT_ERROR);
-    ASSERT_NE(srt_close(m_client_sock), SRT_ERROR);
+    EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_SUCCESS);
+    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
     (void)srt_epoll_release(pollid);
     (void)srt_cleanup();
 }
