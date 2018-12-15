@@ -711,28 +711,20 @@ if ( ENABLE_CXX11 )
 	# For backward compatibility with the old name
 	if (SYMLINKABLE)
 		set (REPLI_COMMAND create_symlink )
+		# It appears impossible to get the filename component from the generator
+		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
+		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
 	else()
 		set (REPLI_COMMAND copy)
+		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
 	endif()
 
 	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
 	add_custom_command(
 		TARGET srt-live-transmit
 		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} $<TARGET_FILE:srt-live-transmit> ${stransmit_path})
-
-	if (SYMLINKABLE)
-		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use symbolic link")
-		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/stransmit)
-	elseif(${CMAKE_MAJOR_VERSION} LESS 3)
-		message(FATAL_ERROR "Your system can't install symbolic link to 'stransmit', copy-on-install requires cmake at least 3.0.2")
-	else()
-		# This installation doesn't work with cmake earlier than 3.0
-		# (looxlike cmake 2.8 somehow doesn't have a problem with resolving the $<TARGET_FILE_DIR:...>
-		# inside the generated makefile, but does have problem with its own generated cmake_install.cmake :D)
-		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use copying")
-		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-	endif()
+		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
+	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
