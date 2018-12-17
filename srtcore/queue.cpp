@@ -1368,10 +1368,8 @@ Handle_timer_events:
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
 
-#if ENABLE_HEAVY_LOGGING
-       int nuupdated = 0;
+       int nuupdated SRT_ATR_UNUSED = 0;
        DebugString whichone = "neither";
-#endif
 
        uint64_t next_xktimer_tk = 0;
 
