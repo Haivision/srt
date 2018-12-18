@@ -131,14 +131,19 @@ void EventRunner::init(int socket)
 
 EventRunner::~EventRunner()
 {
-    WSAEventClose(m_Event[WE_TRIGGER]);
-    WSAEventClose(m_Event[WE_SOCKET]);
+    WSACloseEvent(m_Event[WE_TRIGGER]);
+    WSACloseEvent(m_Event[WE_SOCKET]);
 }
 
 void EventRunner::poll(int64_t timeout_us)
 {
-    DWORD timeout_ms = timeout_us/1000;
+    // Round this time up. It has been happening that
+    // the exact sleep time even though specified in [ms]
+    // was actually less than the given time. If this time
+    // was detected as timeout then this wakeup is spurious
+    DWORD timeout_ms = (timeout_us+400)/1000;
 
+    HLOGC(mglog.Debug, log << "poll(win32): Wait*, timeout[ms]=" << timeout_ms);
     // Waiting.
     DWORD res = WSAWaitForMultipleEvents(2, m_Event, false, timeout_ms, false);
     if (res == WSA_WAIT_FAILED)
@@ -155,6 +160,7 @@ void EventRunner::poll(int64_t timeout_us)
 
     if (res == WSA_WAIT_TIMEOUT)
     {
+        HLOGC(mglog.Debug, log << "poll(win32): timeout reached");
         // Timeout. Reset readiness on all events.
         m_permstate = PSG_NONE;
         m_sockstate = 0;
@@ -162,6 +168,9 @@ void EventRunner::poll(int64_t timeout_us)
     }
 
     int eventx = res - WSA_WAIT_EVENT_0;
+    HLOGC(mglog.Debug, log << "poll(win32): readiness: "
+            << (eventx == WE_TRIGGER ? "TRIGGER" : eventx == WE_SOCKET ? "SOCKET" : "???UNKNOWN???")
+            << " (" << eventx << ")");
 
     // Extra checks.
     // 1. If the returned value represents m_Event[WE_TRIGGER],
@@ -193,7 +202,7 @@ void EventRunner::poll(int64_t timeout_us)
     int resi = WSAEnumNetworkEvents(m_fdSocket, m_Event[WE_SOCKET], &nev);
     if (resi) // 0 == success
     {
-        LOGC(mglog.Error, log << "poll(WIN32): IPE: Error in EnumNetworkEvents");
+        LOGC(mglog.Error, log << "poll(win32): IPE: Error in EnumNetworkEvents");
         m_sockstate = 2;
         WSAResetEvent(m_Event[WE_SOCKET]);
         return;
@@ -201,16 +210,16 @@ void EventRunner::poll(int64_t timeout_us)
 
     if (!nev.lNetworkEvents)
     {
+        HLOGC(mglog.Debug, log << "WSAEnumNetworkEvents: no events on socket");
         m_sockstate = 0;
         return;
     }
 
-    if (eventx != WE_SOCKET)
-    {
-        // Don't clear the event if it has just occurred because
-        // in this case it has been cleared already
-        WSAResetEvent(m_Event[WE_SOCKET]);
-    }
+    HLOGC(mglog.Debug, log << "poll(win32): socket readiness flags: " << hex << nev.lNetworkEvents
+            << " check for read=" << FD_READ << " close=" << FD_CLOSE);
+
+    WSAResetEvent(m_Event[WE_SOCKET]);
+
     if (nev.lNetworkEvents & FD_CLOSE)
     {
         // Close event - exit with error
@@ -220,8 +229,9 @@ void EventRunner::poll(int64_t timeout_us)
     {
         // Check if this reading ended up with error,
         // if so, return 2.
-        if (nev.iErrorCode != 0)
+        if (nev.iErrorCode[FD_READ_BIT] != 0)
         {
+            HLOGC(mglog.Debug, log << "poll(win32): socket read error flag: " << nev.iErrorCode[FD_READ_BIT]);
             m_sockstate = 2;
         }
         else
@@ -247,7 +257,7 @@ int EventRunner::signalReading(PipeSignal val) const
     return WSAGetLastError();
 }
 
-PipeSignal EventRunner::clearSignalReading() const
+PipeSignal EventRunner::clearSignalReading()
 {
     WSAResetEvent(m_Event[WE_TRIGGER]);
 
@@ -736,15 +746,15 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
     DWORD flag = 0;
     int addrsize = m_iSockAddrSize;
 
-    int msg_flags = 0;
+    msg_flags = 0;
     int sockerror = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
-    int res;
     if (sockerror == 0)
     {
         res = size;
     }
     else // == SOCKET_ERROR
     {
+		EReadStatus status;
         res = -1;
         // On Windows this is a little bit more complicated, so simply treat every error
         // as an "again" situation. This should still be probably fixed, but it needs more
@@ -793,25 +803,30 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
 
     uint64_t currtime_tk;
     CTimer::rdtsc(currtime_tk);
-    uint64_t now = currtime_tk/CTimer::getCPUFrequency();
+    uint64_t now = CTimer::tk2us(currtime_tk);
     uint64_t timeout_us;
 
     // The maximum time for poll is defined as 0.5s, so
     // we know it can't exceed 0.99s.
-
-    if (!uptime_us || (timeout_us = uptime_us - now) > MAX_POLL_TIME_US)
+    if (uptime_us)
     {
-        // Waiting forever is risky, so in case of this
+        if (uptime_us <= now)
+            timeout_us = 0; // the time is already in the past, don't wait.
+        else
+        {
+            // Don't wait longer than 0.5s, even if this somehow results
+            // from calculations.
+            timeout_us = std::min(uptime_us - now, MAX_POLL_TIME_US);
+        }
+    }
+    else
+    {
+        // Waiting forever is risky, so in case of no timeout
         // simply wait longer time - 0.5s
         timeout_us = MAX_POLL_TIME_US;
     }
-    else if (now >= uptime_us) // up time is in the past, so don't wait
-    {
-        // return immediately
-        timeout_us = 0;
-    }
 
-    HLOGC(mglog.Debug, log << "CChannel::recvfrom: waiting for event: usec=" << timeout_us);
+    HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: usec=" << timeout_us);
 
     m_EventRunner.poll(timeout_us);
 
@@ -827,7 +842,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
         const char* sock_state = type[socket_ready];
         const char* signal_state = psgname[psg+1];
 
-        LOGC(mglog.Debug, log << "CChannel::recvfrom: select-ready: socket="
+        LOGC(mglog.Debug, log << "CChannel::recvfrom: poll-ready: socket="
                 << sock_state << " trigger=" << signal_state);
     }
 

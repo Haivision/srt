@@ -850,7 +850,7 @@ std::string logging::FormatTime(uint64_t time)
 
     char tmp_buf[512];
 #ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+    strftime(tmp_buf, 512, "%X.", &tm);
 #else
     strftime(tmp_buf, 512, "%T.", &tm);
 #endif

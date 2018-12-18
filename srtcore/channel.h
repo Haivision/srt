@@ -104,9 +104,11 @@ public:
    EventRunner():
 #ifdef _WIN32
    m_fdSocket(INVALID_SOCKET),
-   m_Event(INVALID_HANDLE),
-   m_state(PSG_NONE)
+   m_state(PSG_NONE),
+   m_permstate(PSG_NONE),
+   m_sockstate(0)
    {
+	   m_Event[0] = m_Event[1] = INVALID_HANDLE_VALUE;
    }
 
 #else
@@ -130,7 +132,7 @@ public:
    // This will be returned once and the event will be 
    // cleared thereafter.
    // The latter if the socket is ready for extraction.
-   PipeSignal clearSignalReading() const;
+   PipeSignal clearSignalReading();
    int socketReady() const;
 
    ~EventRunner();
@@ -142,7 +144,7 @@ class CChannel
 public:
 
     // Maximum time to hangup in polling: 0.5s
-    static const int MAX_POLL_TIME_US = 500000;
+    static const uint64_t MAX_POLL_TIME_US = 500000;
 
    // XXX There's currently no way to access the socket ID set for
    // whatever the channel is currently working for. Required to find
