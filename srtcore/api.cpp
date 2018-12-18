@@ -141,7 +141,13 @@ m_GCThread(),
 m_ClosedSockets()
 {
    // Socket ID MUST start from a random value
-   srand((unsigned int)CTimer::getTime());
+   // Note. Don't use CTimer here, because s_UDTUnited is a static instance of CUDTUnited
+   // with dynamic initialization (calling this constructor), while CTimer has
+   // a static member s_ullCPUFrequency with dynamic initialization.
+   // The order of initialization is not guaranteed.
+   timeval t;
+   gettimeofday(&t, 0);
+   srand((unsigned int)t.tv_usec);
    m_SocketIDGenerator = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
    pthread_mutex_init(&m_ControlLock, NULL);
@@ -533,7 +539,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     // protects the m_Sockets structure
     CGuard cg(m_ControlLock);
 
-    map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+    map<SRTSOCKET, CUDTSocket*>::const_iterator i = m_Sockets.find(u);
 
     if (i == m_Sockets.end())
     {
@@ -542,7 +548,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 
         return SRTS_NONEXIST;
     }
-    CUDTSocket* s = i->second;
+    const CUDTSocket* s = i->second;
 
     if (s->m_pUDT->m_bBroken)
         return SRTS_BROKEN;
