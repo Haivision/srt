@@ -95,20 +95,6 @@ using namespace std;
 
 extern logging::Logger mglog;
 
-CChannel::CChannel():
-m_iIPversion(AF_INET),
-m_iSockAddrSize(sizeof(sockaddr_in)),
-m_iSocket(),
-#ifdef SRT_ENABLE_IPOPTS
-m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
-m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
-#endif
-m_iSndBufSize(65536),
-m_iRcvBufSize(65536)
-{
-    pipe(m_fdTrigger);
-}
-
 CChannel::CChannel(int version):
 m_iIPversion(version),
 m_iSocket(),
@@ -121,105 +107,284 @@ m_iRcvBufSize(65536),
 m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-   pipe(m_fdTrigger);
 }
 
 CChannel::~CChannel()
+{
+}
+
+// Windows-only version. This should apply to:
+// - MICROSOFT
+// - MINGW
+#ifdef _WIN32
+void EventRunner::init(int socket)
+{
+    m_fdSocket = socket;
+    m_state = PSG_NONE;
+    m_sockstate = 0; //no event
+
+    m_Event[WE_TRIGGER] = WSACreateEvent();
+    m_Event[WE_SOCKET] = WSACreateEvent();
+    if (WSAEventSelect(m_fdSocket, m_Event[WE_SOCKET], FD_READ | FD_CLOSE) != 0)
+        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+}
+
+EventRunner::~EventRunner()
+{
+    WSAEventClose(m_Event[WE_TRIGGER]);
+    WSAEventClose(m_Event[WE_SOCKET]);
+}
+
+void EventRunner::poll(int64_t timeout_us)
+{
+    DWORD timeout_ms = timeout_us/1000;
+
+    // Waiting.
+    DWORD res = WSAWaitForMultipleEvents(2, m_Event, false, timeout_ms, false);
+    if (res == WSA_WAIT_FAILED)
+    {
+        // Sanity check. This error is reported only in case of
+        // a network shutdown or invalid argument. For any case,
+        // report readiness of the socket so that the reading
+        // happens and fails.
+        LOGC(mglog.Error, log << "poll(WIN32): IPE: Error in Wait");
+        m_sockstate = 2;
+        m_permstate = PSG_CLOSE;
+        return;
+    }
+
+    if (res == WSA_WAIT_TIMEOUT)
+    {
+        // Timeout. Reset readiness on all events.
+        m_permstate = PSG_NONE;
+        m_sockstate = 0;
+        return;
+    }
+
+    int eventx = res - WSA_WAIT_EVENT_0;
+
+    // Extra checks.
+    // 1. If the returned value represents m_Event[WE_TRIGGER],
+    //    rewrite m_permstate. This shall not be changed until this call.
+    //    Note that the signalReading function sets m_state.
+    if (eventx == WE_TRIGGER)
+    {
+        WSAResetEvent(m_Event[WE_TRIGGER]);
+        m_permstate = m_state;
+        // Although continue with checking if an event
+        // occurred also on a socket. Both might have happened
+        // at once. Therefore if this WASN'T the socket event,
+        // clear the socket event, or otherwise this function
+        // would exit immediately when called next time even
+        // though the event was understood and cleared.
+    }
+
+    // 2. If the returned value represents m_Event[WE_SOCKET],
+    //    additionally use WSAEnumNetworkEvents to check what
+    //    happened and rewrite it into m_sockstate accordingly:
+    //    1 - read ready, 2 - error.
+
+    // Remaining is WE_SOCKET, but don't check it,
+    // and test the socket anyway. When a socket readiness
+    // is reported, but the trigger is also ready, it will have
+    // to wait for the next time.
+
+    WSANETWORKEVENTS nev;
+    int resi = WSAEnumNetworkEvents(m_fdSocket, m_Event[WE_SOCKET], &nev);
+    if (resi) // 0 == success
+    {
+        LOGC(mglog.Error, log << "poll(WIN32): IPE: Error in EnumNetworkEvents");
+        m_sockstate = 2;
+        WSAResetEvent(m_Event[WE_SOCKET]);
+        return;
+    }
+
+    if (!nev.lNetworkEvents)
+    {
+        m_sockstate = 0;
+        return;
+    }
+
+    if (eventx != WE_SOCKET)
+    {
+        // Don't clear the event if it has just occurred because
+        // in this case it has been cleared already
+        WSAResetEvent(m_Event[WE_SOCKET]);
+    }
+    if (nev.lNetworkEvents & FD_CLOSE)
+    {
+        // Close event - exit with error
+        m_sockstate = 2;
+    }
+    else if (nev.lNetworkEvents & FD_READ)
+    {
+        // Check if this reading ended up with error,
+        // if so, return 2.
+        if (nev.iErrorCode != 0)
+        {
+            m_sockstate = 2;
+        }
+        else
+        {
+            m_sockstate = 1;
+        }
+    }
+}
+
+int EventRunner::socketReady() const
+{
+    return m_sockstate;
+}
+
+int EventRunner::signalReading(PipeSignal val) const
+{
+    // Setting this value as an intermediate passing storage.
+    // This will be picked up by EventRunner::poll as this
+    // shall cause immediate exit in WSAWaitForMultipleEvents().
+    m_state = val;
+    if (WSASetEvent(m_Event[WE_TRIGGER]))
+        return 0;
+    return WSAGetLastError();
+}
+
+PipeSignal EventRunner::clearSignalReading() const
+{
+    WSAResetEvent(m_Event[WE_TRIGGER]);
+
+    // The state that was rewritten once poll() returned.
+    PipeSignal laststate = m_permstate;
+    m_state = PSG_NONE;
+    m_permstate = PSG_NONE;
+    return laststate;
+}
+
+// POSIX/fallback version. This applies to all systems
+// that can use ::select with both pipes and sockets.
+#else
+void EventRunner::init(int socket)
+{
+    m_fdSocket = socket;
+
+    if (::pipe(m_fdTrigger) == -1)
+        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+
+    int opts = ::fcntl(m_fdTrigger[PIPE_IN], F_GETFL);
+    if (opts == -1 || ::fcntl(m_fdTrigger[PIPE_IN], F_SETFL, opts | O_NONBLOCK) == -1)
+        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+}
+
+EventRunner::~EventRunner()
 {
     ::close(m_fdTrigger[PIPE_IN]);
     ::close(m_fdTrigger[PIPE_OUT]);
 }
 
-int CChannel::signalReading(char val) const
+void EventRunner::poll(int64_t timeout_us)
+{
+    FD_ZERO(&in_set);
+    FD_ZERO(&err_set);
+
+    // Add the UDP socket
+    FD_SET(m_fdSocket, &in_set);
+    FD_SET(m_fdSocket, &err_set);
+    FD_SET(m_fdTrigger[PIPE_IN], &in_set);
+    int nsockets = std::max(m_fdSocket, m_fdTrigger[PIPE_IN]) + 1;
+    timeval tv;
+    tv.tv_usec = timeout_us;
+    tv.tv_sec = 0;
+
+    if (::select(nsockets, &in_set, NULL, &err_set, &tv) == -1)
+    {
+        LOGC(mglog.Error, log << "EventRunner::poll: IPE: select:"
+                << SysStrError(NET_ERROR));
+        // But continue the work.
+    }
+}
+
+int EventRunner::socketReady() const
+{
+    return FD_ISSET(m_fdSocket, &in_set) + 2*FD_ISSET(m_fdSocket, &err_set);
+}
+
+int EventRunner::signalReading(PipeSignal val) const
 {
     char data[2] = { val, 0 }; // could be 0, but this sounds bad.
     return ::write(m_fdTrigger[PIPE_OUT], data, 1);
 }
 
-int CChannel::clearSignalReading(bool checked) const
+PipeSignal EventRunner::clearSignalReading() const
 {
     int value = -1;
-    if (!checked)
-    {
-        int sock = m_fdTrigger[PIPE_IN];
-        fd_set in_set;
-        FD_ZERO(&in_set);
-        FD_SET(sock, &in_set);
 
-        // Use timeout 0 - this is to check if the read end of
-        // the pipe is ready to read. If so, read one byte.
-        timeval tv = {0, 0};
-        int ret = ::select(sock+1, &in_set, 0, 0, &tv);
-        if (ret == -1)
-            return -1;
-        checked = FD_ISSET(sock, &in_set);
-    }
+    if (!FD_ISSET(m_fdTrigger[PIPE_IN], &in_set))
+        return PSG_NONE;
 
-    if (checked)
-    {
-        char onebyte[2];
+    char onebyte[2];
 
-        // Don't check any errors. This is in order to purge
-        // the pipe of the data that were stuffed into it just
-        // to cause a signal on the select that is waiting for
-        // read-readiness of the UDP socket.
-        int ret = ::read(m_fdTrigger[PIPE_IN], onebyte, 1);
-        if (ret == -1)
-            return -1;
+    // Ignore errors. This is in order to purge
+    // the pipe of the data that were stuffed into it just
+    // to cause a signal on the select that is waiting for
+    // read-readiness of the UDP socket.
+    int ret = ::read(m_fdTrigger[PIPE_IN], onebyte, 1);
+    if (ret == -1)
+        return PSG_NONE;
 
-        value = onebyte[0];
-    }
-
-    return value;
+    value = onebyte[0];
+    return PipeSignal(value);
 }
+
+#endif
 
 void CChannel::open(const sockaddr* addr)
 {
-   // construct an socket
-   m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
+    // construct an socket
+    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
 
-   #ifdef _WIN32
-      if (INVALID_SOCKET == m_iSocket)
-   #else
-      if (m_iSocket < 0)
-   #endif
-      throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+#ifdef _WIN32
+    const int error = INVALID_SOCKET;
+#else
+    const int error = -1;
+#endif
+    if (m_iSocket == error)
+        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
-   if (NULL != addr)
-   {
-      socklen_t namelen = m_iSockAddrSize;
+    m_EventRunner.init(m_iSocket);
 
-      if (0 != ::bind(m_iSocket, addr, namelen))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-      memcpy(&m_BindAddr, addr, namelen);
-      m_BindAddr.len = namelen;
-   }
-   else
-   {
-      //sendto or WSASendTo will also automatically bind the socket
-      addrinfo hints;
-      addrinfo* res;
+    if (NULL != addr)
+    {
+        socklen_t namelen = m_iSockAddrSize;
 
-      memset(&hints, 0, sizeof(struct addrinfo));
+        if (0 != ::bind(m_iSocket, addr, namelen))
+            throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+        memcpy(&m_BindAddr, addr, namelen);
+        m_BindAddr.len = namelen;
+    }
+    else
+    {
+        //sendto or WSASendTo will also automatically bind the socket
+        addrinfo hints;
+        addrinfo* res;
 
-      hints.ai_flags = AI_PASSIVE;
-      hints.ai_family = m_iIPversion;
-      hints.ai_socktype = SOCK_DGRAM;
+        memset(&hints, 0, sizeof(struct addrinfo));
 
-      if (0 != ::getaddrinfo(NULL, "0", &hints, &res))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+        hints.ai_flags = AI_PASSIVE;
+        hints.ai_family = m_iIPversion;
+        hints.ai_socktype = SOCK_DGRAM;
 
-      if (0 != ::bind(m_iSocket, res->ai_addr, res->ai_addrlen))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-      memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
-      m_BindAddr.len = res->ai_addrlen;
+        if (0 != ::getaddrinfo(NULL, "0", &hints, &res))
+            throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
-      ::freeaddrinfo(res);
-   }
+        if (0 != ::bind(m_iSocket, res->ai_addr, res->ai_addrlen))
+            throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+        memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
+        m_BindAddr.len = res->ai_addrlen;
 
-   HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
+        ::freeaddrinfo(res);
+    }
 
-   setUDPSockOpt();
+    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(&m_BindAddr));
+
+    setUDPSockOpt();
 }
 
 void CChannel::attach(UDPSOCKET udpsock)
@@ -302,13 +467,16 @@ void CChannel::setUDPSockOpt()
 
 void CChannel::close() const
 {
-   int ret SRT_ATR_UNUSED = signalReading(PSG_CLOSE);
-   HLOGC(mglog.Debug, log << "CChannel::close: sendt TRIGGER signal first, ret=" << ret);
-   #ifndef _WIN32
-      ::close(m_iSocket);
-   #else
-      ::closesocket(m_iSocket);
-   #endif
+    int ret SRT_ATR_UNUSED = m_EventRunner.signalReading(PSG_CLOSE);
+    HLOGC(mglog.Debug, log << "CChannel::close: sendt TRIGGER signal first, ret=" << ret);
+
+    // Need to clear out the socket variable because this function
+    // isn't a destructor.
+#ifndef _WIN32
+    ::close(m_iSocket);
+#else
+    ::closesocket(m_iSocket);
+#endif
 
 }
 
@@ -619,19 +787,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
 {
     EReadStatus status = RST_OK;
 
-    fd_set in_set, err_set;
-    timeval tv;
-
-    FD_ZERO(&in_set);
-    FD_ZERO(&err_set);
-
-    // Add the UDP socket
-    FD_SET(m_iSocket, &in_set);
-    FD_SET(m_iSocket, &err_set);
-    int nsockets;
-    FD_SET(m_fdTrigger[PIPE_IN], &in_set);
-    nsockets = std::max(m_iSocket, m_fdTrigger[PIPE_IN]) + 1;
-
     // uptime_us specifies the absolute time to wait. select uses
     // relative time. As absolute time, it might happen that the
     // uptime is in the past.
@@ -639,40 +794,37 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
     uint64_t currtime_tk;
     CTimer::rdtsc(currtime_tk);
     uint64_t now = currtime_tk/CTimer::getCPUFrequency();
+    uint64_t timeout_us;
 
-    if (!uptime_us)
+    // The maximum time for poll is defined as 0.5s, so
+    // we know it can't exceed 0.99s.
+
+    if (!uptime_us || (timeout_us = uptime_us - now) > MAX_POLL_TIME_US)
     {
         // Waiting forever is risky, so in case of this
         // simply wait longer time - 0.5s
-        tv.tv_sec = 0;
-        tv.tv_usec = 500000;
+        timeout_us = MAX_POLL_TIME_US;
     }
     else if (now >= uptime_us) // up time is in the past, so don't wait
     {
         // return immediately
-        tv.tv_usec = 0;
-        tv.tv_sec = 0;
-    }
-    else
-    {
-        uint64_t timeout_us;
-        timeout_us = uptime_us - now;
-        tv.tv_usec = timeout_us%1000000;
-        tv.tv_sec = timeout_us/1000000;
+        timeout_us = 0;
     }
 
-    HLOGC(mglog.Debug, log << "CChannel::recvfrom: waiting for event: usec=" << tv.tv_usec);
+    HLOGC(mglog.Debug, log << "CChannel::recvfrom: waiting for event: usec=" << timeout_us);
 
-    ::select(nsockets, &in_set, NULL, &err_set, &tv);
+    m_EventRunner.poll(timeout_us);
 
-    int psg = FD_ISSET(m_fdTrigger[PIPE_IN], &in_set) ? clearSignalReading(true) : PSG_NONE;
+    int psg = m_EventRunner.clearSignalReading();
+    int socket_ready = m_EventRunner.socketReady();
 
 #if ENABLE_HEAVY_LOGGING
     {
-        static const char* type [] = {"none", "read", "error"};
+        // The last one is rather impossible, but it is a potential value in the code.
+        static const char* type [] = {"none", "read", "error", "read+error"};
         static const char* psgname [] = {"none", "close", "newunit", "newconn"};
 
-        const char* sock_state = type[ FD_ISSET(m_iSocket, &in_set) + 2*FD_ISSET(m_iSocket, &err_set) ];
+        const char* sock_state = type[socket_ready];
         const char* signal_state = psgname[psg+1];
 
         LOGC(mglog.Debug, log << "CChannel::recvfrom: select-ready: socket="
@@ -684,7 +836,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
     // If the select DID NOT report read-readiness of the UDP socket,
     // do not call the ::recvmsg function - it's useless and won't read
     // anything, but it will still take some CPU.
-    if ( (!FD_ISSET(m_iSocket, &in_set) && !FD_ISSET(m_iSocket, &err_set)) || psg == PSG_CLOSE )
+    if (!socket_ready || psg == PSG_CLOSE )
     {
         HLOGC(mglog.Debug, log << "CChannel::recvfrom: socket "
                 << (psg == PSG_CLOSE ? "TO BE CLOSED" : "not ready")

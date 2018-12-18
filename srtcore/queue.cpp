@@ -1936,7 +1936,7 @@ void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const s
    // After a new connector is registerred, the reading select if hanging
    // on the UDP socket to read, might need to be interrupted.
    m_tConnUpTime_us = 0;
-   m_pChannel->signalReading(CChannel::PSG_NEWCONN);
+   m_pChannel->m_EventRunner.signalReading(PSG_NEWCONN);
 
    // Theoretically these two things shall be done without yielding,
    // but introducing a mutex here won't help in performance. This also
@@ -1981,7 +1981,7 @@ void CRcvQueue::setNewEntry(CUDT* u)
    // to happen (which might be also infinite), this causes this waiting
    // to be interrupted.
 
-   m_pChannel->signalReading(CChannel::PSG_NEWUNIT);
+   m_pChannel->m_EventRunner.signalReading(PSG_NEWUNIT);
    // Note that this shall be defined here because this might be called
    // with affinity to the main user thread, whereas it's the RcvQ:worker
    // thread blocked on reading and this block shall be interrupted.

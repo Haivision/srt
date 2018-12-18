@@ -57,10 +57,92 @@ modified by
 #include "udt.h"
 #include "packet.h"
 #include "netinet_any.h"
+#include <utility>
+
+   // Constants used for signal reading that passes
+   // extra information
+enum PipeSignal
+{
+    PSG_CLOSE = 0,
+    PSG_NEWUNIT = 1,
+    PSG_NEWCONN = 2,
+    PSG_NONE = -1
+};
+
+
+class EventRunner
+{
+    // Note: Socket is only "borrowed" from Channel, exists
+    // here in order to have access to it. It should not be
+    // created nor deleted.
+    int m_fdSocket;
+
+#ifdef _WIN32
+
+    // This state is kept as a field here because the Windows
+    // event system does not allow for any data passing for events.
+    // So the idea is to set this value to required value and then
+    // set the event state. The value of the state can be then
+    // retrieved from here.
+    mutable volatile PipeSignal m_state;
+    PipeSignal m_permstate;
+    int m_sockstate;
+    enum {WE_TRIGGER = 0, WE_SOCKET = 1};
+    WSAEVENT m_Event[2];
+#else // Standard POSIX version
+   enum {PIPE_IN = 0, PIPE_OUT = 1};
+   int m_fdTrigger[2];                      // descriptor for read-end of the pipe used to break reading
+
+   // This is to get and keep output from ::select
+   // so that it can be returned when asked for state.
+   fd_set in_set, err_set;
+#endif
+
+public:
+
+   // Set everything to initial nothing
+   EventRunner():
+#ifdef _WIN32
+   m_fdSocket(INVALID_SOCKET),
+   m_Event(INVALID_HANDLE),
+   m_state(PSG_NONE)
+   {
+   }
+
+#else
+   m_fdSocket(-1)
+   {
+       m_fdTrigger[0] = m_fdTrigger[1] = -1;
+   }
+
+#endif
+
+   // To be bound to Channel's constructor
+   void init(int sock);
+
+   int signalReading(PipeSignal val) const;
+
+   void poll(int64_t timeout);
+
+   // The implementation should call clearSignalReading
+   // and socketReady. The first tells it as to whether
+   // the event was triggered (and what kind of), or not.
+   // This will be returned once and the event will be 
+   // cleared thereafter.
+   // The latter if the socket is ready for extraction.
+   PipeSignal clearSignalReading() const;
+   int socketReady() const;
+
+   ~EventRunner();
+
+};
 
 class CChannel
 {
 public:
+
+    // Maximum time to hangup in polling: 0.5s
+    static const int MAX_POLL_TIME_US = 500000;
 
    // XXX There's currently no way to access the socket ID set for
    // whatever the channel is currently working for. Required to find
@@ -68,7 +150,7 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CChannel();
+   //CChannel();
    CChannel(int version);
    ~CChannel();
 
@@ -160,18 +242,7 @@ public:
    const sockaddr* bindAddress() { return &m_BindAddr; }
    const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
-   enum {PIPE_IN, PIPE_OUT};
-
-   // Constants used for signal reading that passes
-   // extra information
-   static const int
-                PSG_CLOSE = 0,
-                PSG_NEWUNIT = 1,
-                PSG_NEWCONN = 2,
-                PSG_NONE = -1;
-
-   int signalReading(char val) const;
-   int clearSignalReading(bool checked = false) const;
+   mutable EventRunner m_EventRunner;
 
 private:
    void setUDPSockOpt();
@@ -183,7 +254,6 @@ private:
    int m_iSockAddrSize;                 // socket address structure size (pre-defined to avoid run-time test)
 
    UDPSOCKET m_iSocket;                 // socket descriptor
-   int m_fdTrigger[2];                      // descriptor for read-end of the pipe used to break reading
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
