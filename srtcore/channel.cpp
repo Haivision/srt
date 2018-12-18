@@ -162,7 +162,8 @@ void CChannel::open(const sockaddr* addr)
       if (0 != ::getaddrinfo(NULL, "0", &hints, &res))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
-      if (0 != ::bind(m_iSocket, res->ai_addr, (int) res->ai_addrlen))
+      // On Windows ai_addrlen has type size_t (unsigned), while bind takes int.
+      if (0 != ::bind(m_iSocket, res->ai_addr, (socklen_t) res->ai_addrlen))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = (socklen_t) res->ai_addrlen;
@@ -390,7 +391,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
    // convert control information into network order
    // XXX USE HtoNLA!
    if (packet.isControl())
-      for (ptrdiff_t i = 0, n = (ptrdiff_t) packet.getLength() / 4; i < n; ++i)
+      for (ptrdiff_t i = 0, n = packet.getLength() / 4; i < n; ++i)
          *((uint32_t *)packet.m_pcData + i) = htonl(*((uint32_t *)packet.m_pcData + i));
 
    // convert packet header into network order
