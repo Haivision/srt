@@ -473,10 +473,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     int recv_size = -1;
 
 #if defined(UNIX) || defined(_WIN32)
-    if (!m_bBindMasked)
-    {
-        // We don't need ancillary data - the source address
-        // will always be the bound address.
     fd_set set;
     timeval tv;
     FD_ZERO(&set);
@@ -497,7 +493,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
 #ifndef _WIN32
     if (select_ret > 0)
     {
-        msghdr mh;   
+        msghdr mh;
         mh.msg_name = addr;
         mh.msg_namelen = m_iSockAddrSize;
         mh.msg_iov = packet.m_PacketVector;
