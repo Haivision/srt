@@ -98,7 +98,7 @@ public:
 
    int lookup(T* data)
    {
-      CGuard cacheguard(m_Lock);
+      CGuard cacheguard(m_Lock, "cache");
 
       int key = data->getKey();
       if (key < 0)
@@ -126,7 +126,7 @@ public:
 
    int update(T* data)
    {
-      CGuard cacheguard(m_Lock);
+      CGuard cacheguard(m_Lock, "cache");
 
       int key = data->getKey();
       if (key < 0)

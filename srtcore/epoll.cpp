@@ -90,7 +90,7 @@ CEPoll::~CEPoll()
 
 int CEPoll::create()
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    int localid = 0;
 
@@ -125,7 +125,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
 
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -144,7 +144,7 @@ int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -212,7 +212,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -236,7 +236,7 @@ int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
 
 int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -267,7 +267,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 // Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -306,7 +306,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
 int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -386,19 +386,19 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
    int64_t entertime = CTimer::getTime();
    while (true)
    {
-      CGuard::enterCS(m_EPollLock);
+      CGuard::enterCS(m_EPollLock, "EPoll");
 
       map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
       if (p == m_mPolls.end())
       {
-         CGuard::leaveCS(m_EPollLock);
+         CGuard::leaveCS(m_EPollLock, "EPoll");
          throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
       }
 
       if (p->second.m_sUDTSocksIn.empty() && p->second.m_sUDTSocksOut.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
       {
          // no socket is being monitored, this may be a deadlock
-         CGuard::leaveCS(m_EPollLock);
+         CGuard::leaveCS(m_EPollLock, "EPoll");
          throw CUDTException(MJ_NOTSUP, MN_INVAL);
       }
 
@@ -472,7 +472,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
          //"select" has a limitation on the number of sockets
          int max_fd = 0;
-         
+
          fd_set readfds;
          fd_set writefds;
          FD_ZERO(&readfds);
@@ -510,7 +510,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
          #endif
       }
 
-      CGuard::leaveCS(m_EPollLock);
+      CGuard::leaveCS(m_EPollLock, "EPoll");
 
       if (total > 0)
          return total;
@@ -529,7 +529,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
 int CEPoll::release(const int eid)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator i = m_mPolls.find(eid);
    if (i == m_mPolls.end())
@@ -566,7 +566,7 @@ void update_epoll_sets(const SRTSOCKET& uid, const set<SRTSOCKET>& watch, set<SR
 
 int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg(m_EPollLock, "EPoll");
 
    map<int, CEPollDesc>::iterator p;
 

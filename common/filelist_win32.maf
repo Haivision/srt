@@ -4,8 +4,6 @@ win/syslog_defs.h
 #
 # These are included by platform_sys.h header contained in ../srtcore/filelist.maf
 #
-win/inttypes.h
-win/stdint.h
 win/unistd.h
 
 SOURCES

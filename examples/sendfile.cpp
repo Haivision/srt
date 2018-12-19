@@ -1,4 +1,4 @@
-#ifndef WIN32
+#ifndef _WIN32
    #include <cstdlib>
    #include <netdb.h>
 #else
@@ -13,7 +13,7 @@
 
 using namespace std;
 
-#ifndef WIN32
+#ifndef _WIN32
 void* sendfile(void*);
 #else
 DWORD WINAPI sendfile(LPVOID);
@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
 
    // Windows UDP issue
    // For better performance, modify HKLM\System\CurrentControlSet\Services\Afd\Parameters\FastSendDatagramThreshold
-#ifdef WIN32
+#ifdef _WIN32
    int mss = 1052;
    srt_setsockopt(serv, 0, SRTO_MSS, &mss, sizeof(int));
 #endif
@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
       getnameinfo((sockaddr *)&clientaddr, addrlen, clienthost, sizeof(clienthost), clientservice, sizeof(clientservice), NI_NUMERICHOST|NI_NUMERICSERV);
       cout << "new connection: " << clienthost << ":" << clientservice << endl;
 
-      #ifndef WIN32
+      #ifndef _WIN32
          pthread_t filethread;
          pthread_create(&filethread, NULL, sendfile, new SRTSOCKET(fhandle));
          pthread_detach(filethread);
@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
    return 0;
 }
 
-#ifndef WIN32
+#ifndef _WIN32
 void* sendfile(void* usocket)
 #else
 DWORD WINAPI sendfile(LPVOID usocket)
@@ -177,7 +177,7 @@ DWORD WINAPI sendfile(LPVOID usocket)
 
    //ifs.close();
 
-   #ifndef WIN32
+   #ifndef _WIN32
       return NULL;
    #else
       return 0;
