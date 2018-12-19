@@ -322,7 +322,7 @@ int EventRunner::signalReading(PipeSignal val) const
     return ::write(m_fdTrigger[PIPE_OUT], data, 1);
 }
 
-PipeSignal EventRunner::clearSignalReading() const
+PipeSignal EventRunner::clearSignalReading()
 {
     int value = -1;
 
