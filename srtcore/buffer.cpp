@@ -902,11 +902,11 @@ void CRcvBuffer::ackData(int len)
       int bytes = 0;
       for (int i = m_iLastAckPos, n = (m_iLastAckPos + len) % m_iSize; i != n; i = (i + 1) % m_iSize)
       {
-          if (m_pUnit[i] != NULL)
-          {
-              pkts++;
-              bytes += m_pUnit[i]->m_Packet.getLength();
-          }
+          if (m_pUnit[i] == NULL)
+              continue;
+
+          pkts++;
+          bytes += m_pUnit[i]->m_Packet.getLength();
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
