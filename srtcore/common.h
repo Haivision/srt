@@ -66,6 +66,14 @@ modified by
 #include "udt.h"
 #include "utilities.h"
 
+// System-independent errno
+#ifndef WIN32
+   #define NET_ERROR errno
+#else
+   #define NET_ERROR WSAGetLastError()
+#endif
+
+
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation
@@ -602,14 +610,20 @@ private:
 class InvertedGuard
 {
     pthread_mutex_t* m_pMutex;
+#if ENABLE_THREAD_LOGGING
+    std::string lockid;
+#endif
 public:
 
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
+    InvertedGuard(pthread_mutex_t* smutex, const char* ln = NULL): m_pMutex(smutex)
     {
         if ( !smutex )
             return;
-
-        CGuard::leaveCS(*smutex);
+#if ENABLE_THREAD_LOGGING
+        if (ln)
+            lockid = ln;
+#endif
+        CGuard::leaveCS(*smutex, ln);
     }
 
     ~InvertedGuard()
@@ -617,7 +631,11 @@ public:
         if ( !m_pMutex )
             return;
 
+#if ENABLE_THREAD_LOGGING
+        CGuard::enterCS(*m_pMutex, lockid.empty() ? (const char*)0 : lockid.c_str());
+#else
         CGuard::enterCS(*m_pMutex);
+#endif
     }
 };
 
@@ -629,6 +647,8 @@ class CCondDelegate
     pthread_mutex_t* m_mutex;
 #if ENABLE_THREAD_LOGGING
     bool nolock;
+    std::string cvname;
+    std::string lockname;
 #endif
 
 public:
@@ -639,11 +659,11 @@ public:
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_until() can be used only with this socket.
-    CCondDelegate(pthread_cond_t& cond, CGuard& g);
+    CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln = 0);
 
     // This is only for one-shot signaling. This doesn't need a CGuard
     // variable, only the mutex itself. Only lock_signal() can be used.
-    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock);
+    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn = 0, const char* ln = 0);
 
     // Wait indefinitely, until getting a signal on CV.
     void wait();

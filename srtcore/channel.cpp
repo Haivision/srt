@@ -84,12 +84,6 @@ modified by
     typedef int socklen_t;
 #endif
 
-#ifndef WIN32
-   #define NET_ERROR errno
-#else
-   #define NET_ERROR WSAGetLastError()
-#endif
-
 using namespace std;
 
 
