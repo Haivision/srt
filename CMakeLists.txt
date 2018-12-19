@@ -797,18 +797,28 @@ endif()
 
 if (ENABLE_UNITTESTS)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-	include(googletest)
-	fetch_googletest(
-		${PROJECT_SOURCE_DIR}/scripts
-		${PROJECT_BINARY_DIR}/googletest
+
+	find_package(GTest 1.8)
+	if (NOT GTEST_FOUND)
+		message(STATUS "GTEST not found! Fetching from git.")
+		include(googletest)
+		fetch_googletest(
+			${PROJECT_SOURCE_DIR}/scripts
+			${PROJECT_BINARY_DIR}/googletest
+		)
+		set(GTEST_BOTH_LIBRARIES "gtest_main" CACHE STRING "Add gtest_main target")
+	endif()
+
+	MafReadDir(test filelist.maf
+		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp test/test_strict_encription.cpp)
+	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
 
 	target_link_libraries(
 		test_srt
-		gtest_main
+		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
 		)
