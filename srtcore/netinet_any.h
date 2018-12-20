@@ -49,7 +49,44 @@ struct sockaddr_any
         len = size();
     }
 
-    sockaddr_any(const sockaddr* source, socklen_t namelen)
+    sockaddr_any(const sockaddr_storage& stor)
+    {
+        // Here the length isn't passed, so just rely on family.
+        set((const sockaddr*)&stor);
+    }
+
+    sockaddr_any(const sockaddr* source, socklen_t namelen = 0)
+    {
+        if (namelen == 0)
+            set(source);
+        else
+            set(source, namelen);
+    }
+
+    void set(const sockaddr* source)
+    {
+        // Less safe version, simply trust the caller that the
+        // memory at 'source' is also large enough to contain
+        // all data required for particular family.
+        if (source->sa_family == AF_INET)
+        {
+            memcpy(&sin, source, sizeof sin);
+            len = sizeof sin;
+        }
+        else if (source->sa_family == AF_INET6)
+        {
+            memcpy(&sin6, source, sizeof sin6);
+            len = sizeof sin6;
+        }
+        else
+        {
+            // Error fallback: no other families than IP are regarded.
+            sa.sa_family = AF_UNSPEC;
+            len = 0;
+        }
+    }
+
+    void set(const sockaddr* source, socklen_t namelen)
     {
         // It's not safe to copy it directly, so check.
         if (source->sa_family == AF_INET && namelen >= sizeof sin)

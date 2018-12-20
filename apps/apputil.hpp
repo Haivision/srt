@@ -163,7 +163,7 @@ inline std::string Join(const std::vector<std::string>& in, std::string sep)
 }
 
 template<class Number>
-Number StrToNumber(const std::string& s)
+Number StrToNumber(const std::string& )
 {
     typename Number::incorrect_version wrong = Number::incorrect_version;
     return Number();

@@ -380,6 +380,19 @@ inline std::string Sprint(const Arg1& arg)
     return sout.str();
 }
 
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
+
 template <class Type>
 ref_t<Type> Ref(Type& arg)
 {
@@ -432,6 +445,21 @@ public:
 
     operator bool () { return 0!= get(); }
 };
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type* map_getp(Map& m, const Key& key)
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? NULL : ref_t<typename Map::mapped_type>::adrof(it->second);
+}
+
 
 
 #endif
