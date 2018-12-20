@@ -21,6 +21,10 @@ namespace Verbose
     Log& Log::operator<<(LogNoEol)
     {
         noeol = true;
+        if (on)
+        {
+            (*cverb) << std::flush;
+        }
         return *this;
     }
 

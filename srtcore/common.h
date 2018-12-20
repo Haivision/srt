@@ -53,10 +53,11 @@ modified by
 #ifndef __UDT_COMMON_H__
 #define __UDT_COMMON_H__
 
+#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 
 #include <cstdlib>
 #include <cstdio>
-#ifndef WIN32
+#ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
 #else
@@ -67,6 +68,14 @@ modified by
 #include "srt.h"
 #include "utilities.h"
 #include "netinet_any.h"
+
+// System-independent errno
+#ifndef _WIN32
+   #define NET_ERROR errno
+#else
+   #define NET_ERROR WSAGetLastError()
+#endif
+
 
 enum UDTSockType
 {
@@ -523,12 +532,15 @@ private:
 
 class CGuard
 {
+#if ENABLE_THREAD_LOGGING
+    std::string lockname;
+#endif
 public:
    /// Constructs CGuard, which locks the given mutex for
    /// the scope where this object exists.
    /// @param lock Mutex to lock
    /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
+   CGuard(pthread_mutex_t& lock, const char* ln = 0, bool if_condition = true);
    ~CGuard();
 
 public:
@@ -560,8 +572,8 @@ public:
        }
    }
 
-   static int enterCS(pthread_mutex_t& lock, bool block = true);
-   static int leaveCS(pthread_mutex_t& lock);
+   static int enterCS(pthread_mutex_t& lock, const char* ln = 0, bool block = true);
+   static int leaveCS(pthread_mutex_t& lock, const char* ln = 0);
 
    static bool isthread(const pthread_t& thrval);
 
@@ -606,14 +618,20 @@ private:
 class InvertedGuard
 {
     pthread_mutex_t* m_pMutex;
+#if ENABLE_THREAD_LOGGING
+    std::string lockid;
+#endif
 public:
 
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
+    InvertedGuard(pthread_mutex_t* smutex, const char* ln = NULL): m_pMutex(smutex)
     {
         if ( !smutex )
             return;
-
-        CGuard::leaveCS(*smutex);
+#if ENABLE_THREAD_LOGGING
+        if (ln)
+            lockid = ln;
+#endif
+        CGuard::leaveCS(*smutex, ln);
     }
 
     ~InvertedGuard()
@@ -621,7 +639,11 @@ public:
         if ( !m_pMutex )
             return;
 
+#if ENABLE_THREAD_LOGGING
+        CGuard::enterCS(*m_pMutex, lockid.empty() ? (const char*)0 : lockid.c_str());
+#else
         CGuard::enterCS(*m_pMutex);
+#endif
     }
 };
 
@@ -631,7 +653,11 @@ class CCondDelegate
 {
     pthread_cond_t* m_cond;
     pthread_mutex_t* m_mutex;
+#if ENABLE_THREAD_LOGGING
     bool nolock;
+    std::string cvname;
+    std::string lockname;
+#endif
 
 public:
 
@@ -641,11 +667,11 @@ public:
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_until() can be used only with this socket.
-    CCondDelegate(pthread_cond_t& cond, CGuard& g);
+    CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln = 0);
 
     // This is only for one-shot signaling. This doesn't need a CGuard
     // variable, only the mutex itself. Only lock_signal() can be used.
-    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock);
+    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn = 0, const char* ln = 0);
 
     // Wait indefinitely, until getting a signal on CV.
     void wait();

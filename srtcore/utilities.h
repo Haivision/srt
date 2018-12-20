@@ -55,7 +55,7 @@ written by
 #endif
 
 // Windows warning disabler
-#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS 1
 
 #include "platform_sys.h"
 

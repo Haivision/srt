@@ -22,7 +22,7 @@ written by
 #include <stdio.h>	/* snprintf */
 #include <stdlib.h>	/* NULL, malloc, free */
 #include <string.h>	/* memcpy, memset */
-#ifdef WIN32
+#ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
