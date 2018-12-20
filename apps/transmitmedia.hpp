@@ -84,7 +84,7 @@ protected:
 
 class SrtSource: public Source, public SrtCommon
 {
-    int srt_epoll = -1;
+    // (unused?) int srt_epoll = -1;
     std::string hostport_copy;
 public:
 
@@ -112,14 +112,14 @@ public:
     bool End() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
 
-    SRTSOCKET GetSRTSocket()
+    SRTSOCKET GetSRTSocket() override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
             socket = SrtCommon::Listener();
         return socket;
     }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
+    bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
 class SrtTarget: public Target, public SrtCommon
@@ -148,14 +148,14 @@ public:
         return bytes;
     }
 
-    SRTSOCKET GetSRTSocket()
+    SRTSOCKET GetSRTSocket() override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
             socket = SrtCommon::Listener();
         return socket;
     }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
+    bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
 
