@@ -25,7 +25,7 @@ written by
 #endif
 
 #include <pthread.h>
-#ifdef WIN32
+#ifdef _WIN32
 #include "win/syslog_defs.h"
 #else
 #include <syslog.h>
