@@ -26,7 +26,7 @@ written by
 #include <features.h>
 #endif
 
-#if defined(_WIN32) || defined(WIN32)
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
@@ -61,7 +61,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 
     buf[0] = '\0';
 
-#if defined(_WIN32) || defined(WIN32)
+#if defined(_WIN32)
     const char* lpMsgBuf;
 
     // Note: Intentionally the "fixed char size" types are used despite using
@@ -88,7 +88,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
     {
         strncpy(buf, lpMsgBuf, buflen-1);
         buf[buflen-1] = 0;
-        LocalFree(lpMsgBuf);
+        LocalFree((HLOCAL)lpMsgBuf);
     }
     else
     {

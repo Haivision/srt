@@ -12,8 +12,9 @@
 written by
    Haivision Systems Inc.
  *****************************************************************************/
-
-
+#ifdef _WIN32
+#include <direct.h>
+#endif
 #include <iostream>
 #include <iterator>
 #include <vector>
@@ -34,6 +35,11 @@ written by
 #include "socketoptions.hpp"
 #include "transmitmedia.hpp"
 #include "verbose.hpp"
+
+
+#ifndef S_ISDIR
+#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+#endif
 
 
 bool Upload(UriParser& srt, UriParser& file);
@@ -167,6 +173,7 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
 
     struct stat state;
     stat(path.c_str(), &state);
+
     if (!S_ISDIR(state.st_mode))
     {
         // Extract directory as a butlast part of path
@@ -188,9 +195,9 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         // Glue in the absolute prefix of the current directory
         // to make it absolute. This is needed to properly interpret
         // the fixed uri.
-        static const size_t MAX_PATH = 4096; // don't care how proper this is
-        char tmppath[MAX_PATH];
-        char* gwd = getcwd(tmppath, MAX_PATH);
+        static const size_t s_max_path = 4096; // don't care how proper this is
+        char tmppath[s_max_path];
+        char* gwd = getcwd(tmppath, s_max_path);
         if ( !gwd )
         {
             // Don't bother with that now. We need something better for
@@ -214,7 +221,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     bool connected = false;
     int pollid = -1;
 
-    ifstream ifile(path);
+    ifstream ifile(path, ios::binary);
     if ( !ifile )
     {
         cerr << "Error opening file: '" << path << "'";
@@ -519,7 +526,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
                 const char * fn = id.empty() ? filename.c_str() : id.c_str();
                 directory.append("/");
                 directory.append(fn);
-                ofile.open(directory.c_str(), ios::out | ios::trunc);
+                ofile.open(directory.c_str(), ios::out | ios::trunc | ios::binary);
 
                 if(!ofile.is_open())
                 {

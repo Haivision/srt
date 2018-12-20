@@ -24,9 +24,33 @@ matrix:
           before_install: brew update
           install: brew install openssl gnutls nettle
           env: BUILD_TYPE=Release
-
-
+        - os: linux
+          compiler: x86_64-w64-mingw32-g++
+          addons:
+            apt:
+              packages:
+                - gcc-mingw-w64-base
+                - binutils-mingw-w64-x86-64
+                - gcc-mingw-w64-x86-64
+                - gcc-mingw-w64
+                - g++-mingw-w64-x86-64
+          before_script:
+            - git clone https://github.com/openssl/openssl.git
+            - cd openssl
+            - git checkout origin/OpenSSL_1_1_0-stable -b OpenSSL_1_1_0-stable
+            - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
+            - make
+            - cd ..
+          env: BUILD_TYPE=Release
 script:
-    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE; fi
-    - if [ "$TRAVIS_OS_NAME" == "osx" ];   then cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl; fi
+    - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
+        export CC="x86_64-w64-mingw32-gcc";
+        export CXX="x86_64-w64-mingw32-g++";
+        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_UNITTESTS="ON" -DUSE_OPENSSL_PC="OFF" -DOPENSSL_ROOT_DIR="$PWD/openssl" -DCMAKE_SYSTEM_NAME="Windows";
+      elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
+        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_UNITTESTS="ON";
+      elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
+        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_UNITTESTS="ON" -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl;
+      fi
     - make
+    - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
