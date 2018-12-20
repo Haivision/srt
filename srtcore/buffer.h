@@ -424,20 +424,20 @@ private:
 private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
-   int shift(int basepos, int shift)
+   int shift(int basepos, int shift) const
    {
        return (basepos + shift) % m_iSize;
    }
 
    // Simplified versions with ++ and --; avoid using division instruction
-   int shift_forward(int basepos)
+   int shift_forward(int basepos) const
    {
        if (++basepos == m_iSize)
            return 0;
        return basepos;
    }
 
-   int shift_backward(int basepos)
+   int shift_backward(int basepos) const
    {
        if (basepos == 0)
            return m_iSize-1;

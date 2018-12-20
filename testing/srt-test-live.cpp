@@ -68,7 +68,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmediabase.hpp"
+#include "testmedia.hpp"
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -450,6 +450,9 @@ int main( int argc, char** argv )
     for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
+
+    UDT::addlogfa(SRT_LOGFA_APP);
+
     char NAME[] = "SRTLIB";
     if ( internal_log )
     {
@@ -584,6 +587,7 @@ int main( int argc, char** argv )
             {
                 alarm(timeout);
             }
+            Verb() << " << ... " << VerbNoEOL;
             const bytevector& data = src->Read(chunk);
             Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
             if ( data.empty() && src->End() )
@@ -596,16 +600,18 @@ int main( int argc, char** argv )
             {
                 alarm(0);
             }
+
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken\n";
+                Verb() << " OUTPUT broken";
                 break;
             }
 
-            Verb() << " sent";
+            Verb() << "sent";
+
             if ( int_state )
             {
-                cerr << "\n (interrupted on request)\n";
+                Verror() << "\n (interrupted on request)";
                 break;
             }
 
@@ -617,7 +623,7 @@ int main( int argc, char** argv )
                 int remain = stoptime - final_delay - elapsed;
                 if (remain < 0)
                 {
-                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
+                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -629,17 +635,17 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    cerr << "(DEBUG) DEPLETED. Done.\n";
+                    Verror() << "(DEBUG) DEPLETED. Done.\n";
                     break;
                 }
 
-                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
@@ -647,20 +653,24 @@ int main( int argc, char** argv )
 
         if (stoptime != 0 && ::timer_state)
         {
-            cerr << "Exit on timeout.\n";
+            Verror() << "Exit on timeout.";
         }
         else if (::int_state)
         {
+            Verror() << "Exit on interrupt.";
             // Do nothing.
         }
         else
         {
-            cerr << "STD EXCEPTION: " << x.what() << endl;
+            Verror() << "STD EXCEPTION: " << x.what();
         }
+
+        if ( crashonx )
+            throw;
 
         if (final_delay > 0)
         {
-            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
+            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -670,7 +680,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        cerr << "UNKNOWN type of EXCEPTION\n";
+        Verror() << "UNKNOWN type of EXCEPTION";
         if ( crashonx )
             throw;
 

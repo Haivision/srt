@@ -20,6 +20,9 @@
 
 using namespace std;
 
+const logging::LogFA SRT_LOGFA_APP = 10;
+extern logging::Logger applog;
+
 // Trial version of an exception. Try to implement later an official
 // interruption mechanism in SRT using this.
 

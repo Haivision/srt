@@ -138,7 +138,17 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
+   // This function shall be called always wherever
+   // you'd like to call cudtsocket->m_pUDT->close().
+   void makeClosed();
    void removeFromGroup();
+
+   // Instrumentally used by select() and also required for non-blocking
+   // mode check in groups
+   bool readReady();
+   bool writeReady();
+   bool broken();
+
 private:
    CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);

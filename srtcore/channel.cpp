@@ -388,28 +388,10 @@ void CChannel::getPeerAddr(ref_t<sockaddr_any> addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr) const
 {
-#if ENABLE_HEAVY_LOGGING
-    std::ostringstream spec;
-
-    if (packet.isControl())
-    {
-        spec << " CONTROL size=" << packet.getLength()
-             << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
-    }
-    else
-    {
-        spec << " DATA size=" << packet.getLength()
-             << " seq=" << packet.getSeqNo();
-        if (packet.getRexmitFlag())
-            spec << " [REXMIT]";
-    }
-
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID << " sourceIP="
+        << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(source_addr) : "default")
-        << spec.str());
-#endif
+        << " " << packet.Info());
 
    // convert control information into network order
    // XXX USE HtoNLA!

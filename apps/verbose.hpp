@@ -29,10 +29,14 @@ struct LogLock { LogLock() {} };
 
 class Log
 {
-    bool noeol;
+    bool noeol = false;
 #if SRT_ENABLE_VERBOSE_LOCK
-    bool lockline;
+    bool lockline = false;
 #endif
+
+    // Disallow creating dynamic objects
+    void* operator new(size_t);
+
 public:
 
     Log():
@@ -59,9 +63,29 @@ public:
     ~Log();
 };
 
+
+class ErrLog: public Log
+{
+    bool noeol;
+public:
+
+    template <class V>
+    ErrLog& operator<<(const V& arg)
+    {
+        // Template - must be here; extern template requires
+        // predefined specializations.
+        if (on)
+            (*cverb) << arg;
+        else
+            std::cerr << arg;
+        return *this;
+    }
+};
+
 }
 
 inline Verbose::Log Verb() { return Verbose::Log(); }
+inline Verbose::ErrLog Verror() { return Verbose::ErrLog(); }
 
 // Manipulator tags
 static const Verbose::LogNoEol VerbNoEOL;

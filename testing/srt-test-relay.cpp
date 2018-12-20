@@ -41,8 +41,6 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const logging::LogFA SRT_LOGFA_APP = 10;
-
 using namespace std;
 
 template <class VarType, class ValType>

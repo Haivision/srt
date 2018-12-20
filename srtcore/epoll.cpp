@@ -74,8 +74,11 @@ modified by
 #include "common.h"
 #include "epoll.h"
 #include "udt.h"
+#include "logging.h"
 
 using namespace std;
+
+extern logging::Logger mglog, dlog;
 
 CEPoll::CEPoll():
 m_iIDSeed(0)
@@ -131,12 +134,12 @@ int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-   if (!events || (*events & UDT_EPOLL_IN))
+   if (!events || (*events & SRT_EPOLL_IN))
       p->second.m_sUDTSocksIn.insert(u);
-   if (!events || (*events & UDT_EPOLL_OUT))
+   if (!events || (*events & SRT_EPOLL_OUT))
       p->second.m_sUDTSocksOut.insert(u);
    // Connecting timeout not signalled without EPOLL_ERR 
-   if (!events || (*events & UDT_EPOLL_ERR))
+   if (!events || (*events & SRT_EPOLL_ERR))
       p->second.m_sUDTSocksEx.insert(u);
 
    return 0;
@@ -159,11 +162,11 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    else
    {
       ev.events = 0;
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
          ev.events |= EPOLLIN;
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
          ev.events |= EPOLLOUT;
-      if (*events & UDT_EPOLL_ERR)
+      if (*events & SRT_EPOLL_ERR)
          ev.events |= EPOLLERR;
    }
 
@@ -181,11 +184,11 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    else
    {
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
       {
          EV_SET(&ke[num++], s, EVFILT_READ, EV_ADD, 0, 0, NULL);
       }
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
       {
          EV_SET(&ke[num++], s, EVFILT_WRITE, EV_ADD, 0, 0, NULL);
       }
@@ -273,7 +276,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-   if (!events || (*events & UDT_EPOLL_IN))
+   if (!events || (*events & SRT_EPOLL_IN))
       p->second.m_sUDTSocksIn.insert(u);
    else
    {
@@ -286,14 +289,14 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
       p->second.m_sUDTReads.erase(u);
    }
 
-   if (!events || (*events & UDT_EPOLL_OUT))
+   if (!events || (*events & SRT_EPOLL_OUT))
       p->second.m_sUDTSocksOut.insert(u);
    else
    {
       p->second.m_sUDTSocksOut.erase(u);
       p->second.m_sUDTWrites.erase(u);
    }
-   if (!events || (*events & UDT_EPOLL_ERR))
+   if (!events || (*events & SRT_EPOLL_ERR))
       p->second.m_sUDTSocksEx.insert(u);
    else
    {
@@ -321,11 +324,11 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    else
    {
       ev.events = 0;
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
          ev.events |= EPOLLIN;
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
          ev.events |= EPOLLOUT;
-      if (*events & UDT_EPOLL_ERR)
+      if (*events & SRT_EPOLL_ERR)
          ev.events |= EPOLLERR;
    }
 
@@ -351,11 +354,11 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    else
    {
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
       {
          EV_SET(&ke[num++], s, EVFILT_READ, EV_ADD, 0, 0, NULL);
       }
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
       {
          EV_SET(&ke[num++], s, EVFILT_WRITE, EV_ADD, 0, 0, NULL);
       }
@@ -576,15 +579,16 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
       p = m_mPolls.find(*i);
       if (p == m_mPolls.end())
       {
+         LOGC(dlog.Error, log << "epoll/update: EID " << *i << " was deleted in the meantime");
          lost.push_back(*i);
       }
       else
       {
-         if ((events & UDT_EPOLL_IN) != 0)
+         if ((events & SRT_EPOLL_IN) != 0)
             update_epoll_sets(uid, p->second.m_sUDTSocksIn, p->second.m_sUDTReads, enable);
-         if ((events & UDT_EPOLL_OUT) != 0)
+         if ((events & SRT_EPOLL_OUT) != 0)
             update_epoll_sets(uid, p->second.m_sUDTSocksOut, p->second.m_sUDTWrites, enable);
-         if ((events & UDT_EPOLL_ERR) != 0)
+         if ((events & SRT_EPOLL_ERR) != 0)
             update_epoll_sets(uid, p->second.m_sUDTSocksEx, p->second.m_sUDTExcepts, enable);
       }
    }
