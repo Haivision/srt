@@ -911,6 +911,7 @@ public:
 #endif
 };
 
+std::string SockStatusStr(SRT_SOCKSTATUS s);
 
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)

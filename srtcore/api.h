@@ -130,6 +130,16 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
+   // This function shall be called always wherever
+   // you'd like to call cudtsocket->m_pUDT->close().
+   void makeClosed();
+
+    // Instrumentally used by select() and also required for non-blocking
+    // mode check in groups
+    bool readReady();
+    bool writeReady();
+    bool broken();
+
 private:
    CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);
@@ -218,6 +228,8 @@ public:
 private:
 //   void init();
 
+   SRTSOCKET generateSocketID();
+
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
    sockets_t m_Sockets;
@@ -225,7 +237,11 @@ private:
    pthread_mutex_t m_GlobControlLock;              // used to synchronize UDT API
 
    pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
-   SRTSOCKET m_SocketIDGenerator;                             // seed to generate a new unique socket ID
+
+   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+
+   SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
+   SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 

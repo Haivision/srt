@@ -163,6 +163,7 @@ modified by
 #include <cstring>
 #include "packet.h"
 #include "logging.h"
+#include "handshake.h"
 
 extern logging::Logger mglog;
 
@@ -489,5 +490,71 @@ std::string CPacket::MessageFlagStr()
     out << rexmit[int(getRexmitFlag())];
 
     return out.str();
+}
+
+inline void SprintSpecialWord(std::ostream& os, int32_t val)
+{
+    if (val & LOSSDATA_SEQNO_RANGE_FIRST)
+        os << "<" << (val & (~LOSSDATA_SEQNO_RANGE_FIRST)) << ">";
+    else
+        os << val;
+}
+
+std::string CPacket::Info()
+{
+    std::ostringstream os;
+    os << "TARGET=@" << m_iID << " ";
+
+    if (isControl())
+    {
+        os << "CONTROL: size=" << getLength() << " type=" << MessageTypeStr(getType(), getExtendedType());
+
+        if (getType() == UMSG_HANDSHAKE)
+        {
+            os << " HS: ";
+            // For handshake we already have a parsing method
+            CHandShake hs;
+            hs.load_from(m_pcData, getLength());
+            os << hs.show();
+        }
+        else
+        {
+            // This is a value that some messages use for some purposes.
+            // The "ack seq no" is one of the purposes, used by UMSG_ACK and UMSG_ACKACK.
+            // This is simply the PH_MSGNO field used as a message number in data packets.
+            os << " ARG: 0x";
+            os << std::hex << getAckSeqNo() << " ";
+            os << std::dec << getAckSeqNo();
+
+            // It would be nice to see the extended packet data, but this
+            // requires strictly a message-dependent interpreter. So let's simply
+            // display all numbers in the array with the following restrictions:
+            // - all data contained in the buffer are considered 32-bit integer
+            // - sign flag will be cleared before displaying, with additional mark
+            size_t wordlen = getLength()/4; // drop any remainder if present
+            int32_t* array = (int32_t*)m_pcData;
+            os << " [ ";
+            for (size_t i = 0; i < wordlen; ++i)
+            {
+                SprintSpecialWord(os, array[i]);
+                os << " ";
+
+            }
+            os << "]";
+        }
+    }
+    else
+    {
+        // It's hard to extract the information about peer's supported rexmit flag.
+        // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
+        // Declaring that the peer supports rexmit flag cuts off the highest bit from
+        // the displayed number.
+        os << "DATA: size=" << getLength()
+            << " " << BufferStamp(m_pcData, getLength())
+            << " #" << getMsgSeq(true) << " %" << getSeqNo()
+            << " " << MessageFlagStr();
+    }
+
+    return os.str();
 }
 #endif

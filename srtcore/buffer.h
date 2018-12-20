@@ -60,6 +60,19 @@ modified by
 #include "utilities.h"
 #include <fstream>
 
+// The notation used for "circular numbers" in comments:
+// The "cicrular numbers" are numbers that when increased up to the
+// maximum become zero, and similarly, when the zero value is decreased,
+// it turns into the maximum value minus one. This wrapping works the
+// same for adding and subtracting. Circular numbers cannot be multiplied.
+
+// Operations done on these numbers are marked with additional % character:
+// a %> b : a is later than b
+// a ++% (++%a) : shift a by 1 forward
+// a +% b : shift a by b
+// a == b : equality is same as for just numbers
+
+
 class CSndBuffer
 {
 public:
@@ -410,20 +423,20 @@ private:
 private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
-   int shift(int basepos, int shift)
+   int shift(int basepos, int shift) const
    {
        return (basepos + shift) % m_iSize;
    }
 
    // Simplified versions with ++ and --; avoid using division instruction
-   int shift_forward(int basepos)
+   int shift_forward(int basepos) const
    {
        if (++basepos == m_iSize)
            return 0;
        return basepos;
    }
 
-   int shift_backward(int basepos)
+   int shift_backward(int basepos) const
    {
        if (basepos == 0)
            return m_iSize-1;
