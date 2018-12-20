@@ -198,7 +198,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     }
     m_pLastBlock = s;
 
-    CGuard::enterCS(m_BufLock);
+    CGuard::enterCS(m_BufLock, "Buf");
     m_iCount += size;
 
     m_iBytesCount += len;
@@ -210,7 +210,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     updAvgBufSize(time);
 #endif
 
-    CGuard::leaveCS(m_BufLock);
+    CGuard::leaveCS(m_BufLock, "Buf");
 
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -337,11 +337,11 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    }
    m_pLastBlock = s;
 
-   CGuard::enterCS(m_BufLock);
+   CGuard::enterCS(m_BufLock, "Buf");
    m_iCount += size;
    m_iBytesCount += total;
 
-   CGuard::leaveCS(m_BufLock);
+   CGuard::leaveCS(m_BufLock, "Buf");
 
    m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
@@ -408,7 +408,7 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, uint64_t& srctime, 
 
 int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, uint64_t& srctime, int& msglen)
 {
-   CGuard bufferguard(m_BufLock);
+   CGuard bufferguard(m_BufLock, "Buf");
 
    Block* p = m_pFirstBlock;
 
@@ -478,7 +478,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
 
 void CSndBuffer::ackData(int offset)
 {
-   CGuard bufferguard(m_BufLock);
+   CGuard bufferguard(m_BufLock, "Buf");
 
    bool move = false;
    for (int i = 0; i < offset; ++ i)
@@ -511,7 +511,7 @@ int CSndBuffer::getAvgBufSize(ref_t<int> r_bytes, ref_t<int> r_tsp)
 {
     int& bytes = *r_bytes;
     int& timespan = *r_tsp;
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
+    CGuard bufferguard(m_BufLock, "Buf"); /* Consistency of pkts vs. bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(CTimer::getTime());
@@ -579,7 +579,7 @@ int CSndBuffer::dropLateData(int &bytes, uint64_t latetime)
    int dbytes = 0;
    bool move = false;
 
-   CGuard bufferguard(m_BufLock);
+   CGuard bufferguard(m_BufLock, "Buf");
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_ullOriginTime_us < latetime; ++ i)
    {
       dpkts++;
@@ -764,7 +764,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
    *  acked (bytes>0, acked=true),
    *  removed (bytes<0, acked=n/a)
    */
-   CGuard cg(m_BytesCountLock);
+   CGuard cg(m_BytesCountLock, "BytesCount");
 
    if (!acked) //adding new pkt in RcvBuffer
    {
@@ -893,11 +893,11 @@ void CRcvBuffer::ackData(int len)
       int bytes = 0;
       for (int i = m_iLastAckPos, n = (m_iLastAckPos + len) % m_iSize; i != n; i = (i + 1) % m_iSize)
       {
-          if (m_pUnit[i] != NULL)
-          {
-              pkts++;
-              bytes += m_pUnit[i]->m_Packet.getLength();
-          }
+          if (m_pUnit[i] == NULL)
+              continue;
+
+          pkts++;
+          bytes += m_pUnit[i]->m_Packet.getLength();
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
@@ -1492,7 +1492,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
 
     int64_t iDrift = CTimer::getTime() - (getTsbPdTimeBase(timestamp) + timestamp);
 
-    CGuard::enterCS(mutex_to_lock);
+    CGuard::enterCS(mutex_to_lock, "ack");
 
     bool updated = m_DriftTracer.update(iDrift);
 
@@ -1509,7 +1509,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
         m_ullTsbPdTimeBase += m_DriftTracer.overdrift();
     }
 
-    CGuard::leaveCS(mutex_to_lock);
+    CGuard::leaveCS(mutex_to_lock, "ack");
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
