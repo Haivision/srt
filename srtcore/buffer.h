@@ -438,10 +438,11 @@ private:
 
    int extractData(char *data, int len, int p, int q, bool passack);
    bool accessMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> r_passack, ref_t<uint64_t> r_playtime, int upto);
-
-   /// thread safe bytes counter
+   
+   /// thread safe bytes counter of the Recv & Ack buffer
+   /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
    /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.
-   // XXX Please document.
+   /// @param [in] acked true when adding new pkt in RcvBuffer; false when acking/removing pkts to/from buffer
 
    void countBytes(int pkts, int bytes, bool acked = false);
 

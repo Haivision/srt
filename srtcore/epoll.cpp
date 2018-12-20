@@ -75,6 +75,7 @@ modified by
 #include "epoll.h"
 #include "logging.h"
 #include "udt.h"
+#include "logging.h"
 
 using namespace std;
 
@@ -592,7 +593,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
          //"select" has a limitation on the number of sockets
          int max_fd = 0;
-         
+
          fd_set readfds;
          fd_set writefds;
          FD_ZERO(&readfds);

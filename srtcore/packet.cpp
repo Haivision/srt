@@ -164,6 +164,7 @@ modified by
 #include "packet.h"
 #include "handshake.h"
 #include "logging.h"
+#include "handshake.h"
 
 extern logging::Logger mglog;
 
@@ -175,25 +176,23 @@ m_iSeqNo((int32_t&)(m_nHeader[PH_SEQNO])),
 m_iMsgNo((int32_t&)(m_nHeader[PH_MSGNO])),
 m_iTimeStamp((int32_t&)(m_nHeader[PH_TIMESTAMP])),
 m_iID((int32_t&)(m_nHeader[PH_ID])),
-m_pcData((char*&)(m_PacketVector[PV_DATA].iov_base))
+m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
 {
     m_nHeader.clear();
 
     // The part at PV_HEADER will be always set to a builtin buffer
     // containing SRT header.
-    m_PacketVector[PV_HEADER].iov_base = m_nHeader.raw();
-    m_PacketVector[PV_HEADER].iov_len = HDR_SIZE;
+    m_PacketVector[PV_HEADER].set(m_nHeader.raw(), HDR_SIZE);
 
     // The part at PV_DATA is zero-initialized. It should be
     // set (through m_pcData and setLength()) to some externally
     // provided buffer before calling CChannel::sendto().
-    m_PacketVector[PV_DATA].iov_base = NULL;
-    m_PacketVector[PV_DATA].iov_len = 0;
+    m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
 char* CPacket::getData()
 {
-    return (char*)m_PacketVector[PV_DATA].iov_base;
+    return (char*)m_PacketVector[PV_DATA].dataRef();
 }
 
 void CPacket::allocate(size_t alloc_buffer_size)
@@ -206,7 +205,7 @@ void CPacket::allocate(size_t alloc_buffer_size)
         // Would be nice to reallocate; for now just allocate again.
         delete [] m_pcData;
     }
-    m_pcData = new char[alloc_buffer_size];
+    m_PacketVector[PV_DATA].set(new char[alloc_buffer_size], alloc_buffer_size);
     setLength(alloc_buffer_size);
     m_data_owned = true;
 }
@@ -214,9 +213,8 @@ void CPacket::allocate(size_t alloc_buffer_size)
 void CPacket::deallocate()
 {
     if (m_data_owned)
-        delete [] m_pcData;
-    m_pcData = NULL;
-    setLength(0);
+        delete [] (char*)m_PacketVector[PV_DATA].data();
+    m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
 char* CPacket::release()
@@ -238,18 +236,18 @@ CPacket::~CPacket()
     // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
     // Delete the internal buffer only if it was declared as owned.
     if (m_data_owned)
-        delete [] m_pcData;
+        delete[](char*)m_PacketVector[PV_DATA].data();
 }
 
 
 size_t CPacket::getLength() const
 {
-   return m_PacketVector[PV_DATA].iov_len;
+   return m_PacketVector[PV_DATA].size();
 }
 
 void CPacket::setLength(size_t len)
 {
-   m_PacketVector[PV_DATA].iov_len = len;
+   m_PacketVector[PV_DATA].setLength(len);
 }
 
 void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
@@ -270,8 +268,7 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 
       // data ACK seq. no. 
       // optional: RTT (microsends), RTT variance (microseconds) advertised flow window size (packets), and estimated link capacity (packets per second)
-      m_PacketVector[PV_DATA].iov_base = (char *)rparam;
-      m_PacketVector[PV_DATA].iov_len = size;
+      m_PacketVector[PV_DATA].set(rparam, size);
 
       break;
 
@@ -281,46 +278,40 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].iov_base = (char *)&__pad; //NULL;
-      m_PacketVector[PV_DATA].iov_len = 4; //0;
+      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
 
       break;
 
    case UMSG_LOSSREPORT: //0011 - Loss Report (NAK)
       // loss list
-      m_PacketVector[PV_DATA].iov_base = (char *)rparam;
-      m_PacketVector[PV_DATA].iov_len = size;
+      m_PacketVector[PV_DATA].set(rparam, size);
 
       break;
 
    case UMSG_CGWARNING: //0100 - Congestion Warning
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].iov_base = (char *)&__pad; //NULL;
-      m_PacketVector[PV_DATA].iov_len = 4; //0;
+      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
   
       break;
 
    case UMSG_KEEPALIVE: //0001 - Keep-alive
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].iov_base = (char *)&__pad; //NULL;
-      m_PacketVector[PV_DATA].iov_len = 4; //0;
+      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
 
       break;
 
    case UMSG_HANDSHAKE: //0000 - Handshake
       // control info filed is handshake info
-      m_PacketVector[PV_DATA].iov_base = (char *)rparam;
-      m_PacketVector[PV_DATA].iov_len = size; //sizeof(CHandShake);
+      m_PacketVector[PV_DATA].set(rparam, size);
 
       break;
 
    case UMSG_SHUTDOWN: //0101 - Shutdown
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].iov_base = (char *)&__pad; //NULL;
-      m_PacketVector[PV_DATA].iov_len = 4; //0;
+      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
 
       break;
 
@@ -329,8 +320,7 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
       m_nHeader[PH_MSGNO] = *(int32_t *)lparam;
 
       //first seq no, last seq no
-      m_PacketVector[PV_DATA].iov_base = (char *)rparam;
-      m_PacketVector[PV_DATA].iov_len = size;
+      m_PacketVector[PV_DATA].set(rparam, size);
 
       break;
 
@@ -340,8 +330,7 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].iov_base = (char *)&__pad; //NULL;
-      m_PacketVector[PV_DATA].iov_len = 4; //0;
+      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
 
       break;
 
@@ -353,13 +342,11 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
 
       if (NULL != rparam)
       {
-         m_PacketVector[PV_DATA].iov_base = (char *)rparam;
-         m_PacketVector[PV_DATA].iov_len = size;
+         m_PacketVector[PV_DATA].set(rparam, size);
       }
       else
       {
-         m_PacketVector[PV_DATA].iov_base = (char *)&__pad;
-         m_PacketVector[PV_DATA].iov_len = 4;
+         m_PacketVector[PV_DATA].set((void *)&__pad, 4);
       }
 
       break;
@@ -369,7 +356,7 @@ void CPacket::pack(UDTMessageType pkttype, void* lparam, void* rparam, int size)
    }
 }
 
-iovec* CPacket::getPacketVector()
+IOVector* CPacket::getPacketVector()
 {
    return m_PacketVector;
 }
@@ -508,9 +495,9 @@ CPacket* CPacket::clone() const
 {
    CPacket* pkt = new CPacket;
    memcpy(pkt->m_nHeader, m_nHeader, HDR_SIZE);
-   pkt->m_pcData = new char[m_PacketVector[PV_DATA].iov_len];
-   memcpy(pkt->m_pcData, m_pcData, m_PacketVector[PV_DATA].iov_len);
-   pkt->m_PacketVector[PV_DATA].iov_len = m_PacketVector[PV_DATA].iov_len;
+   pkt->m_pcData = new char[m_PacketVector[PV_DATA].size()];
+   memcpy(pkt->m_pcData, m_pcData, m_PacketVector[PV_DATA].size());
+   pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
 
    pkt->m_DestAddr = m_DestAddr;
 

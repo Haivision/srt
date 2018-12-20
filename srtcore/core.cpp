@@ -50,7 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef WIN32
+#ifndef _WIN32
    #include <unistd.h>
    #include <netdb.h>
    #include <arpa/inet.h>
@@ -201,6 +201,7 @@ void CUDT::construct()
     m_bPeerTsbPd = false;
     m_iPeerTsbPdDelay_ms = 0;
     m_bTsbPd = false;
+    m_bTsbPdAckWakeup = false;
     m_bGroupTsbPd = false;
     m_bPeerTLPktDrop = false;
 
@@ -253,6 +254,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
+   m_bOPT_StrictEncryption = true;
    m_bOPT_GroupConnect = false;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
@@ -314,6 +316,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
+   m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
    m_bOPT_GroupConnect = ancestor.m_bOPT_GroupConnect;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
@@ -854,6 +857,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       }
       break;
 
+   case SRTO_STRICTENC:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+        m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
+        break;
+
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -862,7 +872,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, ref_t<int> r_optlen)
 {
    int& optlen = *r_optlen;
-
+   
    CGuard cg(m_ConnectionLock, "conn");
 
    switch (optName)
@@ -1121,6 +1131,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, ref_t<int> r_optlen)
    case SRTO_PAYLOADSIZE:
       optlen = sizeof (int);
       *(int*)optval = m_zOPT_ExpPayloadSize;
+      break;
+
+   case SRTO_STRICTENC:
+      optlen = sizeof (int32_t); // also with TSBPDMODE and SENDER
+      *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;
 
    default:
@@ -1820,7 +1835,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // This is, for example, for redundancy group or bonding group, but not distribution group.
     while (have_group)
     {
-        CGuard grd(m_parent->m_ControlLock, "sock.control");
+        CGuard grd(m_parent->m_ControlLock, "control");
         if (!m_parent->m_IncludedGroup)
         {
             HLOGC(mglog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
@@ -2058,6 +2073,12 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             {
                 if (len_out == 1)
                 {
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                                << " - rejecting per strict encryption");
+                        return false;
+                    }
                     HLOGC(mglog.Debug, log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
                 }
                 else
@@ -2066,6 +2087,8 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
+            // XXX Dead code. processSrtMsg_KMREQ now doesn't return any other value now.
+            // Please review later.
             else
             {
                 LOGC(mglog.Error, log << "KMREQ failed to process the request - ignoring");
@@ -2571,7 +2594,13 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
         if (!m_pCryptoControl->hasPassphrase())
         {
-            LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not.");
+            if (m_bOPT_StrictEncryption)
+            {
+                LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per strict requirement");
+                return false;
+            }
+
+            LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
             // Also normally allow the key to be processed; worst case it will send the failure response.
@@ -2604,12 +2633,26 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     HLOGC(mglog.Debug, log << "interpretSrtHandshake: KMREQ processing failed - returned " << res);
                     return false;
                 }
+                if (*out_len == 1)
+                {
+                    // This means that there was an abnormal encryption situation occurred.
+                    // This is inacceptable in case of strict encryption.
+                    if (m_bOPT_StrictEncryption)
+                    {
+                        LOGC(mglog.Error, log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
+                        return false;
+                    }
+                }
                 encrypted = true;
             }
             else if ( cmd == SRT_CMD_KMRSP )
             {
-                m_pCryptoControl->processSrtMsg_KMRSP(begin+1, bytelen, HS_VERSION_SRT1);
-                // XXX Possible to check status?
+                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin+1, bytelen, HS_VERSION_SRT1);
+                if (m_bOPT_StrictEncryption && res == -1)
+                {
+                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per strict encryption.");
+                    return false;
+                }
                 encrypted = true;
             }
             else if ( cmd == SRT_CMD_NONE )
@@ -2739,6 +2782,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     // Check if peer declared encryption
     if (!encrypted && m_CryptoSecret.len > 0)
     {
+        if (m_bOPT_StrictEncryption)
+        {
+            LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per strict requirement.");
+            return false;
+        }
+
         LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets from Peer).");
 
         // This is required so that the sender is still allowed to send data, when encryption is required,
@@ -3496,6 +3545,9 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 break;
             }
 
+            if (cst == CONN_REJECT)
+                sendCtrl(UMSG_SHUTDOWN);
+
             if ( cst != CONN_CONTINUE )
                 break; // --> OUTSIDE-LOOP
 
@@ -3815,7 +3867,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
             // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
             // Sanity check
             m_llLastReqTime = 0;
-            if (response.getLength() == -1u)
+            if (response.getLength() == size_t(-1))
             {
                 LOGC(mglog.Fatal, log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
                 return CONN_REJECT;
@@ -3926,7 +3978,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
 
-        if (rst != RST_OK || response.getLength() == -1u)
+        if (rst != RST_OK || response.getLength() == size_t(-1))
         {
             // Actually the -1 length would be an IPE, but it's likely that this was reported already.
             HLOGC(mglog.Debug, log << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
@@ -5390,7 +5442,7 @@ void CUDT::close()
             return;
          }
 
-         #ifndef WIN32
+         #ifndef _WIN32
             timespec ts;
             ts.tv_sec = 0;
             ts.tv_nsec = 1000000;
@@ -6646,7 +6698,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    perf->msRTT = m_iRTT/1000.0;
    perf->mbpsBandwidth = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
 
-   if (CGuard::enterCS(m_ConnectionLock, "connection", false) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, "conn", false) == 0)
    {
       perf->byteAvailSndBuf = (m_pSndBuffer == NULL) ? 0 
           : sndBuffersLeft() * m_iMSS;
@@ -6780,7 +6832,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 
    perf->mbpsBandwidth = Bps2Mbps( availbw * (m_iMaxSRTPayloadSize + pktHdrSize) );
 
-   if (CGuard::enterCS(m_ConnectionLock, "connection", false) == 0)
+   if (CGuard::enterCS(m_ConnectionLock, "conn", false) == 0)
    {
       if (m_pSndBuffer)
       {

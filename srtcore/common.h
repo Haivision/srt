@@ -53,10 +53,11 @@ modified by
 #ifndef __UDT_COMMON_H__
 #define __UDT_COMMON_H__
 
+#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
-#ifndef WIN32
+#ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
 #else
@@ -69,7 +70,7 @@ modified by
 #include "netinet_any.h"
 
 // System-independent errno
-#ifndef WIN32
+#ifndef _WIN32
    #define NET_ERROR errno
 #else
    #define NET_ERROR WSAGetLastError()

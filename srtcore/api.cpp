@@ -67,7 +67,7 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <win/wintime.h>
 #endif
 
@@ -201,6 +201,7 @@ CUDTUnited::~CUDTUnited()
     CGuard::releaseMutex(m_IDLock);
     CGuard::releaseMutex(m_InitLock);
 
+    delete (CUDTException*)pthread_getspecific(m_TLSError);
     pthread_key_delete(m_TLSError);
 
     delete m_pCache;
@@ -224,7 +225,7 @@ int CUDTUnited::startup()
       return 0;
 
    // Global initialization code
-   #ifdef WIN32
+   #ifdef _WIN32
       WORD wVersionRequested;
       WSADATA wsaData;
       wVersionRequested = MAKEWORD(2, 2);
@@ -275,7 +276,7 @@ int CUDTUnited::cleanup()
    // the application cleanup section, this can be temporarily
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
-#ifndef WIN32
+#ifndef _WIN32
    CGuard::releaseMutex(m_GCStopLock);
    CGuard::releaseCond(m_GCStopCond);
 #endif
@@ -283,7 +284,7 @@ int CUDTUnited::cleanup()
    m_bGCStatus = false;
 
    // Global destruction code
-   #ifdef WIN32
+   #ifdef _WIN32
       WSACleanup();
    #endif
 
@@ -472,7 +473,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
             // connection already exist, this is a repeated connection request
             // respond with existing HS information
             HLOGC(mglog.Debug, log
-                    << "newConnection: located a WORKING peer %"
+                    << "newConnection: located a WORKING peer @"
                     << hs->m_iID << " - ADAPTING.");
 
             hs->m_iISN = ns->m_pUDT->m_iISN;
@@ -488,7 +489,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     else
     {
-        HLOGC(mglog.Debug, log << "newConnection: NOT located any peer %" << hs->m_iID << " - resuming with initial connection.");
+      HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @" << hs->m_iID << " - resuming with initial connection.");
     }
 
     // exceeding backlog, refuse the connection request
@@ -706,7 +707,7 @@ ERR_ROLLBACK:
         // further processed and should be removed.
         {
             CGuard cg(m_GlobControlLock, "GlobControl");
-            m_Sockets.erase(ns->m_SocketID);
+            m_Sockets.erase(id);
             m_ClosedSockets[id] = ns;
         }
         return -1;
@@ -1447,7 +1448,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
    HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
-   CGuard socket_cg(s->m_ControlLock, "sock.control");
+   CGuard socket_cg(s->m_ControlLock, "control");
 
    HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
 
@@ -2398,7 +2399,7 @@ void* CUDTUnited::garbageCollect(void* p)
        INCREMENT_THREAD_ITERATIONS();
        self->checkBrokenSockets();
 
-       //#ifdef WIN32
+       //#ifdef _WIN32
        //      self->checkTLSValue();
        //#endif
 

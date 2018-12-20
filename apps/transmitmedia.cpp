@@ -18,8 +18,11 @@
 #include <iterator>
 #include <map>
 #include <srt.h>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <sys/ioctl.h>
+#else
+#include <fcntl.h> 
+#include <io.h>
 #endif
 
 #include "netinet_any.h"
@@ -766,6 +769,11 @@ public:
 
     ConsoleSource()
     {
+#ifdef _WIN32
+        // The default stdin mode on windows is text.
+        // We have to set it to the binary mode
+        _setmode(_fileno(stdin), _O_BINARY);
+#endif
     }
 
     bool Read(size_t chunk, bytevector& data) override
@@ -800,6 +808,11 @@ public:
 
     ConsoleTarget()
     {
+#ifdef _WIN32
+        // The default stdout mode on windows is text.
+        // We have to set it to the binary mode
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
     }
 
     bool Write(const bytevector& data) override
@@ -854,7 +867,7 @@ protected:
         ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
 
         // set non-blocking mode
-#if defined(WIN32)
+#if defined(_WIN32)
         unsigned long ulyes = 1;
         if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
 #else
@@ -923,7 +936,7 @@ protected:
                 mreq_arg_ptr = &mreq;
             }
 
-#ifdef WIN32
+#ifdef _WIN32
             const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
@@ -931,7 +944,7 @@ protected:
             const auto status_error = -1;
 #endif
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(__CYGWIN__)
             // On Windows it somehow doesn't work when bind()
             // is called with multicast address. Write the address
             // that designates the network device here.
@@ -999,7 +1012,7 @@ protected:
 
     ~UdpCommon()
     {
-#ifdef WIN32
+#ifdef _WIN32
         if (m_sock != -1)
         {
            shutdown(m_sock, SD_BOTH);

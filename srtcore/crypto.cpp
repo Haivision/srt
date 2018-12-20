@@ -286,6 +286,7 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
     return SRT_CMD_KMRSP;
 
 HSv4_ErrorReport:
+    srtlen = 1;
 
     if (bidirectional && hasPassphrase())
     {
@@ -311,6 +312,8 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
     size_t srtlen = len/sizeof(uint32_t);
     HtoNLA(srtd, srtdata, srtlen);
 
+    int retstatus = -1;
+
     // Unused?
     //bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
 
@@ -328,6 +331,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
         {
         case SRT_KM_S_BADSECRET:
             m_SndKmState = m_RcvKmState = SRT_KM_S_BADSECRET;
+            retstatus = -1;
             break;
 
             // Default embraces two cases:
@@ -338,6 +342,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
             // This means that the peer did not set the password, while Agent did.
             m_RcvKmState = SRT_KM_S_UNSECURED;
             m_SndKmState = SRT_KM_S_NOSECRET;
+            retstatus = -1;
             break;
 
         case SRT_KM_S_UNSECURED:
@@ -346,6 +351,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
             // but can't decrypt what Peer would send.
             m_RcvKmState = SRT_KM_S_NOSECRET;
             m_SndKmState = SRT_KM_S_UNSECURED;
+            retstatus = 0;
             break;
 
         default:
@@ -353,6 +359,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
                     << KmStateStr(peerstate) << " (" << int(peerstate) << ")");
             m_RcvKmState = SRT_KM_S_NOSECRET;
             m_SndKmState = SRT_KM_S_NOSECRET;
+            retstatus = -1; //This is IPE
             break;
         }
 
@@ -371,9 +378,11 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
         {
             m_SndKmState = m_RcvKmState = SRT_KM_S_SECURED;
             HLOGC(mglog.Debug, log << "processSrtMsg_KMRSP: KM response matches " << (key1 ? "EVEN" : "ODD") << " key");
+            retstatus = 1;
         }
         else
         {
+            retstatus = -1;
             LOGC(mglog.Error, log << "processSrtMsg_KMRSP: IPE??? KM response key matches no key");
             /* XXX INSECURE
             LOGC(mglog.Error, log << "processSrtMsg_KMRSP: KM response: [" << FormatBinaryString((uint8_t*)srtd, len)
@@ -389,7 +398,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
 
     LOGP(mglog.Note, FormatKmMessage("processSrtMsg_KMRSP", SRT_CMD_KMRSP, len));
 
-    return SRT_CMD_NONE;
+    return retstatus;
 }
 
 void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen)

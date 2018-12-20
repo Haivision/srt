@@ -33,7 +33,7 @@
 #include <logging.h>
 
 // Make the windows-nonexistent alarm an empty call
-#ifdef WIN32
+#ifdef _WIN32
 #define alarm(argument) (void)0
 #define signal_alarm(fn) (void)0
 #else
