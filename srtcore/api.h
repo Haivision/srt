@@ -138,6 +138,7 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
+   void removeFromGroup();
 private:
    CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);
@@ -198,7 +199,7 @@ public:
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
    int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn, CUDTGroup* pg);
+   int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
    int groupConnect(ref_t<CUDTGroup> g, const sockaddr_any& source, const sockaddr_any& target);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);

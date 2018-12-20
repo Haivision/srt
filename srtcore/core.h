@@ -284,6 +284,7 @@ public:
     void addEPoll(int eid);
     void removeEPoll(int eid);
 
+    int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
@@ -398,6 +399,7 @@ public: //API
     static int addSocketToGroup(SRTSOCKET socket, SRTSOCKET group);
     static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
+    static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, int udpsock);

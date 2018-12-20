@@ -871,10 +871,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
     // the group.
     if (u & SRTGROUP_MASK)
     {
-        CUDTGroup* g = locateGroup(u);
-        if (!g)
-            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
+        CUDTGroup* g = locateGroup(u, ERH_THROW);
         // Note: forced_isn is ignored when connecting a group.
         // The group manages the ISN by itself ALWAYS, that is,
         // it's generated anew for the very first socket, and then
@@ -889,7 +886,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
     // For a single socket, just do bind, then connect
 
     bind(s, source_addr);
-    return connectIn(s, target_addr, 0, 0);
+    return connectIn(s, target_addr, 0);
 }
 
 int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
@@ -917,10 +914,126 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t 
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    return connectIn(s, target_addr, forced_isn, 0);
+    return connectIn(s, target_addr, forced_isn);
 }
 
-int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn, CUDTGroup* pg)
+int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_addr, const sockaddr_any& target_addr)
+{
+    CUDTGroup& g = *r_g;
+    // The group must be managed to use srt_connect on it,
+    // as it must create particular socket automatically.
+
+    // Non-managed groups can't be "connected" - at best you can connect
+    // every socket individually.
+    if (!g.managed())
+        return -1;
+
+    CUDTSocket* ns = 0;
+    SRTSOCKET sid = newSocket(&ns);
+
+    // XXX Support non-blockin mode:
+    // If the group has nonblocking set for connect (SNDSYN),
+    // then it must set so on the socket. Then, the connection
+    // process is asynchronous. The socket appears first as
+    // GST_PENDING state, and only after the socket becomes
+    // connected does its status in the group turn into GST_IDLE.
+
+    // Set it the groupconnect option, as all in-group sockets should have.
+    ns->core().m_bOPT_GroupConnect = true;
+
+    // Set all options that were requested by the options set on a group
+    // prior to connecting.
+    try
+    {
+        for (size_t i = 0; i < g.m_config.size(); ++i)
+            ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
+    }
+    catch (...)
+    {
+        // Intercept to delete the socket on failure.
+        delete ns;
+        throw;
+    }
+
+    CUDTGroup::gli_t f;
+
+    // Add socket to the group.
+    // Do it after setting all stored options, as some of them may
+    // influence some group data.
+    f = g.add(g.prepareData(ns));
+    ns->m_IncludedIter = f;
+    ns->m_IncludedGroup = &g;
+
+    int isn = g.currentSchedSequence();
+
+    // We got it. Bind the socket, if the source address was set
+    if (!source_addr.empty())
+        bind(ns, source_addr);
+
+    // And connect
+    try
+    {
+        HLOGC(mglog.Debug, log << "groupConnect: connecting a new socket with ISN=" << isn);
+        connectIn(ns, target_addr, isn);
+    }
+    catch (...)
+    {
+        // Intercept to delete the socket on failure.
+        delete ns;
+        throw;
+    }
+
+    if (isn == 0)
+    {
+        // The first socket connects
+        g.currentSchedSequence(ns->core().ISN());
+    }
+
+    SRT_SOCKSTATUS st;
+    {
+        CGuard grd(ns->m_ControlLock);
+        st = ns->m_Status;
+    }
+
+    {
+        CGuard grd(g.m_GroupLock);
+
+        g.m_bOpened = true;
+
+        f->laststatus = st;
+        // Check the socket status and update it.
+        // Turn the group state of the socket to IDLE only if
+        // connection is established or in progress
+        f->agent = source_addr;
+        f->peer = target_addr;
+
+        if (st == SRTS_CONNECTED)
+        {
+            f->sndstate = CUDTGroup::GST_IDLE;
+            f->rcvstate = CUDTGroup::GST_IDLE;
+            return sid;
+        }
+        else if (int(st) >= int(SRTS_BROKEN))
+        {
+            f->sndstate = CUDTGroup::GST_BROKEN;
+            f->rcvstate = CUDTGroup::GST_BROKEN;
+        }
+        else
+        {
+            f->sndstate = CUDTGroup::GST_PENDING;
+            f->rcvstate = CUDTGroup::GST_PENDING;
+            return sid;
+        }
+    }
+
+    // Leave broken for later cleanup.
+    // Actually this shouldn't ever happen because all errors
+    // are handled above.
+    return -1;
+}
+
+
+int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
 {
 
     CGuard cg(s->m_ControlLock, "Control");
@@ -948,14 +1061,6 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
         // -> C(Snd|Rcv)Queue::init
         // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
         s->m_Status = SRTS_OPENED;
-
-        if (pg)
-        {
-            // This overrides the value of m_StartTime
-            // and m_ullRcvPeerStartTime before this socket sends
-            // or receives anything.
-            s->m_pUDT->synchronizeGroupTime(pg);
-        }
     }
     else if (s->m_Status != SRTS_OPENED)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -2124,7 +2229,7 @@ int CUDT::setError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 CUDTGroup& CUDT::newGroup(int type)
 {
-    CGuard guard(s_UDTUnited.m_IDLock);
+    CGuard guard(s_UDTUnited.m_IDLock, "id");
     SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
@@ -2182,7 +2287,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         g->managed(false);
     }
 
-    CGuard cg(s->m_ControlLock);
+    CGuard cg(s->m_ControlLock, "Control");
 
     // Check if the socket already is in the group
     CUDTGroup::gli_t f = g->find(socket);
@@ -2209,13 +2314,16 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
     if (!s->m_IncludedGroup)
         return setError(MJ_NOTSUP, MN_INVAL, 0);
 
-    CGuard grd(s->m_ControlLock);
-
-    s->m_IncludedGroup->remove(socket);
-    s->m_IncludedIter = CUDTGroup::gli_NULL();
-    s->m_IncludedGroup = NULL;
-
+    CGuard grd(s->m_ControlLock, "Control");
+    s->removeFromGroup();
     return 0;
+}
+
+void CUDTSocket::removeFromGroup()
+{
+    m_IncludedGroup->remove(m_SocketID);
+    m_IncludedIter = CUDTGroup::gli_NULL();
+    m_IncludedGroup = NULL;
 }
 
 SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
@@ -2228,6 +2336,22 @@ SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
         return setError(MJ_NOTSUP, MN_INVAL, 0);
 
     return s->m_IncludedGroup->id();
+}
+
+int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
+{
+    if ( (groupid & SRTGROUP_MASK) == 0)
+    {
+        return setError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
+    if (!g || !pdata || !psize)
+    {
+        return setError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return g->getGroupData(pdata, psize);
 }
 
 int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)

@@ -9771,121 +9771,6 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
 }
 
 
-int CUDTUnited::groupConnect(ref_t<CUDTGroup> r_g, const sockaddr_any& source_addr, const sockaddr_any& target_addr)
-{
-    CUDTGroup& g = *r_g;
-    // The group must be managed to use srt_connect on it,
-    // as it must create particular socket automatically.
-
-    // Non-managed groups can't be "connected" - at best you can connect
-    // every socket individually.
-    if (!g.managed())
-        return -1;
-
-    CUDTSocket* ns = 0;
-    SRTSOCKET sid = newSocket(&ns);
-
-    // XXX Support non-blockin mode:
-    // If the group has nonblocking set for connect (SNDSYN),
-    // then it must set so on the socket. Then, the connection
-    // process is asynchronous. The socket appears first as
-    // GST_PENDING state, and only after the socket becomes
-    // connected does its status in the group turn into GST_IDLE.
-
-    // Set it the groupconnect option, as all in-group sockets should have.
-    ns->core().m_bOPT_GroupConnect = true;
-
-    // Set all options that were requested by the options set on a group
-    // prior to connecting.
-    try
-    {
-        for (size_t i = 0; i < g.m_config.size(); ++i)
-            ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
-    }
-    catch (...)
-    {
-        // Intercept to delete the socket on failure.
-        delete ns;
-        throw;
-    }
-
-    CUDTGroup::gli_t f;
-
-    // Add socket to the group.
-    // Do it after setting all stored options, as some of them may
-    // influence some group data.
-    f = g.add(g.prepareData(ns));
-    ns->m_IncludedIter = f;
-    ns->m_IncludedGroup = &g;
-
-    int isn = g.currentSchedSequence();
-
-    // We got it. Bind the socket, if the source address was set
-    if (!source_addr.empty())
-        bind(ns, source_addr);
-
-    // And connect
-    try
-    {
-        HLOGC(mglog.Debug, log << "groupConnect: connecting a new socket with ISN=" << isn);
-        connectIn(ns, target_addr, isn, &g);
-    }
-    catch (...)
-    {
-        // Intercept to delete the socket on failure.
-        delete ns;
-        throw;
-    }
-
-    if (isn == 0)
-    {
-        // The first socket connects
-        g.currentSchedSequence(ns->core().ISN());
-    }
-
-    SRT_SOCKSTATUS st;
-    {
-        CGuard grd(ns->m_ControlLock);
-        st = ns->m_Status;
-    }
-
-    {
-        CGuard grd(g.m_GroupLock);
-
-        g.m_bOpened = true;
-
-        f->laststatus = st;
-        // Check the socket status and update it.
-        // Turn the group state of the socket to IDLE only if
-        // connection is established or in progress
-        f->agent = source_addr;
-        f->peer = target_addr;
-
-        if (st == SRTS_CONNECTED)
-        {
-            f->sndstate = CUDTGroup::GST_IDLE;
-            f->rcvstate = CUDTGroup::GST_IDLE;
-            return sid;
-        }
-        else if (int(st) >= int(SRTS_BROKEN))
-        {
-            f->sndstate = CUDTGroup::GST_BROKEN;
-            f->rcvstate = CUDTGroup::GST_BROKEN;
-        }
-        else
-        {
-            f->sndstate = CUDTGroup::GST_PENDING;
-            f->rcvstate = CUDTGroup::GST_PENDING;
-            return sid;
-        }
-    }
-
-    // Leave broken for later cleanup.
-    // Actually this shouldn't ever happen because all errors
-    // are handled above.
-    return -1;
-}
-
 void CUDTGroup::close()
 {
     // Close all descriptors, then delete the group.
@@ -10160,6 +10045,38 @@ int CUDTGroup::send(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     return rstat;
 }
 
+int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+{
+    CGuard gl(m_GroupLock, "group");
+
+    size_t size = *psize;
+    // Rewrite correct size
+    *psize = m_Group.size();
+
+    if (m_Group.size() > size)
+    {
+        // Not enough space to retrieve the data.
+        return SRT_ERROR;
+    }
+
+    size_t i = 0;
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
+    {
+        pdata[i].id = d->id;
+        pdata[i].status = d->laststatus;
+
+        if (d->sndstate == GST_RUNNING)
+            pdata[i].result = 0; // Just "success", no operation was performed
+        else if (d->sndstate == GST_IDLE)
+            pdata[i].result = 0;
+        else
+            pdata[i].result = -1;
+
+        memcpy(&pdata[i].peeraddr, &d->peer, d->peer.size());
+    }
+
+    return 0;
+}
 /* Temporarily eclipsed
 
 void CUDTGroup::tsbpd()
