@@ -24,6 +24,12 @@
 #endif
 
 #include "netinet_any.h"
+#include "common.h"
+#include "api.h"
+#include "udt.h"
+#include "logging.h"
+#include "utilities.h"
+
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -39,6 +45,7 @@ int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
+logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
 string DirectionName(SRT_EPOLL_OPT direction)
 {
@@ -56,6 +63,11 @@ string DirectionName(SRT_EPOLL_OPT direction)
                 dir_name = "relay";
             else
                 dir_name = "target";
+        }
+
+        if (direction & SRT_EPOLL_ERR)
+        {
+            dir_name += "+error";
         }
     }
     else
@@ -301,12 +313,12 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if ( !m_blocking_mode )
     {
-        Verb() << "[ASYNC] ";
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
 
         int len = 2;
         SRTSOCKET ready[2];
         if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -404,8 +416,30 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
         << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
         << ") PBKEYLEN=" << pbkeylen;
 
+    // Display some selected options on the socket.
+    if (Verbose::on)
+    {
+        int64_t bandwidth = 0;
+        int latency = 0;
+        bool blocking_snd = false, blocking_rcv = false;
+        int dropdelay = 0;
+        int size_int = sizeof (int), size_int64 = sizeof (int64_t), size_bool = sizeof (bool);
+
+        srt_getsockflag(m_sock, SRTO_MAXBW, &bandwidth, &size_int64);
+        srt_getsockflag(m_sock, SRTO_RCVLATENCY, &latency, &size_int);
+        srt_getsockflag(m_sock, SRTO_RCVSYN, &blocking_rcv, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDSYN, &blocking_snd, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDDROPDELAY, &dropdelay, &size_int);
+
+        Verb() << "OPTIONS: maxbw=" << bandwidth << " rcvlatency=" << latency << boolalpha
+            << " blocking{rcv=" << blocking_rcv << " snd=" << blocking_snd
+            << "} snddropdelay=" << dropdelay;
+    }
+
     if ( !m_blocking_mode )
     {
+        // Don't add new epoll if already created as a part
+        // of group management: if (srt_epoll == -1)...
         srt_epoll = AddPoller(m_sock, dir);
     }
 }
@@ -415,6 +449,8 @@ int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
     int pollid = srt_epoll_create();
     if ( pollid == -1 )
         throw std::runtime_error("Can't create epoll in nonblocking mode");
+    Verb() << "EPOLL: creating eid=" << pollid << " and adding @" << socket
+        << " in " << DirectionName(SRT_EPOLL_OPT(modes)) << " mode";
     srt_epoll_add_usock(pollid, socket, &modes);
     return pollid;
 }
@@ -425,22 +461,28 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     int result = 0;
     if ( m_direction & SRT_EPOLL_OUT )
     {
+        Verb() << "Setting SND blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+            return result;
     }
 
     if ( m_direction & SRT_EPOLL_IN )
     {
+        Verb() << "Setting RCV blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+            return result;
     }
 
     SrtConfigurePost(sock, m_options);
@@ -605,7 +647,7 @@ void SrtCommon::ConnectClient(string host, int port)
         }
         else
         {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
         }
     }
 
@@ -627,6 +669,13 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
     udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
 }
+
+void SrtCommon::Error(string msg)
+{
+    cerr << "\nERROR (app): " << msg << endl;
+    throw std::runtime_error(msg);
+}
+
 
 void SrtCommon::SetupRendezvous(string adapter, int port)
 {
@@ -885,7 +934,8 @@ template <> struct Srt<Target> { typedef SrtTarget type; };
 template <> struct Srt<Relay> { typedef SrtRelay type; };
 
 template <class Iface>
-Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
+Iface* CreateSrt(const string& host, int port, const map<string,string>& par)
+{ return new typename Srt<Iface>::type (host, port, par); }
 
 bytevector ConsoleRead(size_t chunk)
 {
@@ -1231,13 +1281,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
 
     case UriParser::SRT:
-        iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
-        {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
-            throw invalid_argument("Invalid port number");
-        }
-        ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
+        ptr.reset( CreateSrt<Base>(u.host(), u.portno(), u.parameters()) );
         break;
 
 
