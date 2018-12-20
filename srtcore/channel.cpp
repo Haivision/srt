@@ -643,7 +643,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
       int res = ::sendmsg(m_iSocket, &mh, 0);
    #else
-      DWORD size = CPacket::HDR_SIZE + packet.getLength();
+      DWORD size = DWORD(CPacket::HDR_SIZE + packet.getLength());
       int addrsize = m_iSockAddrSize;
       int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr, addrsize, NULL, NULL);
       res = (0 == res) ? size : -1;
@@ -669,9 +669,10 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 }
 
 EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref_t<int> r_msg_flags, sockaddr* addr) const
-#ifndef _WIN32  // POSIX/fallback version
 {
     CPacket& packet = *r_pkt;
+
+#ifndef _WIN32  // POSIX/fallback version
 
     msghdr mh;
     mh.msg_name = addr;
@@ -708,7 +709,7 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
 
     if (*r_result == -1)
     {
-        int err = NET_ERROR;
+        const int err = NET_ERROR;
         if (err == EAGAIN || err == EINTR || err == ECONNREFUSED) // For EAGAIN, this isn't an error, just a useless call.
         {
             return RST_AGAIN;
@@ -719,9 +720,9 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
     }
 
     return RST_OK;
-}
+
 #else // WIN32 version
-{
+
     // XXX REFACTORING NEEDED!
     // This procedure uses the WSARecvFrom function that just reads
     // into one buffer. On Windows, the equivalent for recvmsg, WSARecvMsg
@@ -738,7 +739,6 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
     // value one Windows than 0, unless this procedure below is rewritten
     // to use WSARecvMsg().
 
-    CPacket& packet = *r_pkt;
     int& res = *r_result;
     int& msg_flags = *r_msg_flags;
 
@@ -754,7 +754,7 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
     }
     else // == SOCKET_ERROR
     {
-		EReadStatus status;
+        EReadStatus status;
         res = -1;
         // On Windows this is a little bit more complicated, so simply treat every error
         // as an "again" situation. This should still be probably fixed, but it needs more
@@ -790,8 +790,8 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
         msg_flags = 1;
 
     return RST_OK;
-}
 #endif
+}
 
 EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_us) const
 {
@@ -868,7 +868,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
     status = sys_recvmsg(Ref(packet), Ref(res), Ref(msg_flags), addr);
 
     // Sanity check for a case when it didn't fill in even the header
-    if ( size_t(res) < CPacket::HDR_SIZE )
+    if (size_t(res) < CPacket::HDR_SIZE)
     {
         status = RST_AGAIN;
         HLOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << res << " bytes");

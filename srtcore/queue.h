@@ -136,7 +136,7 @@ private:
 struct CSNode
 {
    CUDT* m_pUDT;               // Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp_tk;  // Next send event Time Stamp
+   uint64_t m_llTimeStamp_tk;  // Time Stamp to mark schedule time
 
    int m_iHeapLoc;		// location on the heap, -1 means not on the heap
 };
@@ -208,7 +208,7 @@ private:
 struct CRNode
 {
    CUDT* m_pUDT;                  // Pointer to the instance of CUDT socket
-   uint64_t m_tNextEventTime_tk;  // Next receiver event Time Stamp
+   uint64_t m_tNextEventTime_tk;  // Next receiver event Time
 
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link

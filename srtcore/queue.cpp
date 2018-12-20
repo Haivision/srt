@@ -480,12 +480,12 @@ CSndQueue::~CSndQueue()
 
 void CSndQueue::init(CChannel* c, CTimer* t)
 {
-   m_pChannel = c;
-   m_pTimer = t;
-   m_pSndUList = new CSndUList;
-   m_pSndUList->m_pWindowLock = &m_WindowLock;
-   m_pSndUList->m_pWindowCond = &m_WindowCond;
-   m_pSndUList->m_pTimer = m_pTimer;
+    m_pChannel = c;
+    m_pTimer = t;
+    m_pSndUList = new CSndUList;
+    m_pSndUList->m_pWindowLock = &m_WindowLock;
+    m_pSndUList->m_pWindowCond = &m_WindowCond;
+    m_pSndUList->m_pTimer = m_pTimer;
 
 #if ENABLE_LOGGING
     ++m_counter;
@@ -493,11 +493,11 @@ void CSndQueue::init(CChannel* c, CTimer* t)
     thrname << "SRT:SndQ:w" << m_counter;
     ThreadName tn(thrname.str().c_str());
 #endif
-   if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-   {
-	   m_WorkerThread = pthread_t();
-       throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
-   }
+    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
+    {
+        m_WorkerThread = pthread_t();
+        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
+    }
 }
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -1102,6 +1102,7 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
                 {
                     LOGC(mglog.Error, log << "Async: @" << i->m_pUDT->m_SocketID
                             << ": processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
+                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
 #if ENABLE_HEAVY_LOGGING
                     ++debug_nfail;
@@ -1180,9 +1181,8 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
     {
-
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
@@ -1289,7 +1289,7 @@ void* CRcvQueue::worker(void* param)
 
        if (rst == RST_OK)
        {
-           if ( id < 0 )
+           if (id < 0)
            {
                // User error on peer. May log something, but generally can only ignore it.
                // XXX Think maybe about sending some "connection rejection response".

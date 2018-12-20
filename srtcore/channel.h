@@ -59,8 +59,8 @@ modified by
 #include "netinet_any.h"
 #include <utility>
 
-   // Constants used for signal reading that passes
-   // extra information
+// Constants used for signal reading that passes
+// extra information
 enum PipeSignal
 {
     PSG_CLOSE = 0,
@@ -75,9 +75,8 @@ class EventRunner
     // Note: Socket is only "borrowed" from Channel, exists
     // here in order to have access to it. It should not be
     // created nor deleted.
-    int m_fdSocket;
-
 #ifdef _WIN32
+    SOCKET m_fdSocket;
 
     // This state is kept as a field here because the Windows
     // event system does not allow for any data passing for events.
@@ -90,53 +89,53 @@ class EventRunner
     enum {WE_TRIGGER = 0, WE_SOCKET = 1};
     WSAEVENT m_Event[2];
 #else // Standard POSIX version
-   enum {PIPE_IN = 0, PIPE_OUT = 1};
-   int m_fdTrigger[2];                      // descriptor for read-end of the pipe used to break reading
+    int m_fdSocket;
+    enum {PIPE_IN = 0, PIPE_OUT = 1};
+    int m_fdTrigger[2];                      // descriptor for read-end of the pipe used to break reading
 
-   // This is to get and keep output from ::select
-   // so that it can be returned when asked for state.
-   fd_set in_set, err_set;
+    // This is to get and keep output from ::select
+    // so that it can be returned when asked for state.
+    fd_set in_set, err_set;
 #endif
 
 public:
 
-   // Set everything to initial nothing
-   EventRunner():
+    // Set everything to initial nothing
+    EventRunner():
 #ifdef _WIN32
-   m_fdSocket(INVALID_SOCKET),
-   m_state(PSG_NONE),
-   m_permstate(PSG_NONE),
-   m_sockstate(0)
-   {
-	   m_Event[0] = m_Event[1] = INVALID_HANDLE_VALUE;
-   }
+        m_fdSocket(INVALID_SOCKET),
+        m_state(PSG_NONE),
+        m_permstate(PSG_NONE),
+        m_sockstate(0)
+        {
+            m_Event[0] = m_Event[1] = INVALID_HANDLE_VALUE;
+        }
 
 #else
-   m_fdSocket(-1)
-   {
-       m_fdTrigger[0] = m_fdTrigger[1] = -1;
-   }
+    m_fdSocket(-1)
+    {
+        m_fdTrigger[0] = m_fdTrigger[1] = -1;
+    }
 
 #endif
 
-   // To be bound to Channel's constructor
-   void init(int sock);
+    // To be bound to Channel's constructor
+    void init(int sock);
 
-   int signalReading(PipeSignal val) const;
+    int signalReading(PipeSignal val) const;
 
-   void poll(int64_t timeout);
+    void poll(int64_t timeout);
 
-   // The implementation should call clearSignalReading
-   // and socketReady. The first tells it as to whether
-   // the event was triggered (and what kind of), or not.
-   // This will be returned once and the event will be 
-   // cleared thereafter.
-   // The latter if the socket is ready for extraction.
-   PipeSignal clearSignalReading();
-   int socketReady() const;
+    // The implementation should call clearSignalReading
+    // and socketReady. The first tells it as to whether
+    // the event was triggered (and what kind of), or not.
+    // This will be returned once and the event will be 
+    // cleared thereafter.
+    // The latter if the socket is ready for extraction.
+    PipeSignal clearSignalReading();
+    int socketReady() const;
 
-   ~EventRunner();
-
+    ~EventRunner();
 };
 
 class CChannel
@@ -152,7 +151,6 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   //CChannel();
    CChannel(int version);
    ~CChannel();
 

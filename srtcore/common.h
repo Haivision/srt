@@ -465,13 +465,13 @@ public:
    /// Shortcut for converting ticks to microseconds
    static uint64_t tk2us(uint64_t tk)
    {
-       return tk/getCPUFrequency();
+       return tk / getCPUFrequency();
    }
 
    /// Shortcut for converting microseconds to ticks
    static uint64_t us2tk(uint64_t us)
    {
-       return us*getCPUFrequency();
+       return us * getCPUFrequency();
    }
 
       /// check the current time, 64bit, in microseconds.
