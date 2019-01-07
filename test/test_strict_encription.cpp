@@ -143,17 +143,17 @@ protected:
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
-    
+
 protected:
-    
+
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
         ASSERT_EQ(srt_startup(), 0);
-        
+
         m_pollid = srt_epoll_create();
         ASSERT_GE(m_pollid, 0);
-        
+
         m_caller_socket = srt_create_socket();
         ASSERT_NE(m_caller_socket, SRT_INVALID_SOCK);
 
@@ -169,7 +169,7 @@ protected:
         ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_RCVSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
         ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_SNDSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
         ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
-        
+
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_OUT;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_caller_socket, &epoll_out), SRT_ERROR);
@@ -183,8 +183,8 @@ protected:
         ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
         srt_cleanup();
     }
-    
-    
+
+
 public:
 
 
@@ -230,8 +230,8 @@ public:
 
         return val;
     }
-    
-    
+
+
     void TestConnect(TEST_CASE test_case)
     {
         // Prepare input state
@@ -257,7 +257,7 @@ public:
 
         const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
-        
+
         if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
         {
             std::cerr << "UNEXPECTED! srt_connect returned error: "
@@ -280,7 +280,7 @@ public:
         if (epoll_res == SRT_ERROR)
         {
             EXPECT_EQ(srt_getlasterror(NULL), expect.epoll_wait_error);
-            std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << '\n';
+            std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ')\n';
         }
 
         // In non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded
@@ -292,7 +292,7 @@ public:
             EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
         else
             EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
-        
+
         if (accepted_socket != SRT_INVALID_SOCK)
         {
             EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
@@ -326,7 +326,7 @@ public:
 
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket),       SRT_KM_S_UNSECURED);
-        
+
         EXPECT_EQ(rlen, expect.rnum >= 0 ? expect.rnum : default_len);
         EXPECT_EQ(wlen, expect.wnum >= 0 ? expect.wnum : default_len);
         if (rlen != 0 && rlen != 3)
@@ -390,12 +390,12 @@ const char* TestStrictEncryption::m_socket_state[] = {
 TEST_F(TestStrictEncryption, PasswordLength)
 {
     // Empty string sets password to none
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")),  SRT_SUCCESS);
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
-    
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("too_short")),  SRT_ERROR);
+
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("too_short")), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("too_short")), SRT_ERROR);
-    
+
     std::string long_pwd;
     const int pwd_len = 81;     // 80 is the maximum password length accepted
     long_pwd.reserve(pwd_len);
@@ -405,10 +405,10 @@ TEST_F(TestStrictEncryption, PasswordLength)
     ASSERT_LT(pwd_len + start_char, 126);
     for (int i = 0; i < pwd_len; ++i)
         long_pwd.push_back(static_cast<char>(start_char + i));
-    
-    EXPECT_EQ(SetPassword(PEER_CALLER,   long_pwd),  SRT_ERROR);
+
+    EXPECT_EQ(SetPassword(PEER_CALLER,   long_pwd), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, long_pwd), SRT_ERROR);
-    
+
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
 }
