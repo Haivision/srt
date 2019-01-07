@@ -101,22 +101,21 @@ class EventRunner
 public:
 
     // Set everything to initial nothing
-    EventRunner():
 #ifdef _WIN32
+    EventRunner():
         m_fdSocket(INVALID_SOCKET),
         m_state(PSG_NONE),
         m_permstate(PSG_NONE),
         m_sockstate(0)
-        {
-            m_Event[0] = m_Event[1] = INVALID_HANDLE_VALUE;
-        }
-
+    {
+        m_Event[0] = m_Event[1] = INVALID_HANDLE_VALUE;
+    }
 #else
-    m_fdSocket(-1)
+    EventRunner():
+        m_fdSocket(-1)
     {
         m_fdTrigger[0] = m_fdTrigger[1] = -1;
     }
-
 #endif
 
     // To be bound to Channel's constructor

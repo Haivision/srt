@@ -211,7 +211,7 @@ void EventRunner::poll(int64_t timeout_us)
         int resi = WSAEnumNetworkEvents(m_fdSocket, m_Event[WE_SOCKET], &nev);
         if (resi) // 0 == success
         {
-            LOGC(mglog.Error, log << "poll(win32): IPE: Error in EnumNetworkEvents");
+            LOGC(mglog.Error, log << "poll(win32): IPE: Error in EnumNetworkEvents code=" << ::WSAGetLastError());
             m_sockstate = 2;
             WSAResetEvent(m_Event[WE_SOCKET]);
             return;
@@ -357,7 +357,7 @@ PipeSignal EventRunner::clearSignalReading()
 
 void CChannel::open(const sockaddr* addr)
 {
-    // construct an socket
+    // construct a socket
     m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
 
 #ifdef _WIN32
@@ -488,7 +488,7 @@ void CChannel::setUDPSockOpt()
 void CChannel::close() const
 {
     int ret SRT_ATR_UNUSED = m_EventRunner.signalReading(PSG_CLOSE);
-    HLOGC(mglog.Debug, log << "CChannel::close: sendt TRIGGER signal first, ret=" << ret);
+    HLOGC(mglog.Debug, log << "CChannel::close: sending TRIGGER signal first, ret=" << ret);
 
     // Need to clear out the socket variable because this function
     // isn't a destructor.
@@ -876,6 +876,8 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
 
     int res, msg_flags;
     status = sys_recvmsg(Ref(packet), Ref(res), Ref(msg_flags), addr);
+    if (status != RST_OK)
+        goto Return_error;
 
     // Sanity check for a case when it didn't fill in even the header
     if (size_t(res) < CPacket::HDR_SIZE)
