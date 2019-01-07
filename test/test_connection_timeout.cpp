@@ -68,7 +68,7 @@ TEST(Core, ConnectionTimeout) {
         // Epoll timeout is set 100 ms greater than socket's TTL
         EXPECT_EQ(srt_epoll_wait(pollid, read, &rlen,
                                  write, &wlen,
-                                 connection_timeout_ms + 100,   // +100 ms
+                                 connection_timeout_ms + 300,   // +300 ms (inaccuracy problem on Windows)
                                  0, 0, 0, 0)
         /* Expected return value is 2. We have only 1 socket, but
          * sockets with exceptions are returned to both read and write sets.
