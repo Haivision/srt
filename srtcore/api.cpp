@@ -553,8 +553,11 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     if (s->m_pUDT->m_bBroken)
         return SRTS_BROKEN;
 
-    // Connecting timed out
-    if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting)
+    // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
+    // Although m_Status is still SRTS_CONNECTING, the connection is in fact to be closed due to TTL expiry.
+    // In this case m_bConnected is also false. Both checks are required to avoid hitting
+    // a regular state transition from CONNECTING to CONNECTED.
+    if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting && !s->m_pUDT->m_bConnected)
         return SRTS_BROKEN;
 
     return s->m_Status;
