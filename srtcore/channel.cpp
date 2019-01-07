@@ -199,13 +199,23 @@ void EventRunner::poll(int64_t timeout_us)
     // to wait for the next time.
 
     WSANETWORKEVENTS nev;
-    int resi = WSAEnumNetworkEvents(m_fdSocket, m_Event[WE_SOCKET], &nev);
-    if (resi) // 0 == success
+    if (m_state == PSG_CLOSE)
     {
-        LOGC(mglog.Error, log << "poll(win32): IPE: Error in EnumNetworkEvents");
-        m_sockstate = 2;
-        WSAResetEvent(m_Event[WE_SOCKET]);
-        return;
+        // Don't pick up any network events on the socket because
+        // it may be already closed. Note that PSG_CLOSE state is
+        // practically permanent, there's no exit from this state.
+        nev.lNetworkEvents = FD_CLOSE;
+    }
+    else
+    {
+        int resi = WSAEnumNetworkEvents(m_fdSocket, m_Event[WE_SOCKET], &nev);
+        if (resi) // 0 == success
+        {
+            LOGC(mglog.Error, log << "poll(win32): IPE: Error in EnumNetworkEvents");
+            m_sockstate = 2;
+            WSAResetEvent(m_Event[WE_SOCKET]);
+            return;
+        }
     }
 
     if (!nev.lNetworkEvents)
