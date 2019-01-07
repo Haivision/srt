@@ -304,9 +304,8 @@ if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
 	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
 elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1; MACOSX_RPATH=OFF")
+	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
 	add_definitions(-DOSX=1)
-	set(MACOSX_RPATH OFF)
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -482,6 +481,8 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
+	elseif (APPLE)
+		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
 endif()
 
@@ -711,28 +712,20 @@ if ( ENABLE_CXX11 )
 	# For backward compatibility with the old name
 	if (SYMLINKABLE)
 		set (REPLI_COMMAND create_symlink )
+		# It appears impossible to get the filename component from the generator
+		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
+		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
 	else()
 		set (REPLI_COMMAND copy)
+		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
 	endif()
 
 	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
 	add_custom_command(
 		TARGET srt-live-transmit
 		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} $<TARGET_FILE:srt-live-transmit> ${stransmit_path})
-
-	if (SYMLINKABLE)
-		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use symbolic link")
-		srt_install_symlink(srt-live-transmit ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/stransmit)
-	elseif(${CMAKE_MAJOR_VERSION} LESS 3)
-		message(FATAL_ERROR "Your system can't install symbolic link to 'stransmit', copy-on-install requires cmake at least 3.0.2")
-	else()
-		# This installation doesn't work with cmake earlier than 3.0
-		# (looxlike cmake 2.8 somehow doesn't have a problem with resolving the $<TARGET_FILE_DIR:...>
-		# inside the generated makefile, but does have problem with its own generated cmake_install.cmake :D)
-		message(STATUS "BACKWARD COMPATIBLE 'stransmit': will use copying")
-		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-	endif()
+		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
+	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
@@ -809,18 +802,28 @@ endif()
 
 if (ENABLE_UNITTESTS)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-	include(googletest)
-	fetch_googletest(
-		${PROJECT_SOURCE_DIR}/scripts
-		${PROJECT_BINARY_DIR}/googletest
+
+	find_package(GTest 1.8)
+	if (NOT GTEST_FOUND)
+		message(STATUS "GTEST not found! Fetching from git.")
+		include(googletest)
+		fetch_googletest(
+			${PROJECT_SOURCE_DIR}/scripts
+			${PROJECT_BINARY_DIR}/googletest
+		)
+		set(GTEST_BOTH_LIBRARIES "gtest_main" CACHE STRING "Add gtest_main target")
+	endif()
+
+	MafReadDir(test filelist.maf
+		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp)
+	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
 
 	target_link_libraries(
 		test_srt
-		gtest_main
+		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
 		)
