@@ -816,7 +816,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
         {
             // Don't wait longer than 0.5s, even if this somehow results
             // from calculations.
-            timeout_us = std::min(uptime_us - now, MAX_POLL_TIME_US);
+            timeout_us = std::min(uptime_us - now, +MAX_POLL_TIME_US);
         }
     }
     else
