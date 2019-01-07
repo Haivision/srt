@@ -547,7 +547,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     if (s->m_pUDT->m_bBroken)
         return SRTS_BROKEN;
 
-    // Connecting timed out
+    // Connecting timed out (TTL in CRendezvousQueue::updateConnStatus())
     if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting)
         return SRTS_BROKEN;
 
@@ -831,7 +831,6 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    // So we need to update the status before connect() is called,
    // otherwise the status may be overwritten with wrong value
    // (CONNECTED vs. CONNECTING).
-   s->m_Status = SRTS_CONNECTING;
 
    /* 
    * In blocking mode, connect can block for up to 30 seconds for
@@ -850,6 +849,8 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
       s->m_Status = SRTS_OPENED;
       throw e;
    }
+
+   s->m_Status = SRTS_CONNECTING;
 
    // record peer address
    delete s->m_pPeerAddr;

@@ -3737,10 +3737,6 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
 
     setupCC();
 
-    // And, I am connected too.
-    m_bConnecting = false;
-    m_bConnected = true;
-
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
@@ -3759,6 +3755,10 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
 
     // acknowledge the management module.
     s_UDTUnited.connect_complete(m_SocketID);
+
+    // And, I am connected too.
+    m_bConnecting = false;
+    m_bConnected = true;
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
