@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <chrono>
-//#include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
@@ -24,6 +24,12 @@ TEST(Core, ConnectionTimeout) {
 
     const SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+
+    srt_setloglevel(LOG_DEBUG);
+    std::vector<int> falist;
+    falist.push_back(SRT_LOGFA_PERF);
+    falist.push_back(SRT_LOGFA_CONTROL);
+    srt_resetlogfa(falist.data(), falist.size());
 
     // First let's check the default connection timeout value.
     // It should be 3 seconds (3000 ms)
