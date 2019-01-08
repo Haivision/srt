@@ -125,12 +125,10 @@ void CTimer::rdtsc(uint64_t &x)
       x = hval;
       x = (x << 32) | lval;
    #elif defined(_WIN32)
-      //HANDLE hCurThread = ::GetCurrentThread(); 
-      //DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1); 
-      BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
-      //SetThreadAffinityMask(hCurThread, dwOldMask);
-      if (!ret)
-         x = getTime() * s_ullCPUFrequency;
+      // This function should not fail, because we checked the QPC
+      // when calling to QueryPerformanceFrequency. If it failed,
+      // the m_bUseMicroSecond was set to true.
+      QueryPerformanceCounter((LARGE_INTEGER *)&x);
    #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
@@ -143,27 +141,27 @@ uint64_t CTimer::readCPUFrequency()
 {
    uint64_t frequency = 1;  // 1 tick per microsecond.
 
-   #if defined(IA32) || defined(IA64) || defined(AMD64)
-      uint64_t t1, t2;
+#if defined(IA32) || defined(IA64) || defined(AMD64)
+    uint64_t t1, t2;
 
-      rdtsc(t1);
-      timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 100000000;
-      nanosleep(&ts, NULL);
-      rdtsc(t2);
+    rdtsc(t1);
+    timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 100000000;
+    nanosleep(&ts, NULL);
+    rdtsc(t2);
 
-      // CPU clocks per microsecond
-      frequency = (t2 - t1) / 100000;
-   #elif defined(_WIN32)
-      int64_t ccf;
-      if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
-         frequency = ccf / 1000000;
-   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      mach_timebase_info_data_t info;
-      mach_timebase_info(&info);
-      frequency = info.denom * uint64_t(1000) / info.numer;
-   #endif
+    // CPU clocks per microsecond
+    frequency = (t2 - t1) / 100000;
+#elif defined(_WIN32)
+    LARGE_INTEGER counts_per_sec;
+    if (QueryPerformanceFrequency(&counts_per_sec))
+        frequency = counts_per_sec.QuadPart / 1000000;
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+    mach_timebase_info_data_t info;
+    mach_timebase_info(&info);
+    frequency = info.denom * uint64_t(1000) / info.numer;
+#endif
 
    // Fall back to microsecond if the resolution is not high enough.
    if (frequency < 10)
@@ -250,15 +248,20 @@ uint64_t CTimer::getTime()
 
     //For other systems without microsecond level resolution, add to this conditional compile
 #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    uint64_t x;
-    rdtsc(x);
-    return x / s_ullCPUFrequency;
-    //Specific fix may be necessary if rdtsc is not available either.
-#else
+    // Otherwise we will have an infinite recursive functions calls
+    if (m_bUseMicroSecond == false)
+    {
+        uint64_t x;
+        rdtsc(x);
+        return x / s_ullCPUFrequency;
+    }
+    // Specific fix may be necessary if rdtsc is not available either.
+    // Going further on Apple platforms might cause issue, fixed with PR #301.
+    // But it is very unlikely for the latest platforms.
+#endif
     timeval t;
     gettimeofday(&t, 0);
     return t.tv_sec * uint64_t(1000000) + t.tv_usec;
-#endif
 }
 
 void CTimer::triggerEvent()
