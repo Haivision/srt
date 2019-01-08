@@ -604,7 +604,7 @@ private:
     CHandShake m_ConnRes;                        // connection response
     CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
-    int64_t m_llLastReqTime;                     // last time when a connection request is sent
+    int64_t m_llLastReqTime_us;                  // last time when a connection request is sent
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
@@ -703,7 +703,7 @@ private: // Generation and processing of packets
     int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);
 
 private: // Trace
-    uint64_t m_StartTime;                        // timestamp when the UDT entity is started
+    uint64_t m_StartTime_us;                        // timestamp when the UDT entity is started
     int64_t m_llSentTotal;                       // total number of sent data packets, including retransmissions
     int64_t m_llRecvTotal;                       // total number of received packets
     int m_iSndLossTotal;                         // total number of lost packets (sender side)

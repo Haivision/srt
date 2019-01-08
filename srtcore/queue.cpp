@@ -687,7 +687,7 @@ void CRcvUList::remove(const CUDT* u)
    n->m_pNext = n->m_pPrev = NULL;
 }
 
-void CRcvUList::update(const CUDT* u, uint64_t nextevent)
+void CRcvUList::update(const CUDT* u, uint64_t nextevent_tk)
 {
     CRNode* n = u->m_pRNode;
 
@@ -702,10 +702,10 @@ void CRcvUList::update(const CUDT* u, uint64_t nextevent)
     // If nextevent is nonzero and earlier than the predicted next 
     // periodic event, find the most appropriate place to keep items
     // ordered by m_tNextEventTime_tk.
-    if (nextevent && nextevent < n->m_tNextEventTime_tk)
+    if (nextevent_tk && nextevent_tk < n->m_tNextEventTime_tk)
     {
         find_next = true;
-        n->m_tNextEventTime_tk = nextevent;
+        n->m_tNextEventTime_tk = nextevent_tk;
     }
 
     // if n is the last node, do not need to change
@@ -1025,7 +1025,7 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
             // the time has come for THIS exactly socket (could have been
             // the case only for some).
             uint64_t now = CTimer::getTime();
-            uint64_t then = i->m_pUDT->m_llLastReqTime;
+            uint64_t then = i->m_pUDT->m_llLastReqTime_us;
             uint64_t ontime = then + CRcvQueue::CONN_UPDATE_INTERVAL_US;
 
             nowstime = then == 0 || now > ontime;
@@ -1112,7 +1112,7 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
                 {
                     // Re-add this time to the time container. We never know
                     // which time will be earliest.
-                    uint64_t then = i->m_pUDT->m_llLastReqTime;
+                    uint64_t then = i->m_pUDT->m_llLastReqTime_us;
                     uint64_t ontime = then + CRcvQueue::CONN_UPDATE_INTERVAL_US;
                     processing_times.insert(ontime);
                 }
@@ -1129,7 +1129,7 @@ uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst,
                 // updated this last req time because this underwent update, just
                 // without sending anything from here because it's being managed by
                 // the loop in startConnect() call.
-                i->m_pUDT->m_llLastReqTime = CTimer::getTime();
+                i->m_pUDT->m_llLastReqTime_us = CTimer::getTime();
             }
         }
     }

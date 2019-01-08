@@ -183,7 +183,7 @@ void CUDT::construct()
     m_bBroken = false;
     m_bPeerHealth = true;
     m_ullLingerExpiration = 0;
-    m_llLastReqTime = 0;
+    m_llLastReqTime_us = 0;
 
     m_lSrtVersion = SRT_DEF_VERSION;
     m_lPeerSrtVersion = 0; // not defined until connected.
@@ -1151,7 +1151,7 @@ void CUDT::clearData()
    m_ullLastAckTime_tk = 0;
 
    // trace information
-   m_StartTime = CTimer::getTime();
+   m_StartTime_us = CTimer::getTime();
    m_llSentTotal = m_llRecvTotal = m_iSndLossTotal = m_iRcvLossTotal = m_iRetransTotal = m_iSentACKTotal = m_iRecvACKTotal = m_iSentNAKTotal = m_iRecvNAKTotal = 0;
    m_LastSampleTime = CTimer::getTime();
    m_llTraceSent = m_llTraceRecv = m_iTraceSndLoss = m_iTraceRcvLoss = m_iTraceRetrans = m_iSentACK = m_iRecvACK = m_iSentNAK = m_iRecvNAK = 0;
@@ -2793,7 +2793,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     reqpkt.setLength(hs_size);
 
     uint64_t now = CTimer::getTime();
-    reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+    reqpkt.m_iTimeStamp = int32_t(now - m_StartTime_us);
 
     HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (" << now << "). SENDING HS: " << m_ConnReq.show());
 
@@ -2802,7 +2802,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_llLastReqTime = now;
+    m_llLastReqTime_us = now;
     m_bConnecting = true;
     m_pSndQueue->sendto(serv_addr, reqpkt);
 
@@ -2836,14 +2836,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
     while (!m_bClosing)
     {
-        int64_t tdiff = CTimer::getTime() - m_llLastReqTime;
+        int64_t tdiff = CTimer::getTime() - m_llLastReqTime_us;
         // avoid sending too many requests, at most 1 request per 250ms
 
         // SHORT VERSION: 
         // The immediate first run of this loop WILL SKIP THIS PART, so
         // the processing really begins AFTER THIS CONDITION.
         //
-        // Note that some procedures inside may set m_llLastReqTime to 0,
+        // Note that some procedures inside may set m_llLastReqTime_us to 0,
         // which will result of this condition to trigger immediately in
         // the next iteration.
         if (tdiff > CRcvQueue::CONN_UPDATE_INTERVAL_US)
@@ -2863,8 +2863,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             }
 #endif
 
-            m_llLastReqTime = now;
-            reqpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+            m_llLastReqTime_us = now;
+            reqpkt.m_iTimeStamp = int32_t(now - m_StartTime_us);
             m_pSndQueue->sendto(serv_addr, reqpkt);
         }
         else
@@ -2928,7 +2928,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
             // new request/response should be sent out immediately on receving a response
             HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW, should resend request quickly.");
-            m_llLastReqTime = 0;
+            m_llLastReqTime_us = 0;
 
             // Now serialize the handshake again to the existing buffer so that it's
             // then sent later in this loop.
@@ -3041,7 +3041,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEP
 
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: response processing result: "
         << ConnectStatusStr(cst) << "REQ-TIME LOW to enforce immediate response");
-    m_llLastReqTime = 0;
+    m_llLastReqTime_us = 0;
     // REQ-TIME LOW shall request the waiting to be interrupted
     // in the packet-reading function, but it's not necessary here,
     // as this function has the affinity of RcvQ:worker.
@@ -3062,10 +3062,10 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
     request.setControl(UMSG_HANDSHAKE);
     request.allocate(m_iMaxSRTPayloadSize);
     uint64_t now = CTimer::getTime();
-    request.m_iTimeStamp = int(now - this->m_StartTime);
+    request.m_iTimeStamp = int(now - this->m_StartTime_us);
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH (" << now << "). Should prevent too quick responses.");
-    m_llLastReqTime = now;
+    m_llLastReqTime_us = now;
     // ID = 0, connection request
     request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
 
@@ -3122,7 +3122,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
     }
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
-    m_llLastReqTime = CTimer::getTime();
+    m_llLastReqTime_us = CTimer::getTime();
     m_pSndQueue->sendto(serv_addr, request);
     return status;
 }
@@ -3246,7 +3246,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         {
             // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
             // Sanity check
-            m_llLastReqTime = 0;
+            m_llLastReqTime_us = 0;
             if (response.getLength() == size_t(-1))
             {
                 LOGC(mglog.Fatal, log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
@@ -3338,7 +3338,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
         {
             HLOGC(mglog.Debug, log << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
-            m_llLastReqTime = 0;
+            m_llLastReqTime_us = 0;
             return CONN_REJECT;
         }
 
@@ -3431,7 +3431,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
     if ( !createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0))
     {
         LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
-        m_llLastReqTime = 0;
+        m_llLastReqTime_us = 0;
         return CONN_REJECT;
     }
 
@@ -3453,8 +3453,8 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
 
         uint64_t now = CTimer::getTime();
         HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
-        m_llLastReqTime = now;
-        rpkt.m_iTimeStamp = int32_t(now - m_StartTime);
+        m_llLastReqTime_us = now;
+        rpkt.m_iTimeStamp = int32_t(now - m_StartTime_us);
         m_pSndQueue->sendto(serv_addr, rpkt);
 
         return CONN_ACCEPT;
@@ -3465,7 +3465,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // the request time must be updated so that the next handshake can be sent out immediately
         HLOGC(mglog.Debug, log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType)
                 << " REQ-TIME: LOW to send immediately, consider yourself conencted");
-        m_llLastReqTime = 0;
+        m_llLastReqTime_us = 0;
     }
     else
     {
@@ -3607,7 +3607,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
            m_ConnReq.m_iReqType = URQ_CONCLUSION;
            // the request time must be updated so that the next handshake can be sent out immediately.
-           m_llLastReqTime = 0;
+           m_llLastReqTime_us = 0;
            return CONN_CONTINUE;
        }
        else
@@ -3660,7 +3660,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
              bidirectional = true;
              hsd = HSD_INITIATOR;
          }
-         m_llLastReqTime = 0;
+         m_llLastReqTime_us = 0;
          createCrypter(hsd, bidirectional);
 
          // NOTE: This setup sets URQ_CONCLUSION and appropriate data in the handshake structure.
@@ -4694,7 +4694,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 void CUDT::addressAndSend(CPacket& pkt)
 {
     pkt.m_iID = m_PeerID;
-    pkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+    pkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
     m_pSndQueue->sendto(m_pPeerAddr, pkt);
 }
 
@@ -5801,7 +5801,7 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
    uint64_t currtime = CTimer::getTime();
-   perf->msTimeStamp = (currtime - m_StartTime) / 1000;
+   perf->msTimeStamp = (currtime - m_StartTime_us) / 1000;
 
    perf->pktSent = m_llTraceSent;
    perf->pktRecv = m_llTraceRecv;
@@ -5889,7 +5889,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    CGuard recvguard(m_RecvLock);
 
    uint64_t currtime = CTimer::getTime();
-   perf->msTimeStamp = (currtime - m_StartTime) / 1000;
+   perf->msTimeStamp = (currtime - m_StartTime_us) / 1000;
 
    perf->pktSent = m_llTraceSent;
    perf->pktRecv = m_llTraceRecv;
@@ -6290,7 +6290,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
 
-   ctrlpkt.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
+   ctrlpkt.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime_us);
 
    int nbsent = 0;
    int local_prevack = 0;
@@ -6462,7 +6462,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          }
 
          ctrlpkt.m_iID = m_PeerID;
-         ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+         ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
          DebugAck("sendCtrl: ", this, local_prevack, ack);
 
@@ -7088,7 +7088,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
              response.m_iID = m_PeerID;
              uint64_t currtime_tk;
              CTimer::rdtsc(currtime_tk);
-             response.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
+             response.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime_us);
              int nbsent = m_pSndQueue->sendto(m_pPeerAddr, response);
              if (nbsent)
              {
@@ -7407,17 +7407,17 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
        * When timestamp is carried over in this sending stream from a received stream,
        * it may be older than the session start time causing a negative packet time
        * that may block the receiver's Timestamp-based Packet Delivery.
-       * XXX Isn't it then better to not decrease it by m_StartTime? As long as it
+       * XXX Isn't it then better to not decrease it by m_StartTime_us? As long as it
        * doesn't screw up the start time on the other side.
        */
-      if (origintime >= m_StartTime)
-         packet.m_iTimeStamp = int(origintime - m_StartTime);
+      if (origintime >= m_StartTime_us)
+         packet.m_iTimeStamp = int(origintime - m_StartTime_us);
       else
-         packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+         packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
    }
    else
    {
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
    }
 
    packet.m_iID = m_PeerID;
@@ -8119,7 +8119,7 @@ int32_t CUDT::bake(const sockaddr* addr, int32_t current_cookie, int correction)
                 (m_iIPversion == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6),
                 clienthost, sizeof(clienthost), clientport, sizeof(clientport),
                 NI_NUMERICHOST|NI_NUMERICSERV);
-        int64_t timestamp = ((CTimer::getTime() - m_StartTime) / 60000000) + distractor - correction; // secret changes every one minute
+        int64_t timestamp = ((CTimer::getTime() - m_StartTime_us) / 60000000) + distractor - correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
         union
@@ -8258,7 +8258,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
-      packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+      packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
       m_pSndQueue->sendto(addr, packet);
       return URQ_INDUCTION;
    }
@@ -8329,7 +8329,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
        size_t size = CHandShake::m_iContentSize;
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
        m_pSndQueue->sendto(addr, packet);
    }
    else
@@ -8377,7 +8377,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
            size_t size = CHandShake::m_iContentSize;
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
-           packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+           packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime_us);
            m_pSndQueue->sendto(addr, packet);
        }
        else
