@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <chrono>
+//#include <thread>
 
 #ifdef _WIN32
 #define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
@@ -64,17 +66,26 @@ TEST(Core, ConnectionTimeout) {
         int wlen = 2;
         SRTSOCKET write[2];
 
+        using namespace std;
+        const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
+
         // Here we check the connection timeout.
         // Epoll timeout is set 100 ms greater than socket's TTL
         EXPECT_EQ(srt_epoll_wait(pollid, read, &rlen,
                                  write, &wlen,
-                                 connection_timeout_ms + 300,   // +300 ms (inaccuracy problem on Windows)
+                                 3 * connection_timeout_ms,
                                  0, 0, 0, 0)
         /* Expected return value is 2. We have only 1 socket, but
          * sockets with exceptions are returned to both read and write sets.
         */
                  , 2);
 
+        const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
+        const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
+        cout << "Timeout was " << delta_ms << " ms\n";
+
+        EXPECT_LT(delta_ms, 1.05 * connection_timeout_ms);  // 5% deviation
+        EXPECT_GT(delta_ms, 0.95 * connection_timeout_ms);  // 5% deviation
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
         EXPECT_EQ(wlen, 1);
