@@ -822,12 +822,17 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
     if (uptime_us)
     {
         if (uptime_us <= now)
+        {
             timeout_us = 0; // the time is already in the past, don't wait.
+            HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: NO SLEEPING (uptime is in the past, return immediately)");
+        }
         else
         {
             // Don't wait longer than 0.5s, even if this somehow results
             // from calculations.
             timeout_us = std::min(uptime_us - now, +MAX_POLL_TIME_US);
+            HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << "us (calculated: "
+                    << (uptime_us - now) << "us)");
         }
     }
     else
@@ -835,9 +840,8 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
         // Waiting forever is risky, so in case of no timeout
         // simply wait longer time - 0.5s
         timeout_us = MAX_POLL_TIME_US;
+        HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << "us (default maximum in absence of explicit)");
     }
-
-    HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: usec=" << timeout_us);
 
     m_EventRunner.poll(timeout_us);
 
