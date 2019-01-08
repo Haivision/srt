@@ -1583,6 +1583,10 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    delete i->second;
    m_ClosedSockets.erase(i);
 
+   // Might have never been bound.
+   if (mid == -1)
+       return;
+
    map<int, CMultiplexer>::iterator m;
    m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())

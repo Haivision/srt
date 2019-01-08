@@ -79,7 +79,8 @@ extern logging::Logger
     mglog,
     dlog,
     tslog,
-    rxlog;
+    rxlog,
+    perflog;
 
 
 // XXX Utility function - to be moved to utilities.h?
@@ -778,7 +779,7 @@ private: // Timers
 
     uint64_t m_ullTargetTime_tk;			// scheduled time of next packet sending
 
-    void checkTimers();
+    uint64_t checkTimers();
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration

@@ -621,4 +621,35 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
     return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
 }
 
+// DEBUG STRING:
+// The type that turns into:
+// - std::string, if ENABLE_HEAVY_LOGGING
+// - a VoidType otherwise
+#if ENABLE_HEAVY_LOGGING
+
+typedef std::string DebugString;
+
+#else
+
+struct VoidType
+{
+    template <class T>
+    VoidType(const T&) {}
+
+    template <class T>
+    void operator=(const T&) {}
+
+    template <class T>
+    operator T() { return T(); }
+
+    // For operator+ in a string
+
+    template <class T>
+    VoidType operator+(const T&) const { return *this; }
+    VoidType operator+(const VoidType&) const { return *this; }
+};
+
+typedef VoidType DebugString;
+#endif
+
 #endif

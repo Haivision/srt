@@ -839,6 +839,8 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
 std::string logging::FormatTime(uint64_t time)
 {
     using namespace std;
+    if (!time)
+        return "NO-TIME-DEFINED";
 
     time_t sec = time/1000000;
     time_t usec = time%1000000;
@@ -848,7 +850,7 @@ std::string logging::FormatTime(uint64_t time)
 
     char tmp_buf[512];
 #ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+    strftime(tmp_buf, 512, "%X.", &tm);
 #else
     strftime(tmp_buf, 512, "%T.", &tm);
 #endif

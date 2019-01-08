@@ -405,7 +405,7 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
 
     if ( !m_blocking_mode )
     {
-        srt_epoll = AddPoller(m_sock, dir);
+        srt_epoll = AddPoller(m_sock, dir | SRT_EPOLL_ERR);
     }
 }
 
@@ -541,7 +541,7 @@ void SrtCommon::PrepareClient()
 
     if ( !m_blocking_mode )
     {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     }
 
 }
@@ -596,11 +596,18 @@ void SrtCommon::ConnectClient(string host, int port)
         // SpinWaitAsync();
 
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
+        int len = 2, elen = 2;
         SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
+        SRTSOCKET eready[2];
+        if ( srt_epoll_wait(srt_conn_epoll, eready, &elen, ready, &len, -1, 0, 0, 0, 0) != -1 )
         {
             Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+            // If a socket is set in both read and write table, it was failed.
+            if (elen > 0 && eready[0] == m_sock)
+            {
+                Verb() << "[FAILURE]";
+                Error(UDT::getlasterror(), "UDT::connect");
+            }
         }
         else
         {
@@ -702,10 +709,16 @@ bytevector SrtSource::Read(size_t chunk)
                 {
                     Verb() << "AGAIN: - waiting for data by epoll...";
                     // Poll on this descriptor until reading is available, indefinitely.
-                    int len = 2;
-                    SRTSOCKET sready[2];
-                    if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
+                    int len = 2, elen = 2;
+                    SRTSOCKET sready[2], esready[2];
+                    if ( srt_epoll_wait(srt_epoll, sready, &len, esready, &elen, -1, 0, 0, 0, 0) != -1 )
                     {
+                        if (elen > 0)
+                        {
+                            // both read-and-write ready for sockets that are to be IN|ERR
+                            // means the socket got an error.
+                            Error(UDT::getlasterror(), "recvmsg,epoll");
+                        }
                         if ( Verbose::on )
                         {
                             Verb() << "... epoll reported ready " << len << " sockets";

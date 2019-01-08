@@ -474,21 +474,30 @@ CSndQueue::~CSndQueue()
    delete m_pSndUList;
 }
 
+#if ENABLE_LOGGING
+    int CSndQueue::m_counter = 0;
+#endif
+
 void CSndQueue::init(CChannel* c, CTimer* t)
 {
-   m_pChannel = c;
-   m_pTimer = t;
-   m_pSndUList = new CSndUList;
-   m_pSndUList->m_pWindowLock = &m_WindowLock;
-   m_pSndUList->m_pWindowCond = &m_WindowCond;
-   m_pSndUList->m_pTimer = m_pTimer;
+    m_pChannel = c;
+    m_pTimer = t;
+    m_pSndUList = new CSndUList;
+    m_pSndUList->m_pWindowLock = &m_WindowLock;
+    m_pSndUList->m_pWindowCond = &m_WindowCond;
+    m_pSndUList->m_pTimer = m_pTimer;
 
-   ThreadName tn("SRT:SndQ:worker");
-   if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-   {
-	   m_WorkerThread = pthread_t();
-       throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
-   }
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::ostringstream thrname;
+    thrname << "SRT:SndQ:w" << m_counter;
+    ThreadName tn(thrname.str().c_str());
+#endif
+    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
+    {
+        m_WorkerThread = pthread_t();
+        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
+    }
 }
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -511,7 +520,7 @@ void* CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
+    self->m_ullDbgPeriod = CTimer::us2tk(5000000);
     self->m_ullDbgTime += self->m_ullDbgPeriod;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
@@ -626,7 +635,10 @@ CRcvUList::~CRcvUList()
 void CRcvUList::insert(const CUDT* u)
 {
    CRNode* n = u->m_pRNode;
-   CTimer::rdtsc(n->m_llTimeStamp_tk);
+
+   uint64_t timestamp_tk;
+   CTimer::rdtsc(timestamp_tk);
+   n->m_tNextEventTime_tk = timestamp_tk + CTimer::us2tk(CRcvQueue::TIMER_UPDATE_INTERVAL_US);
 
    if (NULL == m_pUList)
    {
@@ -675,34 +687,120 @@ void CRcvUList::remove(const CUDT* u)
    n->m_pNext = n->m_pPrev = NULL;
 }
 
-void CRcvUList::update(const CUDT* u)
+void CRcvUList::update(const CUDT* u, uint64_t nextevent)
 {
-   CRNode* n = u->m_pRNode;
+    CRNode* n = u->m_pRNode;
 
-   if (!n->m_bOnList)
-      return;
+    if (!n->m_bOnList)
+        return;
 
-   CTimer::rdtsc(n->m_llTimeStamp_tk);
+    bool find_next = false;
+    uint64_t timestamp_tk;
+    CTimer::rdtsc(timestamp_tk);
+    n->m_tNextEventTime_tk = timestamp_tk + CTimer::us2tk(CRcvQueue::TIMER_UPDATE_INTERVAL_US);
 
-   // if n is the last node, do not need to change
-   if (NULL == n->m_pNext)
-      return;
+    // If nextevent is nonzero and earlier than the predicted next 
+    // periodic event, find the most appropriate place to keep items
+    // ordered by m_tNextEventTime_tk.
+    if (nextevent && nextevent < n->m_tNextEventTime_tk)
+    {
+        find_next = true;
+        n->m_tNextEventTime_tk = nextevent;
+    }
 
-   if (NULL == n->m_pPrev)
-   {
-      m_pUList = n->m_pNext;
-      m_pUList->m_pPrev = NULL;
-   }
-   else
-   {
-      n->m_pPrev->m_pNext = n->m_pNext;
-      n->m_pNext->m_pPrev = n->m_pPrev;
-   }
+    // if n is the last node, do not need to change
+    if (!n->m_pNext)
+    {
+        HLOGC(mglog.Debug, log << "CRcvUList::update: the only node, nothing to be moved");
+        return;
+    }
 
-   n->m_pPrev = m_pLast;
-   n->m_pNext = NULL;
-   m_pLast->m_pNext = n;
-   m_pLast = n;
+    // New BEFORE NODE (node before which this node should be inserted).
+    // NULL means that the node should be moved to the very end.
+    CRNode* nb = NULL;
+    if (find_next)
+    {
+        // Check if the next node has the later time.
+        // If so, don't move the node. It is possible that
+        // the next packet is pending to handling in some time,
+        // but might be that the ACK/PNACK event on the current
+        // node still happens earlier.
+        if (n->m_pNext->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
+        {
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node still freshest next="
+                    << logging::FormatTime(CTimer::tk2us(n->m_pNext->m_tNextEventTime_tk))
+                    << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk)));
+            return;
+        }
+
+        // Before searching for the node in the middle, check the last one.
+        if (m_pLast->m_tNextEventTime_tk < n->m_tNextEventTime_tk)
+        {
+            // Do nothing, the below procedure with swipe it to the last position
+            HLOGC(mglog.Debug, log << "CRcvUList::update: node is stalest anyway. last="
+                    << logging::FormatTime(CTimer::tk2us(m_pLast->m_tNextEventTime_tk))
+                    << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk)));
+        }
+        else
+        {
+            // Need to find the most appropriate position to shift to.
+
+            // 1. We know that n->m_pNext exists.
+            // 2. We don't know if n->m_pNext->m_pNext exists, but at worst
+            // it will not execute the following while loop at all.
+            // 3. But this shall never happen because if (n->m_pNext->m_pNext == NULL)
+            // then n->m_pNext == m_pLast, and node has been already checked.
+            nb = n->m_pNext->m_pNext;
+            while (nb)
+            {
+                // XXX This is linear searching since the second following node
+                // until the butlast one (the last one is checked already).
+                // This isn't too efficient, possibly the list shall be replaced
+                // by std::map ordered by time. The only operations being done here
+                // are insertion and removal at the earliest position, fortunately
+                // not linear iteration.
+
+                // Find first node that DOES NOT satisfy the condition that its
+                // next event time happens earlier than the n node's (NOTE: not last
+                // one that still satisfies this condition, but one past it).
+                if (nb->m_tNextEventTime_tk > n->m_tNextEventTime_tk)
+                {
+                    HLOGC(mglog.Debug, log << "CRcvUList::update: node falls in between,"
+                            << " prev=" << logging::FormatTime(CTimer::tk2us(nb->m_pPrev->m_tNextEventTime_tk))
+                            << " this=" << logging::FormatTime(CTimer::tk2us(n->m_tNextEventTime_tk))
+                            << " next=" << logging::FormatTime(CTimer::tk2us(nb->m_tNextEventTime_tk)));
+                    break;
+                }
+                nb = nb->m_pNext;
+            }
+        }
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "CRcvUList::update: next formal update still earliest - moving to the end");
+    }
+
+    // 1. TEARING OFF this node
+
+    // is first
+    if (!n->m_pPrev)
+    {
+        m_pUList = n->m_pNext;
+        m_pUList->m_pPrev = NULL;
+    }
+    else
+    {
+        n->m_pPrev->m_pNext = n->m_pNext;
+        n->m_pNext->m_pPrev = n->m_pPrev;
+    }
+
+    // 2. INSERTING the node into correct place
+    CRNode*& lastref = nb ? nb->m_pPrev : m_pLast;
+
+    n->m_pPrev = lastref;
+    n->m_pNext = nb;
+    lastref->m_pNext = n;
+    lastref = n;
 }
 
 //
@@ -866,20 +964,34 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
    return NULL;
 }
 
-void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& response)
+// The 'timely' parameter decides whether the call was because the time has come or because a packet
+// has been received, in the latter case it's false. In such a situation just check if you have the
+// socket mentioned in 'response' among the connectors. If it wasn't timely, skip those connectors that
+// don't have this id completely.
+uint64_t CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& response, bool timely)
 {
     CGuard vg(m_RIDVectorLock);
 
     if (m_lRendezvousID.empty())
-        return;
+        return 0; // Won't need processing
 
-    HLOGC(mglog.Debug, log << "updateConnStatus: updating after getting pkt id=" << response.m_iID << " status: " << ConnectStatusStr(cst));
+    HLOGC(mglog.Debug, log << "updateConnStatus: updating "
+            << (timely ? "PERIODICALLY with pkt id=" : "after getting pkt id=")
+            << response.m_iID << " connection status: " << ConnectStatusStr(cst));
 
 #if ENABLE_HEAVY_LOGGING
     int debug_nupd = 0;
     int debug_nrun = 0;
     int debug_nfail = 0;
 #endif
+
+    set<uint64_t> processing_times;
+
+    // Make first the initial roll
+
+    // We have the "now" time, we have to perform the connection update
+    // for those entities, for which the time has come to update. During this process
+
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
     {
@@ -889,30 +1001,43 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         // REMOVE the currently processed element. When the element was removed,
         // the iterator value for the next iteration will be taken from erase()'s result.
 
-        // RST_AGAIN happens in case when the last attempt to read a packet from the UDP
-        // socket has read nothing. In this case it would be a repeated update, while
-        // still waiting for a response from the peer. When we have any other state here
-        // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
-        // just arrived in this iteration), do the update immetiately (in SRT this also
-        // involves additional incoming data interpretation, which wasn't the case in UDT).
-        uint64_t then = i->m_pUDT->m_llLastReqTime;
-        uint64_t now = CTimer::getTime();
-        bool nowstime = true;
-
-        // Use "slow" cyclic responding in case when
-        // - RST_AGAIN (no packet was received for whichever socket)
-        // - a packet was received, but not for THIS socket
-        if (rst == RST_AGAIN || i->m_iID != response.m_iID)
+        bool nowstime = false;
+        if (!timely)
         {
-            // If no packet has been received from the peer,
-            // avoid sending too many requests, at most 1 request per 250ms
-            nowstime = (now - then) > 250000;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst)
+                    << " -- update after receiving for id="
+                    << response.m_iID << " - will " << (response.m_iID == i->m_iID ? "" : "NOT ")
+                    << "update this time");
+            if (response.m_iID != i->m_iID)
+            {
+                // If this is NOT timely (that is, in reaction to packet reception)
+                // skip those for which the packet wasn't destined.
+                continue;
+            }
+
+            // And if it was, request to update it immediately.
+            nowstime = true;
         }
         else
         {
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+            // If it was timely (first periodic update, or called at time
+            // calculated at the previous periodic update), then check if
+            // the time has come for THIS exactly socket (could have been
+            // the case only for some).
+            uint64_t now = CTimer::getTime();
+            uint64_t then = i->m_pUDT->m_llLastReqTime;
+            uint64_t ontime = then + CRcvQueue::CONN_UPDATE_INTERVAL_US;
+
+            nowstime = then == 0 || now > ontime;
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+                    <<  "<=> " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
+            if (!nowstime)
+            {
+                // The time is not now, add this processing time to the list
+                // Don't add those that are to be processed because after
+                // processing they will be either re-added, or removed from the list.
+                processing_times.insert(ontime);
+            }
         }
 
 #if ENABLE_HEAVY_LOGGING
@@ -920,21 +1045,11 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 #endif
         if (nowstime)
         {
-            // XXX This looks like a loop that rolls in infinity without any sleeps
-            // inside and makes it once per about 50 calls send a hs conclusion
-            // for a randomly sampled rendezvous ID of a socket out of the list.
-            // Ok, probably the rendezvous ID should be just one so not much to
-            // sample from, but if so, why the container?
-            //
-            // This must be somehow fixed!
-            //
-            // Maybe the time should be simply checked once and the whole loop not
-            // done when "it's not the time"?
             if (CTimer::getTime() >= i->m_ullTTL)
             {
                 HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
-                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
-                        << ". removing from queue");
+                        << (i->m_ullTTL ? "passed TTL" : "enforced on FAILURE")
+                        << "). removing from queue");
                 // connection timer expired, acknowledge app via epoll
                 i->m_pUDT->m_bConnecting = false;
                 CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
@@ -950,8 +1065,17 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 
                 // i_next was preincremented, but this is guaranteed to point to
                 // the element next to erased one.
+
+                // Note that if nowstime, the time for processing this unit wasn't
+                // added to processing_times anyway.
                 i_next = m_lRendezvousID.erase(i);
                 continue;
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "RendezvousQueue: @" << i->m_pUDT->m_SocketID
+                        << " still pending up to T=" << logging::FormatTime(i->m_ullTTL)
+                        << " (" << (i->m_ullTTL - CTimer::getTime()) << "us to expire)");
             }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
@@ -976,17 +1100,36 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 // before calling this function), and it checks for the data presence.
                 if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
                 {
-                    LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
+                    LOGC(mglog.Error, log << "Async: @" << i->m_pUDT->m_SocketID
+                            << ": processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                     i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
 #if ENABLE_HEAVY_LOGGING
                     ++debug_nfail;
 #endif
                 }
+                else
+                {
+                    // Re-add this time to the time container. We never know
+                    // which time will be earliest.
+                    uint64_t then = i->m_pUDT->m_llLastReqTime;
+                    uint64_t ontime = then + CRcvQueue::CONN_UPDATE_INTERVAL_US;
+                    processing_times.insert(ontime);
+                }
 
                 // NOTE: safe loop, the incrementation was done before the loop body,
                 // so the `i' node can be safely deleted. Just the body must end here.
                 continue;
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "Async: @" << i->m_pUDT->m_SocketID
+                        << ": using BLOCKING mode, not to be handled here.");
+
+                // updated this last req time because this underwent update, just
+                // without sending anything from here because it's being managed by
+                // the loop in startConnect() call.
+                i->m_pUDT->m_llLastReqTime = CTimer::getTime();
             }
         }
     }
@@ -995,6 +1138,15 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
             << (debug_nrun-debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets."
          );
+
+    if (processing_times.empty())
+    {
+        // No pending entities have been notified, nothing pending processing.
+        return 0;
+    }
+
+    // Return the lowest processing time
+    return *processing_times.begin();
 }
 
 //
@@ -1008,6 +1160,9 @@ CRcvQueue::CRcvQueue():
     m_iPayloadSize(),
     m_bClosing(false),
     m_ExitCond(),
+    m_tRcvUpTime_us(),
+    m_tConnUpTime_us(),
+    // Lower part (?)
     m_LSLock(),
     m_pListener(NULL),
     m_pRendezvousQueue(NULL),
@@ -1026,8 +1181,11 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+        HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
     pthread_mutex_destroy(&m_LSLock);
@@ -1050,6 +1208,11 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
+#if ENABLE_LOGGING
+    int CRcvQueue::m_counter = 0;
+#endif
+
+
 void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* cc, CTimer* t)
 {
     m_iPayloadSize = payload;
@@ -1065,12 +1228,32 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     m_pRcvUList = new CRcvUList;
     m_pRendezvousQueue = new CRendezvousQueue;
 
-    ThreadName tn("SRT:RcvQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::ostringstream thrname;
+    thrname << "SRT:RcvQ:w" << m_counter;
+    ThreadName tn(thrname.str().c_str());
+#endif
+
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
 		m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+void CRcvQueue::addProcessingUnit(CUDT* ne)
+{
+    m_pRcvUList->insert(ne);
+    m_pHash->insert(ne->m_SocketID, ne);
+}
+
+void CRcvQueue::withdrawProcessingUnit(CUDT* u)
+{
+    // the socket must be removed from Hash table first, then RcvUList
+    m_pHash->remove(u->m_SocketID);
+    m_pRcvUList->remove(u);
+    u->m_pRNode->m_bOnList = false;
 }
 
 void* CRcvQueue::worker(void* param)
@@ -1083,10 +1266,27 @@ void* CRcvQueue::worker(void* param)
 
    CUnit* unit = 0;
    EConnectStatus cst = CONN_AGAIN;
+
+   // Time up to which the worker_RetrieveUnit should sleep on reading
+   // on UDP socket. Note that the operation will be interrupted also
+   // when another thread calls CRcvQueue::setNewEntry().
+   uint64_t uptime_us = 0;
+   self->m_tConnUpTime_us = 0;
+
+#if ENABLE_HEAVY_LOGGING
+       int npupdated = 0;
+#endif
    while (!self->m_bClosing)
    {
-       bool have_received = false;
-       EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa);
+       bool have_received SRT_ATR_UNUSED = false; // used in HLOG only
+       HLOGP(perflog.Debug, "worker_RetrieveUnit - START");
+       EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa, uptime_us);
+       HLOGC(perflog.Debug, log << "worker_RetrieveUnit - FINISHED. return=" << rst << ", " << (rst ? (rst == -1 ? "ERROR" : "AGAIN") : "RETRIEVED"));
+       uint64_t currtime_tk;
+
+       // take care of the timing event for all UDT sockets
+       CTimer::rdtsc(currtime_tk);
+
        if (rst == RST_OK)
        {
            if (id < 0)
@@ -1094,6 +1294,12 @@ void* CRcvQueue::worker(void* param)
                // User error on peer. May log something, but generally can only ignore it.
                // XXX Think maybe about sending some "connection rejection response".
                HLOGC(mglog.Debug, log << self->CONID() << "RECEIVED negative socket id '" << id << "', rejecting (POSSIBLE ATTACK)");
+
+               // Check if the exit was at the time when an event needs to be handled.
+               // If not, just repeat reading
+               if (CTimer::tk2us(currtime_tk) > uptime_us)
+                   goto Handle_timer_events;
+
                continue;
            }
 
@@ -1104,6 +1310,7 @@ void* CRcvQueue::worker(void* param)
            // Note to rendezvous connection. This can accept:
            // - ID == 0 - take the first waiting rendezvous socket
            // - ID > 0  - find the rendezvous socket that has this ID.
+           HLOGC(perflog.Debug, log << "PROCESSING PACKET: START");
            if (id == 0)
            {
                // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
@@ -1115,11 +1322,22 @@ void* CRcvQueue::worker(void* param)
                // - an enqueued rendezvous socket
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+#if ENABLE_HEAVY_LOGGING
+               if (cst == CONN_CONTINUE)
+                   ++npupdated;
+#endif
            }
+           HLOGC(perflog.Debug, log << "PROCESSING PACKET: END");
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
            if (cst == CONN_AGAIN)
            {
                HLOGC(mglog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
+
+               // Check if the exit was at the time when an event needs to be handled.
+               // If not, just repeat reading
+               if (CTimer::tk2us(currtime_tk) > uptime_us)
+                   goto Handle_timer_events;
+
                continue;
            }
            have_received = true;
@@ -1137,46 +1355,117 @@ void* CRcvQueue::worker(void* param)
            }
            else
            {
-               LOGC(mglog.Fatal, log << self->CONID() << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
+               LOGC(mglog.Fatal, log << self->CONID() << "CChannel reported ERROR DURING TRANSMISSION - INTERRUPTING worker anyway.");
            }
            cst = CONN_REJECT;
            break;
        }
+
        // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
-
-       // take care of the timing event for all UDT sockets
-       uint64_t currtime_tk;
-       CTimer::rdtsc(currtime_tk);
+Handle_timer_events:
+       HLOGC(perflog.Debug, log << "TIMER CHECK: START");
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
-       uint64_t ctime_tk = currtime_tk - 100000 * CTimer::getCPUFrequency();
-       while ((NULL != ul) && (ul->m_llTimeStamp_tk < ctime_tk))
+
+       int nuupdated SRT_ATR_UNUSED = 0;
+       DebugString whichone = "neither";
+
+       uint64_t next_xktimer_tk = 0;
+
+#if ENABLE_HEAVY_LOGGING
+       if (ul)
+       {
+           LOGC(mglog.Debug, log << "FIRST RCVUnit next event time:"
+                   << logging::FormatTime(CTimer::tk2us(ul->m_tNextEventTime_tk)));
+       }
+       else
+       {
+           LOGP(mglog.Debug, "NO RCVUnit ready to update");
+       }
+#endif
+
+       while (ul && currtime_tk > ul->m_tNextEventTime_tk)
        {
            CUDT* u = ul->m_pUDT;
 
            if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
            {
-               u->checkTimers();
-               self->m_pRcvUList->update(u);
+#if ENABLE_HEAVY_LOGGING
+               LOGC(mglog.Debug, log << "UPDATING SOCKET: @" << u->m_SocketID);
+               ++nuupdated;
+#endif
+
+               // Grab the earliest update time that arise after checkTimers.
+               // update: saves current time in the UList node and
+               // moves it to the end of list, or if the checkTimers()
+               // reported any earlier time than this, move it to the
+               // appropriate place in time ordering.
+               self->m_pRcvUList->update(u, u->checkTimers());
            }
            else
            {
-               HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
-               // the socket must be removed from Hash table first, then RcvUList
-               self->m_pHash->remove(u->m_SocketID);
-               self->m_pRcvUList->remove(u);
-               u->m_pRNode->m_bOnList = false;
+               HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE.");
+               self->withdrawProcessingUnit(u);
            }
 
+           // When this loop interrupts, ul is either NULL (whole list got processed)
+           // or stands at the item which's processing time is in future.
+           //
+           // Processing time 
            ul = self->m_pRcvUList->m_pUList;
+           HLOGC(mglog.Debug, log << "NEXT UPDATE HEAD: @" << (ul? ul->m_pUDT->m_SocketID : 0)
+                   << " TS=" << logging::FormatTime(ul? CTimer::tk2us(ul->m_tNextEventTime_tk) : 0));
        }
 
-       if ( have_received )
+       if (ul)
        {
-           HLOGC(mglog.Debug, log << "worker: RECEIVED PACKET --> updateConnStatus. cst=" << ConnectStatusStr(cst)
-                   << " id=" << id << " pkt-payload-size=" << unit->m_Packet.getLength());
+           // We have the unit for next processing.
+           uptime_us = CTimer::tk2us(ul->m_tNextEventTime_tk);
+           HLOGC(mglog.Debug, log << "FIRST UNIT TO UPDATE: @" << ul->m_pUDT->m_SocketID << " AT: "
+                   << logging::FormatTime(uptime_us));
        }
+       else
+       {
+           // We don't have time of the next processing.
+           HLOGC(mglog.Debug, log << "NO CONNECTED UNITS TO UPDATE - waiting maximum time.");
+           uptime_us = 0;
+       }
+
+       // Can be also 0!
+       uint64_t next_xktimer_us = CTimer::tk2us(next_xktimer_tk);
+
+       if (uptime_us == 0 || (next_xktimer_tk && uptime_us > next_xktimer_us) )
+       {
+           uptime_us = next_xktimer_us;
+       }
+       else
+       {
+           whichone = "receiver";
+       }
+
+       // This records the update time as defined by the receiver entities (m_pRcvUList).
+       self->m_tRcvUpTime_us = uptime_us;
+
+       // But still, the updateConnStatus might detect some units that need taking care
+       // of earlier than this time, or just have something unlike the units ready for
+       // processing, in which case it will set its own next processing time.
+#if ENABLE_HEAVY_LOGGING
+       string pktinfo = "PERIODIC UPDATE";
+       if (have_received)
+       {
+           std::ostringstream info;
+           info << "RECEIVED PKT pl-size=" << unit->m_Packet.getLength() << " id=" << id;
+           pktinfo = info.str();
+       }
+
+       LOGC(mglog.Debug, log << "worker: UPDATED " << nuupdated << "+" << npupdated << " units. "
+               << pktinfo
+               << ". NEXT RCV EVENT: " << logging::FormatTime(uptime_us)
+               << " cst=" << ConnectStatusStr(cst));
+
+       npupdated = 0; // this variable is outside the loop
+#endif
 
        // Check connection requests status for all sockets in the RendezvousQueue.
        // Pass the connection status from the last call of:
@@ -1184,10 +1473,80 @@ void* CRcvQueue::worker(void* param)
        // worker_TryAsyncRend_OrStore --->
        // CUDT::processAsyncConnectResponse --->
        // CUDT::processConnectResponse 
-       self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit->m_Packet);
 
-       // XXX updateConnStatus may have removed the connector from the list,
-       // however there's still m_mBuffer in CRcvQueue for that socket to care about.
+       uint64_t now_us = CTimer::tk2us(currtime_tk);
+       bool timely = self->m_tConnUpTime_us < now_us;  // (including when m_tConnUpTime_us == 0)
+
+       HLOGC(perflog.Debug, log << "TIMER CHECK: END. DOING updateConnStatus");
+       if (timely || rst == RST_OK)
+       {
+           // If this is the beginning (m_tConnUpTime_us == 0), it will be always called.
+           // If the next processing time calculated at the previous call of this
+           // function turned out to be later than the uptime_us extracted for the
+           // nearest receiver entity, this will be skipped (meaning, this time
+           // will remain the same). Otherwise this will be executed.
+           // It will be executed also regardless of the time, if in this iteration
+           // a new packet has been received (non-timely).
+#if ENABLE_HEAVY_LOGGING
+
+           string late = "PACKET RECEIVED";
+           if (self->m_tConnUpTime_us)
+           {
+               std::ostringstream info;
+               info << "UPDATE TIME (belated: "
+                   << (CTimer::getTime() - self->m_tConnUpTime_us) << "us)";
+               late = info.str();
+           }
+           else if (timely)
+           {
+               // But not m_tConnUpTime_us, so it's forced update
+               late = "FORCED UPDATE (no conn event time)";
+           }
+
+           LOGC(mglog.Debug, log << "worker: >updateConnStatus T=" << logging::FormatTime(self->m_tConnUpTime_us)
+                   << " REASON:" << late);
+#endif
+           uint64_t nexttime = self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit->m_Packet, timely);
+
+           // Note that with timely == false, only the entity with id == unit->m_Packet.m_iID are regarded,
+           // so 
+           if (timely)
+           {
+               // Assign whatever was returned, even if it's 0.
+               // Don't assign anything if the update was on packet reception because
+               // those entities that don't match the ID won't be processed, and processing
+               // time will not be extracted for any entity.
+               self->m_tConnUpTime_us = nexttime;
+           }
+           HLOGC(mglog.Debug, log << "worker: <updateConnStatus, next proc T=" << logging::FormatTime(self->m_tConnUpTime_us));
+           // XXX updateConnStatus may have removed the connector from the list,
+           // however there's still m_mBuffer in CRcvQueue for that socket to care about.
+       }
+       else
+       {
+           HLOGC(mglog.Debug, log << "worker: NO updateConnStatus - no packet and T=" << logging::FormatTime(self->m_tConnUpTime_us));
+       }
+       HLOGC(perflog.Debug, log << "TIMER CHECK: END. updateConnStatus FINISHED. LOOP ROLLING.");
+
+       // Use the time reported by updateConnStatus as a next processing time
+       // (time until when the next reading operation should wait at maximum),
+       // in case when there's no unit to process in the RcvUList, or the firstmost
+       // unit in this list is about to be processed later than the next updateConnStatus.
+
+       // If updateConnStatus wasn't called in this iteration, according to the condition,
+       // then the time used here will be taken as calculated from the previous call.
+
+       // Note that m_tConnUpTime_us == 0 may be either triggered from registerConnector
+       // or by returning from updateConnStatus when there are no pending connections.
+
+       if (uptime_us == 0 || (self->m_tConnUpTime_us && self->m_tConnUpTime_us < uptime_us))
+       {
+           uptime_us = self->m_tConnUpTime_us;
+           whichone = uptime_us ? "connector" : "neither";
+       }
+
+       HLOGC(mglog.Debug, log << "worker: NEXT PROC TIME: " << logging::FormatTime(uptime_us)
+               << " as required by " << whichone << " queue");
    }
 
    THREAD_EXIT();
@@ -1217,7 +1576,7 @@ static string PacketInfo(const CPacket& pkt)
 }
 #endif
 
-EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
+EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr, uint64_t uptime_us)
 {
 #ifdef NO_BUSY_WAITING
     m_pTimer->tick();
@@ -1229,9 +1588,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         CUDT* ne = getNewEntry();
         if (ne)
         {
-            HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
-            m_pRcvUList->insert(ne);
-            m_pHash->insert(ne->m_SocketID, ne);
+            HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE");
+            addProcessingUnit(ne);
         }
     }
     // find next available slot for incoming packet
@@ -1243,11 +1601,9 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         temp.m_pcData = new char[m_iPayloadSize];
         temp.setLength(m_iPayloadSize);
         THREAD_PAUSED();
-        EReadStatus rst = m_pChannel->recvfrom(addr, temp);
+        EReadStatus rst = m_pChannel->recvfrom(addr, temp, uptime_us);
         THREAD_RESUMED();
-#if ENABLE_LOGGING
         LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << PacketInfo(temp));
-#endif
         delete [] temp.m_pcData;
 
         // Be transparent for RST_ERROR, but ignore the correct
@@ -1257,9 +1613,10 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
 
     r_unit->m_Packet.setLength(m_iPayloadSize);
 
+    HLOGC(mglog.Debug, log << "SLEEP-READING packet up to T=" << logging::FormatTime(uptime_us));
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
-    EReadStatus rst = m_pChannel->recvfrom(addr, r_unit->m_Packet);
+    EReadStatus rst = m_pChannel->recvfrom(addr, r_unit->m_Packet, uptime_us);
     THREAD_RESUMED();
 
     if (rst == RST_OK)
@@ -1329,6 +1686,22 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr* addr)
 {
+    // XXX It's unknown as to why this m_pHash is in use here. This is actually
+    // XXX a duplicate functionality of CUDTUnited::m_Sockets, which exactly
+    // XXX the same way maps SRT Socket Id's to CUDT units, albeit indirectly
+    // XXX (the latter keeps CUDTSocket objects, which embrace CUDT). There's
+    // XXX also no possibility that they need to be kept separately to m_Sockets
+    // XXX because:
+    // XXX - sockets are added to this list if CRcvQueue::getNewEntry returns something
+    // XXX - the latter returns something, if CRcvQueue::setNewEntry was called before
+    // XXX - setNewEntry is called in two places: acceptAndRespond and postConnect.
+    // XXX - in both above conditions, the socket id IS ALREADY in CUDTUnited::m_Sockets.
+    //
+    // Conclusions? The call to m_pHash->lookup(id) could be replaced by
+    // CUDTUnited::lookup(id)->m_pUDT and this way the m_pHash field can be
+    // deleted completely. The only problem is to make the CUDT::s_UDTUnited
+    // field somehow accessible by CRcvQueue, but this can be somehow arranged
+    // at the construction time.
     CUDT* u = m_pHash->lookup(id);
     if ( !u )
     {
@@ -1343,7 +1716,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     if (!CIPAddress::ipcmp(addr, u->m_pPeerAddr, u->m_iIPversion))
     {
         HLOGC(mglog.Debug, log << CONID() << "Packet for SID=" << id << " asoc with " << SockaddrToString(u->m_pPeerAddr)
-            << " received from " << SockaddrToString(addr) << " (CONSIDERED ATTACK ATTEMPT)");
+                << " received from " << SockaddrToString(addr) << " (CONSIDERED ATTACK ATTEMPT)");
         // This came not from the address that is the peer associated
         // with the socket. Ignore it.
         return CONN_AGAIN;
@@ -1363,8 +1736,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     else
         u->processData(unit);
 
-    u->checkTimers();
-    m_pRcvUList->update(u);
+    m_pRcvUList->update(u, u->checkTimers());
 
     return CONN_CONTINUE;
 }
@@ -1560,6 +1932,21 @@ void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const s
 {
    HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << ttl);
    m_pRendezvousQueue->insert(id, u, ipv, addr, ttl);
+
+   // After a new connector is registerred, the reading select if hanging
+   // on the UDP socket to read, might need to be interrupted.
+   m_tConnUpTime_us = 0;
+   m_pChannel->m_EventRunner.signalReading(PSG_NEWCONN);
+
+   // Theoretically these two things shall be done without yielding,
+   // but introducing a mutex here won't help in performance. This also
+   // isn't important at what exactly time the other thread will realize
+   // the cleared m_tConnUpTime_us. Important is that it happens before
+   // the signal, that is, it's already cleared at the signal. Worst thing
+   // that may happen is that the updateConnStatus would be called before
+   // the signal is issued - but in this case the signal will be also cleared
+   // before select(), as the purification of the signal happens with the
+   // check of ifNewEntry(), before CChannel::recvfrom().
 }
 
 void CRcvQueue::removeConnector(const SRTSOCKET& id, bool should_lock)
@@ -1588,6 +1975,17 @@ void CRcvQueue::setNewEntry(CUDT* u)
    HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
    CGuard listguard(m_IDLock);
    m_vNewEntry.push_back(u);
+
+   // In case when the RcvQ:worker thread is blocked on the socket
+   // reading only up to the time when the next processing is about
+   // to happen (which might be also infinite), this causes this waiting
+   // to be interrupted.
+
+   m_pChannel->m_EventRunner.signalReading(PSG_NEWUNIT);
+   // Note that this shall be defined here because this might be called
+   // with affinity to the main user thread, whereas it's the RcvQ:worker
+   // thread blocked on reading and this block shall be interrupted.
+   m_tRcvUpTime_us = 0;
 }
 
 bool CRcvQueue::ifNewEntry()
