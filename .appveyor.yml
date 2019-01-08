@@ -2,7 +2,7 @@ init:
  # -ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
  
 configuration:
-  - Release
+  - RelWithDebInfo
   - Debug
 
 image:
@@ -25,7 +25,7 @@ build_script:
   # build SRT
   - ps: if ( $VS_VERSION -eq "2013" ) { $CMAKE_GENERATOR = "Visual Studio 12 2013 Win64" } else { $CMAKE_GENERATOR = "Visual Studio 14 2015 Win64" }
   - ps: if ( $VS_VERSION -eq "2013" ) { $ENABLE_UNITTESTS = "OFF" } else { $ENABLE_UNITTESTS = "ON" }
-  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
+  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_HEAVY_LOGGING=1 -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64
   
 test_script:
