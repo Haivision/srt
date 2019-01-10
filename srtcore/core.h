@@ -227,7 +227,7 @@ public: // internal API
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
 
     // Input rate constants
-    static const uint64_t
+    static const int64_t
         SND_INPUTRATE_FAST_START_US = 500*1000,
         SND_INPUTRATE_RUNNING_US = 1*1000*1000;
     static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
@@ -268,7 +268,7 @@ public: // internal API
     int MSS() { return m_iMSS; }
     size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
-    uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
+    DurationCpu minNAKInterval() { return m_rMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
@@ -458,7 +458,7 @@ private:
     void unlose(const CPacket& oldpacket);
     void unlose(int32_t from, int32_t to);
 
-    void considerLegacySrtHandshake(uint64_t timebase);
+    void considerLegacySrtHandshake(ClockSys timebase);
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
     void handshakeDone()
     {
@@ -550,7 +550,7 @@ private: // Identification
     bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
-    uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time
+    ClockSys m_ullSndHsLastTime_us;	    //Last SRT handshake request time
     int      m_iSndHsRetryCnt;       //SRT handshake retries left
 
     bool m_bMessageAPI;
@@ -597,21 +597,21 @@ private:
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
 
-    uint64_t m_ullLingerExpiration;              // Linger expiration time (for GC to close a socket with data in sending buffer)
+    ClockSys m_tsLingerExpiration_us;              // Linger expiration time (for GC to close a socket with data in sending buffer)
 
     CHandShake m_ConnReq;                        // connection request
     CHandShake m_ConnRes;                        // connection response
     CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
-    int64_t m_llLastReqTime;                     // last time when a connection request is sent
+    ClockSys m_tsLastReqTime_us;                     // last time when a connection request is sent
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;            // Packet sending time window
 
-    volatile uint64_t m_ullInterval_tk;             // Inter-packet time, in CPU clock cycles
-    uint64_t m_ullTimeDiff_tk;                      // aggregate difference in inter-packet time
+    volatile DurationCpu m_rInterval_tk;             // Inter-packet time, in CPU clock cycles
+    DurationCpu m_rTimeDiff_tk;                      // aggregate difference in inter-packet time
 
     volatile int m_iFlowWindowSize;              // Flow control window size
     volatile double m_dCongestionWindow;         // congestion window size
@@ -622,7 +622,7 @@ private: // Sending related data
     volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that has been sent
     int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
-    uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
+    ClockSys m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
@@ -647,15 +647,15 @@ private: // Receiving related data
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
-    uint64_t m_ullLastAckTime_tk;                   // Timestamp of last ACK
+    ClockCpu m_tcLastAckTime_tk;                   // Timestamp of last ACK
     int32_t m_iRcvLastAckAck;                    // Last sent ACK that has been acknowledged
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     int32_t m_iRcvCurrSeqNo;                     // Largest received sequence number
 
-    uint64_t m_ullLastWarningTime;               // Last time that a warning message is sent
+    ClockCpu m_tcLastWarningTime;               // Last time that a warning message is sent
 
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
-    uint64_t m_ullRcvPeerStartTime;
+    ClockSys m_tsRcvPeerStartTime;
 
     uint32_t m_lSrtVersion;
     uint32_t m_lMinimumPeerSrtVersion;
@@ -694,7 +694,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
-    int packData(CPacket& packet, uint64_t& ts);
+    int packData(CPacket& packet, ClockCpu& ts);
     int processData(CUnit* unit);
     void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);
@@ -702,7 +702,7 @@ private: // Generation and processing of packets
     int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);
 
 private: // Trace
-    uint64_t m_StartTime;                        // timestamp when the UDT entity is started
+    ClockSys m_tsStartTime_us;                        // timestamp when the UDT entity is started
     int64_t m_llSentTotal;                       // total number of sent data packets, including retransmissions
     int64_t m_llRecvTotal;                       // total number of received packets
     int m_iSndLossTotal;                         // total number of lost packets (sender side)
@@ -722,9 +722,9 @@ private: // Trace
     uint64_t m_ullRcvBytesDropTotal;
     int m_iRcvUndecryptTotal;
     uint64_t m_ullRcvBytesUndecryptTotal;
-    int64_t m_llSndDurationTotal;		// total real time for sending
+    DurationSys m_llSndDurationTotal;		// total real time for sending
 
-    uint64_t m_LastSampleTime;                   // last performance sample time
+    ClockSys m_LastSampleTime;                   // last performance sample time
     int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
     int64_t m_llTraceRecv;                       // number of packets received in the last trace interval
     int m_iTraceSndLoss;                         // number of lost packets in the last trace interval (sender side)
@@ -748,8 +748,8 @@ private: // Trace
     uint64_t m_ullTraceRcvBytesDrop;
     int m_iTraceRcvUndecrypt;
     uint64_t m_ullTraceRcvBytesUndecrypt;
-    int64_t m_llSndDuration;			// real time for sending
-    int64_t m_llSndDurationCounter;		// timers to record the sending duration
+    DurationSys m_llSndDuration;			// real time for sending
+    ClockSys m_llSndDurationCounter;		// timers to record the sending duration
 
 public:
 
@@ -761,22 +761,22 @@ public:
 
 private: // Timers
     uint64_t m_ullCPUFrequency;               // CPU clock frequency, used for Timer, ticks per microsecond
-    uint64_t m_ullNextACKTime_tk;			  // Next ACK time, in CPU clock cycles, same below
-    uint64_t m_ullNextNAKTime_tk;			  // Next NAK time
+    ClockCpu m_tcNextACKTime_tk;			  // Next ACK time, in CPU clock cycles, same below
+    ClockCpu m_tcNextNAKTime_tk;			  // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;		  // SYN interval
-    volatile uint64_t m_ullACKInt_tk;         // ACK interval
-    volatile uint64_t m_ullNAKInt_tk;         // NAK interval
-    volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
-    volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
-    volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
-    uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
-    uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
+    volatile DurationCpu m_rSYNInt_tk;		  // SYN interval
+    volatile DurationCpu m_rACKInt_tk;         // ACK interval
+    volatile DurationCpu m_rNAKInt_tk;         // NAK interval
+    volatile ClockCpu m_tcLastRspTime_tk;    // time stamp of last response from the peer
+    volatile ClockCpu m_tcLastRspAckTime_tk; // time stamp of last ACK from the peer
+    volatile ClockCpu m_tcLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
+    DurationCpu m_rMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
+    DurationCpu m_rMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
 
     int m_iPktCount;				// packet counter for ACK
     int m_iLightACKCount;			// light ACK counter
 
-    uint64_t m_ullTargetTime_tk;			// scheduled time of next packet sending
+    ClockCpu m_tcTargetTime_tk;			// scheduled time of next packet sending
 
     void checkTimers();
 

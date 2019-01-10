@@ -136,7 +136,7 @@ private:
 struct CSNode
 {
    CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp_tk;      // Time Stamp
+   ClockCpu m_llTimeStamp_tk;      // Time Stamp
 
    int m_iHeapLoc;		// location on the heap, -1 means not on the heap
 };
@@ -159,7 +159,7 @@ public:
       /// @param [in] ts time stamp: next processing time
       /// @param [in] u pointer to the UDT instance
 
-   void insert(int64_t ts, const CUDT* u);
+   void insert(ClockCpu ts, const CUDT* u);
 
       /// Update the timestamp of the UDT instance on the list.
       /// @param [in] u pointer to the UDT instance
@@ -182,10 +182,10 @@ public:
       /// Retrieve the next scheduled processing time.
       /// @return Scheduled processing time of the first UDT socket in the list.
 
-   uint64_t getNextProcTime();
+   ClockCpu getNextProcTime();
 
 private:
-   void insert_(int64_t ts, const CUDT* u);
+   void insert_(ClockCpu ts, const CUDT* u);
    void remove_(const CUDT* u);
 
 private:
@@ -303,7 +303,7 @@ public:
    ~CRendezvousQueue();
 
 public:
-   void insert(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
+   void insert(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, ClockSys ttl);
 
    // The should_lock parameter is given here to state as to whether
    // the lock should be applied here. If called from some internals
@@ -321,7 +321,7 @@ private:
       CUDT* m_pUDT;			// UDT instance
       int m_iIPversion;                 // IP version
       sockaddr* m_pPeerAddr;		// UDT sonnection peer address
-      uint64_t m_ullTTL;			// the time that this request expires
+      ClockSys m_ullTTL;			// the time that this request expires
    };
    std::list<CRL> m_lRendezvousID;      // The sockets currently in rendezvous mode
 
@@ -468,7 +468,7 @@ private:
    int setListener(CUDT* u);
    void removeListener(const CUDT* u);
 
-   void registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl);
+   void registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, ClockSys ttl);
    void removeConnector(const SRTSOCKET& id, bool should_lock = true);
 
    void setNewEntry(CUDT* u);

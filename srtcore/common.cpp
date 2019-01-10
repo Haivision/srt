@@ -80,6 +80,55 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
+
+template<>
+TimeAbs<CK_SYSTEM, TMU_US> TimeAbs<CK_SYSTEM, TMU_US>::now()
+{
+    return TimeAbs<CK_SYSTEM, TMU_US>(CTimer::getTime());
+}
+
+template<>
+void TimeAbs<CK_SYSTEM, TMU_US>::setnow()
+{
+    value = CTimer::getTime();
+}
+
+template<>
+TimeAbs<CK_CPU, TMU_TK> TimeAbs<CK_CPU, TMU_TK>::now()
+{
+    uint64_t value;
+    CTimer::rdtsc(value);
+    return TimeAbs<CK_CPU, TMU_TK>(value);
+}
+
+template<>
+void TimeAbs<CK_CPU, TMU_TK>::setnow()
+{
+    CTimer::rdtsc(value);
+}
+
+
+TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f)
+{
+    return TimeRel<TMU_TK>(f.value * CTimer::getCPUFrequency());
+}
+
+TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f, uint64_t frequency)
+{
+    return TimeRel<TMU_TK>(f.value * frequency);
+}
+
+
+TimeRel<TMU_US> TimeConvertTools<TMU_TK, TMU_US>::from(TimeRel<TMU_TK> f)
+{
+    return TimeRel<TMU_US>(f.value / CTimer::getCPUFrequency());
+}
+
+TimeRel<TMU_US> TimeConvertTools<TMU_TK, TMU_US>::from(TimeRel<TMU_TK> f, uint64_t frequency)
+{
+    return TimeRel<TMU_US>(f.value / frequency);
+}
+
 bool CTimer::m_bUseMicroSecond = false;
 uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
 
@@ -177,22 +226,22 @@ uint64_t CTimer::getCPUFrequency()
    return s_ullCPUFrequency;
 }
 
-void CTimer::sleep(uint64_t interval)
+void CTimer::sleep(DurationCpu interval)
 {
-   uint64_t t;
-   rdtsc(t);
+   ClockCpu t;
+   t.setnow();
 
    // sleep next "interval" time
    sleepto(t + interval);
 }
 
-void CTimer::sleepto(uint64_t nexttime)
+void CTimer::sleepto(ClockCpu nexttime)
 {
    // Use class member such that the method can be interrupted by others
    m_ullSchedTime = nexttime;
 
-   uint64_t t;
-   rdtsc(t);
+   ClockCpu t;
+   t.setnow();
 
    while (t < m_ullSchedTime)
    {
@@ -225,14 +274,14 @@ void CTimer::sleepto(uint64_t nexttime)
        THREAD_RESUMED();
 #endif
 
-       rdtsc(t);
+       t.setnow();
    }
 }
 
 void CTimer::interrupt()
 {
    // schedule the sleepto time to the current CCs, so that it will stop
-   rdtsc(m_ullSchedTime);
+    m_ullSchedTime.setnow();
    tick();
 }
 
@@ -300,10 +349,10 @@ void CTimer::sleep()
    #endif
 }
 
-int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
+int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, DurationUs delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
+    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay.value;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
@@ -839,12 +888,12 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-std::string logging::FormatTime(uint64_t time)
+std::string logging::FormatTime(ClockSys time)
 {
     using namespace std;
 
-    time_t sec = time/1000000;
-    time_t usec = time%1000000;
+    time_t sec = time.value/1000000;
+    time_t usec = time.value%1000000;
 
     time_t tt = sec;
     struct tm tm = SysLocalTime(tt);
@@ -859,6 +908,36 @@ std::string logging::FormatTime(uint64_t time)
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
 }
+
+std::string logging::FormatDuration(DurationUs dur, TimeUnit u)
+{
+    // Regard only MS and "others, default".
+    ostringstream out;
+
+    if (u == TMU_MS)
+    {
+        int64_t mil = dur.value/1000;
+        int64_t mic = dur.value%1000;
+
+        if (dur.value < 0)
+        {
+            out << "-" << (~mil) << "." << setw(6) << setfill('0') << (~mic);
+        }
+        else
+        {
+            out << mil << "." << setw(6) << setfill('0') << mic;
+        }
+
+        out << "ms";
+    }
+    else
+    {
+        out << dur.value << "us";
+    }
+
+    return out.str();
+}
+
 // Some logging imps
 #if ENABLE_LOGGING
 

@@ -35,6 +35,7 @@ written by
 
 #include "srt.h"
 #include "utilities.h"
+#include "common.h"
 #include "threadname.h"
 #include "logging_api.h"
 #include "srt_compat.h"
@@ -388,7 +389,8 @@ inline bool LogDispatcher::CheckEnabled()
     return configured_enabled_fa && level <= configured_maxlevel;
 }
 
-SRT_API std::string FormatTime(uint64_t time);
+SRT_API std::string FormatTime(ClockSys time);
+SRT_API std::string FormatDuration(DurationUs time, TimeUnit u = TMU_US);
 
 #if HAVE_CXX11
 
