@@ -79,12 +79,12 @@ struct TestResultBlocking
 };
 
 
-template<typename test_result_t>
+template<typename TResult>
 struct TestCase
 {
     bool                strictenc [PEER_COUNT];
     const std::string  (&password)[PEER_COUNT];
-    test_result_t       expected_result;
+    TResult             expected_result;
 };
 
 typedef TestCase<TestResultNonBlocking>  TestCaseNonBlocking;
@@ -114,7 +114,7 @@ static const int SRT_E_REJECT  = MJ_SETUP * 1000 + MN_RDAVAIL;
  * 
  * In the cases C.2-C.4 it is the listener who rejects the connection, so we don't have an accepted socket.
  */
-const TestCaseNonBlocking g_test_matrix[] =
+const TestCaseNonBlocking g_test_matrix_non_blocking[] =
 {
         // STRICTENC         |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |  connect_ret   accept_ret      |ret | error          | rnum|wnum | caller              accepted |  caller              listener
@@ -159,24 +159,24 @@ const TestCaseNonBlocking g_test_matrix[] =
  */
 const TestCaseBlocking g_test_matrix_blocking[] =
 {
-        // STRICTENC         |  Password           |                                      | socket_state                            |  KM State
-        // caller | listener |  caller  | listener |  connect_ret         accept_ret      | caller              accepted |  caller              listener
+        // STRICTENC         |  Password           |                                      | socket_state                   |  KM State
+        // caller | listener |  caller  | listener |  connect_ret         accept_ret      | caller                accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,                0, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -216,16 +216,12 @@ protected:
         ASSERT_NE(m_caller_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_caller_socket,    SRTO_SENDER,    &s_yes, sizeof s_yes), SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_caller_socket, 0, SRTO_RCVSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
-        ASSERT_NE(srt_setsockopt (m_caller_socket, 0, SRTO_SNDSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
         ASSERT_NE(srt_setsockopt (m_caller_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         m_listener_socket = srt_create_socket();
         ASSERT_NE(m_listener_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_listener_socket,    SRTO_SENDER,    &s_no,  sizeof s_no),  SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_RCVSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
-        ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_SNDSYN,    &s_no,  sizeof s_no),  SRT_ERROR); // non-blocking mode
         ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         // Will use this epoll to wait for srt_accept(...)
@@ -290,132 +286,43 @@ public:
     }
 
 
-    void TestConnectNonBlocking(TEST_CASE test_case)
+    template<typename TResult>
+    int WaitOnEpoll(const TResult &expect);
+
+
+    template<typename TResult>
+    const TestCase<TResult>& GetTestMatrix(TEST_CASE test_case) const;
+
+
+    template<typename TResult>
+    void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
-        // Prepare input state
-        const TestCaseNonBlocking &test = g_test_matrix[test_case];
-        ASSERT_EQ(SetStrictEncryption(PEER_CALLER,   test.strictenc[PEER_CALLER]),   SRT_SUCCESS);
-        ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
-        ASSERT_EQ(SetPassword(PEER_CALLER,   test.password[PEER_CALLER]),   SRT_SUCCESS);
-        ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
-
-        const TestResultNonBlocking &expect = test.expected_result;
-        // Start testing
-        sockaddr_in sa;
-        memset(&sa, 0, sizeof sa);
-        sa.sin_family = AF_INET;
-        sa.sin_port = htons(5200);
-        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
-        sockaddr* psa = (sockaddr*)&sa;
-        
-        ASSERT_NE(srt_bind  (m_listener_socket, psa, sizeof sa), SRT_ERROR);
-        ASSERT_NE(srt_listen(m_listener_socket, 4),              SRT_ERROR);
-
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
-        EXPECT_EQ(connect_ret, expect.connect_ret);
-
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
+        if (is_blocking)
         {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                      << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
         }
-
-        const int default_len = 3;
-        int rlen = default_len;
-        SRTSOCKET read[default_len];
-
-        int wlen = default_len;
-        SRTSOCKET write[default_len];
-
-        const int epoll_res = srt_epoll_wait(m_pollid, read, &rlen,
-                                             write, &wlen,
-                                             500, /* timeout */
-                                             0, 0, 0, 0);
-
-        EXPECT_EQ(epoll_res, expect.epoll_wait_ret);
-        if (epoll_res == SRT_ERROR)
-        {
-            EXPECT_EQ(srt_getlasterror(NULL), expect.epoll_wait_error);
-            std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ')\n';
-        }
-
-        // In non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded
-        sockaddr_in client_address;
-        int length = sizeof(sockaddr_in);
-        const int accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-        EXPECT_NE(accepted_socket, 0);
-        if (expect.accept_ret == SRT_INVALID_SOCK)
-            EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
         else
-            EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
-
-        if (accepted_socket != SRT_INVALID_SOCK)
         {
-            EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
-            EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
         }
 
-        if (m_is_tracing)
-        {
-            if (accepted_socket != SRT_INVALID_SOCK)
-                std::cout << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
-            std::cout << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)]   << "\n";
-            std::cout << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-
-            if (accepted_socket != SRT_INVALID_SOCK)
-            {
-                std::cout << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                std::cout << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                std::cout << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
-            }
-            std::cout << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cout << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cout << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cout << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
-
-            std::cout << "wlen: " << wlen << " (write[0] " << write[0] << ", listener " << m_listener_socket << ")\n";
-            std::cout << "rlen: " << rlen << " (read[0]  " << read[0]  << ", caller "   << m_caller_socket << ")\n";
-        }
-
-        EXPECT_EQ(srt_getsockstate(m_caller_socket),   expect.socket_state[CHECK_SOCKET_CALLER]);
-        EXPECT_EQ(GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
-
-        EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
-        EXPECT_EQ(GetKMState(m_listener_socket),       SRT_KM_S_UNSECURED);
-
-        EXPECT_EQ(rlen, expect.rnum >= 0 ? expect.rnum : default_len);
-        EXPECT_EQ(wlen, expect.wnum >= 0 ? expect.wnum : default_len);
-        if (rlen != 0 && rlen != 3)
-        {
-            EXPECT_EQ(read[0],  m_caller_socket);
-        }
-        if (wlen != 0 && wlen != 3)
-        {
-            EXPECT_EQ(write[0], m_caller_socket);
-        }
-
-    }
-
-
-    void TestConnectBlocking(TEST_CASE test_case)
-    {
         // Prepare input state
-        const TestCaseBlocking &test = g_test_matrix_blocking[test_case];
+        const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
         ASSERT_EQ(SetStrictEncryption(PEER_CALLER, test.strictenc[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
-        ASSERT_NE(srt_setsockopt(m_caller_socket,   0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR); // non-blocking mode
-        ASSERT_NE(srt_setsockopt(m_caller_socket,   0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR); // non-blocking mode
-        ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR); // non-blocking mode
-        ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR); // non-blocking mode
+        const TResult &expect = test.expected_result;
 
-        const TestResultBlocking &expect = test.expected_result;
-        
         // Start testing
-        SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
-
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -425,14 +332,26 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
-        auto server = std::thread([&] {
-            // If the assertion hits, only this thread will finish,
-            // The main testing thread will go on
+        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        EXPECT_EQ(connect_ret, expect.connect_ret);
 
-            // In a-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded
+        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        {
+            std::cerr << "UNEXPECTED! srt_connect returned error: "
+                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        }
+
+        const int epoll_res = WaitOnEpoll(expect);
+
+        auto accepting_thread = std::thread([&] {
+            if (epoll_res != SRT_SUCCESS)
+                return;
+            // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
+            // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
+            // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+            SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -456,16 +375,11 @@ public:
                     std::cout << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
+            std::cout << "srt_accept() thread finished\n";
         });
 
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
-        EXPECT_EQ(connect_ret, expect.connect_ret);
-
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
-        {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
-        }
+        if (is_blocking == false)
+            accepting_thread.join();
 
         if (m_is_tracing)
         {
@@ -477,18 +391,23 @@ public:
             std::cout << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
         }
 
-        if (connect_ret != SRT_ERROR)
-            EXPECT_EQ(srt_getsockstate(m_caller_socket), SRTS_CONNECTED);
-        else
-            EXPECT_NE(srt_getsockstate(m_caller_socket), SRTS_CONNECTED);
+        // If a blocking call to srt_connect() returned error, then the state is not valid,
+        // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
+        EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
         EXPECT_EQ(GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
 
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
-        // srt_listen() has no timeout, so we have to close the socket and wait for the thread to exit.
-        ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
-        server.join();
+        if (is_blocking)
+        {
+            // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
+            // Just give it some time and close the socket.
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::cout << "Closing the listener socket\n";
+            ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            accepting_thread.join();
+        }
     }
 
 
@@ -503,10 +422,67 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = false;
+    const bool          m_is_tracing = true;
     static const char*  m_km_state[];
     static const char*  m_socket_state[];
 };
+
+
+template<>
+int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &expect)
+{
+    return SRT_SUCCESS;
+}
+
+
+template<>
+int TestStrictEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultNonBlocking &expect)
+{
+    const int default_len = 3;
+    int rlen = default_len;
+    SRTSOCKET read[default_len];
+
+    int wlen = default_len;
+    SRTSOCKET write[default_len];
+
+    const int epoll_res = srt_epoll_wait(m_pollid, read, &rlen,
+        write, &wlen,
+        500, /* timeout */
+        0, 0, 0, 0);
+
+    EXPECT_EQ(epoll_res, expect.epoll_wait_ret);
+    if (epoll_res == SRT_ERROR)
+    {
+        EXPECT_EQ(srt_getlasterror(NULL), expect.epoll_wait_error);
+        std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+    }
+
+    EXPECT_EQ(rlen, expect.rnum >= 0 ? expect.rnum : default_len);
+    EXPECT_EQ(wlen, expect.wnum >= 0 ? expect.wnum : default_len);
+    if (rlen != 0 && rlen != 3)
+    {
+        EXPECT_EQ(read[0], m_caller_socket);
+    }
+    if (wlen != 0 && wlen != 3)
+    {
+        EXPECT_EQ(write[0], m_caller_socket);
+    }
+
+    return epoll_res;
+}
+
+
+template<>
+const TestCase<TestResultBlocking>& TestStrictEncryption::GetTestMatrix<TestResultBlocking>(TEST_CASE test_case) const
+{
+    return g_test_matrix_blocking[test_case];
+}
+
+template<>
+const TestCase<TestResultNonBlocking>& TestStrictEncryption::GetTestMatrix<TestResultNonBlocking>(TEST_CASE test_case) const
+{
+    return g_test_matrix_non_blocking[test_case];
+}
 
 
 
@@ -582,14 +558,20 @@ TEST_F(TestStrictEncryption, SetGetDefault)
 }
 
 
-#define CREATE_TEST_CASE(CASE_NUMBER, BLOCKING_LABEL, DESC) TEST_F(TestStrictEncryption, ##CASE_NUMBER##_##BLOCKING_LABEL##_##DESC)\
+#define CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC) TEST_F(TestStrictEncryption, CASE_NUMBER##_Blocking_##DESC)\
 {\
-    TestConnect##BLOCKING_LABEL(TEST_##CASE_NUMBER);\
-}\
+    TestConnect<TestResultBlocking>(TEST_##CASE_NUMBER);\
+}
+
+#define CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) TEST_F(TestStrictEncryption, CASE_NUMBER##_NonBlocking_##DESC)\
+{\
+    TestConnect<TestResultNonBlocking>(TEST_##CASE_NUMBER);\
+}
+
 
 #define CREATE_TEST_CASES(CASE_NUMBER, DESC) \
-    CREATE_TEST_CASE(CASE_NUMBER, NonBlocking, DESC) \
-    CREATE_TEST_CASE(CASE_NUMBER,    Blocking, DESC)
+    CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
+    CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
 
 CREATE_TEST_CASES(CASE_A_1, Strict_On_On_Pwd_Set_Set_Match)
