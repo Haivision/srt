@@ -459,6 +459,12 @@ enum ClockType { CK_CPU, CK_SYSTEM };
     TU_DEFINE_OP(thistype, <=) \
     TU_DEFINE_OP(thistype, >=)
 
+#ifdef _WIN32
+#pragma warning(push)
+#pragma warning(disable : 4521)
+#pragma warning(disable : 4522)
+#endif
+
 template <TimeUnit UNIT>
 struct TimeRel
 {
@@ -560,6 +566,10 @@ struct TimeAbs
 
     TU_DEFINE_RELOPS(this_t);
 };
+
+#ifdef _WIN32
+#pragma warning(pop)
+#endif
 
 template <ClockType CLOCK, TimeUnit UNIT> inline
 TimeAbs<CLOCK, UNIT> operator+(TimeAbs<CLOCK, UNIT> t, TimeRel<UNIT> other)

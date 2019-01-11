@@ -2746,7 +2746,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     m_ConnReq.m_iID = m_SocketID;
     CIPAddress::ntop(serv_addr, m_ConnReq.m_piPeerIP, m_iIPversion);
 
-    if ( forced_isn == 0 )
+    if (forced_isn == 0)
     {
         // Random Initial Sequence Number (normal mode)
         srand((unsigned int)ClockSys::now().value);
