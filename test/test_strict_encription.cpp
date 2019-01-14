@@ -280,7 +280,7 @@ public:
         if (epoll_res == SRT_ERROR)
         {
             EXPECT_EQ(srt_getlasterror(NULL), expect.epoll_wait_error);
-            std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ')\n';
+            std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
         }
 
         // In non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded

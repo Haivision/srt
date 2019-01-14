@@ -209,7 +209,7 @@ public:
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   EReadStatus recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_us) const;
+   EReadStatus recvfrom(sockaddr* addr, CPacket& packet, ClockCpu update_tk) const;
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.

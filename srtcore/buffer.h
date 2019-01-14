@@ -79,7 +79,7 @@ public:
       /// @param [in] ttl time to live in milliseconds
       /// @param [in] order if the block should be delivered in order, for DGRAM only
 
-   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno);
+   void addBuffer(const char* data, int len, int ttl, bool order, ClockSys srctime, ref_t<int32_t> r_msgno);
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.
@@ -95,7 +95,7 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(char** data, int32_t& msgno, uint64_t& origintime, int kflgs);
+   int readData(char** data, int32_t& msgno, ClockSys& origintime, int kflgs);
 
 
       /// Find data position to pack a DATA packet for a retransmission.
@@ -106,7 +106,7 @@ public:
       /// @param [out] msglen length of the message
       /// @return Actual length of data read.
 
-   int readData(char** data, const int offset, int32_t& msgno, uint64_t& origintime, int& msglen);
+   int readData(char** data, const int offset, int32_t& msgno, ClockSys& origintime, int& msglen);
 
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
@@ -118,17 +118,17 @@ public:
 
    int getCurrBufSize() const;
 
-   int dropLateData(int &bytes, uint64_t latetime);
+   int dropLateData(int &bytes, ClockSys latetime);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
-   void updAvgBufSize(uint64_t time);
+   void updAvgBufSize(ClockSys time);
    int getAvgBufSize(ref_t<int> bytes, ref_t<int> timespan);
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   int getInputRate(ref_t<int> payloadtsz, ref_t<uint64_t> period);
-   void updInputRate(uint64_t time, int pkts, int bytes);
-   void setInputRateSmpPeriod(int period);
+   int getInputRate(ref_t<int> payloadtsz, ref_t<DurationUs> period);
+   void updInputRate(ClockSys time, int pkts, int bytes);
+   void setInputRateSmpPeriod(DurationUs period);
 
 private:
    void increase();
@@ -142,8 +142,8 @@ private:
       int m_iLength;                    // length of the block
 
       int32_t m_iMsgNoBitset;                 // message number
-      uint64_t m_ullOriginTime_us;            // original request time
-      uint64_t m_ullSourceTime_us;
+      ClockSys m_ullOriginTime_us;            // original request time
+      ClockSys m_ullSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block
@@ -179,10 +179,10 @@ private:
    int m_iCount;                        // number of used blocks
 
    int m_iBytesCount;                   // number of payload bytes in queue
-   uint64_t m_ullLastOriginTime_us;
+   ClockSys m_ullLastOriginTime_us;
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
-   uint64_t m_LastSamplingTime;
+   ClockSys m_LastSamplingTime;
    int m_iCountMAvg;
    int m_iBytesCountMAvg;
    int m_TimespanMAvg;
@@ -190,8 +190,8 @@ private:
 
    int m_iInRatePktsCount;  // number of payload bytes added since InRateStartTime
    int m_iInRateBytesCount;  // number of payload bytes added since InRateStartTime
-   uint64_t m_InRateStartTime;
-   uint64_t m_InRatePeriod; // usec
+   ClockSys m_InRateStartTime;
+   DurationUs m_InRatePeriod; // usec
    int m_iInRateBps;        // Input Rate in Bytes/sec
    int m_iAvgPayloadSz;     // Average packet payload size
 
@@ -273,7 +273,7 @@ public:
       /// @param [in] now current time in us.
       /// @return none.
 
-   void updRcvAvgDataSize(uint64_t now);
+   void updRcvAvgDataSize(ClockSys now);
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
       /// Query the received average payload size.
@@ -310,7 +310,7 @@ public:
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
-   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+   bool isRcvDataReady(ref_t<ClockSys> tsbpdtime, ref_t<int32_t> curpktseq);
    bool isRcvDataReady();
    bool isRcvDataAvailable()
    {
@@ -348,7 +348,7 @@ public:
       ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
 
 
-   bool getRcvFirstMsg(ref_t<uint64_t> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> curpktseq);
+   bool getRcvFirstMsg(ref_t<ClockSys> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> curpktseq);
 
       /// Update the ACK point of the buffer.
       /// @param [in] len size of data to be skip & acknowledged.
@@ -364,9 +364,13 @@ private:
       /// @retval false tsbpdtime = 0: no packet ready to play
 
 
-   bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+   bool getRcvReadyMsg(ref_t<ClockSys> tsbpdtime, ref_t<int32_t> curpktseq);
 
-      /// Get packet delivery local time base (adjusted for wrap around)
+      /// Get packet delivery local time base (adjusted for wrap around).
+      /// Note that this is the ClockSys-based time base which represents
+      /// the value from transmission start time + N segments. This, added
+      /// with the relative 32-bit time coming from the timestamp and the
+      /// time drift should give a valid ClockSys value.
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
 
@@ -377,7 +381,7 @@ private:
       /// @return local delivery time (usec)
 
 public:
-   uint64_t getPktTsbPdTime(uint32_t timestamp);
+   ClockSys getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
    bool empty() const;
 private:
@@ -413,7 +417,21 @@ private:
    bool m_bTsbPdMode;                   // true: apply TimeStamp-Based Rx Mode
    uint32_t m_uTsbPdDelay;              // aggreed delay
    uint64_t m_ullTsbPdTimeBase;         // localtime base for TsbPd mode
-   // Note: m_ullTsbPdTimeBase cumulates values from:
+   // REMARKS for m_ullTsbPdTimeBase:
+   //
+   // R1:
+   //    This is the value that represents the domain of ClockSys type, however
+   //    it has been decided that it remain with uint64_t type, that is, pure
+   //    integer value of this clock, because it doesn't exactly hold any meaningful
+   //    time, but it's rather a value from that domain, which cumulates time offsets.
+   //    It's set initially to `CUDT::m_tsStartTime_us` and then it's being added
+   //    32-bit time offset overflow segments after this overflow was detected and
+   //    the overdrift value once the drift has exceeded the maximum value.
+   //
+   //    To refactor this, a better solution would be to void it of the ingredients
+   //    of `CUDT::m_tsStartTime_us` and make it DurationUs representing the offset only.
+   //
+   // R2: m_ullTsbPdTimeBase cumulates values from:
    // 1. Initial SRT_CMD_HSREQ packet returned value diff to current time:
    //    == (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception
    // 2. Timestamp overflow (@c CRcvBuffer::getTsbPdTimeBase), when overflow on packet detected
@@ -436,7 +454,7 @@ private:
    //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-   uint64_t m_LastSamplingTime;
+   ClockSys m_LastSamplingTime;
    int m_TimespanMAvg;
    int m_iCountMAvg;
    int m_iBytesCountMAvg;

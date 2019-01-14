@@ -56,6 +56,7 @@ modified by
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 
 #include <cstdlib>
+#include <iostream> // basic ostream classes
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
@@ -421,8 +422,229 @@ struct EventSlot
 };
 
 
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
+// Time unit classes. This is to avoid confusions about time
+// expressed in microseconds and ticks as well as time base.
+
+enum TimeUnit { TMU_TK, TMU_US, TMU_MS };
+enum ClockType { CK_CPU, CK_SYSTEM };
+
+#define TU_DEFINE_ASSIGNMENT(type) \
+    void operator=(type & src) volatile { value = src.value; }
+
+#define TU_DEFINE_ASSIGNMENT_CVA(type) \
+    TU_DEFINE_ASSIGNMENT(type) \
+    TU_DEFINE_ASSIGNMENT(const type) \
+    TU_DEFINE_ASSIGNMENT(volatile type)
+
+#define TU_DEFINE_COPYCTOR(thistype, type) \
+    thistype(type& src): value(src.value) {}
+
+#define TU_DEFINE_COPYCTOR_CVA(thistype, type) \
+    TU_DEFINE_COPYCTOR(thistype, type) \
+    TU_DEFINE_COPYCTOR(thistype, const type) \
+    TU_DEFINE_COPYCTOR(thistype, volatile type)
+
+#define TU_DEFINE_COPYABLE(thistype, type) \
+    TU_DEFINE_COPYCTOR_CVA(thistype, type) \
+    TU_DEFINE_ASSIGNMENT_CVA(type)
+
+#define TU_DEFINE_OP(thistype, op) \
+    bool operator op (const thistype& r) const { return value op r.value; }
+
+#define TU_DEFINE_RELOPS(thistype) \
+    TU_DEFINE_OP(thistype, ==) \
+    TU_DEFINE_OP(thistype, !=) \
+    TU_DEFINE_OP(thistype, <) \
+    TU_DEFINE_OP(thistype, >) \
+    TU_DEFINE_OP(thistype, <=) \
+    TU_DEFINE_OP(thistype, >=)
+
+#ifdef _WIN32
+#pragma warning(push)
+#pragma warning(disable : 4521)
+#pragma warning(disable : 4522)
+#endif
+
+template <TimeUnit UNIT>
+struct TimeRel
+{
+    int64_t value;
+    explicit TimeRel(int64_t v): value(v) {}
+    TimeRel(): value(0) {}
+
+    TU_DEFINE_COPYABLE(TimeRel, TimeRel<UNIT>);
+
+    void operator-=(const TimeRel<UNIT>& shift)
+    {
+        value -= shift.value;
+    }
+
+    void operator+=(const TimeRel<UNIT>& shift)
+    {
+        value += shift.value;
+    }
+
+    template<class Out>
+    Out to() { return Out(value); }
+
+    TU_DEFINE_RELOPS(TimeRel<UNIT>);
+};
+
+// Internal operations
+
+template<TimeUnit UNIT> inline
+TimeRel<UNIT> operator-(TimeRel<UNIT> t) { return TimeRel<UNIT>(-t.value); }
+
+template<TimeUnit UNIT> inline
+TimeRel<UNIT> operator+(TimeRel<UNIT> t) { return t; }
+
+template<TimeUnit UNIT> inline
+TimeRel<UNIT> operator+(TimeRel<UNIT> t, TimeRel<UNIT> x) { return TimeRel<UNIT>(t.value + x.value); }
+
+template<TimeUnit UNIT> inline
+TimeRel<UNIT> operator-(TimeRel<UNIT> t, TimeRel<UNIT> x) { return TimeRel<UNIT>(t.value - x.value); }
+
+template <TimeUnit UNIT> inline
+TimeRel<UNIT> operator*(TimeRel<UNIT> value, int factor)
+{ return TimeRel<UNIT>(value.value * factor); }
+
+template <TimeUnit UNIT> inline
+TimeRel<UNIT> operator*(int factor, TimeRel<UNIT> value)
+{ return TimeRel<UNIT>(value.value * factor); }
+
+template <TimeUnit UNIT> inline
+TimeRel<UNIT> operator/(TimeRel<UNIT> value, int factor)
+{ return TimeRel<UNIT>(value.value / factor); }
+
+// ostream support
+
+inline std::ostream& operator<<(std::ostream& os, TimeRel<TMU_US> x)
+{
+    os << x.value << "us";
+    return os;
+}
+
+inline std::ostream& operator<<(std::ostream& os, TimeRel<TMU_TK> x)
+{
+    os << x.value << "tk";
+    return os;
+}
+
+template <ClockType CLOCK, TimeUnit UNIT>
+struct TimeAbs
+{
+    typedef TimeAbs<CLOCK, UNIT> this_t;
+    uint64_t value;
+
+    explicit TimeAbs(uint64_t v): value(v) {}
+    static TimeAbs<CLOCK, UNIT> now();
+
+    // Optimized
+    void setnow();
+
+    TimeAbs(): value(0) {}
+    static TimeAbs<CLOCK, UNIT> null() { return TimeAbs(); }
+
+    TU_DEFINE_COPYABLE(TimeAbs, this_t);
+
+    TimeRel<UNIT> operator-(this_t other) const volatile
+    {
+        int64_t ivalue = value;
+        int64_t ovalue = other.value;
+        return TimeRel<UNIT>( ivalue - ovalue );
+    }
+
+    void operator-=(const TimeRel<UNIT>& shift)
+    {
+        value -= shift.value;
+    }
+
+    void operator+=(const TimeRel<UNIT>& shift)
+    {
+        value += shift.value;
+    }
+
+    TU_DEFINE_RELOPS(this_t);
+};
+
+#ifdef _WIN32
+#pragma warning(pop)
+#endif
+
+template <ClockType CLOCK, TimeUnit UNIT> inline
+TimeAbs<CLOCK, UNIT> operator+(TimeAbs<CLOCK, UNIT> t, TimeRel<UNIT> other)
+{
+    return TimeAbs<CLOCK, UNIT>(t.value + other.value);
+}
+
+template <ClockType CLOCK, TimeUnit UNIT> inline
+TimeAbs<CLOCK, UNIT> operator-(TimeAbs<CLOCK, UNIT> t, TimeRel<UNIT> shift)
+{
+    return TimeAbs<CLOCK, UNIT>(t.value - shift.value);
+}
+
+template <ClockType CLOCK>
+struct DisplayClockType
+{
+};
+
+template<>
+struct DisplayClockType<CK_SYSTEM>
+{
+    static const char* name() { return "sysclock"; }
+};
+
+template<>
+struct DisplayClockType<CK_CPU>
+{
+    static const char* name() { return "cpuclock"; }
+};
+
+template <ClockType CLOCK, TimeUnit UNIT> inline
+std::ostream& operator<<(std::ostream& os, TimeAbs<CLOCK, UNIT> x)
+{
+    // This is a simple "displaying clock value", with extra suf
+    os << x.value << "(" << DisplayClockType<CLOCK>::name() << ")";
+    return os;
+}
+
+
+typedef TimeAbs<CK_CPU, TMU_TK> ClockCpu;
+typedef TimeAbs<CK_SYSTEM, TMU_US> ClockSys;
+
+typedef TimeRel<TMU_TK> DurationCpu, DurationTk;
+typedef TimeRel<TMU_US> DurationSys, DurationUs;
+
+template <TimeUnit FROM, TimeUnit TO>
+struct TimeConvertTools
+{
+};
+
+template<>
+struct TimeConvertTools<TMU_US, TMU_TK>
+{
+    static TimeRel<TMU_TK> from(TimeRel<TMU_US> f);
+    static TimeRel<TMU_TK> from(TimeRel<TMU_US> f, uint64_t frequency);
+};
+
+template<>
+struct TimeConvertTools<TMU_TK, TMU_US>
+{
+    static TimeRel<TMU_US> from(TimeRel<TMU_TK> f);
+    static TimeRel<TMU_US> from(TimeRel<TMU_TK> f, uint64_t frequency);
+};
+
+template <TimeUnit TO, TimeUnit FROM> inline
+TimeRel<TO> TimeConvert(TimeRel<FROM> f)
+{
+    return TimeConvertTools<FROM, TO>::from(f);
+}
+
+template <TimeUnit TO, TimeUnit FROM> inline
+TimeRel<TO> TimeConvert(TimeRel<FROM> f, uint64_t freq)
+{
+    return TimeConvertTools<FROM, TO>::from(f, freq);
+}
 
 class CTimer
 {
@@ -435,12 +657,12 @@ public:
       /// Sleep for "interval" CCs.
       /// @param [in] interval CCs to sleep.
 
-   void sleep(uint64_t interval);
+   void sleep(DurationCpu interval);
 
       /// Seelp until CC "nexttime".
       /// @param [in] nexttime next time the caller is waken up.
 
-   void sleepto(uint64_t nexttime);
+   void sleepto(ClockCpu nexttime);
 
       /// Stop the sleep() or sleepto() methods.
 
@@ -503,13 +725,13 @@ public:
       /// @retval 0 Wait was successfull
       /// @retval ETIMEDOUT The wait timed out
 
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
+   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, DurationUs delay);
 
 private:
    uint64_t getTimeInMicroSec();
 
 private:
-   uint64_t m_ullSchedTime;             // next schedulled time
+   ClockCpu m_ullSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
    pthread_mutex_t m_TickLock;

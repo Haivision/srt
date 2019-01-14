@@ -212,7 +212,7 @@ private:
         return Smoother::SRM_FASTREXMIT;
     }
 
-    uint64_t updateNAKInterval(uint64_t nakint_tk, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
+    DurationTk updateNAKInterval(DurationTk nakint_tk, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
     {
         /*
          * duB:
@@ -233,9 +233,9 @@ private:
         return nakint_tk / m_iNakReportAccel;
     }
 
-    uint64_t minNAKInterval() ATR_OVERRIDE
+    DurationTk minNAKInterval() ATR_OVERRIDE
     {
-        return m_iMinNakInterval_us * CTimer::getCPUFrequency();
+        return DurationTk(m_iMinNakInterval_us * CTimer::getCPUFrequency());
     }
 
 };

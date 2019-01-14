@@ -804,7 +804,7 @@ EReadStatus CChannel::sys_recvmsg(ref_t<CPacket> r_pkt, ref_t<int> r_result, ref
 #endif
 }
 
-EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_us) const
+EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, ClockCpu uptime_tk) const
 {
     EReadStatus status = RST_OK;
 
@@ -812,38 +812,38 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, uint64_t uptime_
     // relative time. As absolute time, it might happen that the
     // uptime is in the past.
 
-    uint64_t currtime_tk;
-    CTimer::rdtsc(currtime_tk);
-    uint64_t now = CTimer::tk2us(currtime_tk);
-    uint64_t timeout_us;
+    ClockCpu currtime_tk = ClockCpu::now();
+
+    DurationUs timeout_us;
 
     // The maximum time for poll is defined as 0.5s, so
     // we know it can't exceed 0.99s.
-    if (uptime_us)
+    if (uptime_tk.value)
     {
-        if (uptime_us <= now)
+        if (uptime_tk <= currtime_tk)
         {
-            timeout_us = 0; // the time is already in the past, don't wait.
+            timeout_us = DurationUs(); // the time is already in the past, don't wait.
             HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: NO SLEEPING (uptime is in the past, return immediately)");
         }
         else
         {
             // Don't wait longer than 0.5s, even if this somehow results
             // from calculations.
-            timeout_us = std::min(uptime_us - now, +MAX_POLL_TIME_US);
-            HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << "us (calculated: "
-                    << (uptime_us - now) << "us)");
+            DurationTk passed = uptime_tk - currtime_tk;
+            timeout_us = std::min(TimeConvert<TMU_US>(passed), DurationUs(MAX_POLL_TIME_US));
+            HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << " (calculated: "
+                    << (uptime_tk - currtime_tk) << ")");
         }
     }
     else
     {
         // Waiting forever is risky, so in case of no timeout
         // simply wait longer time - 0.5s
-        timeout_us = MAX_POLL_TIME_US;
+        timeout_us = DurationUs(MAX_POLL_TIME_US);
         HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << "us (default maximum in absence of explicit)");
     }
 
-    m_EventRunner.poll(timeout_us);
+    m_EventRunner.poll(timeout_us.value);
 
     int psg = m_EventRunner.clearSignalReading();
     int socket_ready = m_EventRunner.socketReady();
