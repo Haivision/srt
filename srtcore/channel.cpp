@@ -830,7 +830,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, ClockCpu uptime_
             // Don't wait longer than 0.5s, even if this somehow results
             // from calculations.
             DurationTk passed = uptime_tk - currtime_tk;
-            timeout_us = std::min(TimeConvert<TMU_US>(passed), DurationUs(MAX_POLL_TIME_US));
+            timeout_us = std::min(DurationUs::from(passed), DurationUs(MAX_POLL_TIME_US));
             HLOGC(mglog.Debug, log << "CChannel::recvfrom: poll for event: sleep=" << timeout_us << " (calculated: "
                     << (uptime_tk - currtime_tk) << ")");
         }

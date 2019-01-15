@@ -1511,7 +1511,7 @@ Handle_timer_events:
                // Don't assign anything if the update was on packet reception because
                // those entities that don't match the ID won't be processed, and processing
                // time will not be extracted for any entity.
-               self->m_tcConnUpTime_tk = now_tk + TimeConvert<TMU_TK>(delnext);
+               self->m_tcConnUpTime_tk = now_tk + DurationTk::from(delnext);
            }
            HLOGC(mglog.Debug, log << "worker: <updateConnStatus, next proc T=" << logging::FormatClock(self->m_tcConnUpTime_tk));
            // XXX updateConnStatus may have removed the connector from the list,

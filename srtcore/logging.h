@@ -394,7 +394,7 @@ SRT_API std::string FormatClock(ClockCpu time);
 SRT_API std::string FormatDuration(DurationUs time, TimeUnit u = TMU_US);
 inline SRT_API std::string FormatDuration(DurationTk time)
 {
-    return FormatDuration(TimeConvert<TMU_US>(time));
+    return FormatDuration(DurationUs::from(time));
 }
 
 #if HAVE_CXX11

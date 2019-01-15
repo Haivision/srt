@@ -110,10 +110,10 @@ void TimeAbs<CK_CPU, TMU_TK>::setnow()
 
 TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f)
 {
-    return TimeRel<TMU_TK>(f.value * CTimer::getCPUFrequency());
+    return TimeRel<TMU_TK>(f.value * int64_t(CTimer::getCPUFrequency()));
 }
 
-TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f, uint64_t frequency)
+TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f, int64_t frequency)
 {
     return TimeRel<TMU_TK>(f.value * frequency);
 }
@@ -121,10 +121,10 @@ TimeRel<TMU_TK> TimeConvertTools<TMU_US, TMU_TK>::from(TimeRel<TMU_US> f, uint64
 
 TimeRel<TMU_US> TimeConvertTools<TMU_TK, TMU_US>::from(TimeRel<TMU_TK> f)
 {
-    return TimeRel<TMU_US>(f.value / CTimer::getCPUFrequency());
+    return TimeRel<TMU_US>(f.value / int64_t(CTimer::getCPUFrequency()));
 }
 
-TimeRel<TMU_US> TimeConvertTools<TMU_TK, TMU_US>::from(TimeRel<TMU_TK> f, uint64_t frequency)
+TimeRel<TMU_US> TimeConvertTools<TMU_TK, TMU_US>::from(TimeRel<TMU_TK> f, int64_t frequency)
 {
     return TimeRel<TMU_US>(f.value / frequency);
 }
@@ -920,7 +920,7 @@ std::string logging::FormatClock(ClockCpu time)
 
     DurationTk tkdiff = time - ClockCpu::now();
 
-    return FormatTime(ClockSys::now() + TimeConvert<TMU_US>(tkdiff));
+    return FormatTime(ClockSys::now() + DurationSys::from(tkdiff));
 }
 
 std::string logging::FormatDuration(DurationUs dur, TimeUnit u)

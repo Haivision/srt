@@ -1227,7 +1227,7 @@ void CUDT::open()
    m_ullCPUFrequency = CTimer::getCPUFrequency();
 
    // set up the timers
-   m_rSYNInt_tk = TimeConvert<TMU_TK>(DurationSys(COMM_SYN_INTERVAL_US), m_ullCPUFrequency);
+   m_rSYNInt_tk = DurationTk::from(DurationSys(COMM_SYN_INTERVAL_US), m_ullCPUFrequency);
 
    // set minimum NAK and EXP timeout to 300ms
    /*
@@ -8470,7 +8470,7 @@ ClockCpu CUDT::checkTimers()
             if (currtime_tk > m_tcNextNAKTime_tk)
             {
                 HLOGC(mglog.Debug, log << "checkTimers: sending PERIODIC NAK (slip: "
-                        << TimeConvert<TMU_US>(currtime_tk-m_tcNextNAKTime_tk) << ")");
+                        << DurationUs::from(currtime_tk-m_tcNextNAKTime_tk) << ")");
                 // NAK timer expired, and there is loss to be reported.
                 sendCtrl(UMSG_LOSSREPORT);
 

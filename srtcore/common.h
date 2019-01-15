@@ -474,6 +474,12 @@ struct TimeRel
 
     TU_DEFINE_COPYABLE(TimeRel, TimeRel<UNIT>);
 
+    template<TimeUnit U2>
+    static TimeRel<UNIT> from(const TimeRel<U2>& another);
+
+    template<TimeUnit U2>
+    static TimeRel<UNIT> from(const TimeRel<U2>& another, int64_t freq);
+
     void operator-=(const TimeRel<UNIT>& shift)
     {
         value -= shift.value;
@@ -624,14 +630,14 @@ template<>
 struct TimeConvertTools<TMU_US, TMU_TK>
 {
     static TimeRel<TMU_TK> from(TimeRel<TMU_US> f);
-    static TimeRel<TMU_TK> from(TimeRel<TMU_US> f, uint64_t frequency);
+    static TimeRel<TMU_TK> from(TimeRel<TMU_US> f, int64_t frequency);
 };
 
 template<>
 struct TimeConvertTools<TMU_TK, TMU_US>
 {
     static TimeRel<TMU_US> from(TimeRel<TMU_TK> f);
-    static TimeRel<TMU_US> from(TimeRel<TMU_TK> f, uint64_t frequency);
+    static TimeRel<TMU_US> from(TimeRel<TMU_TK> f, int64_t frequency);
 };
 
 template <TimeUnit TO, TimeUnit FROM> inline
@@ -744,6 +750,34 @@ private:
    static uint64_t readCPUFrequency();
    static bool m_bUseMicroSecond;       // No higher resolution timer available, use gettimeofday().
 };
+
+template<>
+template<>
+inline TimeRel<TMU_US> TimeRel<TMU_US>::from(const TimeRel<TMU_TK>& another)
+{
+    return TimeRel<TMU_US>(another.value / int64_t(CTimer::getCPUFrequency()));
+}
+
+template<>
+template<>
+inline TimeRel<TMU_TK> TimeRel<TMU_TK>::from(const TimeRel<TMU_US>& another)
+{
+    return TimeRel<TMU_TK>(another.value * int64_t(CTimer::getCPUFrequency()));
+}
+
+template<>
+template<>
+inline TimeRel<TMU_US> TimeRel<TMU_US>::from(const TimeRel<TMU_TK>& another, int64_t fq)
+{
+    return TimeRel<TMU_US>(another.value / fq);
+}
+
+template<>
+template<>
+inline TimeRel<TMU_TK> TimeRel<TMU_TK>::from(const TimeRel<TMU_US>& another, int64_t fq)
+{
+    return TimeRel<TMU_TK>(another.value * fq);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
