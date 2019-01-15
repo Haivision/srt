@@ -1072,6 +1072,7 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 HLOGC(mglog.Debug, log << "RendezvousQueue: @" << i->m_pUDT->m_SocketID
                         << " still pending up to T=" << logging::FormatTime(i->m_ullTTL)
                         << " (" << (i->m_ullTTL - ClockSys::now()) << "us to expire)");
+                processing_times.insert(i->m_ullTTL - currtime_us);
             }
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
@@ -1110,6 +1111,8 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                     // which time will be earliest.
                     ClockSys then = i->m_pUDT->m_tsLastReqTime_us;
                     ClockSys ontime = then + DurationSys(CRcvQueue::CONN_UPDATE_INTERVAL_US);
+                    if (ontime > i->m_ullTTL)
+                        ontime = i->m_ullTTL;
                     processing_times.insert(ontime - currtime_us);
                 }
 
@@ -1128,6 +1131,10 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 i->m_pUDT->m_tsLastReqTime_us = ClockSys::now();
             }
         }
+
+        // If this entity's iteration survived all abnormal continuing interruption,
+        // add this time.
+        processing_times.insert(i->m_ullTTL - currtime_us);
     }
 
     HLOGC(mglog.Debug,
