@@ -387,6 +387,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
    int total = 0;
 
    int64_t entertime = CTimer::getTime();
+#if ENABLE_LOGGING
+   int64_t butlasttime = entertime;
+#endif
    while (true)
    {
       CGuard::enterCS(m_EPollLock);
@@ -521,7 +524,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       int64_t now = CTimer::getTime();
       if ((msTimeOut >= 0) && (int64_t(now - entertime) >= msTimeOut * int64_t(1000)))
       {
-          LOGC(mglog.Warn, log << "epoll_wait: timeout: " << (now - entertime) << "us passed (belated: " << (now - entertime - msTimeOut) << "us)");
+          LOGC(mglog.Warn, log << "epoll_wait: timeout: " << (now - entertime)
+                    << "us passed (belated: " << (now - entertime - msTimeOut)
+                    << "us). Last check=" << logging::FormatTime(ClockSys(butlasttime)));
           throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
       }
 
@@ -529,6 +534,10 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       #else
       CTimer::waitForEvent();
       #endif
+
+#if ENABLE_LOGGING
+      butlasttime = CTimer::getTime();
+#endif
    }
 
    return 0;

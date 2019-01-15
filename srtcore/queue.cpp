@@ -1106,6 +1106,10 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                             << ": processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                     i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = ClockSys::null(); // Make it expire right now, will be picked up at the next iteration
+
+                    // Insert artificially lowest possible time to enforce the next
+                    // iteration to never wait for anything
+                    processing_times.insert(DurationSys(1));
 #if ENABLE_HEAVY_LOGGING
                     ++debug_nfail;
 #endif
