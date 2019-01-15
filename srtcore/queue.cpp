@@ -1032,6 +1032,9 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 // The time is not now, add this processing time to the list
                 // Don't add those that are to be processed because after
                 // processing they will be either re-added, or removed from the list.
+                HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << ontime
+                        << " REASON: NEXT UPDATE to be done "
+                        << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << "us + T=" << then);
                 processing_times.insert(ontime - currtime_us);
             }
         }
@@ -1072,6 +1075,8 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 HLOGC(mglog.Debug, log << "RendezvousQueue: @" << i->m_pUDT->m_SocketID
                         << " still pending up to T=" << logging::FormatTime(i->m_ullTTL)
                         << " (" << (i->m_ullTTL - ClockSys::now()) << "us to expire)");
+                HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << i->m_ullTTL
+                        << " REASON: Connection expires at T=" << i->m_ullTTL);
                 processing_times.insert(i->m_ullTTL - currtime_us);
             }
 
@@ -1111,8 +1116,14 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                     // which time will be earliest.
                     ClockSys then = i->m_pUDT->m_tsLastReqTime_us;
                     ClockSys ontime = then + DurationSys(CRcvQueue::CONN_UPDATE_INTERVAL_US);
+                    DebugString reason = "Connection update";
                     if (ontime > i->m_ullTTL)
+                    {
                         ontime = i->m_ullTTL;
+                        reason = "Connection times out";
+                    }
+                    HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << ontime
+                            << " REASON: " << reason << " at T=" << ontime);
                     processing_times.insert(ontime - currtime_us);
                 }
 
@@ -1131,10 +1142,15 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 i->m_pUDT->m_tsLastReqTime_us = ClockSys::now();
             }
         }
+        else
+        {
 
-        // If this entity's iteration survived all abnormal continuing interruption,
-        // add this time.
-        processing_times.insert(i->m_ullTTL - currtime_us);
+            // If this entity's iteration survived all abnormal continuing interruption,
+            // add this time.
+            HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << i->m_ullTTL
+                    << " REASON: Entity not processed, Connection expires at T=" << i->m_ullTTL);
+            processing_times.insert(i->m_ullTTL - currtime_us);
+        }
     }
 
     HLOGC(mglog.Debug,
@@ -1145,10 +1161,12 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
     if (processing_times.empty())
     {
         // No pending entities have been notified, nothing pending processing.
+        HLOGC(mglog.Debug, log << "updateConnStatus: NEXTPROC not estimated");
         return DurationSys();
     }
 
     // Return the lowest processing time
+    HLOGC(mglog.Debug, log << "updateConnStatus: NEXTPROC RESULT: " << logging::FormatTime(ClockSys::now() + *processing_times.begin()));
     return *processing_times.begin();
 }
 
@@ -1376,8 +1394,6 @@ Handle_timer_events:
        int nuupdated SRT_ATR_UNUSED = 0;
        DebugString whichone = "neither";
 
-       ClockCpu next_xktimer_tk = ClockCpu::null();
-
 #if ENABLE_HEAVY_LOGGING
        if (ul)
        {
@@ -1427,23 +1443,15 @@ Handle_timer_events:
        {
            // We have the unit for next processing.
            uptime_tk = ul->m_tNextEventTime_tk;
-           HLOGC(mglog.Debug, log << "FIRST UNIT TO UPDATE: @" << ul->m_pUDT->m_SocketID << " AT: "
+           HLOGC(mglog.Debug, log << "NEXTPROC: from unit to update: @" << ul->m_pUDT->m_SocketID << " T="
                    << logging::FormatClock(uptime_tk));
+           whichone = "CUDT(checkTimers)";
        }
        else
        {
            // We don't have time of the next processing.
-           HLOGC(mglog.Debug, log << "NO CONNECTED UNITS TO UPDATE - waiting maximum time.");
+           HLOGC(mglog.Debug, log << "NEXTPROC not set from updatable units - NO CONNECTED UNITS TO UPDATE - waiting maximum time.");
            uptime_tk = ClockCpu::null();
-       }
-
-       if (uptime_tk.value == 0 || (next_xktimer_tk.value && uptime_tk > next_xktimer_tk) )
-       {
-           uptime_tk = next_xktimer_tk;
-       }
-       else
-       {
-           whichone = "receiver";
        }
 
        // This records the update time as defined by the receiver entities (m_pRcvUList).
@@ -1520,7 +1528,8 @@ Handle_timer_events:
                // time will not be extracted for any entity.
                self->m_tcConnUpTime_tk = now_tk + DurationTk::from(delnext);
            }
-           HLOGC(mglog.Debug, log << "worker: <updateConnStatus, next proc T=" << logging::FormatClock(self->m_tcConnUpTime_tk));
+           HLOGC(mglog.Debug, log << "worker: <updateConnStatus, next proc T=" << logging::FormatClock(self->m_tcConnUpTime_tk)
+                   << (timely ? " (reported from updateConnStatus)" : " (unchanged as per reception)"));
            // XXX updateConnStatus may have removed the connector from the list,
            // however there's still m_mBuffer in CRcvQueue for that socket to care about.
        }
@@ -1544,7 +1553,7 @@ Handle_timer_events:
        if (uptime_tk.value == 0 || (self->m_tcConnUpTime_tk.value && self->m_tcConnUpTime_tk < uptime_tk))
        {
            uptime_tk = self->m_tcConnUpTime_tk;
-           whichone = uptime_tk.value ? "connector" : "neither";
+           whichone = uptime_tk.value ? "CONNECTOR(updateConnStatus)" : "neither";
        }
 
        HLOGC(mglog.Debug, log << "worker: NEXT PROC TIME: " << logging::FormatClock(uptime_tk)
@@ -1738,7 +1747,10 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     else
         u->processData(unit);
 
-    m_pRcvUList->update(u, u->checkTimers());
+    ClockCpu utime = u->checkTimers();
+    HLOGC(mglog.Debug, log << "NEXTPROC for @" << u->m_SocketID << ": updating at rcvlist for T="
+            << logging::FormatClock(utime));
+    m_pRcvUList->update(u, utime);
 
     return CONN_CONTINUE;
 }

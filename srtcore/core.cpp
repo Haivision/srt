@@ -8633,7 +8633,7 @@ ClockCpu CUDT::checkTimers()
 
     }
 
-    HLOGC(mglog.Debug, log << "checkTimers: RESULTING NEXT EVENT T=" << logging::FormatClock(nexttime_tk));
+    HLOGC(mglog.Debug, log << "checkTimers: RESULTING NEXTPROC T=" << logging::FormatClock(nexttime_tk));
 
     // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
     //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
