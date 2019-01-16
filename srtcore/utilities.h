@@ -649,6 +649,9 @@ struct VoidType
     VoidType operator+(const VoidType&) const { return *this; }
 };
 
+inline VoidType operator+(const VoidType& x, const char* ) { return x; }
+inline VoidType operator+(const char* , const VoidType& x) { return x; }
+
 typedef VoidType DebugString;
 #endif
 

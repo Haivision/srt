@@ -1045,7 +1045,7 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 }
             }
 
-            DebugString time_situation = nowstime ? DebugString("the time because: " + reason) : DebugString("NOT the time");
+            DebugString time_situation SRT_ATR_UNUSED = nowstime ? DebugString("the time because: ")  + reason : DebugString("NOT the time");
 
             HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << currtime_us
                     << " passed=" << (currtime_us-then) <<  "<=> " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US)
