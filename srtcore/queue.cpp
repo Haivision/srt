@@ -1022,19 +1022,42 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
             // the time has come for THIS exactly socket (could have been
             // the case only for some).
             ClockSys then = i->m_pUDT->m_tsLastReqTime_us;
-            ClockSys ontime = then + DurationSys(CRcvQueue::CONN_UPDATE_INTERVAL_US);
+            ClockSys ontime;
+            ClockSys ttl = i->m_ullTTL;
+            DebugString reason = "No last request/TTL still on";
 
-            nowstime = then.value == 0 || currtime_us > ontime;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << currtime_us << " passed=" << (currtime_us-then)
-                    <<  "<=> " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
+            if (then.value == 0)
+            {
+                nowstime = true;
+            }
+            else
+            {
+                ontime = then + DurationSys(CRcvQueue::CONN_UPDATE_INTERVAL_US);
+                if (ontime > ttl)
+                {
+                    nowstime = currtime_us > ttl;
+                    reason = "TTL expired";
+                }
+                else
+                {
+                    nowstime = currtime_us > ontime;
+                    reason = "Update time";
+                }
+            }
+
+            DebugString time_situation = nowstime ? DebugString("the time because: " + reason) : DebugString("NOT the time");
+
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << currtime_us
+                    << " passed=" << (currtime_us-then) <<  "<=> " << (+CRcvQueue::CONN_UPDATE_INTERVAL_US)
+                    << " TTL=" << logging::FormatTime(i->m_ullTTL)
+                    << " -- now's " << time_situation);
             if (!nowstime)
             {
                 // The time is not now, add this processing time to the list
                 // Don't add those that are to be processed because after
                 // processing they will be either re-added, or removed from the list.
                 HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << ontime
-                        << " REASON: NEXT UPDATE to be done "
-                        << (+CRcvQueue::CONN_UPDATE_INTERVAL_US) << "us + T=" << then);
+                        << " REASON: " << reason);
                 processing_times.insert(ontime - currtime_us);
             }
         }
@@ -1068,6 +1091,11 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 // Note that if nowstime, the time for processing this unit wasn't
                 // added to processing_times anyway.
                 i_next = m_lRendezvousID.erase(i);
+
+                // It has been observed that sometimes epoll happens to wait too long
+                // on this, so trigger it now.
+                CTimer::triggerEvent();
+
                 continue;
             }
             else
@@ -1530,7 +1558,7 @@ Handle_timer_events:
                // Don't assign anything if the update was on packet reception because
                // those entities that don't match the ID won't be processed, and processing
                // time will not be extracted for any entity.
-               self->m_tcConnUpTime_tk = now_tk + DurationTk::from(delnext);
+               self->m_tcConnUpTime_tk = delnext.value ? now_tk + DurationTk::from(delnext) : ClockCpu::null();
            }
            HLOGC(mglog.Debug, log << "worker: <updateConnStatus, next proc T=" << logging::FormatClock(self->m_tcConnUpTime_tk)
                    << (timely ? " (reported from updateConnStatus)" : " (unchanged as per reception)"));

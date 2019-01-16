@@ -519,14 +519,21 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       CGuard::leaveCS(m_EPollLock);
 
       if (total > 0)
+      {
+          HLOGC(mglog.Debug, log << "epoll_wait: got signal on " << total << " objects after "
+                  << logging::FormatDuration(ClockSys::now() - ClockSys(entertime)) << ". Cut off timeout[us]: "
+                  << (msTimeOut <= 0 ? msTimeOut : (entertime + msTimeOut*1000) - CTimer::getTime()));
          return total;
+      }
 
       int64_t now = CTimer::getTime();
       if ((msTimeOut >= 0) && (int64_t(now - entertime) >= msTimeOut * int64_t(1000)))
       {
-          LOGC(mglog.Warn, log << "epoll_wait: timeout: " << (now - entertime)
-                    << "us passed (belated: " << (now - entertime - msTimeOut)
-                    << "us). Last check=" << logging::FormatTime(ClockSys(butlasttime)));
+          LOGC(mglog.Warn, log << "epoll_wait: timeout=" << msTimeOut << "ms, "
+                  << logging::FormatDuration(DurationUs(now - entertime), TMU_MS)
+                    << " passed (belated: "
+                    << logging::FormatDuration(DurationUs(now - entertime - msTimeOut*1000), TMU_MS)
+                    << "). Last check=" << logging::FormatTime(ClockSys(butlasttime)));
           throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
       }
 
