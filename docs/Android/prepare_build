@@ -1,26 +1,29 @@
 #!/bin/bash
 
-while getopts t:h:s:i: option
+while getopts t:h:a:s:i: option
 do
  case "${option}"
  in
  t) toolchain_dir=${OPTARG};;
  h) target_host=${OPTARG};;
+ a) target_host_api=${OPTARG};;
  s) src_dir=${OPTARG};;
  i) install_dir=$OPTARG;;
  esac
 done
 
-# Add the standalone toolchain to the search path.
+# Add toolchain to the search path.
 export PATH=$PATH:$toolchain_dir/bin
 
 # Tell configure what tools to use.
 export AR=$target_host-ar
-export AS=$target_host-clang
-export CC=$target_host-clang
-export CXX=$target_host-clang++
+export AS=$target_host-as
 export LD=$target_host-ld
 export STRIP=$target_host-strip
+
+# Tell configure which android api to use.
+export CC=$target_host_api-clang
+export CXX=$target_host_api-clang++
 
 # Tell configure what flags Android requires.
 export CFLAGS="-fPIE -fPIC"

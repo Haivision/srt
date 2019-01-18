@@ -1,23 +1,41 @@
 #!/bin/bash
 
-openssl_ver=1.0.2n
-srt_branch=dev
+NDK=/opt/android-ndk-r19
 
+openssl_ver=1.0.2q
+srt_version=1.3.1
+#srt_branch=dev
+
+# Determine the path of the executing script
 BASE_DIR=$(readlink -f $0 | xargs dirname)
 
 wget -N https://www.openssl.org/source/openssl-$openssl_ver.tar.gz
 
 if [ ! -d $BASE_DIR/srt ]; then
  git clone https://github.com/Haivision/srt srt
- git -C $BASE_DIR/srt checkout -b $srt_branch origin/$srt_branch
+# git -C $BASE_DIR/srt checkout v${srt_version}
+# git -C $BASE_DIR/srt checkout -b $srt_branch origin/$srt_branch
 fi
 
+# Clang, binutils, the sysroot, and other toolchain pieces are all installed to $NDK/toolchains/llvm/prebuilt/<host-tag>
+toolchain=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+
+# Cross-compiler tool prefix
 declare -A target_hosts
 target_hosts=(
  [arm]=arm-linux-androideabi
  [arm64]=aarch64-linux-android
  [x86]=i686-linux-android
  [x86_64]=x86_64-linux-android
+)
+
+# Cross-compiler prefix for -clang and -clang++ has api version
+declare -A target_api
+target_api=(
+ [arm]=armv7a-linux-androideabi16
+ [arm64]=aarch64-linux-android21
+ [x86]=i686-linux-android16
+ [x86_64]=x86_64-linux-android21
 )
 
 declare -A sysroots
@@ -31,8 +49,8 @@ sysroots=(
 for arch in arm arm64 x86 x86_64; do
  rm -rf $BASE_DIR/openssl-$openssl_ver
  tar xf $BASE_DIR/openssl-$openssl_ver.tar.gz
- $BASE_DIR/mkssl -t $BASE_DIR/android-toolchain-$arch -h ${target_hosts[$arch]} -s $BASE_DIR/openssl-$openssl_ver -i ${sysroots[$arch]}
+ $BASE_DIR/mkssl -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/openssl-$openssl_ver -i ${sysroots[$arch]}
 
  git -C $BASE_DIR/srt clean -fd
- $BASE_DIR/mksrt -t $BASE_DIR/android-toolchain-$arch -h ${target_hosts[$arch]} -s $BASE_DIR/srt -i ${sysroots[$arch]}
+ $BASE_DIR/mksrt -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/srt -i ${sysroots[$arch]}
 done
