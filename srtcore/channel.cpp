@@ -93,7 +93,7 @@ modified by
 using namespace std;
 
 
-extern logging::Logger mglog;
+extern logging::Logger mglog, perflog;
 
 CChannel::CChannel(int version):
 m_iIPversion(version),
@@ -935,6 +935,9 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet, ClockCpu uptime_
         for (size_t j = 0, n = packet.getLength() / sizeof (uint32_t); j < n; ++ j)
             *((uint32_t *)packet.m_pcData + j) = ntohl(*((uint32_t *)packet.m_pcData + j));
     }
+
+    LOGC(perflog.Note, log << "CChannel: INCOMING PACKET size=" << res << " seq="
+            << (IsSet(packet.m_iSeqNo, SEQNO_CONTROL::mask) ? -1 : packet.m_iSeqNo));
 
     return RST_OK;
 

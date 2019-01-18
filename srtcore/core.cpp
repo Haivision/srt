@@ -4191,6 +4191,10 @@ void* CUDT::tsbpd(void* param)
       int32_t current_pkt_seq = 0;
       ClockSys tsbpdtime;
       bool rxready = false;
+#if ENFORCE_PERF_STATS
+      ClockSys old_tsbpdtime;
+      int32_t old_pktseq = 0;
+#endif
 
       CGuard::enterCS(self->m_AckLock);
 
@@ -4203,7 +4207,12 @@ void* CUDT::tsbpd(void* param)
           int32_t skiptoseqno = -1;
           bool passack = true; //Get next packet to wait for even if not acked
 
+#if ENFORCE_PERF_STATS
+          rxready = self->m_pRcvBuffer->getRcvFirstMsg(Ref(tsbpdtime), Ref(old_tsbpdtime),
+                  Ref(passack), Ref(skiptoseqno), Ref(current_pkt_seq), Ref(old_pktseq));
+#else
           rxready = self->m_pRcvBuffer->getRcvFirstMsg(Ref(tsbpdtime), Ref(passack), Ref(skiptoseqno), Ref(current_pkt_seq));
+#endif
           /*
            * VALUES RETURNED:
            *
@@ -4274,6 +4283,21 @@ void* CUDT::tsbpd(void* param)
       {
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << current_pkt_seq
               << " (belated " << logging::FormatDuration((ClockSys::now() - tsbpdtime), TMU_MS) << ")");
+
+#if ENFORCE_PERF_STATS
+          DurationUs span;
+          if (old_tsbpdtime.value && tsbpdtime.value)
+              span = old_tsbpdtime - tsbpdtime;
+
+          int seqspan = 0;
+          if (current_pkt_seq && old_pktseq)
+              seqspan = CSeqNo::seqcmp(old_pktseq, current_pkt_seq);
+
+          LOGC(perflog.Note, log << self->CONID() << "tsbpd: PLAYING %" << current_pkt_seq
+                  << " T=" << logging::FormatTime(tsbpdtime) << " OLDEST: %" << old_pktseq
+                  << " T=" << logging::FormatTime(old_tsbpdtime) << " BUFSPAN="
+                  << (span/1000.0) << "ms " << seqspan << " packets waiting");
+#endif
          /*
          * There are packets ready to be delivered
          * signal a waiting "recv" call if there is any data available
@@ -5394,6 +5418,9 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 
 int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
+    // Mark the very first entry point, before any mutex sugar tax applies.
+    LOGC(perflog.Note, log << "receiveMessage: START");
+
     SRT_MSGCTRL& mctrl = *r_mctrl;
     // Recvmsg isn't restricted to the smoother type, it's the most
     // basic method of passing the data. You can retrieve data as

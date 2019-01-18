@@ -21,6 +21,11 @@ include(FindPkgConfig)
 include(FindThreads)
 include(CheckFunctionExists)
 
+# FLAVOR
+
+add_definitions(-DENFORCE_PERF_STATS=1)
+
+
 # Platform shortcuts
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")

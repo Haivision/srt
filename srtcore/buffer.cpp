@@ -933,10 +933,8 @@ void CRcvBuffer::skipData(int len)
 
 bool CRcvBuffer::getRcvFirstMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<bool> r_passack, ref_t<int32_t> r_skipseqno, ref_t<int32_t> r_curpktseq)
 {
-    int32_t& skipseqno = *r_skipseqno;
-    bool& passack = *r_passack;
-    skipseqno = -1;
-    passack = false;
+    *r_skipseqno = -1;
+    *r_passack = false;
     // tsbpdtime will be retrieved by the below call
     // Returned values:
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
@@ -967,10 +965,17 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<bool> r_passa
      * No acked packets ready but caller want to know next packet to wait for
      * Check the not yet acked packets that may be stuck by missing packet(s).
      */
-    bool haslost = false;
     *r_tsbpdtime = ClockSys::null(); // redundant, for clarity
-    passack = true;
+    *r_passack = true;
 
+    bool ret = getRcvFirstPassackMsg(r_tsbpdtime, r_skipseqno);
+    *r_curpktseq = *r_skipseqno;
+    return ret;
+}
+
+bool CRcvBuffer::getRcvFirstPassackMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<int32_t> r_curpktseq)
+{
+    bool haslost = false;
     // XXX SUSPECTED ISSUE with this algorithm:
     // The above call to getRcvReadyMsg() should report as to whether:
     // - there is an EXACTLY NEXT SEQUENCE packet
@@ -1019,8 +1024,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<bool> r_passa
                      * Packet stuck on non-acked side because of missing packets.
                      * Tell 1st valid packet seqno so caller can skip (drop) the missing packets.
                      */
-                    skipseqno = m_pUnit[i]->m_Packet.m_iSeqNo;
-                    *r_curpktseq = skipseqno;
+                    *r_curpktseq = m_pUnit[i]->m_Packet.m_iSeqNo;
                 }
 
                 // NOTE: if haslost is not set, it means that this is the VERY FIRST
@@ -1039,6 +1043,227 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<bool> r_passa
         // the 'haslost' is set, which means that it continues only to find the first valid
         // packet after stating that the very first packet isn't valid.
     }
+    return false;
+}
+
+// Performance versions
+
+bool CRcvBuffer::getRcvFirstMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<ClockSys> r_otsbpdtime, ref_t<bool> r_passack, ref_t<int32_t> r_skipseqno,
+        ref_t<int32_t> r_curpktseq, ref_t<int32_t> r_oldpktseq)
+{
+    *r_skipseqno = -1;
+    *r_passack = false;
+    // tsbpdtime will be retrieved by the below call
+    // Returned values:
+    // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
+    // - passack: false (the report concerns a packet with an exactly next sequence)
+    // - skipseqno == -1: no packets to skip towards the first RTP
+    // - ppkt: that exactly packet that is reported (for debugging purposes)
+    // - @return: whether the reported packet is ready to play
+
+    /* Check the acknowledged packets */
+    if (getRcvReadyMsg(r_tsbpdtime, r_otsbpdtime, r_curpktseq, r_oldpktseq))
+    {
+        return true;
+    }
+    else if (r_tsbpdtime.get().value != 0)
+    {
+        return false;
+    }
+
+    // getRcvReadyMsg returned false and tsbpdtime == 0.
+
+    // Below this line we have only two options:
+    // - m_iMaxPos == 0, which means that no more packets are in the buffer
+    //    - returned: tsbpdtime=0, passack=true, skipseqno=-1, ppkt=0, @return false
+    // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
+    //    - returned: tsbpdtime=PKT.TS, passack=true, skipseqno=PKT.SEQ, ppkt=PKT, @return LOCAL(PKT.TS) <= NOW
+
+    /* 
+     * No acked packets ready but caller want to know next packet to wait for
+     * Check the not yet acked packets that may be stuck by missing packet(s).
+     */
+    *r_tsbpdtime = ClockSys::null(); // redundant, for clarity
+    *r_passack = true;
+
+    bool ret = getRcvFirstPassackMsg(r_tsbpdtime, r_otsbpdtime, r_skipseqno, r_oldpktseq);
+    *r_curpktseq = *r_skipseqno;
+    return ret;
+}
+
+bool CRcvBuffer::getRcvFirstPassackMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<ClockSys> r_oldesttsbpdtime, ref_t<int32_t> r_curpktseq, ref_t<int32_t> r_oldpktseq)
+{
+    bool haslost = false;
+    bool found = false;
+    ClockSys playtime;
+
+    for (int i = m_iLastAckPos, n = (m_iLastAckPos + m_iMaxPos) % m_iSize; i != n; i = (i + 1) % m_iSize)
+    {
+        if ( !m_pUnit[i]
+                || m_pUnit[i]->m_iFlag != CUnit::GOOD )
+        {
+            /* There are packets in the sequence not received yet */
+            haslost = true;
+        }
+        else
+        {
+            /* We got the 1st valid packet */
+            playtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+            if (*r_tsbpdtime <= ClockSys::now())
+            {
+                /* Packet ready to play */
+                if (haslost)
+                {
+                    /* 
+                     * Packet stuck on non-acked side because of missing packets.
+                     * Tell 1st valid packet seqno so caller can skip (drop) the missing packets.
+                     */
+                    if (!found)
+                    {
+                        *r_curpktseq = m_pUnit[i]->m_Packet.m_iSeqNo;
+                        *r_tsbpdtime = playtime;
+                        found = true;
+                    }
+
+                    // Update these values with every iteration where a "ready" packet
+                    // has been found. The loop will stop at the first packet that is not ready.
+                    *r_oldpktseq = m_pUnit[i]->m_Packet.m_iSeqNo;
+                    *r_oldesttsbpdtime = playtime;
+                }
+
+                // NOTE: if haslost is not set, it means that this is the VERY FIRST
+                // packet, that is, packet currently at pos = m_iLastAckPos. There's no
+                // possibility that it is so otherwise because:
+                // - if this first good packet is ready to play, THIS HERE RETURNS NOW.
+                // ...
+                continue;
+            }
+            // ... and if this first good packet WASN'T ready to play, THIS HERE RETURNS NOW, TOO,
+            // just states that there's no ready packet to play.
+            // ...
+            if (found)
+            {
+                // This means that the loop was only continued to find the oldest
+                // ready packet, but at least one ready packet has been already found.
+                return true;
+            }
+            return false;
+        }
+        // ... and if this first packet WASN'T GOOD, the loop continues, however since now
+        // the 'haslost' is set, which means that it continues only to find the first valid
+        // packet after stating that the very first packet isn't valid.
+    }
+
+    if (found)
+    {
+        // The loop reached the end and all packets are ready to play.
+        return true;
+    }
+    return false;
+}
+
+bool CRcvBuffer::getRcvReadyMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<ClockSys> r_oldesttsbpdtime, ref_t<int32_t> r_curpktseq, ref_t<int32_t> r_oldestpktseq)
+{
+    *r_tsbpdtime = ClockSys::null();
+    int rmpkts = 0; 
+    int rmbytes = 0;
+    bool found = false;
+    ClockSys playtime;
+
+    string reason = "NOT RECEIVED";
+    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
+    {
+        bool freeunit = false;
+
+        /* Skip any invalid skipped/dropped packets */
+        if (m_pUnit[i] == NULL)
+        {
+            if (found)
+            {
+                // The loop was only continued to find the oldest ready packet.
+                // Can return immediately now.
+                return true;
+            }
+            if (++ m_iStartPos == m_iSize)
+                m_iStartPos = 0;
+            continue;
+        }
+
+        if (m_pUnit[i]->m_iFlag != CUnit::GOOD)
+        {
+            if (!found)
+                freeunit = true;
+        }
+        else
+        {
+            playtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+            DurationUs towait = playtime - ClockSys::now();
+            if (towait.value > 0)
+            {
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << logging::FormatDuration(towait, TMU_MS) << ")");
+                if (found)
+                {
+                    *r_oldestpktseq = m_pUnit[i]->m_Packet.getSeqNo();
+                    *r_oldesttsbpdtime = playtime;
+                    // We found already a packet ready to play, just now we
+                    // have hit the first not ready. We're done here.
+                    return true;
+                }
+
+                *r_tsbpdtime = playtime;
+                *r_curpktseq = m_pUnit[i]->m_Packet.getSeqNo();
+                return false;
+            }
+
+            if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+            {
+                reason = "DECRYPTION FAILED";
+                freeunit = true; /* packet not decrypted */
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << r_curpktseq.get() << " ready to play (delayed " << logging::FormatDuration(-towait) << ")");
+                if (!found)
+                {
+                    // The first switch from notfound to found. Remember THIS packet's pktseq
+                    *r_curpktseq = m_pUnit[i]->m_Packet.getSeqNo();
+                    *r_tsbpdtime = playtime;
+                    found = true;
+                }
+                *r_oldestpktseq = m_pUnit[i]->m_Packet.getSeqNo();
+                *r_oldesttsbpdtime = playtime;
+
+                // We found it, now we continue the loop only to find
+                // the oldest ready packet.
+                continue;
+            }
+        }
+
+        if (freeunit)
+        {
+            CUnit* tmp = m_pUnit[i];
+            m_pUnit[i] = NULL;
+            rmpkts++;
+            rmbytes += tmp->m_Packet.getLength();
+            tmp->m_iFlag = CUnit::FREE;
+            --m_pUnitQueue->m_iCount;
+
+            if (++m_iStartPos == m_iSize)
+                m_iStartPos = 0;
+        }
+    }
+
+    if (found)
+    {
+        // The loop has exit before we could reach the oldest
+        // possible packet, looxlike "the whole buffer is ready to play".
+        // Return what is now checked.
+        return true;
+    }
+
+    HLOGC(mglog.Debug, log << "getRcvReadyMsg: nothing to deliver: " << reason);
+    /* removed skipped, dropped, undecryptable bytes from rcv buffer */
+    countBytes(-rmpkts, -rmbytes, true);
     return false;
 }
 
@@ -1549,13 +1774,23 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     bool passack;
     bool empty = true;
     ClockSys rplaytime;
+#if ENFORCE_PERF_STATS
+    ClockSys oldplaytime;
+    int32_t oldseq;
+#endif
 
     if (m_bTsbPdMode)
     {
         passack = false;
-        int seq = 0;
+        int32_t seq = 0;
 
-        if (getRcvReadyMsg(Ref(rplaytime), Ref(seq)))
+#if ENFORCE_PERF_STATS
+        bool rdy = getRcvReadyMsg(Ref(rplaytime), Ref(oldplaytime), Ref(seq), Ref(oldseq));
+#else
+        bool rdy = getRcvReadyMsg(Ref(rplaytime), Ref(seq));
+#endif
+
+        if (rdy)
         {
             empty = false;
 
@@ -1635,6 +1870,38 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
                 prev_now = nowtime;
                 prev_srctime = srctime;
+            }
+#endif
+
+#if ENFORCE_PERF_STATS
+            {
+                int32_t seq = m_pUnit[p]->m_Packet.m_iSeqNo;
+
+                ClockSys nowtime = ClockSys::now();
+                ClockSys srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
+                DurationSys timediff = nowtime - srctime;
+
+                // Extra information concerning the oldest waiting packet
+                int rdyseqspan = 0;
+                DurationUs rdytimespan;
+                if (seq && oldseq)
+                    rdyseqspan = CSeqNo::seqcmp(oldseq, seq);
+                if (srctime.value && oldplaytime.value)
+                    rdytimespan = oldplaytime - srctime;
+
+                // Extra information about the total time span in the buffer
+                int atend = (m_iSize + m_iLastAckPos + m_iMaxPos - 1)%m_iSize;
+                int seqspan = (m_iSize + atend - m_iStartPos) % m_iSize;
+                CUnit* ua = (m_iLastAckPos + m_iMaxPos == m_iStartPos) ? 0 : m_pUnit[atend];
+                // Not possible, but let's stay safe.
+                DurationUs timespan = ua ? getPktTsbPdTime(ua->m_Packet.getMsgTimeStamp()) - srctime : DurationUs();
+
+                LOGC(perflog.Note, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime)
+                        << " late=" << logging::FormatDuration(timediff, TMU_MS) << " "
+                        "READY pkts=" << rdyseqspan << " time="
+                        << logging::FormatDuration(rdytimespan, TMU_MS) << " "
+                        "COLLECTED pkts=" << seqspan
+                        << " time=" << logging::FormatDuration(timespan, TMU_MS));
             }
 #endif
         }

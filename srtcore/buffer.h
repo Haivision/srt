@@ -349,6 +349,15 @@ public:
 
 
    bool getRcvFirstMsg(ref_t<ClockSys> tsbpdtime, ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> curpktseq);
+   // Performance version
+   bool getRcvFirstMsg(ref_t<ClockSys> tsbpdtime, ref_t<ClockSys> oldesttsbpdtime,
+           ref_t<bool> passack, ref_t<int32_t> skipseqno, ref_t<int32_t> curpktseq, ref_t<int32_t> oldestpktseq);
+
+   // Splitting function
+   bool getRcvFirstPassackMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<int32_t> r_curpktseq);
+   // Performance version
+   bool getRcvFirstPassackMsg(ref_t<ClockSys> r_tsbpdtime, ref_t<ClockSys> oldesttsbpdtime,
+           ref_t<int32_t> r_curpktseq, ref_t<int32_t> r_oldpktseq);
 
       /// Update the ACK point of the buffer.
       /// @param [in] len size of data to be skip & acknowledged.
@@ -366,6 +375,8 @@ private:
 
    bool getRcvReadyMsg(ref_t<ClockSys> tsbpdtime, ref_t<int32_t> curpktseq);
 
+   // Perflog version
+   bool getRcvReadyMsg(ref_t<ClockSys> tsbpdtime, ref_t<ClockSys> oldesttsbpdtime, ref_t<int32_t> curpktseq, ref_t<int32_t> oldestpktseq);
       /// Get packet delivery local time base (adjusted for wrap around).
       /// Note that this is the ClockSys-based time base which represents
       /// the value from transmission start time + N segments. This, added

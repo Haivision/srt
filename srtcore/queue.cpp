@@ -1056,8 +1056,6 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 // The time is not now, add this processing time to the list
                 // Don't add those that are to be processed because after
                 // processing they will be either re-added, or removed from the list.
-                HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << ontime
-                        << " REASON: " << reason);
                 processing_times.insert(ontime - currtime_us);
             }
         }
@@ -1103,8 +1101,6 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                 HLOGC(mglog.Debug, log << "RendezvousQueue: @" << i->m_pUDT->m_SocketID
                         << " still pending up to T=" << logging::FormatTime(i->m_ullTTL)
                         << " (" << (i->m_ullTTL - ClockSys::now()) << "us to expire)");
-                HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << i->m_ullTTL
-                        << " REASON: Connection expires at T=" << i->m_ullTTL);
                 processing_times.insert(i->m_ullTTL - currtime_us);
             }
 
@@ -1154,8 +1150,6 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
                         ontime = i->m_ullTTL;
                         reason = "Connection times out";
                     }
-                    HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << ontime
-                            << " REASON: " << reason << " at T=" << ontime);
                     processing_times.insert(ontime - currtime_us);
                 }
 
@@ -1179,8 +1173,6 @@ DurationSys CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus c
 
             // If this entity's iteration survived all abnormal continuing interruption,
             // add this time.
-            HLOGC(perflog.Debug, log << "updateConnStatus: NEXTPROC T=" << i->m_ullTTL
-                    << " REASON: Entity not processed, Connection expires at T=" << i->m_ullTTL);
             processing_times.insert(i->m_ullTTL - currtime_us);
         }
     }
@@ -1332,9 +1324,7 @@ void* CRcvQueue::worker(void* param)
    while (!self->m_bClosing)
    {
        bool have_received SRT_ATR_UNUSED = false; // used in HLOG only
-       HLOGP(perflog.Debug, "worker_RetrieveUnit - START");
        EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa, uptime_tk);
-       HLOGC(perflog.Debug, log << "worker_RetrieveUnit - FINISHED. return=" << rst << ", " << (rst ? (rst == -1 ? "ERROR" : "AGAIN") : "RETRIEVED"));
        ClockCpu currtime_tk;
        ClockSys currtime_us;
 
@@ -1365,7 +1355,6 @@ void* CRcvQueue::worker(void* param)
            // Note to rendezvous connection. This can accept:
            // - ID == 0 - take the first waiting rendezvous socket
            // - ID > 0  - find the rendezvous socket that has this ID.
-           HLOGC(perflog.Debug, log << "PROCESSING PACKET: START");
            if (id == 0)
            {
                // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
@@ -1382,7 +1371,6 @@ void* CRcvQueue::worker(void* param)
                    ++npupdated;
 #endif
            }
-           HLOGC(perflog.Debug, log << "PROCESSING PACKET: END");
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
            if (cst == CONN_AGAIN)
            {
@@ -1419,7 +1407,6 @@ void* CRcvQueue::worker(void* param)
        // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
 Handle_timer_events:
-       HLOGC(perflog.Debug, log << "TIMER CHECK: START");
 
        CRNode* ul = self->m_pRcvUList->m_pUList;
 
@@ -1518,7 +1505,6 @@ Handle_timer_events:
 
        bool timely = self->m_tcConnUpTime_tk < currtime_tk;  // (including when m_tcConnUpTime_tk == 0)
 
-       HLOGC(perflog.Debug, log << "TIMER CHECK: END. DOING updateConnStatus");
        if (timely || rst == RST_OK)
        {
            // If this is the beginning (m_tcConnUpTime_tk == 0), it will be always called.
@@ -1569,7 +1555,6 @@ Handle_timer_events:
        {
            HLOGC(mglog.Debug, log << "worker: NO updateConnStatus - no packet and T=" << logging::FormatClock(self->m_tcConnUpTime_tk));
        }
-       HLOGC(perflog.Debug, log << "TIMER CHECK: END. updateConnStatus FINISHED. LOOP ROLLING.");
 
        // Use the time reported by updateConnStatus as a next processing time
        // (time until when the next reading operation should wait at maximum),
