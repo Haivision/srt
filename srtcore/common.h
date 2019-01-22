@@ -53,9 +53,10 @@ modified by
 #ifndef __UDT_COMMON_H__
 #define __UDT_COMMON_H__
 
+#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 
 #include <cstdlib>
-#ifndef WIN32
+#ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
 #else

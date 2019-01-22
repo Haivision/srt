@@ -179,7 +179,6 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
    }
 }
 
-
 int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, psize);

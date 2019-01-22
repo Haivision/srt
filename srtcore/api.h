@@ -73,7 +73,7 @@ public:
    CUDTSocket();
    ~CUDTSocket();
 
-   SRT_SOCKSTATUS m_Status;                       //< current socket state
+   SRT_SOCKSTATUS m_Status;                  //< current socket state
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
@@ -270,19 +270,16 @@ inline std::string SockaddrToString(const sockaddr* sadr)
 
     std::ostringstream output;
     char hostbuf[1024];
+    int flags;
 
 #if ENABLE_GETNAMEINFO
-    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
-    {
-        output << hostbuf;
-    }
-    else
+    flags = NI_NAMEREQD;
+#else
+    flags = NI_NUMERICHOST | NI_NUMERICSERV;
 #endif
+
+    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, flags))
     {
-        if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
-        {
-            strcpy(hostbuf, "unknown");
-        }
         output << hostbuf;
     }
 

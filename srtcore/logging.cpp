@@ -81,6 +81,7 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
     else if ( src_config->log_stream )
     {
         (*src_config->log_stream) << msg;
+        src_config->log_stream->flush();
     }
     src_config->unlock();
 }
@@ -97,8 +98,8 @@ std::string FormatTime(uint64_t time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
+#ifdef _WIN32
+    strftime(tmp_buf, 512, "%X.", &tm);
 #else
     strftime(tmp_buf, 512, "%T.", &tm);
 #endif
@@ -121,12 +122,12 @@ logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabl
 	}
 }
 
-logging::LogDispatcher::Proxy logging::LogDispatcher::operator()()
+logging::LogDispatcher::Proxy LogDispatcher::operator()()
 {
 	return Proxy(*this);
 }
 
-void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
 
@@ -146,7 +147,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         //
         // XXX Consider using %X everywhere, as it should work
         // on both systems.
-#ifdef WIN32
+#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
 #else
         strftime(tmp_buf, 512, "%T.", &tm);
@@ -172,7 +173,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     }
 }
 
-std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 {
     if ( pretty_function == "" )
         return "";

@@ -63,7 +63,7 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <win/wintime.h>
 #endif
 
@@ -141,7 +141,13 @@ m_GCThread(),
 m_ClosedSockets()
 {
    // Socket ID MUST start from a random value
-   srand((unsigned int)CTimer::getTime());
+   // Note. Don't use CTimer here, because s_UDTUnited is a static instance of CUDTUnited
+   // with dynamic initialization (calling this constructor), while CTimer has
+   // a static member s_ullCPUFrequency with dynamic initialization.
+   // The order of initialization is not guaranteed.
+   timeval t;
+   gettimeofday(&t, 0);
+   srand((unsigned int)t.tv_usec);
    m_SocketIDGenerator = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
    pthread_mutex_init(&m_ControlLock, NULL);
@@ -167,6 +173,7 @@ CUDTUnited::~CUDTUnited()
     pthread_mutex_destroy(&m_IDLock);
     pthread_mutex_destroy(&m_InitLock);
 
+    delete (CUDTException*)pthread_getspecific(m_TLSError);
     pthread_key_delete(m_TLSError);
 
     delete m_pCache;
@@ -190,7 +197,7 @@ int CUDTUnited::startup()
       return 0;
 
    // Global initialization code
-   #ifdef WIN32
+   #ifdef _WIN32
       WORD wVersionRequested;
       WSADATA wsaData;
       wVersionRequested = MAKEWORD(2, 2);
@@ -240,7 +247,7 @@ int CUDTUnited::cleanup()
    // the application cleanup section, this can be temporarily
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
-#ifndef WIN32
+#ifndef _WIN32
    pthread_mutex_destroy(&m_GCStopLock);
    pthread_cond_destroy(&m_GCStopCond);
 #endif
@@ -248,7 +255,7 @@ int CUDTUnited::cleanup()
    m_bGCStatus = false;
 
    // Global destruction code
-   #ifdef WIN32
+   #ifdef _WIN32
       WSACleanup();
    #endif
 
@@ -439,15 +446,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
    catch (...)
    {
-       // The mapped socket should be now unmapped to preserve the situation that
-       // was in the original UDT code.
-       // In SRT additionally the acceptAndRespond() function (it was called probably
-       // connect() in UDT code) may fail, in which case this socket should not be
-       // further processed and should be removed.
-       {
-           CGuard cg(m_ControlLock);
-           m_Sockets.erase(ns->m_SocketID);
-       }
        error = 1;
        goto ERR_ROLLBACK;
    }
@@ -497,9 +495,20 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
+      SRTSOCKET id = ns->m_SocketID;
       ns->m_pUDT->close();
       ns->m_Status = SRTS_CLOSED;
       ns->m_TimeStamp = CTimer::getTime();
+      // The mapped socket should be now unmapped to preserve the situation that
+      // was in the original UDT code.
+      // In SRT additionally the acceptAndRespond() function (it was called probably
+      // connect() in UDT code) may fail, in which case this socket should not be
+      // further processed and should be removed.
+      {
+          CGuard cg(m_ControlLock);
+          m_Sockets.erase(id);
+          m_ClosedSockets[id] = ns;
+      }
 
       return -1;
    }
@@ -530,7 +539,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     // protects the m_Sockets structure
     CGuard cg(m_ControlLock);
 
-    map<SRTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+    map<SRTSOCKET, CUDTSocket*>::const_iterator i = m_Sockets.find(u);
 
     if (i == m_Sockets.end())
     {
@@ -539,13 +548,16 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 
         return SRTS_NONEXIST;
     }
-    CUDTSocket* s = i->second;
+    const CUDTSocket* s = i->second;
 
     if (s->m_pUDT->m_bBroken)
         return SRTS_BROKEN;
 
-    // Connecting timed out
-    if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting)
+    // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
+    // Although m_Status is still SRTS_CONNECTING, the connection is in fact to be closed due to TTL expiry.
+    // In this case m_bConnected is also false. Both checks are required to avoid hitting
+    // a regular state transition from CONNECTING to CONNECTED.
+    if ((s->m_Status == SRTS_CONNECTING) && !s->m_pUDT->m_bConnecting && !s->m_pUDT->m_bConnected)
         return SRTS_BROKEN;
 
     return s->m_Status;
@@ -1580,6 +1592,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    delete i->second;
    m_ClosedSockets.erase(i);
 
+   if (mid == -1)
+       return;
+
    map<int, CMultiplexer>::iterator m;
    m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())
@@ -1807,7 +1822,7 @@ void* CUDTUnited::garbageCollect(void* p)
        INCREMENT_THREAD_ITERATIONS();
        self->checkBrokenSockets();
 
-       //#ifdef WIN32
+       //#ifdef _WIN32
        //      self->checkTLSValue();
        //#endif
 

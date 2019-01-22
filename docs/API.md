@@ -396,105 +396,549 @@ connected. On binding a socket setting this flag is effective only on this
 socket itself. Note though that there are some post-bound options that have
 important meaning when set prior to connecting.
 
-This option list is sorted alphabetically. Note that some options can be
-either only a retrieved (r) or set (w) value.
 
-| OptName         | Since | Binding | Type            | Units | Default | Range | Description |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `SRTO_CONNTIMEO` | 1.1.2 | pre  | `int` | msec | 3000 | tbd | Connect timeout. SRT cannot connect for RTT > 1500 msec (2 handshake exchanges) with the default connect timeout of 3 seconds. This option applies to the caller and rendezvous connection modes. The connect timeout is 10 times the value set for the rendezvous mode (which can be used as a workaround for this connection problem with earlier versions). |
-| --- |
-| `SRTO_EVENT` (r) |   | n/a  | `int32_t` |   | n/a | n/a | Connection epoll flags (see [epoll\_ctl](http://man7.org/linux/man-pages/man2/epoll_ctl.2.html)). One or more of the following flags: EPOLLIN | EPOLLOUT | EPOLLERR |
-| --- |
-| `SRTO_FC`          |   | pre  | `int` | pkts | 25600 | 32.. | Flight Flag Size. |
-| --- |
-| `SRTO_INPUTBW`     | 1.0.5 | post  | `int64_t` | bytes/secs | 0 | 0.. | Sender nominal input rate. Used along with OHEADBW, when MAXBW is set to relative (0), to calculate maximum sending rate when recovery packets are sent along with main media stream (INPUTBW * (100 + OHEADBW) / 100). If INPUTBW is not set while MAXBW is set to relative (0), the actual input rate is evaluated inside the library. |
-| --- |
-| `SRTO_IPTOS`       | 1.0.5 | pre  | `int32_t` |   | (platform default) | 0..255 | IP Type of Service. Applies to sender only. *Sender: user configurable, default: 0xB8* |
-| --- |
-| `SRTO_ISN` (r) | 1.3.0 | post | `int32_t` | sequence | n/a | n/a | The value of the ISN (Initial Sequence Number), which is the first sequence number put on a firstmost sent UDP packets carrying SRT data payload. *This value is useful for developers of some more complicated methods of flow control, possibly with multiple SRT sockets at a time, not predicted in any regular development.* |
-| --- |
-| `SRTO_KMSTATE` (r) | 1.0.2 | n/a  | `int32_t` |   | n/a | n/a | Receiver Keying Material state. Available on both sender and receiver sides. Values defined in `enum SRT_KM_STATE`: | 
-|                    |       |      |           |   |     |     | * `SRT_KM_S_UNSECURED`: unsecured: data not encrypted  | 
-|                    |       |      |           |   |     |     | * `SRT_KM_S_SECURING`: securing: waiting for keying material |                                        
-|                    |       |      |           |   |     |     | * `SRT_KM_S_SECURED`: secured: keying material obtained and operational (decrypting received data) |  
-|                    |       |      |           |   |     |     | * `SRT_KM_S_NOSECRET`: no secret: no secret configured to handle keying material |                    
-|                    |       |      |           |   |     |     | * `SRT_KM_S_BADSECRET`: bad secret: invalid secret configured  |                                      
-| --- |
-| `SRTO_IPTTL` | 1.0.5 | pre  | `int32_t` | hops | (platform default) | 1..255 | IP Time To Live. Applies to sender only. *Sender: user configurable, default: 64* |
-| --- |
-| `SRTO_LATENCY` | 0.0.0 | pre  | `int32_t` | msec | 0 | positive only | This flag sets both `SRTO_RCVLATENCY` and `SRTO_PEERLATENCY` to the same value. Note that prior to version 1.3.0 this is the only flag to set the latency, however this is effectively equivalent to setting `SRTO_PEERLATENCY`, when the side is sender (see `SRTO_SENDER`) and `SRTO_RCVLATENCY` when the side is receiver, and the bidirectional stream sending is not supported. |
-| --- |
-| `SRTO_LINGER` |   | pre | linger | secs | on (180) |   | Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)) *SRT recommended value: off (0)* |
-| --- |
-| `SRTO_LOSSMAXTTL` (writeonly) | 1.2.0 | pre | `int` | packets | 0 | reasonable | The value up to which the *Reorder Tolerance* may grow. When *Reorder Tolerance* is > 0, then packet loss report is delayed until that number of packets come in. *Reorder Tolerance* increases every time a "belated" packet has come, but it wasn't due to retransmission (that is, when UDP packets tend to come out of order), with the difference between the latest sequence and this packet's sequence, and not more than the value of this option. By default it's 0, which means that this mechanism is turned off, and the loss report is always sent immediately upon experiencing a "gap" in sequences.
-| --- |
-| `SRTO_MAXBW`  | 1.0.5 | pre  | `int64_t` | bytes/sec | -1 | -1 | 0 | 1.. | Maximum send bandwidth. -1: infinite (CSRTCC limit is 30mbps) =0: relative to input rate (SRT 1.0.5 addition, see `SRTO_INPUTBW`) >0: absolute limit *SRT recommended value: 0 (relative)* |
-| --- |
-| `SRTO_MESSAGEAPI` (w) | 1.3.0 | pre | bool | boolean | true |  | When set, this socket uses the Message API[\*], otherwise it uses Buffer API |
-| --- |
-| `SRTO_MINVERSION` (writeonly) | 1.3.0 | pre | `int32_t` | version | 0 | up to current | The minimum SRT version that is required from the peer. A connection to a peer that does not satisfy the minimum version requirement will be rejected. |
-| --- |
-| `SRTO_MSS`|  | pre  | `int` | bytes|1500 | 76.. | Maximum Segment Size. Used for buffer allocation and rate calculation using packet counter assuming fully filled packets. The smallest MSS between the peers is used. *This is 1500 by default in the overall internet. This is the maximum size of the UDP packet and can be only decreased, unless you have some unusual dedicated network settings.* |
-| --- |
-| `SRTO_NAKREPORT` | 1.1.0 | pre  | `bool` |   | true | true|false | Receiver will send `UMSG_LOSSREPORT` messages periodically until the lost packet is retransmitted or intentionally dropped |
-| --- |
-| `SRTO_OHEADBW`   | 1.0.5 | post  | `int` | % | 25 | 5..100 | Recovery bandwidth overhead above input rate (see `SRTO_INPUTBW`). *Sender: user configurable, default: 25%.* ***To do: set-only. get should be supported.*** |
-| --- |
-| `SRTO_PASSPHRASE` (w) | 0.0.0 | pre | string |   | [0] | [10..79] | HaiCrypt Encryption/Decryption Passphrase.  The passphrase is the shared secret between the sender and the receiver. It is used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2) (Password-Based Key Derivation Function 2). It is used on the sender if PBKEYLEN is non zero. It is used on the receiver only if the received data is encrypted.  The configured passphrase cannot be get back (write-only). *Sender and receiver: user configurable.* |
-| --- |
-| `SRTO_PAYLOADSIZE` (w) | 1.3.0 | pre | int | bytes | 1316 (Live) | up to MTUsize-28-16, usually 1456 | Sets the maximum declared size of a single call to sending function in Live mode. Use 0 if this value isn't used (which is default in file mode)
-| --- |
-| `SRTO_PBKEYLEN` | 0.0.0 | pre  | `int32_t` | bytes | 0 | 0 16(128/8) 24(192/8) 32(256/8) | Sender encryption key length. Enable sender encryption if not 0. Not required on receiver (set to 0), key size obtained from sender in HaiCrypt handshake. *Sender: user configurable.* |
-| --- |
-| `SRTO_PEERLATENCY` | 1.3.0 | pre  | `int32_t` | msec | 0 | positive only | The latency value (as described in `SRTO_RCVLATENCY`) that is set by the sender side as a minimum value for the receiver. |
-| --- |
-| `SRTO_PEERVERSION` (r) | 1.1.0 | n/a  | `int32_t` | n/a | n/a | n/a | Peer SRT version. The value 0 is returned if not connected, SRT handshake not yet performed, or if peer is not SRT. See `SRTO_VERSION` for the version format. |
-| `SRTO_RCVBUF` |   | pre  | `int` | bytes | 8192 * (1500-28) | 32 * (1500-28) ..FC * (1500-28) | Receive Buffer Size. *Receive buffer must not be greater than FC size.* ***Warning: configured in bytes, converted in packets when set based on MSS value. For desired result, configure MSS first.*** |
-| --- |
-| `SRTO_RCVDATA` (r) |   | n/a  | `int32_t` | pkts | n/a |   | Size of the available data in the receive buffer. |
-| --- |
-| `SRTO_RCVKMSTATE` (readonly) | 1.2.0 | post | enum | n/a | n/a | KM state on the agent side when it's a receiver, as per `SRTO_KMSTATE` |
-| --- |
-| `SRTO_RCVLATENCY` | 1.3.0 | pre  | `int32_t` | msec | 0 | positive only | The time that should elapse since the moment when the packet was sent and the moment when it's delivered to the receiver application in the receiving function. This time should be a buffer time large enough to cover the time spent for sending, unexpectedly extended RTT time, and the time needed to retransmit the lost UDP packet. The effective latency value will be the maximum of this options' value and the value of `SRTO_PEERLATENCY` set by the peer side. **This option in pre-1.3.0 version is available only as** `SRTO_LATENCY`. |
-| --- |
-| `SRTO_RCVSYN` |   | pre  | `bool` |   | true | true | false | Synchronous (blocking) receive mode |
-| --- |
-| `SRTO_RCVTIMEO` |   | post  | `int` | msecs | -1 | -1.. | Blocking mode receiving timeout (-1: infinite) |
-| --- |
-| `SRTO_RENDEZVOUS` |   | pre  | `bool` |   | false | true | false | Use Rendez-Vous connection mode (both sides must set this and both must use bind/connect to one another. |
-| --- |
-| `SRTO_REUSEADDR` |   | pre |   |   | true | true | false | Reuse existing address (see [SO\_REUSEADDR](http://man7.org/linux/man-pages/man7/socket.7.html)) |
-| --- |
-| `SRTO_SENDER`   | 1.0.4 | pre     | `int32_t` bool? |       | false   |       | Set sender side. The side that sets this flag is expected to be a sender. It's required when any of two connection sides supports at most *HSv4* handshake, and the sender side is the side that initiates the SRT extended handshake (which won't be done at all, if none of the sides sets this flag). This flag is superfluous, if **both** parties are at least version 1.3.0 and therefore support *HSv5* handshake, where the SRT extended handshake is done with the overall handshake process. This flag is however **obligatory** if at least one party is SRT below version 1.3.0 and does not support *HSv5*.
-| --- |
-| `SRTO_SMOOTHER` (w) | 1.3.0 | pre | `const char*` | predefined | "live" | "live" or "file" | The type of Smoother used for the transmission for that socket, which is responsible for the transmission and congestion control. The Smoother type must be exactly the same on both connecting parties, otherwise the connection is rejected. ***TODO: might be reasonable to allow an "adaptive" value of the Smoother, which will accept either of the smoother types when the other party enforces it, and rejected if both sides are "adaptive"***
-| --- |
-| `SRTO_SNDBUF` |   | pre  | `int` | bytes | 8192 * (1500-28) |   | Send Buffer Size.  ***Warning: configured in bytes, converted in packets, when set, based on MSS value. For desired result, configure MSS first.*** |
-| --- |
-| `SRTO_SNDDATA` (read-only) |   | n/a  | `int32_t` | pkts | n/a | n/a | Size of the unacknowledged data in send buffer. |
-| --- |
-| `SRTO_SNDPEERKMSTATE` (readonly) | 1.2.0 | post | enum | n/a | n/a | Peer KM state on receiver side for `SRTO_KMSTATE` |
-| --- |
-| `SRTO_SNDSYN`|  | post  | `bool` |  |true | true | false | Synchronous (blocking) send mode |
-| --- |
-| `SRTO_SNDTIMEO`|  | post  | `int` | msecs|-1 | -1.. | Blocking mode sending timeout (-1: infinite) |
-| --- |
-| `SRTO_STATE` (r) |   | n/a  | `int32_t` |   | n/a | n/a | UDT connection state. |
-| --- |
-| `SRTO_STREAMID` (rw) | 1.3.0 | pre | `const char*` |    | empty | any string | A string limited to 512 characters that can be set on the socket prior to connecting. This stream ID will be able to be retrieved by the listener side from the socket that is returned from `srt_accept` and was connected by a socket with that set stream ID. SRT does not enforce any special interpretation of the contents of this string. As this uses internally the `std::string` type, there are additional functions for it in the legacy/C++ API: `UDT::setstreamid` and `UDT::getstreamid`. |
-| --- |
-| `SRTO_TLPKTDROP`   | 1.0.6 | pre  | `int32_t` bool? |   | true | true | false | Too-late Packet Drop. When enabled on receiver, it skips missing packets that have not been delivered in time and delivers the subsequent packets to the application when their time-to-play has come. It also sends a fake ACK to the sender. When enabled on sender and enabled on the receiving peer, sender drops the older packets that have no chance to be delivered in time. It is automatically enabled in sender if receiver supports it. |
-| --- |
-| `SRTO_TRANSTYPE` (w) | 1.3.0 | pre | enum |  | `SRTT_LIVE` | alt: `SRTT_FILE` | Sets the transmission type for the socket, in particular, setting this option sets multiple other parameters to their default values as required for a particular transmission type. |
-| --- |
-| `SRTO_TSBPDMODE`   | 0.0.0 | pre | `int32_t` (bool?) |   | false | true | false | Timestamp-based Packet Delivery mode. This flag is set to _true_ by default and as a default flag set in live mode. |
-| --- |
-| `SRTO_UDP_RCVBUF` |   | pre  | `int` | bytes | 8192 * 1500 | MSS.. | UDP Socket Receive Buffer Size.  Configured in bytes, maintained in packets based on MSS value. Receive buffer must not be greater than FC size. |
-| --- |
-| `SRTO_UDP_SNDBUF` |   | pre  | `int` | bytes | 65536 | MSS.. | UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based on `SRTO_MSS` value. *SRT recommended value:* `1024*1024` |
-| --- |
-| `SRTO_VERSION` (r) | 1.1.0 | n/a  | `int32_t` |   | n/a | n/a | Local SRT version. This is the highest local version supported if not connected, or the highest version supported by the peer if connected. The version format in hex is 0xXXYYZZ for x.y.z in human readable form, where x = ("%d", (version>>16) & 0xff), etc... Set could eventually be supported to test |
-| --- |
+
+This option list is sorted alphabetically. Note that some options can be
+either only a retrieved (GET) or specified (SET) value.
+
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_CONNTIMEO`      | 1.1.2 | pre     | `int` | msec   | 3000     | tbd    |
+
+- Connect timeout. SRT cannot connect for RTT > 1500 msec (2 handshake exchanges) 
+with the default connect timeout of 3 seconds. This option applies to the caller 
+and rendezvous connection modes. The connect timeout is 10 times the value set 
+for the rendezvous mode (which can be used as a workaround for this connection 
+problem with earlier versions)
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_EVENT`      |       | n/a     | `int32_t` |        | n/a      | n/a    |
+
+- **[GET]** — Returns bit flags set according to the current active events on 
+the socket. 
+- Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of 
+`SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR`).
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_FC`             |       | pre     | `int` | pkts   | 25600    | 32..   |
+
+- Flight Flag Size (maximum number of bytes that can be sent without 
+being acknowledged)
+---
+
+| OptName          | Since | Binding | Type      | Units   | Default  | Range  |
+| ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
+| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t` | bytes/s | 0        | 0..    |
+
+- Sender nominal input rate. Used along with `OHEADBW`, when `MAXBW` is set to 
+relative (0), to calculate maximum sending rate when recovery packets are sent 
+along with main media stream (`INPUTBW` × (100 + `OHEADBW`) / 100). If `INPUTBW` 
+is not set while MAXBW is set to relative (0), the actual input rate is evaluated 
+inside the library.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default            | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | ------------------ | ------ |
+| `SRTO_IPTOS`          | 1.0.5 | pre     | `int32_t` |        | (platform default) | 0..255 |
+
+- IPv4 Type of Service (see IP_TOS option for IP) or IPv6 Traffic Class (see IPV6_TCLASS
+of IPv6) depending on socket address family. Applies to sender only. 
+- *Sender: user configurable, default: 0xB8*
+---
+
+| OptName               | Since | Binding | Type      | Units    | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | -------- | -------- | ------ |
+| `SRTO_ISN`            | 1.3.0 | post    | `int32_t` | sequence | n/a      | n/a    |
+
+- **[GET]** — The value of the ISN (Initial Sequence Number), which is the first 
+sequence number put on a firstmost sent UDP packets carrying SRT data payload. 
+*This value is useful for developers of some more complicated methods of flow 
+control, possibly with multiple SRT sockets at a time, not predicted in any 
+regular development.*
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default            | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | ------------------ | ------ |
+| `SRTO_IPTTL`          | 1.0.5 | pre     | `int32_t` | hops   | (platform default) | 1..255 |
+
+- IPv4 Time To Live (see IP_TTL option for IP) or IPv6 unicast hops (see IPV6_UNICAST_HOPS for
+IPV6) depending on socket address family. Applies to sender only. 
+- *Sender: user configurable, default: 64*
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
+
+- **[GET]** — Keying Material state. This is a legacy option that is equivalent 
+to `SRTO_SNDKMSTATE`, if the socket has set `SRTO_SENDER` to true, and 
+`SRTO_RCVKMSTATE` otherwise. This option shall not be used if the application 
+meant to use the versions at least 1.3.0 and does not use the `SRTO_SENDER` flag
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range         |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
+| `SRTO_LATENCY`        | 1.0.2 | pre     | `int32_t` | msec   | 0        | positive only |
+
+- This flag sets both `SRTO_RCVLATENCY` and `SRTO_PEERLATENCY` to the same value. 
+Note that prior to version 1.3.0 this is the only flag to set the latency, however 
+this is effectively equivalent to setting `SRTO_PEERLATENCY`, when the side is 
+sender (see `SRTO_SENDER`) and `SRTO_RCVLATENCY` when the side is receiver, and 
+the bidirectional stream sending in version 1.2.0is not supported.
+---
+
+| OptName              | Since | Binding | Type   | Units  | Default  | Range  |
+| -------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_LINGER`        |       | pre     | linger | secs   | on (180) |        |
+
+- Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)) 
+- *SRT recommended value: off (0)*
+---
+
+| OptName            | Since | Binding | Type  | Units   | Default  | Range      |
+| ------------------ | ----- | ------- | ----- | ------- | -------- | ---------- |
+| `SRTO_LOSSMAXTTL`  | 1.2.0 | pre     | `int` | packets | 0        | reasonable |
+
+- **[SET]** — The value up to which the *Reorder Tolerance* may grow. When 
+*Reorder Tolerance* is > 0, then packet loss report is delayed until that number 
+of packets come in. *Reorder Tolerance* increases every time a "belated" packet 
+has come, but it wasn't due to retransmission (that is, when UDP packets tend to 
+come out of order), with the difference between the latest sequence and this 
+packet's sequence, and not more than the value of this option. By default it's 0, 
+which means that this mechanism is turned off, and the loss report is always sent 
+immediately upon experiencing a "gap" in sequences.
+---
+
+| OptName               | Since | Binding | Type      | Units     | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | --------- | -------- | ------ |
+| `SRTO_MAXBW`          | 1.0.5 | pre     | `int64_t` | bytes/sec | -1       | -1     |
+
+- **[GET or SET]** — Maximum send bandwidth. -1: infinite (CSRTCC limit is 
+30mbps) = 0: relative to input rate (SRT 1.0.5 addition, see `SRTO_INPUTBW`) 
+>0: absolute limit 
+- *SRT recommended value: 0 (relative)*
+---
+
+| OptName              | Since | Binding | Type  | Units   | Default  | Range  |
+| -------------------- | ----- | ------- | ----- | ------- | -------- | ------ |
+| `SRTO_MESSAGEAPI`    | 1.3.0 | pre     | bool  | boolean | true     |        |
+
+- **[SET]** — When set, this socket uses the Message API[*], otherwise it uses 
+Buffer API. Note that in live mode (see SRTO_TRANSTYPE option) there’s only 
+message API available. In File mode you can chose to use one of two modes:
+
+  - Stream API (default, when this option is false). In this mode you may send 
+  as many data as you wish with one sending instruction, or even use dedicated 
+  functions that read directly from a file. The internal facility will take care 
+  of any speed and congestion control. When receiving, you can also receive as 
+  many data as desired, the data not extracted will be waiting for the next call. 
+  There is no boundary between data portions in the Stream mode.
+  
+  - Message API. In this mode your single sending instruction passes exactly one 
+  piece of data that has boundaries (a message). Contrary to Live mode, 
+  this message may span across multiple UDP packets and the only size limitation 
+  is that it shall fit as a whole in the sending buffer. The receiver shall use 
+  as large buffer as necessary to receive the message, otherwise the message will 
+  not be given up. When the message is not complete (not all packets received or 
+  there was a packet loss) it will not be given up. The messages that are sent 
+  later, but were earlier reassembled by the receiver, will be given up to the 
+  received once ready, if the “inorder” flag (see srt_sendmsg) was set to false.
+  
+- As a comparison to the standard system protocols, the Stream API makes the 
+transmission similar to TCP, whereas the Message API functions like the 
+SCTP protocol.
+---
+
+| OptName           | Since | Binding | Type      | Units   | Default  | Range         |
+| ----------------- | ----- | ------- | --------- | ------- | -------- | ------------- |
+| `SRTO_MINVERSION` | 1.3.0 | pre     | `int32_t` | version | 0        | up to current |
+
+- **[SET]** — The minimum SRT version that is required from the peer. 
+A connection to a peer  that does not satisfy the minimum version requirement 
+will be rejected.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_MSS`            |       | pre     | `int` | bytes  | 1500     | 76..   |
+
+- Maximum Segment Size. Used for buffer allocation and rate calculation using 
+packet counter assuming fully filled packets. The smallest MSS between the peers 
+is used. *This is 1500 by default in the overall internet. This is the maximum 
+size of the UDP packet and can be only decreased, unless you have some unusual 
+dedicated network settings. Not to be mistaken with the size of the UDP payload 
+or SRT payload — this size is the size of the IP packet, including the UDP 
+and SRT headers* 
+---
+
+| OptName              | Since | Binding | Type   | Units  | Default  | Range  |
+| -------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_NAKREPORT`     | 1.1.0 | pre     | `bool` | true   | true     | false  |
+
+- **[GET or SET]** — When set to true, Receiver will send `UMSG_LOSSREPORT` 
+messages periodically until the lost packet is retransmitted or intentionally 
+dropped 
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_OHEADBW`        | 1.0.5 | post    | `int` | %      | 25       | 5..100 | 
+
+- Recovery bandwidth overhead above input rate (see `SRTO_INPUTBW`). 
+- *Sender: user configurable, default: 25%.* 
+- ***To do: set-only. get should be supported.***
+---
+
+| OptName             | Since | Binding | Type   | Units | Default  | Range    |
+| ------------------- | ----- | ------- | ------ | ----- | -------- | -------- |
+| `SRTO_PASSPHRASE`   | 0.0.0 | pre     | string |       | [0]      | [10..79] |
+
+- **[SET]** — Sets the passphrase for encryption. This turns encryption on on 
+this side (or turns it off, if empty passphrase is passed).
+- The passphrase is the shared secret between the sender and the receiver. It is 
+used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2) 
+(Password-Based Key Derivation Function 2). It is used on the receiver only if 
+the received data is encrypted.  The configured passphrase cannot be get back 
+(write-only). *Sender and receiver: user configurable.* 
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default     | Range                             |
+| --------------------- | ----- | ------- | ----- | ------ | ----------- | --------------------------------- |
+| `SRTO_PAYLOADSIZE`    | 1.3.0 | pre     | int   | bytes  | 1316 (Live) | up to MTUsize-28-16, usually 1456 |
+
+- **[SET]** — Sets the maximum declared size of a single call to sending 
+function in Live mode. Use 0 if this value isn't used (which is default in file 
+mode). This value shall not be exceeded for a single data sending instruction 
+in Live mode
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range                           |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------------------------- |
+| `SRTO_PBKEYLEN`       | 0.0.0 | pre     | `int32_t` | bytes  | 0        | 0 16(128/8) 24(192/8) 32(256/8) |
+
+- **[GET or SET]** — Sender encryption key length. The use is slightly 
+different in 1.2.0 (HSv4) and 1.3.0 (HSv5):
+
+  - HSv4: This is set on the sender and enables encryption, if not 0. The receiver 
+  shall not set it and will agree on the length as defined by the sender.
+  
+  - HSv5: On the sending party it will default to 16 if not changed the default 
+  0 and the passphrase was set. The party that has set this value to non-zero 
+  value will advertise it at the beginning of the handshake. Actually there are 
+  two methods of defining it predicted to be used and all other uses are 
+  considered an undefined behavior:
+  
+    - **Unidirectional**: the sender shall set `PBKEYLEN` and the receiver shall 
+    not alter the default value 0. The effective `PBKEYLEN` will be the one set 
+    on the sender. The receiver need not know the sender’s `PBKEYLEN`, just the 
+    passphrase, `PBKEYLEN` will be correctly passed.
+    
+    - **Bidirectional in Caller-Listener arrangement**: use a rule in your use 
+    case that you will be setting the `PBKEYLEN` exclusively either on the 
+    Listener or on the Caller. Simply the value set on the Listener will win, 
+    if set. 
+    
+    - **Bidirectional in Rendezvous arrangement**: you have to know both parties 
+    passphrases as well as `PBKEYLEN` and you shall set `PBKEYLEN` to the same 
+    value on both parties (or leave the default value on both parties, which will 
+    result in 16)
+    
+    - **Unwanted behavior cases**: if both parties set `PBKEYLEN` and the value 
+    on both sides is different, the effective `PBKEYLEN` will be the one that is 
+    set on the Responder party, which may also override the `PBKEYLEN` 32 set by 
+    the sender to value 16 if such value was used by the receiver. The Responder 
+    party is Listener in Caller-Listener arrangement, and in Rendezvous it’s the 
+    matter of luck which one.
+
+- Possible values:
+  - 0 (`PBKEYLEN` not set)
+  - 16 (effective default) = AES-128
+  - 24 = AES-192
+  - 32 = AES-256
+
+- *Sender: user configurable.* 
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range         |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
+| `SRTO_PEERLATENCY`    | 1.3.0 | pre     | `int32_t` | msec   | 0        | positive only |
+
+- The latency value (as described in `SRTO_RCVLATENCY`) that is set by the sender 
+side as a minimum value for the receiver.
+---
+
+| OptName            | Since | Binding | Type      | Units  | Default | Range  |
+| ------------------ | ----- | ------- | --------- | ------ | ------- | ------ |
+| `SRTO_PEERVERSION` | 1.1.0 | n/a     | `int32_t` | n/a    | n/a     | n/a    |
+
+- **[GET]** — Peer SRT version. The value 0 is returned if not connected, SRT 
+handshake not yet performed (HSv4 only), or if peer is not SRT. See `SRTO_VERSION` 
+for the version format. 
+---
+
+| OptName               | Since | Binding | Type  | Units | Default          | Range                           |
+| --------------------- | ----- | ------- | ----- | ----- | ---------------- | ------------------------------- |
+| `SRTO_RCVBUF`         |       | pre     | `int` | bytes | 8192 × (1500-28) | 32 × (1500-28) ..FC × (1500-28) |
+
+- Receive Buffer Size. 
+- *Receive buffer must not be greater than FC size.* 
+- ***Warning: configured in bytes, converted in packets when set based on MSS 
+value. For desired result, configure MSS first.***
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_RCVDATA`    |       | n/a     | `int32_t` | pkts   | n/a      |        |
+
+- **[GET]** — Size of the available data in the receive buffer.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_RCVKMSTATE`     | 1.2.0 | post    | enum  | n/a    | n/a      |        |
+ 
+- **[GET]** — KM state on the agent side when it's a receiver, as per `SRTO_KMSTATE`
+- Values defined in enum `SRT_KM_STATE`:
+  - `SRT_KM_S_UNSECURED`: no decryption (even if sent data are encrypted)
+  - `SRT_KM_S_SECURING`: securing: (HSv4 only) encryption is desired, but KMX 
+  handshake not yet done, still waiting (until done, behaves like UNSECURED)
+  - `SRT_KM_S_SECURED`: KM exchange was successful and it will be decrypting 
+  encrypted data
+  - `SRT_KM_S_NOSECRET`: (HSv5 only) This site has set password, but data will 
+  be received as plain
+  - `SRT_KM_S_BADSECRET`: The password is wrong, encrypted payloads won’t be 
+  decrypted.
+
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range         |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
+| `SRTO_RCVLATENCY`     | 1.3.0 | pre     | `int32_t` | msec   | 0        | positive only |
+
+- The time that should elapse since the moment when the packet was sent and the 
+moment when it's delivered to the receiver application in the receiving function. 
+This time should be a buffer time large enough to cover the time spent for sending, 
+unexpectedly extended RTT time, and the time needed to retransmit the lost UDP 
+packet. The effective latency value will be the maximum of this options' value 
+and the value of `SRTO_PEERLATENCY` set by the peer side. **This option in 
+pre-1.3.0 version is available only as** `SRTO_LATENCY`.
+---
+
+| OptName               | Since | Binding | Type   | Units  | Default | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | ------- | ------ |
+| `SRTO_RCVSYN`         |       | pre     | `bool` | true   | true    | false  |
+
+- **[GET or SET]** — Synchronous (blocking) receive mode 
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_RCVTIMEO`       |       | post    | `int` | msecs  | -1       | -1..   |
+
+- **[GET or SET]** — Blocking mode receiving timeout (-1: infinite)
+---
+
+| OptName               | Since | Binding | Type   | Units  | Default | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | ------- | ------ |
+| `SRTO_RENDEZVOUS`     |       | pre     | `bool` | false  | true    | false  |
+
+- **[GET or SET]** — Use Rendezvous connection mode (both sides must set this 
+and both must use bind/connect to one another.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range       |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ----------- |
+| `SRTO_REUSEADDR`      |       | pre     |       |        | true     | true, false |
+
+- When true, allows the SRT socket use the binding address used already by 
+another SRT socket in the same application. Note that SRT socket use an 
+intermediate object to access the underlying UDP sockets called Multiplexer, 
+so multiple SRT socket may share one UDP socket and the packets received to this 
+UDP socket will be correctly dispatched to the SRT socket to which they are 
+currently destined. This has some similarities to `SO_REUSEADDR` system socket 
+option, although it’s only used inside SRT. 
+
+- *TODO: This option weirdly only allows the socket used in **bind()** to use the 
+local address that another socket is already using, but not to disallow another 
+socket in the same application to use the binding address that the current 
+socket is already using. What it actually changes is that when given address in 
+**bind()** is already used by another socket, this option will make the binding 
+fail instead of making the socket added to the shared group of that socket that 
+already has bound this address - but it will not disallow another socket reuse 
+its address.* 
+---
+
+| OptName        | Since | Binding | Type            | Units | Default | Range |
+| -------------- | ----- | ------- | --------------- | ----- | ------- | ----- |
+| `SRTO_SENDER`  | 1.0.4 | pre     | `int32_t` bool? |       | false   |       |
+
+- Set sender side. The side that sets this flag is expected to be a sender. 
+It's required when any of two connection sides supports at most *HSv4* handshake, 
+and therefore the sender side is the side that initiates the SRT extended 
+handshake (which won't be done at all, if none of the sides sets this flag). 
+This flag is superfluous, if **both** parties are at least version 1.3.0 (this 
+shall be enforced by setting this value to `SRTO_MINVERSION` if you expect that it 
+be true) and therefore support *HSv5* handshake, where the SRT extended handshake 
+is done with the overall handshake process. This flag is however **obligatory** 
+if at least one party may be SRT below version 1.3.0 and does not support *HSv5*.
+---
+
+| OptName               | Since | Binding | Type          | Units      | Default  | Range            |
+| --------------------- | ----- | ------- | ------------- | ---------- | -------- | ---------------- |
+| `SRTO_SMOOTHER`       | 1.3.0 | pre     | `const char*` | predefined | "live"   | "live" or "file" |
+
+- **[SET]** — The type of Smoother used for the transmission for that socket, 
+which is responsible for the transmission and congestion control. The Smoother 
+type must be exactly the same on both connecting parties, otherwise the 
+connection is rejected. 
+- ***TODO: might be reasonable to allow an "adaptive" value of the Smoother, 
+which will accept either of the smoother types when the other party enforces it, 
+and rejected if both sides are "adaptive"***
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default          | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | ---------------- | ------ |
+| `SRTO_SNDBUF`         |       | pre     | `int` | bytes  | 8192 × (1500-28) |        |
+
+- Send Buffer Size.  ***Warning: configured in bytes, converted in packets, when 
+set, based on MSS value. For desired result, configure MSS first.*** 
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_SNDDATA`    |       | n/a     | `int32_t` | pkts   | n/a      | n/a    |
+
+- **[GET]** — Size of the unacknowledged data in send buffer.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_SNDPEERKMSTATE` | 1.2.0 | post    | enum  | n/a    | n/a      |        |
+
+- **[GET]** — Peer KM state on receiver side for `SRTO_KMSTATE`
+- Values defined in enum `SRT_KM_STATE`:
+  - `SRT_KM_S_UNSECURED`: data will not be encrypted
+  - `SRT_KM_S_SECURING`: (HSv4 only): encryption is desired, but KM exchange 
+  isn’t finished. Payloads will be encrypted, but the receiver won’t be able 
+  to decrypt them yet.
+  - `SRT_KM_S_SECURED`: payloads will be encrypted and the receiver will 
+  decrypt them
+  - `SRT_KM_S_NOSECRET`: Encryption is desired on this side and payloads will 
+  be encrypted, but the receiver didn’t set the password and therefore won’t be 
+  able to decrypt them
+  - `SRT_KM_S_BADSECRET`: Encryption is configured on both sides, but the 
+  password is wrong (in HSv5 terms: both sides have set different passwords). 
+  The payloads will be encrypted and the receiver won’t be able to decrypt them.
+
+---
+
+| OptName              | Since | Binding | Type   | Units  | Default  | Range  |
+| -------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_SNDSYN`        |       | post    | `bool` | true   | true     | false  |
+
+- **[GET or SET]** — Synchronous (blocking) send mode 
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_SNDTIMEO`       |       | post    | `int` | msecs  | -1       | -1..   |
+
+- **[GET or SET]** — Blocking mode sending timeout (-1: infinite)
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_STATE`      |       | n/a     | `int32_t` |        | n/a      | n/a    |
+
+- **[GET]** — UDT connection state. (See enum `SRT_SOCKSTATUS`)
+---
+
+| OptName         | Since | Binding | Type          | Units  | Default  | Range      |
+| --------------- | ----- | ------- | ------------- | ------ | -------- | ---------- |
+| `SRTO_STREAMID` | 1.3.0 | pre     | `const char*` |        | empty    | any string |
+
+- **[GET or SET]** — A string limited to 512 characters that can be set on the 
+socket prior to connecting. This stream ID will be able to be retrieved by the 
+listener side from the socket that is returned from `srt_accept` and was 
+connected by a socket with that set stream ID. SRT does not enforce any special 
+interpretation of the contents of this string. As this uses internally the 
+`std::string` type, there are additional functions for it in the legacy/C++ API 
+(udt.h): `UDT::setstreamid` and `UDT::getstreamid`. This option doesn’t make sense 
+in Rendezvous connection; the result might be that simply one side will override 
+the value from the other side and it’s the matter of luck which one would win
+---
+
+| OptName           | Since | Binding | Type            | Units | Default  | Range  |
+| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_TLPKTDROP`  | 1.0.6 | pre     | `int32_t` bool? | true  | true     | false  |
+
+- Too-late Packet Drop. When enabled on receiver, it skips missing packets that 
+have not been delivered in time and delivers the subsequent packets to the 
+application when their time-to-play has come. It also sends a fake ACK to the 
+sender. When enabled on sender and enabled on the receiving peer, sender drops 
+the older packets that have no chance to be delivered in time. It is automatically 
+enabled in sender if receiver supports it.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default     | Range            |
+| --------------------- | ----- | ------- | ----- | ------ | ----------- | ---------------- |
+| `SRTO_TRANSTYPE`      | 1.3.0 | pre     | enum  |        | `SRTT_LIVE` | alt: `SRTT_FILE` |
+
+- **[SET]** — Sets the transmission type for the socket, in particular, setting 
+this option sets multiple other parameters to their default values as required 
+for a particular transmission type.
+  - `SRTT_LIVE`: Set options as for live transmission. In this mode, you should 
+  send by one sending instruction only so many data that fit in one UDP packet, 
+  and limited to the value defined first in `SRTO_PAYLOADSIZE` option (1316 is 
+  default in this mode). There is no speed control in this mode, only the 
+  bandwidth control, if configured, in order to not exceed the bandwidth with 
+  the overhead transmission (retransmitted and control packets).
+  - `SRTT_FILE`: Set options as for non-live transmission. See `SRTO_MESSAGEAPI` 
+  for further explanations
+
+---
+
+| OptName            | Since | Binding | Type              | Units  | Default  | Range  |
+| ------------------ | ----- | ------- | ----------------- | ------ | -------- | ------ |
+| `SRTO_TSBPDMODE`   | 0.0.0 | pre     | `int32_t` (bool?) | false  | true     | false  |
+
+- Timestamp-based Packet Delivery mode. This flag is set to _true_ by default 
+and as a default flag set in live mode.
+---
+
+| OptName            | Since | Binding | Type  | Units  | Default     | Range  |
+| ------------------ | ----- | ------- | ----- | ------ | ----------- | ------ |
+| `SRTO_UDP_RCVBUF`  |       | pre     | `int` | bytes  | 8192 × 1500 | MSS..  |
+
+- UDP Socket Receive Buffer Size.  Configured in bytes, maintained in packets 
+based on MSS value. Receive buffer must not be greater than FC size.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_UDP_SNDBUF`     |       | pre     | `int` | bytes  | 65536    | MSS..  |
+
+- UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
+on `SRTO_MSS` value. *SRT recommended value:* `1024*1024`
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_VERSION`    | 1.1.0 | n/a     | `int32_t` |        | n/a      | n/a    |
+
+- **[GET]** — Local SRT version. This is the highest local version supported if 
+not connected, or the highest version supported by the peer if connected.
+- The version format in hex is 0xXXYYZZ for x.y.z in human readable form, 
+where x = ("%d", (version>>16) & 0xff), etc.
+- SET could eventually be supported for testing 
+
+
+
 
 
 Transmission types

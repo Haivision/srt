@@ -55,7 +55,7 @@ written by
 #endif
 
 // Windows warning disabler
-#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS 1
 
 #include "platform_sys.h"
 
@@ -442,7 +442,7 @@ struct PairProxy
 template <class T1, class T2> inline
 PairProxy<T1, T2> Tie2(T1& v1, T2& v2)
 {
-    return PairProxy<T1, T2<(v1, v2);
+    return PairProxy<T1, T2>(v1, v2);
 }
 
 template<class T>
@@ -489,7 +489,7 @@ inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size
     return filter;
 }
 
-inline pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFilter<int> filter)
+inline std::pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFilter<int> filter)
 {
     int count = 0;
     int sum = 0;
@@ -503,16 +503,17 @@ inline pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFil
         ++count;
     }
 
-    return make_pair(sum, count);
+    return std::make_pair(sum, count);
 }
 
+template <class IntCount, class IntParaCount>
 inline void AccumulatePassFilterParallel(const int* p, const int* end, PassFilter<int> filter,
         const int* para,
-        ref_t<int> r_sum, ref_t<int> r_count, ref_t<int> r_paracount)
+        ref_t<int> r_sum, ref_t<IntCount> r_count, ref_t<IntParaCount> r_paracount)
 {
-    int count = 0;
+    IntCount count = 0;
     int sum = 0;
-    int parasum = 0;
+    IntParaCount parasum = 0;
     for (; p != end; ++p, ++para)
     {
         // Throw away those that don't fit in the filter

@@ -35,7 +35,7 @@ written by
 //use -D_WIN32_WINNT=0x0501
 
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
@@ -95,7 +95,7 @@ extern "C" {
 
 typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       typedef SOCKET SYSSOCKET;
    #else
@@ -158,7 +158,7 @@ typedef enum SRT_SOCKOPT {
 	SRTO_IPTTL = 29,      // IP Time To Live (passthru for system sockopt IPPROTO_IP/IP_TTL)
 	SRTO_IPTOS,           // IP Type of Service (passthru for system sockopt IPPROTO_IP/IP_TOS)
 	SRTO_TLPKTDROP = 31,  // Enable receiver pkt drop
-    // deprecated: SRTO_TSBPDMAXLAG (@c below)
+	SRTO_SNDDROPDELAY = 32, // Extra delay towards latency for sender TLPKTDROP decision (-1 to off)
 	SRTO_NAKREPORT = 33,  // Enable receiver to send periodic NAK reports
 	SRTO_VERSION = 34,    // Local SRT Version
 	SRTO_PEERVERSION,     // Peer SRT Version (from SRT Handshake)
@@ -172,13 +172,14 @@ typedef enum SRT_SOCKOPT {
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
     SRTO_PEERLATENCY,     // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
     SRTO_MINVERSION,      // Minimum SRT version needed for the peer (peers with less version will get connection reject)
-    SRTO_STREAMID,         // A string set to a socket and passed to the listener's accepted socket
-    SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
-    SRTO_MESSAGEAPI,
-    SRTO_PAYLOADSIZE,
-    SRTO_TRANSTYPE,         // Transmission type (set of options required for given transmission type)
-    SRTO_KMREFRESHRATE,
-    SRTO_KMPREANNOUNCE
+    SRTO_STREAMID,        // A string set to a socket and passed to the listener's accepted socket
+    SRTO_SMOOTHER,        // Smoother selection (congestion control algorithm)
+    SRTO_MESSAGEAPI,      // In File mode, use message API (portions of data with boundaries)
+    SRTO_PAYLOADSIZE,     // Maximum payload size sent in one UDP packet (0 if unlimited)
+    SRTO_TRANSTYPE,       // Transmission type (set of options required for given transmission type)
+    SRTO_KMREFRESHRATE,   // After sending how many packets the encryption key should be flipped to the new key
+    SRTO_KMPREANNOUNCE,   // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
+    SRTO_STRICTENC,       // Connection to be rejected or quickly broken when one side encryption set or bad password
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -193,6 +194,7 @@ typedef enum SRT_SOCKOPT {
 static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 
 // This has been deprecated a long time ago, treat this as never implemented.
+// The value is also already reused for another option.
 static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
@@ -541,7 +543,7 @@ typedef struct SRT_MsgCtrl_
    int msgttl;           // TTL for a message, default -1 (delivered always)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;     // source timestamp (usec), 0LL: use internal time     
+   uint64_t srctime;     // source timestamp (usec), 0: use internal time     
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
 } SRT_MSGCTRL;

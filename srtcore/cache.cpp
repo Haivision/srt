@@ -38,7 +38,7 @@ written by
    Yunhong Gu, last updated 05/05/2009
 *****************************************************************************/
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
 #endif
@@ -51,7 +51,7 @@ using namespace std;
 
 CInfoBlock& CInfoBlock::operator=(const CInfoBlock& obj)
 {
-   std::copy(obj.m_piIP, obj.m_piIP + 3, m_piIP);
+   std::copy(obj.m_piIP, obj.m_piIP + 4, m_piIP);
    m_iIPversion = obj.m_iIPversion;
    m_ullTimeStamp = obj.m_ullTimeStamp;
    m_iRTT = obj.m_iRTT;
@@ -85,7 +85,7 @@ CInfoBlock* CInfoBlock::clone()
 {
    CInfoBlock* obj = new CInfoBlock;
 
-   std::copy(m_piIP, m_piIP + 3, obj->m_piIP);
+   std::copy(m_piIP, m_piIP + 4, obj->m_piIP);
    obj->m_iIPversion = m_iIPversion;
    obj->m_ullTimeStamp = m_ullTimeStamp;
    obj->m_iRTT = m_iRTT;

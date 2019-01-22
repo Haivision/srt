@@ -48,12 +48,9 @@ FUNCTION(join_arguments outvar)
 	set (${outvar} ${output} PARENT_SCOPE)
 ENDFUNCTION()
 
-macro(srt_install_symlink filepath sympath)
-    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${filepath} ${sympath})")
-    install(CODE "message(\"-- Created symlink: ${sympath} -> ${filepath}\")")
-endmacro(srt_install_symlink)
-
+# LEGACY. PLEASE DON'T USE ANYMORE.
 MACRO(MafRead maffile)
+	message(WARNING "MafRead is deprecated. Please use MafReadDir instead")
 	# ARGN contains the extra "section-variable" pairs
 	# If empty, return nothing
 	set (MAFREAD_TAGS
@@ -148,6 +145,12 @@ MACRO(MafReadDir directory maffile)
 	FILE(READ ${directory}/${maffile} MAFREAD_CONTENTS)
 	STRING(REGEX REPLACE ";" "\\\\;" MAFREAD_CONTENTS "${MAFREAD_CONTENTS}")
 	STRING(REGEX REPLACE "\n" ";" MAFREAD_CONTENTS "${MAFREAD_CONTENTS}")
+
+	# Once correctly read, declare this file as dependency of the build file.
+	# Normally you should use cmake_configure_depends(), but this is
+	# available only since 3.0 version.
+	configure_file(${directory}/${maffile} dummy_${maffile}.cmake.out)
+	file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/dummy_${maffile}.cmake.out)
 
     #message("DEBUG: MAF FILE CONTENTS: ${MAFREAD_CONTENTS}")
     #message("DEBUG: PASSED VARIABLES:")

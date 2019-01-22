@@ -23,7 +23,7 @@ written by
 #include <vector>
 #include <sstream>
 #include <cstdarg>
-#ifdef WIN32
+#ifdef _WIN32
 #include "win/wintime.h"
 #include <sys/timeb.h>
 #else
@@ -416,7 +416,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 #endif
 }
 
-#else
+#else // !HAVE_CXX11
 
 template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, const Arg& arg ATR_UNUSED)
@@ -434,8 +434,9 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 #endif
 }
 
-#endif
+#endif // HAVE_CXX11
 
 }
 
-#endif
+#endif // INC__SRT_LOGGING_H
+
