@@ -34,7 +34,7 @@ Synopsis
 --------
 
     SRTSOCKET srt_socket(int af, int, int);
-    void srt_close(SRTSOCKET s);
+    int srt_close(SRTSOCKET s);
 
 The `srt_socket` function is based on the legacy UDT API except
 the first parameter. The other two are ignored.
@@ -360,13 +360,13 @@ Synopsis
 
 Legacy version:
 
-    void srt_getsockopt(SRTSOCKET socket, int level, SRT_SOCKOPT optName, void* optval, int& optlen);
-    void srt_setsockopt(SRTSOCKET socket, int level, SRT_SOCKOPT optName, const void* optval, int optlen);
+    int srt_getsockopt(SRTSOCKET socket, int level, SRT_SOCKOPT optName, void* optval, int& optlen);
+    int srt_setsockopt(SRTSOCKET socket, int level, SRT_SOCKOPT optName, const void* optval, int optlen);
 
 New version:
 
-    void srt_getsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, void* optval, int& optlen);
-    void srt_setsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, const void* optval, int optlen);
+    int srt_getsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, void* optval, int& optlen);
+    int srt_setsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, const void* optval, int optlen);
 
 (In the legacy version, there's an additional unused `level` parameter. It was there
 in the original UDT API just to mimic the system `setsockopt` function).
