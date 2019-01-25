@@ -150,7 +150,7 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 
 It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them: 
 ```
-OPENSSL_ROOT_DIR=<path to OpenSSL instalation>
+OPENSSL_ROOT_DIR=<path to OpenSSL installation>
 OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
 OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
 
