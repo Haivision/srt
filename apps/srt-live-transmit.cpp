@@ -395,7 +395,7 @@ int main( int argc, char** argv )
 
             int srtrfdslen = 2;
             int srtwfdslen = 2;
-            SRTSOCKET srtrwfds[4] = {};
+            SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
             if (srt_epoll_wait(pollid,
@@ -412,10 +412,10 @@ int main( int argc, char** argv )
                 }
 
                 bool doabort = false;
-                for (int i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
+                for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
                 {
                     SRTSOCKET s = srtrwfds[i];
-                    if (s == NULL)
+                    if (s == SRT_INVALID_SOCK)
                         continue;
 
                     bool issource = false;
