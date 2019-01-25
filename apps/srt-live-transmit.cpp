@@ -371,7 +371,7 @@ int main( int argc, char** argv )
                 }
 
                 // IN because we care for state transitions only
-                // ON - to ckeck the connection state changes
+                // ON - to check the connection state changes
                 int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
                 switch(tar->uri.type())
                 {
@@ -419,11 +419,11 @@ int main( int argc, char** argv )
                         continue;
 
                     bool issource = false;
-                    if (src->GetSRTSocket() == s)
+                    if (src && src->GetSRTSocket() == s)
                     {
                         issource = true;
                     }
-                    else if (tar->GetSRTSocket() != s)
+                    else if (tar && tar->GetSRTSocket() != s)
                     {
                         cerr << "Unexpected socket poll: " << s;
                         doabort = true;
