@@ -371,7 +371,8 @@ int main( int argc, char** argv )
                 }
 
                 // IN because we care for state transitions only
-                int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                // ON - to ckeck the connection state changes
+                int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
                 switch(tar->uri.type())
                 {
                 case UriParser::SRT:
@@ -393,11 +394,12 @@ int main( int argc, char** argv )
             }
 
             int srtrfdslen = 2;
-            SRTSOCKET srtrfds[2];
+            int srtwfdslen = 2;
+            SRTSOCKET srtrwfds[4] = {};
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
             if (srt_epoll_wait(pollid,
-                &srtrfds[0], &srtrfdslen, 0, 0,
+                &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
                 &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
             {
@@ -410,10 +412,13 @@ int main( int argc, char** argv )
                 }
 
                 bool doabort = false;
-                for (int i = 0; i < srtrfdslen; i++)
+                for (int i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
                 {
+                    SRTSOCKET s = srtrwfds[i];
+                    if (s == NULL)
+                        continue;
+
                     bool issource = false;
-                    SRTSOCKET s = srtrfds[i];
                     if (src->GetSRTSocket() == s)
                     {
                         issource = true;
