@@ -796,7 +796,7 @@ if (ENABLE_EXAMPLES)
 endif()
 
 
-if (ENABLE_UNITTESTS)
+if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	find_package(GTest 1.8)
