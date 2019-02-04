@@ -545,10 +545,6 @@ when it was closed by the foreign host).
 * `SRT_EINVALBUFFERAPI`: Incorrect API usage in stream mode:
 	* Currently not in use. The FileSmoother used as the only for stream
 	  mode does not restrict the parameters.
-* `SRT_ELARGEMSG`: Message to be sent can't fit in the sending buffer (that is,
-it exceeds the current total space in the sending buffer in bytes). It means
-that the sender buffer is too small, or the application is trying to send
-larger message than initially predicted.
 * `SRT_EASYNCRCV`: There are no data currently waiting for delivery. This
 happens only in non-blocking mode (when `SRTO_RCVSYN` is set to false), in
 blocking mode the call is blocked until the data are ready. How this is defined,
@@ -615,6 +611,13 @@ reported for `srt_sendfile` when the `seekg` or `tellg` operations resulted in e
 
 Diagnostics
 -----------
+
+General notes concerning the "getlasterror" diagnostic functions: when an API
+function ends up with error, this error information is stored in a thread-local
+storage. This means that you'll get the error of the operation that was last
+performed as long as you call this diagnostic function just after the failed
+function has returned. In any other situation the information provided by the
+diagnostic function is undefined.
 
 ```
 const char* srt_getlasterror_str(void);
@@ -703,7 +706,11 @@ packets can be sent. In Live mode this field is not really in use.
 the packet sequence number that was last reported by ACK message and the
 sequence number of the packet just sent. Note that ACK gets received
 periodically, so this value is most accurate just after receiving ACK and
-becomes a little exaggerated in time until the next ACK comes.
+becomes a little exaggerated in time until the next ACK comes. (**BUG**
+or improvement required: it makes little sense to calculate this value
+basing on the current sent-out sequence; what really counts is the distance
+between the ACK-ed sequence and the sent-out sequence at the very moment
+when ACK comes, not at any moment).
 
 * `msRTT`: The RTT (Round-Trip time), it's the sum of two STT (Single-Trip
 time) values, one from agent to peer and one from peer to agent. Beware that
@@ -724,7 +731,7 @@ the receiver side.
 data scheduled for sending by the application and increases with every ACK
 received from the receiver, after the packets are sent over the UDP link.
 
-* ` byteAvailRcvBuf`: Bytes available in the receiver buffer.
+* `byteAvailRcvBuf`: Bytes available in the receiver buffer.
 
 * `mbpsMaxBW`: Usually this is the setting from `SRTO_MAXBW` option, including
 value 0 (unlimited). Might be that under certain conditions a nonzero value can
