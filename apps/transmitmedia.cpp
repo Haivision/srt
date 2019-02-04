@@ -612,17 +612,23 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, clear_stats);
-    clear_stats = false;
-    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
+    const bool need_bw_report    = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
+
+    if (need_bw_report || need_stats_report)
     {
-        PrintSrtBandwidth(perf.mbpsBandwidth);
-    }
-    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
-    {
-        PrintSrtStats(m_sock, perf);
-        clear_stats = !transmit_total_stats;
+        CBytePerfMon perf;
+        srt_bstats(m_sock, &perf, clear_stats);
+        clear_stats = false;
+        if (need_bw_report)
+        {
+            PrintSrtBandwidth(perf.mbpsBandwidth);
+        }
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+            clear_stats = !transmit_total_stats;
+        }
     }
 
     ++counter;
@@ -658,17 +664,23 @@ bool SrtTarget::Write(const bytevector& data)
         return false;
     }
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, clear_stats);
-    clear_stats = false;
-    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
+    const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
+
+    if (need_bw_report || need_stats_report)
     {
-        PrintSrtBandwidth(perf.mbpsBandwidth);
-    }
-    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
-    {
-        PrintSrtStats(m_sock, perf);
-        clear_stats = !transmit_total_stats;
+        CBytePerfMon perf;
+        srt_bstats(m_sock, &perf, clear_stats);
+        clear_stats = false;
+        if (need_bw_report)
+        {
+            PrintSrtBandwidth(perf.mbpsBandwidth);
+        }
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+            clear_stats = !transmit_total_stats;
+        }
     }
 
     ++counter;
