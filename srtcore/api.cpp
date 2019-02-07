@@ -1223,7 +1223,7 @@ int CUDTUnited::select(
          s = *j1;
 
          if ((s->m_pUDT->m_bConnected
-               && s->m_pUDT->m_pRcvBuffer->isRcvDataReady()
+               && s->m_pUDT->m_pRcvBuffer->isRcvDataReady(s->m_pUDT->m_bMessageAPI)
             )
             || (!s->m_pUDT->m_bListening
                && (s->m_pUDT->m_bBroken || !s->m_pUDT->m_bConnected))
@@ -1320,7 +1320,7 @@ int CUDTUnited::selectEx(
          if (readfds)
          {
             if ((s->m_pUDT->m_bConnected
-                  && s->m_pUDT->m_pRcvBuffer->isRcvDataReady()
+                  && s->m_pUDT->m_pRcvBuffer->isRcvDataReady(s->m_pUDT->m_bMessageAPI)
                )
                || (s->m_pUDT->m_bListening
                   && (s->m_pQueuedSockets->size() > 0)))

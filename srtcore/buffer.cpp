@@ -1137,7 +1137,8 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 * used in the code (core.cpp) is expensive in TsbPD mode, hence this simpler function
 * that only check if first packet in queue is ready.
 */
-bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
+bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq,
+    bool ismessageapi)
 {
     *tsbpdtime = 0;
 
@@ -1156,6 +1157,13 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         *tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
 
         return (*tsbpdtime <= CTimer::getTime());
+    }
+
+    if (ismessageapi)
+    {
+        int32_t q, p;
+        bool passack;
+        return scanMsg(Ref(p), Ref(q), Ref(passack));
     }
 
     return isRcvDataAvailable();
@@ -1233,15 +1241,14 @@ void CRcvBuffer::reportBufferStats()
     LOGC(dlog.Debug, log << "RCV BUF STATS: seqspan=%(" << low_seq << "-" << high_seq << ":" << seqspan << ") missing=" << nmissing << "pkts");
     LOGC(dlog.Debug, log << "RCV BUF STATS: timespan=" << timespan << "us (lo=" << FormatTime(lower_time) << " hi=" << FormatTime(upper_time) << ")");
 }
-
 #endif // ENABLE_HEAVY_LOGGING
 
-bool CRcvBuffer::isRcvDataReady()
+bool CRcvBuffer::isRcvDataReady(bool ismessageapi)
 {
    uint64_t tsbpdtime;
    int32_t seq;
 
-   return isRcvDataReady(Ref(tsbpdtime), Ref(seq));
+   return isRcvDataReady(Ref(tsbpdtime), Ref(seq), ismessageapi);
 }
 
 int CRcvBuffer::getAvailBufSize() const

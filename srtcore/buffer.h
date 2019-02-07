@@ -347,8 +347,8 @@ public:
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
-   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
-   bool isRcvDataReady();
+   bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq, bool ismessageapi = false);
+   bool isRcvDataReady(bool ismessageapi = false);
    bool isRcvDataAvailable()
    {
        return m_iLastAckPos != m_iStartPos;

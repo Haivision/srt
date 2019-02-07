@@ -1040,7 +1040,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         else
         {
             CGuard::enterCS(m_RecvLock);
-            if (m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady())
+            if (m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
                 event |= UDT_EPOLL_IN;
             CGuard::leaveCS(m_RecvLock);
             if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
@@ -4832,7 +4832,7 @@ void *CUDT::tsbpd(void *param)
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady(Ref(tsbpdtime), Ref(current_pkt_seq));
+            rxready = self->m_pRcvBuffer->isRcvDataReady(Ref(tsbpdtime), Ref(current_pkt_seq), self->m_bMessageAPI);
         }
         CGuard::leaveCS(self->m_RcvBufferLock);
 
@@ -5571,7 +5571,7 @@ int CUDT::receiveBuffer(char *data, int len)
 
     CGuard recvguard(m_RecvLock);
 
-    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         if (m_bShutdown)
         {
@@ -5601,7 +5601,7 @@ int CUDT::receiveBuffer(char *data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         if (!m_bSynRecving)
         {
@@ -5612,7 +5612,7 @@ int CUDT::receiveBuffer(char *data, int len)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_iRcvTimeOut < 0)
             {
-                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
                 {
                     // Do not block forever, check connection status each 1 sec.
                     CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, 1000000);
@@ -5621,7 +5621,7 @@ int CUDT::receiveBuffer(char *data, int len)
             else
             {
                 uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000;
-                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
                 {
                     CTimer::condTimedWaitUS(&m_RecvDataCond, &m_RecvLock, m_iRcvTimeOut * 1000);
                     if (CTimer::getTime() >= exptime)
@@ -5635,7 +5635,7 @@ int CUDT::receiveBuffer(char *data, int len)
     if (!m_bConnected)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         // See at the beginning
         if (!m_bMessageAPI && m_bShutdown)
@@ -5659,7 +5659,7 @@ int CUDT::receiveBuffer(char *data, int len)
         pthread_cond_signal(&m_RcvTsbPdCond);
     }
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         // read is not available any more
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
@@ -6059,7 +6059,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         if (m_bTsbPd)
             pthread_cond_signal(&m_RcvTsbPdCond);
 
-        if (!m_pRcvBuffer->isRcvDataReady())
+        if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
         {
             // read is not available any more
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
@@ -6093,7 +6093,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
         }
         else
         {
-            if (!m_pRcvBuffer->isRcvDataReady())
+            if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
             {
                 // Kick TsbPd thread to schedule next wakeup (if running)
                 if (m_bTsbPd)
@@ -6119,7 +6119,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     do
     {
-        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
+        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI)))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -6140,7 +6140,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
                 {
                     HLOGP(tslog.Debug, "recvmsg: DATA COND: KICKED.");
                 }
-            } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+            } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI)));
         }
 
         /* XXX DEBUG STUFF - enable when required
@@ -6161,7 +6161,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     } while ((res == 0) && !timeout);
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         // Falling here means usually that res == 0 && timeout == true.
         // res == 0 would repeat the above loop, unless there was also a timeout.
@@ -6318,7 +6318,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
 {
     if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         if (!m_bMessageAPI && m_bShutdown)
             return 0;
@@ -6397,13 +6397,13 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
         }
 
         pthread_mutex_lock(&m_RecvDataLock);
-        while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+        while (stillConnected() && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
             pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock);
         pthread_mutex_unlock(&m_RecvDataLock);
 
         if (!m_bConnected)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+        else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
         {
 
             if (!m_bMessageAPI && m_bShutdown)
@@ -6421,7 +6421,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
         }
     }
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         // read is not available any more
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
@@ -6957,8 +6957,13 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
                     pthread_mutex_unlock(&m_RecvDataLock);
                 }
                 // acknowledge any waiting epolls to read
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
-                CTimer::triggerEvent();
+                CGuard::enterCS(m_RecvLock); // lock changes on m_pRcvBuffer->m_pUnit
+                if (!m_bMessageAPI || m_pRcvBuffer->isRcvDataReady(true))
+                {
+                    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+                    CTimer::triggerEvent();
+                }
+                CGuard::leaveCS(m_RecvLock);
             }
             CGuard::enterCS(m_RcvBufferLock);
         }
@@ -9503,7 +9508,7 @@ void CUDT::addEPoll(const int eid)
         return;
 
     CGuard::enterCS(m_RecvLock);
-    if (m_pRcvBuffer->isRcvDataReady())
+    if (m_pRcvBuffer->isRcvDataReady(m_bMessageAPI))
     {
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
     }
