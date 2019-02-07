@@ -508,9 +508,9 @@ int main( int argc, char** argv )
                                 // force re-connection
                                 srt_epoll_remove_usock(pollid, s);
                                 if (issource)
-                                    src.release();
+                                    src.reset();
                                 else
-                                    tar.release();
+                                    tar.reset();
                             }
                         }
                         break;
