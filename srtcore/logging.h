@@ -53,15 +53,15 @@ written by
 
 // LOGC uses an iostream-like syntax, using the special 'log' symbol.
 // This symbol isn't visible outside the log macro parameters.
-// Usage: LOGC(mglog.Debug, log << param1 << param2 << param3);
+// Usage: LOGC(mglob().Debug, log << param1 << param2 << param3);
 #define LOGC(logdes, args) if (logdes.CheckEnabled()) { logging::LogDispatcher::Proxy log(logdes); log.setloc(__FILE__, __LINE__, __FUNCTION__); args; }
 
 // LOGF uses printf-like style formatting.
-// Usage: LOGF(mglog.Debug, "%s: %d", param1.c_str(), int(param2));
+// Usage: LOGF(mglob().Debug, "%s: %d", param1.c_str(), int(param2));
 #define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 
 // LOGP is C++11 only OR with only one string argument.
-// Usage: LOGP(mglog.Debug, param1, param2, param3);
+// Usage: LOGP(mglob().Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
 
 #if ENABLE_HEAVY_LOGGING

@@ -24,6 +24,7 @@ written by
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
+#include "static_loggers.h"
 
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
@@ -32,7 +33,6 @@ written by
 
 std::string KmStateStr(SRT_KM_STATE state);
 
-extern logging::Logger mglog;
 
 #endif
 
@@ -156,11 +156,11 @@ public:
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;
-            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+            HLOGC(mglob().Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
         }
         else
         {
-            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
+            HLOGC(mglob().Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
         }
     }
 

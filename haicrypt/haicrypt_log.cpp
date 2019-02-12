@@ -18,7 +18,7 @@
 extern logging::LogConfig srt_logger_config;
 
 // LOGFA symbol defined in srt.h
-logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.k");
+static logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.k");
 
 extern "C" {
 

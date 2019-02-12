@@ -163,8 +163,8 @@ modified by
 #include <cstring>
 #include "packet.h"
 #include "logging.h"
+#include "static_loggers.h"
 
-extern logging::Logger mglog;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():
@@ -404,7 +404,7 @@ EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
 {
     if ( !hcrypto )
     {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
+        LOGC(mglob().Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
         return ENCS_FAILED;
     }
 
@@ -424,13 +424,13 @@ EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
 {
    if (getMsgCryptoFlags() == EK_NOENC)
    {
-       //HLOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
+       //HLOGC(mglob().Debug, log << "CPacket::decrypt: packet not encrypted");
        return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
    }
 
    if (!hcrypto)
    {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
+        LOGC(mglob().Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
         return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
    }
 

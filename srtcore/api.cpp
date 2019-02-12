@@ -58,6 +58,7 @@ modified by
 #include <cstring>
 #include "platform_sys.h"
 #include "api.h"
+#include "static_loggers.h"
 #include "core.h"
 #include "logging.h"
 #include "threadname.h"
@@ -71,7 +72,6 @@ using namespace std;
 
 extern logging::LogConfig srt_logger_config;
 
-extern logging::Logger mglog;
 
 CUDTSocket::CUDTSocket():
 m_Status(SRTS_INIT),
@@ -310,7 +310,7 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
    CGuard::enterCS(m_ControlLock);
    try
    {
-      HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
+      HLOGC(mglob().Debug, log << CONID(ns->m_SocketID)
          << "newSocket: mapping socket "
          << ns->m_SocketID);
       m_Sockets[ns->m_SocketID] = ns;
@@ -339,7 +339,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    CUDTSocket* ls = locate(listen);
    if (!ls)
    {
-       LOGC(mglog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
+       LOGC(mglob().Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
        return -1;
    }
 
@@ -377,7 +377,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    // exceeding backlog, refuse the connection request
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
    {
-       LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+       LOGC(mglob().Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
        return -1;
    }
 
@@ -403,13 +403,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    catch (...)
    {
       delete ns;
-      LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
+      LOGC(mglob().Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
       return -1;
    }
 
    CGuard::enterCS(m_IDLock);
    ns->m_SocketID = -- m_SocketIDGenerator;
-   HLOGF(mglog.Debug, "newConnection: generated socket id %d", ns->m_SocketID);
+   HLOGF(mglob().Debug, "newConnection: generated socket id %d", ns->m_SocketID);
    CGuard::leaveCS(m_IDLock);
 
    ns->m_ListenSocket = listen;
@@ -431,7 +431,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        // this call causes sending the SRT Handshake through this socket.
        // Without this mapping the socket cannot be found and therefore
        // the SRT Handshake message would fail.
-       HLOGF(mglog.Debug, 
+       HLOGF(mglob().Debug, 
                "newConnection: incoming %s, mapping socket %d",
                SockaddrToString(peer).c_str(), ns->m_SocketID);
        {
@@ -460,7 +460,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    CGuard::enterCS(m_ControlLock);
    try
    {
-       HLOGF(mglog.Debug, 
+       HLOGF(mglob().Debug, 
                "newConnection: mapping peer %d to that socket (%d)\n",
                ns->m_PeerID, ns->m_SocketID);
        m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
@@ -493,7 +493,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    {
 #if ENABLE_LOGGING
        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
-       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+       LOGC(mglob().Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
       SRTSOCKET id = ns->m_SocketID;
       ns->m_pUDT->close();
@@ -900,11 +900,11 @@ int CUDTUnited::close(const SRTSOCKET u)
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-   HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
+   HLOGC(mglob().Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
    CGuard socket_cg(s->m_ControlLock);
 
-   HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
+   HLOGC(mglob().Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
 
    bool synch_close_snd = s->m_pUDT->m_bSynSending;
    //bool synch_close_rcv = s->m_pUDT->m_bSynRecving;
@@ -928,7 +928,7 @@ int CUDTUnited::close(const SRTSOCKET u)
       // be unable to bind to this port that the about-to-delete listener
       // is currently occupying (due to blocked slot in the RcvQueue).
 
-      HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing listener immediately)");
+      HLOGC(mglob().Debug, log << s->m_pUDT->CONID() << " CLOSING (removing listener immediately)");
       {
           CGuard cg(s->m_pUDT->m_ConnectionLock);
           s->m_pUDT->m_bListening = false;
@@ -946,7 +946,7 @@ int CUDTUnited::close(const SRTSOCKET u)
        s->m_pUDT->close();
 
        // synchronize with garbage collection.
-       HLOGC(mglog.Debug, log << "%" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
+       HLOGC(mglob().Debug, log << "%" << id << " CUDT::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
        CGuard manager_cg(m_ControlLock);
 
        // since "s" is located before m_ControlLock, locate it again in case
@@ -970,7 +970,7 @@ int CUDTUnited::close(const SRTSOCKET u)
        CTimer::triggerEvent();
    }
 
-   HLOGC(mglog.Debug, log << "%" << id << ": GLOBAL: CLOSING DONE");
+   HLOGC(mglob().Debug, log << "%" << id << ": GLOBAL: CLOSING DONE");
 
    // Check if the ID is still in closed sockets before you access it
    // (the last triggerEvent could have deleted it).
@@ -978,7 +978,7 @@ int CUDTUnited::close(const SRTSOCKET u)
    {
 #if SRT_ENABLE_CLOSE_SYNCH
 
-       HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
+       HLOGC(mglob().Debug, log << "%" << id << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
        for (;;)
        {
            CSndBuffer* sb = s->m_pUDT->m_pSndBuffer;
@@ -986,14 +986,14 @@ int CUDTUnited::close(const SRTSOCKET u)
            // Disconnected from buffer - nothing more to check.
            if (!sb)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.");
+               HLOGC(mglob().Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer disconnected. Allowed to close.");
                break;
            }
 
            // Sender buffer empty
            if (sb->getCurrBufSize() == 0)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
+               HLOGC(mglob().Debug, log << "%" << id << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
                break;
            }
 
@@ -1013,16 +1013,16 @@ int CUDTUnited::close(const SRTSOCKET u)
            }
            if (isgone)
            {
-               HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().");
+               HLOGC(mglob().Debug, log << "%" << id << " GLOBAL CLOSING: ... gone in the meantime, whatever. Exiting close().");
                break;
            }
 
-           HLOGC(mglog.Debug, log << "%" << id << " GLOBAL CLOSING: ... still waiting for any update.");
+           HLOGC(mglob().Debug, log << "%" << id << " GLOBAL CLOSING: ... still waiting for any update.");
            CTimer::EWait wt = CTimer::waitForEvent();
 
            if ( wt == CTimer::WT_ERROR )
            {
-               HLOGC(mglog.Debug, log << "GLOBAL CLOSING: ... ERROR WHEN WAITING FOR EVENT. Exiting close() to prevent hangup.");
+               HLOGC(mglob().Debug, log << "GLOBAL CLOSING: ... ERROR WHEN WAITING FOR EVENT. Exiting close() to prevent hangup.");
                break;
            }
 
@@ -1443,7 +1443,7 @@ void CUDTUnited::checkBrokenSockets()
    {
        CUDTSocket* s = i->second;
 
-      // HLOGF(mglog.Debug, "checking EXISTING socket: %d\n", i->first);
+      // HLOGF(mglob().Debug, "checking EXISTING socket: %d\n", i->first);
       // check broken connection
       if (s->m_pUDT->m_bBroken)
       {
@@ -1454,7 +1454,7 @@ void CUDTUnited::checkBrokenSockets()
             // in case a client is connecting
             if (elapsed < 3000000) // XXX MAKE A SYMBOLIC CONSTANT HERE!
             {
-               // HLOGF(mglog.Debug, "STILL KEEPING socket %d
+               // HLOGF(mglob().Debug, "STILL KEEPING socket %d
                // (listener, too early, w8 %fs)\n", i->first,
                // double(elapsed)/1000000);
                continue;
@@ -1469,13 +1469,13 @@ void CUDTUnited::checkBrokenSockets()
             && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable()
             && (s->m_pUDT->m_iBrokenCounter -- > 0))
          {
-            // HLOGF(mglog.Debug, "STILL KEEPING socket (still have data):
+            // HLOGF(mglob().Debug, "STILL KEEPING socket (still have data):
             // %d\n", i->first);
             // if there is still data in the receiver buffer, wait longer
             continue;
          }
 
-         // HLOGF(mglog.Debug, "moving socket to CLOSED: %d\n", i->first);
+         // HLOGF(mglob().Debug, "moving socket to CLOSED: %d\n", i->first);
 
          //close broken connections and start removal timer
          s->m_Status = SRTS_CLOSED;
@@ -1503,7 +1503,7 @@ void CUDTUnited::checkBrokenSockets()
    for (map<SRTSOCKET, CUDTSocket*>::iterator j = m_ClosedSockets.begin();
       j != m_ClosedSockets.end(); ++ j)
    {
-      // HLOGF(mglog.Debug, "checking CLOSED socket: %d\n", j->first);
+      // HLOGF(mglob().Debug, "checking CLOSED socket: %d\n", j->first);
       if (j->second->m_pUDT->m_ullLingerExpiration > 0)
       {
          // asynchronous close:
@@ -1523,7 +1523,7 @@ void CUDTUnited::checkBrokenSockets()
          && ((!j->second->m_pUDT->m_pRNode)
             || !j->second->m_pUDT->m_pRNode->m_bOnList))
       {
-         // HLOGF(mglog.Debug, "will unref socket: %d\n", j->first);
+         // HLOGF(mglob().Debug, "will unref socket: %d\n", j->first);
          tbr.push_back(j->first);
       }
    }
@@ -1586,9 +1586,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       UDT_EPOLL_IN|UDT_EPOLL_OUT|UDT_EPOLL_ERR, false);
 
    // delete this one
-   HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
+   HLOGC(mglob().Debug, log << "GC/removeSocket: closing associated UDT %" << u);
    i->second->m_pUDT->close();
-   HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
+   HLOGC(mglob().Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
    delete i->second;
    m_ClosedSockets.erase(i);
 
@@ -1599,16 +1599,16 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())
    {
-      LOGC(mglog.Fatal, log << "IPE: For socket %" << u << " MUXER id=" << mid << " NOT FOUND!");
+      LOGC(mglob().Fatal, log << "IPE: For socket %" << u << " MUXER id=" << mid << " NOT FOUND!");
       return;
    }
 
    m->second.m_iRefCount --;
-   // HLOGF(mglog.Debug, "unrefing underlying socket for %u: %u\n",
+   // HLOGF(mglob().Debug, "unrefing underlying socket for %u: %u\n",
    //    u, m->second.m_iRefCount);
    if (0 == m->second.m_iRefCount)
    {
-       HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket %"
+       HLOGC(mglob().Debug, log << "MUXER id=" << mid << " lost last socket %"
            << u << " - deleting muxer bound to port "
            << m->second.m_pChannel->bindAddressAny().hport());
       m->second.m_pChannel->close();
@@ -1659,7 +1659,7 @@ void CUDTUnited::updateMux(
          {
             if (i->second.m_iPort == port)
             {
-               // HLOGF(mglog.Debug, "reusing multiplexer for port
+               // HLOGF(mglob().Debug, "reusing multiplexer for port
                // %hd\n", port);
                // reuse the existing multiplexer
                ++ i->second.m_iRefCount;
@@ -1735,7 +1735,7 @@ void CUDTUnited::updateMux(
    s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
    s->m_iMuxID = m.m_iID;
 
-   HLOGF(mglog.Debug, 
+   HLOGF(mglob().Debug, 
       "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
@@ -1797,7 +1797,7 @@ void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
    {
       if (i->second.m_iPort == port)
       {
-         HLOGF(mglog.Debug, 
+         HLOGF(mglob().Debug, 
             "updateMux: reusing multiplexer for port %i\n", port);
          // reuse the existing multiplexer
          ++ i->second.m_iRefCount;
@@ -1922,7 +1922,7 @@ SRTSOCKET CUDT::socket(int af, int, int)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "socket: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "socket: UNEXPECTED EXCEPTION: "
          << typeid(ee).name()
          << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
@@ -1948,7 +1948,7 @@ int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "bind: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "bind: UNEXPECTED EXCEPTION: "
          << typeid(ee).name()
          << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
@@ -1974,7 +1974,7 @@ int CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "bind/udp: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "bind/udp: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -1999,7 +1999,7 @@ int CUDT::listen(SRTSOCKET u, int backlog)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "listen: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "listen: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2019,7 +2019,7 @@ SRTSOCKET CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "accept: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "accept: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return INVALID_SOCK;
@@ -2045,7 +2045,7 @@ int CUDT::connect(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "connect: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "connect: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2065,7 +2065,7 @@ int CUDT::close(SRTSOCKET u)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "close: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "close: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2085,7 +2085,7 @@ int CUDT::getpeername(SRTSOCKET u, sockaddr* name, int* namelen)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "getpeername: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "getpeername: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2105,7 +2105,7 @@ int CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "getsockname: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "getsockname: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2128,7 +2128,7 @@ int CUDT::getsockopt(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "getsockopt: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "getsockopt: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2150,7 +2150,7 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2176,7 +2176,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "send: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "send: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2197,7 +2197,7 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "recv: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "recv: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2225,7 +2225,7 @@ int CUDT::sendmsg(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2252,7 +2252,7 @@ int CUDT::sendmsg2(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2273,7 +2273,7 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "recvmsg: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "recvmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2294,7 +2294,7 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "recvmsg: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "recvmsg: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2320,7 +2320,7 @@ int64_t CUDT::sendfile(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "sendfile: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "sendfile: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2342,7 +2342,7 @@ int64_t CUDT::recvfile(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "recvfile: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "recvfile: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2378,7 +2378,7 @@ int CUDT::select(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "select: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "select: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2414,7 +2414,7 @@ int CUDT::selectEx(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "selectEx: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "selectEx: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN));
       return ERROR;
@@ -2434,7 +2434,7 @@ int CUDT::epoll_create()
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_create: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_create: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2454,7 +2454,7 @@ int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_add_usock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_add_usock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2474,7 +2474,7 @@ int CUDT::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_add_ssock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_add_ssock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2495,7 +2495,7 @@ int CUDT::epoll_update_usock(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_update_usock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_update_usock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2516,7 +2516,7 @@ int CUDT::epoll_update_ssock(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_update_ssock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_update_ssock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2537,7 +2537,7 @@ int CUDT::epoll_remove_usock(const int eid, const SRTSOCKET u)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_remove_usock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_remove_usock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2557,7 +2557,7 @@ int CUDT::epoll_remove_ssock(const int eid, const SYSSOCKET s)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_remove_ssock: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_remove_ssock: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2584,7 +2584,7 @@ int CUDT::epoll_wait(
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2604,7 +2604,7 @@ int CUDT::epoll_release(const int eid)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "epoll_release: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "epoll_release: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2631,7 +2631,7 @@ int CUDT::perfmon(SRTSOCKET u, CPerfMon* perf, bool clear)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "perfmon: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "perfmon: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2653,7 +2653,7 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
@@ -2673,7 +2673,7 @@ CUDT* CUDT::getUDTHandle(SRTSOCKET u)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "getUDTHandle: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "getUDTHandle: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return NULL;
@@ -2705,7 +2705,7 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    }
    catch (std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "getsockstate: UNEXPECTED EXCEPTION: "
+      LOGC(mglob().Fatal, log << "getsockstate: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return SRTS_NONEXIST;

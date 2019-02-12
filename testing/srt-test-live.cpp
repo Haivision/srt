@@ -444,7 +444,6 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
-    extern logging::Logger glog;
     try
     {
         for (;;)

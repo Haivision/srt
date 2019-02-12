@@ -70,16 +70,7 @@ modified by
 #include "handshake.h"
 #include "smoother.h"
 #include "utilities.h"
-
 #include <haicrypt.h>
-
-extern logging::Logger
-    glog,
-    blog,
-    mglog,
-    dlog,
-    tslog,
-    rxlog;
 
 
 // XXX Utility function - to be moved to utilities.h?
