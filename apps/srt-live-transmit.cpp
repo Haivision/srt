@@ -226,7 +226,7 @@ int main( int argc, char** argv )
         transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
         transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
     }
-    catch (std::invalid_argument)
+    catch (std::invalid_argument &)
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
