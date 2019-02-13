@@ -16,6 +16,13 @@
 #include "srt.h"
 
 
+#ifdef __GNUC__
+#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
+#else
+#  define UNUSED(x) UNUSED_ ## x
+#endif
+
+
 enum PEER_TYPE
 {
     PEER_CALLER   = 0,
@@ -428,8 +435,9 @@ private:
 };
 
 
+
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &expect)
+int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking & UNUSED(expect))
 {
     return SRT_SUCCESS;
 }
