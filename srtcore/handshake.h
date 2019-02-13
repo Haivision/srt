@@ -62,6 +62,7 @@ enum SrtOptions
     SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
     SRT_OPT_STREAM    = BIT(6)
+    SRT_OPT_SHORTMSG  = BIT(7), // Message number is written only in the 16-bit lower field
 };
 
 
@@ -74,6 +75,7 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_KMRSP = 4,
       SRT_CMD_SID = 5,
       SRT_CMD_SMOOTHER = 6,
+      SRT_CMD_FEC = 10,
       SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
 
 enum SrtDataStruct

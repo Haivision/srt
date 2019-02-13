@@ -348,6 +348,7 @@ private:
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool checkApplyFECConfig(const std::string& fec);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -576,6 +577,11 @@ private:
     std::vector<EventSlot> m_Slots[TEV__SIZE];
     Smoother m_Smoother;
 
+    // Forward Error Correction (FEC)
+    Corrector m_Corrector;
+    std::string m_OPT_FECConfigString;
+    std::string m_sPeerFECConfiguString;
+
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
@@ -628,6 +634,7 @@ private: // Sending related data
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
     bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
+    bool m_bPeer16bMsg;                       // Peer supports msgno written only in a 16-bit field
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
@@ -694,6 +701,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
+    void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
     int packData(CPacket& packet, uint64_t& ts);
     int processData(CUnit* unit);
     void processClose();

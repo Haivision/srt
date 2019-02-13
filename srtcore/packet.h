@@ -164,21 +164,13 @@ inline int32_t CreateControlExtSeqNo(int exttype)
 typedef Bits<31, 30> MSGNO_PACKET_BOUNDARY;
 typedef Bits<29> MSGNO_PACKET_INORDER;
 typedef Bits<28, 27> MSGNO_ENCKEYSPEC;
-#if 1 // can block rexmit flag
-// New bit breakdown - rexmit flag supported.
 typedef Bits<26> MSGNO_REXMIT;
-typedef Bits<25, 0> MSGNO_SEQ;
-// Old bit breakdown - no rexmit flag
-typedef Bits<26, 0> MSGNO_SEQ_OLD;
-// This symbol is for older SRT version, where the peer does not support the MSGNO_REXMIT flag.
-// The message should be extracted as PMASK_MSGNO_SEQ, if REXMIT is supported, and PMASK_MSGNO_SEQ_OLD otherwise.
+// New bit breakdown - corrector flag supported.
+typedef Bits<25> MSGNO_CORRECTOR;
+typedef Bits<16, 0> MSGNO_SEQ;
+// Old bit breakdown - no corrector flag
+typedef Bits<25, 0> MSGNO_SEQ_OLD;
 
-const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
-
-#else
-// Old bit breakdown - no rexmit flag
-typedef Bits<26, 0> MSGNO_SEQ;
-#endif
 
 
 // constexpr in C++11 !
@@ -317,10 +309,12 @@ public:
 
    bool getRexmitFlag() const;
 
+   bool getCorrectorFlag() const;
+
       /// Read the message sequence number.
       /// @return packet header field [1]
 
-   int32_t getMsgSeq(bool has_rexmit = true) const;
+   int32_t getMsgSeq(bool msgno_16bit) const;
 
       /// Read the message crypto key bits.
       /// @return packet header field [1] (bit 3~4).

@@ -176,10 +176,12 @@ typedef enum SRT_SOCKOPT {
     SRTO_SMOOTHER,        // Smoother selection (congestion control algorithm)
     SRTO_MESSAGEAPI,      // In File mode, use message API (portions of data with boundaries)
     SRTO_PAYLOADSIZE,     // Maximum payload size sent in one UDP packet (0 if unlimited)
-    SRTO_TRANSTYPE,       // Transmission type (set of options required for given transmission type)
+    SRTO_TRANSTYPE = 50,       // Transmission type (set of options required for given transmission type)
     SRTO_KMREFRESHRATE,   // After sending how many packets the encryption key should be flipped to the new key
     SRTO_KMPREANNOUNCE,   // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
     SRTO_STRICTENC,       // Connection to be rejected or quickly broken when one side encryption set or bad password
+    // (some space left)
+    SRTO_FEC = 60
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:

@@ -420,6 +420,19 @@ public:
     operator bool () { return 0!= get(); }
 };
 
+template<typename Map, typename Key>
+typename Map::mapped_type* map_getp(Map& m, const Key& key)
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? (Map::mapped_type*)0 : &(it->second);
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? (Map::mapped_type*)0 : &(it->second);
+}
 
 #endif
 
@@ -597,6 +610,28 @@ inline void Split(const std::string & str, char delimiter, OutputIterator tokens
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
     } while (end != std::string::npos);
+}
+
+inline std::string SelectNot(const std::string& unwanted, const std::string& s1, const std::string& s2)
+{
+    if (s1 == unwanted)
+        return s2; // might be unwanted, too, but then, there's nothing you can do anyway
+    if (s2 == unwanted)
+        return s1;
+
+    // Both have wanted values, so now compare if they are same
+    if (s1 == s2)
+        return s1; // occasionally there's a winner
+
+    // Irresolvable situation.
+    return std::string();
+}
+
+inline std::string SelectDefault(const std::string& checked, const std::string& def)
+{
+    if (checked == "")
+        return def;
+    return checked;
 }
 
 template <class It>

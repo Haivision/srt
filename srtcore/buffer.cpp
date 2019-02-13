@@ -61,7 +61,7 @@ using namespace std;
 
 extern logging::Logger mglog, dlog, tslog;
 
-CSndBuffer::CSndBuffer(int size, int mss):
+CSndBuffer::CSndBuffer(bool use_16b_msgno, int size, int mss):
 m_BufLock(),
 m_pBlock(NULL),
 m_pFirstBlock(NULL),
@@ -86,6 +86,7 @@ m_iCount(0)
 ,m_InRatePeriod(CUDT::SND_INPUTRATE_FAST_START_US)   // 0.5 sec (fast start)
 ,m_iInRateBps(CUDT::SND_INPUTRATE_INITIAL_BPS)
 ,m_iAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
+,m_bUse16bMsgNo(use_16b_msgno)
 {
    // initial physical buffer of "size"
    m_pBuffer = new Buffer;
@@ -433,7 +434,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, u
    // before the TTL defined time comes, will be dropped).
    if ((p->m_iTTL >= 0) && ((CTimer::getTime() - p->m_ullOriginTime_us) / 1000 > (uint64_t)p->m_iTTL))
    {
-      int32_t msgno = p->getMsgSeq();
+      int32_t msgno = p->getMsgSeq(m_);
       msglen = 1;
       p = p->m_pNext;
       bool move = false;
@@ -698,7 +699,8 @@ void CSndBuffer::increase()
 //const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
 #endif
 
-CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize):
+CRcvBuffer::CRcvBuffer(CUnitQueue* queue, bool use_16b_msgno, int bufsize):
+m_bUse16bMsgNo(
 m_pUnit(NULL),
 m_iSize(bufsize),
 m_pUnitQueue(queue),
@@ -715,6 +717,7 @@ m_iNotch(0)
 ,m_uTsbPdDelay(0)
 ,m_ullTsbPdTimeBase(0)
 ,m_bTsbPdWrapCheck(false)
+,m_bUse16bMsgNo(use_16b_msgno)
 //,m_iTsbPdDrift(0)
 //,m_TsbPdDriftSum(0)
 //,m_iTsbPdDriftNbSamples(0)
@@ -1342,11 +1345,11 @@ int CRcvBuffer::getRcvAvgPayloadSize() const
    return m_iAvgPayloadSz;
 }
 
-void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
+void CRcvBuffer::dropMsg(int32_t msgno, bool using_16bit_msgno)
 {
    for (int i = m_iStartPos, n = (m_iLastAckPos + m_iMaxPos) % m_iSize; i != n; i = (i + 1) % m_iSize)
       if ((m_pUnit[i] != NULL) 
-              && (m_pUnit[i]->m_Packet.getMsgSeq(using_rexmit_flag) == msgno))
+              && (m_pUnit[i]->m_Packet.getMsgSeq(using_16bit_msgno) == msgno))
          m_pUnit[i]->m_iFlag = CUnit::DROPPED;
 }
 
@@ -1596,7 +1599,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     // This returns the sequence number and message number to
     // the API caller.
     msgctl.pktseq = pkt1.getSeqNo();
-    msgctl.msgno = pkt1.getMsgSeq();
+    msgctl.msgno = pkt1.getMsgSeq(m_bUse16bMsgNo);
 
     int rs = len;
     while (p != (q + 1) % m_iSize)

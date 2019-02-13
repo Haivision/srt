@@ -255,6 +255,8 @@ CUDT::CUDT()
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
    m_bTwoWayData = false;
 
+   m_OPT_FECConfigString = "";
+
    m_pCache = NULL;
 
    // Default smoother is "live".
@@ -313,6 +315,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bMessageAPI = ancestor.m_bMessageAPI;
    //Runtime
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
+   m_OPT_FECConfigString = ancestor.m_OPT_FECConfigString;
 
    m_CryptoSecret = ancestor.m_CryptoSecret;
    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
@@ -829,6 +832,44 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
+   case SRTO_FEC:
+      if (m_bConnected)
+          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      {
+          string arg ((char*)optval, optlen);
+          // Parse the configuration string prematurely
+          vector<string> args;
+          Split(arg, ',', back_inserter(args));
+          // The syntax for configuration is:
+          // - arguments separated by comma
+          // - first two arguments are: horizontal size, vertical size
+          // - following arguments must have label:value
+          if (args.size() < 2)
+          {
+              LOGC(mglog.Error, log << "SRTO_FEC: Syntax: <rowsize>,<columnsize>[,extras...]; no comma found");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          // Check the extras if they have a correct form
+          if (args.size() > 2)
+          {
+              for (size_t i = 2; i < args.size(); ++i)
+              {
+                  vector<string> aval;
+                  Split(args[i], ':', back_inserter(aval));
+                  if (aval.size() != 2)
+                  {
+                      LOGC(mglog.Error, log << "SRTO_FEC: For extra arguments (after rows and cols) the syntax is label:value");
+                      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                  }
+              }
+          }
+
+          m_OPT_FECConfigString = arg;
+
+      }
+
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -1101,6 +1142,14 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;
 
+   case SRTO_FEC:
+      if (size_t(optlen) < m_OPT_FECConfigString.size()+1)
+          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+      strcpy((char*)optval, m_OPT_FECConfigString.c_str());
+      optlen = m_OPT_FECConfigString.size();
+      break;
+
    default:
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
    }
@@ -1192,6 +1241,7 @@ void CUDT::clearData()
    m_bPeerNakReport = false;
 
    m_bPeerRexmitFlag = false;
+   m_bPeer16bMsg = false;
 
    m_llSndDuration = m_llSndDurationTotal = 0;
 
@@ -1357,6 +1407,9 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
     // I support SRT_OPT_REXMITFLG. Do you?
     srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
+    // I support SRT_OPT_SHORTMSG.
+    srtdata[SRT_HS_FLAGS] |= SRT_OPT_SHORTMSG;
+
     // Declare the API used. The flag is set for "stream" API because
     // the older versions will never set this flag, but all old SRT versions use message API.
     if (!m_bMessageAPI)
@@ -1461,6 +1514,15 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
             // Request that the rexmit bit be used as a part of msgno.
             srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
             HLOGF(mglog.Debug, "HSRSP/snd: AGENT UNDERSTANDS REXMIT flag and PEER reported that it does, too." );
+        }
+
+        if (!m_bPeer16bMsg)
+        {
+
+        }
+        else
+        {
+            srtdata[SRT_HS_FLAGS] |= SRT_OPT_SHORTMSG;
         }
     }
     else
@@ -1648,6 +1710,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     bool have_kmreq = false;
     bool have_sid = false;
     bool have_smoother = false;
+    bool have_fec = false;
 
     // Install the SRT extensions
     hs.m_iType |= CHandShake::HS_EXT_HSREQ;
@@ -1661,6 +1724,42 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             logext += ",SID";
         }
 
+    }
+
+
+    // If this is a response, we have also information
+    // on the peer. If Peer is NOT FEC capable, don't
+    // put FEC config, even if agent is capable.
+    bool peer_fec_capable = true;
+    if (srths_cmd == SRT_CMD_HSRSP)
+    {
+        if (m_sPeerFECConfiguString != "")
+        {
+            peer_fec_capable = true;
+        }
+        else if (m_lPeerSrtVersion >= SrtVersion(1, 3, 3))
+        {
+            peer_fec_capable = true;
+        }
+        else
+        {
+            peer_fec_capable = false;
+        }
+    }
+
+    // Now, if this is INITIATOR, then it has its
+    // FEC config already set, if configured, otherwise
+    // it should not attach the FEC config extension.
+
+    // If this is a RESPONDER, then it has already received
+    // the FEC config string from the peer and therefore
+    // possibly confronted with the contents of m_OPT_FECConfigString,
+    // and if it decided to go with FEC, it will be nonempty.
+    if (peer_fec_capable && m_OPT_FECConfigString != "")
+    {
+        have_fec = true;
+        hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+        logext += ",FEC";
     }
 
     string sm = m_Smoother.selected_name();
@@ -1772,6 +1871,25 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
         HLOGC(mglog.Debug, log << "createSrtHandshake: after SMOOTHER [" << sm << "] length=" << sm.size() << " alignedln=" << aligned_bytesize
             << ": offset=" << offset << " SMOOTHER size=" << ra_size << " space left: " << (total_ra_size - offset));
+    }
+
+    if (have_fec)
+    {
+        offset += ra_size;
+        pcmdspec = p+offset;
+        ++offset;
+
+        size_t wordsize = (m_OPT_FECConfigString.size()+3)/4;
+        size_t aligned_bytesize = wordsize*4;
+
+        memset(p+offset, 0, aligned_bytesize);
+        memcpy(p+offset, m_OPT_FECConfigString.data(), m_OPT_FECConfigString.size());
+
+        ra_size = wordsize;
+        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FEC) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+        HLOGC(mglog.Debug, log << "createSrtHandshake: after FEC [" << m_OPT_FECConfigString << "] length=" << m_OPT_FECConfigString.size() << " alignedln=" << aligned_bytesize
+            << ": offset=" << offset << " FEC size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
     // When encryption turned on
@@ -2088,6 +2206,9 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     m_bPeerRexmitFlag = IsSet(peer_srt_options, SRT_OPT_REXMITFLG);
     HLOGF(mglog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
 
+    m_bPeer16bMsg = IsSet(peer_srt_options, SRT_OPT_SHORTMSG);
+    HLOGF(mglog.Debug, "HSREQ/rcv: peer %s 16-bit msgno", m_bPeer16bMsg ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
+
     // Check if both use the same API type. Reject if not.
     bool peer_message_api = !IsSet(peer_srt_options, SRT_OPT_STREAM);
     if ( peer_message_api != m_bMessageAPI )
@@ -2325,10 +2446,21 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         {
             HLOGP(mglog.Debug, "HSRSP/rcv: Agent understands REXMIT flag, but PEER DOES NOT");
         }
+
+        if ( IsSet(peer_srt_options, SRT_OPT_SHORTMSG) )
+        {
+            //Peer will use REXMIT flag in packet retransmission.
+            m_bPeer16bMsg = true;
+            HLOGP(mglog.Debug, "HSRSP/rcv: 1.2.0+ Agent understands 16-bit msgno field and so does peer.");
+        }
+        else
+        {
+            HLOGP(mglog.Debug, "HSRSP/rcv: Agent understands 16-bit msgno field, but PEER DOES NOT");
+        }
     }
     else
     {
-        HLOGF(mglog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag");
+        HLOGF(mglog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag nor 16-bit msgno field");
     }
 
     handshakeDone();
@@ -2546,6 +2678,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     }
 
     bool have_smoother = false;
+    bool have_fec = false;
     string agsm = m_Smoother.selected_name();
     if (agsm == "")
     {
@@ -2611,6 +2744,32 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
                 HLOGC(mglog.Debug, log << "CONNECTOR'S SMOOTHER [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
+            else if ( cmd == SRT_CMD_FEC )
+            {
+                if (have_fec)
+                {
+                    LOGC(mglog.Error, log << "FEC BLOCK REPEATED!");
+                    return false;
+                }
+                // Declare that fec has been received
+                have_fec = true;
+
+                // XXX This is the maximum string, but FEC config
+                // shall be normally limited somehow, especially if used
+                // together with SID!
+                char target[MAX_SID_LENGTH+1];
+                memset(target, 0, MAX_SID_LENGTH+1);
+                memcpy(target, begin+1, bytelen);
+                string fec = target;
+
+                if (!checkApplyFECConfig(fec))
+                {
+                    LOGC(mglog.Error, log << "PEER'S FEC CONFIG '" << fec << "' has been rejected");
+                    return false;
+                }
+
+                HLOGC(mglog.Debug, log << "CONNECTOR'S FEC CONFIG [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
+            }
             else if ( cmd == SRT_CMD_NONE )
             {
                 break;
@@ -2655,6 +2814,86 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
     // Ok, finished, for now.
     return true;
+}
+
+static int FECBetterValue(int my_value, int his_value)
+{
+    int win = my_value;
+    if (my_value < 0 && his_value < 0)
+    {
+        // Return the lesser size, still as negative number.
+        return max(my_value, his_value);
+    }
+
+    if (my_value <= 0)
+        return his_value;
+    if (his_value <= 0)
+        return my_value;
+
+    return min(my_value, his_value);
+}
+
+bool CUDT::checkApplyFECConfig(const std::string& fec)
+{
+    CorrectorConfig cfg;
+    if (!ParseCorrectorConfig(fec, cfg))
+        return false;
+
+    // Now extract the type, if present, and
+    // check if you have this type of corrector available.
+    if (!Corrector::correctConfig(cfg))
+        return false;
+
+    // Now parse your own string, if you have it.
+    if (m_OPT_FECConfigString != "")
+    {
+        CorrectorConfig mycfg;
+        if (!ParseCorrectorConfig(m_OPT_FECConfigString, mycfg))
+            return false;
+
+        // Confront the options.
+
+        // 1. If FEC has a different type, reject the connection.
+        // Special cases:
+        // - the "adaptive" name means that it submits to the type of the other side.
+        //   if both are "adaptive", use default.
+        // - otherwise the type must be unspecified or the same in both.
+
+        string his_type = SelectDefault(cfg.parameters["type"], "default");
+        string my_type = SelectDefault(mycfg.parameters["type"], "default");
+
+        string best_type = SelectNot("adaptive", his_type, my_type);
+        if (best_type == "")
+        {
+            return false;
+        }
+
+        // We need to construct the response later for the peer,
+        // so you have to only modify your type, and the receiver will
+        // modify it in itself upon reception of the response.
+        mycfg.parameters["type"] = best_type;
+
+        // 2. The FEC that requires more redundancy should take precedence.
+        // The exception is when the value is negative in which case the
+        // party that has them, blindly accepts the result
+        mycfg.rows = FECBetterValue(mycfg.rows, cfg.rows);
+        mycfg.cols = FECBetterValue(mycfg.cols, cfg.cols);
+
+        // Rewrite the string back
+        std::ostringstream out;
+        out << mycfg.rows << "," << mycfg.cols;
+        for (map<string, string>::iterator x = mycfg.parameters.begin(); x != mycfg.parameters.end(); ++x)
+        {
+            out << "," << x->first << ":" << x->second;
+        }
+
+        m_OPT_FECConfigString = out.str();
+    }
+    else
+    {
+        // Take the foreign configuration as a good deal.
+        m_OPT_FECConfigString = fec;
+    }
 }
 
 void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
@@ -4349,8 +4588,8 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
 
     try
     {
-        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
+        m_pSndBuffer = new CSndBuffer(m_bPeer16bMsg, 32, m_iMaxSRTPayloadSize);
+        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_bPeer16bMsg, m_iRcvBufSize);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
@@ -4578,6 +4817,17 @@ void CUDT::setupCC()
     // Smoother will retrieve whatever parameters it needs
     // from *this.
     m_Smoother.configure(this);
+
+    // XXX Configure FEC module
+    if (m_OPT_FECConfigString != "")
+    {
+        // This string, when nonempty, defines that the corrector shall be
+        // configured. Otherwise it's left uninitialized.
+
+        // At this point we state everything is checked and the appropriate
+        // corrector type is already selected, so now create it.
+        m_Corrector.configure(this, m_OPT_FECConfigString);
+    }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
     // When default 0 value is returned, the current value set by CUDT
@@ -6573,7 +6823,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
-   bool using_rexmit_flag = m_bPeerRexmitFlag;
+   bool using_16bit_msgno = m_bPeer16bMsg;
 
    HLOGC(mglog.Debug, log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
        << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.m_iID);
@@ -7095,7 +7345,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
    case UMSG_DROPREQ: //111 - Msg drop request
       CGuard::enterCS(m_RecvLock);
-      m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+      m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_16bit_msgno), using_16bit_msgno);
       CGuard::leaveCS(m_RecvLock);
 
       unlose(*(int32_t*)ctrlpkt.m_pcData, *(int32_t*)(ctrlpkt.m_pcData + 4));
@@ -7269,6 +7519,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 
    string reason;
 
+   bool new_packet_packed = false;
+
    // Loss retransmission always has higher priority.
    packet.m_iSeqNo = m_pSndLossList->getLostSeq();
    if (packet.m_iSeqNo >= 0)
@@ -7321,9 +7573,13 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       // So, set here the rexmit flag if the peer understands it.
       if ( m_bPeerRexmitFlag )
       {
-          packet.m_iMsgNo |= PACKET_SND_REXMIT;
+          packet.m_iMsgNo |= MSGNO_REXMIT::mask;
       }
       reason = "reXmit";
+   }
+   else if (m_Corrector && m_Corrector->packCorrectionPacket(Ref(packet), m_iSndCurrSeqNo))
+   {
+       payload = packet.getLength();
    }
    else
    {
@@ -7340,7 +7596,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
          // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
          // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
          kflg = m_pCryptoControl->getSndCryptoFlags();
-         if (0 != (payload = m_pSndBuffer->readData(&(packet.m_pcData), packet.m_iMsgNo, origintime, kflg)))
+         payload = m_pSndBuffer->readData(&(packet.m_pcData), packet.m_iMsgNo, origintime, kflg);
+         if (payload)
          {
             m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
             //m_pCryptoControl->m_iSndCurrSeqNo = m_iSndCurrSeqNo;
@@ -7350,6 +7607,8 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
             // every 16 (0xF) packets, a packet pair is sent
             if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
                probe = true;
+
+            new_packet_packed = true;
          }
          else
          {
@@ -7410,6 +7669,9 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       payload = packet.getLength(); /* Cipher may change length */
       reason += " (encrypted)";
    }
+
+   if (new_packet_packed && m_Corrector)
+       m_Corrector->feedSource(Ref(packet));
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
    HLOGC(mglog.Debug, log << CONID() << "packData: " << reason << " packet seq=" << packet.m_iSeqNo
@@ -7497,6 +7759,35 @@ void CUDT::processClose()
 
 }
 
+void CUDT::sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& loss_seqs)
+{
+    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
+
+    vector<int32_t> seqbuffer;
+    seqbuffer.reserve(2 * loss_seqs.size()); // pessimistic
+    for (loss_seqs_t::const_iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+    {
+        if (i->first == i->second)
+        {
+            seqbuffer.push_back(i->first);
+            HLOGF(mglog.Debug, "lost packet %d: sending LOSSREPORT", i->first);
+        }
+        else
+        {
+            seqbuffer.push_back(i->first | LOSSDATA_SEQNO_RANGE_FIRST);
+            seqbuffer.push_back(i->second);
+            HLOGF(mglog.Debug, "lost packets %d-%d (%d packets): sending LOSSREPORT",
+                    i->first, i->second, 1+CSeqNo::seqcmp(i->second, i->first));
+        }
+    }
+
+    if (!seqbuffer.empty())
+    {
+        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], seqbuffer.size());
+    }
+
+}
+
 int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
@@ -7579,6 +7870,10 @@ int CUDT::processData(CUnit* unit)
    ++ m_llTraceRecv;
    ++ m_llRecvTotal;
 
+   typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
+   loss_seqs_t loss_seqs;
+   bool handle_lossreport = true; // SEND if there's anything to lossreport
+
    {
       /*
       * Start of offset protected section
@@ -7587,69 +7882,105 @@ int CUDT::processData(CUnit* unit)
       */
       CGuard recvbuf_acklock(m_AckLock);
 
-      int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
-
-      bool excessive = false;
-      string exc_type = "EXPECTED";
-      if ((offset < 0))
+      vector<CUnit*> incoming;
+      vector<CUnit*> undec_units;
+      if (m_Corrector)
       {
-          exc_type = "BELATED";
-          excessive = true;
-          m_iTraceRcvBelated++;
-          uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
-          uint64_t bltime = CountIIR(
-                  uint64_t(m_fTraceBelatedTime)*1000,
-                  CTimer::getTime() - tsbpdtime, 0.2);
-          m_fTraceBelatedTime = double(bltime)/1000.0;
+          // Stuff this data into the corrector
+          handle_lossreport = m_Corrector->receive(unit, Ref(incoming), Ref(loss_seqs));
       }
       else
       {
+          // Stuff in just one packet that has come in.
+          incoming.push_back(unit);
+      }
 
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
-          if (offset >= avail_bufsize)
+      for (vector<CUnit*>::iterator i = incoming.begin(); i != incoming.end(); ++i)
+      {
+          CUnit* u = *i;
+          CPacket& rpkt = u->m_Packet;
+
+          int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
+
+          bool excessive = false;
+          string exc_type = "EXPECTED";
+          if (offset < 0)
           {
-              // This is already a sequence discrepancy. Probably there could be found
-              // some way to make it continue reception by overriding the sequence and
-              // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
-              if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+              exc_type = "BELATED";
+              excessive = true;
+              m_iTraceRcvBelated++;
+              uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
+              uint64_t bltime = CountIIR(
+                      uint64_t(m_fTraceBelatedTime)*1000,
+                      CTimer::getTime() - tsbpdtime, 0.2);
+              m_fTraceBelatedTime = double(bltime)/1000.0;
+          }
+          else
+          {
+              int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+              if (offset >= avail_bufsize)
               {
-                  // Only in live mode. In File mode this shall not be possible
-                  // because the sender should stop sending in this situation.
-                  // In Live mode this means that there is a gap between the
-                  // lowest sequence in the empty buffer and the incoming sequence
-                  // that exceeds the buffer size. Receiving data in this situation
-                  // is no longer possible and this is a point of no return.
+                  // This is already a sequence discrepancy. Probably there could be found
+                  // some way to make it continue reception by overriding the sequence and
+                  // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+                  if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                  {
+                      // Only in live mode. In File mode this shall not be possible
+                      // because the sender should stop sending in this situation.
+                      // In Live mode this means that there is a gap between the
+                      // lowest sequence in the empty buffer and the incoming sequence
+                      // that exceeds the buffer size. Receiving data in this situation
+                      // is no longer possible and this is a point of no return.
 
-                  LOGC(mglog.Error,
-                          log << CONID() <<
-                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+                      LOGC(mglog.Error,
+                              log << CONID() <<
+                              "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
 
-                  // This is a scoped lock with AckLock, but for the moment
-                  // when processClose() is called this lock must be taken out,
-                  // otherwise this will cause a deadlock. We don't need this
-                  // lock anymore, and at 'return' it will be unlocked anyway.
-                  recvbuf_acklock.forceUnlock();
-                  processClose();
-                  return -1;
+                      // This is a scoped lock with AckLock, but for the moment
+                      // when processClose() is called this lock must be taken out,
+                      // otherwise this will cause a deadlock. We don't need this
+                      // lock anymore, and at 'return' it will be unlocked anyway.
+                      recvbuf_acklock.forceUnlock();
+                      processClose();
+                      return -1;
+                  }
+                  else
+                  {
+                      LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                              << offset << " avail=" << avail_bufsize
+                              << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
+                              << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                          );
+                      return -1;
+                  }
+
+              }
+
+              if (m_pRcvBuffer->addData(unit, offset) < 0)
+              {
+                  // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                  // So this packet is "redundant".
+                  exc_type = "UNACKED";
+                  excessive = true;
+              }
+              else if (unit->m_Packet.getMsgCryptoFlags())
+              {
+                  undec_units.push_back(unit);
+              }
+
+              // Update the current largest sequence number that has been received.
+              // Or it is a retransmitted packet, remove it from receiver loss list.
+              bool was_orderly_sent = true;
+              if (CSeqNo::seqcmp(ppkt->m_iSeqNo, m_iRcvCurrSeqNo) > 0)
+              {
+                  m_iRcvCurrSeqNo = ppkt->m_iSeqNo; // Latest possible received
               }
               else
               {
-                  LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
-                          << offset << " avail=" << avail_bufsize
-                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << packet.m_iSeqNo
-                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
-                          );
-                  return -1;
+                  unlose(*ppkt); // was BELATED or RETRANSMITTED ppkt->
+                  was_orderly_sent = 0!=  pktrexmitflag;
               }
 
-          }
-
-          if (m_pRcvBuffer->addData(unit, offset) < 0)
-          {
-              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-              // So this packet is "redundant".
-              exc_type = "UNACKED";
-              excessive = true;
           }
       }
 
@@ -7663,11 +7994,21 @@ int CUDT::processData(CUnit* unit)
           return -1;
       }
 
-      if (packet.getMsgCryptoFlags())
+      // This is not a regular fixed size packet...
+      // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
+      // (if the smoother says so).
+      if (m_Smoother->needsQuickACK(packet))
+      {
+          CTimer::rdtsc(m_ullNextACKTime_tk);
+      }
+
+      bool decr = true;
+      for (vector<CUnit*>::iterator ue = undec_units.begin(); ue != undec_units.end(); ++ue)
       {
           // Crypto should be already created during connection process,
           // this is rather a kinda sanity check.
-          EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
+          CUnit* u = *ue;
+          EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
               /*
@@ -7680,12 +8021,14 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
+              decr = false;
           }
       }
-      else
-      {
-          HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
-      }
+
+
+      HLOGC(dlog.Debug, log << "crypter: data "
+              << (undec_units.empty() ? " not encrypted, returning as plain " : "encrypted, decrypting ")
+              << (decr ? "OK" : "FAILED"));
 
    }  /* End of recvbuf_acklock*/
 
@@ -7701,155 +8044,162 @@ int CUDT::processData(CUnit* unit)
       return(-1);
    }
 
-   // If the peer doesn't understand REXMIT flag, send rexmit request
-   // always immediately.
-   int initial_loss_ttl = 0;
-   if ( m_bPeerRexmitFlag )
-       initial_loss_ttl = m_iReorderTolerance;
+   // Since this moment we allow only those possibilities:
+   //
+   // 1. We have EXACTLY ONE packet, and even if a corrector facility
+   // was processing it, we have it exactly like received.
+   // 2. We have no packets now, nothing to check.
+   // 3. We have more than one packet and handle_lossreport == false.
 
-   if  (packet.getMsgCryptoFlags())
+   // Check first if we don't have an IPE for a different case.
+
+   CPacket* ppkt = &incoming[0]->m_Packet;
+   if (incoming.size() > 1 && handle_lossreport)
    {
-       /*
-       * Crypto flags not cleared means that decryption failed
-       * Do no ask loss packets retransmission
-       */
-       ;
-       HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+       LOGC(mglog.Error, log << "IPE (FEC): Provided >1 packet from FEC and it required loss to be handled by SRT - handling only one.");
    }
-   else
-   // Loss detection.
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+   else if (incoming.empty())
    {
+       return -1; // Treat as excessive. This is when FEC cumulates packets until the loss is rebuilt.
+   }
+
+   bool reorder_prevent_lossreport = false;
+
+   {
+       // If the peer doesn't understand REXMIT flag, send rexmit request
+       // always immediately.
+       int initial_loss_ttl = 0;
+       if ( m_bPeerRexmitFlag )
+           initial_loss_ttl = m_iReorderTolerance;
+
+       if  (ppkt->getMsgCryptoFlags())
+       {
+           /*
+            * Crypto flags not cleared means that decryption failed
+            * Do no ask loss packets retransmission
+            */
+           ;
+           HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+       }
+       else if (handle_lossreport && CSeqNo::seqcmp(ppkt->m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
+       {
+           {
+               int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+               int32_t seqhi = CSeqNo::decseq(ppkt->m_iSeqNo);
+
+               loss_seqs.push_back(make_pair(seqlo, seqhi));
+
+               if ( initial_loss_ttl )
+               {
+                   // pack loss list for (possibly belated) NAK
+                   // The LOSSREPORT will be sent in a while.
+
+                   for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+                   {
+                       m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                   }
+                   HLOGC(mglog.Debug, "FreshLoss: added sequences: " << Printable(loss_seqs) << " tolerance: " << initial_loss_ttl);
+                   reorder_prevent_lossreport = true;
+               }
+
+               int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, ppkt->m_iSeqNo) - 2;
+               m_iTraceRcvLoss += loss;
+               m_iRcvLossTotal += loss;
+               uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+               m_ullTraceRcvBytesLoss += lossbytes;
+               m_ullRcvBytesLossTotal += lossbytes;
+           }
+
+           if (m_bTsbPd)
+           {
+               pthread_mutex_lock(&m_RecvLock);
+               pthread_cond_signal(&m_RcvTsbPdCond);
+               pthread_mutex_unlock(&m_RecvLock);
+           }
+       }
+
+       if (!loss_seqs.empty())
+       {
+           {
+               CGuard lg(m_RcvLossLock);
+               for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+               {
+                   // If loss found, insert them to the receiver loss list
+                   m_pRcvLossList->insert(i->first, i->second);
+               }
+           }
+
+           if (!reorder_prevent_lossreport)
+               sendLossReport(loss_seqs);
+       }
+
+       // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
+
+       // PERFORMANCE CONSIDERATIONS:
+       // This list is quite inefficient as a data type and finding the candidate to send UMSG_LOSSREPORT
+       // is linear time. On the other hand, there are some special cases that are important for performance:
+       // - only the first (plus some following) could have had TTL drown to 0
+       // - the only (little likely) possibility that the next-to-first record has TTL=0 is when there was
+       //   a loss range split (due to unlose() of one sequence)
+       // - first found record with TTL>0 means end of "ready to LOSSREPORT" records
+       // So:
+       // All you have to do is:
+       //  - start with first element and continue with next elements, as long as they have TTL=0
+       //    If so, send the loss report and remove this element.
+       //  - Since the first element that has TTL>0, iterate until the end of container and decrease TTL.
+       //
+       // This will be efficient becase the loop to increment one field (without any condition check)
+       // can be quite well optimized.
+
+       vector<int32_t> lossdata;
+       if (handle_lossreport)
        {
            CGuard lg(m_RcvLossLock);
-           int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-           int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
-           // If loss found, insert them to the receiver loss list
-           m_pRcvLossList->insert(seqlo, seqhi);
 
-           if ( initial_loss_ttl )
+           // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
+           // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
+           if ( initial_loss_ttl && !m_FreshLoss.empty() )
            {
-               // pack loss list for (possibly belated) NAK
-               // The LOSSREPORT will be sent in a while.
-               m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-               HLOGF(mglog.Debug, "added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-           }
-           else
-           {
-               // old code; run immediately when tolerance = 0
-               // or this feature isn't used because of the peer
-               int32_t seq[2] = { seqlo, seqhi };
-               if ( seqlo == seqhi )
-                   sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
+               deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
+
+               // Phase 1: take while TTL <= 0.
+               // There can be more than one record with the same TTL, if it has happened before
+               // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
+               // into two records.
+               for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
+               {
+                   HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
+                           i->seq[0], i->seq[1], CSeqNo::seqcmp(i->seq[1], i->seq[0])+1);
+                   addLossRecord(lossdata, i->seq[0], i->seq[1]);
+               }
+
+               // Remove elements that have been processed and prepared for lossreport.
+               if ( i != m_FreshLoss.begin() )
+               {
+                   m_FreshLoss.erase(m_FreshLoss.begin(), i);
+                   i = m_FreshLoss.begin();
+               }
+
+               if ( m_FreshLoss.empty() )
+               {
+                   HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
+               }
                else
                {
-                   seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
-                   sendCtrl(UMSG_LOSSREPORT, NULL, seq, 2);
+                   HLOGF(mglog.Debug, "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
+                           i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
+                           i->ttl);
                }
-               HLOGF(mglog.Debug, "lost packets %d-%d (%d packets): sending LOSSREPORT", seqlo, seqhi, 1+CSeqNo::seqcmp(seqhi, seqlo));
+
+               // Phase 2: rest of the records should have TTL decreased.
+               for ( ; i != m_FreshLoss.end(); ++i )
+                   --i->ttl;
            }
 
-           int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
-           m_iTraceRcvLoss += loss;
-           m_iRcvLossTotal += loss;
-           uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-           m_ullTraceRcvBytesLoss += lossbytes;
-           m_ullRcvBytesLossTotal += lossbytes;
        }
+       if ( !lossdata.empty() )
+           sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
 
-       if (m_bTsbPd)
-       {
-           pthread_mutex_lock(&m_RecvLock);
-           pthread_cond_signal(&m_RcvTsbPdCond);
-           pthread_mutex_unlock(&m_RecvLock);
-       }
-   }
-
-   // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
-
-   // PERFORMANCE CONSIDERATIONS:
-   // This list is quite inefficient as a data type and finding the candidate to send UMSG_LOSSREPORT
-   // is linear time. On the other hand, there are some special cases that are important for performance:
-   // - only the first (plus some following) could have had TTL drown to 0
-   // - the only (little likely) possibility that the next-to-first record has TTL=0 is when there was
-   //   a loss range split (due to unlose() of one sequence)
-   // - first found record with TTL>0 means end of "ready to LOSSREPORT" records
-   // So:
-   // All you have to do is:
-   //  - start with first element and continue with next elements, as long as they have TTL=0
-   //    If so, send the loss report and remove this element.
-   //  - Since the first element that has TTL>0, iterate until the end of container and decrease TTL.
-   //
-   // This will be efficient becase the loop to increment one field (without any condition check)
-   // can be quite well optimized.
-
-   vector<int32_t> lossdata;
-   {
-       CGuard lg(m_RcvLossLock);
-
-       // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
-       // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
-       if ( initial_loss_ttl && !m_FreshLoss.empty() )
-       {
-           deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
-
-           // Phase 1: take while TTL <= 0.
-           // There can be more than one record with the same TTL, if it has happened before
-           // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
-           // into two records.
-           for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
-           {
-               HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
-                                      i->seq[0], i->seq[1], CSeqNo::seqcmp(i->seq[1], i->seq[0])+1);
-               addLossRecord(lossdata, i->seq[0], i->seq[1]);
-           }
-
-           // Remove elements that have been processed and prepared for lossreport.
-           if ( i != m_FreshLoss.begin() )
-           {
-               m_FreshLoss.erase(m_FreshLoss.begin(), i);
-               i = m_FreshLoss.begin();
-           }
-
-           if ( m_FreshLoss.empty() )
-           {
-               HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
-           }
-           else
-           {
-               HLOGF(mglog.Debug, "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
-                       i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
-                       i->ttl);
-           }
-
-           // Phase 2: rest of the records should have TTL decreased.
-           for ( ; i != m_FreshLoss.end(); ++i )
-               --i->ttl;
-       }
-
-   }
-   if ( !lossdata.empty() )
-       sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
-
-   // This is not a regular fixed size packet...
-   // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
-   // (if the smoother says so).
-   if (m_Smoother->needsQuickACK(packet))
-   {
-       CTimer::rdtsc(m_ullNextACKTime_tk);
-   }
-
-   // Update the current largest sequence number that has been received.
-   // Or it is a retransmitted packet, remove it from receiver loss list.
-   bool was_orderly_sent = true;
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
-   {
-      m_iRcvCurrSeqNo = packet.m_iSeqNo; // Latest possible received
-   }
-   else
-   {
-      unlose(packet); // was BELATED or RETRANSMITTED packet.
-      was_orderly_sent = 0!=  pktrexmitflag;
    }
 
    // was_orderly_sent means either of:

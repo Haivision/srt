@@ -366,9 +366,9 @@ bool CPacket::getMsgOrderFlag() const
     return 0!=  MSGNO_PACKET_INORDER::unwrap(m_nHeader[PH_MSGNO]);
 }
 
-int32_t CPacket::getMsgSeq(bool has_rexmit) const
+int32_t CPacket::getMsgSeq(bool msgno_16bit) const
 {
-    if ( has_rexmit )
+    if (msgno_16bit)
     {
         return MSGNO_SEQ::unwrap(m_nHeader[PH_MSGNO]);
     }
@@ -380,8 +380,12 @@ int32_t CPacket::getMsgSeq(bool has_rexmit) const
 
 bool CPacket::getRexmitFlag() const
 {
-    // return false; //
     return 0 !=  MSGNO_REXMIT::unwrap(m_nHeader[PH_MSGNO]);
+}
+
+bool CPacket::getControlFlags() const
+{
+    return 0 != MSGNO_CORRECTOR::unwrap(m_nHeader[PH_MSGNO]);
 }
 
 EncryptionKeySpec CPacket::getMsgCryptoFlags() const
