@@ -24,7 +24,10 @@ transport unit size for SRT, and it is also often used when sending MPEG-TS over
 Note that SRT isn't limited to MPEG-TS -- it can be applied to any "live streaming" data 
 transmission (as long as you use Live mode, which is the SRT default mode). You can use 
 any other suitable data format, and any intermediate protocol on top of MPEG-TS with 
-an extra header (you still have an extra 140 bytes per unit for that purpose). 
+an extra header (this is an option that people often try with RTP) - note that
+1316 is the default maximum payload size, which can be changed using the
+`SRTO_PAYLOADSIZE` option to no more than 1456).
+
 However, the transmission must still satisfy the Live Streaming Requirements.
 
 
