@@ -34,7 +34,7 @@
 #include "logging.h"
 
 using namespace std;
-using namespace logging;
+using namespace srt_logging;
 
 SmootherBase::SmootherBase(CUDT* parent)
 {

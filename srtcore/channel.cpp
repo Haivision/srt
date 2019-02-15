@@ -91,7 +91,7 @@ modified by
 #endif
 
 using namespace std;
-using namespace logging;
+using namespace srt_logging;
 
 CChannel::CChannel():
 m_iIPversion(AF_INET),

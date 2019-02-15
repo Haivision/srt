@@ -25,7 +25,7 @@ written by
 #include "logging.h"
 #include "core.h"
 
-using namespace logging;
+using namespace srt_logging;
 
 #define SRT_MAX_KMRETRY     10
  

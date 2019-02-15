@@ -68,7 +68,7 @@ modified by
 #endif
 
 using namespace std;
-using namespace logging;
+using namespace srt_logging;
 extern LogConfig srt_logger_config;
 
 
@@ -3077,25 +3077,25 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
    return CUDT::getsockstate(u);
 }
 
-void setloglevel(logging::LogLevel::type ll)
+void setloglevel(LogLevel::type ll)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
 }
 
-void addlogfa(logging::LogFA fa)
+void addlogfa(LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
 }
 
-void dellogfa(logging::LogFA fa)
+void dellogfa(LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
 }
 
-void resetlogfa(set<logging::LogFA> fas)
+void resetlogfa(set<LogFA> fas)
 {
     CGuard gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)

@@ -80,12 +80,12 @@ modified by
 
 using namespace std;
 
-namespace logging
+namespace srt_logging
 {
 
 struct AllFaOn
 {
-    logging::LogConfig::fa_bitset_t allfa;
+    LogConfig::fa_bitset_t allfa;
 
     AllFaOn()
     {
@@ -104,9 +104,9 @@ struct AllFaOn
 
 // We need it outside the namespace to preserve the global name.
 // It's a part of "hidden API" (used by applications)
-SRT_API logging::LogConfig srt_logger_config (logging::logger_fa_all.allfa);
+SRT_API srt_logging::LogConfig srt_logger_config (srt_logging::logger_fa_all.allfa);
 
-namespace logging
+namespace srt_logging
 {
 
 Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
@@ -119,7 +119,7 @@ Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
 
 }
 
-using namespace logging;
+using namespace srt_logging;
 
 CUDTUnited CUDT::s_UDTUnited;
 

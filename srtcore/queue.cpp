@@ -64,7 +64,7 @@ modified by
 #include "queue.h"
 
 using namespace std;
-using namespace logging;
+using namespace srt_logging;
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),

@@ -164,11 +164,11 @@ modified by
 #include "packet.h"
 #include "logging.h"
 
-namespace logging
+namespace srt_logging
 {
     extern Logger mglog;
 }
-using namespace logging;
+using namespace srt_logging;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():

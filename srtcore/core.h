@@ -73,7 +73,7 @@ modified by
 
 #include <haicrypt.h>
 
-namespace logging
+namespace srt_logging
 {
 
 extern Logger
