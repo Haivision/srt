@@ -80,13 +80,16 @@ modified by
 
 using namespace std;
 
+namespace srt_logging
+{
+
 struct AllFaOn
 {
-    logging::LogConfig::fa_bitset_t allfa;
+    LogConfig::fa_bitset_t allfa;
 
     AllFaOn()
     {
-        allfa.set(SRT_LOGFA_BSTATS, true);
+//        allfa.set(SRT_LOGFA_BSTATS, true);
         allfa.set(SRT_LOGFA_CONTROL, true);
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
@@ -97,14 +100,26 @@ struct AllFaOn
     }
 } logger_fa_all;
 
-SRT_API logging::LogConfig srt_logger_config (logger_fa_all.allfa);
+}
 
-logging::Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
-logging::Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
-logging::Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
-logging::Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
-logging::Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
-logging::Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
+// We need it outside the namespace to preserve the global name.
+// It's a part of "hidden API" (used by applications)
+SRT_API srt_logging::LogConfig srt_logger_config (srt_logging::logger_fa_all.allfa);
+
+namespace srt_logging
+{
+
+Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
+// Unused. If not found useful, maybe reuse for another FA.
+//Logger blog(SRT_LOGFA_BSTATS, srt_logger_config, "SRT.b");
+Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
+Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
+Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
+Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
+
+}
+
+using namespace srt_logging;
 
 CUDTUnited CUDT::s_UDTUnited;
 
@@ -4234,7 +4249,7 @@ void* CUDT::tsbpd(void* param)
                      timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
 #if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno)
-                    << " (" << seqlen << " packets) playable at " << logging::FormatTime(tsbpdtime) << " delayed "
+                    << " (" << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
                     << (timediff/1000) << "." << (timediff%1000) << " ms");
 #endif
                 LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff/1000) << "ms");
@@ -4287,7 +4302,7 @@ void* CUDT::tsbpd(void* param)
           self->m_bTsbPdAckWakeup = false;
           THREAD_PAUSED();
           HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-              << " T=" << logging::FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
+              << " T=" << FormatTime(tsbpdtime) << " - waiting " << (timediff/1000.0) << "ms");
           CTimer::condTimedWaitUS(&self->m_RcvTsbPdCond, &self->m_RecvLock, timediff);
           THREAD_RESUMED();
       }
@@ -8396,7 +8411,7 @@ void CUDT::checkTimers()
 
     // This is a very heavy log, unblock only for temporary debugging!
 #if 0
-    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << logging::FormatTime(m_ullNextACKTime_tk)
+    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_ullNextACKTime_tk)
         << " AckInterval=" << m_iACKInterval
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
