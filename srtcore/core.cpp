@@ -1173,6 +1173,9 @@ void CUDT::clearData()
    m_ullTraceBytesSent      = 0;
    m_ullTraceBytesRecv      = 0;
    m_ullTraceBytesRetrans   = 0;
+#ifdef SRT_ENABLE_LOSTBYTESCOUNT
+   m_ullTraceRcvBytesLoss   = 0;
+#endif
    m_ullSndBytesDropTotal   = 0;
    m_ullRcvBytesDropTotal   = 0;
    m_ullTraceSndBytesDrop   = 0;
@@ -5842,6 +5845,9 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
       m_iTraceRcvBelated = 0;
+#ifdef SRT_ENABLE_LOSTBYTESCOUNT
+      m_ullTraceRcvBytesLoss = 0;
+#endif
       m_LastSampleTime = currtime;
    }
 }
@@ -6037,6 +6043,9 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
       m_iTraceRcvBelated = 0;
+#ifdef SRT_ENABLE_LOSTBYTESCOUNT
+      m_ullTraceRcvBytesLoss = 0;
+#endif
       m_LastSampleTime = currtime;
    }
 }
