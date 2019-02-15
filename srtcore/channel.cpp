@@ -91,9 +91,7 @@ modified by
 #endif
 
 using namespace std;
-
-
-extern logging::Logger mglog;
+using namespace logging;
 
 CChannel::CChannel():
 m_iIPversion(AF_INET),

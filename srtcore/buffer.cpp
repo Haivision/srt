@@ -58,8 +58,7 @@ modified by
 #include "logging.h"
 
 using namespace std;
-
-extern logging::Logger mglog, dlog, tslog;
+using namespace logging;
 
 CSndBuffer::CSndBuffer(int size, int mss):
 m_BufLock(),

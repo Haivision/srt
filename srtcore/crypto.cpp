@@ -25,7 +25,7 @@ written by
 #include "logging.h"
 #include "core.h"
 
-extern logging::Logger mglog, dlog;
+using namespace logging;
 
 #define SRT_MAX_KMRETRY     10
  

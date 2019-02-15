@@ -68,10 +68,9 @@ modified by
 #endif
 
 using namespace std;
+using namespace logging;
+extern LogConfig srt_logger_config;
 
-extern logging::LogConfig srt_logger_config;
-
-extern logging::Logger mglog;
 
 CUDTSocket::CUDTSocket():
 m_Status(SRTS_INIT),
