@@ -150,7 +150,7 @@ public:
     {
         // XXX stpcpy desired, but not enough portable
         // Composing the exact prefix is not critical, so simply
-        // cut the prefix, if the lenght is exceeded
+        // cut the prefix, if the length is exceeded
 
         // See Logger::Logger; we know this has normally 2 characters,
         // except !!FATAL!!, which has 9. Still less than 32.
@@ -158,7 +158,7 @@ public:
 
         // If the size of the FA name together with severity exceeds the size,
         // just skip the former.
-        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) < MAX_PREFIX_SIZE)
+        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
         {
             strcat(prefix, ":");
             strcat(prefix, logger_pfx);
