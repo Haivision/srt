@@ -58,8 +58,7 @@ modified by
 #include "logging.h"
 
 using namespace std;
-
-extern logging::Logger mglog, dlog, tslog;
+using namespace srt_logging;
 
 CSndBuffer::CSndBuffer(int size, int mss):
 m_BufLock(),
@@ -1629,7 +1628,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
                     "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
 
                 prev_now = nowtime;

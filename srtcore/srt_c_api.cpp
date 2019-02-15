@@ -284,17 +284,17 @@ int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    UDT::setloglevel(logging::LogLevel::type(ll));
+    UDT::setloglevel(srt_logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(logging::LogFA(fa));
+    UDT::addlogfa(srt_logging::LogFA(fa));
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(logging::LogFA(fa));
+    UDT::dellogfa(srt_logging::LogFA(fa));
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
