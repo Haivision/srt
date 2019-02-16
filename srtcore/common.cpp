@@ -83,22 +83,16 @@ modified by
 bool CTimer::m_bUseMicroSecond = false;
 uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
 
-pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
+std::mutex CTimer::m_EventLock;
+std::condition_variable CTimer::m_EventCond;
 
 CTimer::CTimer():
-m_ullSchedTime(),
-m_TickCond(),
-m_TickLock()
+m_ullSchedTime()
 {
-    pthread_mutex_init(&m_TickLock, NULL);
-    pthread_cond_init(&m_TickCond, NULL);
 }
 
 CTimer::~CTimer()
 {
-    pthread_mutex_destroy(&m_TickLock);
-    pthread_cond_destroy(&m_TickCond);
 }
 
 void CTimer::rdtsc(uint64_t &x)
@@ -205,23 +199,11 @@ void CTimer::sleepto(uint64_t nexttime)
        __asm__ volatile ("nop; nop; nop; nop; nop;");
 #endif
 #else
-       timeval now;
-       timespec timeout;
-       gettimeofday(&now, 0);
-       if (now.tv_usec < 990000)
-       {
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-       }
-       else
-       {
-           timeout.tv_sec = now.tv_sec + 1;
-           timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-       }
        THREAD_PAUSED();
-       pthread_mutex_lock(&m_TickLock);
-       pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-       pthread_mutex_unlock(&m_TickLock);
+       {// mutex scope
+           std::unique_lock<std::mutex> tickguard(m_TickLock);
+           m_TickCond.wait_for(tickguard, std::chrono::microseconds(10000));
+       }
        THREAD_RESUMED();
 #endif
 
@@ -238,7 +220,7 @@ void CTimer::interrupt()
 
 void CTimer::tick()
 {
-    pthread_cond_signal(&m_TickCond);
+    m_TickCond.notify_one();
 }
 
 uint64_t CTimer::getTime()
@@ -266,29 +248,14 @@ uint64_t CTimer::getTime()
 
 void CTimer::triggerEvent()
 {
-    pthread_cond_signal(&m_EventCond);
+    m_EventCond.notify_one();
 }
 
 CTimer::EWait CTimer::waitForEvent()
 {
-    timeval now;
-    timespec timeout;
-    gettimeofday(&now, 0);
-    if (now.tv_usec < 990000)
-    {
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-    }
-    else
-    {
-        timeout.tv_sec = now.tv_sec + 1;
-        timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-    }
-    pthread_mutex_lock(&m_EventLock);
-    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
-    pthread_mutex_unlock(&m_EventLock);
-
-    return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
+    std::unique_lock<std::mutex> eventguard(m_EventLock);
+    std::cv_status res = m_EventCond.wait_for(eventguard, std::chrono::microseconds(10000));
+    return res == std::cv_status::timeout ? WT_TIMEOUT : WT_EVENT;
 }
 
 void CTimer::sleep()
@@ -298,76 +265,6 @@ void CTimer::sleep()
    #else
       Sleep(1);
    #endif
-}
-
-int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
-    timeval now;
-    gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
-    timespec timeout;
-    timeout.tv_sec = time_us / 1000000;
-    timeout.tv_nsec = (time_us % 1000000) * 1000;
-    
-    return pthread_cond_timedwait(cond, mutex, &timeout);
-}
-
-
-// Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
-    m_Mutex(lock),
-    m_iLocked(-1)
-{
-    if (shouldwork)
-        m_iLocked = pthread_mutex_lock(&m_Mutex);
-}
-
-// Automatically unlock in destructor
-CGuard::~CGuard()
-{
-    if (m_iLocked == 0)
-        pthread_mutex_unlock(&m_Mutex);
-}
-
-// After calling this on a scoped lock wrapper (CGuard),
-// the mutex will be unlocked right now, and no longer
-// in destructor
-void CGuard::forceUnlock()
-{
-    if (m_iLocked == 0)
-    {
-        pthread_mutex_unlock(&m_Mutex);
-        m_iLocked = -1;
-    }
-}
-
-int CGuard::enterCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_lock(&lock);
-}
-
-int CGuard::leaveCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_unlock(&lock);
-}
-
-void CGuard::createMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_init(&lock, NULL);
-}
-
-void CGuard::releaseMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_destroy(&lock);
-}
-
-void CGuard::createCond(pthread_cond_t& cond)
-{
-    pthread_cond_init(&cond, NULL);
-}
-
-void CGuard::releaseCond(pthread_cond_t& cond)
-{
-    pthread_cond_destroy(&cond);
 }
 
 //

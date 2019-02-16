@@ -134,15 +134,15 @@ private:
    void increase();
 
 private:
-   pthread_mutex_t m_BufLock;           // used to synchronize buffer operation
+   std::mutex m_BufLock;                // used to synchronize buffer operation
 
    struct Block
    {
       char* m_pcData;                   // pointer to the data block
       int m_iLength;                    // length of the block
 
-      int32_t m_iMsgNoBitset;                 // message number
-      uint64_t m_ullOriginTime_us;            // original request time
+      int32_t m_iMsgNoBitset;           // message number
+      uint64_t m_ullOriginTime_us;      // original request time
       uint64_t m_ullSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
@@ -329,7 +329,7 @@ public:
       /// @param [in] timestamp packet time stamp
       /// @param [ref] lock Mutex that should be locked for the operation
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
+   void addRcvTsbPdDriftSample(uint32_t timestamp, std::mutex& lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -394,16 +394,16 @@ private:
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer
    int m_iSize;                         // size of the protocol buffer
-   CUnitQueue* m_pUnitQueue;		// the shared unit queue
+   CUnitQueue* m_pUnitQueue;	    	// the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)
    int m_iLastAckPos;                   // the last ACKed position (exclusive)
-					// EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
-   int m_iMaxPos;			// the furthest data position
+                                        // EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
+   int m_iMaxPos;		            	// the furthest data position
 
-   int m_iNotch;			// the starting read point of the first unit
+   int m_iNotch;		             	// the starting read point of the first unit
 
-   pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
+   std::mutex m_BytesCountLock;         // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer
    int m_iAckedPktsCount;               // Number of acknowledged pkts in the buffer
    int m_iAckedBytesCount;              // Number of acknowledged payload bytes in the buffer

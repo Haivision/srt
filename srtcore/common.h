@@ -63,6 +63,8 @@ modified by
    // #include <winsock2.h>
    //#include <windows.h>
 #endif
+#include <condition_variable>
+#include <mutex>
 #include <pthread.h>
 #include "udt.h"
 #include "utilities.h"
@@ -483,15 +485,6 @@ public:
       /// sleep for a short interval. exact sleep time does not matter
 
    static void sleep();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
 
 private:
    uint64_t getTimeInMicroSec();
@@ -499,11 +492,11 @@ private:
 private:
    uint64_t m_ullSchedTime;             // next schedulled time
 
-   pthread_cond_t m_TickCond;
-   pthread_mutex_t m_TickLock;
+   std::condition_variable m_TickCond;
+   std::mutex m_TickLock;
 
-   static pthread_cond_t m_EventCond;
-   static pthread_mutex_t m_EventLock;
+   static std::condition_variable m_EventCond;
+   static std::mutex m_EventLock;
 
 private:
    static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
@@ -513,55 +506,28 @@ private:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class CGuard
-{
+
+template <class T>
+class inverted_lock_guard {
 public:
-   /// Constructs CGuard, which locks the given mutex for
-   /// the scope where this object exists.
-   /// @param lock Mutex to lock
-   /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
-   ~CGuard();
+  inverted_lock_guard(T& mutex, bool shouldwork): m_Mutex(mutex), m_ShouldWork(shouldwork)
+  {
+    if (m_ShouldWork)
+      m_Mutex.unlock();
+  }
 
-public:
-   static int enterCS(pthread_mutex_t& lock);
-   static int leaveCS(pthread_mutex_t& lock);
+  ~inverted_lock_guard()
+  {
+    if (m_ShouldWork)
+      m_Mutex.lock();
+  }
 
-   static void createMutex(pthread_mutex_t& lock);
-   static void releaseMutex(pthread_mutex_t& lock);
-
-   static void createCond(pthread_cond_t& cond);
-   static void releaseCond(pthread_cond_t& cond);
-
-   void forceUnlock();
+  inverted_lock_guard(const inverted_lock_guard&) = delete;
+  inverted_lock_guard& operator=(const inverted_lock_guard&) = delete;
 
 private:
-   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
-   int m_iLocked;                       // Locking status
-
-   CGuard& operator=(const CGuard&);
-};
-
-class InvertedGuard
-{
-    pthread_mutex_t* m_pMutex;
-public:
-
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
-    {
-        if ( !smutex )
-            return;
-
-        CGuard::leaveCS(*smutex);
-    }
-
-    ~InvertedGuard()
-    {
-        if ( !m_pMutex )
-            return;
-
-        CGuard::enterCS(*m_pMutex);
-    }
+  T& m_Mutex;
+  bool m_ShouldWork;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

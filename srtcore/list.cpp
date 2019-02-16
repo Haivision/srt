@@ -58,8 +58,7 @@ m_caSeq(),
 m_iHead(-1),
 m_iLength(0),
 m_iSize(size),
-m_iLastInsertPos(-1),
-m_ListLock()
+m_iLastInsertPos(-1)
 {
     m_caSeq = new Seq[size];
 
@@ -69,20 +68,16 @@ m_ListLock()
       m_caSeq[i].data1 = -1;
       m_caSeq[i].data2 = -1;
    }
-
-   // sender list needs mutex protection
-   pthread_mutex_init(&m_ListLock, 0);
 }
 
 CSndLossList::~CSndLossList()
 {
     delete [] m_caSeq;
-    pthread_mutex_destroy(&m_ListLock);
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
    {
@@ -254,7 +249,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::remove(int32_t seqno)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
       return;
@@ -366,7 +361,7 @@ void CSndLossList::remove(int32_t seqno)
 
 int CSndLossList::getLossLength()
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    return m_iLength;
 }
@@ -376,7 +371,7 @@ int32_t CSndLossList::getLostSeq()
    if (0 == m_iLength)
      return -1;
 
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
      return -1;

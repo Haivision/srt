@@ -666,29 +666,28 @@ private: // Receiving related data
     uint32_t m_lMinimumPeerSrtVersion;
     uint32_t m_lPeerSrtVersion;
 
-    bool m_bTsbPd;                            // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    pthread_cond_t m_RcvTsbPdCond;
+    std::condition_variable m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
 private: // synchronization: mutexes and conditions
-    pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
+    std::mutex      m_ConnectionLock;            // used to synchronize connection operation
 
-    pthread_cond_t m_SendBlockCond;              // used to block "send" call
-    pthread_mutex_t m_SendBlockLock;             // lock associated to m_SendBlockCond
+    std::condition_variable m_SendBlockCond;     // used to block "send" call
+    std::mutex m_SendBlockLock;                  // lock associated to m_SendBlockCond
 
-    pthread_mutex_t m_AckLock;                   // used to protected sender's loss list when processing ACK
+    std::mutex m_AckLock;                        // used to protected sender's loss list when processing ACK
 
-    pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
-    pthread_mutex_t m_RecvDataLock;              // lock associated to m_RecvDataCond
+    std::condition_variable m_RecvDataCond;      // used to block "recv" when there is no data
+    std::mutex m_RecvDataLock;                   // lock associated to m_RecvDataCond
 
-    pthread_mutex_t m_SendLock;                  // used to synchronize "send" call
-    pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
+    std::mutex m_SendLock;                       // used to synchronize "send" call
+    std::mutex m_RecvLock;                       // used to synchronize "recv" call
 
-    pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
+    std::mutex m_RcvLossLock;                    // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
 
     void initSynch();
-    void destroySynch();
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
