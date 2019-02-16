@@ -586,6 +586,14 @@ endforeach()
 
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
+IF(ENABLE_SHARED AND NOT ENABLE_STATIC)
+IF(UNIX)
+	IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
+	ENDIF()
+ENDIF(UNIX)
+ENDIF()
+
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 target_compile_definitions(haicrypt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
