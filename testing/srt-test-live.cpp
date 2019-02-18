@@ -306,7 +306,7 @@ int main( int argc, char** argv )
         transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
         stoptime = stoul(Option("0", "d", "stoptime"));
     }
-    catch (std::invalid_argument)
+    catch (std::invalid_argument &)
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;

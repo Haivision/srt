@@ -62,7 +62,6 @@ enum SrtOptions
     SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
     SRT_OPT_STREAM    = BIT(6)
-    SRT_OPT_SHORTMSG  = BIT(7), // Message number is written only in the 16-bit lower field
 };
 
 

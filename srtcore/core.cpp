@@ -1241,7 +1241,6 @@ void CUDT::clearData()
    m_bPeerNakReport = false;
 
    m_bPeerRexmitFlag = false;
-   m_bPeer16bMsg = false;
 
    m_llSndDuration = m_llSndDurationTotal = 0;
 
@@ -1407,9 +1406,6 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
     // I support SRT_OPT_REXMITFLG. Do you?
     srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
-    // I support SRT_OPT_SHORTMSG.
-    srtdata[SRT_HS_FLAGS] |= SRT_OPT_SHORTMSG;
-
     // Declare the API used. The flag is set for "stream" API because
     // the older versions will never set this flag, but all old SRT versions use message API.
     if (!m_bMessageAPI)
@@ -1514,15 +1510,6 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused
             // Request that the rexmit bit be used as a part of msgno.
             srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
             HLOGF(mglog.Debug, "HSRSP/snd: AGENT UNDERSTANDS REXMIT flag and PEER reported that it does, too." );
-        }
-
-        if (!m_bPeer16bMsg)
-        {
-
-        }
-        else
-        {
-            srtdata[SRT_HS_FLAGS] |= SRT_OPT_SHORTMSG;
         }
     }
     else
@@ -2206,9 +2193,6 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     m_bPeerRexmitFlag = IsSet(peer_srt_options, SRT_OPT_REXMITFLG);
     HLOGF(mglog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
 
-    m_bPeer16bMsg = IsSet(peer_srt_options, SRT_OPT_SHORTMSG);
-    HLOGF(mglog.Debug, "HSREQ/rcv: peer %s 16-bit msgno", m_bPeer16bMsg ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
-
     // Check if both use the same API type. Reject if not.
     bool peer_message_api = !IsSet(peer_srt_options, SRT_OPT_STREAM);
     if ( peer_message_api != m_bMessageAPI )
@@ -2446,21 +2430,10 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         {
             HLOGP(mglog.Debug, "HSRSP/rcv: Agent understands REXMIT flag, but PEER DOES NOT");
         }
-
-        if ( IsSet(peer_srt_options, SRT_OPT_SHORTMSG) )
-        {
-            //Peer will use REXMIT flag in packet retransmission.
-            m_bPeer16bMsg = true;
-            HLOGP(mglog.Debug, "HSRSP/rcv: 1.2.0+ Agent understands 16-bit msgno field and so does peer.");
-        }
-        else
-        {
-            HLOGP(mglog.Debug, "HSRSP/rcv: Agent understands 16-bit msgno field, but PEER DOES NOT");
-        }
     }
     else
     {
-        HLOGF(mglog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag nor 16-bit msgno field");
+        HLOGF(mglog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag");
     }
 
     handshakeDone();
@@ -4588,8 +4561,8 @@ bool CUDT::prepareConnectionObjects(const CHandShake& hs, HandshakeSide hsd, CUD
 
     try
     {
-        m_pSndBuffer = new CSndBuffer(m_bPeer16bMsg, 32, m_iMaxSRTPayloadSize);
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_bPeer16bMsg, m_iRcvBufSize);
+        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
+        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
@@ -6823,7 +6796,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
-   bool using_16bit_msgno = m_bPeer16bMsg;
+   bool using_rexmit_flag = m_bPeerRexmitFlag;
 
    HLOGC(mglog.Debug, log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
        << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.m_iID);
@@ -7345,7 +7318,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
    case UMSG_DROPREQ: //111 - Msg drop request
       CGuard::enterCS(m_RecvLock);
-      m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_16bit_msgno), using_16bit_msgno);
+      m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
       CGuard::leaveCS(m_RecvLock);
 
       unlose(*(int32_t*)ctrlpkt.m_pcData, *(int32_t*)(ctrlpkt.m_pcData + 4));
@@ -7573,17 +7546,20 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       // So, set here the rexmit flag if the peer understands it.
       if ( m_bPeerRexmitFlag )
       {
-          packet.m_iMsgNo |= MSGNO_REXMIT::mask;
+          packet.m_iMsgNo |= PACKET_SND_REXMIT;
       }
       reason = "reXmit";
    }
-   else if (m_Corrector && m_Corrector->packCorrectionPacket(Ref(packet), m_iSndCurrSeqNo))
+   else if (m_Corrector && m_Corrector->packCorrectionPacket(
+               Ref(packet), m_iSndCurrSeqNo,
+               m_pCryptoControl->getSndCryptoFlags()))
    {
        payload = packet.getLength();
+       reason = "FEC";
    }
    else
    {
-      // If no loss, pack a new packet.
+      // If no loss, and no FEC control packet, pack a new packet.
 
       // check congestion/flow window limit
       int cwnd = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));

@@ -70,7 +70,7 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CSndBuffer(bool use_16b_msgno, int size = 32, int mss = 1500);
+   CSndBuffer(int size = 32, int mss = 1500);
    ~CSndBuffer();
 
       /// Insert a user buffer into the sending list.
@@ -148,14 +148,13 @@ private:
 
       Block* m_pNext;                   // next block
 
-      int32_t getMsgSeq(bool current_16b_msg)
+      int32_t getMsgSeq()
       {
           // NOTE: this extracts message ID with regard to REXMIT flag.
           // This is valid only for message ID that IS GENERATED in this instance,
           // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
           // for the peer that it uses LESS bits to represent the message.
-          return current_16b_msg ? m_iMsgNoBitset & MSGNO_SEQ::mask
-              : m_iMsgNoBitset & MSGNO_SEQ_OLD::mask;
+          return m_iMsgNoBitset & MSGNO_SEQ::mask;
       }
 
    } *m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
@@ -196,9 +195,6 @@ private:
    int m_iInRateBps;        // Input Rate in Bytes/sec
    int m_iAvgPayloadSz;     // Average packet payload size
 
-   // Temporary field for backward compat
-   bool m_bUse16bMsgNo;
-
 private:
    CSndBuffer(const CSndBuffer&);
    CSndBuffer& operator=(const CSndBuffer&);
@@ -217,7 +213,7 @@ public:
    // Currently just "unimplemented".
    std::string CONID() const { return ""; }
 
-   CRcvBuffer(CUnitQueue* queue, bool use_16b_msgno, int bufsize = 65536);
+   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -321,7 +317,6 @@ public:
        return m_iLastAckPos != m_iStartPos;
    }
    CPacket* getRcvReadyPacket();
-   bool isReadyToPlay(const CPacket* p, uint64_t& tsbpdtime);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
       ///    @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -358,6 +353,7 @@ public:
       /// @param [in] len size of data to be skip & acknowledged.
 
    void skipData(int len);
+
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
@@ -438,10 +434,6 @@ private:
    //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
    //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
-
-   // Temporary field for backward compat
-   bool m_bUse16bMsgNo;
-
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    uint64_t m_LastSamplingTime;
    int m_TimespanMAvg;

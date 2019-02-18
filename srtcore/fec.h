@@ -152,7 +152,7 @@ public:
     // a prediction to be immediately sent. This is called in the function
     // that normally is prepared for extracting a data packet from the sender
     // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq) = 0;
+    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg) = 0;
 
     // This is called at the moment when the sender queue decided to pick up
     // a new packet from the scheduled packets. This should be then used to

@@ -634,7 +634,6 @@ private: // Sending related data
     bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
     bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
-    bool m_bPeer16bMsg;                       // Peer supports msgno written only in a 16-bit field
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
