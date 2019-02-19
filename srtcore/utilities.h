@@ -420,18 +420,43 @@ public:
     operator bool () { return 0!= get(); }
 };
 
+namespace srt_pair_op
+{
+    template <class Value1, class Value2>
+    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    {
+        s << "{" << v.first << " " << v.second << "}";
+        return s;
+    }
+}
+
+// A primitive one-argument version of Printable
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+
+    return os.str();
+}
+
 template<typename Map, typename Key>
 typename Map::mapped_type* map_getp(Map& m, const Key& key)
 {
     typename Map::iterator it = m.find(key);
-    return it == m.end() ? (Map::mapped_type*)0 : &(it->second);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
 template<typename Map, typename Key>
 typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 {
     typename Map::const_iterator it = m.find(key);
-    return it == m.end() ? (Map::mapped_type*)0 : &(it->second);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
 #endif

@@ -16,6 +16,7 @@
 #include <string>
 
 #include "packet.h"
+#include "queue.h"
 #include "utilities.h"
 
 class CUDT;
@@ -29,6 +30,8 @@ struct CorrectorConfig
 };
 
 bool ParseCorrectorConfig(std::string s, CorrectorConfig& out);
+
+typedef CorrectorBase* corrector_create_t(CUDT* parent, const std::string& config);
 
 class Corrector
 {
@@ -61,7 +64,7 @@ public:
     template <class Target>
     struct Creator
     {
-        static CorrectorBase* Create(CUDT* parent, const std::string confstr)
+        static CorrectorBase* Create(CUDT* parent, const std::string& confstr)
         { return new Target(parent, confstr); }
     };
 
@@ -92,7 +95,7 @@ public:
     // Things being done:
     // 1. The corrector is individual, so don't copy it. Set NULL.
     // 2. This will be configued anyway basing on possibly a new rule set.
-    Corrector(const Corrector& source): corrector() {}
+    Corrector(const Corrector& source SRT_ATR_UNUSED): corrector() {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -142,7 +145,7 @@ public:
 
    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    CorrectorBase(CUDT* par): parent(par), m_fallback_level(FS_LAST)
+    CorrectorBase(CUDT* par): m_parent(par), m_fallback_level(Corrector::FS_LAST)
     {
     }
 
@@ -167,8 +170,12 @@ public:
     // arrived (no matter if subsequent or recovered). The 'state' value
     // defines the configured level of loss state required to send the
     // loss report.
-    virtual bool receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) = 0;
+    virtual bool receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) = 0;
 
+
+    virtual ~CorrectorBase()
+    {
+    }
 };
 
 #endif

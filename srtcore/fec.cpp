@@ -20,11 +20,6 @@
 
 using namespace std;
 
-CorrectorBase::CorrectorBase(CUDT* parent)
-{
-    m_parent = parent;
-}
-
 bool ParseCorrectorConfig(std::string s, CorrectorConfig& out)
 {
     vector<string> parts;
@@ -108,14 +103,14 @@ class DefaultCorrector: public CorrectorBase
 
     void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
     void ConfigureColumns(vector<Group>& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn);
-    void ResetGroup(Group& g, int32_t seqno);
-    void CheckGroupClose(Group& g, size_t size);
+    void ResetGroup(Group& g);
+    bool CheckGroupClose(Group& g, size_t pos, size_t size);
     void ClipPacket(Group& g, const CPacket& pkt);
-    void PackControl(const Group& g, int8_t groupix, CPacket& pkt, int32_t seqno);
+    void PackControl(const Group& g, signed char groupix, CPacket& pkt, int32_t seqno, int kflg);
 
     // This translates the sequence number into two indexes
     // for indexing the 'rcv_cells' array.
-    static pair<size_t, size_t> FindCell(int32_t base_seq, int32_t seq)
+    pair<size_t, size_t> FindCell(int32_t base_seq, int32_t seq)
     {
         // base_seq is the sequence which is one before the
         // very first element, that is element at [0][0] has
@@ -130,7 +125,7 @@ class DefaultCorrector: public CorrectorBase
 
 public:
 
-    DefaultCorrector(CUDT* parent, const std::string& confstr);
+    DefaultCorrector(CUDT* m_parent, const std::string& confstr);
 
     // Sender side
 
@@ -138,7 +133,7 @@ public:
     // a prediction to be immediately sent. This is called in the function
     // that normally is prepared for extracting a data packet from the sender
     // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq) ATR_OVERRIDE;
+    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg) ATR_OVERRIDE;
 
     // This is called at the moment when the sender queue decided to pick up
     // a new packet from the scheduled packets. This should be then used to
@@ -156,7 +151,7 @@ public:
     virtual bool receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) ATR_OVERRIDE;
 };
 
-DefaultCorrector::DefaultCorrector(CUDT* parent, const std::string& confstr): CorrectorBase(parent)
+DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): CorrectorBase(m_parent)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -179,7 +174,7 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, const std::string& confstr): Co
     // Vertical size (y)
     rcv_cells.resize(col_size);
 
-    for (size_t x = 0; i < col_size; ++i)
+    for (size_t x = 0; x < col_size; ++x)
     {
         rcv_cells[x].resize(row_size);
     }
@@ -189,13 +184,13 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, const std::string& confstr): Co
     // receiver ISN by the peer. Both should be known after the handshake.
     // Later they will be updated as packets are transmitted.
 
-    int32_t snd_isn = CSeqNo::incseq(parent->sndSeqNo());
-    int32_t rcv_isn = CSeqNo::incseq(parent->rcvSeqNo());
+    int32_t snd_isn = CSeqNo::incseq(m_parent->sndSeqNo());
+    int32_t rcv_isn = CSeqNo::incseq(m_parent->rcvSeqNo());
 
-    // Alright, now we need to get the ISN from parent
+    // Alright, now we need to get the ISN from m_parent
     // to extract the sequence number allowing qualification to the group.
     // The base values must be prepared so that feedSource can qualify them.
-    // Obtain by parent->getSndSeqNo() and parent->getRcvSeqNo()
+    // Obtain by m_parent->getSndSeqNo() and m_parent->getRcvSeqNo()
 
     // SEPARATE FOR SENDING AND RECEIVING!
 
@@ -234,8 +229,8 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, const std::string& confstr): Co
     // Size: cols
     // Step: rows (the next packet in the group is one row later)
     // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
-    ConfigureColumns(rcv.cols, number_cols, number_rows+1, rcv_isn);
-    ConfigureColumns(snd.cols, number_cols, number_rows+1, snd_isn);
+    ConfigureColumns(rcv.cols, number_cols, col_size, number_rows+1, rcv_isn);
+    ConfigureColumns(snd.cols, number_cols, col_size, number_rows+1, snd_isn);
 }
 
 void DefaultCorrector::ConfigureColumns(vector<Group>& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn)
@@ -270,12 +265,14 @@ void DefaultCorrector::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
     g.collected = 0;
 
     // Now the buffer spaces for clips.
-    g.payload_clip.resize(parent->OPT_PayloadSize());
+    g.payload_clip.resize(m_parent->OPT_PayloadSize());
 }
 
-void DefaultCorrector::ResetGroup(Group& g, int32_t seqno)
+void DefaultCorrector::ResetGroup(Group& g)
 {
-    g.base = seqno;
+
+    int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
+    g.base = new_seq_base;
     g.collected = 0;
 
     // This isn't necessary for ConfigureGroup because the
@@ -337,6 +334,11 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
 
     int vert_pos = vert_off / row_size;
 
+    HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
+            << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+            << ")[" << vert_gx << "][" << vert_pos << "] "
+            << ( clip_column ? "" : "<NO-COLUMN-CLIP>"));
+
     // 3. The group should be check for the necessity of being closed.
     // Note that FEC packet extraction doesn't change the state of the
     // VERTICAL groups (it can be potentially extracted multiple times),
@@ -346,25 +348,33 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     // 4. Apply the clip
     // 5. Increase collected.
 
-    CheckGroupClose(snd.row, horiz_pos, row_size);
+    if (CheckGroupClose(snd.row, horiz_pos, row_size))
+    {
+        HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
+    }
     ClipPacket(snd.row, *r_packet);
     snd.row.collected++;
 
     if (clip_column)
     {
-        CheckGroupClose(snd.cols[vert_gx], vert_pos, col_size);
+        if (CheckGroupClose(snd.cols[vert_gx], vert_pos, col_size))
+        {
+            HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
+        }
         ClipPacket(snd.cols[vert_gx], *r_packet);
         snd.cols[vert_gx].collected++;
     }
+
+    HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
 }
 
-void DefaultCorrector::CheckGroupClose(Group& g, int pos, size_t size)
+bool DefaultCorrector::CheckGroupClose(Group& g, size_t pos, size_t size)
 {
     if (pos < size)
-        return;
+        return false;
 
-    int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
-    ResetGroup(g, new_seq_base);
+    ResetGroup(g);
+    return true;
 }
 
 void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
@@ -383,7 +393,7 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
     g.timestamp_clip = g.timestamp_clip ^ timestamp_hw;
 
     // Payload goes "as is".
-    for (int i = 0; i < pkt.getLength(); ++i)
+    for (size_t i = 0; i < pkt.getLength(); ++i)
     {
         g.payload_clip[i] = g.payload_clip[i] ^ pkt.m_pcData[i];
     }
@@ -392,11 +402,11 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
     // recovered, the payload extraced from this process will have
     // the maximum lenght, but it will be cut to the right length
     // and these padding 0s taken out.
-    for (int i = pkt.getLength(); i < parent->OPT_PayloadSize(); ++i)
+    for (size_t i = pkt.getLength(); i < m_parent->OPT_PayloadSize(); ++i)
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
 }
 
-bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq)
+bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
 {
     // If the FEC packet is not yet ready for extraction, do nothing and return false.
     // Check if seq is the last sequence of the group.
@@ -420,8 +430,9 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     // - make sure that pointers are reset to not suggest the packet is ready
     if (snd.row.collected >= number_cols)
     {
+        HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
         // SHIP THE HORIZONTAL FEC packet.
-        PackControl(snd.row, -1, *r_packet, CSeqNo::incseq(seq));
+        PackControl(snd.row, -1, *r_packet, CSeqNo::incseq(seq), kflg);
 
         // RESET THE HORIZONTAL GROUP.
         ResetGroup(snd.row);
@@ -432,8 +443,9 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     int vert_gx = (offset + number_cols) % number_cols;
     if (snd.cols[vert_gx].collected >= number_rows)
     {
+        HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq);
         // SHIP THE VERTICAL FEC packet.
-        PackControl(snd.cols[vert_gx], vert_gx, *r_packet, CSeqNo::incseq(seq));
+        PackControl(snd.cols[vert_gx], vert_gx, *r_packet, CSeqNo::incseq(seq), kflg);
 
         // RESET THE GROUP THAT WAS SENT
         ResetGroup(snd.cols[vert_gx]);
@@ -443,19 +455,19 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     return false;
 }
 
-void DefaultCorrector::PackControl(Group& g, signed char index, CPacket& pkt, int32_t seq, int kflg)
+void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& pkt, int32_t seq, int kflg)
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
     static const size_t
         INDEX_SIZE = 1,
-        PAD_SIZE = 1,
+        PAD_SIZE = 1;
 
     size_t total_size =
         INDEX_SIZE + PAD_SIZE
         + sizeof(g.length_clip)
         + sizeof(g.timestamp_clip);
-        + parent->OPT_PayloadSize();
+        + m_parent->OPT_PayloadSize();
 
     pkt.allocate(total_size);
 
@@ -468,8 +480,8 @@ void DefaultCorrector::PackControl(Group& g, signed char index, CPacket& pkt, in
     out[off++] = 0;
 
     // Ok, now the length clip
-    memcpy(out+off, &length_clip, sizeof length_clip);
-    off += sizeof length_clip;
+    memcpy(out+off, &g.length_clip, sizeof g.length_clip);
+    off += sizeof g.length_clip;
 
     // And finally the payload clip
     memcpy(out+off, &g.payload_clip[0], g.payload_clip.size());
@@ -489,7 +501,7 @@ void DefaultCorrector::PackControl(Group& g, signed char index, CPacket& pkt, in
     pkt.m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
 
     // ... and then fix only the Crypto flags
-    pkt.setMsgCryptoFlags(kflg); // THEN, set crypto flags, if needed.
+    pkt.setMsgCryptoFlags(EncryptionKeySpec(kflg)); // THEN, set crypto flags, if needed.
 
     // Don't set the ID, it will be later set for any kind of packet.
     // Write the timestamp clip into the timestamp field.
@@ -506,6 +518,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     if (pkt.getMsgSeq() == 0)
     {
         // Exit with empty output, it doesn't matter how the loss check is reported.
+        HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet detected, NOT PASSING DOWN (TESTING MODE)");
         return false;
     }
 
@@ -571,8 +584,7 @@ void Corrector::globalInit()
     // with the same builtin.
 }
 
-
-bool Corrector::configure(CUDT* parent, const std::string& confstr)
+bool Corrector::configure(CUDT* m_parent, const std::string& confstr)
 {
     CorrectorConfig cfg;
     if (!ParseCorrectorConfig(confstr, cfg))
@@ -580,7 +592,7 @@ bool Corrector::configure(CUDT* parent, const std::string& confstr)
 
     // Extract the "type" key from parameters, or use
     // builtin if lacking.
-    string type = cfg["type"];
+    string type = cfg.parameters["type"];
 
     correctors_map_t::iterator selector;
     if ( type == "")
@@ -593,7 +605,7 @@ bool Corrector::configure(CUDT* parent, const std::string& confstr)
     }
 
     // Found a corrector, so call the creation function
-    corrector = (*selector->second)(parent, confstr);
+    corrector = (*selector->second)(m_parent, confstr);
 
     // The corrector should have pinned in all events
     // that are of its interest. It's stated that

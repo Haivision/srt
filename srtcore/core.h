@@ -69,6 +69,7 @@ modified by
 #include "queue.h"
 #include "handshake.h"
 #include "smoother.h"
+#include "fec.h"
 #include "utilities.h"
 
 #include <haicrypt.h>

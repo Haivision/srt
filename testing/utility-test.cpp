@@ -20,6 +20,8 @@
 
 void ShowDistance(int32_t s1, int32_t s2)
 {
+    using namespace std;
+
     cout << "s1=" << s1 << "s2=" << s2 << " DISTANCE:\n";
     cout << "seqcmp -> " << CSeqNo::seqcmp(s1, s2) << endl;
     cout << "seqoff -> " << CSeqNo::seqoff(s2, s1) << endl;

@@ -2741,7 +2741,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     return false;
                 }
 
-                HLOGC(mglog.Debug, log << "CONNECTOR'S FEC CONFIG [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
+                HLOGC(mglog.Debug, log << "CONNECTOR'S FEC CONFIG [" << fec << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
             else if ( cmd == SRT_CMD_NONE )
             {
@@ -2791,7 +2791,6 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
 static int FECBetterValue(int my_value, int his_value)
 {
-    int win = my_value;
     if (my_value < 0 && his_value < 0)
     {
         // Return the lesser size, still as negative number.
@@ -2861,12 +2860,17 @@ bool CUDT::checkApplyFECConfig(const std::string& fec)
         }
 
         m_OPT_FECConfigString = out.str();
+
+        HLOGC(mglog.Debug, log << "checkApplyFECConfig: Effective config: " << m_OPT_FECConfigString);
     }
     else
     {
         // Take the foreign configuration as a good deal.
+        HLOGC(mglog.Debug, log << "checkApplyFECConfig: Good deal config: " << m_OPT_FECConfigString);
         m_OPT_FECConfigString = fec;
     }
+
+    return true;
 }
 
 void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
@@ -4799,6 +4803,7 @@ void CUDT::setupCC()
 
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
+        HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_FECConfigString);
         m_Corrector.configure(this, m_OPT_FECConfigString);
     }
 
@@ -7554,6 +7559,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {
+       HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet ready, packet instead of data.");
        payload = packet.getLength();
        reason = "FEC";
    }
@@ -7647,7 +7653,10 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    }
 
    if (new_packet_packed && m_Corrector)
+   {
+       HLOGC(mglog.Debug, log << "FEC: Feeding packet for source clip");
        m_Corrector->feedSource(Ref(packet));
+   }
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
    HLOGC(mglog.Debug, log << CONID() << "packData: " << reason << " packet seq=" << packet.m_iSeqNo
@@ -7849,6 +7858,8 @@ int CUDT::processData(CUnit* unit)
    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
    loss_seqs_t loss_seqs;
    bool handle_lossreport = true; // SEND if there's anything to lossreport
+   vector<CUnit*> incoming;
+   bool was_orderly_sent = true;
 
    {
       /*
@@ -7858,12 +7869,14 @@ int CUDT::processData(CUnit* unit)
       */
       CGuard recvbuf_acklock(m_AckLock);
 
-      vector<CUnit*> incoming;
       vector<CUnit*> undec_units;
       if (m_Corrector)
       {
           // Stuff this data into the corrector
           handle_lossreport = m_Corrector->receive(unit, Ref(incoming), Ref(loss_seqs));
+          HLOGC(mglog.Debug, log << "FEC: fed data, received " << incoming.size() << " pkts, "
+                  << Printable(loss_seqs) << " loss to report, " << (handle_lossreport ? "" : "DO NOT")
+                  << " check for losses later");
       }
       else
       {
@@ -7871,6 +7884,7 @@ int CUDT::processData(CUnit* unit)
           incoming.push_back(unit);
       }
 
+      bool excessive = true; // stays true unless it was successfully added
       for (vector<CUnit*>::iterator i = incoming.begin(); i != incoming.end(); ++i)
       {
           CUnit* u = *i;
@@ -7878,12 +7892,10 @@ int CUDT::processData(CUnit* unit)
 
           int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
 
-          bool excessive = false;
           string exc_type = "EXPECTED";
           if (offset < 0)
           {
               exc_type = "BELATED";
-              excessive = true;
               m_iTraceRcvBelated++;
               uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
               uint64_t bltime = CountIIR(
@@ -7937,33 +7949,31 @@ int CUDT::processData(CUnit* unit)
                   // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
                   // So this packet is "redundant".
                   exc_type = "UNACKED";
-                  excessive = true;
               }
               else if (unit->m_Packet.getMsgCryptoFlags())
               {
                   undec_units.push_back(unit);
+                  excessive = false;
               }
 
               // Update the current largest sequence number that has been received.
               // Or it is a retransmitted packet, remove it from receiver loss list.
-              bool was_orderly_sent = true;
-              if (CSeqNo::seqcmp(ppkt->m_iSeqNo, m_iRcvCurrSeqNo) > 0)
+              if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
               {
-                  m_iRcvCurrSeqNo = ppkt->m_iSeqNo; // Latest possible received
+                  m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
               }
               else
               {
-                  unlose(*ppkt); // was BELATED or RETRANSMITTED ppkt->
-                  was_orderly_sent = 0!=  pktrexmitflag;
+                  unlose(rpkt); // was BELATED or RETRANSMITTED ppkt->
+                  was_orderly_sent &= 0!=  pktrexmitflag;
               }
 
+              HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
+                      << (excessive ? " EXCESSIVE" : " ACCEPTED")
+                      << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+                      << packet.MessageFlagStr());
           }
       }
-
-      HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
-          << (excessive ? " EXCESSIVE" : " ACCEPTED")
-          << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
-          << packet.MessageFlagStr());
 
       if ( excessive )
       {
@@ -8048,6 +8058,8 @@ int CUDT::processData(CUnit* unit)
        if ( m_bPeerRexmitFlag )
            initial_loss_ttl = m_iReorderTolerance;
 
+       bool loss_was_detected = false;
+
        if  (ppkt->getMsgCryptoFlags())
        {
            /*
@@ -8057,41 +8069,49 @@ int CUDT::processData(CUnit* unit)
            ;
            HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
        }
-       else if (handle_lossreport && CSeqNo::seqcmp(ppkt->m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
+       else if (handle_lossreport)
        {
+           if (CSeqNo::seqcmp(ppkt->m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
            {
-               int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-               int32_t seqhi = CSeqNo::decseq(ppkt->m_iSeqNo);
-
-               loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-               if ( initial_loss_ttl )
+               loss_was_detected = true;
                {
-                   // pack loss list for (possibly belated) NAK
-                   // The LOSSREPORT will be sent in a while.
+                   int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                   int32_t seqhi = CSeqNo::decseq(ppkt->m_iSeqNo);
 
-                   for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+                   loss_seqs.push_back(make_pair(seqlo, seqhi));
+
+                   if ( initial_loss_ttl )
                    {
-                       m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                       // pack loss list for (possibly belated) NAK
+                       // The LOSSREPORT will be sent in a while.
+
+                       for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+                       {
+                           m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                       }
+                       HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(loss_seqs) << " tolerance: " << initial_loss_ttl);
+                       reorder_prevent_lossreport = true;
                    }
-                   HLOGC(mglog.Debug, "FreshLoss: added sequences: " << Printable(loss_seqs) << " tolerance: " << initial_loss_ttl);
-                   reorder_prevent_lossreport = true;
+
+                   int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, ppkt->m_iSeqNo) - 2;
+                   m_iTraceRcvLoss += loss;
+                   m_iRcvLossTotal += loss;
+                   uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+                   m_ullTraceRcvBytesLoss += lossbytes;
+                   m_ullRcvBytesLossTotal += lossbytes;
                }
 
-               int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, ppkt->m_iSeqNo) - 2;
-               m_iTraceRcvLoss += loss;
-               m_iRcvLossTotal += loss;
-               uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-               m_ullTraceRcvBytesLoss += lossbytes;
-               m_ullRcvBytesLossTotal += lossbytes;
+               if (m_bTsbPd)
+               {
+                   pthread_mutex_lock(&m_RecvLock);
+                   pthread_cond_signal(&m_RcvTsbPdCond);
+                   pthread_mutex_unlock(&m_RecvLock);
+               }
            }
-
-           if (m_bTsbPd)
-           {
-               pthread_mutex_lock(&m_RecvLock);
-               pthread_cond_signal(&m_RcvTsbPdCond);
-               pthread_mutex_unlock(&m_RecvLock);
-           }
+       }
+       else if (loss_was_detected)
+       {
+           HLOGC(mglog.Debug, log << "(FEC) Loss detected, but FEC decided not to check for loss");
        }
 
        if (!loss_seqs.empty())
@@ -8106,7 +8126,10 @@ int CUDT::processData(CUnit* unit)
            }
 
            if (!reorder_prevent_lossreport)
+           {
+               HLOGC(mglog.Debug, log << "WILL REPORT LOSSES: " << Printable(loss_seqs));
                sendLossReport(loss_seqs);
+           }
        }
 
        // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
