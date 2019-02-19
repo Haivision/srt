@@ -39,40 +39,28 @@ endif()
 set (SRT_VERSION 1.3.1)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
-# The CMAKE_BUILD_TYPE seems not to be always set, weird.
+set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
+
 if (NOT DEFINED ENABLE_DEBUG)
-
 	if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-		set (ENABLE_DEBUG ON)
+		set (ENABLE_DEBUG "1")
+	elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")	
+		set (ENABLE_DEBUG "2")
 	else()
-		set (ENABLE_DEBUG OFF)
+		set (ENABLE_DEBUG "0")
+		set (CMAKE_BUILD_TYPE "Release")
 	endif()
-endif()
-
-# Set CMAKE_BUILD_TYPE properly, now that you know
-# that ENABLE_DEBUG is set as it should.
-
-if (ENABLE_DEBUG EQUAL 1)
+elseif (ENABLE_DEBUG EQUAL 1)
 	set (CMAKE_BUILD_TYPE "Debug")
+	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 elseif (ENABLE_DEBUG EQUAL 2)
 	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
-
-# option defaults
-# XXX CHANGE: Logging is enabled now by default,
-# use ENABLE_LOGGING=NO in cmake or
-# --disable-logging in configure.
-set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
-
-# Always turn logging on if the build type is debug
-if (ENABLE_DEBUG)
-	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
-endif()
-
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
