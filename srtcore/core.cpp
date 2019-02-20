@@ -867,8 +867,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           }
 
           m_OPT_FECConfigString = arg;
-
       }
+      break;
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);

@@ -428,11 +428,12 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     // After packing the FEC packet:
     // - update the base sequence in the group for which it's packed
     // - make sure that pointers are reset to not suggest the packet is ready
+
     if (snd.row.collected >= number_cols)
     {
         HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
         // SHIP THE HORIZONTAL FEC packet.
-        PackControl(snd.row, -1, *r_packet, CSeqNo::incseq(seq), kflg);
+        PackControl(snd.row, -1, *r_packet, seq, kflg);
 
         // RESET THE HORIZONTAL GROUP.
         ResetGroup(snd.row);
@@ -440,12 +441,19 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     }
 
     int offset = CSeqNo::seqoff(snd.row.base, seq);
+
+    // This can actually happen only for the very first sent packet.
+    // It looks like "following the last packet from the previous group",
+    // however there was no previous group because this is the first packet.
+    if (offset < 0)
+        return false;
+
     int vert_gx = (offset + number_cols) % number_cols;
     if (snd.cols[vert_gx].collected >= number_rows)
     {
         HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq);
         // SHIP THE VERTICAL FEC packet.
-        PackControl(snd.cols[vert_gx], vert_gx, *r_packet, CSeqNo::incseq(seq), kflg);
+        PackControl(snd.cols[vert_gx], vert_gx, *r_packet, seq, kflg);
 
         // RESET THE GROUP THAT WAS SENT
         ResetGroup(snd.cols[vert_gx]);
