@@ -149,6 +149,9 @@ public:
     {
     }
 
+    // General configuration
+    virtual size_t extraSize() = 0;
+
     // Sender side
 
     // This function creates and stores the FEC control packet with

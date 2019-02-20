@@ -7885,6 +7885,7 @@ int CUDT::processData(CUnit* unit)
       }
 
       bool excessive = true; // stays true unless it was successfully added
+      bool incoming_belated = ( CSeqNo::seqcmp(unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0 );
       for (vector<CUnit*>::iterator i = incoming.begin(); i != incoming.end(); ++i)
       {
           CUnit* u = *i;
@@ -7950,12 +7951,14 @@ int CUDT::processData(CUnit* unit)
                   // So this packet is "redundant".
                   exc_type = "UNACKED";
               }
-              else if (unit->m_Packet.getMsgCryptoFlags())
+              else
               {
-                  undec_units.push_back(unit);
                   excessive = false;
+                  if (unit->m_Packet.getMsgCryptoFlags())
+                  {
+                      undec_units.push_back(unit);
+                  }
               }
-
               // Update the current largest sequence number that has been received.
               // Or it is a retransmitted packet, remove it from receiver loss list.
               if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
@@ -7975,17 +7978,27 @@ int CUDT::processData(CUnit* unit)
           }
       }
 
+      // This is moved earlier after introducing FEC because it shouldn't
+      // be executed in case when the packet was rejected by the receiver buffer.
+      // However now the 'excessive' condition may be true also in case when
+      // a truly non-excessive packet has been received, just it has been temporarily
+      // stored for better times by the FEC module. This way 'excessive' is also true,
+      // although the old condition that a packet with a newer sequence number has arrived
+      // or arrived unorderly may still be satisfied.
+      if (!incoming_belated && was_orderly_sent)
+      {
+          // Basing on some special case in the packet, it might be required
+          // to enforce sending ACK immediately (earlier than normally after
+          // a given period).
+          if (m_Smoother->needsQuickACK(packet))
+          {
+              CTimer::rdtsc(m_ullNextACKTime_tk);
+          }
+      }
+
       if ( excessive )
       {
           return -1;
-      }
-
-      // This is not a regular fixed size packet...
-      // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
-      // (if the smoother says so).
-      if (m_Smoother->needsQuickACK(packet))
-      {
-          CTimer::rdtsc(m_ullNextACKTime_tk);
       }
 
       bool decr = true;

@@ -74,6 +74,10 @@ class DefaultCorrector: public CorrectorBase
         uint16_t length_clip;
         uint32_t timestamp_clip;
         vector<char> payload_clip;
+
+        // This is mutable because it's an intermediate buffer for
+        // the purpose of output.
+        mutable vector<char> output_buffer;
     };
 
     // Row Groups: every item represents a single row group and collects clips for one row.
@@ -149,6 +153,24 @@ public:
     // defines the configured level of loss state required to send the
     // loss report.
     virtual bool receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) ATR_OVERRIDE;
+
+    // Configuration
+    virtual size_t extraSize() ATR_OVERRIDE
+    {
+        // This is the size that is needed extra by packets operated by this corrector.
+        // It should be subtracted from a current maximum value for SRTO_PAYLOADSIZE
+
+        // The default FEC uses extra space only for FEC/CTL packet.
+        // The timestamp clip is placed in the timestamp field in the header.
+        // The payload contains:
+        // - the length clip
+        // - the flag spec
+        // - the payload clip
+        // The payload clip takes simply the current length of SRTO_PAYLOADSIZE.
+        // So extra 4 bytes are needed, 2 for flags, 2 for length clip.
+
+        return 4;
+    }
 };
 
 DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): CorrectorBase(m_parent)
@@ -266,6 +288,12 @@ void DefaultCorrector::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 
     // Now the buffer spaces for clips.
     g.payload_clip.resize(m_parent->OPT_PayloadSize());
+
+    // Preallocate the buffer that will be used for storing it for
+    // the needs of passing the data through the network.
+    // This will be filled with zeros initially, which is unnecessary,
+    // but it happeens just once after connection.
+    g.output_buffer.resize(m_parent->OPT_PayloadSize() + extraSize() + 4);
 }
 
 void DefaultCorrector::ResetGroup(Group& g)
@@ -475,11 +503,18 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
         INDEX_SIZE + PAD_SIZE
         + sizeof(g.length_clip)
         + sizeof(g.timestamp_clip);
-        + m_parent->OPT_PayloadSize();
+        + g.payload_clip.size();
 
-    pkt.allocate(total_size);
+    // Sanity
+#if ENABLE_DEBUG
+    if (g.output_buffer.size() < total_size)
+    {
+        LOGC(mglog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");
+        abort();
+    }
+#endif
 
-    char* out = pkt.m_pcData;
+    char* out = pkt.m_pcData = &g.output_buffer[0];
     size_t off = 0;
     // Spread the index. This is the index of the payload in the vertical group.
     // For horizontal group this value is always -1.
@@ -509,7 +544,7 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
     pkt.m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
 
     // ... and then fix only the Crypto flags
-    pkt.setMsgCryptoFlags(EncryptionKeySpec(kflg)); // THEN, set crypto flags, if needed.
+    pkt.setMsgCryptoFlags(EncryptionKeySpec(kflg));
 
     // Don't set the ID, it will be later set for any kind of packet.
     // Write the timestamp clip into the timestamp field.
