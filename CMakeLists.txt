@@ -93,7 +93,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
-set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
+set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -708,25 +708,6 @@ if ( ENABLE_CXX11 )
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
-
-	# For backward compatibility with the old name
-	if (SYMLINKABLE)
-		set (REPLI_COMMAND create_symlink )
-		# It appears impossible to get the filename component from the generator
-		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
-		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
-	else()
-		set (REPLI_COMMAND copy)
-		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
-	endif()
-
-	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
-	add_custom_command(
-		TARGET srt-live-transmit
-		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
-	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
