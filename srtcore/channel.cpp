@@ -388,6 +388,36 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
         << spec.str());
 #endif
 
+#ifdef SRT_TEST_FAKE_LOSS
+
+    static int dcounter = 0;
+
+    if (!packet.isControl())
+    {
+        if (dcounter == 0)
+        {
+            timeval tv;
+            gettimeofday(&tv, 0);
+            srand(tv.tv_usec & 0xFFFF);
+        }
+        ++dcounter;
+
+        if (dcounter > 8)
+        {
+            // Make a random number in the range between 8 and 24
+            int rnd = rand() % 16 + 8;
+
+            if (dcounter > rnd)
+            {
+                dcounter = 1;
+                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo());
+                return packet.getLength(); // fake successful sendinf
+            }
+        }
+    }
+
+#endif
+
    // convert control information into network order
    // XXX USE HtoNLA!
    if (packet.isControl())
