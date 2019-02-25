@@ -367,6 +367,9 @@ void DefaultCorrector::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 
     // Now the buffer spaces for clips.
     g.payload_clip.resize(m_parent->OPT_PayloadSize());
+    g.length_clip = 0;
+    g.flag_clip = 0;
+    g.timestamp_clip = 0;
 
     // Preallocate the buffer that will be used for storing it for
     // the needs of passing the data through the network.
@@ -523,6 +526,13 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
         g.payload_clip[i] = g.payload_clip[i] ^ pkt.m_pcData[i];
     }
 
+    HLOGC(mglog.Debug, log << "FEC DATA PKT: " << hex
+            << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
+            << " TS[he]=" << timestamp_hw
+            << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
+            << " LENGTH=" << g.length_clip
+            << " TS=" << g.timestamp_clip
+            << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
     // Fill the rest with zeros. When this packet is going to be
     // recovered, the payload extraced from this process will have
     // the maximum lenght, but it will be cut to the right length
@@ -563,6 +573,14 @@ void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
     {
         g.payload_clip[i] = g.payload_clip[i] ^ payload[i];
     }
+
+    HLOGC(mglog.Debug, log << "FEC/CTL CLIP: " << hex
+            << "FLAGS=" << unsigned(*flag_clip) << " LENGTH[ne]=" << (*length_clip)
+            << " TS[he]=" << timestamp_hw
+            << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
+            << " LENGTH=" << g.length_clip
+            << " TS=" << g.timestamp_clip
+            << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
 }
 
 bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
@@ -730,12 +748,14 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         {
             isfec.col = true;
         }
+
+        HLOGC(mglog.Debug, log << "FEC: msgno=0, FEC/CTL packet detected. INDEX=" << int(payload[0]));
     }
 
     loss_seqs_t irrecover_row, irrecover_col;
 
     bool ok = true;
-    if (!isfec.row)
+    if (!isfec.col)
     {
         // Don't manage this packet for horizontal group,
         // if it was a vertical FEC/CTL packet.
@@ -743,7 +763,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     }
 
     // XXX TESTING: NOT IMPLEMENTED.
-    if (!isfec.col)
+    if (!isfec.row)
     {
         //ok = HangVertical(rpkt, isfec.colx, r_incoming, irrecover_col);
     }
