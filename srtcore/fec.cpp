@@ -107,6 +107,12 @@ private:
     struct Receive
     {
         SRTSOCKET id;
+        bool order_required;
+
+        Receive(): id(SRT_INVALID_SOCK), order_required(false)
+        {
+        }
+
         // In reception we need to keep as many horizontal groups as required
         // for possible later tracking. A horizontal group should be dismissed
         // when the size of this container exceeds the `number_rows` (size of the column).
@@ -755,6 +761,13 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         HLOGC(mglog.Debug, log << "FEC: msgno=0, FEC/CTL packet detected. INDEX=" << int(payload[0]));
     }
 
+    // Remember this simply every time a packet comes in. In live mode usually
+    // this flag is ORD_RELAXED (false), but some earlier versions used ORD_REQUIRED.
+    // Even though this flag is now usually ORD_RELAXED, it's fate in live mode
+    // isn't completely decided yet, so stay flexible. We believe at least that this
+    // flag will stay unchanged during whole connection.
+    rcv.order_required = rpkt.getMsgOrderFlag();
+
     loss_seqs_t irrecover_row, irrecover_col;
 
     bool ok = true;
@@ -1102,7 +1115,7 @@ void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
     // which isn't true here.
     p.hdr[CPacket::PH_MSGNO] = 1
         | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
-        | MSGNO_PACKET_INORDER::wrap(true)
+        | MSGNO_PACKET_INORDER::wrap(rcv.order_required)
         | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
         | MSGNO_REXMIT::wrap(true)
         ;
