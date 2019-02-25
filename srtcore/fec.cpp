@@ -923,10 +923,9 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     {
         // Create and configure next groups.
         size_t old = rcv.rowq.size();
-        size_t nc =  - rowx + 1;
 
         // First, add the number of groups.
-        rcv.rowq.resize(rcv.rowq.size() + nc);
+        rcv.rowq.resize(rowx + 1);
 
         // Starting from old size
         for (size_t i = old; i < rcv.rowq.size(); ++i)
