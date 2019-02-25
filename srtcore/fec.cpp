@@ -651,14 +651,12 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
-    static const size_t
-        INDEX_SIZE = 1;
+    static const size_t INDEX_SIZE = 1;
 
     size_t total_size =
         INDEX_SIZE
         + sizeof(g.flag_clip)
         + sizeof(g.length_clip)
-        + sizeof(g.timestamp_clip);
         + g.payload_clip.size();
 
     // Sanity
