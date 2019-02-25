@@ -4804,7 +4804,7 @@ void CUDT::setupCC()
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
         HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_FECConfigString);
-        m_Corrector.configure(this, m_OPT_FECConfigString);
+        m_Corrector.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_FECConfigString);
     }
 
     // Override the value of minimum NAK interval, per Smoother's wish.

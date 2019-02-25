@@ -31,7 +31,7 @@ struct CorrectorConfig
 
 bool ParseCorrectorConfig(std::string s, CorrectorConfig& out);
 
-typedef CorrectorBase* corrector_create_t(CUDT* parent, const std::string& config);
+typedef CorrectorBase* corrector_create_t(CUDT* parent, CUnitQueue* uq, const std::string& config);
 
 class Corrector
 {
@@ -64,8 +64,8 @@ public:
     template <class Target>
     struct Creator
     {
-        static CorrectorBase* Create(CUDT* parent, const std::string& confstr)
-        { return new Target(parent, confstr); }
+        static CorrectorBase* Create(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+        { return new Target(parent, uq, confstr); }
     };
 
     static bool IsBuiltin(const std::string&);
@@ -101,7 +101,7 @@ public:
     // in appropriate time. It should select appropriate
     // corrector basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
-    bool configure(CUDT* parent, const std::string& confstr);
+    bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
 
     static bool correctConfig(const CorrectorConfig& c);
 
@@ -126,6 +126,7 @@ class CorrectorBase
 {
 protected:
     CUDT* m_parent;
+    CUnitQueue* m_unitqueue;
 
     typedef Corrector::State State;
 
@@ -143,9 +144,9 @@ protected:
 
 public:
 
-   typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    CorrectorBase(CUDT* par): m_parent(par), m_fallback_level(Corrector::FS_LAST)
+    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq), m_fallback_level(Corrector::FS_LAST)
     {
     }
 

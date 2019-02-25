@@ -379,6 +379,13 @@ public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
    bool empty() const;
+
+   // Required by FEC facility to use as a storage for rebuilt packets
+   CUnitQueue* getUnitQueue()
+   {
+       return m_pUnitQueue;
+   }
+
 private:
 
    /// thread safe bytes counter of the Recv & Ack buffer

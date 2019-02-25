@@ -16,6 +16,7 @@
 
 #include "fec.h"
 #include "core.h"
+#include "packet.h"
 #include "logging.h"
 
 using namespace std;
@@ -56,10 +57,7 @@ class DefaultCorrector: public CorrectorBase
     size_t number_cols;
     size_t number_rows;
 
-    typedef vector<bool> row_t;
-
-    vector<row_t> rcv_cells;
-
+public:
     struct Group
     {
         int32_t base; //< Sequence of the first packet in the group
@@ -72,13 +70,27 @@ class DefaultCorrector: public CorrectorBase
         }
 
         uint16_t length_clip;
+        uint8_t flag_clip;
         uint32_t timestamp_clip;
         vector<char> payload_clip;
 
         // This is mutable because it's an intermediate buffer for
         // the purpose of output.
         mutable vector<char> output_buffer;
+
+        enum Type
+        {
+            HORIZ, VERT
+        };
     };
+
+    struct RcvGroup: Group
+    {
+        bool fec;
+        RcvGroup(): fec(false) {}
+    };
+
+private:
 
     // Row Groups: every item represents a single row group and collects clips for one row.
     // Col Groups: every item represents a signel column group and collect clips for packets represented in one column
@@ -94,6 +106,7 @@ class DefaultCorrector: public CorrectorBase
 
     struct Receive
     {
+        SRTSOCKET id;
         // In reception we need to keep as many horizontal groups as required
         // for possible later tracking. A horizontal group should be dismissed
         // when the size of this container exceeds the `number_rows` (size of the column).
@@ -101,16 +114,73 @@ class DefaultCorrector: public CorrectorBase
         // The 'deque' type is used here for a trial implementation. A desired solution
         // would be a kind of a ring buffer where new groups are added and old (exceeding
         // the size) automatically dismissed.
-        deque<Group> rowq;
-        vector<Group> cols;
+        deque<RcvGroup> rowq;
+
+        // Base index at the oldest column platform determines
+        // the base index of the queue. Meaning, first you need
+        // to determnine the column index, where the index 0 is
+        // the fistmost element of this queue. After determining
+        // the column index, there must be also a second factor
+        // deteremined - which column series it is. So, this can
+        // start by extracting the base sequence of the element
+        // at the index column. This is the series 0. Now, the
+        // distance between these two sequences, divided by
+        // rowsize*colsize should return %index-in-column,
+        // /number-series. The latter multiplied by the row size
+        // is the offset between the firstmost column and the
+        // searched column.
+        deque<RcvGroup> colq;
+
+        // This keeps the value of "packet received or not".
+        // The sequence number of the first cell is rowq[0].base.
+        // When dropping a row,
+        // - the firstmost element of rowq is removed
+        // - the length of one row is removed from this vector
+        deque<bool> cells;
+
+        struct PrivPacket
+        {
+            CPacket* pkt;
+            vector<char> buffer;
+
+            PrivPacket(size_t size)
+            {
+                pkt = new CPacket;
+                buffer.resize(size);
+                pkt->m_pcData = &buffer[0];
+            }
+
+            ~PrivPacket()
+            {
+                delete pkt;
+            }
+        };
+
+        mutable vector<PrivPacket> rebuilt;
     } rcv;
 
     void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
-    void ConfigureColumns(vector<Group>& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn);
+    template <class Container>
+    void ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn);
+
     void ResetGroup(Group& g);
+
+    // Sending
     bool CheckGroupClose(Group& g, size_t pos, size_t size);
     void ClipPacket(Group& g, const CPacket& pkt);
     void PackControl(const Group& g, signed char groupix, CPacket& pkt, int32_t seqno, int kflg);
+
+    // Receiving
+
+    bool HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
+    bool HangVertical(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
+    void ClipControlPacket(Group& g, const CPacket& pkt);
+    void RcvCheckRebuild(Group& g, Group::Type type, int gindex);
+    void RcvCheckRebuildHoriz(Group& g, int gindex);
+    void RcvCheckRebuildVert(Group& g, int gindex);
+    void RcvDismissRow();
+    void InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq);
+    void CollectIrrecover(Group& g, loss_seqs_t& irrecover);
 
     // This translates the sequence number into two indexes
     // for indexing the 'rcv_cells' array.
@@ -129,7 +199,7 @@ class DefaultCorrector: public CorrectorBase
 
 public:
 
-    DefaultCorrector(CUDT* m_parent, const std::string& confstr);
+    DefaultCorrector(CUDT* m_parent, CUnitQueue* uq, const std::string& confstr);
 
     // Sender side
 
@@ -173,7 +243,7 @@ public:
     }
 };
 
-DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): CorrectorBase(m_parent)
+DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::string& confstr): CorrectorBase(parent, uq)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -191,15 +261,20 @@ DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): 
     size_t row_size = number_cols;
     size_t col_size = number_rows;
 
+    // XXX TESTING ONLY: columns not implemented, require col == 1.
+    if (col_size != 1)
+    {
+        LOGC(mglog.Error, log << "TEST MODE ONLY. PLEASE USE NUMBER ROWS = 1");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    // Required to store in the header when rebuilding
+    rcv.id = m_parent->socketID();
+
     // Setup the bit matrix, initialize everything with false.
 
     // Vertical size (y)
-    rcv_cells.resize(col_size);
-
-    for (size_t x = 0; x < col_size; ++x)
-    {
-        rcv_cells[x].resize(row_size);
-    }
+    rcv.cells.resize(col_size * row_size);
 
     // These sequence numbers are both the value of ISN-1 at the moment
     // when the handshake is done. The sender ISN is generated here, the
@@ -231,12 +306,6 @@ DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): 
     //  - The result from the above division can't exceed the column size, otherwise
     //    it's another group. The number of currently collected data should be in 'collected'.
 
-    // In the beginning we need just one reception group. New reception
-    // groups will be created in tact with receiving packets outside this one.
-    // The value of rcv.row[0].base will be used as an absolute base for calculating
-    // the index of the group for a given received packet.
-    rcv.rowq.resize(1);
-
     // Now set up the group starting sequences.
     // The very first group in both dimensions will have the value of ISN in particular direction.
 
@@ -246,16 +315,26 @@ DefaultCorrector::DefaultCorrector(CUDT* m_parent, const std::string& confstr): 
     // Step: 1 (next packet in group is 1 past the previous one)
     // Slip: rows (first packet in the next group is distant to first packet in the previous group by 'rows')
     ConfigureGroup(snd.row, snd_isn, 1, row_size);
+
+    // In the beginning we need just one reception group. New reception
+    // groups will be created in tact with receiving packets outside this one.
+    // The value of rcv.row[0].base will be used as an absolute base for calculating
+    // the index of the group for a given received packet.
+    rcv.rowq.resize(1);
     ConfigureGroup(rcv.rowq[0], rcv_isn, 1, row_size);
 
-    // Size: cols
-    // Step: rows (the next packet in the group is one row later)
-    // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
-    ConfigureColumns(rcv.cols, number_cols, col_size, number_rows+1, rcv_isn);
-    ConfigureColumns(snd.cols, number_cols, col_size, number_rows+1, snd_isn);
+    if (col_size > 1)
+    {
+        // Size: cols
+        // Step: rows (the next packet in the group is one row later)
+        // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+        ConfigureColumns(snd.cols, number_cols, col_size, number_rows+1, snd_isn);
+        ConfigureColumns(rcv.colq, number_cols, col_size, number_rows+1, rcv_isn);
+    }
 }
 
-void DefaultCorrector::ConfigureColumns(vector<Group>& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn)
+template <class Container>
+void DefaultCorrector::ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn)
 {
     // This is to initialize the first set of groups.
 
@@ -307,6 +386,7 @@ void DefaultCorrector::ResetGroup(Group& g)
     // vector after resizing is filled with a given value,
     // by default the default value of the type, char(), that is 0.
     g.length_clip = 0;
+    g.flag_clip = 0;
     g.timestamp_clip = 0;
     memset(&g.payload_clip[0], 0, g.payload_clip.size());
 }
@@ -348,7 +428,7 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     // the future, and "this sequence" is in a group that is already closed.
     // In this case simply can't clip the packet in the column group.
 
-    bool clip_column = vert_off >= 0;
+    bool clip_column = vert_off >= 0 && col_size > 1;
 
     // SANITY: check if the rule applies on the group
     if (vert_off % row_size)
@@ -365,7 +445,10 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
             << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
             << ")[" << vert_gx << "][" << vert_pos << "] "
-            << ( clip_column ? "" : "<NO-COLUMN-CLIP>"));
+            << ( clip_column ? "" : "<NO-COLUMN-CLIP>")
+            << " size=" << r_packet.get().getLength()
+            << " TS=" << r_packet.get().getMsgTimeStamp()
+            << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
 
     // 3. The group should be check for the necessity of being closed.
     // Note that FEC packet extraction doesn't change the state of the
@@ -413,6 +496,9 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
     uint16_t length_net = htons(pkt.getLength());
     g.length_clip = g.length_clip ^ length_net;
 
+    uint8_t kflg = uint8_t(pkt.getMsgCryptoFlags());
+    g.flag_clip = g.flag_clip ^ kflg;
+
     // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
     // because it will be written into the TIMESTAMP field in the
     // header, and header is inverted automatically when sending,
@@ -432,6 +518,40 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
     // and these padding 0s taken out.
     for (size_t i = pkt.getLength(); i < m_parent->OPT_PayloadSize(); ++i)
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
+}
+
+// Clipping a control packet does merely the same, just the packet has
+// different contents, so it must be differetly interpreted.
+void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
+{
+    // Both length and timestamp must be taken as NETWORK ORDER
+    // before applying the clip.
+
+    const char* fec_header = pkt.m_pcData;
+    const char* payload = fec_header + 4;
+    size_t payload_clip_len = pkt.getLength() - 4;
+
+    const uint8_t* flag_clip = (const uint8_t*)(fec_header + 1);
+    const uint16_t* length_clip = (const uint16_t*)(fec_header + 2);
+
+    // The endian order used in the length clip is NETWORK ORDER.
+    // So simply keep it this way here.
+    g.length_clip = g.length_clip ^ *length_clip;
+    g.flag_clip = g.flag_clip ^ *flag_clip;
+
+    // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
+    // because it will be written into the TIMESTAMP field in the
+    // header, and header is inverted automatically when sending,
+    // unlike the contents of the payload, where the length will be written.
+    uint32_t timestamp_hw = pkt.getMsgTimeStamp();
+    g.timestamp_clip = g.timestamp_clip ^ timestamp_hw;
+
+    // Payload goes "as is". The clip packet has also the maximum
+    // possible size, so no zero-filling is required.
+    for (size_t i = 0; i < payload_clip_len; ++i)
+    {
+        g.payload_clip[i] = g.payload_clip[i] ^ payload[i];
+    }
 }
 
 bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
@@ -463,10 +583,19 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
         // SHIP THE HORIZONTAL FEC packet.
         PackControl(snd.row, -1, *r_packet, seq, kflg);
 
+        HLOGC(mglog.Debug, log << "...PACKET size=" << r_packet.get().getLength()
+                << " TS=" << r_packet.get().getMsgTimeStamp()
+                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+
         // RESET THE HORIZONTAL GROUP.
         ResetGroup(snd.row);
         return true;
     }
+
+    // Handle the special case of number_rows == 1, which
+    // means we don't use columns.
+    if (number_rows <= 1)
+        return false;
 
     int offset = CSeqNo::seqoff(snd.row.base, seq);
 
@@ -496,11 +625,11 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
     static const size_t
-        INDEX_SIZE = 1,
-        PAD_SIZE = 1;
+        INDEX_SIZE = 1;
 
     size_t total_size =
-        INDEX_SIZE + PAD_SIZE
+        INDEX_SIZE
+        + sizeof(g.flag_clip)
         + sizeof(g.length_clip)
         + sizeof(g.timestamp_clip);
         + g.payload_clip.size();
@@ -519,8 +648,8 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
     // Spread the index. This is the index of the payload in the vertical group.
     // For horizontal group this value is always -1.
     out[off++] = index;
-    // Reserved space for flags
-    out[off++] = 0;
+    // Flags, currently only the encryption flags
+    out[off++] = g.flag_clip;
 
     // Ok, now the length clip
     memcpy(out+off, &g.length_clip, sizeof g.length_clip);
@@ -556,16 +685,91 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // This simply moves the packet to the input queue.
     // Just check if the packet is the FEC packet.
 
-    CPacket& pkt = unit->m_Packet;
+    CPacket& rpkt = unit->m_Packet;
 
-    if (pkt.getMsgSeq() == 0)
+    // size_t row_size = number_cols;
+    // size_t col_size = number_rows;
+
+    // Add this packet to the group where it belongs.
+    // Light up the cell of this packet to mark it received.
+    // Check if any of the groups to which the packet belongs
+    // have changed the status into RECOVERABLE.
+    //
+    // The group has RECOVERABLE status when it has FEC
+    // packet received and the number of collected packets counts
+    // exactly group_size - 1.
+
+    struct IsFec
     {
-        // Exit with empty output, it doesn't matter how the loss check is reported.
-        HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet detected, NOT PASSING DOWN (TESTING MODE)");
-        return false;
+        bool row;
+        bool col;
+        signed char colx;
+    } isfec = { false, false, -1 };
+
+    if (rpkt.getMsgSeq() == 0)
+    {
+        // Interpret the first byte of the contents.
+        const char* payload = rpkt.m_pcData;
+        isfec.colx = payload[0];
+        if (isfec.colx == -1)
+        {
+            isfec.row = true;
+        }
+        else
+        {
+            isfec.col = true;
+        }
     }
 
-    r_incoming.get().push_back(unit);
+    loss_seqs_t irrecover_row, irrecover_col;
+
+    bool ok = true;
+    if (!isfec.row)
+    {
+        // Don't manage this packet for horizontal group,
+        // if it was a vertical FEC/CTL packet.
+        ok = HangHorizontal(rpkt, isfec.row, irrecover_row);
+    }
+
+    // XXX TESTING: NOT IMPLEMENTED.
+    if (!isfec.col)
+    {
+        //ok = HangVertical(rpkt, isfec.colx, r_incoming, irrecover_col);
+    }
+
+    // Pack first recovered packets, if any.
+    if (!rcv.rebuilt.empty())
+    {
+        InsertRebuilt(*r_incoming, m_unitqueue);
+    }
+
+    if (!isfec.col && !isfec.row)
+        r_incoming.get().push_back(unit);
+
+    if (!ok)
+        return true; // something's wrong, can't FEC-rebuild, manage this yourself
+
+    // For now, report immediately the irrecoverable packets
+    // from the row.
+
+    // Later, the `irrecover_row` or `irrecover_col` will be
+    // reported only, depending on level settings. For example,
+    // with default LATELY level, packets will be reported as
+    // irrecoverable only when they are irrecoverable in the
+    // vertical group.
+    *r_loss_seqs = irrecover_row;
+
+    // The return value should depend on the value of the required level:
+    // 0. on ALWAYS, simply return always true.
+    // 1. on EARLY, report those that are in irrecover_row, but return false.
+    // 2. on LATELY, report those that are in both irrecover, but return false.
+    // 3. on NEVER, report nothing and return false.
+
+    // XXX TESTING MODE. Always check for retransmission.
+    // Later it should be changed to: return false always,
+    // but in r_loss_seqs report sequence numbers of packets
+    // that are lost and cannot be recovered at the current
+    // recovery level.
     return true;
 
 
@@ -591,6 +795,488 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // 2. If this is a regular packet, use it for building the FEC group.
     // - FS_ALWAYS: always return true and leave loss_seqs empty.
     // - others: return false and return nothing in loss_seqs
+}
+
+void DefaultCorrector::CollectIrrecover(Group& g, loss_seqs_t& irrecover)
+{
+    // XXX ROW ONLY IMPLEMENTATION.
+
+    // Obtain the group's packet shift
+
+    int32_t base = rcv.rowq[0].base;
+    int offset = CSeqNo::seqoff(base, g.base);
+    if (offset < 0)
+    {
+        LOGC(mglog.Error, log << "!!!");
+        return;
+    }
+
+    size_t maxoff = offset + number_cols;
+    // Sanity check, if all cells are really filled.
+    if (maxoff > rcv.cells.size())
+    {
+        LOGC(mglog.Error, log << "!!!");
+        return;
+    }
+
+    bool last = true;
+    loss_seqs_t::value_type val;
+    for (size_t i = offset; i < maxoff; ++i)
+    {
+        bool gone = last;
+        last = rcv.cells[i];
+
+        if (gone && !last)
+        {
+            // Switch full -> loss. Store the sequence, as single.
+            val.first = val.second = CSeqNo::incseq(base, i);
+        }
+        else if (last && !gone)
+        {
+            val.second = CSeqNo::incseq(base, i);
+            irrecover.push_back(val);
+        }
+    }
+
+    // If it happened that 0 cells were until the end, we are
+    // sure that we have the val.first set to the first of the loss list
+    // and we've reached the end. Otherwise 'last' would be true.
+    if (!last)
+    {
+        val.second = CSeqNo::incseq(base, int(maxoff)-1);
+        irrecover.push_back(val);
+    }
+}
+
+void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+{
+    if (rcv.rebuilt.empty())
+        return;
+
+    HLOGC(mglog.Debug, log << "FEC: have rebuilt " << rcv.rebuilt.size() << " packets, PROVIDING");
+
+    for (vector<Receive::PrivPacket>::iterator i = rcv.rebuilt.begin();
+            i != rcv.rebuilt.end(); ++i)
+    {
+        CUnit* u = uq->getNextAvailUnit();
+        if (!u)
+        {
+            LOGC(mglog.Error, log << "FEC: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
+            break;
+        }
+
+        CPacket& packet = u->m_Packet;
+        CPacket* newpkt = i->pkt;
+
+        memcpy(packet.getHeader(), newpkt->getHeader(), CPacket::HDR_SIZE);
+        memcpy(packet.m_pcData, newpkt->m_pcData, newpkt->getLength());
+        packet.setLength(newpkt->getLength());
+
+        incoming.push_back(u);
+    }
+
+    rcv.rebuilt.clear();
+}
+
+bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
+{
+    int32_t seq = rpkt.getSeqNo();
+    int32_t base = rcv.rowq[0].base;
+
+    int offset = CSeqNo::seqoff(base, seq);
+
+    // Discard the packet, if older than base.
+    if (offset < 0)
+    {
+        HLOGC(mglog.Debug, log << "FEC/H: Packet %" << seq << " is in the past, ignoring");
+        return false;
+    }
+
+    // Hang in the receiver group first.
+    size_t rowx = offset / number_cols;
+
+    // Mind a possible excessive size, simply reject
+    // the packet in a very unusual case.
+    if (rowx > 2 * number_rows * number_cols)
+    {
+        LOGC(mglog.Error, log << "FEC/H: Packet %" << seq << " Exceeds 2*matrix, ignoring.");
+        return false;
+    }
+
+    // The packet might have come completely out of the blue.
+    // The row group container must be prepared to extend
+    // itself in order to give place for the packet.
+
+    // First, possibly extend the row container
+    if (rowx >= rcv.rowq.size())
+    {
+        // Create and configure next groups.
+        size_t old = rcv.rowq.size();
+        size_t nc =  - rowx + 1;
+
+        // First, add the number of groups.
+        rcv.rowq.resize(rcv.rowq.size() + nc);
+
+        // Starting from old size
+        for (size_t i = old; i < rcv.rowq.size(); ++i)
+        {
+            // Initialize the base for the row group
+            int32_t ibase = CSeqNo::incseq(base, i*number_cols);
+            ConfigureGroup(rcv.rowq[i], ibase, 1, number_cols);
+        }
+    }
+
+    RcvGroup& rowg = rcv.rowq[rowx];
+
+    // Mark the packet as received. This will allow later to
+    // determine, which exactly packet is lost and needs rebuilding.
+    int cellsize = rcv.cells.size();
+    if (offset >= cellsize)
+    {
+        // Expand the cell container with zeros, excluding the 'offset'.
+        // Resize normally up to the required size, just set the lastmost
+        // item to true.
+        rcv.cells.resize(offset+1, false);
+    }
+    rcv.cells[offset] = true;
+
+    // Now we know that rowx is here.
+    // Clip the packet into the horizontal group.
+
+    // If this was a regular packet, increase the number of collected.
+    // If this was a FEC/CTL packet, keep this number, just set the fec flag.
+    if (isfec)
+    {
+        ClipControlPacket(rowg, rpkt);
+        rowg.fec = true;
+        HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq);
+    }
+    else
+    {
+        ClipPacket(rowg, rpkt);
+        rowg.collected++;
+        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq << ", received " << rowg.collected << "/" << number_cols);
+    }
+
+    if (rowg.fec)
+    {
+        if (rowg.collected == number_cols - 1)
+        {
+            HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING");
+            // The group will provide the information for rebuilding.
+            // The sequence of the lost packet can be checked in cells.
+            // With the condition of 'collected == number_cols - 1', there
+            // should be only one lacking packet, so just rely on first found.
+            RcvCheckRebuild(rowg, Group::HORIZ, rowx);
+        }
+        else if (rowg.collected < number_cols - 1) // can be also ==, i.e., all packets received
+        {
+            HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; COLLECT IRRECOVERABLE");
+            // We have FEC for the row and more than 1 packets lacking.
+            // Not recoverable. Find all irrecoverable packets and report them.
+            CollectIrrecover(rowg, irrecover);
+        }
+    }
+
+    // After the operation, check if the row shall be dismissed.
+    // NOTE: Another condition for dismissal of a row is when after
+    // column check the oldest row has achieved collected == number_cols.
+    if (rcv.rowq.size() > 2*number_cols)
+    {
+        HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
+        RcvDismissRow();
+    }
+
+    return true;
+}
+
+void DefaultCorrector::RcvDismissRow()
+{
+    // Take the oldest row group, and:
+    // - delete it
+    // - delete from rcv.cells the size of one dow (number_cols)
+
+    rcv.rowq.pop_front();
+
+    // Use safe version
+    size_t ersize = min(number_cols, rcv.cells.size());
+    rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
+}
+
+void DefaultCorrector::RcvCheckRebuild(Group& g, Group::Type type, int gindex)
+{
+    if (type == Group::HORIZ)
+        return RcvCheckRebuildHoriz(g, gindex);
+//    return RcvCheckRebuildVert(g);
+}
+
+void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
+{
+    // Rebuild condition is satisfied, just rebuild.
+    // Start with getting the base sequence number and
+    // find the exact packet that is missing.
+
+    // Note that rcv.cells is in sync with rcv.rowq, so
+    // you just need to find the right row in the cells.
+
+    int offset = -1;
+
+    // You can search linearly for the 0 in the container
+    for (size_t cix = gindex * number_cols; cix < (gindex+1) * number_cols; ++cix)
+    {
+        if (rcv.cells[cix] == 0)
+        {
+            offset = cix % number_cols;
+
+            // Find just one. No more that just one shall be found
+            // because it was checked earlier that we have collected
+            // all but just one packet.
+            break;
+        }
+    }
+
+    if (offset == -1)
+    {
+        LOGC(mglog.Fatal, log << "FEC: IPE: rebuilding attempt, but no lost packet found");
+        return; // sanity, shouldn't happen
+    }
+
+    uint16_t length_hw = ntohs(g.length_clip);
+
+    if (length_hw > m_parent->OPT_PayloadSize())
+    {
+        LOGC(mglog.Error, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
+        return;
+    }
+
+    // Now apply the offset to the base in the group
+    // to get the sequence number of the packet
+    int32_t seqno = CSeqNo::incseq(g.base, offset);
+
+    // Rebuild the packet
+    // (length_hw is automatically converted through PrivPacket constructor)
+    rcv.rebuilt.push_back( length_hw );
+
+    Receive::PrivPacket& p = rcv.rebuilt.back();
+
+    uint32_t* header = p.pkt->getHeader();
+
+    header[CPacket::PH_SEQNO] = seqno;
+
+    // This is for live mode only, for now, so the message
+    // number will be always 1, PB_SOLO, INORDER, and flags from clip.
+    // The REXMIT flag is set to 1 to fake that the packet was
+    // retransmitted. It is necessary because this packet will
+    // come out of sequence order, and if such a packet has
+    // no rexmit flag set, it's treated as reordered by network,
+    // which isn't true here.
+    header[CPacket::PH_MSGNO] = 1
+        | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
+        | MSGNO_PACKET_INORDER::wrap(true)
+        | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
+        | MSGNO_REXMIT::wrap(true)
+        ;
+
+    header[CPacket::PH_TIMESTAMP] = g.timestamp_clip;
+    header[CPacket::PH_ID] = rcv.id;
+
+    // Header ready, now we rebuild the contents
+    // First, rebuild the length.
+
+    // Allocate the buffer and assign to a packet.
+    // This is only temporary, it will be copied to
+    // the target place when needed, with the buffer coming
+    // from the unit queue.
+
+    // The payload clip may be longer than length_hw, but it
+    // contains only trailing zeros for completion, which are skipped.
+    memcpy(&p.buffer[0], &g.payload_clip[0], length_hw);
+
+    p.pkt->setLength(length_hw);
+
+    HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno << " msgno=" << p.pkt->getMsgSeq() << " flags:"
+            << p.pkt->MessageFlagStr() << " TS=" << p.pkt->getMsgTimeStamp()
+            << " !" << BufferStamp(p.pkt->m_pcData, p.pkt->getLength()));
+}
+
+bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs_t& irrecover)
+{
+    // Now hang the packet in the vertical group
+
+    int32_t seq = rpkt.getSeqNo();
+    int32_t base = rcv.colq[0].base;
+
+    int baseoff = CSeqNo::seqoff(base, seq);
+
+    // Discard the packet, if older than base.
+    if (baseoff < 0)
+        return false;
+
+    int coln = baseoff % number_cols;
+
+    // The column is only the column, not yet
+    // exactly the index of the column group in the container.
+    // It's like:
+
+    //   0   1   2   3   4
+    //  [A]
+    //  [A] [A]
+    //  [A] [A] [A]
+    //  [A] [A] [A] [A]
+    //  [A] [A] [A] [A] [A]
+    //  [B] [A] [A] [A] [A]
+    //  [B] [B] [A] [A] [A]
+    //  [B] [B] [B] [A] [A]
+    //  [B] [B] [B] [B] [A]
+    //  [B] [B] [B] [B] [B]
+    //      [B] [B] [B] [B]
+    //          [B] [B] [B]
+    //              [B] [B]
+    //                  [B]
+    //
+    // The same groups laid out in the container:
+    //
+    // [A]0 [A]1 [A]2 [A]3 [A]4 [B]0 [B]1 [B]2 [B]3 [B]4
+
+    // This means, vert_gx returns the number for the
+    // logical column, but we only know this column,
+    // not the exact group that is assigned to this
+    // packet. That is, in the above picture, if the
+    // vert_gx resulted in 3, we still don't know if
+    // this is A3 or B3.
+    //
+    // To know it, we need to first take the base
+    // sequence number for the very first column group
+    // in the container. Every next group in this
+    // container is shifted by the 'slip' factor,
+    // which in this case is number_cols + 1. The base
+    // sequence shifted by (number_cols+1)*number_rows
+    // becomes the sequence number of the next
+    // group in column 0.
+    //
+    // If a single column is dismissed, then the
+    // column 1 will become column 0, but the column
+    // 1 in the next series will also become column 0.
+    // All due to that the very base sequence for
+    // all groups will be the one in the first series
+    // column 1, now 0.
+    //
+    // Therefore, once we have the column, let's extract
+    // the column base sequence.
+
+    int32_t colbase = rcv.colq[coln].base;
+    
+    // Example:
+    // BASE SEQUENCE: 11
+    // INCOMING PACKET SEQUENCE: 28
+    // baseoff = 28 - 11 = 17
+    // coln = 17 % 5 = 2
+    // colbase = rcv.colq[2] = :
+    //  [0] 11
+    //  [1] 11 + 5 + 1 = 17
+    //  [2] 17 + 5 + 1 = 23
+    // -> colbase = 23
+    //
+    // Now the distance towards 0 position
+    // in the column is:
+    //
+    // (28 - 23) / 5 [row size]
+    //
+    int colp = CSeqNo::seqoff(colbase, seq)/number_cols;
+    // XXX ASSERT: seqoff(...) % 5 == 0 !!!
+    //
+
+    // That's not all. Now we can see the offset
+    // inside the column as column, not as column
+    // group. If this exceeds the size of the column,
+    // it means that this packet belongs to a group
+    // that is in the next series.
+
+    // First off, though, this position might be negative
+    // (also potentially), which means that the group,
+    // to which it belongs, is already dismissed. If so,
+    // we don't have any group to which this packet can
+    // be added.
+    if (colp < 0)
+        return false;
+
+    // Ok, now we have colp positive, it shows the
+    // logical position of the packet in the column,
+    // stating that the column starts with 'colbase'.
+    // The distance of 1 in 'colp' is the distance
+    // of one row size in sequence numbers, so we
+    // have one dimension off-head. What we need is
+    // to find the exact column group that should
+    // represent this packet, so we need to qualify
+    // this position to a certain range. A single
+    // column group represents the number of packets
+    // equal to column_size, so
+
+    int colseries = colp/number_rows;
+
+    // In the above example, colp == 1, and colseries == 0.
+    // For a case when colp == 7, we'd have colseries == 1
+
+    // By having colseries, we know that we have to shift
+    // the column index (coln) by colseries * number_cols.
+
+    size_t vert_gx = (colseries * number_cols) + coln;
+
+    // Alright, now we have the correct group index.
+    // This index, however, may be presently out of
+    // the space if currently existing groups.
+    // We need to lazily extend the groups up to
+    // the given one.
+
+    if (vert_gx >= rcv.colq.size())
+    {
+        // XXX Make ConfigureColumns() more universal so that
+        // it can start with the current container contents and
+        // only add new elements until the end of the new container size.
+        size_t old = rcv.colq.size();
+        rcv.colq.resize(vert_gx+1);
+        int32_t seqno = rcv.colq[old-1].base;
+        size_t gsize = number_cols;
+        size_t gstep = number_rows;
+        size_t gslip = number_rows + 1;
+
+        seqno = CSeqNo::incseq(seqno, gslip);
+        for (size_t i = vert_gx; i < rcv.colq.size(); ++i)
+        {
+            ConfigureGroup(rcv.colq[i], seqno, gstep, gstep * gsize);
+            seqno = CSeqNo::incseq(seqno, gslip);
+        }
+    }
+
+    // Ok, now we have the column index, we know it exists.
+    // Apply the packet.
+
+    RcvGroup& colg = rcv.colq[vert_gx];
+
+    if (!fec_ctl)
+    {
+        // Data packet, clip it as data
+        ClipPacket(colg, rpkt);
+        colg.collected++;
+    }
+    else
+    {
+        ClipControlPacket(colg, rpkt);
+        colg.fec = true;
+    }
+
+    if (colg.collected == number_rows - 1 && colg.fec)
+    {
+        RcvCheckRebuild(colg, Group::VERT, vert_gx);
+    }
+
+    // XXX Consider group dismissal.
+    // This should happen if the system is certain
+    // that a packet can no longer be recovered.
+
+    // NEEDED ONE MORE API FUNCTION: ack(int32_t seq); ?
+
+    return true;
 }
 
 
@@ -627,7 +1313,7 @@ void Corrector::globalInit()
     // with the same builtin.
 }
 
-bool Corrector::configure(CUDT* m_parent, const std::string& confstr)
+bool Corrector::configure(CUDT* m_parent, CUnitQueue* uq, const std::string& confstr)
 {
     CorrectorConfig cfg;
     if (!ParseCorrectorConfig(confstr, cfg))
@@ -648,7 +1334,7 @@ bool Corrector::configure(CUDT* m_parent, const std::string& confstr)
     }
 
     // Found a corrector, so call the creation function
-    corrector = (*selector->second)(m_parent, confstr);
+    corrector = (*selector->second)(m_parent, uq, confstr);
 
     // The corrector should have pinned in all events
     // that are of its interest. It's stated that
