@@ -211,6 +211,7 @@ inline EncryptionKeySpec GetEncryptionKeySpec(int32_t msgno)
 
 const int32_t PUMASK_SEQNO_PROBE = 0xF;
 
+std::string PacketMessageFlagStr(uint32_t msgno_field);
 
 class CChannel;
 
@@ -436,7 +437,7 @@ public:
 
    std::string MessageFlagStr()
 #if ENABLE_LOGGING
-       ;
+   { return PacketMessageFlagStr(m_nHeader[PH_MSGNO]); }
 #else
    { return ""; }
 #endif

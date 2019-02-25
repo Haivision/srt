@@ -7498,6 +7498,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    string reason;
 
    bool new_packet_packed = false;
+   bool fec_ctl_pkt = false;
 
    // Loss retransmission always has higher priority.
    packet.m_iSeqNo = m_pSndLossList->getLostSeq();
@@ -7559,9 +7560,10 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {
-       HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet ready, packet instead of data.");
+       HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet ready - packing instead of data.");
        payload = packet.getLength();
        reason = "FEC";
+       fec_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
    }
    else
    {
@@ -7613,23 +7615,32 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       reason = "normal";
    }
 
-   if (m_bPeerTsbPd)
+   // Normally packet.m_iTimeStamp field is set exactly here,
+   // usually as taken from m_StartTime and current time, unless live
+   // mode in which case it is based on 'origintime' as set during scheduling.
+   // In case when this is a FEC/CTL packet, the m_iTimeStamp field already
+   // contains the exactly needed value, and it's a timestamp clip, not a real
+   // timestamp.
+   if (!fec_ctl_pkt)
    {
-       /*
-       * When timestamp is carried over in this sending stream from a received stream,
-       * it may be older than the session start time causing a negative packet time
-       * that may block the receiver's Timestamp-based Packet Delivery.
-       * XXX Isn't it then better to not decrease it by m_StartTime? As long as it
-       * doesn't screw up the start time on the other side.
-       */
-      if (origintime >= m_StartTime)
-         packet.m_iTimeStamp = int(origintime - m_StartTime);
-      else
-         packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
-   }
-   else
-   {
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       if (m_bPeerTsbPd)
+       {
+           /*
+            * When timestamp is carried over in this sending stream from a received stream,
+            * it may be older than the session start time causing a negative packet time
+            * that may block the receiver's Timestamp-based Packet Delivery.
+            * XXX Isn't it then better to not decrease it by m_StartTime? As long as it
+            * doesn't screw up the start time on the other side.
+            */
+           if (origintime >= m_StartTime)
+               packet.m_iTimeStamp = int(origintime - m_StartTime);
+           else
+               packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       }
+       else
+       {
+           packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
+       }
    }
 
    packet.m_iID = m_PeerID;

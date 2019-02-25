@@ -524,12 +524,12 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
         g.payload_clip[i] = g.payload_clip[i] ^ pkt.m_pcData[i];
     }
 
-    HLOGC(mglog.Debug, log << "FEC DATA PKT: " << hex
+    HLOGC(mglog.Debug, log << "FEC DATA PKT CLIP: " << hex
             << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
             << " TS[he]=" << timestamp_hw
             << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
-            << " LENGTH=" << g.length_clip
-            << " TS=" << g.timestamp_clip
+            << " LENGTH[ne]=" << g.length_clip
+            << " TS[he]=" << g.timestamp_clip
             << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
     // Fill the rest with zeros. When this packet is going to be
     // recovered, the payload extraced from this process will have
@@ -576,8 +576,8 @@ void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
             << "FLAGS=" << unsigned(*flag_clip) << " LENGTH[ne]=" << (*length_clip)
             << " TS[he]=" << timestamp_hw
             << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
-            << " LENGTH=" << g.length_clip
-            << " TS=" << g.timestamp_clip
+            << " LENGTH[ne]=" << g.length_clip
+            << " TS[he]=" << g.timestamp_clip
             << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
 }
 
@@ -1124,8 +1124,9 @@ void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
 
     HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[CPacket::PH_MSGNO])
-            << " flags=" << hex << (p.hdr[CPacket::PH_MSGNO] & ~MSGNO_SEQ::mask)
-            << " TS=" << p.hdr[CPacket::PH_TIMESTAMP] << " ID=" << p.hdr[CPacket::PH_ID]
+            << " flags=" << PacketMessageFlagStr(p.hdr[CPacket::PH_MSGNO])
+            << " TS=" << p.hdr[CPacket::PH_TIMESTAMP] << " ID=" << dec << p.hdr[CPacket::PH_ID]
+            << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));
 
 }
