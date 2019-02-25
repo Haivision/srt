@@ -140,19 +140,17 @@ private:
 
         struct PrivPacket
         {
-            CPacket* pkt;
-            vector<char> buffer;
+            uint32_t hdr[CPacket::PH_SIZE];
+            char buffer[CPacket::SRT_MAX_PAYLOAD_SIZE];
+            size_t length;
 
-            PrivPacket(size_t size)
+            PrivPacket(size_t size): length(size)
             {
-                pkt = new CPacket;
-                buffer.resize(size);
-                pkt->m_pcData = &buffer[0];
+                memset(hdr, 0, sizeof(hdr));
             }
 
             ~PrivPacket()
             {
-                delete pkt;
             }
         };
 
@@ -693,6 +691,13 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
     pkt.m_iTimeStamp = g.timestamp_clip;
     pkt.m_iSeqNo = seq;
 
+    HLOGC(mglog.Debug, log << "FEC: PackControl: hdr("
+            << (total_size - g.payload_clip.size()) << "): INDEX="
+            << int(index) << " LENGTH[ne]=" << hex << g.length_clip
+            << " FLAGS=" << int(g.flag_clip) << " TS=" << g.timestamp_clip
+            << " PL(" << dec << g.payload_clip.size() << ")[0-4]=" << hex
+            << (*(uint32_t*)&g.payload_clip[0]));
+
     // This sets only the Packet Boundary flags, while all other things:
     // - Order
     // - Rexmit
@@ -897,11 +902,10 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         }
 
         CPacket& packet = u->m_Packet;
-        CPacket* newpkt = i->pkt;
 
-        memcpy(packet.getHeader(), newpkt->getHeader(), CPacket::HDR_SIZE);
-        memcpy(packet.m_pcData, newpkt->m_pcData, newpkt->getLength());
-        packet.setLength(newpkt->getLength());
+        memcpy(packet.getHeader(), i->hdr, CPacket::HDR_SIZE);
+        memcpy(packet.m_pcData, i->buffer, i->length);
+        packet.setLength(i->length);
 
         incoming.push_back(u);
     }
@@ -1089,9 +1093,7 @@ void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
 
     Receive::PrivPacket& p = rcv.rebuilt.back();
 
-    uint32_t* header = p.pkt->getHeader();
-
-    header[CPacket::PH_SEQNO] = seqno;
+    p.hdr[CPacket::PH_SEQNO] = seqno;
 
     // This is for live mode only, for now, so the message
     // number will be always 1, PB_SOLO, INORDER, and flags from clip.
@@ -1100,15 +1102,15 @@ void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
     // come out of sequence order, and if such a packet has
     // no rexmit flag set, it's treated as reordered by network,
     // which isn't true here.
-    header[CPacket::PH_MSGNO] = 1
+    p.hdr[CPacket::PH_MSGNO] = 1
         | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
         | MSGNO_PACKET_INORDER::wrap(true)
         | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
         | MSGNO_REXMIT::wrap(true)
         ;
 
-    header[CPacket::PH_TIMESTAMP] = g.timestamp_clip;
-    header[CPacket::PH_ID] = rcv.id;
+    p.hdr[CPacket::PH_TIMESTAMP] = g.timestamp_clip;
+    p.hdr[CPacket::PH_ID] = rcv.id;
 
     // Header ready, now we rebuild the contents
     // First, rebuild the length.
@@ -1120,13 +1122,14 @@ void DefaultCorrector::RcvCheckRebuildHoriz(Group& g, int gindex)
 
     // The payload clip may be longer than length_hw, but it
     // contains only trailing zeros for completion, which are skipped.
-    memcpy(&p.buffer[0], &g.payload_clip[0], length_hw);
+    copy(g.payload_clip.begin(), g.payload_clip.end(), p.buffer);
 
-    p.pkt->setLength(length_hw);
+    HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno
+            << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[CPacket::PH_MSGNO])
+            << " flags=" << hex << (p.hdr[CPacket::PH_MSGNO] & ~MSGNO_SEQ::mask)
+            << " TS=" << p.hdr[CPacket::PH_TIMESTAMP] << " ID=" << p.hdr[CPacket::PH_ID]
+            << " !" << BufferStamp(p.buffer, p.length));
 
-    HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno << " msgno=" << p.pkt->getMsgSeq() << " flags:"
-            << p.pkt->MessageFlagStr() << " TS=" << p.pkt->getMsgTimeStamp()
-            << " !" << BufferStamp(p.pkt->m_pcData, p.pkt->getLength()));
 }
 
 bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs_t& irrecover)
