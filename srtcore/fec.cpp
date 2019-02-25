@@ -406,58 +406,7 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     // we don't have to check if this isn't a control packet)
     int baseoff = CSeqNo::seqoff(base, r_packet.get().getSeqNo());
 
-    // The algorithm is the following:
-    //
-    // 1. Get the number of group in both vertical and horizontal groups:
-    //    - Horizontal: unnecessary, there's only one group.
-    //    - Vertical: offset towards base (% row size, but with updated Base seq unnecessary)
-
-    // Just for a case.
-    int vert_gx = baseoff % row_size;
-
-    // 2. Define the position of this packet in the group
-    //    - Horizontal: offset towards base (of the given group, not absolute!)
     int horiz_pos = baseoff;
-    //    - Vertical: (seq-base)/column_size
-    int32_t vert_base = snd.cols[vert_gx].base;
-    int vert_off = CSeqNo::seqoff(vert_base, r_packet.get().getSeqNo());
-
-    // It MAY HAPPEN that the base is newer than the sequence of the packet.
-    // This may normally happen in the beginning period, where the bases
-    // set up initially for all columns got the shift, so they are kinda from
-    // the future, and "this sequence" is in a group that is already closed.
-    // In this case simply can't clip the packet in the column group.
-
-    bool clip_column = vert_off >= 0 && col_size > 1;
-
-    // SANITY: check if the rule applies on the group
-    if (vert_off % row_size)
-    {
-        LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
-                << " WRONG with horiz base=%" << base);
-
-        // Do not place it, it would be wrong.
-        return;
-    }
-
-    int vert_pos = vert_off / row_size;
-
-    HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
-            << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-            << ")[" << vert_gx << "][" << vert_pos << "] "
-            << ( clip_column ? "" : "<NO-COLUMN-CLIP>")
-            << " size=" << r_packet.get().getLength()
-            << " TS=" << r_packet.get().getMsgTimeStamp()
-            << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
-
-    // 3. The group should be check for the necessity of being closed.
-    // Note that FEC packet extraction doesn't change the state of the
-    // VERTICAL groups (it can be potentially extracted multiple times),
-    // only the horizontal in order to mark that the vertical FEC is
-    // extracted already. So, anyway, check if the group limit was reached
-    // and it wasn't closed.
-    // 4. Apply the clip
-    // 5. Increase collected.
 
     if (CheckGroupClose(snd.row, horiz_pos, row_size))
     {
@@ -466,17 +415,79 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     ClipPacket(snd.row, *r_packet);
     snd.row.collected++;
 
-    if (clip_column)
+    // Don't do any column feeding if using column size 1
+    if (col_size > 1)
     {
-        if (CheckGroupClose(snd.cols[vert_gx], vert_pos, col_size))
+        // 1. Get the number of group in both vertical and horizontal groups:
+        //    - Vertical: offset towards base (% row size, but with updated Base seq unnecessary)
+        // (Just for a case).
+        int vert_gx = baseoff % row_size;
+
+        // 2. Define the position of this packet in the group
+        //    - Horizontal: offset towards base (of the given group, not absolute!)
+        //    - Vertical: (seq-base)/column_size
+        int32_t vert_base = snd.cols[vert_gx].base;
+        int vert_off = CSeqNo::seqoff(vert_base, r_packet.get().getSeqNo());
+
+        // It MAY HAPPEN that the base is newer than the sequence of the packet.
+        // This may normally happen in the beginning period, where the bases
+        // set up initially for all columns got the shift, so they are kinda from
+        // the future, and "this sequence" is in a group that is already closed.
+        // In this case simply can't clip the packet in the column group.
+
+        bool clip_column = vert_off >= 0 && col_size > 1;
+
+        // SANITY: check if the rule applies on the group
+        if (vert_off % row_size)
         {
-            HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
+            LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
+                    << " WRONG with horiz base=%" << base);
+
+            // Do not place it, it would be wrong.
+            return;
         }
-        ClipPacket(snd.cols[vert_gx], *r_packet);
-        snd.cols[vert_gx].collected++;
+
+        int vert_pos = vert_off / row_size;
+
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
+                << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+                << ")[" << vert_gx << "][" << vert_pos << "] "
+                << ( clip_column ? "" : "<NO-COLUMN-CLIP>")
+                << " size=" << r_packet.get().getLength()
+                << " TS=" << r_packet.get().getMsgTimeStamp()
+                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+
+        // 3. The group should be check for the necessity of being closed.
+        // Note that FEC packet extraction doesn't change the state of the
+        // VERTICAL groups (it can be potentially extracted multiple times),
+        // only the horizontal in order to mark that the vertical FEC is
+        // extracted already. So, anyway, check if the group limit was reached
+        // and it wasn't closed.
+        // 4. Apply the clip
+        // 5. Increase collected.
+
+        if (clip_column)
+        {
+            if (CheckGroupClose(snd.cols[vert_gx], vert_pos, col_size))
+            {
+                HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
+            }
+            ClipPacket(snd.cols[vert_gx], *r_packet);
+            snd.cols[vert_gx].collected++;
+        }
+        HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
+    }
+    else
+    {
+        // The above logging instruction in case of no columns
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
+                << " B:%" << baseoff << " H:*[" << horiz_pos << "]"
+                << " size=" << r_packet.get().getLength()
+                << " TS=" << r_packet.get().getMsgTimeStamp()
+                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+        HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
     }
 
-    HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
 }
 
 bool DefaultCorrector::CheckGroupClose(Group& g, size_t pos, size_t size)
