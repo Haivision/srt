@@ -78,7 +78,7 @@ endif()
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
-option(DISABLE_SUPPORT "Should the Support Applications be Disabled?" OFF)
+option(DISABLE_SUPPORT_APPLICATIONS "Should the Support Applications be Disabled?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -700,11 +700,11 @@ endmacro()
 ##    See https://man.openbsd.org/multicast
 if (BSD
    AND ${CMAKE_SYSTEM_NAME} MATCHES "^[oO][pP][eE][nN][bB][sS][dD]$")
-   set(DISABLE_SUPPORT ON)
+   set(DISABLE_SUPPORT_APPLICATIONS ON)
 endif()
 
 if ( ENABLE_CXX11
-   AND NOT DISABLE_SUPPORT )
+   AND NOT DISABLE_SUPPORT_APPLICATIONS )
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
