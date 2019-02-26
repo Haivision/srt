@@ -24,6 +24,7 @@ include(CheckFunctionExists)
 # Platform shortcuts
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(BSD         ${CMAKE_SYSTEM_NAME} MATCHES "[bB][sS][dD]$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
 
@@ -77,6 +78,7 @@ endif()
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+option(DISABLE_SUPPORT "Should the Support Applications be Disabled?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -306,6 +308,9 @@ if(WIN32)
 elseif(DARWIN)
 	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
 	add_definitions(-DOSX=1)
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -690,7 +695,16 @@ macro(srt_add_application name sources)
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
-if ( ENABLE_CXX11 )
+## FIXME: transmitmedia.cpp does not build on OpenBSD as some of the Multicast
+##    socket operations used there are non-portable.
+##    See https://man.openbsd.org/multicast
+if (BSD
+   AND ${CMAKE_SYSTEM_NAME} MATCHES "^[oO][pP][eE][nN][bB][sS][dD]$")
+   set(DISABLE_SUPPORT ON)
+endif()
+
+if ( ENABLE_CXX11
+   AND NOT DISABLE_SUPPORT )
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
