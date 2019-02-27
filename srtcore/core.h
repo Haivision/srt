@@ -687,6 +687,8 @@ private: // synchronization: mutexes and conditions
 
     pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
 
+    pthread_mutex_t m_StatsLock;                 // used to synchronize access to trace statistics
+
     void initSynch();
     void destroySynch();
     void releaseSynch();
@@ -707,54 +709,58 @@ private: // Generation and processing of packets
     int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);
 
 private: // Trace
-    uint64_t m_StartTime;                        // timestamp when the UDT entity is started
-    int64_t m_llSentTotal;                       // total number of sent data packets, including retransmissions
-    int64_t m_llRecvTotal;                       // total number of received packets
-    int m_iSndLossTotal;                         // total number of lost packets (sender side)
-    int m_iRcvLossTotal;                         // total number of lost packets (receiver side)
-    int m_iRetransTotal;                         // total number of retransmitted packets
-    int m_iSentACKTotal;                         // total number of sent ACK packets
-    int m_iRecvACKTotal;                         // total number of received ACK packets
-    int m_iSentNAKTotal;                         // total number of sent NAK packets
-    int m_iRecvNAKTotal;                         // total number of received NAK packets
-    int m_iSndDropTotal;
-    int m_iRcvDropTotal;
-    uint64_t m_ullBytesSentTotal;                // total number of bytes sent,  including retransmissions
-    uint64_t m_ullBytesRecvTotal;                // total number of received bytes
-    uint64_t m_ullRcvBytesLossTotal;             // total number of loss bytes (estimate)
-    uint64_t m_ullBytesRetransTotal;             // total number of retransmitted bytes
-    uint64_t m_ullSndBytesDropTotal;
-    uint64_t m_ullRcvBytesDropTotal;
-    int m_iRcvUndecryptTotal;
-    uint64_t m_ullRcvBytesUndecryptTotal;
-    int64_t m_llSndDurationTotal;		// total real time for sending
 
-    uint64_t m_LastSampleTime;                   // last performance sample time
-    int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
-    int64_t m_llTraceRecv;                       // number of packets received in the last trace interval
-    int m_iTraceSndLoss;                         // number of lost packets in the last trace interval (sender side)
-    int m_iTraceRcvLoss;                         // number of lost packets in the last trace interval (receiver side)
-    int m_iTraceRetrans;                         // number of retransmitted packets in the last trace interval
-    int m_iSentACK;                              // number of ACKs sent in the last trace interval
-    int m_iRecvACK;                              // number of ACKs received in the last trace interval
-    int m_iSentNAK;                              // number of NAKs sent in the last trace interval
-    int m_iRecvNAK;                              // number of NAKs received in the last trace interval
-    int m_iTraceSndDrop;
-    int m_iTraceRcvDrop;
-    int m_iTraceRcvRetrans;
-    int m_iTraceReorderDistance;
-    double m_fTraceBelatedTime;
-    int64_t m_iTraceRcvBelated;
-    uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
-    uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
-    uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)
-    uint64_t m_ullTraceBytesRetrans;             // number of bytes retransmitted in the last trace interval
-    uint64_t m_ullTraceSndBytesDrop;
-    uint64_t m_ullTraceRcvBytesDrop;
-    int m_iTraceRcvUndecrypt;
-    uint64_t m_ullTraceRcvBytesUndecrypt;
-    int64_t m_llSndDuration;			// real time for sending
-    int64_t m_llSndDurationCounter;		// timers to record the sending duration
+    struct CoreStats
+    {
+        uint64_t m_StartTime;                        // timestamp when the UDT entity is started
+        int64_t m_llSentTotal;                       // total number of sent data packets, including retransmissions
+        int64_t m_llRecvTotal;                       // total number of received packets
+        int m_iSndLossTotal;                         // total number of lost packets (sender side)
+        int m_iRcvLossTotal;                         // total number of lost packets (receiver side)
+        int m_iRetransTotal;                         // total number of retransmitted packets
+        int m_iSentACKTotal;                         // total number of sent ACK packets
+        int m_iRecvACKTotal;                         // total number of received ACK packets
+        int m_iSentNAKTotal;                         // total number of sent NAK packets
+        int m_iRecvNAKTotal;                         // total number of received NAK packets
+        int m_iSndDropTotal;
+        int m_iRcvDropTotal;
+        uint64_t m_ullBytesSentTotal;                // total number of bytes sent,  including retransmissions
+        uint64_t m_ullBytesRecvTotal;                // total number of received bytes
+        uint64_t m_ullRcvBytesLossTotal;             // total number of loss bytes (estimate)
+        uint64_t m_ullBytesRetransTotal;             // total number of retransmitted bytes
+        uint64_t m_ullSndBytesDropTotal;
+        uint64_t m_ullRcvBytesDropTotal;
+        int m_iRcvUndecryptTotal;
+        uint64_t m_ullRcvBytesUndecryptTotal;
+        int64_t m_llSndDurationTotal;		// total real time for sending
+
+        uint64_t m_LastSampleTime;                   // last performance sample time
+        int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
+        int64_t m_llTraceRecv;                       // number of packets received in the last trace interval
+        int m_iTraceSndLoss;                         // number of lost packets in the last trace interval (sender side)
+        int m_iTraceRcvLoss;                         // number of lost packets in the last trace interval (receiver side)
+        int m_iTraceRetrans;                         // number of retransmitted packets in the last trace interval
+        int m_iSentACK;                              // number of ACKs sent in the last trace interval
+        int m_iRecvACK;                              // number of ACKs received in the last trace interval
+        int m_iSentNAK;                              // number of NAKs sent in the last trace interval
+        int m_iRecvNAK;                              // number of NAKs received in the last trace interval
+        int m_iTraceSndDrop;
+        int m_iTraceRcvDrop;
+        int m_iTraceRcvRetrans;
+        int m_iTraceReorderDistance;
+        double m_fTraceBelatedTime;
+        int64_t m_iTraceRcvBelated;
+        uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
+        uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
+        uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)
+        uint64_t m_ullTraceBytesRetrans;             // number of bytes retransmitted in the last trace interval
+        uint64_t m_ullTraceSndBytesDrop;
+        uint64_t m_ullTraceRcvBytesDrop;
+        int m_iTraceRcvUndecrypt;
+        uint64_t m_ullTraceRcvBytesUndecrypt;
+        int64_t m_llSndDuration;			// real time for sending
+        int64_t m_llSndDurationCounter;		// timers to record the sending duration
+    } m_stats;
 
 public:
 
