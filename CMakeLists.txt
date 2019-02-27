@@ -22,11 +22,12 @@ include(FindThreads)
 include(CheckFunctionExists)
 
 # Platform shortcuts
+string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-set_if(BSD         ${CMAKE_SYSTEM_NAME} MATCHES "[bB][sS][dD]$")
+set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -698,7 +699,7 @@ endmacro()
 ## FIXME: transmitmedia.cpp does not build on OpenBSD
 ##    Issue: https://github.com/Haivision/srt/issues/590
 if (BSD
-   AND ${CMAKE_SYSTEM_NAME} MATCHES "^[oO][pP][eE][nN][bB][sS][dD]$")
+   AND ${SYSNAME_LC} MATCHES "^openbsd$")
    set(ENABLE_APPS OFF)
 endif()
 ## The applications currently require c++11.
