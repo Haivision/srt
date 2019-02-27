@@ -67,6 +67,15 @@ modified by
 #include "udt.h"
 #include "utilities.h"
 
+
+#ifdef _DEBUG
+#include <assert.h>
+#define SRT_ASSERT(cond) assert(cond)
+#else
+#define SRT_ASSERT(cond)
+#endif
+
+
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation
