@@ -695,9 +695,8 @@ macro(srt_add_application name sources)
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
-## FIXME: transmitmedia.cpp does not build on OpenBSD as some of the Multicast
-##    socket operations used there are non-portable.
-##    See https://man.openbsd.org/multicast
+## FIXME: transmitmedia.cpp does not build on OpenBSD
+##    Issue: https://github.com/Haivision/srt/issues/590
 if (BSD
    AND ${CMAKE_SYSTEM_NAME} MATCHES "^[oO][pP][eE][nN][bB][sS][dD]$")
    set(ENABLE_APPS OFF)
