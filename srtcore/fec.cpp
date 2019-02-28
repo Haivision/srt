@@ -267,12 +267,14 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     size_t row_size = number_cols;
     size_t col_size = number_rows;
 
+    /*
     // XXX TESTING ONLY: columns not implemented, require col == 1.
     if (col_size != 1)
     {
         LOGC(mglog.Error, log << "TEST MODE ONLY. PLEASE USE NUMBER ROWS = 1");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
+    */
 
     // Required to store in the header when rebuilding
     rcv.id = m_parent->socketID();
@@ -1418,8 +1420,6 @@ void DefaultCorrector::RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover)
     // Currently use the simplified version: having the column index,
     // reach the symmetric column from the previous series and dismiss
     // everything from the start of the container up to this one.
-
-    RcvGroup& colg = rcv.colq[colgx];
 
     // Index in the same column previous series
     int colg_psx = colgx - number_cols;
