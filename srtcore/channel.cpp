@@ -391,6 +391,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 #ifdef SRT_TEST_FAKE_LOSS
 
     static int dcounter = 0;
+    static int flwcounter = 0;
 
     if (!packet.isControl())
     {
@@ -402,15 +403,24 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
         }
         ++dcounter;
 
+        if (flwcounter)
+        {
+            // This is a counter of how many packets in a row shall be lost
+            --flwcounter;
+            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
+            return packet.getLength(); // fake successful sendinf
+        }
+
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            int rnd = rand() % 16 + 8;
+            int rnd = rand() % 16 + 8 + SRT_TEST_FAKE_LOSS;
 
             if (dcounter > rnd)
             {
                 dcounter = 1;
                 HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo());
+                flwcounter = SRT_TEST_FAKE_LOSS;
                 return packet.getLength(); // fake successful sendinf
             }
         }

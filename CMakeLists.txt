@@ -113,8 +113,8 @@ if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
 
-if (SRT_TEST_FAKE_LOSS)
-	add_definitions(-DSRT_TEST_FAKE_LOSS=1)
+if (EXISTS SRT_TEST_FAKE_LOSS)
+	add_definitions(-DSRT_TEST_FAKE_LOSS=${SRT_TEST_FAKE_LOSS})
 endif()
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory

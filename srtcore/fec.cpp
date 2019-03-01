@@ -202,7 +202,7 @@ private:
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
 
-    void TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover);
+    static void TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover);
     int RcvGetRowGroupIndex(int32_t seq);
     int RcvGetColumnGroupIndex(int32_t seq);
@@ -1486,7 +1486,7 @@ void DefaultCorrector::RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover)
     }
     else
     {
-        HLOGC(mglog.Debug, log << "NOT DISMISSING ROWS - negative shrink " << shrink );
+        HLOGC(mglog.Debug, log << "FEC: ... NOT DISMISSING ROWS - negative shrink " << shrink );
     }
 
     // After erasing these rows, dismiss also so many cells that the cell base becomes
@@ -1502,6 +1502,8 @@ void DefaultCorrector::RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover)
 
     // Now all collected lost packets translate into the range list format
     TranslateLossRecords(loss, irrecover);
+
+    HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss));
 }
 
 void DefaultCorrector::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
