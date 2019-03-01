@@ -139,9 +139,6 @@ protected:
     // -N: The N value still specifies the size, but in particular
     //     dimension there is no FEC control packet formed nor expected.
 
-    int m_size_rows;
-    int m_size_columns;
-
 public:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
