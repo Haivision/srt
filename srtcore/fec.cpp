@@ -72,7 +72,7 @@ public:
         size_t drop;      //< by how much the sequence should increase to get to the next series
         size_t collected; //< how many packets were taken to collect the clip
 
-        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), collected(0)
+        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), drop(0), collected(0)
         {
         }
 
@@ -94,6 +94,16 @@ public:
             // can flip between them.
             SINGLE  // Horizontal-only with no recursion
         };
+
+        std::string DisplayStats()
+        {
+            if (base == CSeqNo::m_iMaxSeqNo)
+                return "UNINITIALIZED!!!";
+
+            std::ostringstream os;
+            os << "base=" << base << " step=" << step << " drop=" << drop << " collected=" << collected;
+            return os.str();
+        }
     };
 
     struct RcvGroup: Group
@@ -325,6 +335,7 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     // Size: rows
     // Step: 1 (next packet in group is 1 past the previous one)
     // Slip: rows (first packet in the next group is distant to first packet in the previous group by 'rows')
+    HLOGC(mglog.Debug, log << "FEC: INIT: ISN { snd=" << snd_isn << " rcv=" << rcv_isn << " }; sender single row");
     ConfigureGroup(snd.row, snd_isn, 1, sizeRow());
 
     // In the beginning we need just one reception group. New reception
@@ -332,6 +343,7 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     // The value of rcv.row[0].base will be used as an absolute base for calculating
     // the index of the group for a given received packet.
     rcv.rowq.resize(1);
+    HLOGP(mglog.Debug, "FEC: INIT: receiver first row");
     ConfigureGroup(rcv.rowq[0], rcv_isn, 1, sizeRow());
 
     if (sizeCol() > 1)
@@ -339,7 +351,9 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
         // Size: cols
         // Step: rows (the next packet in the group is one row later)
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+        HLOGP(mglog.Debug, "FEC: INIT: sender first N columns");
         ConfigureColumns(snd.cols, numberCols(), sizeCol(), m_number_rows+1, snd_isn);
+        HLOGP(mglog.Debug, "FEC: INIT: receiver first N columns");
         ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_number_rows+1, rcv_isn);
     }
 
@@ -1287,6 +1301,13 @@ int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
             rowx -= m_number_cols;
         }
 
+#if ENABLE_HEAVY_LOGGING
+        LOGC(mglog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
+
+        for (size_t i = 0; i < rcv.rowq.size(); ++i)
+            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+#endif
+
         // Create and configure next groups.
         size_t old = rcv.rowq.size();
 
@@ -1300,6 +1321,13 @@ int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
             int32_t ibase = CSeqNo::incseq(base, i*m_number_cols);
             ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
         }
+
+#if ENABLE_HEAVY_LOGGING
+        LOGC(mglog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
+
+        for (size_t i = 0; i < rcv.rowq.size(); ++i)
+            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+#endif
     }
 
     return rowx;
@@ -1659,6 +1687,13 @@ int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
             colgx -= m_number_rows;
         }
 
+#if ENABLE_HEAVY_LOGGING
+        LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+
+        for (size_t i = 0; i < rcv.colq.size(); ++i)
+            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
+
         // XXX Make ConfigureColumns() more universal so that
         // it can start with the current container contents and
         // only add new elements until the end of the new container size.
@@ -1676,11 +1711,18 @@ int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
 
         rcv.colq.resize(colgx+1);
 
-        for (size_t i = colgx; i < rcv.colq.size(); ++i)
+        for (size_t i = old; i < rcv.colq.size(); ++i)
         {
             ConfigureGroup(rcv.colq[i], seqno, gstep, gstep * gsize);
             seqno = CSeqNo::incseq(seqno, gslip);
         }
+
+#if ENABLE_HEAVY_LOGGING
+        LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+
+        for (size_t i = 0; i < rcv.colq.size(); ++i)
+            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
     }
 
     return colgx;
