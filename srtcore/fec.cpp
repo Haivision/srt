@@ -95,21 +95,23 @@ public:
             SINGLE  // Horizontal-only with no recursion
         };
 
-        std::string DisplayStats()
-        {
-            if (base == CSeqNo::m_iMaxSeqNo)
-                return "UNINITIALIZED!!!";
-
-            std::ostringstream os;
-            os << "base=" << base << " step=" << step << " drop=" << drop << " collected=" << collected;
-            return os.str();
-        }
     };
 
     struct RcvGroup: Group
     {
         bool fec;
         RcvGroup(): fec(false) {}
+
+        std::string DisplayStats()
+        {
+            if (base == CSeqNo::m_iMaxSeqNo)
+                return "UNINITIALIZED!!!";
+
+            std::ostringstream os;
+            os << "base=" << base << " step=" << step << " drop=" << drop << " collected=" << collected
+                << (fec ? "+" : "-") << "FEC";
+            return os.str();
+        }
     };
 
 private:
