@@ -407,10 +407,11 @@ void DefaultCorrector::ConfigureColumns(Container& which, size_t gsize, size_t g
     // gslip: seqdiff between the first packet in one group and first packet in the next group
     // isn: sequence number of the first packet in the first group
 
-    which.resize(which.size() + gsize);
+    size_t zero = which.size();
+    which.resize(zero + gsize);
 
     int32_t seqno = isn;
-    for (size_t i = 0; i < gsize; ++i)
+    for (size_t i = zero; i < which.size(); ++i)
     {
         ConfigureGroup(which[i], seqno, gstep, gstep * gsize);
         seqno = CSeqNo::incseq(seqno, gslip);
