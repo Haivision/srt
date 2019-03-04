@@ -100,7 +100,8 @@ public:
     struct RcvGroup: Group
     {
         bool fec;
-        RcvGroup(): fec(false) {}
+        bool dismissed;
+        RcvGroup(): fec(false), dismissed(false) {}
 
         std::string DisplayStats()
         {
@@ -109,7 +110,7 @@ public:
 
             std::ostringstream os;
             os << "base=" << base << " step=" << step << " drop=" << drop << " collected=" << collected
-                << (fec ? "+" : "-") << "FEC";
+                << " " << (fec ? "+" : "-") << "FEC " << (dismissed ? "DISMISSED" : "active");
             return os.str();
         }
     };
@@ -205,6 +206,8 @@ private:
 
     // Receiving
 
+    int ExtendRows(int rowx);
+    int ExtendColumns(int colgx);
     void MarkCellReceived(int32_t seq);
     bool HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
     bool HangVertical(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
@@ -215,7 +218,7 @@ private:
     int32_t RcvGetLossSeqVert(Group& g);
 
     static void TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover);
-    void RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover);
+    void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
     int RcvGetRowGroupIndex(int32_t seq);
     int RcvGetColumnGroupIndex(int32_t seq);
     void InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq);
@@ -273,23 +276,52 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     if (!ParseCorrectorConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
+    // Configuration supported:
+    // - row only (number_rows == 1)
+    // - columns only, no row FEC/CTL (number_rows < -1)
+    // - columns and rows (both > 1)
+
+    // Disallowed configurations:
+    // - number_cols < 1
+    // - number_rows [-1, 0]
+
+    if (cfg.cols < 1 || (cfg.rows >= -1 && cfg.rows < 1))
+    {
+        LOGC(mglog.Error, log << "FEC: Wrong config: rows,cols: rows < -1 or rows > 0, cols > 1.");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+
     // It is allowed for rows and cols to have negative value,
     // this way it only marks the fact that particular dimension
     // does not form a FEC group (no FEC control packet sent).
     m_number_cols = abs(cfg.cols);
     m_number_rows = abs(cfg.rows);
 
-    if (m_number_cols == 0 || m_number_rows == 0)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-    /*
-    // XXX TESTING ONLY: columns not implemented, require col == 1.
-    if (sizeCol() != 1)
+    // Check only those that are managed.
+    string level = cfg.parameters["level"];
+    int lv = -1;
+    if (level != "")
     {
-        LOGC(mglog.Error, log << "TEST MODE ONLY. PLEASE USE NUMBER ROWS = 1");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        static const char* levelnames [] = { "never", "lately", "early", "always" };
+
+        for (size_t i = 0; i < Size(levelnames); ++i)
+        {
+            if (level == levelnames[i])
+            {
+                lv = i;
+                break;
+            }
+        }
+
+        if (lv != Corrector::FS_ALWAYS && lv != Corrector::FS_NEVER)
+        {
+            LOGC(mglog.Error, log << "FEC: config error, level: only 'always' and 'never' currently supported");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        m_fallback_level = State(lv);
     }
-    */
 
     // Required to store in the header when rebuilding
     rcv.id = m_parent->socketID();
@@ -375,7 +407,7 @@ void DefaultCorrector::ConfigureColumns(Container& which, size_t gsize, size_t g
     // gslip: seqdiff between the first packet in one group and first packet in the next group
     // isn: sequence number of the first packet in the first group
 
-    which.resize(gsize);
+    which.resize(which.size() + gsize);
 
     int32_t seqno = isn;
     for (size_t i = 0; i < gsize; ++i)
@@ -836,8 +868,12 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     if (!isfec.col && !isfec.row)
         r_incoming.get().push_back(unit);
 
+    bool retval = false;
+    if (m_fallback_level == Corrector::FS_ALWAYS)
+        retval = true;
+
     if (!ok)
-        return true; // something's wrong, can't FEC-rebuild, manage this yourself
+        return retval; // something's wrong, can't FEC-rebuild, manage this yourself (if needed)
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -860,8 +896,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // but in r_loss_seqs report sequence numbers of packets
     // that are lost and cannot be recovered at the current
     // recovery level.
-    return true;
-
+    return retval;
 
     // Get the packet from the incoming stream, already recognized
     // as data packet, and then:
@@ -1267,6 +1302,51 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
 }
 
+int DefaultCorrector::ExtendRows(int rowx)
+{
+    // Check if oversize. Oversize is when the
+    // index is > 2*m_number_cols. If so, shrink
+    // the container first.
+
+    if (rowx > int(m_number_cols*2))
+    {
+        LOGC(mglog.Error, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING");
+
+        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
+        rowx -= m_number_cols;
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
+
+    for (size_t i = 0; i < rcv.rowq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+#endif
+
+    // Create and configure next groups.
+    size_t old = rcv.rowq.size();
+
+    // First, add the number of groups.
+    rcv.rowq.resize(rowx + 1);
+
+    // Starting from old size
+    for (size_t i = old; i < rcv.rowq.size(); ++i)
+    {
+        // Initialize the base for the row group
+        int32_t ibase = CSeqNo::incseq(rcv.rowq[0].base, i*m_number_cols);
+        ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
+
+    for (size_t i = 0; i < rcv.rowq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+#endif
+
+    return rowx;
+}
+
 int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
 {
     RcvGroup& head = rcv.rowq[0];
@@ -1283,6 +1363,11 @@ int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
 
     // Hang in the receiver group first.
     size_t rowx = offset / m_number_cols;
+    if (rowx > numberRows()*2) // past twice the matrix
+    {
+        LOGC(mglog.Error, log << "FEC/H: Packet %" << seq << " is in the far future, ignoring");
+        return -1;
+    }
 
     // The packet might have come completely out of the blue.
     // The row group container must be prepared to extend
@@ -1291,45 +1376,7 @@ int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
     // First, possibly extend the row container
     if (rowx >= rcv.rowq.size())
     {
-        // Check if oversize. Oversize is when the
-        // index is > 2*m_number_cols. If so, shrink
-        // the container first.
-
-        if (rowx > m_number_cols*2)
-        {
-            LOGC(mglog.Error, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING");
-
-            rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
-            rowx -= m_number_cols;
-        }
-
-#if ENABLE_HEAVY_LOGGING
-        LOGC(mglog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
-
-        for (size_t i = 0; i < rcv.rowq.size(); ++i)
-            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
-#endif
-
-        // Create and configure next groups.
-        size_t old = rcv.rowq.size();
-
-        // First, add the number of groups.
-        rcv.rowq.resize(rowx + 1);
-
-        // Starting from old size
-        for (size_t i = old; i < rcv.rowq.size(); ++i)
-        {
-            // Initialize the base for the row group
-            int32_t ibase = CSeqNo::incseq(base, i*m_number_cols);
-            ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
-        }
-
-#if ENABLE_HEAVY_LOGGING
-        LOGC(mglog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
-
-        for (size_t i = 0; i < rcv.rowq.size(); ++i)
-            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
-#endif
+        rowx = ExtendRows(rowx);
     }
 
     return rowx;
@@ -1403,80 +1450,40 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs
     // Column dismissal takes place under very strictly specified condition,
     // so simply call it in general here. At least it may happen potentially
     // at any time of when a packet has been received.
-    RcvCheckDismissColumn(colgx, irrecover);
+    RcvCheckDismissColumn(rpkt.getSeqNo(), colgx, irrecover);
 
     return true;
 }
 
-void DefaultCorrector::RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover)
+void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t& irrecover)
 {
-    // The column dismissal should happen at the moment when this
-    // column group is no longer necessary. This is considered to
-    // have happened at the moment when all packets that might fill
-    // in the gap in the group, have been already received and the
-    // rebuilding attempt was also already tried and for that group
-    // this is no longer possible.
+    // The first check we need to do is:
     //
-    // As there's no possibility to be certain as to whether any packet
-    // (either data with particular sequence number or FEC/CTL packet)
-    // will be received, and potentially any number of packets in the
-    // series might be lost (even though we regard the sequence threshold
-    // limit), there must be first considered the maximum number of
-    // column groups (this is currently checked at the RcvGetColumnGroupIndex).
-    //
-    // When the sequence fits in particular limits so that it can spawn
-    // a new column group, we have the second stage of checking:
-    //
-    // For starters, this is the picture that shows a dismissed column group:
+    // - get the column number
+    // - get the series for this column
+    // - if series is 0, just return
 
-    //   0   1   2   3   4
-    //  [ ]  '   '   '   '
-    //  [ ] [ ]  '   '   '
-    //  [ ] [ ]  # < ----------- removed column
-    //  [ ] [ ]  #  [A]  '++
-    //  [ ]+[ ]  #  [A] [A]+
-    //  [.] [ ]+ #  [A] [A]+
-    //  #.###.##############  < --- removed row
-    //  [.] [.] [B] [A]+[A]+
-    //  [.] [.] [B] [B] [A]++
-    //  [.]+[.] [B] [B] [B]
-    //      [.]+[B] [B] [B]
-    //          [B]+[B] [B]
-    //            / [B]+[B]
-    //          /       [B]++
-    // CLOSED---
+    int series = colgx / sizeCol();
+    if (series == 0)
+        return;
 
-    // Currently use the simplified version: having the column index,
-    // reach the symmetric column from the previous series and dismiss
-    // everything from the start of the container up to this one.
+    //  - STARTING from the same column series 0:
+    //  - unless DISMISSED, collect all irrecoverable packets from this group
+    //  - mark this column DISMISSED
+    //  - SAME CHECK for previous group, until index 0
 
-    // Index in the same column previous series
-    int colg_psx = colgx - m_number_cols;
-    if (colg_psx < 0)
-        return; // nothing to dismiss, all groups must be still kept
-
-    // We have a column group to dismiss, pick up its LAST SEQUENCE.
-    int32_t last_seq = CSeqNo::incseq(rcv.colq[colg_psx].base, (m_number_rows * (m_number_cols-1)));
-
-    //
-    // Find the row that manages that sequence.
-    int rowoff = CSeqNo::seqoff(rcv.rowq[0].base, last_seq);
-    int rowx = rowoff / m_number_cols;
-
-    HLOGC(mglog.Debug, log << "FEC/V: updated g=" << colgx << " %"
-            << rcv.colq[colgx].base << ", DISMISS g=" << colg_psx
-            << " base=%" << rcv.colq[colg_psx].base << " last=%" << last_seq
-            << " ROW=%" << rcv.rowq[0].base << "+" << rowoff << " INDEX=" << rowx);
-
-    // Collect all irrecoverable packets in a set (this is the only way
-    // to keep the loss records merged).
     set<int32_t> loss;
 
-    for (int i = 0; i <= colg_psx; ++i)
+    int colx = colgx % sizeCol();
+    // Series 0 means simply that colx is the index in the container
+    for (int i = colx; i >= 0; --i)
     {
-        // Walk through all sequences in every group.
         RcvGroup& pg = rcv.colq[i];
-        for (size_t sof = 0; sof < (m_number_cols * m_number_rows); sof += m_number_cols)
+        if (pg.dismissed)
+            break; // don't look for any preceding column, if this is dismissed
+
+        pg.dismissed = true; // mark irrecover already collected
+        for (size_t sof = 0; sof < pg.step * sizeCol(); sof += pg.step)
         {
             int32_t lseq = CSeqNo::incseq(pg.base, sof);
             if (!CellAt(lseq))
@@ -1484,56 +1491,115 @@ void DefaultCorrector::RcvCheckDismissColumn(int colgx, loss_seqs_t& irrecover)
         }
     }
 
-    // Now remove column groups up to the one designated by colg_psx, including.
+    // - check the last sequence of last column in series 0
+    // - if passed sequence number is earlier than this, just return
+    // - now that seq is newer than the last in the last column,
+    //    - dismiss whole series 0 column groups
 
-    // We have a guarantee that colg_psx is an existing element, so +1 won't
-    // exceed the container size.
-    rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + colg_psx + 1);
-
-    // Now collect losses from all rows about to be dismissed.
-
-    for (int i = 0; i <= rowx; ++i)
+    bool any_dismiss = false;
+    // First, index of the last column
+    size_t lastx = numberCols()-1;
+    if (lastx < rcv.colq.size())
     {
-        // Walk through all sequences in every group.
-        RcvGroup& pg = rcv.rowq[i];
-        for (size_t sof = 0; sof < m_number_cols; sof++)
+        int32_t lastbase = rcv.colq[lastx].base;
+
+        // Compare this seqwuence with the sequence that caused the update
+        int dist = CSeqNo::seqoff(lastbase, seq);
+
+        // Shift this distance by the distance between the first and last
+        // sequence managed by a singled column. This counts (sizeCol()-1)*step.
+        dist -= (sizeCol()-1) * rcv.colq[lastx].step;
+
+        // Now, if this value is in the past (negative), it means that the
+        // 'seq' number is covered by this group or any earlier group. If so,
+        // do nothing. If this value is positive, it means that this
+        // sequence is in future towards the group that is in the last
+        // column of series 0. If so, whole series 0 may be now dismissed.
+
+        // NOTE: we don't care if lost packets have been collected for
+        // the groups being dismissed. They *SHOULD* be, just as a fallback
+        // SRT - if needed - will simply send LOSSREPORT request for all
+        // packets that are lossreported and all older ones.
+
+        if (dist > 0 && rcv.colq.size() > numberCols() /*sanity*/)
         {
-            int32_t lseq = CSeqNo::incseq(pg.base, sof);
-            if (!CellAt(lseq))
-                loss.insert(lseq);
+            any_dismiss = true;
+            int32_t newbase = rcv.colq[numberCols()].base;
+            rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
+
+            // After a column series was dismissed, now dismiss also
+            // the same number of rows.
+            // Do some sanity checks first.
+
+            size_t nrowrem = 0;
+            if (rcv.rowq.size() > numberRows())
+            {
+                int32_t newrowbase = rcv.rowq[numberRows()].base;
+                if (newbase != newrowbase)
+                {
+                    LOGC(mglog.Error, log << "ROW/COL base DISCREPANCY! Looking up lineraly for the right row.");
+
+                    // Fallback implementation in order not to break everything
+                    for (size_t r = 0; r < rcv.rowq.size(); ++r)
+                    {
+                        if (CSeqNo::seqoff(newbase, rcv.rowq[r].base) >= 0)
+                        {
+                            rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + r);
+                            nrowrem = r;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + numberRows());
+                    nrowrem = numberRows();
+                }
+            }
+
+            // If rows were removed, so remove also cells
+            if (nrowrem > 0)
+            {
+                int nrem;
+                int32_t newbase = rcv.rowq[0].base;
+                if (newbase == rcv.cell_base)
+                {
+                    nrem = nrowrem;
+                }
+                else
+                {
+                    LOGC(mglog.Error, log << "CELL/ROW base discrepancy, calculating and resynchronizing");
+                    nrem = CSeqNo::seqoff(rcv.cell_base, newbase);
+                }
+
+                if (nrem > 0)
+                {
+                    // Now collect losses from all rows about to be dismissed.
+                    for (int sof = 0; sof < nrem; sof++)
+                    {
+                        int32_t lseq = CSeqNo::incseq(rcv.cell_base, sof);
+                        if (!CellAt(lseq))
+                            loss.insert(lseq);
+                    }
+
+                    rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nrem);
+                    rcv.cell_base = newbase;
+                }
+            }
+
+
+            HLOGC(mglog.Debug, log << "FEC/V: updated g=" << colgx << " %"
+                    << rcv.colq[colgx].base << ", DISMISS up to g=" << numberCols()
+                    << " base=%" << lastbase
+                    << " ROW=%" << rcv.rowq[0].base << "+" << nrowrem);
+
         }
     }
-
-    // No matter how many rows were qualified for dismissal, make sure that
-    // at least one row is present, otherwise you'd lose the absolute row base
-    // and make a crash.
-    int shrink = min(rowx+1, int(rcv.rowq.size())-1);
-    if (shrink > 0)
-    {
-        // And dismiss all these rows.
-        HLOGC(mglog.Debug, log << "DISMISSING " << shrink << " ROWS");
-        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + shrink);
-    }
-    else
-    {
-        HLOGC(mglog.Debug, log << "FEC: ... NOT DISMISSING ROWS - negative shrink " << shrink );
-    }
-
-    // After erasing these rows, dismiss also so many cells that the cell base becomes
-    // in sync with the row. According to the algorithm statements, the row base shall
-    // be never later than the column base.
-
-    int32_t base = rcv.rowq[0].base;
-    int celloff = CSeqNo::seqoff(rcv.cell_base, base);
-
-    shrink = min(celloff, int(rcv.cells.size()));
-    rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + shrink);
-    rcv.cell_base = base;
 
     // Now all collected lost packets translate into the range list format
     TranslateLossRecords(loss, irrecover);
 
-    HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss));
+    HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
 }
 
 void DefaultCorrector::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
@@ -1669,62 +1735,18 @@ int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
             << " column=" << colx << " with base %" << colbase << ": SERIES=" << colseries
             << " INDEX:" << colgx);
 
+    // Check oversize. Dismiss some earlier items if it exceeds the size.
+    // before you extend the size enormously.
+    if (colgx > m_number_rows * m_number_cols * 2)
+    {
+        // That's too much
+        LOGC(mglog.Error, log << "FEC/V: IPE or ATTACK: offset " << colgx << " is too crazy, ABORTING lookup");
+        return -1;
+    }
+
     if (colgx >= rcv.colq.size())
     {
-        // Check oversize. Dismiss some earlier items if it exceeds the size.
-        // before you extend the size enormously.
-        if (colgx > m_number_rows * 2)
-        {
-            size_t shrink = colgx - m_number_rows;
-            if (shrink > m_number_rows*2)
-            {
-                // That's too much
-                LOGC(mglog.Error, log << "FEC/V: IPE or ATTACK: offset " << colgx << " is too crazy, ABORTING lookup");
-                return -1;
-            }
-
-            LOGC(mglog.Error, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << shrink);
-
-            rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + m_number_rows);
-            colgx -= m_number_rows;
-        }
-
-#if ENABLE_HEAVY_LOGGING
-        LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
-
-        for (size_t i = 0; i < rcv.colq.size(); ++i)
-            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
-#endif
-
-        // XXX Make ConfigureColumns() more universal so that
-        // it can start with the current container contents and
-        // only add new elements until the end of the new container size.
-        size_t old = rcv.colq.size();
-        int32_t seqno = rcv.colq[old-1].base;
-        size_t gsize = numberCols();
-        size_t gstep = sizeCol();
-        size_t gslip = 1 + gstep; // + gstep is to make a staircase arrangement
-
-        HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups, size "
-                << old << " -> " << (colgx+1) << ", last base=%" << seqno
-                << " step=" << gstep << " size=" << gsize << " %slip=" << gslip);
-
-        seqno = CSeqNo::incseq(seqno, gslip);
-
-        rcv.colq.resize(colgx+1);
-
-        for (size_t i = old; i < rcv.colq.size(); ++i)
-        {
-            ConfigureGroup(rcv.colq[i], seqno, gstep, gstep * gsize);
-            seqno = CSeqNo::incseq(seqno, gslip);
-        }
-
-#if ENABLE_HEAVY_LOGGING
-        LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
-
-        for (size_t i = 0; i < rcv.colq.size(); ++i)
-            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
-#endif
+        colgx = ExtendColumns(colgx);
     }
 
     return colgx;
@@ -1781,6 +1803,81 @@ int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
     //     IF ( gs %> gmax )
     //        DISMISS COLUMNS from 0 to GROUP_INDEX - i; break
 
+}
+
+int DefaultCorrector::ExtendColumns(int colgx)
+{
+    if (colgx > int(sizeRow() * 2))
+    {
+        // This shouldn't happen because columns should be dismissed
+        // once the last row of the first series is closed.
+        LOGC(mglog.Error, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
+
+        rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + sizeRow());
+        colgx -= sizeRow();
+
+        // Note that after this shift, column groups that were
+        // in particular column, remain in that column.
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+
+    for (size_t i = 0; i < rcv.colq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
+
+    // First, obtain the "series" of columns, possibly fixed.
+    int series = colgx / numberCols();
+
+    // Now, the base of the series is the base increased by one matrix size.
+
+    int32_t base = rcv.colq[0].base;
+
+    // This is the base for series 0, but this procedure must be prepared
+    // for that the series will not necessarily be 1, may be greater.
+    // Extension requires to be done in order to achieve this very index
+    // existing in the column, so you need to add whole series in loop
+    // until the series covering this shift is created.
+
+    // Check, up to which series the columns are initialized.
+    // Start with the series that doesn't exist
+    int old_series = rcv.colq.size() / numberCols();
+
+    size_t gsize = numberCols(); // number of columns in one series
+    size_t gstep = sizeRow();    // seq diff bw. two consex elements in the column (stats)
+    size_t gslip = 1 + gstep; // + gstep is to make a staircase arrangement
+
+    // Each iteration of this loop adds one series of columns.
+    // One series count numberCols() columns.
+    for (int s = old_series; s <= series; ++s)
+    {
+        // We start with the base in series 0, the calculation of the
+        // sequence number must happen anew for each one anyway, so it
+        // doesn't matter from which start point.
+
+        // Every base sequence for a series of columns is the series 0
+        // base increased by one matrix size times series number.
+        // THIS REMAINS TRUE NO MATTER IF WE USE STRAIGNT OR STAIRCASE ARRANGEMENT.
+        int32_t sbase = CSeqNo::incseq(base, (numberCols()*numberRows()) * s);
+        HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups, size "
+                << rcv.colq.size() << " -> " << (rcv.colq.size() + gsize)
+                << ", last base=%" << sbase << " step=" << gstep
+                << " size=" << gsize << " %slip=" << gslip);
+
+        // Every call to this function extends the given container
+        // by 'gsize' number and configures each so added column accordingly.
+        ConfigureColumns(rcv.colq, gsize, gstep, gslip, sbase);
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+
+    for (size_t i = 0; i < rcv.colq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
+
+    return colgx;
 }
 
 Corrector::NamePtr Corrector::builtin_correctors[] =

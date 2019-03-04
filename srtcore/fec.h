@@ -116,8 +116,6 @@ public:
         FS_LATELY, //< Send LOSSREPORT when both horizontal AND vertical group is closed
         FS_EARLY,  //< Send LOSSREPORT when the horizontal group is closed
         FS_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
-
-        FS_LAST
     };
 };
 
@@ -143,7 +141,7 @@ public:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq), m_fallback_level(Corrector::FS_LAST)
+    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq), m_fallback_level(Corrector::FS_NEVER)
     {
     }
 
