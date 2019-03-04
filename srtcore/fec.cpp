@@ -1029,7 +1029,7 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     {
         ClipPacket(rowg, rpkt);
         rowg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq << ", received " << rowg.collected << "/" << m_number_cols);
+        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq << ", received " << rowg.collected << "/" << sizeRow());
     }
 
     if (rowg.fec && rowg.collected == m_number_cols - 1)
@@ -1436,15 +1436,18 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs
         // Data packet, clip it as data
         ClipPacket(colg, rpkt);
         colg.collected++;
+        HLOGC(mglog.Debug, log << "FEC/V: DATA packet clipped, %" << seq << ", received " << colg.collected << "/" << sizeCol());
     }
     else
     {
         ClipControlPacket(colg, rpkt);
         colg.fec = true;
+        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq);
     }
 
     if (colg.fec && colg.collected == m_number_rows - 1)
     {
+        HLOGC(mglog.Debug, log << "FEC/V: HAVE " << colg.collected << " collected & FEC; REBUILDING");
         RcvRebuild(colg, RcvGetLossSeqVert(colg), Group::VERT);
     }
 
@@ -1452,6 +1455,13 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs
     // so simply call it in general here. At least it may happen potentially
     // at any time of when a packet has been received.
     RcvCheckDismissColumn(rpkt.getSeqNo(), colgx, irrecover);
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: COL STATS ATM: n=" << rcv.colq.size());
+
+    for (size_t i = 0; i < rcv.colq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
 
     return true;
 }

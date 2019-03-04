@@ -390,8 +390,26 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
 #ifdef SRT_TEST_FAKE_LOSS
 
+#define FAKELOSS_STRING(x) #x
+    const char* fakeloss_text = FAKELOSS_STRING(SRT_TEST_FAKE_LOSS);
+#undef FAKELOSS_STRING
+
     static int dcounter = 0;
     static int flwcounter = 0;
+
+    struct FakelossConfig
+    {
+        pair<int,int> config;
+        FakelossConfig(const char* f)
+        {
+            vector<string> out;
+            Split(f, '+', back_inserter(out));
+
+            config.first = atoi(out[0].c_str());
+            config.second = out.size() > 1 ? atoi(out[1].c_str()) : 8;
+        }
+    };
+    static FakelossConfig fakeloss = fakeloss_text;
 
     if (!packet.isControl())
     {
@@ -414,13 +432,13 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            int rnd = rand() % 16 + 8 + SRT_TEST_FAKE_LOSS;
+            int rnd = rand() % 16 + SRT_TEST_FAKE_LOSS;
 
             if (dcounter > rnd)
             {
                 dcounter = 1;
-                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo());
-                flwcounter = SRT_TEST_FAKE_LOSS;
+                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
+                flwcounter = fakeloss.config.first;
                 return packet.getLength(); // fake successful sendinf
             }
         }
