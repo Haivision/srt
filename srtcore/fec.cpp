@@ -210,7 +210,7 @@ private:
     int ExtendColumns(int colgx);
     void MarkCellReceived(int32_t seq);
     bool HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
-    bool HangVertical(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
+    bool HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
     void ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
@@ -1416,8 +1416,9 @@ bool DefaultCorrector::CellAt(int32_t seq)
     return rcv.cells[offset];
 }
 
-bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs_t& irrecover)
+bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, loss_seqs_t& irrecover)
 {
+    bool fec_ctl = (fec_col != -1);
     // Now hang the packet in the vertical group
 
     int32_t seq = rpkt.getSeqNo();
@@ -1431,18 +1432,18 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, bool fec_ctl, loss_seqs
 
     RcvGroup& colg = rcv.colq[colgx];
 
-    if (!fec_ctl)
+    if (fec_ctl)
+    {
+        ClipControlPacket(colg, rpkt);
+        colg.fec = true;
+        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << fec_col);
+    }
+    else
     {
         // Data packet, clip it as data
         ClipPacket(colg, rpkt);
         colg.collected++;
         HLOGC(mglog.Debug, log << "FEC/V: DATA packet clipped, %" << seq << ", received " << colg.collected << "/" << sizeCol());
-    }
-    else
-    {
-        ClipControlPacket(colg, rpkt);
-        colg.fec = true;
-        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq);
     }
 
     if (colg.fec && colg.collected == m_number_rows - 1)
