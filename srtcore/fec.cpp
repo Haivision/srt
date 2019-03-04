@@ -1539,6 +1539,9 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             int32_t newbase = rcv.colq[numberCols()].base;
             rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
 
+            // colgx is INVALIDATED after removal
+            int newcolgx SRT_ATR_UNUSED = colgx - numberCols();
+
             // After a column series was dismissed, now dismiss also
             // the same number of rows.
             // Do some sanity checks first.
@@ -1599,9 +1602,8 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                 }
             }
 
-
-            HLOGC(mglog.Debug, log << "FEC/V: updated g=" << colgx << " %"
-                    << rcv.colq[colgx].base << ", DISMISS up to g=" << numberCols()
+            HLOGC(mglog.Debug, log << "FEC/V: updated g=" << colgx << " -> " << newcolgx << " %"
+                    << rcv.colq[newcolgx].base << ", DISMISS up to g=" << numberCols()
                     << " base=%" << lastbase
                     << " ROW=%" << rcv.rowq[0].base << "+" << nrowrem);
 

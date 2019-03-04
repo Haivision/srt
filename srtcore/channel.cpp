@@ -390,9 +390,11 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
 #ifdef SRT_TEST_FAKE_LOSS
 
-#define FAKELOSS_STRING(x) #x
+#define FAKELOSS_STRING_0(x) #x
+#define FAKELOSS_STRING(x) FAKELOSS_STRING_0(x)
     const char* fakeloss_text = FAKELOSS_STRING(SRT_TEST_FAKE_LOSS);
 #undef FAKELOSS_STRING
+#undef FAKELOSS_WRAP
 
     static int dcounter = 0;
     static int flwcounter = 0;
