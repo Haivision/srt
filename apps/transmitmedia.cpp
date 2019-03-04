@@ -36,7 +36,6 @@
 using namespace std;
 
 bool transmit_total_stats = false;
-bool clear_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -618,8 +617,7 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
     if (need_bw_report || need_stats_report)
     {
         CBytePerfMon perf;
-        srt_bstats(m_sock, &perf, clear_stats);
-        clear_stats = false;
+        srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
         if (need_bw_report)
         {
             PrintSrtBandwidth(perf.mbpsBandwidth);
@@ -627,7 +625,6 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
         if (need_stats_report)
         {
             PrintSrtStats(m_sock, perf);
-            clear_stats = !transmit_total_stats;
         }
     }
 
@@ -670,8 +667,7 @@ bool SrtTarget::Write(const bytevector& data)
     if (need_bw_report || need_stats_report)
     {
         CBytePerfMon perf;
-        srt_bstats(m_sock, &perf, clear_stats);
-        clear_stats = false;
+        srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
         if (need_bw_report)
         {
             PrintSrtBandwidth(perf.mbpsBandwidth);
@@ -679,7 +675,6 @@ bool SrtTarget::Write(const bytevector& data)
         if (need_stats_report)
         {
             PrintSrtStats(m_sock, perf);
-            clear_stats = !transmit_total_stats;
         }
     }
 
