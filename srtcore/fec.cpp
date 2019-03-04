@@ -1249,13 +1249,15 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(rowg, p);
         rowg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno << ", received " << rowg.collected << "/" << m_number_cols);
+        HLOGC(mglog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno
+                << ", received " << rowg.collected << "/" << m_number_cols
+                << " FOR base=%" << rowg.base);
 
         // Similar as by HangHorizontal, just don't collect irrecoverable packets.
         // They are already known when the packets were collected.
         if (rowg.fec && rowg.collected == m_number_cols - 1)
         {
-            HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING");
+            HLOGC(mglog.Debug, log << "FEC/H: with FEC-rebuilt HAVE " << rowg.collected << " collected & FEC; REBUILDING");
             // The group will provide the information for rebuilding.
             // The sequence of the lost packet can be checked in cells.
             // With the condition of 'collected == m_number_cols - 1', there
@@ -1284,13 +1286,15 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(colg, p);
         colg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno << ", received " << colg.collected << "/" << m_number_rows);
+        HLOGC(mglog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno
+                << ", received " << colg.collected << "/" << m_number_rows
+                << " FOR base=%" << colg.base);
 
-        // Similar as by HangHorizontal, just don't collect irrecoverable packets.
+        // Similar as by HangVertical, just don't collect irrecoverable packets.
         // They are already known when the packets were collected.
         if (colg.fec && colg.collected == m_number_rows - 1)
         {
-            HLOGC(mglog.Debug, log << "FEC/V: HAVE " << colg.collected << " collected & FEC; REBUILDING");
+            HLOGC(mglog.Debug, log << "FEC/V: with FEC-rebuilt HAVE " << colg.collected << " collected & FEC; REBUILDING");
             // The group will provide the information for rebuilding.
             // The sequence of the lost packet can be checked in cells.
             // With the condition of 'collected == m_number_rows - 1', there
