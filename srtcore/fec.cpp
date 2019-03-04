@@ -1436,7 +1436,7 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, lo
     {
         ClipControlPacket(colg, rpkt);
         colg.fec = true;
-        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << fec_col);
+        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col));
     }
     else
     {
