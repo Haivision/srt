@@ -732,7 +732,7 @@ private: // Trace
         uint64_t m_ullRcvBytesDropTotal;
         int m_iRcvUndecryptTotal;
         uint64_t m_ullRcvBytesUndecryptTotal;
-        int64_t m_llSndDurationTotal;		// total real time for sending
+        int64_t m_llSndDurationTotal;                // total real time for sending
 
         uint64_t m_LastSampleTime;                   // last performance sample time
         int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
