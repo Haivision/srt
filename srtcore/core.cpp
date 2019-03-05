@@ -8050,13 +8050,6 @@ int CUDT::processData(CUnit* unit)
                       m_ullTraceRcvBytesLoss += lossbytes;
                       m_ullRcvBytesLossTotal += lossbytes;
                   }
-
-                  if (m_bTsbPd)
-                  {
-                      pthread_mutex_lock(&m_RecvLock);
-                      pthread_cond_signal(&m_RcvTsbPdCond);
-                      pthread_mutex_unlock(&m_RecvLock);
-                  }
               }
           }
 
@@ -8176,6 +8169,13 @@ int CUDT::processData(CUnit* unit)
            HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
            sendLossReport(srt_loss_seqs);
        }
+
+       if (m_bTsbPd)
+       {
+           pthread_mutex_lock(&m_RecvLock);
+           pthread_cond_signal(&m_RcvTsbPdCond);
+           pthread_mutex_unlock(&m_RecvLock);
+       }
    }
 
    // Separately report loss records of those reported by FEC.
@@ -8187,6 +8187,13 @@ int CUDT::processData(CUnit* unit)
    {
        HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(fec_loss_seqs));
        sendLossReport(fec_loss_seqs);
+
+       if (m_bTsbPd)
+       {
+           pthread_mutex_lock(&m_RecvLock);
+           pthread_cond_signal(&m_RcvTsbPdCond);
+           pthread_mutex_unlock(&m_RecvLock);
+       }
    }
 
    // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
