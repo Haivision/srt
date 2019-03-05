@@ -7894,11 +7894,11 @@ int CUDT::processData(CUnit* unit)
           m_Corrector->receive(unit, Ref(incoming), Ref(fec_loss_seqs));
           HLOGC(mglog.Debug, log << "FEC: fed data, received " << incoming.size() << " pkts, "
                   << Printable(fec_loss_seqs) << " loss to report, "
-                  << (record_loss ? "" : "DO NOT")
-                  << " check for losses later"
+                  << (record_loss ? "" : "DO NOT ")
+                  << "check for losses later"
                   << (record_loss ? (report_recorded_loss
                           ? " AND REPORT THEM"
-                          : " but don not report them") : ""));
+                          : ", but don not report them") : ""));
       }
       else
       {
@@ -8152,6 +8152,8 @@ int CUDT::processData(CUnit* unit)
        if (!srt_loss_seqs.empty())
        {
            {
+               HLOGC(mglog.Debug, log << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs)
+                       << " - RECORDING.");
                // if record_loss == false, nothing will be contained here
                CGuard lg(m_RcvLossLock);
                for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
