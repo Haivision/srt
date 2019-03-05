@@ -22,13 +22,7 @@
 class CUDT;
 class CorrectorBase;
 
-struct CorrectorConfig
-{
-    int rows;
-    int cols;
-    std::map<std::string, std::string> parameters;
-};
-
+struct CorrectorConfig;
 bool ParseCorrectorConfig(std::string s, CorrectorConfig& out);
 
 typedef CorrectorBase* corrector_create_t(CUDT* parent, CUnitQueue* uq, const std::string& config);
@@ -110,13 +104,20 @@ public:
     // destruction.
     ~Corrector();
 
-    enum State
+    enum ARQLevel
     {
-        FS_NEVER,   //< Never send LOSSREPORT (rely on FEC exclusively)
-        FS_LATELY, //< Send LOSSREPORT when both horizontal AND vertical group is closed
-        FS_EARLY,  //< Send LOSSREPORT when the horizontal group is closed
-        FS_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
+        ARQ_NEVER,   //< Never send LOSSREPORT (rely on FEC exclusively)
+        ARQ_ONREQ,
+        ARQ_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
     };
+};
+
+struct CorrectorConfig
+{
+    int rows;
+    int cols;
+    Corrector::ARQLevel level;
+    std::map<std::string, std::string> parameters;
 };
 
 // Real interface
@@ -125,11 +126,6 @@ class CorrectorBase
 protected:
     CUDT* m_parent;
     CUnitQueue* m_unitqueue;
-
-    typedef Corrector::State State;
-
-    // Configuration
-    Corrector::State m_fallback_level;
 
     // Beside the size of the rows, special values:
     // 0: if you have 0 specified for rows, there are only columns
@@ -141,7 +137,7 @@ public:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq), m_fallback_level(Corrector::FS_NEVER)
+    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq)
     {
     }
 
@@ -170,6 +166,11 @@ public:
     // defines the configured level of loss state required to send the
     // loss report.
     virtual bool receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) = 0;
+
+    // Backward configuration.
+    // This should have some stable value after the configuration is parsed,
+    // and it should be a stable value set ONCE, after the FEC module is ready.
+    virtual Corrector::ARQLevel arqLevel() = 0;
 
 
     virtual ~CorrectorBase()

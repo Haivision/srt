@@ -48,6 +48,33 @@ bool ParseCorrectorConfig(std::string s, CorrectorConfig& out)
         out.parameters[keyval[0]] = keyval[1];
     }
 
+    // Extra interpret level, if found, default never.
+    // Check only those that are managed.
+    string level = out.parameters["arq"];
+    int lv = -1;
+    if (level != "")
+    {
+        static const char* levelnames [] = { "never", "onreq", "always" };
+
+        for (size_t i = 0; i < Size(levelnames); ++i)
+        {
+            if (level == levelnames[i])
+            {
+                lv = i;
+                break;
+            }
+        }
+
+        if (lv == -1)
+            return false; // NOT FOUND
+
+        out.level = Corrector::ARQLevel(lv);
+    }
+    else
+    {
+        out.level = Corrector::ARQ_NEVER;
+    }
+
     return true;
 }
 
@@ -56,6 +83,9 @@ class DefaultCorrector: public CorrectorBase
     CorrectorConfig cfg;
     size_t m_number_cols;
     size_t m_number_rows;
+
+    // Configuration
+    Corrector::ARQLevel m_fallback_level;
 
 public:
 
@@ -222,7 +252,7 @@ private:
     int RcvGetRowGroupIndex(int32_t seq);
     int RcvGetColumnGroupIndex(int32_t seq);
     void InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq);
-    void CollectIrrecoverRow(Group& g, loss_seqs_t& irrecover);
+    void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover);
     bool CellAt(int32_t seq);
 
 public:
@@ -269,9 +299,13 @@ public:
 
         return 4;
     }
+
+    virtual Corrector::ARQLevel arqLevel() { return m_fallback_level; }
 };
 
-DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::string& confstr): CorrectorBase(parent, uq)
+DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::string& confstr):
+    CorrectorBase(parent, uq),
+    m_fallback_level(Corrector::ARQ_NEVER)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -297,30 +331,12 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     // does not form a FEC group (no FEC control packet sent).
     m_number_cols = abs(cfg.cols);
     m_number_rows = abs(cfg.rows);
+    m_fallback_level = cfg.level;
 
-    // Check only those that are managed.
-    string level = cfg.parameters["level"];
-    int lv = -1;
-    if (level != "")
+    if (m_fallback_level != Corrector::ARQ_ALWAYS && m_fallback_level != Corrector::ARQ_NEVER)
     {
-        static const char* levelnames [] = { "never", "lately", "early", "always" };
-
-        for (size_t i = 0; i < Size(levelnames); ++i)
-        {
-            if (level == levelnames[i])
-            {
-                lv = i;
-                break;
-            }
-        }
-
-        if (lv != Corrector::FS_ALWAYS && lv != Corrector::FS_NEVER)
-        {
-            LOGC(mglog.Error, log << "FEC: config error, level: only 'always' and 'never' currently supported");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        m_fallback_level = State(lv);
+        LOGC(mglog.Error, log << "FEC: config error, level: only 'always' and 'never' currently supported");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     // Required to store in the header when rebuilding
@@ -860,6 +876,12 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         ok = HangVertical(rpkt, isfec.colx, irrecover_col);
     }
 
+    if (!ok)
+    {
+        // Just informative.
+        LOGC(mglog.Error, log << "FEC: rebuilding FAILED.");
+    }
+
     // Pack first recovered packets, if any.
     if (!rcv.rebuilt.empty())
     {
@@ -870,11 +892,6 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         r_incoming.get().push_back(unit);
 
     bool retval = false;
-    if (m_fallback_level == Corrector::FS_ALWAYS)
-        retval = true;
-
-    if (!ok)
-        return retval; // something's wrong, can't FEC-rebuild, manage this yourself (if needed)
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -884,7 +901,6 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // with default LATELY level, packets will be reported as
     // irrecoverable only when they are irrecoverable in the
     // vertical group.
-    *r_loss_seqs = irrecover_row;
 
     // The return value should depend on the value of the required level:
     // 0. on ALWAYS, simply return always true.
@@ -892,11 +908,25 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // 2. on LATELY, report those that are in both irrecover, but return false.
     // 3. on NEVER, report nothing and return false.
 
-    // XXX TESTING MODE. Always check for retransmission.
-    // Later it should be changed to: return false always,
-    // but in r_loss_seqs report sequence numbers of packets
-    // that are lost and cannot be recovered at the current
-    // recovery level.
+    // Return true (make SRT check losses by itself), unless
+    // the ARQ cooperation is set to "never".
+    if (m_fallback_level != Corrector::ARQ_NEVER)
+        retval = true;
+
+    // Pack the following packets as irrecoverable:
+    if (m_fallback_level == Corrector::ARQ_ONREQ)
+    {
+        // Use irrecover_row with rows only because there is
+        // never anything collected in irrecover_col.
+        if (m_number_rows == 1)
+            *r_loss_seqs = irrecover_row;
+        else
+            *r_loss_seqs = irrecover_col;
+    }
+
+    // With "always", do not report any losses, SRT will simply check
+    // them itself.
+
     return retval;
 
     // Get the packet from the incoming stream, already recognized
@@ -913,19 +943,20 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // 1. If this is a FEC packet, close the group, check for lost packets, try to recover.
     // Check if there is recovery possible, if so, request a new unit and pack the recovered packet there.
     // Report the loss to be reported by SRT according to m_fallback_level:
-    // - FS_ALWAYS: N/A for a FEC packet
-    // - FS_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
-    // - FS_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
-    // - FS_NEVER: Always return empty loss_seqs
+    // - ARQ_ALWAYS: N/A for a FEC packet
+    // - ARQ_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
+    // - ARQ_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
+    // - ARQ_NEVER: Always return empty loss_seqs
     //
     // 2. If this is a regular packet, use it for building the FEC group.
-    // - FS_ALWAYS: always return true and leave loss_seqs empty.
+    // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
     // - others: return false and return nothing in loss_seqs
 }
 
-void DefaultCorrector::CollectIrrecoverRow(Group& g, loss_seqs_t& irrecover)
+void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
 {
-    // XXX ROW ONLY IMPLEMENTATION.
+    if (g.dismissed)
+        return; // already collected
 
     // Obtain the group's packet shift
 
@@ -972,6 +1003,8 @@ void DefaultCorrector::CollectIrrecoverRow(Group& g, loss_seqs_t& irrecover)
         val.second = CSeqNo::incseq(base, int(maxoff)-1);
         irrecover.push_back(val);
     }
+
+    g.dismissed = true;
 }
 
 
@@ -1047,7 +1080,7 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     // collected at least 1 packet in the next group. Do not dismiss
     // any groups here otherwise - all will be decided during column
     // processing.
-    if (m_number_rows == 1)
+    if (m_number_rows == 1 || m_fallback_level == Corrector::ARQ_ONREQ)
     {
         // The conditional row dismissal in row-only configuration.
         // In this configuration, cells and rows go hand-in-hand,
@@ -1068,18 +1101,23 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
 
             CollectIrrecoverRow(rowg, irrecover);
 
-            HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
-            // Take the oldest row group, and:
-            // - delete it
-            // - delete from rcv.cells the size of one dow (m_number_cols)
+            // Collect irrecoverable with EARLY setting, but still do not
+            // remove the row until the crossing it column is alive.
+            if (m_number_rows == 1)
+            {
+                HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
+                // Take the oldest row group, and:
+                // - delete it
+                // - delete from rcv.cells the size of one dow (m_number_cols)
 
-            rcv.rowq.pop_front();
+                rcv.rowq.pop_front();
 
-            // When columns are not used, also dismiss that number of bits.
-            // Use safe version
-            size_t ersize = min(m_number_cols, rcv.cells.size());
-            rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
-            rcv.cell_base = CSeqNo::incseq(rcv.cell_base, m_number_cols);
+                // When columns are not used, also dismiss that number of bits.
+                // Use safe version
+                size_t ersize = min(m_number_cols, rcv.cells.size());
+                rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
+                rcv.cell_base = CSeqNo::incseq(rcv.cell_base, m_number_cols);
+            }
         }
     }
 

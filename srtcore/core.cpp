@@ -1720,7 +1720,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     bool peer_fec_capable = true;
     if (srths_cmd == SRT_CMD_HSRSP)
     {
-        if (m_sPeerFECConfiguString != "")
+        if (m_sPeerFECConfigString != "")
         {
             peer_fec_capable = true;
         }
@@ -4805,6 +4805,8 @@ void CUDT::setupCC()
         // corrector type is already selected, so now create it.
         HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_FECConfigString);
         m_Corrector.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_FECConfigString);
+
+        m_CorrectorRexmitLevel = m_Corrector->arqLevel();
     }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
@@ -7867,8 +7869,10 @@ int CUDT::processData(CUnit* unit)
    ++ m_llRecvTotal;
 
    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
-   loss_seqs_t loss_seqs;
-   bool handle_lossreport = true; // SEND if there's anything to lossreport
+   loss_seqs_t fec_loss_seqs;
+   loss_seqs_t srt_loss_seqs;
+   bool record_loss = true;          // Check for loss yourself and record them
+   bool report_recorded_loss = true; // Report immediately recorded loss
    vector<CUnit*> incoming;
    bool was_orderly_sent = true;
 
@@ -7883,11 +7887,18 @@ int CUDT::processData(CUnit* unit)
       vector<CUnit*> undec_units;
       if (m_Corrector)
       {
+          record_loss = m_CorrectorRexmitLevel != Corrector::ARQ_NEVER;
+          report_recorded_loss = m_CorrectorRexmitLevel == Corrector::ARQ_ALWAYS;
+
           // Stuff this data into the corrector
-          handle_lossreport = m_Corrector->receive(unit, Ref(incoming), Ref(loss_seqs));
+          m_Corrector->receive(unit, Ref(incoming), Ref(fec_loss_seqs));
           HLOGC(mglog.Debug, log << "FEC: fed data, received " << incoming.size() << " pkts, "
-                  << Printable(loss_seqs) << " loss to report, " << (handle_lossreport ? "" : "DO NOT")
-                  << " check for losses later");
+                  << Printable(fec_loss_seqs) << " loss to report, "
+                  << (record_loss ? "" : "DO NOT")
+                  << " check for losses later"
+                  << (record_loss ? (report_recorded_loss
+                          ? " AND REPORT THEM"
+                          : " but don not report them") : ""));
       }
       else
       {
@@ -8059,12 +8070,12 @@ int CUDT::processData(CUnit* unit)
    // 1. We have EXACTLY ONE packet, and even if a corrector facility
    // was processing it, we have it exactly like received.
    // 2. We have no packets now, nothing to check.
-   // 3. We have more than one packet and handle_lossreport == false.
+   // 3. We have more than one packet and record_loss == false.
 
    // Check first if we don't have an IPE for a different case.
 
    CPacket* ppkt = &incoming[0]->m_Packet;
-   if (incoming.size() > 1 && handle_lossreport)
+   if (incoming.size() > 1 && record_loss)
    {
        LOGC(mglog.Error, log << "IPE (FEC): Provided >1 packet from FEC and it required loss to be handled by SRT - handling only one.");
    }
@@ -8093,7 +8104,7 @@ int CUDT::processData(CUnit* unit)
            ;
            HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
        }
-       else if (handle_lossreport)
+       else if (record_loss)
        {
            if (CSeqNo::seqcmp(ppkt->m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
            {
@@ -8102,18 +8113,18 @@ int CUDT::processData(CUnit* unit)
                    int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                    int32_t seqhi = CSeqNo::decseq(ppkt->m_iSeqNo);
 
-                   loss_seqs.push_back(make_pair(seqlo, seqhi));
+                   srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
 
                    if ( initial_loss_ttl )
                    {
                        // pack loss list for (possibly belated) NAK
                        // The LOSSREPORT will be sent in a while.
 
-                       for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+                       for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                        {
                            m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
                        }
-                       HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(loss_seqs) << " tolerance: " << initial_loss_ttl);
+                       HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
                        reorder_prevent_lossreport = true;
                    }
 
@@ -8138,22 +8149,34 @@ int CUDT::processData(CUnit* unit)
            HLOGC(mglog.Debug, log << "(FEC) Loss detected, but FEC decided not to check for loss");
        }
 
-       if (!loss_seqs.empty())
+       if (!srt_loss_seqs.empty())
        {
            {
+               // if record_loss == false, nothing will be contained here
                CGuard lg(m_RcvLossLock);
-               for (loss_seqs_t::iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
+               for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                {
                    // If loss found, insert them to the receiver loss list
                    m_pRcvLossList->insert(i->first, i->second);
                }
            }
 
-           if (!reorder_prevent_lossreport)
+           if (!reorder_prevent_lossreport && report_recorded_loss)
            {
-               HLOGC(mglog.Debug, log << "WILL REPORT LOSSES: " << Printable(loss_seqs));
-               sendLossReport(loss_seqs);
+               HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
+               sendLossReport(srt_loss_seqs);
            }
+       }
+
+       // Separately report loss records of those reported by FEC.
+       // ALWAYS report whatever has been reported back by FEC. Note that
+       // FEC never reports anything when rexmit fallback level is ALWAYS or NEVER.
+       // With ALWAYS only those are reported that were recorded here by SRT.
+       // With NEVER, nothing is to be reported.
+       if (!fec_loss_seqs.empty())
+       {
+           HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(fec_loss_seqs));
+           sendLossReport(fec_loss_seqs);
        }
 
        // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
@@ -8175,7 +8198,7 @@ int CUDT::processData(CUnit* unit)
        // can be quite well optimized.
 
        vector<int32_t> lossdata;
-       if (handle_lossreport)
+       if (record_loss)
        {
            CGuard lg(m_RcvLossLock);
 

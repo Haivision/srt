@@ -581,7 +581,8 @@ private:
     // Forward Error Correction (FEC)
     Corrector m_Corrector;
     std::string m_OPT_FECConfigString;
-    std::string m_sPeerFECConfiguString;
+    Corrector::ARQLevel m_CorrectorRexmitLevel;
+    std::string m_sPeerFECConfigString;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
