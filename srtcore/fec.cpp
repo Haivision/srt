@@ -894,11 +894,17 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         // Don't manage this packet for horizontal group,
         // if it was a vertical FEC/CTL packet.
         ok = HangHorizontal(rpkt, isfec.row, irrecover_row);
+        HLOGC(mglog.Debug, log << "FEC: HangHorizontal %" << unit->m_Packet.getSeqNo()
+                << " msgno=" << unit->m_Packet.getMsgSeq()
+                << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_row));
     }
 
     if (!isfec.row) // == regular packet or FEC/COL
     {
         ok = HangVertical(rpkt, isfec.colx, irrecover_col);
+        HLOGC(mglog.Debug, log << "FEC: HangVertical %" << unit->m_Packet.getSeqNo()
+                << " msgno=" << unit->m_Packet.getMsgSeq()
+                << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_col));
     }
 
     if (!ok)
@@ -910,12 +916,13 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // Pack first recovered packets, if any.
     if (!rcv.rebuilt.empty())
     {
+        HLOGC(mglog.Debug, log << "FEC: inserting REBUILT packets (" << rcv.rebuilt.size() << "):");
         InsertRebuilt(*r_incoming, m_unitqueue);
     }
 
     if (!isfec.col && !isfec.row)
     {
-        HLOGC(mglog.Debug, log << "FEC: PASSTHRU packet %" << unit->m_Packet.getSeqNo());
+        HLOGC(mglog.Debug, log << "FEC: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         r_incoming.get().push_back(unit);
     }
 
