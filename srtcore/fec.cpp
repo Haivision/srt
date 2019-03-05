@@ -1439,6 +1439,7 @@ void DefaultCorrector::MarkCellReceived(int32_t seq)
         rcv.cells.resize(cell_offset+1, false);
     }
     rcv.cells[cell_offset] = true;
+    HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cell base=%" << rcv.cell_base << "+" << rcv.cells.size());
 }
 
 bool DefaultCorrector::CellAt(int32_t seq)

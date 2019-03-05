@@ -7875,6 +7875,13 @@ int CUDT::processData(CUnit* unit)
    bool report_recorded_loss = true; // Report immediately recorded loss
    vector<CUnit*> incoming;
    bool was_orderly_sent = true;
+   bool reorder_prevent_lossreport = false;
+
+   // If the peer doesn't understand REXMIT flag, send rexmit request
+   // always immediately.
+   int initial_loss_ttl = 0;
+   if ( m_bPeerRexmitFlag )
+       initial_loss_ttl = m_iReorderTolerance;
 
    {
       /*
@@ -7907,12 +7914,23 @@ int CUDT::processData(CUnit* unit)
       }
 
       bool excessive = true; // stays true unless it was successfully added
+
+      // Needed for possibly check for needsQuickACK.
       bool incoming_belated = ( CSeqNo::seqcmp(unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0 );
+
+      // Loop over all incoming packets that were filtered out.
+      // In case when there is no filter, there's just one packet in 'incoming',
+      // the one that came in the input of this function.
       for (vector<CUnit*>::iterator i = incoming.begin(); i != incoming.end(); ++i)
       {
           CUnit* u = *i;
           CPacket& rpkt = u->m_Packet;
 
+          // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
+          // This is the offset in the buffer; if this is negative, it means that
+          // this sequence is already in the past and the buffer is not interested.
+          // Meaning, this packet will be rejected, even if it could potentially be
+          // one of missing packets in the transmission.
           int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
 
           string exc_type = "EXPECTED";
@@ -7925,78 +7943,133 @@ int CUDT::processData(CUnit* unit)
                       uint64_t(m_fTraceBelatedTime)*1000,
                       CTimer::getTime() - tsbpdtime, 0.2);
               m_fTraceBelatedTime = double(bltime)/1000.0;
+
+              HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
+                      << " offset=" << offset << " (BELATED" << rexmitstat[pktrexmitflag] << rexmit_reason
+                      << ") FLAGS: " << packet.MessageFlagStr());
+              continue;
+          }
+
+          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          if (offset >= avail_bufsize)
+          {
+              // This is already a sequence discrepancy. Probably there could be found
+              // some way to make it continue reception by overriding the sequence and
+              // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+              if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+              {
+                  // Only in live mode. In File mode this shall not be possible
+                  // because the sender should stop sending in this situation.
+                  // In Live mode this means that there is a gap between the
+                  // lowest sequence in the empty buffer and the incoming sequence
+                  // that exceeds the buffer size. Receiving data in this situation
+                  // is no longer possible and this is a point of no return.
+
+                  LOGC(mglog.Error,
+                          log << CONID() <<
+                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+
+                  // This is a scoped lock with AckLock, but for the moment
+                  // when processClose() is called this lock must be taken out,
+                  // otherwise this will cause a deadlock. We don't need this
+                  // lock anymore, and at 'return' it will be unlocked anyway.
+                  recvbuf_acklock.forceUnlock();
+                  processClose();
+                  return -1;
+              }
+              else
+              {
+                  LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                      );
+                  return -1;
+              }
+
+          }
+
+          if (m_pRcvBuffer->addData(unit, offset) < 0)
+          {
+              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+              // So this packet is "redundant".
+              exc_type = "UNACKED";
           }
           else
           {
-              int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
-              if (offset >= avail_bufsize)
+              exc_type = "ACCEPTED";
+              excessive = false;
+              if (unit->m_Packet.getMsgCryptoFlags())
               {
-                  // This is already a sequence discrepancy. Probably there could be found
-                  // some way to make it continue reception by overriding the sequence and
-                  // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
-                  if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                  undec_units.push_back(unit);
+              }
+          }
+
+          HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
+                  << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+                  << packet.MessageFlagStr());
+
+          if  (rpkt.getMsgCryptoFlags())
+          {
+              /*
+               * Crypto flags not cleared means that decryption failed
+               * Do no ask loss packets retransmission
+               */
+              ;
+              HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+          }
+          else if (record_loss)
+          {
+              HLOGC(mglog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
+                      << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
+              if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
+              {
                   {
-                      // Only in live mode. In File mode this shall not be possible
-                      // because the sender should stop sending in this situation.
-                      // In Live mode this means that there is a gap between the
-                      // lowest sequence in the empty buffer and the incoming sequence
-                      // that exceeds the buffer size. Receiving data in this situation
-                      // is no longer possible and this is a point of no return.
+                      int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                      int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
 
-                      LOGC(mglog.Error,
-                              log << CONID() <<
-                              "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+                      srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
 
-                      // This is a scoped lock with AckLock, but for the moment
-                      // when processClose() is called this lock must be taken out,
-                      // otherwise this will cause a deadlock. We don't need this
-                      // lock anymore, and at 'return' it will be unlocked anyway.
-                      recvbuf_acklock.forceUnlock();
-                      processClose();
-                      return -1;
+                      if ( initial_loss_ttl )
+                      {
+                          // pack loss list for (possibly belated) NAK
+                          // The LOSSREPORT will be sent in a while.
+
+                          for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
+                          {
+                              m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                          }
+                          HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
+                          reorder_prevent_lossreport = true;
+                      }
+
+                      int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, rpkt.m_iSeqNo) - 2;
+                      m_iTraceRcvLoss += loss;
+                      m_iRcvLossTotal += loss;
+                      uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+                      m_ullTraceRcvBytesLoss += lossbytes;
+                      m_ullRcvBytesLossTotal += lossbytes;
                   }
-                  else
+
+                  if (m_bTsbPd)
                   {
-                      LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
-                              << offset << " avail=" << avail_bufsize
-                              << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
-                              << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
-                          );
-                      return -1;
-                  }
-
-              }
-
-              if (m_pRcvBuffer->addData(unit, offset) < 0)
-              {
-                  // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-                  // So this packet is "redundant".
-                  exc_type = "UNACKED";
-              }
-              else
-              {
-                  excessive = false;
-                  if (unit->m_Packet.getMsgCryptoFlags())
-                  {
-                      undec_units.push_back(unit);
+                      pthread_mutex_lock(&m_RecvLock);
+                      pthread_cond_signal(&m_RcvTsbPdCond);
+                      pthread_mutex_unlock(&m_RecvLock);
                   }
               }
-              // Update the current largest sequence number that has been received.
-              // Or it is a retransmitted packet, remove it from receiver loss list.
-              if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
-              {
-                  m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
-              }
-              else
-              {
-                  unlose(rpkt); // was BELATED or RETRANSMITTED ppkt->
-                  was_orderly_sent &= 0!=  pktrexmitflag;
-              }
+          }
 
-              HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
-                      << (excessive ? " EXCESSIVE" : " ACCEPTED")
-                      << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
-                      << packet.MessageFlagStr());
+          // Update the current largest sequence number that has been received.
+          // Or it is a retransmitted packet, remove it from receiver loss list.
+          if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
+          {
+              m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
+          }
+          else
+          {
+              unlose(rpkt); // was BELATED or RETRANSMITTED
+              was_orderly_sent &= 0!=  pktrexmitflag;
           }
       }
 
@@ -8074,7 +8147,7 @@ int CUDT::processData(CUnit* unit)
 
    // Check first if we don't have an IPE for a different case.
 
-   CPacket* ppkt = &incoming[0]->m_Packet;
+   //CPacket* ppkt = &incoming[0]->m_Packet;
    if (incoming.size() > 1 && record_loss)
    {
        LOGC(mglog.Error, log << "IPE (FEC): Provided >1 packet from FEC and it required loss to be handled by SRT - handling only one.");
@@ -8084,171 +8157,105 @@ int CUDT::processData(CUnit* unit)
        return -1; // Treat as excessive. This is when FEC cumulates packets until the loss is rebuilt.
    }
 
-   bool reorder_prevent_lossreport = false;
-
+   if (!srt_loss_seqs.empty())
    {
-       // If the peer doesn't understand REXMIT flag, send rexmit request
-       // always immediately.
-       int initial_loss_ttl = 0;
-       if ( m_bPeerRexmitFlag )
-           initial_loss_ttl = m_iReorderTolerance;
-
-       bool loss_was_detected = false;
-
-       if  (ppkt->getMsgCryptoFlags())
        {
-           /*
-            * Crypto flags not cleared means that decryption failed
-            * Do no ask loss packets retransmission
-            */
-           ;
-           HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
-       }
-       else if (record_loss)
-       {
-           if (CSeqNo::seqcmp(ppkt->m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
-           {
-               loss_was_detected = true;
-               {
-                   int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-                   int32_t seqhi = CSeqNo::decseq(ppkt->m_iSeqNo);
-
-                   srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                   if ( initial_loss_ttl )
-                   {
-                       // pack loss list for (possibly belated) NAK
-                       // The LOSSREPORT will be sent in a while.
-
-                       for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                       {
-                           m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                       }
-                       HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
-                       reorder_prevent_lossreport = true;
-                   }
-
-                   int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, ppkt->m_iSeqNo) - 2;
-                   m_iTraceRcvLoss += loss;
-                   m_iRcvLossTotal += loss;
-                   uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-                   m_ullTraceRcvBytesLoss += lossbytes;
-                   m_ullRcvBytesLossTotal += lossbytes;
-               }
-
-               if (m_bTsbPd)
-               {
-                   pthread_mutex_lock(&m_RecvLock);
-                   pthread_cond_signal(&m_RcvTsbPdCond);
-                   pthread_mutex_unlock(&m_RecvLock);
-               }
-           }
-       }
-       else if (loss_was_detected)
-       {
-           HLOGC(mglog.Debug, log << "(FEC) Loss detected, but FEC decided not to check for loss");
-       }
-
-       if (!srt_loss_seqs.empty())
-       {
-           {
-               HLOGC(mglog.Debug, log << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs)
-                       << " - RECORDING.");
-               // if record_loss == false, nothing will be contained here
-               CGuard lg(m_RcvLossLock);
-               for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-               {
-                   // If loss found, insert them to the receiver loss list
-                   m_pRcvLossList->insert(i->first, i->second);
-               }
-           }
-
-           if (!reorder_prevent_lossreport && report_recorded_loss)
-           {
-               HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
-               sendLossReport(srt_loss_seqs);
-           }
-       }
-
-       // Separately report loss records of those reported by FEC.
-       // ALWAYS report whatever has been reported back by FEC. Note that
-       // FEC never reports anything when rexmit fallback level is ALWAYS or NEVER.
-       // With ALWAYS only those are reported that were recorded here by SRT.
-       // With NEVER, nothing is to be reported.
-       if (!fec_loss_seqs.empty())
-       {
-           HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(fec_loss_seqs));
-           sendLossReport(fec_loss_seqs);
-       }
-
-       // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
-
-       // PERFORMANCE CONSIDERATIONS:
-       // This list is quite inefficient as a data type and finding the candidate to send UMSG_LOSSREPORT
-       // is linear time. On the other hand, there are some special cases that are important for performance:
-       // - only the first (plus some following) could have had TTL drown to 0
-       // - the only (little likely) possibility that the next-to-first record has TTL=0 is when there was
-       //   a loss range split (due to unlose() of one sequence)
-       // - first found record with TTL>0 means end of "ready to LOSSREPORT" records
-       // So:
-       // All you have to do is:
-       //  - start with first element and continue with next elements, as long as they have TTL=0
-       //    If so, send the loss report and remove this element.
-       //  - Since the first element that has TTL>0, iterate until the end of container and decrease TTL.
-       //
-       // This will be efficient becase the loop to increment one field (without any condition check)
-       // can be quite well optimized.
-
-       vector<int32_t> lossdata;
-       if (record_loss)
-       {
+           HLOGC(mglog.Debug, log << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs)
+                   << " - RECORDING.");
+           // if record_loss == false, nothing will be contained here
            CGuard lg(m_RcvLossLock);
-
-           // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
-           // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
-           if ( initial_loss_ttl && !m_FreshLoss.empty() )
+           for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
            {
-               deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
+               // If loss found, insert them to the receiver loss list
+               m_pRcvLossList->insert(i->first, i->second);
+           }
+       }
 
-               // Phase 1: take while TTL <= 0.
-               // There can be more than one record with the same TTL, if it has happened before
-               // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
-               // into two records.
-               for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
-               {
-                   HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
-                           i->seq[0], i->seq[1], CSeqNo::seqcmp(i->seq[1], i->seq[0])+1);
-                   addLossRecord(lossdata, i->seq[0], i->seq[1]);
-               }
+       if (!reorder_prevent_lossreport && report_recorded_loss)
+       {
+           HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
+           sendLossReport(srt_loss_seqs);
+       }
+   }
 
-               // Remove elements that have been processed and prepared for lossreport.
-               if ( i != m_FreshLoss.begin() )
-               {
-                   m_FreshLoss.erase(m_FreshLoss.begin(), i);
-                   i = m_FreshLoss.begin();
-               }
+   // Separately report loss records of those reported by FEC.
+   // ALWAYS report whatever has been reported back by FEC. Note that
+   // FEC never reports anything when rexmit fallback level is ALWAYS or NEVER.
+   // With ALWAYS only those are reported that were recorded here by SRT.
+   // With NEVER, nothing is to be reported.
+   if (!fec_loss_seqs.empty())
+   {
+       HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(fec_loss_seqs));
+       sendLossReport(fec_loss_seqs);
+   }
 
-               if ( m_FreshLoss.empty() )
-               {
-                   HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
-               }
-               else
-               {
-                   HLOGF(mglog.Debug, "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
-                           i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
-                           i->ttl);
-               }
+   // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
 
-               // Phase 2: rest of the records should have TTL decreased.
-               for ( ; i != m_FreshLoss.end(); ++i )
-                   --i->ttl;
+   // PERFORMANCE CONSIDERATIONS:
+   // This list is quite inefficient as a data type and finding the candidate to send UMSG_LOSSREPORT
+   // is linear time. On the other hand, there are some special cases that are important for performance:
+   // - only the first (plus some following) could have had TTL drown to 0
+   // - the only (little likely) possibility that the next-to-first record has TTL=0 is when there was
+   //   a loss range split (due to unlose() of one sequence)
+   // - first found record with TTL>0 means end of "ready to LOSSREPORT" records
+   // So:
+   // All you have to do is:
+   //  - start with first element and continue with next elements, as long as they have TTL=0
+   //    If so, send the loss report and remove this element.
+   //  - Since the first element that has TTL>0, iterate until the end of container and decrease TTL.
+   //
+   // This will be efficient becase the loop to increment one field (without any condition check)
+   // can be quite well optimized.
+
+   vector<int32_t> lossdata;
+   if (record_loss)
+   {
+       CGuard lg(m_RcvLossLock);
+
+       // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
+       // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
+       if ( initial_loss_ttl && !m_FreshLoss.empty() )
+       {
+           deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
+
+           // Phase 1: take while TTL <= 0.
+           // There can be more than one record with the same TTL, if it has happened before
+           // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
+           // into two records.
+           for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
+           {
+               HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
+                       i->seq[0], i->seq[1], CSeqNo::seqcmp(i->seq[1], i->seq[0])+1);
+               addLossRecord(lossdata, i->seq[0], i->seq[1]);
            }
 
+           // Remove elements that have been processed and prepared for lossreport.
+           if ( i != m_FreshLoss.begin() )
+           {
+               m_FreshLoss.erase(m_FreshLoss.begin(), i);
+               i = m_FreshLoss.begin();
+           }
+
+           if ( m_FreshLoss.empty() )
+           {
+               HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
+           }
+           else
+           {
+               HLOGF(mglog.Debug, "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d", m_FreshLoss.size(),
+                       i->seq[0], i->seq[1], 1+CSeqNo::seqcmp(i->seq[1], i->seq[0]),
+                       i->ttl);
+           }
+
+           // Phase 2: rest of the records should have TTL decreased.
+           for ( ; i != m_FreshLoss.end(); ++i )
+               --i->ttl;
        }
-       if ( !lossdata.empty() )
-           sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
 
    }
+   if ( !lossdata.empty() )
+       sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
+
 
    // was_orderly_sent means either of:
    // - packet was sent in order (first if branch above)
