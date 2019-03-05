@@ -818,8 +818,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // This simply moves the packet to the input queue.
     // Just check if the packet is the FEC packet.
 
-    CPacket& rpkt = unit->m_Packet;
-
+    const CPacket& rpkt = unit->m_Packet;
 
     // Add this packet to the group where it belongs.
     // Light up the cell of this packet to mark it received.
@@ -857,7 +856,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
             isfec.col = true;
         }
 
-        HLOGC(mglog.Debug, log << "FEC: msgno=0, FEC/CTL packet detected. INDEX=" << int(payload[0]));
+        HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=0, FEC/CTL packet. INDEX=" << int(payload[0]));
     }
     else
     {
@@ -876,6 +875,8 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
 
             return retval;
         }
+
+        HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
     }
 
     // Remember this simply every time a packet comes in. In live mode usually
