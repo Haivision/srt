@@ -830,6 +830,12 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // packet received and the number of collected packets counts
     // exactly group_size - 1.
 
+    bool retval = false;
+    // Return true (make SRT check losses by itself), unless
+    // the ARQ cooperation is set to "never".
+    if (m_fallback_level != Corrector::ARQ_NEVER)
+        retval = true;
+
     struct IsFec
     {
         bool row;
@@ -852,6 +858,24 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         }
 
         HLOGC(mglog.Debug, log << "FEC: msgno=0, FEC/CTL packet detected. INDEX=" << int(payload[0]));
+    }
+    else
+    {
+        // Data packet, check if this packet was already received.
+        // If so, ignore it. This may happen if you have configured
+        // FEC and ARQ to cooperate, so a packet once rebuilt might
+        // be simultaneously also retransmitted. This may confuse the tables.
+        int celloff = CSeqNo::seqoff(rcv.cell_base, rpkt.getSeqNo());
+        bool past = celloff < 0;
+        bool exists = celloff < int(rcv.cells.size()) && rcv.cells[celloff];
+
+        if (past || exists)
+        {
+            HLOGC(mglog.Debug, log << "FEC: packet %" << rpkt.getSeqNo() << " "
+                    << (past ? "in the PAST" : "already known") << ", IGNORING.");
+
+            return retval;
+        }
     }
 
     // Remember this simply every time a packet comes in. In live mode usually
@@ -889,9 +913,11 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     }
 
     if (!isfec.col && !isfec.row)
+    {
+        HLOGC(mglog.Debug, log << "FEC: PASSTHRU packet %" << unit->m_Packet.getSeqNo());
         r_incoming.get().push_back(unit);
+    }
 
-    bool retval = false;
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -907,11 +933,6 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // 1. on EARLY, report those that are in irrecover_row, but return false.
     // 2. on LATELY, report those that are in both irrecover, but return false.
     // 3. on NEVER, report nothing and return false.
-
-    // Return true (make SRT check losses by itself), unless
-    // the ARQ cooperation is set to "never".
-    if (m_fallback_level != Corrector::ARQ_NEVER)
-        retval = true;
 
     // Pack the following packets as irrecoverable:
     if (m_fallback_level == Corrector::ARQ_ONREQ)
@@ -1013,8 +1034,6 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
     if (rcv.rebuilt.empty())
         return;
 
-    HLOGC(mglog.Debug, log << "FEC: have rebuilt " << rcv.rebuilt.size() << " packets, PROVIDING");
-
     for (vector<Receive::PrivPacket>::iterator i = rcv.rebuilt.begin();
             i != rcv.rebuilt.end(); ++i)
     {
@@ -1030,6 +1049,8 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         memcpy(packet.getHeader(), i->hdr, CPacket::HDR_SIZE);
         memcpy(packet.m_pcData, i->buffer, i->length);
         packet.setLength(i->length);
+
+        HLOGC(mglog.Debug, log << "FEC: PROVIDING rebuilt packet %" << packet.getSeqNo());
 
         incoming.push_back(u);
     }
@@ -1054,9 +1075,16 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     // If this was a FEC/CTL packet, keep this number, just set the fec flag.
     if (isfec)
     {
-        ClipControlPacket(rowg, rpkt);
-        rowg.fec = true;
-        HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq);
+        if (!rowg.fec)
+        {
+            ClipControlPacket(rowg, rpkt);
+            rowg.fec = true;
+            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL at %" << seq << " DUPLICATED, skipping.");
+        }
     }
     else
     {
@@ -1067,13 +1095,23 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
 
     if (rowg.fec && rowg.collected == m_number_cols - 1)
     {
-        HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING");
+        HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING...");
         // The group will provide the information for rebuilding.
         // The sequence of the lost packet can be checked in cells.
         // With the condition of 'collected == m_number_cols - 1', there
         // should be only one lacking packet, so just rely on first found.
         RcvRebuild(rowg, RcvGetLossSeqHoriz(rowg),
                 m_number_rows == 1 ? Group::SINGLE : Group::HORIZ);
+
+#if ENABLE_HEAVY_LOGGING
+        std::ostringstream os;
+        for (size_t i = 0; i < rcv.rebuilt.size(); ++i)
+        {
+            os << " " << rcv.rebuilt[i].hdr[CPacket::PH_SEQNO];
+        }
+
+        LOGC(mglog.Debug, log << "FEC: ... cached rebuilt packets (" << rcv.rebuilt.size() << "):" << os.str());
+#endif
     }
 
     // When there are only rows, dismiss the oldest row when you have
@@ -1477,9 +1515,16 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, lo
 
     if (fec_ctl)
     {
-        ClipControlPacket(colg, rpkt);
-        colg.fec = true;
-        HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col));
+        if (!colg.fec)
+        {
+            ClipControlPacket(colg, rpkt);
+            colg.fec = true;
+            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col));
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL at %" << seq << " COLUMN " << int(fec_col) << " DUPLICATED, skipping.");
+        }
     }
     else
     {

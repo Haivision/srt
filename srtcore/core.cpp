@@ -7899,7 +7899,7 @@ int CUDT::processData(CUnit* unit)
 
           // Stuff this data into the corrector
           m_Corrector->receive(unit, Ref(incoming), Ref(fec_loss_seqs));
-          HLOGC(mglog.Debug, log << "FEC: fed data, received " << incoming.size() << " pkts, "
+          HLOGC(mglog.Debug, log << "(FEC) fed data, received " << incoming.size() << " pkts, "
                   << Printable(fec_loss_seqs) << " loss to report, "
                   << (record_loss ? "" : "DO NOT ")
                   << "check for losses later"
@@ -8119,7 +8119,8 @@ int CUDT::processData(CUnit* unit)
 
    }  /* End of recvbuf_acklock*/
 
-   if (m_bClosing) {
+   if (m_bClosing)
+   {
       /*
       * RcvQueue worker thread can call processData while closing (or close while processData)
       * This race condition exists in the UDT design but the protection against TsbPd thread
@@ -8128,26 +8129,12 @@ int CUDT::processData(CUnit* unit)
       * RcvQueue worker thread will not necessarily be deleted with this connection as it can be
       * used by others (socket multiplexer).
       */
-      return(-1);
+      return -1;
    }
 
-   // Since this moment we allow only those possibilities:
-   //
-   // 1. We have EXACTLY ONE packet, and even if a corrector facility
-   // was processing it, we have it exactly like received.
-   // 2. We have no packets now, nothing to check.
-   // 3. We have more than one packet and record_loss == false.
-
-   // Check first if we don't have an IPE for a different case.
-
-   //CPacket* ppkt = &incoming[0]->m_Packet;
-   if (incoming.size() > 1 && record_loss)
+   if (incoming.empty())
    {
-       LOGC(mglog.Error, log << "IPE (FEC): Provided >1 packet from FEC and it required loss to be handled by SRT - handling only one.");
-   }
-   else if (incoming.empty())
-   {
-       return -1; // Treat as excessive. This is when FEC cumulates packets until the loss is rebuilt.
+       return -1; // Treat as excessive. This is when FEC cumulates packets until the loss is rebuilt, or eats up FEC/CTL packet
    }
 
    if (!srt_loss_seqs.empty())
