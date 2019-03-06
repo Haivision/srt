@@ -20,17 +20,104 @@
 #include "utilities.h"
 
 class CUDT;
-class CorrectorBase;
 
-struct CorrectorConfig;
+enum SRT_ARQLevel
+{
+    SRT_ARQ_NEVER,   //< Never send LOSSREPORT (rely on FEC exclusively)
+    SRT_ARQ_ONREQ,
+    SRT_ARQ_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
+};
+
+
+struct CorrectorConfig
+{
+    int rows;
+    int cols;
+    SRT_ARQLevel level;
+    std::map<std::string, std::string> parameters;
+};
+
+// Real interface
+class CorrectorBase
+{
+protected:
+
+    friend class Corrector;
+
+    CUDT* m_parent;
+
+    // Beside the size of the rows, special values:
+    // 0: if you have 0 specified for rows, there are only columns
+    // -1: Only during the handshake, use the value specified by peer.
+    // -N: The N value still specifies the size, but in particular
+    //     dimension there is no FEC control packet formed nor expected.
+
+    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+
+    CorrectorBase(CUDT* par): m_parent(par)
+    {
+    }
+
+    // General configuration
+    virtual size_t extraSize() = 0;
+
+    // Sender side
+
+    // This function creates and stores the FEC control packet with
+    // a prediction to be immediately sent. This is called in the function
+    // that normally is prepared for extracting a data packet from the sender
+    // buffer and send it over the channel.
+    virtual bool packCorrectionPacket(CPacket& packet, int32_t seq, int kflg) = 0;
+
+    // This is called at the moment when the sender queue decided to pick up
+    // a new packet from the scheduled packets. This should be then used to
+    // continue filling the group, possibly followed by final calculating the
+    // FEC control packet ready to send.
+    virtual void feedSource(CPacket& r_packet) = 0;
+
+
+    // Receiver side
+
+    // This function is called at the moment when a new data packet has
+    // arrived (no matter if subsequent or recovered). The 'state' value
+    // defines the configured level of loss state required to send the
+    // loss report.
+    virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) = 0;
+
+    // Backward configuration.
+    // This should have some stable value after the configuration is parsed,
+    // and it should be a stable value set ONCE, after the FEC module is ready.
+    virtual SRT_ARQLevel arqLevel() = 0;
+
+    virtual ~CorrectorBase()
+    {
+    }
+};
+
 bool ParseCorrectorConfig(std::string s, CorrectorConfig& out);
-
-typedef CorrectorBase* corrector_create_t(CUDT* parent, CUnitQueue* uq, const std::string& config);
 
 class Corrector
 {
     friend class CorrectorBase;
 
+public:
+
+    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+
+    struct Packet
+    {
+        uint32_t hdr[CPacket::PH_SIZE];
+        char buffer[CPacket::SRT_MAX_PAYLOAD_SIZE];
+        size_t length;
+
+        Packet(size_t size): length(size)
+        {
+            memset(hdr, 0, sizeof(hdr));
+        }
+    };
+    typedef CorrectorBase* corrector_create_t(CUDT* parent, std::vector<Packet>&, const std::string& config);
+
+private:
     // Temporarily changed to linear searching, until this is exposed
     // for a user-defined corrector.
     // Note that this is a pointer to function :)
@@ -53,13 +140,14 @@ class Corrector
     }
 
 public:
+
     static void globalInit();
 
     template <class Target>
     struct Creator
     {
-        static CorrectorBase* Create(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
-        { return new Target(parent, uq, confstr); }
+        static CorrectorBase* Create(CUDT* parent, std::vector<Corrector::Packet>& provided, const std::string& confstr)
+        { return new Target(parent, provided, confstr); }
     };
 
     static bool IsBuiltin(const std::string&);
@@ -89,7 +177,7 @@ public:
     // Things being done:
     // 1. The corrector is individual, so don't copy it. Set NULL.
     // 2. This will be configued anyway basing on possibly a new rule set.
-    Corrector(const Corrector& source SRT_ATR_UNUSED): corrector() {}
+    Corrector(const Corrector& source SRT_ATR_UNUSED): corrector(), unitq() {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -104,78 +192,22 @@ public:
     // destruction.
     ~Corrector();
 
-    enum ARQLevel
+    // Simple wrappers
+    size_t extraSize() { return corrector->extraSize(); }
+    void feedSource(ref_t<CPacket> r_packet) { return corrector->feedSource(*r_packet); }
+    bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
     {
-        ARQ_NEVER,   //< Never send LOSSREPORT (rely on FEC exclusively)
-        ARQ_ONREQ,
-        ARQ_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
-    };
-};
+        return corrector->packCorrectionPacket(*r_packet, seq, kflg);
+    }
+    SRT_ARQLevel arqLevel() { return corrector->arqLevel(); }
 
-struct CorrectorConfig
-{
-    int rows;
-    int cols;
-    Corrector::ARQLevel level;
-    std::map<std::string, std::string> parameters;
-};
+    void receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs);
 
-// Real interface
-class CorrectorBase
-{
 protected:
-    CUDT* m_parent;
-    CUnitQueue* m_unitqueue;
+    void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
 
-    // Beside the size of the rows, special values:
-    // 0: if you have 0 specified for rows, there are only columns
-    // -1: Only during the handshake, use the value specified by peer.
-    // -N: The N value still specifies the size, but in particular
-    //     dimension there is no FEC control packet formed nor expected.
-
-public:
-
-    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
-
-    CorrectorBase(CUDT* par, CUnitQueue* uq): m_parent(par), m_unitqueue(uq)
-    {
-    }
-
-    // General configuration
-    virtual size_t extraSize() = 0;
-
-    // Sender side
-
-    // This function creates and stores the FEC control packet with
-    // a prediction to be immediately sent. This is called in the function
-    // that normally is prepared for extracting a data packet from the sender
-    // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg) = 0;
-
-    // This is called at the moment when the sender queue decided to pick up
-    // a new packet from the scheduled packets. This should be then used to
-    // continue filling the group, possibly followed by final calculating the
-    // FEC control packet ready to send.
-    virtual void feedSource(ref_t<CPacket> r_packet) = 0;
-
-
-    // Receiver side
-
-    // This function is called at the moment when a new data packet has
-    // arrived (no matter if subsequent or recovered). The 'state' value
-    // defines the configured level of loss state required to send the
-    // loss report.
-    virtual bool receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) = 0;
-
-    // Backward configuration.
-    // This should have some stable value after the configuration is parsed,
-    // and it should be a stable value set ONCE, after the FEC module is ready.
-    virtual Corrector::ARQLevel arqLevel() = 0;
-
-
-    virtual ~CorrectorBase()
-    {
-    }
+    CUnitQueue* unitq;
+    std::vector<Packet> provided;
 };
 
 #endif

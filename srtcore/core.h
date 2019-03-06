@@ -581,7 +581,7 @@ private:
     // Forward Error Correction (FEC)
     Corrector m_Corrector;
     std::string m_OPT_FECConfigString;
-    Corrector::ARQLevel m_CorrectorRexmitLevel;
+    SRT_ARQLevel m_CorrectorRexmitLevel;
     std::string m_sPeerFECConfigString;
 
     // Attached tool function

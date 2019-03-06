@@ -4806,7 +4806,7 @@ void CUDT::setupCC()
         HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_FECConfigString);
         m_Corrector.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_FECConfigString);
 
-        m_CorrectorRexmitLevel = m_Corrector->arqLevel();
+        m_CorrectorRexmitLevel = m_Corrector.arqLevel();
     }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
@@ -7558,7 +7558,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       }
       reason = "reXmit";
    }
-   else if (m_Corrector && m_Corrector->packCorrectionPacket(
+   else if (m_Corrector && m_Corrector.packCorrectionPacket(
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {
@@ -7668,7 +7668,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    if (new_packet_packed && m_Corrector)
    {
        HLOGC(mglog.Debug, log << "FEC: Feeding packet for source clip");
-       m_Corrector->feedSource(Ref(packet));
+       m_Corrector.feedSource(Ref(packet));
    }
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
@@ -7894,18 +7894,18 @@ int CUDT::processData(CUnit* unit)
       vector<CUnit*> undec_units;
       if (m_Corrector)
       {
-          record_loss = m_CorrectorRexmitLevel != Corrector::ARQ_NEVER;
-          report_recorded_loss = m_CorrectorRexmitLevel == Corrector::ARQ_ALWAYS;
+          record_loss = m_CorrectorRexmitLevel != SRT_ARQ_NEVER;
+          report_recorded_loss = m_CorrectorRexmitLevel == SRT_ARQ_ALWAYS;
 
           // Stuff this data into the corrector
-          m_Corrector->receive(unit, Ref(incoming), Ref(fec_loss_seqs));
+          m_Corrector.receive(unit, Ref(incoming), Ref(fec_loss_seqs));
           HLOGC(mglog.Debug, log << "(FEC) fed data, received " << incoming.size() << " pkts, "
                   << Printable(fec_loss_seqs) << " loss to report, "
                   << (record_loss ? "" : "DO NOT ")
                   << "check for losses later"
                   << (record_loss ? (report_recorded_loss
                           ? " AND REPORT THEM"
-                          : ", but don not report them") : ""));
+                          : ", but do not report them") : ""));
       }
       else
       {

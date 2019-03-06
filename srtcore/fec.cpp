@@ -68,15 +68,104 @@ bool ParseCorrectorConfig(std::string s, CorrectorConfig& out)
         if (lv == -1)
             return false; // NOT FOUND
 
-        out.level = Corrector::ARQLevel(lv);
+        out.level = SRT_ARQLevel(lv);
     }
     else
     {
-        out.level = Corrector::ARQ_NEVER;
+        out.level = SRT_ARQ_NEVER;
     }
 
     return true;
 }
+
+struct SortBySequence
+{
+    bool operator()(const CUnit* u1, const CUnit* u2)
+    {
+        int32_t s1 = u1->m_Packet.getSeqNo();
+        int32_t s2 = u2->m_Packet.getSeqNo();
+
+        return CSeqNo::seqcmp(s1, s2) < 0;
+    }
+};
+
+void Corrector::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs)
+{
+    const CPacket& rpkt = unit->m_Packet;
+
+    if (corrector->receive(rpkt, *r_loss_seqs))
+    {
+        // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
+        // unit factory will supply it from getNextAvailUnit() as if it were not in use.
+        unit->m_iFlag = CUnit::GOOD;
+        HLOGC(mglog.Debug, log << "FEC: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
+        r_incoming.get().push_back(unit);
+    }
+
+    // Pack first recovered packets, if any.
+    if (!provided.empty())
+    {
+        HLOGC(mglog.Debug, log << "FEC: inserting REBUILT packets (" << provided.size() << "):");
+        InsertRebuilt(*r_incoming, unitq);
+    }
+
+    // Now that all units have been filled as they should be,
+    // SET THEM ALL FREE. This is because now it's up to the 
+    // buffer to decide as to whether it wants them or not.
+    // Wanted units will be set GOOD flag, unwanted will remain
+    // with FREE and therefore will be returned at the next
+    // call to getNextAvailUnit().
+    unit->m_iFlag = CUnit::FREE;
+    vector<CUnit*>& inco = *r_incoming;
+    for (vector<CUnit*>::iterator i = inco.begin(); i != inco.end(); ++i)
+    {
+        CUnit* u = *i;
+        u->m_iFlag = CUnit::FREE;
+    }
+
+    // Packets must be sorted by sequence number, ascending, in order
+    // not to challenge the SRT's contiguity checker.
+    sort(inco.begin(), inco.end(), SortBySequence());
+
+    // For now, report immediately the irrecoverable packets
+    // from the row.
+
+    // Later, the `irrecover_row` or `irrecover_col` will be
+    // reported only, depending on level settings. For example,
+    // with default LATELY level, packets will be reported as
+    // irrecoverable only when they are irrecoverable in the
+    // vertical group.
+
+    // With "always", do not report any losses, SRT will simply check
+    // them itself.
+
+    return;
+
+    // Get the packet from the incoming stream, already recognized
+    // as data packet, and then:
+    //
+    // (Note that the default builtin FEC mechanism uses such rules:
+    //  - allows SRT to get the packet, even if it follows the loss
+    //  - depending on m_fallback_level, confirms or denies the need that SRT handle the loss
+    //  - in loss_seqs we return those that are not recoverable at the current level
+    //  - FEC has no extra header provided, so regular data are passed as is
+    //)
+    // So, the needs to implement:
+    // 
+    // 1. If this is a FEC packet, close the group, check for lost packets, try to recover.
+    // Check if there is recovery possible, if so, request a new unit and pack the recovered packet there.
+    // Report the loss to be reported by SRT according to m_fallback_level:
+    // - ARQ_ALWAYS: N/A for a FEC packet
+    // - ARQ_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
+    // - ARQ_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
+    // - ARQ_NEVER: Always return empty loss_seqs
+    //
+    // 2. If this is a regular packet, use it for building the FEC group.
+    // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
+    // - others: return false and return nothing in loss_seqs
+}
+
+
 
 class DefaultCorrector: public CorrectorBase
 {
@@ -85,7 +174,7 @@ class DefaultCorrector: public CorrectorBase
     size_t m_number_rows;
 
     // Configuration
-    Corrector::ARQLevel m_fallback_level;
+    SRT_ARQLevel m_fallback_level;
 
 public:
 
@@ -164,7 +253,7 @@ private:
         SRTSOCKET id;
         bool order_required;
 
-        Receive(): id(SRT_INVALID_SOCK), order_required(false)
+        Receive(vector<Corrector::Packet>& provided): id(SRT_INVALID_SOCK), order_required(false), rebuilt(provided)
         {
         }
 
@@ -217,34 +306,8 @@ private:
             return cells[index];
         }
 
-        struct PrivPacket
-        {
-            uint32_t hdr[CPacket::PH_SIZE];
-            char buffer[CPacket::SRT_MAX_PAYLOAD_SIZE];
-            size_t length;
-
-            PrivPacket(size_t size): length(size)
-            {
-                memset(hdr, 0, sizeof(hdr));
-            }
-
-            ~PrivPacket()
-            {
-            }
-        };
-
-        struct SortBySequence
-        {
-            bool operator()(const CUnit* u1, const CUnit* u2)
-            {
-                int32_t s1 = u1->m_Packet.getSeqNo();
-                int32_t s2 = u2->m_Packet.getSeqNo();
-
-                return CSeqNo::seqcmp(s1, s2) < 0;
-            }
-        };
-
-        mutable vector<PrivPacket> rebuilt;
+        typedef Corrector::Packet PrivPacket;
+        vector<PrivPacket>& rebuilt;
     } rcv;
 
     void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
@@ -279,13 +342,12 @@ private:
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
     int RcvGetRowGroupIndex(int32_t seq);
     int RcvGetColumnGroupIndex(int32_t seq);
-    void InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq);
     void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover);
     bool IsLost(int32_t seq);
 
 public:
 
-    DefaultCorrector(CUDT* m_parent, CUnitQueue* uq, const std::string& confstr);
+    DefaultCorrector(CUDT* m_parent, vector<Corrector::Packet>& provided, const std::string& confstr);
 
     // Sender side
 
@@ -293,14 +355,13 @@ public:
     // a prediction to be immediately sent. This is called in the function
     // that normally is prepared for extracting a data packet from the sender
     // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg) ATR_OVERRIDE;
+    virtual bool packCorrectionPacket(CPacket& r_packet, int32_t seq, int kflg) ATR_OVERRIDE;
 
     // This is called at the moment when the sender queue decided to pick up
     // a new packet from the scheduled packets. This should be then used to
     // continue filling the group, possibly followed by final calculating the
     // FEC control packet ready to send.
-    virtual void feedSource(ref_t<CPacket> r_packet) ATR_OVERRIDE;
-
+    virtual void feedSource(CPacket& r_packet) ATR_OVERRIDE;
 
     // Receiver side
 
@@ -308,7 +369,7 @@ public:
     // arrived (no matter if subsequent or recovered). The 'state' value
     // defines the configured level of loss state required to send the
     // loss report.
-    virtual bool receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs) ATR_OVERRIDE;
+    virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
 
     // Configuration
     virtual size_t extraSize() ATR_OVERRIDE
@@ -328,12 +389,13 @@ public:
         return 4;
     }
 
-    virtual Corrector::ARQLevel arqLevel() { return m_fallback_level; }
+    virtual SRT_ARQLevel arqLevel() { return m_fallback_level; }
 };
 
-DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::string& confstr):
-    CorrectorBase(parent, uq),
-    m_fallback_level(Corrector::ARQ_NEVER)
+DefaultCorrector::DefaultCorrector(CUDT* parent, vector<Corrector::Packet>& provided, const std::string& confstr):
+    CorrectorBase(parent),
+    m_fallback_level(SRT_ARQ_NEVER),
+    rcv(provided)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -361,7 +423,7 @@ DefaultCorrector::DefaultCorrector(CUDT* parent, CUnitQueue* uq, const std::stri
     m_number_rows = abs(cfg.rows);
     m_fallback_level = cfg.level;
 
-    if (m_fallback_level != Corrector::ARQ_ALWAYS && m_fallback_level != Corrector::ARQ_NEVER)
+    if (m_fallback_level != SRT_ARQ_ALWAYS && m_fallback_level != SRT_ARQ_NEVER)
     {
         LOGC(mglog.Error, log << "FEC: config error, level: only 'always' and 'never' currently supported");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -507,20 +569,20 @@ void DefaultCorrector::ResetGroup(Group& g)
     memset(&g.payload_clip[0], 0, g.payload_clip.size());
 }
 
-void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
+void DefaultCorrector::feedSource(CPacket& packet)
 {
     // Handy aliases.
     size_t col_size = m_number_rows;
     size_t row_size = m_number_cols;
 
-    // Hang on the matrix. Find by r_packet.get()->getSeqNo().
+    // Hang on the matrix. Find by packet->getSeqNo().
 
     //    (The "absolute base" is the cell 0 in vertical groups)
     int32_t base = snd.row.base;
 
     // (we are guaranteed that this packet is a data packet, so
     // we don't have to check if this isn't a control packet)
-    int baseoff = CSeqNo::seqoff(base, r_packet.get().getSeqNo());
+    int baseoff = CSeqNo::seqoff(base, packet.getSeqNo());
 
     int horiz_pos = baseoff;
 
@@ -528,7 +590,7 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     {
         HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
     }
-    ClipPacket(snd.row, *r_packet);
+    ClipPacket(snd.row, packet);
     snd.row.collected++;
 
     // Don't do any column feeding if using column size 1
@@ -543,7 +605,7 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
         //    - Horizontal: offset towards base (of the given group, not absolute!)
         //    - Vertical: (seq-base)/column_size
         int32_t vert_base = snd.cols[vert_gx].base;
-        int vert_off = CSeqNo::seqoff(vert_base, r_packet.get().getSeqNo());
+        int vert_off = CSeqNo::seqoff(vert_base, packet.getSeqNo());
 
         // It MAY HAPPEN that the base is newer than the sequence of the packet.
         // This may normally happen in the beginning period, where the bases
@@ -565,13 +627,13 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
 
         int vert_pos = vert_off / row_size;
 
-        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[" << vert_gx << "][" << vert_pos << "] "
                 << ( clip_column ? "" : "<NO-COLUMN-CLIP>")
-                << " size=" << r_packet.get().getLength()
-                << " TS=" << r_packet.get().getMsgTimeStamp()
-                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+                << " size=" << packet.getLength()
+                << " TS=" << packet.getMsgTimeStamp()
+                << " !" << BufferStamp(packet.m_pcData, packet.getLength()));
 
         // 3. The group should be check for the necessity of being closed.
         // Note that FEC packet extraction doesn't change the state of the
@@ -588,7 +650,7 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
             {
                 HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
             }
-            ClipPacket(snd.cols[vert_gx], *r_packet);
+            ClipPacket(snd.cols[vert_gx], packet);
             snd.cols[vert_gx].collected++;
         }
         HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
@@ -596,11 +658,11 @@ void DefaultCorrector::feedSource(ref_t<CPacket> r_packet)
     else
     {
         // The above logging instruction in case of no columns
-        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << r_packet.get().getSeqNo()
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "]"
-                << " size=" << r_packet.get().getLength()
-                << " TS=" << r_packet.get().getMsgTimeStamp()
-                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+                << " size=" << packet.getLength()
+                << " TS=" << packet.getMsgTimeStamp()
+                << " !" << BufferStamp(packet.m_pcData, packet.getLength()));
         HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
     }
 
@@ -710,7 +772,7 @@ void DefaultCorrector::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
 }
 
-bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
+bool DefaultCorrector::packCorrectionPacket(CPacket& rpkt, int32_t seq, int kflg)
 {
     // If the FEC packet is not yet ready for extraction, do nothing and return false.
     // Check if seq is the last sequence of the group.
@@ -737,11 +799,11 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     {
         HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
         // SHIP THE HORIZONTAL FEC packet.
-        PackControl(snd.row, -1, *r_packet, seq, kflg);
+        PackControl(snd.row, -1, rpkt, seq, kflg);
 
-        HLOGC(mglog.Debug, log << "...PACKET size=" << r_packet.get().getLength()
-                << " TS=" << r_packet.get().getMsgTimeStamp()
-                << " !" << BufferStamp(r_packet.get().m_pcData, r_packet.get().getLength()));
+        HLOGC(mglog.Debug, log << "...PACKET size=" << rpkt.getLength()
+                << " TS=" << rpkt.getMsgTimeStamp()
+                << " !" << BufferStamp(rpkt.m_pcData, rpkt.getLength()));
 
         // RESET THE HORIZONTAL GROUP.
         ResetGroup(snd.row);
@@ -766,7 +828,7 @@ bool DefaultCorrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq
     {
         HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq);
         // SHIP THE VERTICAL FEC packet.
-        PackControl(snd.cols[vert_gx], vert_gx, *r_packet, seq, kflg);
+        PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq, kflg);
 
         // RESET THE GROUP THAT WAS SENT
         ResetGroup(snd.cols[vert_gx]);
@@ -840,14 +902,8 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, CPacket& p
     // Write the timestamp clip into the timestamp field.
 }
 
-bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs)
+bool DefaultCorrector::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 {
-    // XXX TRIAL IMPLEMENTATION for testing the initial statements.
-    // This simply moves the packet to the input queue.
-    // Just check if the packet is the FEC packet.
-
-    const CPacket& rpkt = unit->m_Packet;
-
     // Add this packet to the group where it belongs.
     // Light up the cell of this packet to mark it received.
     // Check if any of the groups to which the packet belongs
@@ -857,11 +913,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
     // packet received and the number of collected packets counts
     // exactly group_size - 1.
 
-    bool retval = false;
-    // Return true (make SRT check losses by itself), unless
-    // the ARQ cooperation is set to "never".
-    if (m_fallback_level != Corrector::ARQ_NEVER)
-        retval = true;
+    bool want_packet = false;
 
     struct IsFec
     {
@@ -901,15 +953,13 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
             HLOGC(mglog.Debug, log << "FEC: packet %" << rpkt.getSeqNo() << " "
                     << (past ? "in the PAST" : "already known") << ", IGNORING.");
 
-            return retval;
+            return false;
         }
+
+        want_packet = true;
 
         HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
         MarkCellReceived(rpkt.getSeqNo());
-
-        // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
-        // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_iFlag = CUnit::GOOD;
     }
 
     // Remember this simply every time a packet comes in. In live mode usually
@@ -927,16 +977,16 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         // Don't manage this packet for horizontal group,
         // if it was a vertical FEC/CTL packet.
         ok = HangHorizontal(rpkt, isfec.row, irrecover_row);
-        HLOGC(mglog.Debug, log << "FEC: HangHorizontal %" << unit->m_Packet.getSeqNo()
-                << " msgno=" << unit->m_Packet.getMsgSeq()
+        HLOGC(mglog.Debug, log << "FEC: HangHorizontal %" << rpkt.getSeqNo()
+                << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_row));
     }
 
     if (!isfec.row) // == regular packet or FEC/COL
     {
         ok = HangVertical(rpkt, isfec.colx, irrecover_col);
-        HLOGC(mglog.Debug, log << "FEC: HangVertical %" << unit->m_Packet.getSeqNo()
-                << " msgno=" << unit->m_Packet.getMsgSeq()
+        HLOGC(mglog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
+                << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_col));
     }
 
@@ -946,90 +996,18 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         LOGC(mglog.Error, log << "FEC: rebuilding FAILED.");
     }
 
-    // Pack first recovered packets, if any.
-    if (!rcv.rebuilt.empty())
-    {
-        HLOGC(mglog.Debug, log << "FEC: inserting REBUILT packets (" << rcv.rebuilt.size() << "):");
-        InsertRebuilt(*r_incoming, m_unitqueue);
-    }
-
-    if (!isfec.col && !isfec.row)
-    {
-        HLOGC(mglog.Debug, log << "FEC: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
-        r_incoming.get().push_back(unit);
-    }
-
-    // Now that all units have been filled as they should be,
-    // SET THEM ALL FREE. This is because now it's up to the 
-    // buffer to decide as to whether it wants them or not.
-    // Wanted units will be set GOOD flag, unwanted will remain
-    // with FREE and therefore will be returned at the next
-    // call to getNextAvailUnit().
-    unit->m_iFlag = CUnit::FREE;
-    vector<CUnit*>& inco = *r_incoming;
-    for (vector<CUnit*>::iterator i = inco.begin(); i != inco.end(); ++i)
-    {
-        CUnit* u = *i;
-        u->m_iFlag = CUnit::FREE;
-    }
-
-    // Packets must be sorted by sequence number, ascending, in order
-    // not to challenge the SRT's contiguity checker.
-    sort(inco.begin(), inco.end(), Receive::SortBySequence());
-
-    // For now, report immediately the irrecoverable packets
-    // from the row.
-
-    // Later, the `irrecover_row` or `irrecover_col` will be
-    // reported only, depending on level settings. For example,
-    // with default LATELY level, packets will be reported as
-    // irrecoverable only when they are irrecoverable in the
-    // vertical group.
-
-    // The return value should depend on the value of the required level:
-    // 0. on ALWAYS, simply return always true.
-    // 1. on EARLY, report those that are in irrecover_row, but return false.
-    // 2. on LATELY, report those that are in both irrecover, but return false.
-    // 3. on NEVER, report nothing and return false.
-
     // Pack the following packets as irrecoverable:
-    if (m_fallback_level == Corrector::ARQ_ONREQ)
+    if (m_fallback_level == SRT_ARQ_ONREQ)
     {
         // Use irrecover_row with rows only because there is
         // never anything collected in irrecover_col.
         if (m_number_rows == 1)
-            *r_loss_seqs = irrecover_row;
+            loss_seqs = irrecover_row;
         else
-            *r_loss_seqs = irrecover_col;
+            loss_seqs = irrecover_col;
     }
 
-    // With "always", do not report any losses, SRT will simply check
-    // them itself.
-
-    return retval;
-
-    // Get the packet from the incoming stream, already recognized
-    // as data packet, and then:
-    //
-    // (Note that the default builtin FEC mechanism uses such rules:
-    //  - allows SRT to get the packet, even if it follows the loss
-    //  - depending on m_fallback_level, confirms or denies the need that SRT handle the loss
-    //  - in loss_seqs we return those that are not recoverable at the current level
-    //  - FEC has no extra header provided, so regular data are passed as is
-    //)
-    // So, the needs to implement:
-    // 
-    // 1. If this is a FEC packet, close the group, check for lost packets, try to recover.
-    // Check if there is recovery possible, if so, request a new unit and pack the recovered packet there.
-    // Report the loss to be reported by SRT according to m_fallback_level:
-    // - ARQ_ALWAYS: N/A for a FEC packet
-    // - ARQ_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
-    // - ARQ_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
-    // - ARQ_NEVER: Always return empty loss_seqs
-    //
-    // 2. If this is a regular packet, use it for building the FEC group.
-    // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
-    // - others: return false and return nothing in loss_seqs
+    return want_packet;
 }
 
 void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
@@ -1087,13 +1065,12 @@ void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
 }
 
 
-void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+void Corrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
-    if (rcv.rebuilt.empty())
+    if (provided.empty())
         return;
 
-    for (vector<Receive::PrivPacket>::iterator i = rcv.rebuilt.begin();
-            i != rcv.rebuilt.end(); ++i)
+    for (vector<Packet>::iterator i = provided.begin(); i != provided.end(); ++i)
     {
         CUnit* u = uq->getNextAvailUnit();
         if (!u)
@@ -1120,7 +1097,7 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         incoming.push_back(u);
     }
 
-    rcv.rebuilt.clear();
+    provided.clear();
 }
 
 bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
@@ -1183,7 +1160,7 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     // collected at least 1 packet in the next group. Do not dismiss
     // any groups here otherwise - all will be decided during column
     // processing.
-    if (m_number_rows == 1 || m_fallback_level == Corrector::ARQ_ONREQ)
+    if (m_number_rows == 1 || m_fallback_level == SRT_ARQ_ONREQ)
     {
         // The conditional row dismissal in row-only configuration.
         // In this configuration, cells and rows go hand-in-hand,
@@ -2114,8 +2091,10 @@ bool Corrector::configure(CUDT* m_parent, CUnitQueue* uq, const std::string& con
             return false;
     }
 
+    unitq = uq;
+
     // Found a corrector, so call the creation function
-    corrector = (*selector->second)(m_parent, uq, confstr);
+    corrector = (*selector->second)(m_parent, provided, confstr);
 
     // The corrector should have pinned in all events
     // that are of its interest. It's stated that
