@@ -877,6 +877,7 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         }
 
         HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
+        MarkCellReceived(rpkt.getSeqNo());
 
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
@@ -1092,9 +1093,7 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 
 bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
 {
-
     int32_t seq = rpkt.getSeqNo();
-    MarkCellReceived(seq);
 
     int rowx = RcvGetRowGroupIndex(seq);
     if (rowx == -1)
