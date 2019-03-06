@@ -200,6 +200,23 @@ private:
         int32_t cell_base;
         deque<bool> cells;
 
+        // Note this function will automatically extend the container
+        // with empty cells if the index exceeds the size, HOWEVER
+        // the caller must make sure that this index isn't any "crazy",
+        // that is, it fits somehow in reasonable ranges.
+        bool CellAt(size_t index)
+        {
+            if (index >= cells.size())
+            {
+                // Cells not prepared for this sequence yet,
+                // so extend in advance.
+                cells.resize(index+1, false);
+                return false; // It wasn't marked, anyway.
+            }
+
+            return cells[index];
+        }
+
         struct PrivPacket
         {
             uint32_t hdr[CPacket::PH_SIZE];
@@ -253,7 +270,7 @@ private:
     int RcvGetColumnGroupIndex(int32_t seq);
     void InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq);
     void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover);
-    bool CellAt(int32_t seq);
+    bool IsLost(int32_t seq);
 
 public:
 
@@ -1211,7 +1228,7 @@ int32_t DefaultCorrector::RcvGetLossSeqHoriz(Group& g)
 
     for (size_t cix = baseoff; cix < baseoff + m_number_cols; ++cix)
     {
-        if (!rcv.cells[cix])
+        if (!rcv.CellAt(cix))
         {
             offset = cix;
 
@@ -1250,7 +1267,7 @@ int32_t DefaultCorrector::RcvGetLossSeqVert(Group& g)
 
     for (size_t cix = baseoff; cix < baseoff + m_number_cols*m_number_rows; cix += m_number_rows)
     {
-        if (!rcv.cells[cix])
+        if (!rcv.CellAt(cix))
         {
             offset = cix;
 
@@ -1513,17 +1530,20 @@ void DefaultCorrector::MarkCellReceived(int32_t seq)
     HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cell base=%" << rcv.cell_base << "+" << rcv.cells.size());
 }
 
-bool DefaultCorrector::CellAt(int32_t seq)
+bool DefaultCorrector::IsLost(int32_t seq)
 {
     int offset = CSeqNo::seqoff(rcv.cell_base, seq);
     if (offset < 0)
     {
-        // XXX IPE!
+        LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq
+                << " is earlier than the cell base %" << rcv.cell_base);
         return true; // fake we have the packet - this is to collect losses only
     }
     if (offset > int(rcv.cells.size()))
     {
         // XXX IPE!
+        LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq << " is past the cells %"
+                << rcv.cell_base << " + " << rcv.cells.size());
         return true;
     }
 
@@ -1621,7 +1641,7 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         for (size_t sof = 0; sof < pg.step * sizeCol(); sof += pg.step)
         {
             int32_t lseq = CSeqNo::incseq(pg.base, sof);
-            if (!CellAt(lseq))
+            if (!IsLost(lseq))
                 loss.insert(lseq);
         }
     }
@@ -1706,7 +1726,7 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                 }
                 else
                 {
-                    LOGC(mglog.Error, log << "CELL/ROW base discrepancy, calculating and resynchronizing");
+                    LOGC(mglog.Error, log << "FEC: CELL/ROW base discrepancy, calculating and resynchronizing");
                     nrem = CSeqNo::seqoff(rcv.cell_base, newbase);
                 }
 
@@ -1716,12 +1736,21 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                     for (int sof = 0; sof < nrem; sof++)
                     {
                         int32_t lseq = CSeqNo::incseq(rcv.cell_base, sof);
-                        if (!CellAt(lseq))
+                        if (!IsLost(lseq))
                             loss.insert(lseq);
                     }
 
+                    HLOGC(mglog.Debug, log << "FEC: ERASING unused cells (" << nrem << "): %"
+                            << rcv.cell_base << " - %" << newbase
+                            << ", losses collected: " << Printable(loss));
+
                     rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nrem);
                     rcv.cell_base = newbase;
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "FEC: NOT ERASING cells, base %" << rcv.cell_base
+                            << " vs row base %" << rcv.rowq[0].base);
                 }
             }
 
