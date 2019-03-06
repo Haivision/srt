@@ -877,6 +877,10 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         }
 
         HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
+
+        // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
+        // unit factory will supply it from getNextAvailUnit() as if it were not in use.
+        unit->m_iFlag = CUnit::GOOD;
     }
 
     // Remember this simply every time a packet comes in. In live mode usually
@@ -926,6 +930,19 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         r_incoming.get().push_back(unit);
     }
 
+    // Now that all units have been filled as they should be,
+    // SET THEM ALL FREE. This is because now it's up to the 
+    // buffer to decide as to whether it wants them or not.
+    // Wanted units will be set GOOD flag, unwanted will remain
+    // with FREE and therefore will be returned at the next
+    // call to getNextAvailUnit().
+    unit->m_iFlag = CUnit::FREE;
+    vector<CUnit*>& inco = *r_incoming;
+    for (vector<CUnit*>::iterator i = inco.begin(); i != inco.end(); ++i)
+    {
+        CUnit* u = *i;
+        u->m_iFlag = CUnit::FREE;
+    }
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -1051,6 +1068,13 @@ void DefaultCorrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
             LOGC(mglog.Error, log << "FEC: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
             break;
         }
+
+        // LOCK the unit as GOOD because otherwise the next
+        // call to getNextAvailUnit will return THE SAME UNIT.
+        u->m_iFlag = CUnit::GOOD;
+        // After returning from this function, all units will be
+        // set back to FREE so that the buffer can decide whether
+        // it wants them or not.
 
         CPacket& packet = u->m_Packet;
 
