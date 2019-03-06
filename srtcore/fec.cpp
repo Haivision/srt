@@ -233,6 +233,17 @@ private:
             }
         };
 
+        struct SortBySequence
+        {
+            bool operator()(const CUnit* u1, const CUnit* u2)
+            {
+                int32_t s1 = u1->m_Packet.getSeqNo();
+                int32_t s2 = u2->m_Packet.getSeqNo();
+
+                return CSeqNo::seqcmp(s1, s2) < 0;
+            }
+        };
+
         mutable vector<PrivPacket> rebuilt;
     } rcv;
 
@@ -961,6 +972,10 @@ bool DefaultCorrector::receive(CUnit* unit, ref_t< vector<CUnit*> > r_incoming, 
         CUnit* u = *i;
         u->m_iFlag = CUnit::FREE;
     }
+
+    // Packets must be sorted by sequence number, ascending, in order
+    // not to challenge the SRT's contiguity checker.
+    sort(inco.begin(), inco.end(), Receive::SortBySequence());
 
     // For now, report immediately the irrecoverable packets
     // from the row.
