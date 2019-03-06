@@ -1122,7 +1122,9 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     {
         ClipPacket(rowg, rpkt);
         rowg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq << ", received " << rowg.collected << "/" << sizeRow());
+        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq
+                << ", received " << rowg.collected << "/" << sizeRow()
+                << " base=%" << rowg.base);
     }
 
     if (rowg.fec && rowg.collected == m_number_cols - 1)
@@ -1563,7 +1565,9 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, lo
         // Data packet, clip it as data
         ClipPacket(colg, rpkt);
         colg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/V: DATA packet clipped, %" << seq << ", received " << colg.collected << "/" << sizeCol());
+        HLOGC(mglog.Debug, log << "FEC/V: DATA packet clipped, %" << seq
+                << ", received " << colg.collected << "/" << sizeCol()
+                << " base=%" << colg.base);
     }
 
     if (colg.fec && colg.collected == m_number_rows - 1)
