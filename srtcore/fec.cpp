@@ -24,7 +24,7 @@
 
 using namespace std;
 
-DefaultCorrector::DefaultCorrector(vector<SrtPacket>& provided, const std::string& confstr):
+FECFilterBuiltin::FECFilterBuiltin(vector<SrtPacket>& provided, const std::string& confstr):
     m_fallback_level(SRT_ARQ_ONREQ),
     rcv(provided)
 {
@@ -178,7 +178,7 @@ DefaultCorrector::DefaultCorrector(vector<SrtPacket>& provided, const std::strin
 }
 
 template <class Container>
-void DefaultCorrector::ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn)
+void FECFilterBuiltin::ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn)
 {
     // This is to initialize the first set of groups.
 
@@ -199,7 +199,7 @@ void DefaultCorrector::ConfigureColumns(Container& which, size_t gsize, size_t g
     }
 }
 
-void DefaultCorrector::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop)
+void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop)
 {
     g.base = seqno;
     g.step = gstep;
@@ -225,7 +225,7 @@ void DefaultCorrector::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 }
 
 
-void DefaultCorrector::ResetGroup(Group& g)
+void FECFilterBuiltin::ResetGroup(Group& g)
 {
     int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
 
@@ -243,7 +243,7 @@ void DefaultCorrector::ResetGroup(Group& g)
     memset(&g.payload_clip[0], 0, g.payload_clip.size());
 }
 
-void DefaultCorrector::feedSource(CPacket& packet)
+void FECFilterBuiltin::feedSource(CPacket& packet)
 {
     // Handy aliases.
     size_t col_size = m_number_rows;
@@ -342,7 +342,7 @@ void DefaultCorrector::feedSource(CPacket& packet)
 
 }
 
-bool DefaultCorrector::CheckGroupClose(Group& g, size_t pos, size_t size)
+bool FECFilterBuiltin::CheckGroupClose(Group& g, size_t pos, size_t size)
 {
     if (pos < size)
         return false;
@@ -351,7 +351,7 @@ bool DefaultCorrector::CheckGroupClose(Group& g, size_t pos, size_t size)
     return true;
 }
 
-void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
+void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
 {
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
@@ -378,7 +378,7 @@ void DefaultCorrector::ClipPacket(Group& g, const CPacket& pkt)
 
 // Clipping a control packet does merely the same, just the packet has
 // different contents, so it must be differetly interpreted.
-void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
+void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 {
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
@@ -403,7 +403,7 @@ void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
             << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
 }
 
-void DefaultCorrector::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
+void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 {
     uint16_t length_net = htons(pkt.length);
     uint8_t kflg = MSGNO_ENCKEYSPEC::unwrap(pkt.hdr[SRT_PH_MSGNO]);
@@ -425,7 +425,7 @@ void DefaultCorrector::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
             << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
 }
 
-void DefaultCorrector::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
+void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
         uint32_t timestamp_hw, const char* payload, size_t payload_size)
 {
     g.length_clip = g.length_clip ^ length_net;
@@ -446,7 +446,7 @@ void DefaultCorrector::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
 }
 
-bool DefaultCorrector::packCorrectionPacket(SrtPacket& rpkt, int32_t seq)
+bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
 {
     // If the FEC packet is not yet ready for extraction, do nothing and return false.
     // Check if seq is the last sequence of the group.
@@ -512,7 +512,7 @@ bool DefaultCorrector::packCorrectionPacket(SrtPacket& rpkt, int32_t seq)
     return false;
 }
 
-void DefaultCorrector::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
+void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
@@ -563,7 +563,7 @@ void DefaultCorrector::PackControl(const Group& g, signed char index, SrtPacket&
 
 }
 
-bool DefaultCorrector::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
+bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 {
     // Add this packet to the group where it belongs.
     // Light up the cell of this packet to mark it received.
@@ -669,9 +669,31 @@ bool DefaultCorrector::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     }
 
     return want_packet;
+    // Get the packet from the incoming stream, already recognized
+    // as data packet, and then:
+    //
+    // (Note that the default builtin FEC mechanism uses such rules:
+    //  - allows SRT to get the packet, even if it follows the loss
+    //  - depending on m_fallback_level, confirms or denies the need that SRT handle the loss
+    //  - in loss_seqs we return those that are not recoverable at the current level
+    //  - FEC has no extra header provided, so regular data are passed as is
+    //)
+    // So, the needs to implement:
+    // 
+    // 1. If this is a FEC packet, close the group, check for lost packets, try to recover.
+    // Check if there is recovery possible, if so, request a new unit and pack the recovered packet there.
+    // Report the loss to be reported by SRT according to m_fallback_level:
+    // - ARQ_ALWAYS: N/A for a FEC packet
+    // - ARQ_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
+    // - ARQ_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
+    // - ARQ_NEVER: Always return empty loss_seqs
+    //
+    // 2. If this is a regular packet, use it for building the FEC group.
+    // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
+    // - others: return false and return nothing in loss_seqs
 }
 
-void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
+void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
 {
     if (g.dismissed)
         return; // already collected
@@ -726,7 +748,7 @@ void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
 }
 
 
-bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
+bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
 {
     int32_t seq = rpkt.getSeqNo();
 
@@ -830,7 +852,7 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     return true;
 }
 
-int32_t DefaultCorrector::RcvGetLossSeqHoriz(Group& g)
+int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
 {
     int baseoff = CSeqNo::seqoff(rcv.cell_base, g.base);
     if (baseoff < 0)
@@ -868,7 +890,7 @@ int32_t DefaultCorrector::RcvGetLossSeqHoriz(Group& g)
     return CSeqNo::incseq(rcv.cell_base, offset);
 }
 
-int32_t DefaultCorrector::RcvGetLossSeqVert(Group& g)
+int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
 {
     int baseoff = CSeqNo::seqoff(rcv.cell_base, g.base);
     if (baseoff < 0)
@@ -907,7 +929,7 @@ int32_t DefaultCorrector::RcvGetLossSeqVert(Group& g)
     return CSeqNo::incseq(rcv.cell_base, offset);
 }
 
-void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
+void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 {
     if (seqno == -1)
         return;
@@ -1051,7 +1073,7 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
 }
 
-int DefaultCorrector::ExtendRows(int rowx)
+int FECFilterBuiltin::ExtendRows(int rowx)
 {
     // Check if oversize. Oversize is when the
     // index is > 2*m_number_cols. If so, shrink
@@ -1096,7 +1118,7 @@ int DefaultCorrector::ExtendRows(int rowx)
     return rowx;
 }
 
-int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
+int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq)
 {
     RcvGroup& head = rcv.rowq[0];
     int32_t base = head.base;
@@ -1131,7 +1153,7 @@ int DefaultCorrector::RcvGetRowGroupIndex(int32_t seq)
     return rowx;
 }
 
-void DefaultCorrector::MarkCellReceived(int32_t seq)
+void FECFilterBuiltin::MarkCellReceived(int32_t seq)
 {
     // Mark the packet as received. This will allow later to
     // determine, which exactly packet is lost and needs rebuilding.
@@ -1148,7 +1170,7 @@ void DefaultCorrector::MarkCellReceived(int32_t seq)
     HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cell base=%" << rcv.cell_base << "+" << rcv.cells.size());
 }
 
-bool DefaultCorrector::IsLost(int32_t seq)
+bool FECFilterBuiltin::IsLost(int32_t seq)
 {
     int offset = CSeqNo::seqoff(rcv.cell_base, seq);
     if (offset < 0)
@@ -1168,7 +1190,7 @@ bool DefaultCorrector::IsLost(int32_t seq)
     return rcv.cells[offset];
 }
 
-bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, loss_seqs_t& irrecover)
+bool FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, loss_seqs_t& irrecover)
 {
     bool fec_ctl = (fec_col != -1);
     // Now hang the packet in the vertical group
@@ -1228,7 +1250,7 @@ bool DefaultCorrector::HangVertical(const CPacket& rpkt, signed char fec_col, lo
     return true;
 }
 
-void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t& irrecover)
+void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t& irrecover)
 {
     // The first check we need to do is:
     //
@@ -1269,7 +1291,7 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     // - now that seq is newer than the last in the last column,
     //    - dismiss whole series 0 column groups
 
-    bool any_dismiss = false;
+    bool any_dismiss SRT_ATR_UNUSED = false;
     // First, index of the last column
     size_t lastx = numberCols()-1;
     if (lastx < rcv.colq.size())
@@ -1386,7 +1408,7 @@ void DefaultCorrector::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
 }
 
-void DefaultCorrector::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
+void FECFilterBuiltin::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
 {
     if (loss.empty())
         return;
@@ -1414,7 +1436,7 @@ void DefaultCorrector::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t
     irrecover.push_back(make_pair(fi_start, fi_end));
 }
 
-int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
+int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
 {
     // The column is only the column, not yet
     // exactly the index of the column group in the container.
@@ -1589,7 +1611,7 @@ int DefaultCorrector::RcvGetColumnGroupIndex(int32_t seqno)
 
 }
 
-int DefaultCorrector::ExtendColumns(int colgx)
+int FECFilterBuiltin::ExtendColumns(int colgx)
 {
     if (colgx > int(sizeRow() * 2))
     {

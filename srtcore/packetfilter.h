@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__FEC_H
-#define INC__FEC_H
+#ifndef INC__PACKETFILTER_H
+#define INC__PACKETFILTER_H
 
 #include <cstdlib>
 #include <map>
@@ -20,15 +20,15 @@
 #include "utilities.h"
 #include "packetfilter_api.h"
 
-class Corrector
+class PacketFilter
 {
-    friend class CorrectorBase;
+    friend class SrtPacketFilterBase;
 
 public:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    typedef CorrectorBase* corrector_create_t(std::vector<SrtPacket>&, const std::string& config);
+    typedef SrtPacketFilterBase* corrector_create_t(std::vector<SrtPacket>&, const std::string& config);
 
 private:
     // Temporarily changed to linear searching, until this is exposed
@@ -41,7 +41,7 @@ private:
     static correctors_map_t correctors;
 
     // This is a corrector container.
-    CorrectorBase* corrector;
+    SrtPacketFilterBase* corrector;
     void Check()
     {
 #if ENABLE_DEBUG
@@ -58,7 +58,7 @@ public:
     template <class Target>
     struct Creator
     {
-        static CorrectorBase* Create(std::vector<SrtPacket>& provided, const std::string& confstr)
+        static SrtPacketFilterBase* Create(std::vector<SrtPacket>& provided, const std::string& confstr)
         { return new Target(provided, confstr); }
     };
 
@@ -84,17 +84,17 @@ public:
     bool installed() { return corrector; }
     operator bool() { return installed(); }
 
-    CorrectorBase* operator->() { Check(); return corrector; }
+    SrtPacketFilterBase* operator->() { Check(); return corrector; }
 
     // In the beginning it's initialized as first, builtin default.
     // Still, it will be created only when requested.
-    Corrector(): corrector(), sndctl(), unitq() {}
+    PacketFilter(): corrector(), sndctl(), unitq() {}
 
     // Copy constructor - important when listener-spawning
     // Things being done:
     // 1. The corrector is individual, so don't copy it. Set NULL.
     // 2. This will be configued anyway basing on possibly a new rule set.
-    Corrector(const Corrector& source SRT_ATR_UNUSED): corrector(), unitq() {}
+    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): corrector(), unitq() {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -102,12 +102,12 @@ public:
     // pin oneself in into CUDT for receiving event signals.
     bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
 
-    static bool correctConfig(const CorrectorConfig& c);
+    static bool correctConfig(const FilterConfig& c);
 
     // Will delete the pinned in corrector object.
     // This must be defined in *.cpp file due to virtual
     // destruction.
-    ~Corrector();
+    ~PacketFilter();
 
     // Simple wrappers
     size_t extraSize();
@@ -128,8 +128,8 @@ protected:
 };
 
 
-inline size_t Corrector::extraSize() { return corrector->extraSize(); }
-inline void Corrector::feedSource(ref_t<CPacket> r_packet) { return corrector->feedSource(*r_packet); }
-inline SRT_ARQLevel Corrector::arqLevel() { return corrector->arqLevel(); }
+inline size_t PacketFilter::extraSize() { return corrector->extraSize(); }
+inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { return corrector->feedSource(*r_packet); }
+inline SRT_ARQLevel PacketFilter::arqLevel() { return corrector->arqLevel(); }
 
 #endif

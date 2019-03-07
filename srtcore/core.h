@@ -349,7 +349,7 @@ private:
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
-    SRT_ATR_NODISCARD bool checkApplyFECConfig(const std::string& fec);
+    SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -578,11 +578,11 @@ private:
     std::vector<EventSlot> m_Slots[TEV__SIZE];
     Smoother m_Smoother;
 
-    // Forward Error Correction (FEC)
-    Corrector m_Corrector;
-    std::string m_OPT_FECConfigString;
-    SRT_ARQLevel m_CorrectorRexmitLevel;
-    std::string m_sPeerFECConfigString;
+    // Packet filtering
+    PacketFilter m_PacketFilter;
+    std::string m_OPT_PktFilterConfigString;
+    SRT_ARQLevel m_PktFilterRexmitLevel;
+    std::string m_sPeerPktFilterConfigString;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);

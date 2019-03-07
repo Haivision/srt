@@ -255,7 +255,7 @@ CUDT::CUDT()
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
    m_bTwoWayData = false;
 
-   m_OPT_FECConfigString = "";
+   m_OPT_PktFilterConfigString = "";
 
    m_pCache = NULL;
 
@@ -315,7 +315,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bMessageAPI = ancestor.m_bMessageAPI;
    //Runtime
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
-   m_OPT_FECConfigString = ancestor.m_OPT_FECConfigString;
+   m_OPT_PktFilterConfigString = ancestor.m_OPT_PktFilterConfigString;
 
    m_CryptoSecret = ancestor.m_CryptoSecret;
    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
@@ -832,7 +832,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
-   case SRTO_FEC:
+   case SRTO_FILTER:
       if (m_bConnected)
           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -866,7 +866,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
               }
           }
 
-          m_OPT_FECConfigString = arg;
+          m_OPT_PktFilterConfigString = arg;
       }
       break;
 
@@ -1142,12 +1142,12 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;
 
-   case SRTO_FEC:
-      if (size_t(optlen) < m_OPT_FECConfigString.size()+1)
+   case SRTO_FILTER:
+      if (size_t(optlen) < m_OPT_PktFilterConfigString.size()+1)
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-      strcpy((char*)optval, m_OPT_FECConfigString.c_str());
-      optlen = m_OPT_FECConfigString.size();
+      strcpy((char*)optval, m_OPT_PktFilterConfigString.c_str());
+      optlen = m_OPT_PktFilterConfigString.size();
       break;
 
    default:
@@ -1720,7 +1720,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     bool peer_fec_capable = true;
     if (srths_cmd == SRT_CMD_HSRSP)
     {
-        if (m_sPeerFECConfigString != "")
+        if (m_sPeerPktFilterConfigString != "")
         {
             peer_fec_capable = true;
         }
@@ -1742,7 +1742,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // the FEC config string from the peer and therefore
     // possibly confronted with the contents of m_OPT_FECConfigString,
     // and if it decided to go with FEC, it will be nonempty.
-    if (peer_fec_capable && m_OPT_FECConfigString != "")
+    if (peer_fec_capable && m_OPT_PktFilterConfigString != "")
     {
         have_fec = true;
         hs.m_iType |= CHandShake::HS_EXT_CONFIG;
@@ -1866,16 +1866,16 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         pcmdspec = p+offset;
         ++offset;
 
-        size_t wordsize = (m_OPT_FECConfigString.size()+3)/4;
+        size_t wordsize = (m_OPT_PktFilterConfigString.size()+3)/4;
         size_t aligned_bytesize = wordsize*4;
 
         memset(p+offset, 0, aligned_bytesize);
-        memcpy(p+offset, m_OPT_FECConfigString.data(), m_OPT_FECConfigString.size());
+        memcpy(p+offset, m_OPT_PktFilterConfigString.data(), m_OPT_PktFilterConfigString.size());
 
         ra_size = wordsize;
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FEC) | HS_CMDSPEC_SIZE::wrap(ra_size);
+        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FILTER) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after FEC [" << m_OPT_FECConfigString << "] length=" << m_OPT_FECConfigString.size() << " alignedln=" << aligned_bytesize
+        HLOGC(mglog.Debug, log << "createSrtHandshake: after FEC [" << m_OPT_PktFilterConfigString << "] length=" << m_OPT_PktFilterConfigString.size() << " alignedln=" << aligned_bytesize
             << ": offset=" << offset << " FEC size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
@@ -2717,11 +2717,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
                 HLOGC(mglog.Debug, log << "CONNECTOR'S SMOOTHER [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_FEC )
+            else if ( cmd == SRT_CMD_FILTER )
             {
                 if (have_fec)
                 {
-                    LOGC(mglog.Error, log << "FEC BLOCK REPEATED!");
+                    LOGC(mglog.Error, log << "FILTER BLOCK REPEATED!");
                     return false;
                 }
                 // Declare that fec has been received
@@ -2735,7 +2735,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memcpy(target, begin+1, bytelen);
                 string fec = target;
 
-                if (!checkApplyFECConfig(fec))
+                if (!checkApplyFilterConfig(fec))
                 {
                     LOGC(mglog.Error, log << "PEER'S FEC CONFIG '" << fec << "' has been rejected");
                     return false;
@@ -2789,29 +2789,29 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     return true;
 }
 
-bool CUDT::checkApplyFECConfig(const std::string& fec)
+bool CUDT::checkApplyFilterConfig(const std::string& confstr)
 {
-    CorrectorConfig cfg;
-    if (!ParseCorrectorConfig(fec, cfg))
+    FilterConfig cfg;
+    if (!ParseCorrectorConfig(confstr, cfg))
         return false;
 
     // Now extract the type, if present, and
     // check if you have this type of corrector available.
-    if (!Corrector::correctConfig(cfg))
+    if (!PacketFilter::correctConfig(cfg))
         return false;
 
     // Now parse your own string, if you have it.
-    if (m_OPT_FECConfigString != "")
+    if (m_OPT_PktFilterConfigString != "")
     {
         // - for rendezvous, both must be exactly the same, or only one side specified.
         if (m_bRendezvous)
         {
-            if (m_OPT_FECConfigString != fec)
+            if (m_OPT_PktFilterConfigString != confstr)
                 return false;
         }
 
-        CorrectorConfig mycfg;
-        if (!ParseCorrectorConfig(m_OPT_FECConfigString, mycfg))
+        FilterConfig mycfg;
+        if (!ParseCorrectorConfig(m_OPT_PktFilterConfigString, mycfg))
             return false;
 
         // Check only if both have set a filter of the same type.
@@ -2822,16 +2822,16 @@ bool CUDT::checkApplyFECConfig(const std::string& fec)
         // - for caller-listener configuration, accept the listener version.
         if (m_SrtHsSide == HSD_INITIATOR)
         {
-            m_OPT_FECConfigString = fec;
+            m_OPT_PktFilterConfigString = confstr;
         }
 
-        HLOGC(mglog.Debug, log << "checkApplyFECConfig: Effective config: " << m_OPT_FECConfigString);
+        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: EfFiltertive config: " << m_OPT_PktFilterConfigString);
     }
     else
     {
         // Take the foreign configuration as a good deal.
-        HLOGC(mglog.Debug, log << "checkApplyFECConfig: Good deal config: " << m_OPT_FECConfigString);
-        m_OPT_FECConfigString = fec;
+        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: Good deal config: " << m_OPT_PktFilterConfigString);
+        m_OPT_PktFilterConfigString = confstr;
     }
 
     return true;
@@ -3948,7 +3948,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     return CONN_ACCEPT;
 }
 
-void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
+void CUDT::checkUpdateCryptoKeyLen(const char* loghdr SRT_ATR_UNUSED, int32_t typefield)
 {
     int enc_flags = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(typefield);
 
@@ -4760,17 +4760,17 @@ void CUDT::setupCC()
     m_Smoother.configure(this);
 
     // XXX Configure FEC module
-    if (m_OPT_FECConfigString != "")
+    if (m_OPT_PktFilterConfigString != "")
     {
         // This string, when nonempty, defines that the corrector shall be
         // configured. Otherwise it's left uninitialized.
 
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
-        HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_FECConfigString);
-        m_Corrector.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_FECConfigString);
+        HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_PktFilterConfigString);
+        m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString);
 
-        m_CorrectorRexmitLevel = m_Corrector.arqLevel();
+        m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
@@ -7522,7 +7522,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       }
       reason = "reXmit";
    }
-   else if (m_Corrector && m_Corrector.packCorrectionPacket(
+   else if (m_PacketFilter && m_PacketFilter.packCorrectionPacket(
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {
@@ -7629,10 +7629,10 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       reason += " (encrypted)";
    }
 
-   if (new_packet_packed && m_Corrector)
+   if (new_packet_packed && m_PacketFilter)
    {
        HLOGC(mglog.Debug, log << "FEC: Feeding packet for source clip");
-       m_Corrector.feedSource(Ref(packet));
+       m_PacketFilter.feedSource(Ref(packet));
    }
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
@@ -7833,7 +7833,7 @@ int CUDT::processData(CUnit* unit)
    ++ m_llRecvTotal;
 
    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
-   loss_seqs_t fec_loss_seqs;
+   loss_seqs_t filter_loss_seqs;
    loss_seqs_t srt_loss_seqs;
    bool record_loss = true;          // Check for loss yourself and record them
    bool report_recorded_loss = true; // Report immediately recorded loss
@@ -7856,15 +7856,15 @@ int CUDT::processData(CUnit* unit)
       CGuard recvbuf_acklock(m_AckLock);
 
       vector<CUnit*> undec_units;
-      if (m_Corrector)
+      if (m_PacketFilter)
       {
-          record_loss = m_CorrectorRexmitLevel != SRT_ARQ_NEVER;
-          report_recorded_loss = m_CorrectorRexmitLevel == SRT_ARQ_ALWAYS;
+          record_loss = m_PktFilterRexmitLevel != SRT_ARQ_NEVER;
+          report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
 
           // Stuff this data into the corrector
-          m_Corrector.receive(unit, Ref(incoming), Ref(fec_loss_seqs));
+          m_PacketFilter.receive(unit, Ref(incoming), Ref(filter_loss_seqs));
           HLOGC(mglog.Debug, log << "(FEC) fed data, received " << incoming.size() << " pkts, "
-                  << Printable(fec_loss_seqs) << " loss to report, "
+                  << Printable(filter_loss_seqs) << " loss to report, "
                   << (record_loss ? "" : "DO NOT ")
                   << "check for losses later"
                   << (record_loss ? (report_recorded_loss
@@ -8053,7 +8053,7 @@ int CUDT::processData(CUnit* unit)
           return -1;
       }
 
-      bool decr = true;
+      bool decr SRT_ATR_UNUSED = true;
       for (vector<CUnit*>::iterator ue = undec_units.begin(); ue != undec_units.end(); ++ue)
       {
           // Crypto should be already created during connection process,
@@ -8098,7 +8098,9 @@ int CUDT::processData(CUnit* unit)
 
    if (incoming.empty())
    {
-       return -1; // Treat as excessive. This is when FEC cumulates packets until the loss is rebuilt, or eats up FEC/CTL packet
+       // Treat as excessive. This is when a filter cumulates packets
+       // until the loss is rebuilt, or eats up a filter control packet
+       return -1;
    }
 
    if (!srt_loss_seqs.empty())
@@ -8129,15 +8131,15 @@ int CUDT::processData(CUnit* unit)
        }
    }
 
-   // Separately report loss records of those reported by FEC.
-   // ALWAYS report whatever has been reported back by FEC. Note that
-   // FEC never reports anything when rexmit fallback level is ALWAYS or NEVER.
+   // Separately report loss records of those reported by a filter.
+   // ALWAYS report whatever has been reported back by a filter. Note that
+   // the filter never reports anything when rexmit fallback level is ALWAYS or NEVER.
    // With ALWAYS only those are reported that were recorded here by SRT.
    // With NEVER, nothing is to be reported.
-   if (!fec_loss_seqs.empty())
+   if (!filter_loss_seqs.empty())
    {
-       HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(fec_loss_seqs));
-       sendLossReport(fec_loss_seqs);
+       HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(filter_loss_seqs));
+       sendLossReport(filter_loss_seqs);
 
        if (m_bTsbPd)
        {

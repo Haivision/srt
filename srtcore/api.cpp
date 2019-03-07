@@ -206,7 +206,7 @@ int CUDTUnited::startup()
          throw CUDTException(MJ_SETUP, MN_NONE,  WSAGetLastError());
    #endif
 
-   Corrector::globalInit();
+   PacketFilter::globalInit();
 
    //init CTimer::EventLock
 

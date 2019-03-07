@@ -224,7 +224,7 @@ const SocketOption srt_options [] {
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "strictenc", 0, SRTO_STRICTENC, SocketOption::PRE, SocketOption::BOOL, nullptr },
-    { "filter", 0, SRTO_FEC, SocketOption::PRE, SocketOption::STRING, nullptr }
+    { "filter", 0, SRTO_FILTER, SocketOption::PRE, SocketOption::STRING, nullptr }
 };
 }
 

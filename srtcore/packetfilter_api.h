@@ -25,13 +25,13 @@ enum SrtPktHeaderFields
 
 enum SRT_ARQLevel
 {
-    SRT_ARQ_NEVER,   //< Never send LOSSREPORT (rely on FEC exclusively)
-    SRT_ARQ_ONREQ,
-    SRT_ARQ_ALWAYS, //< Regardless of that we have FEC, always send LOSSREPORT when loss detected
+    SRT_ARQ_NEVER,   //< Never send LOSSREPORT
+    SRT_ARQ_ONREQ,  //< Only record the loss, but report only those that are returned in receive()
+    SRT_ARQ_ALWAYS, //< always send LOSSREPORT immediately after detecting a loss
 };
 
 
-struct CorrectorConfig
+struct FilterConfig
 {
     std::string type;
     std::map<std::string, std::string> parameters;
@@ -54,10 +54,10 @@ struct SrtPacket
 };
 
 
-bool ParseCorrectorConfig(std::string s, CorrectorConfig& out);
+bool ParseCorrectorConfig(std::string s, FilterConfig& out);
 
 
-class CorrectorBase
+class SrtPacketFilterBase
 {
     SRTSOCKET m_socket_id;
     int32_t m_snd_isn;
@@ -71,17 +71,17 @@ protected:
     int32_t rcvISN() { return m_rcv_isn; }
     size_t payloadSize() { return m_payload_size; }
 
-    friend class Corrector;
+    friend class PacketFilter;
 
     // Beside the size of the rows, special values:
     // 0: if you have 0 specified for rows, there are only columns
     // -1: Only during the handshake, use the value specified by peer.
     // -N: The N value still specifies the size, but in particular
-    //     dimension there is no FEC control packet formed nor expected.
+    //     dimension there is no filter control packet formed nor expected.
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    CorrectorBase()
+    SrtPacketFilterBase()
     {
     }
 
@@ -90,16 +90,16 @@ protected:
 
     // Sender side
 
-    // This function creates and stores the FEC control packet with
+    // This function creates and stores the filter control packet with
     // a prediction to be immediately sent. This is called in the function
     // that normally is prepared for extracting a data packet from the sender
     // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(SrtPacket& packet, int32_t seq) = 0;
+    virtual bool packControlPacket(SrtPacket& packet, int32_t seq) = 0;
 
     // This is called at the moment when the sender queue decided to pick up
     // a new packet from the scheduled packets. This should be then used to
     // continue filling the group, possibly followed by final calculating the
-    // FEC control packet ready to send.
+    // control packet ready to send.
     virtual void feedSource(CPacket& packet) = 0;
 
 
@@ -113,10 +113,10 @@ protected:
 
     // Backward configuration.
     // This should have some stable value after the configuration is parsed,
-    // and it should be a stable value set ONCE, after the FEC module is ready.
+    // and it should be a stable value set ONCE, after the filter module is ready.
     virtual SRT_ARQLevel arqLevel() = 0;
 
-    virtual ~CorrectorBase()
+    virtual ~SrtPacketFilterBase()
     {
     }
 };

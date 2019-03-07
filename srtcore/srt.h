@@ -181,7 +181,7 @@ typedef enum SRT_SOCKOPT {
     SRTO_KMPREANNOUNCE,   // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
     SRTO_STRICTENC,       // Connection to be rejected or quickly broken when one side encryption set or bad password
     // (some space left)
-    SRTO_FEC = 60
+    SRTO_FILTER = 60
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
