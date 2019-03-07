@@ -53,7 +53,6 @@ modified by
 #ifndef __UDT_PACKET_H__
 #define __UDT_PACKET_H__
 
-
 #include "udt.h"
 #include "common.h"
 #include "utilities.h"
@@ -328,26 +327,6 @@ public:
 
    EncryptionKeySpec getMsgCryptoFlags() const;
    void setMsgCryptoFlags(EncryptionKeySpec spec);
-
-   /*
-      /// Encrypt packet if crypto context present
-      /// @param hcrypto  HaiCrypt handle.
-      /// @retval -1 encryption enabled and failed.
-      /// @retval 0 encryption deferred (parallel processing).
-      /// @retval >0 bytes in packet (clear text, encrypted current or older (deferred) packet).
-
-
-   EncryptionStatus encrypt(HaiCrypt_Handle hcrypto);
-
-      /// Decrypt packet if crypto context present
-      /// @param hcrypto  HaiCrypt handle.
-      /// @retval -1 packet encrypted but no crypto context or decryption failed.
-      /// @retval 0 decryption deferred (parallel processing).
-      /// @retval >0 bytes in packet (clear text oo decrypted current or older (deferred) packet).
-
-
-   EncryptionStatus decrypt(HaiCrypt_Handle hcrypto);
-   */
 
       /// Read the message time stamp.
       /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
