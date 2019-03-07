@@ -371,7 +371,7 @@ int main( int argc, char** argv )
                 }
 
                 // IN because we care for state transitions only
-                // ON - to check the connection state changes
+                // OUT - to check the connection state changes
                 int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
                 switch(tar->uri.type())
                 {
@@ -535,6 +535,18 @@ int main( int argc, char** argv )
                                 if (!quiet)
                                     cerr << "SRT target connected" << endl;
                                 tarConnected = true;
+                                if (tar->uri.type() == UriParser::SRT)
+                                {
+                                    const int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                                    // Disable OUT event polling when connected
+                                    if (srt_epoll_update_usock(pollid,
+                                        tar->GetSRTSocket(), &events))
+                                    {
+                                        cerr << "Failed to add SRT destination to poll, "
+                                            << tar->GetSRTSocket() << endl;
+                                        return 1;
+                                    }
+                                }
                             }
                         }
 
