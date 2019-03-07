@@ -14,43 +14,69 @@
 #include <vector>
 #include <deque>
 
-#include "fec.h"
+#include "packetfilter.h"
 #include "core.h"
 #include "packet.h"
 #include "logging.h"
 
+// Defines DefaultCorrector
+#include "packetfilter_builtin.h"
+
 using namespace std;
 
-bool ParseCorrectorConfig(std::string s, CorrectorConfig& out)
+DefaultCorrector::DefaultCorrector(vector<SrtPacket>& provided, const std::string& confstr):
+    m_fallback_level(SRT_ARQ_ONREQ),
+    rcv(provided)
 {
-    vector<string> parts;
-    Split(s, ',', back_inserter(parts));
+    if (!ParseCorrectorConfig(confstr, cfg))
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-    // Minimum arguments are: rows,cols.
-    if (parts.size() < 2)
-        return false;
+    // Configuration supported:
+    // - row only (number_rows == 1)
+    // - columns only, no row FEC/CTL (number_rows < -1)
+    // - columns and rows (both > 1)
 
-    out.rows = atoi(parts[0].c_str());
-    out.cols = atoi(parts[1].c_str());
+    // Disallowed configurations:
+    // - number_cols < 1
+    // - number_rows [-1, 0]
 
-    if (out.rows == 0 && parts[0] != "0")
-        return false;
+    string colspec = cfg.parameters["cols"], rowspec = cfg.parameters["rows"];
 
-    if (out.cols == 0 && parts[1] != "0")
-        return false;
+    int out_rows = 1;
+    int out_cols = atoi(colspec.c_str());
 
-    for (vector<string>::iterator i = parts.begin()+2; i != parts.end(); ++i)
+    if (colspec == "" || out_cols < 2)
     {
-        vector<string> keyval;
-        Split(*i, ':', back_inserter(keyval));
-        if (keyval.size() != 2)
-            return false;
-        out.parameters[keyval[0]] = keyval[1];
+        LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: at least 'cols' must be specified and > 1");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    m_number_cols = out_cols;
+
+    if (rowspec != "")
+    {
+        out_rows = atoi(rowspec.c_str());
+        if (out_rows >= -1 && out_rows < 1)
+        {
+            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: 'rows' must be >=1 or negative < -1");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+    }
+
+    if (out_rows < 0)
+    {
+        m_number_rows = -out_rows;
+        m_cols_only = true;
+    }
+    else
+    {
+        m_number_rows = out_rows;
+        m_cols_only = false;
     }
 
     // Extra interpret level, if found, default never.
     // Check only those that are managed.
-    string level = out.parameters["arq"];
+    string level = cfg.parameters["arq"];
     int lv = -1;
     if (level != "")
     {
@@ -66,397 +92,18 @@ bool ParseCorrectorConfig(std::string s, CorrectorConfig& out)
         }
 
         if (lv == -1)
-            return false; // NOT FOUND
+        {
+            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: 'arq': value '" << level << "' unknown");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
-        out.level = SRT_ARQLevel(lv);
+        m_fallback_level = SRT_ARQLevel(lv);
     }
     else
     {
-        out.level = SRT_ARQ_NEVER;
+        m_fallback_level = SRT_ARQ_ONREQ;
     }
 
-    return true;
-}
-
-struct SortBySequence
-{
-    bool operator()(const CUnit* u1, const CUnit* u2)
-    {
-        int32_t s1 = u1->m_Packet.getSeqNo();
-        int32_t s2 = u2->m_Packet.getSeqNo();
-
-        return CSeqNo::seqcmp(s1, s2) < 0;
-    }
-};
-
-void Corrector::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs)
-{
-    const CPacket& rpkt = unit->m_Packet;
-
-    if (corrector->receive(rpkt, *r_loss_seqs))
-    {
-        // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
-        // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_iFlag = CUnit::GOOD;
-        HLOGC(mglog.Debug, log << "FEC: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
-        r_incoming.get().push_back(unit);
-    }
-
-    // Pack first recovered packets, if any.
-    if (!provided.empty())
-    {
-        HLOGC(mglog.Debug, log << "FEC: inserting REBUILT packets (" << provided.size() << "):");
-        InsertRebuilt(*r_incoming, unitq);
-    }
-
-    // Now that all units have been filled as they should be,
-    // SET THEM ALL FREE. This is because now it's up to the 
-    // buffer to decide as to whether it wants them or not.
-    // Wanted units will be set GOOD flag, unwanted will remain
-    // with FREE and therefore will be returned at the next
-    // call to getNextAvailUnit().
-    unit->m_iFlag = CUnit::FREE;
-    vector<CUnit*>& inco = *r_incoming;
-    for (vector<CUnit*>::iterator i = inco.begin(); i != inco.end(); ++i)
-    {
-        CUnit* u = *i;
-        u->m_iFlag = CUnit::FREE;
-    }
-
-    // Packets must be sorted by sequence number, ascending, in order
-    // not to challenge the SRT's contiguity checker.
-    sort(inco.begin(), inco.end(), SortBySequence());
-
-    // For now, report immediately the irrecoverable packets
-    // from the row.
-
-    // Later, the `irrecover_row` or `irrecover_col` will be
-    // reported only, depending on level settings. For example,
-    // with default LATELY level, packets will be reported as
-    // irrecoverable only when they are irrecoverable in the
-    // vertical group.
-
-    // With "always", do not report any losses, SRT will simply check
-    // them itself.
-
-    return;
-
-    // Get the packet from the incoming stream, already recognized
-    // as data packet, and then:
-    //
-    // (Note that the default builtin FEC mechanism uses such rules:
-    //  - allows SRT to get the packet, even if it follows the loss
-    //  - depending on m_fallback_level, confirms or denies the need that SRT handle the loss
-    //  - in loss_seqs we return those that are not recoverable at the current level
-    //  - FEC has no extra header provided, so regular data are passed as is
-    //)
-    // So, the needs to implement:
-    // 
-    // 1. If this is a FEC packet, close the group, check for lost packets, try to recover.
-    // Check if there is recovery possible, if so, request a new unit and pack the recovered packet there.
-    // Report the loss to be reported by SRT according to m_fallback_level:
-    // - ARQ_ALWAYS: N/A for a FEC packet
-    // - ARQ_EARLY: When Horizontal group is closed and the packet is not recoverable, report this in loss_seqs
-    // - ARQ_LATELY: When Horizontal and Vertical group is closed and the packet is not recoverable, report it.
-    // - ARQ_NEVER: Always return empty loss_seqs
-    //
-    // 2. If this is a regular packet, use it for building the FEC group.
-    // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
-    // - others: return false and return nothing in loss_seqs
-}
-
-bool Corrector::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
-{
-    bool have = corrector->packCorrectionPacket(*sndctl, seq);
-    if (!have)
-        return false;
-
-    // Now this should be repacked back to CPacket.
-    // The header must be copied, it's always part of CPacket.
-    uint32_t* hdr = r_packet.get().getHeader();
-    memcpy(hdr, sndctl->hdr, CPacket::PH_SIZE * sizeof(*hdr));
-
-    // The buffer can be assigned.
-    r_packet.get().m_pcData = sndctl->buffer;
-    r_packet.get().setLength(sndctl->length);
-
-    // This sets only the Packet Boundary flags, while all other things:
-    // - Order
-    // - Rexmit
-    // - Crypto
-    // - Message Number
-    // will be set to 0/false
-    r_packet.get().m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
-
-    // ... and then fix only the Crypto flags
-    r_packet.get().setMsgCryptoFlags(EncryptionKeySpec(kflg));
-
-    // Don't set the ID, it will be later set for any kind of packet.
-    // Write the timestamp clip into the timestamp field.
-    return true;
-}
-
-
-class DefaultCorrector: public CorrectorBase
-{
-    CorrectorConfig cfg;
-    size_t m_number_cols;
-    size_t m_number_rows;
-
-    // Configuration
-    SRT_ARQLevel m_fallback_level;
-
-public:
-
-    size_t numberCols() { return m_number_cols; }
-    size_t numberRows() { return m_number_rows; }
-
-    size_t sizeCol() { return m_number_rows; }
-    size_t sizeRow() { return m_number_cols; }
-
-    struct Group
-    {
-        int32_t base; //< Sequence of the first packet in the group
-        size_t step;      //< by how many packets the sequence should increase to get the next packet
-        size_t drop;      //< by how much the sequence should increase to get to the next series
-        size_t collected; //< how many packets were taken to collect the clip
-
-        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), drop(0), collected(0)
-        {
-        }
-
-        uint16_t length_clip;
-        uint8_t flag_clip;
-        uint32_t timestamp_clip;
-        vector<char> payload_clip;
-
-        // This is mutable because it's an intermediate buffer for
-        // the purpose of output.
-        //mutable vector<char> output_buffer;
-
-        enum Type
-        {
-            HORIZ,  // Horizontal, recursive
-            VERT,    // Vertical, recursive
-
-            // NOTE: HORIZ/VERT are defined as 0/1 so that not-inversion
-            // can flip between them.
-            SINGLE  // Horizontal-only with no recursion
-        };
-
-    };
-
-    struct RcvGroup: Group
-    {
-        bool fec;
-        bool dismissed;
-        RcvGroup(): fec(false), dismissed(false) {}
-
-        std::string DisplayStats()
-        {
-            if (base == CSeqNo::m_iMaxSeqNo)
-                return "UNINITIALIZED!!!";
-
-            std::ostringstream os;
-            os << "base=" << base << " step=" << step << " drop=" << drop << " collected=" << collected
-                << " " << (fec ? "+" : "-") << "FEC " << (dismissed ? "DISMISSED" : "active");
-            return os.str();
-        }
-    };
-
-private:
-
-    // Row Groups: every item represents a single row group and collects clips for one row.
-    // Col Groups: every item represents a signel column group and collect clips for packets represented in one column
-
-    struct Send
-    {
-        // We need only ONE horizontal group. Simply after the group
-        // is closed (last packet supplied), and the FEC packet extracted,
-        // the group is no longer in use.
-        Group row;
-        vector<Group> cols;
-    } snd;
-
-    struct Receive
-    {
-        SRTSOCKET id;
-        bool order_required;
-
-        Receive(vector<Corrector::Packet>& provided): id(SRT_INVALID_SOCK), order_required(false), rebuilt(provided)
-        {
-        }
-
-        // In reception we need to keep as many horizontal groups as required
-        // for possible later tracking. A horizontal group should be dismissed
-        // when the size of this container exceeds the `m_number_rows` (size of the column).
-        //
-        // The 'deque' type is used here for a trial implementation. A desired solution
-        // would be a kind of a ring buffer where new groups are added and old (exceeding
-        // the size) automatically dismissed.
-        deque<RcvGroup> rowq;
-
-        // Base index at the oldest column platform determines
-        // the base index of the queue. Meaning, first you need
-        // to determnine the column index, where the index 0 is
-        // the fistmost element of this queue. After determining
-        // the column index, there must be also a second factor
-        // deteremined - which column series it is. So, this can
-        // start by extracting the base sequence of the element
-        // at the index column. This is the series 0. Now, the
-        // distance between these two sequences, divided by
-        // rowsize*colsize should return %index-in-column,
-        // /number-series. The latter multiplied by the row size
-        // is the offset between the firstmost column and the
-        // searched column.
-        deque<RcvGroup> colq;
-
-        // This keeps the value of "packet received or not".
-        // The sequence number of the first cell is rowq[0].base.
-        // When dropping a row,
-        // - the firstmost element of rowq is removed
-        // - the length of one row is removed from this vector
-        int32_t cell_base;
-        deque<bool> cells;
-
-        // Note this function will automatically extend the container
-        // with empty cells if the index exceeds the size, HOWEVER
-        // the caller must make sure that this index isn't any "crazy",
-        // that is, it fits somehow in reasonable ranges.
-        bool CellAt(size_t index)
-        {
-            if (index >= cells.size())
-            {
-                // Cells not prepared for this sequence yet,
-                // so extend in advance.
-                cells.resize(index+1, false);
-                return false; // It wasn't marked, anyway.
-            }
-
-            return cells[index];
-        }
-
-        typedef Corrector::Packet PrivPacket;
-        vector<PrivPacket>& rebuilt;
-    } rcv;
-
-    void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
-    template <class Container>
-    void ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn);
-
-    void ResetGroup(Group& g);
-
-    // Universal
-    void ClipData(Group& g, uint16_t length_net, uint8_t kflg,
-            uint32_t timestamp_hw, const char* payload, size_t payload_size);
-    void ClipPacket(Group& g, const CPacket& pkt);
-
-    // Sending
-    bool CheckGroupClose(Group& g, size_t pos, size_t size);
-    void PackControl(const Group& g, signed char groupix, Corrector::Packet& pkt, int32_t seqno);
-
-    // Receiving
-
-    int ExtendRows(int rowx);
-    int ExtendColumns(int colgx);
-    void MarkCellReceived(int32_t seq);
-    bool HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
-    bool HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
-    void ClipControlPacket(Group& g, const CPacket& pkt);
-    void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
-    void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
-    int32_t RcvGetLossSeqHoriz(Group& g);
-    int32_t RcvGetLossSeqVert(Group& g);
-
-    static void TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover);
-    void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
-    int RcvGetRowGroupIndex(int32_t seq);
-    int RcvGetColumnGroupIndex(int32_t seq);
-    void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover);
-    bool IsLost(int32_t seq);
-
-public:
-
-    DefaultCorrector(vector<Corrector::Packet>& provided, const std::string& confstr);
-
-    // Sender side
-
-    // This function creates and stores the FEC control packet with
-    // a prediction to be immediately sent. This is called in the function
-    // that normally is prepared for extracting a data packet from the sender
-    // buffer and send it over the channel.
-    virtual bool packCorrectionPacket(Corrector::Packet& r_packet, int32_t seq) ATR_OVERRIDE;
-
-    // This is called at the moment when the sender queue decided to pick up
-    // a new packet from the scheduled packets. This should be then used to
-    // continue filling the group, possibly followed by final calculating the
-    // FEC control packet ready to send.
-    virtual void feedSource(CPacket& r_packet) ATR_OVERRIDE;
-
-    // Receiver side
-
-    // This function is called at the moment when a new data packet has
-    // arrived (no matter if subsequent or recovered). The 'state' value
-    // defines the configured level of loss state required to send the
-    // loss report.
-    virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
-
-    // Configuration
-    virtual size_t extraSize() ATR_OVERRIDE
-    {
-        // This is the size that is needed extra by packets operated by this corrector.
-        // It should be subtracted from a current maximum value for SRTO_PAYLOADSIZE
-
-        // The default FEC uses extra space only for FEC/CTL packet.
-        // The timestamp clip is placed in the timestamp field in the header.
-        // The payload contains:
-        // - the length clip
-        // - the flag spec
-        // - the payload clip
-        // The payload clip takes simply the current length of SRTO_PAYLOADSIZE.
-        // So extra 4 bytes are needed, 2 for flags, 2 for length clip.
-
-        return 4;
-    }
-
-    virtual SRT_ARQLevel arqLevel() { return m_fallback_level; }
-};
-
-DefaultCorrector::DefaultCorrector(vector<Corrector::Packet>& provided, const std::string& confstr):
-    m_fallback_level(SRT_ARQ_NEVER),
-    rcv(provided)
-{
-    if (!ParseCorrectorConfig(confstr, cfg))
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-    // Configuration supported:
-    // - row only (number_rows == 1)
-    // - columns only, no row FEC/CTL (number_rows < -1)
-    // - columns and rows (both > 1)
-
-    // Disallowed configurations:
-    // - number_cols < 1
-    // - number_rows [-1, 0]
-
-    if (cfg.cols < 1 || (cfg.rows >= -1 && cfg.rows < 1))
-    {
-        LOGC(mglog.Error, log << "FEC: Wrong config: rows,cols: rows < -1 or rows > 0, cols > 1.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-
-    // It is allowed for rows and cols to have negative value,
-    // this way it only marks the fact that particular dimension
-    // does not form a FEC group (no FEC control packet sent).
-    m_number_cols = abs(cfg.cols);
-    m_number_rows = abs(cfg.rows);
-    m_fallback_level = cfg.level;
-
-    if (m_fallback_level != SRT_ARQ_ALWAYS && m_fallback_level != SRT_ARQ_NEVER)
-    {
-        LOGC(mglog.Error, log << "FEC: config error, level: only 'always' and 'never' currently supported");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
 
     // Required to store in the header when rebuilding
     rcv.id = socketID();
@@ -759,13 +406,13 @@ void DefaultCorrector::ClipControlPacket(Group& g, const CPacket& pkt)
 void DefaultCorrector::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 {
     uint16_t length_net = htons(pkt.length);
-    uint8_t kflg = MSGNO_ENCKEYSPEC::unwrap(pkt.hdr[CPacket::PH_MSGNO]);
+    uint8_t kflg = MSGNO_ENCKEYSPEC::unwrap(pkt.hdr[SRT_PH_MSGNO]);
 
     // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
     // because it will be written into the TIMESTAMP field in the
     // header, and header is inverted automatically when sending,
     // unlike the contents of the payload, where the length will be written.
-    uint32_t timestamp_hw = pkt.hdr[CPacket::PH_TIMESTAMP];
+    uint32_t timestamp_hw = pkt.hdr[SRT_PH_TIMESTAMP];
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.buffer, pkt.length);
 
@@ -799,7 +446,7 @@ void DefaultCorrector::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
 }
 
-bool DefaultCorrector::packCorrectionPacket(Corrector::Packet& rpkt, int32_t seq)
+bool DefaultCorrector::packCorrectionPacket(SrtPacket& rpkt, int32_t seq)
 {
     // If the FEC packet is not yet ready for extraction, do nothing and return false.
     // Check if seq is the last sequence of the group.
@@ -865,7 +512,7 @@ bool DefaultCorrector::packCorrectionPacket(Corrector::Packet& rpkt, int32_t seq
     return false;
 }
 
-void DefaultCorrector::PackControl(const Group& g, signed char index, Corrector::Packet& pkt, int32_t seq)
+void DefaultCorrector::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
@@ -1079,41 +726,6 @@ void DefaultCorrector::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
 }
 
 
-void Corrector::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
-{
-    if (provided.empty())
-        return;
-
-    for (vector<Packet>::iterator i = provided.begin(); i != provided.end(); ++i)
-    {
-        CUnit* u = uq->getNextAvailUnit();
-        if (!u)
-        {
-            LOGC(mglog.Error, log << "FEC: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
-            break;
-        }
-
-        // LOCK the unit as GOOD because otherwise the next
-        // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_iFlag = CUnit::GOOD;
-        // After returning from this function, all units will be
-        // set back to FREE so that the buffer can decide whether
-        // it wants them or not.
-
-        CPacket& packet = u->m_Packet;
-
-        memcpy(packet.getHeader(), i->hdr, CPacket::HDR_SIZE);
-        memcpy(packet.m_pcData, i->buffer, i->length);
-        packet.setLength(i->length);
-
-        HLOGC(mglog.Debug, log << "FEC: PROVIDING rebuilt packet %" << packet.getSeqNo());
-
-        incoming.push_back(u);
-    }
-
-    provided.clear();
-}
-
 bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
 {
     int32_t seq = rpkt.getSeqNo();
@@ -1163,7 +775,7 @@ bool DefaultCorrector::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         std::ostringstream os;
         for (size_t i = 0; i < rcv.rebuilt.size(); ++i)
         {
-            os << " " << rcv.rebuilt[i].hdr[CPacket::PH_SEQNO];
+            os << " " << rcv.rebuilt[i].hdr[SRT_PH_SEQNO];
         }
 
         LOGC(mglog.Debug, log << "FEC: ... cached rebuilt packets (" << rcv.rebuilt.size() << "):" << os.str());
@@ -1313,7 +925,7 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     Receive::PrivPacket& p = rcv.rebuilt.back();
 
-    p.hdr[CPacket::PH_SEQNO] = seqno;
+    p.hdr[SRT_PH_SEQNO] = seqno;
 
     // This is for live mode only, for now, so the message
     // number will be always 1, PB_SOLO, INORDER, and flags from clip.
@@ -1322,15 +934,15 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     // come out of sequence order, and if such a packet has
     // no rexmit flag set, it's treated as reordered by network,
     // which isn't true here.
-    p.hdr[CPacket::PH_MSGNO] = 1
+    p.hdr[SRT_PH_MSGNO] = 1
         | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
         | MSGNO_PACKET_INORDER::wrap(rcv.order_required)
         | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
         | MSGNO_REXMIT::wrap(true)
         ;
 
-    p.hdr[CPacket::PH_TIMESTAMP] = g.timestamp_clip;
-    p.hdr[CPacket::PH_ID] = rcv.id;
+    p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
+    p.hdr[SRT_PH_ID] = rcv.id;
 
     // Header ready, now we rebuild the contents
     // First, rebuild the length.
@@ -1345,9 +957,9 @@ void DefaultCorrector::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     copy(g.payload_clip.begin(), g.payload_clip.end(), p.buffer);
 
     HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno
-            << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[CPacket::PH_MSGNO])
-            << " flags=" << PacketMessageFlagStr(p.hdr[CPacket::PH_MSGNO])
-            << " TS=" << p.hdr[CPacket::PH_TIMESTAMP] << " ID=" << dec << p.hdr[CPacket::PH_ID]
+            << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])
+            << " flags=" << PacketMessageFlagStr(p.hdr[SRT_PH_MSGNO])
+            << " TS=" << p.hdr[SRT_PH_TIMESTAMP] << " ID=" << dec << p.hdr[SRT_PH_ID]
             << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));
 
@@ -2052,98 +1664,3 @@ int DefaultCorrector::ExtendColumns(int colgx)
     return colgx;
 }
 
-Corrector::NamePtr Corrector::builtin_correctors[] =
-{
-    {"default", Creator<DefaultCorrector>::Create },
-};
-
-bool Corrector::IsBuiltin(const string& s)
-{
-    size_t size = sizeof builtin_correctors/sizeof(builtin_correctors[0]);
-    for (size_t i = 0; i < size; ++i)
-        if (s == builtin_correctors[i].first)
-            return true;
-
-    return false;
-}
-
-Corrector::correctors_map_t Corrector::correctors;
-
-void Corrector::globalInit()
-{
-    // Add the builtin correctors to the global map.
-    // Users may add their correctors after that.
-    // This function is called from CUDTUnited::startup,
-    // which is guaranteed to run the initializing
-    // procedures only once per process.
-
-    for (size_t i = 0; i < sizeof builtin_correctors/sizeof (builtin_correctors[0]); ++i)
-        correctors[builtin_correctors[i].first] = builtin_correctors[i].second;
-
-    // Actually there's no problem with calling this function
-    // multiple times, at worst it will overwrite existing correctors
-    // with the same builtin.
-}
-
-bool Corrector::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
-{
-    CorrectorConfig cfg;
-    if (!ParseCorrectorConfig(confstr, cfg))
-        return false;
-
-    // Extract the "type" key from parameters, or use
-    // builtin if lacking.
-    string type = cfg.parameters["type"];
-
-    correctors_map_t::iterator selector;
-    if ( type == "")
-        selector = correctors.begin();
-    else
-    {
-        selector = correctors.find(type);
-        if (selector == correctors.end())
-            return false;
-    }
-
-    // Found a corrector, so call the creation function
-    corrector = (*selector->second)(provided, confstr);
-    if (!corrector)
-        return false;
-
-    sndctl = new Packet(0); // This only sets the 'length'.
-
-    unitq = uq;
-
-    corrector->m_socket_id = parent->socketID();
-    corrector->m_snd_isn = parent->sndSeqNo();
-    corrector->m_rcv_isn = parent->rcvSeqNo();
-    corrector->m_payload_size = parent->OPT_PayloadSize();
-
-    // The corrector should have pinned in all events
-    // that are of its interest. It's stated that
-    // it's ready after creation.
-    return true;
-}
-
-bool Corrector::correctConfig(const CorrectorConfig& conf)
-{
-    const string* pname = map_getp(conf.parameters, "type");
-
-    if (!pname)
-        return true; // default, parameters ignored
-
-    if (*pname == "adaptive")
-        return true;
-
-    correctors_map_t::iterator x = correctors.find(*pname);
-    if (x == correctors.end())
-        return false;
-
-    return true;
-}
-
-Corrector::~Corrector()
-{
-    delete sndctl;
-    delete corrector;
-}

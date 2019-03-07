@@ -2789,22 +2789,6 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     return true;
 }
 
-static int FECBetterValue(int my_value, int his_value)
-{
-    if (my_value < 0 && his_value < 0)
-    {
-        // Return the lesser size, still as negative number.
-        return max(my_value, his_value);
-    }
-
-    if (my_value <= 0)
-        return his_value;
-    if (his_value <= 0)
-        return my_value;
-
-    return min(my_value, his_value);
-}
-
 bool CUDT::checkApplyFECConfig(const std::string& fec)
 {
     CorrectorConfig cfg;
@@ -2819,47 +2803,27 @@ bool CUDT::checkApplyFECConfig(const std::string& fec)
     // Now parse your own string, if you have it.
     if (m_OPT_FECConfigString != "")
     {
+        // - for rendezvous, both must be exactly the same, or only one side specified.
+        if (m_bRendezvous)
+        {
+            if (m_OPT_FECConfigString != fec)
+                return false;
+        }
+
         CorrectorConfig mycfg;
         if (!ParseCorrectorConfig(m_OPT_FECConfigString, mycfg))
             return false;
 
-        // Confront the options.
-
-        // 1. If FEC has a different type, reject the connection.
-        // Special cases:
-        // - the "adaptive" name means that it submits to the type of the other side.
-        //   if both are "adaptive", use default.
-        // - otherwise the type must be unspecified or the same in both.
-
-        string his_type = SelectDefault(cfg.parameters["type"], "default");
-        string my_type = SelectDefault(mycfg.parameters["type"], "default");
-
-        string best_type = SelectNot("adaptive", his_type, my_type);
-        if (best_type == "")
-        {
+        // Check only if both have set a filter of the same type.
+        if (mycfg.type != cfg.type)
             return false;
-        }
 
-        // We need to construct the response later for the peer,
-        // so you have to only modify your type, and the receiver will
-        // modify it in itself upon reception of the response.
-        mycfg.parameters["type"] = best_type;
-
-        // 2. The FEC that requires more redundancy should take precedence.
-        // The exception is when the value is negative in which case the
-        // party that has them, blindly accepts the result
-        mycfg.rows = FECBetterValue(mycfg.rows, cfg.rows);
-        mycfg.cols = FECBetterValue(mycfg.cols, cfg.cols);
-
-        // Rewrite the string back
-        std::ostringstream out;
-        out << mycfg.rows << "," << mycfg.cols;
-        for (map<string, string>::iterator x = mycfg.parameters.begin(); x != mycfg.parameters.end(); ++x)
+        // If so, then:
+        // - for caller-listener configuration, accept the listener version.
+        if (m_SrtHsSide == HSD_INITIATOR)
         {
-            out << "," << x->first << ":" << x->second;
+            m_OPT_FECConfigString = fec;
         }
-
-        m_OPT_FECConfigString = out.str();
 
         HLOGC(mglog.Debug, log << "checkApplyFECConfig: Effective config: " << m_OPT_FECConfigString);
     }
