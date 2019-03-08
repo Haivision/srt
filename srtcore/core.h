@@ -152,6 +152,7 @@ class CUDT
     friend class CRcvQueue;
     friend class CSndUList;
     friend class CRcvUList;
+    friend class PacketFilter;
 
 private: // constructor and desctructor
 
@@ -723,6 +724,12 @@ private: // Trace
     int m_iRecvNAKTotal;                         // total number of received NAK packets
     int m_iSndDropTotal;
     int m_iRcvDropTotal;
+
+    int m_iSndFilterExtraTotal;
+    int m_iRcvFilterExtraTotal;
+    int m_iRcvFilterSupplyTotal;
+    int m_iRcvFilterLossTotal;
+
     uint64_t m_ullBytesSentTotal;                // total number of bytes sent,  including retransmissions
     uint64_t m_ullBytesRecvTotal;                // total number of received bytes
     uint64_t m_ullRcvBytesLossTotal;             // total number of loss bytes (estimate)
@@ -749,6 +756,12 @@ private: // Trace
     int m_iTraceReorderDistance;
     double m_fTraceBelatedTime;
     int64_t m_iTraceRcvBelated;
+
+    int m_iSndFilterExtra;
+    int m_iRcvFilterExtra;
+    int m_iRcvFilterSupply;
+    int m_iRcvFilterLoss;
+
     uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)

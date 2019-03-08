@@ -70,11 +70,40 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         HLOGC(mglog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         r_incoming.get().push_back(unit);
     }
+    else
+    {
+        // Packet not to be passthru, update stats
+        ++m_parent->m_iRcvFilterExtra;
+        ++m_parent->m_iRcvFilterExtraTotal;
+    }
+
+    // r_loss_seqs enters empty into this function and can be only filled here.
+    for (loss_seqs_t::iterator i = r_loss_seqs.get().begin();
+            i != r_loss_seqs.get().end(); ++i)
+    {
+        // Sequences here are low-high, if there happens any negative distance
+        // here, simply skip and report IPE.
+        int dist = CSeqNo::seqoff(i->first, i->second) + 1;
+        if (dist > 0)
+        {
+            m_parent->m_iRcvFilterLoss += dist;
+            m_parent->m_iRcvFilterLossTotal += dist;
+        }
+        else
+        {
+            LOGC(mglog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
+                    << i->first << " - %" << i->second);
+        }
+    }
 
     // Pack first recovered packets, if any.
     if (!m_provided.empty())
     {
         HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
+
+        m_parent->m_iRcvFilterSupply += m_provided.size();
+        m_parent->m_iRcvFilterSupplyTotal += m_provided.size();
+
         InsertRebuilt(*r_incoming, m_unitq);
     }
 
@@ -201,6 +230,8 @@ void PacketFilter::globalInit()
 
 bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
+    m_parent = parent;
+
     SrtFilterConfig cfg;
     if (!ParseCorrectorConfig(confstr, cfg))
         return false;

@@ -1216,6 +1216,11 @@ void CUDT::clearData()
    m_iRcvUndecryptTotal        = 0;
    m_iTraceRcvUndecrypt        = 0;
 
+   m_iSndFilterExtra = 0;
+   m_iRcvFilterExtra = 0;
+   m_iRcvFilterSupply = 0;
+   m_iRcvFilterLoss = 0;
+
    m_ullBytesSentTotal      = 0;
    m_ullBytesRecvTotal      = 0;
    m_ullBytesRetransTotal   = 0;
@@ -6066,6 +6071,12 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       m_llSndDuration = 0;
       m_iTraceRcvRetrans = 0;
       m_iTraceRcvBelated = 0;
+
+      m_iSndFilterExtra = 0;
+      m_iRcvFilterExtra = 0;
+      m_iRcvFilterSupply = 0;
+      m_iRcvFilterLoss = 0;
+
       m_LastSampleTime = currtime;
    }
 }
@@ -6100,7 +6111,12 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktReorderDistance = m_iTraceReorderDistance;
    perf->pktRcvAvgBelatedTime = m_fTraceBelatedTime;
    perf->pktRcvBelated = m_iTraceRcvBelated;
-   //>new
+
+   perf->pktSndFilterExtra = m_iSndFilterExtra;
+   perf->pktRcvFilterExtra = m_iRcvFilterExtra;
+   perf->pktRcvFilterSupply = m_iRcvFilterSupply;
+   perf->pktRcvFilterLoss = m_iRcvFilterLoss;
+
    /* perf byte counters include all headers (SRT+UDP+IP) */
    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
    perf->byteSent = m_ullTraceBytesSent + (m_llTraceSent * pktHdrSize);
@@ -6117,8 +6133,6 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktRcvUndecrypt = m_iTraceRcvUndecrypt;
    perf->byteRcvUndecrypt = m_ullTraceRcvBytesUndecrypt;
 
-   //<
-
    perf->pktSentTotal = m_llSentTotal;
    perf->pktRecvTotal = m_llRecvTotal;
    perf->pktSndLossTotal = m_iSndLossTotal;
@@ -6129,7 +6143,12 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktSentNAKTotal = m_iSentNAKTotal;
    perf->pktRecvNAKTotal = m_iRecvNAKTotal;
    perf->usSndDurationTotal = m_llSndDurationTotal;
-   //>new
+
+   perf->pktSndFilterExtraTotal = m_iSndFilterExtraTotal;
+   perf->pktRcvFilterExtraTotal = m_iRcvFilterExtraTotal;
+   perf->pktRcvFilterSupplyTotal = m_iRcvFilterSupplyTotal;
+   perf->pktRcvFilterLossTotal = m_iRcvFilterLossTotal;
+
    perf->byteSentTotal = m_ullBytesSentTotal + (m_llSentTotal * pktHdrSize);
    perf->byteRecvTotal = m_ullBytesRecvTotal + (m_llRecvTotal * pktHdrSize);
    perf->byteRetransTotal = m_ullBytesRetransTotal + (m_iRetransTotal * pktHdrSize);
@@ -7560,6 +7579,10 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
        payload = packet.getLength();
        reason = "FEC";
        fec_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
+
+       // Stats
+       ++m_iSndFilterExtra;
+       ++m_iSndFilterExtraTotal;
    }
    else
    {

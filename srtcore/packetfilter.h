@@ -88,7 +88,7 @@ public:
 
     // In the beginning it's initialized as first, builtin default.
     // Still, it will be created only when requested.
-    PacketFilter(): m_filter(), m_sndctlpkt(), m_unitq() {}
+    PacketFilter(): m_filter(), m_parent(), m_sndctlpkt(), m_unitq() {}
 
     // Copy constructor - important when listener-spawning
     // Things being done:
@@ -118,6 +118,8 @@ public:
 
 protected:
     void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
+
+    CUDT* m_parent;
 
     // Sender part
     SrtPacket* m_sndctlpkt;

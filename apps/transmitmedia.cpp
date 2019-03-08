@@ -128,7 +128,8 @@ static void PrintSrtStats(int sid, const PerfMonType& mon)
         output << "\"packets\":" << mon.pktSent << ",";
         output << "\"packetsLost\":" << mon.pktSndLoss << ",";
         output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
+        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
         output << "\"bytes\":" << mon.byteSent << ",";
         output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsSendRate;
@@ -139,6 +140,9 @@ static void PrintSrtStats(int sid, const PerfMonType& mon)
         output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
         output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
         output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
+        output << "\"packetsFilterSupplied\":" << mon.pktRcvFilterSupply << ",";
+        output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
         output << "\"bytes\":" << mon.byteRecv << ",";
         output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
         output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
@@ -153,6 +157,8 @@ static void PrintSrtStats(int sid, const PerfMonType& mon)
         output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
         output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
         output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        output << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra    << endl;
+        output << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss     << endl;
         output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
         output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
         output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
