@@ -2830,6 +2830,10 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
                 mycfg.parameters[x->first] = x->second;
             }
         }
+
+        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: param: LOCAL: "
+                << Printable(mycfg.parameters) << " FORGN: " << Printable(cfg.parameters));
+
         ostringstream myos;
         myos << mycfg.type;
         for (map<string,string>::iterator x = mycfg.parameters.begin();
