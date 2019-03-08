@@ -2822,8 +2822,23 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
         // - for caller-listener configuration, accept the listener version.
         if (m_SrtHsSide == HSD_INITIATOR)
         {
-            m_OPT_PktFilterConfigString = confstr;
+            // This is a caller, this should apply all parameters received
+            // from the listener, forcefully.
+            for (map<string,string>::iterator x = cfg.parameters.begin();
+                    x != cfg.parameters.end(); ++x)
+            {
+                mycfg.parameters[x->first] = x->second;
+            }
         }
+        ostringstream myos;
+        myos << mycfg.type;
+        for (map<string,string>::iterator x = mycfg.parameters.begin();
+                x != mycfg.parameters.end(); ++x)
+        {
+            myos << "," << x->first << ":" << x->second;
+        }
+
+        m_OPT_PktFilterConfigString = myos.str();
 
         HLOGC(mglog.Debug, log << "checkApplyFilterConfig: Effective config: " << m_OPT_PktFilterConfigString);
     }
