@@ -185,6 +185,7 @@ int main( int argc, char** argv )
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
         cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
         cerr << "\t-pf:<format> - printformat (json or default)\n";
+        cerr << "\t-statsreport:<filename> - stats report file name (cout for output to cout, or a filename)\n";
         cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
         cerr << "\t-q - quiet mode (default no)\n";
         cerr << "\t-v - verbose mode (default no)\n";
@@ -212,12 +213,16 @@ int main( int argc, char** argv )
     bool internal_log = Option("no", "loginternal") != "no";
     bool autoreconnect = Option("yes", "a", "auto") != "no";
     transmit_total_stats = Option("no", "f", "fullstats") != "no";
-    
+
     // Print format
-    string pf = Option("default", "pf", "printformat");
+    const string pf = Option("default", "pf", "printformat");
     if (pf == "json")
     {
-        printformat_json = true;
+        printformat = PRINT_FORMAT_JSON;
+    }
+    if (pf == "csv")
+    {
+        printformat = PRINT_FORMAT_CSV;
     }
     else if (pf != "default")
     {
@@ -267,6 +272,19 @@ int main( int argc, char** argv )
         }
     }
 
+    std::ofstream logfile_stats; // leave unused if not set
+    const string statsfile = Option("cout", "statsfile");
+    if (statsfile != "" && statsfile != "cout")
+    {
+        logfile_stats.open(statsfile.c_str());
+        if (!logfile_stats)
+        {
+            cerr << "ERROR: Can't open '" << statsfile << "' for writing stats. Fallback to cout.\n";
+            logfile_stats.close();
+        }
+    }
+
+    ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
 
 #ifdef _WIN32
 
@@ -584,7 +602,7 @@ int main( int argc, char** argv )
                     {
                         std::shared_ptr<bytevector> pdata(
                             new bytevector(chunk));
-                        if (!src->Read(chunk, *pdata) || (*pdata).empty())
+                        if (!src->Read(chunk, *pdata, out_stats) || (*pdata).empty())
                         {
                             break;
                         }
@@ -599,7 +617,7 @@ int main( int argc, char** argv )
                     std::shared_ptr<bytevector> pdata = dataqueue.front();
                     if (!tar.get() || !tar->IsOpen()) {
                         lostBytes += (*pdata).size();
-                    } else if (!tar->Write(*pdata)) {
+                    } else if (!tar->Write(pdata->data(), pdata->size(), out_stats)) {
                         lostBytes += (*pdata).size();
                     } else
                         wroteBytes += (*pdata).size();

@@ -42,13 +42,26 @@ written by
 #endif
 
 
-bool Upload(UriParser& srt, UriParser& file);
-bool Download(UriParser& srt, UriParser& file);
+bool Upload(UriParser& srt, UriParser& file, std::ostream &out_stats);
+bool Download(UriParser& srt, UriParser& file, std::ostream &out_stats);
 
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
 
 static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
+
+map<string, string> g_options;
+
+string Option(string deflt = "") { return deflt; }
+
+template <class... Args>
+string Option(string deflt, string key, Args... further_keys)
+{
+    map<string, string>::iterator i = g_options.find(key);
+    if (i == g_options.end())
+        return Option(deflt, further_keys...);
+    return i->second;
+}
 
 using namespace std;
 
@@ -61,70 +74,132 @@ void OnINT_ForceExit(int)
 
 int main( int argc, char** argv )
 {
-    set<string>
-        o_loglevel = { "ll", "loglevel" },
-        o_buffer = {"b", "buffer" },
-        o_verbose = {"v", "verbose" },
-        o_noflush = {"s", "skipflush" },
-        o_fullstats = {"f", "fullstats" };
+    vector<string> args;
+    copy(argv + 1, argv + argc, back_inserter(args));
 
-    // Options that expect no arguments (ARG_NONE) need not be mentioned.
-    vector<OptionScheme> optargs = {
-        { o_loglevel, OptionScheme::ARG_ONE },
-        { o_buffer, OptionScheme::ARG_ONE },
-        { o_noflush, OptionScheme::ARG_NONE },
-        { o_fullstats, OptionScheme::ARG_NONE }
-    };
-    options_t params = ProcessOptions(argv, argc, optargs);
+    // Check options
+    vector<string> params;
 
-    /*
-    cerr << "OPTIONS (DEBUG)\n";
-    for (auto o: params)
+    for (string a : args)
     {
-        cerr << "[" << o.first << "] ";
-        copy(o.second.begin(), o.second.end(), ostream_iterator<string>(cerr, " "));
-        cerr << endl;
+        if (a[0] == '-')
+        {
+            string key = a.substr(1);
+            size_t pos = key.find(':');
+            if (pos == string::npos)
+                pos = key.find(' ');
+            string value = pos == string::npos ? "" : key.substr(pos + 1);
+            key = key.substr(0, pos);
+            g_options[key] = value;
+            continue;
+        }
+
+        params.push_back(a);
     }
-    */
 
-    vector<string> args = params[""];
-    if ( args.size() < 2 )
+    if (params.size() != 2)
     {
-        cerr << "Usage: " << argv[0] << " <source> <target>\n";
+        cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
+        cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
+        cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
+        cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
+        cerr << "\t-buffer:<buffer> - set SRT buffer\n";
+        cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
+        cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
+        cerr << "\t-pf:<format> - printformat (json or default)\n";
+        cerr << "\t-statsreport:<filename> - stats report file name (cout for output to cout, or a filename)\n";
+        cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
+        cerr << "\t-q - quiet mode (default no)\n";
+        cerr << "\t-v - verbose mode (default no)\n";
         return 1;
     }
 
-    string loglevel = Option<OutString>(params, "error", o_loglevel);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
-
-   string verbo = Option<OutString>(params, "no", o_verbose);
-   if ( verbo == "" || !false_names.count(verbo) )
-       Verbose::on = true;
-
-    string bs = Option<OutString>(params, "", o_buffer);
-    if ( bs != "" )
+    int timeout = stoi(Option("0", "t", "to", "timeout"), 0, 0);
+    unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
+    if (chunk == 0)
     {
-        ::g_buffer_size = stoi(bs);
+        chunk = SRT_LIVE_DEF_PLSIZE;
+    }
+    else
+    {
+        transmit_chunk_size = chunk;
     }
 
-    string sf = Option<OutString>(params, "no", o_noflush);
+    bool quiet = Option("no", "q", "quiet") != "no";
+    Verbose::on = !quiet && Option("no", "v", "verbose") != "no";
+    string loglevel = Option("error", "loglevel");
+    string logfa = Option("general", "logfa");
+    string logfile = Option("", "logfile");
+    bool autoreconnect = Option("yes", "a", "auto") != "no";
+    transmit_total_stats = Option("no", "f", "fullstats") != "no";
+
+    const string sf = Option("no", "skipflush");
     if (sf == "" || !false_names.count(sf))
         ::g_skip_flushing = true;
 
-    string sfull = Option<OutString>(params, "no", o_fullstats);
-    if (sfull == "" || !false_names.count(sfull))
-        ::transmit_total_stats = true;
+    const string bs = Option("", "buffer");
+    if (bs != "")
+        ::g_buffer_size = stoi(bs);
 
-    string source = args[0];
-    string target = args[1];
+
+    // Print format
+    const string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        printformat = PRINT_FORMAT_JSON;
+    }
+    if (pf == "csv")
+    {
+        printformat = PRINT_FORMAT_CSV;
+    }
+    else if (pf != "default")
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
+
+    try
+    {
+        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
+        transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
+    }
+    catch (std::invalid_argument &)
+    {
+        cerr << "ERROR: Incorrect integer number specified for an option.\n";
+        return 1;
+    }
+
+
+    std::ofstream logfile_stream; // leave unused if not set
+
+    srt_setloglevel(SrtParseLogLevel(loglevel));
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+        srt_addlogfa(*i);
+
+
+    std::ofstream logfile_stats; // leave unused if not set
+    const string statsfile = Option("cout", "statsfile");
+    if (statsfile != "" && statsfile != "cout")
+    {
+        logfile_stats.open(statsfile.c_str());
+        if (!logfile_stats)
+        {
+            cerr << "ERROR: Can't open '" << statsfile << "' for writing stats. Fallback to cout.\n";
+            logfile_stats.close();
+        }
+    }
+
+    ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
+
+    string source = params[0];
+    string target = params[1];
 
     UriParser us(source), ut(target);
 
     Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
 
-    signal(SIGINT, OnINT_ForceExit);
+    signal(SIGINT,  OnINT_ForceExit);
     signal(SIGTERM, OnINT_ForceExit);
 
     try
@@ -136,7 +211,7 @@ int main( int argc, char** argv )
                 cerr << "SRT to FILE should be specified\n";
                 return 1;
             }
-            Download(us, ut);
+            Download(us, ut, out_stats);
         }
         else if (ut.scheme() == "srt")
         {
@@ -145,7 +220,7 @@ int main( int argc, char** argv )
                 cerr << "FILE to SRT should be specified\n";
                 return 1;
             }
-            Upload(ut, us);
+            Upload(ut, us, out_stats);
         }
         else
         {
@@ -213,7 +288,7 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
     *fname = filename;
 }
 
-bool DoUpload(UriParser& ut, string path, string filename)
+bool DoUpload(UriParser& ut, string path, string filename, std::ostream &out_stats)
 {
     bool result = false;
     unique_ptr<Target> tar;
@@ -334,7 +409,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
             size_t shift = 0;
             while (n > 0)
             {
-                int st = srt_send(s, buf.data() + shift, n);
+                int st = tar->Write(buf.data() + shift, n, out_stats);
                 Verb() << "Upload: " << n << " --> " << st
                     << (!shift ? string() : "+" + Sprint(shift));
                 if (st == SRT_ERROR)
@@ -402,7 +477,7 @@ exit:
     return result;
 }
 
-bool DoDownload(UriParser& us, string directory, string filename)
+bool DoDownload(UriParser& us, string directory, string filename, std::ostream &out_stats)
 {
     bool result = false;
     unique_ptr<Source> src;
@@ -536,7 +611,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
                 cerr << "Writing output to [" << directory << "]" << endl;
             }
 
-            n = srt_recv(s, buf.data(), ::g_buffer_size);
+            n = src->Read(::g_buffer_size, buf, out_stats);
             if (n == SRT_ERROR)
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
@@ -571,7 +646,7 @@ exit:
     return result;
 }
 
-bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
+bool Upload(UriParser& srt_target_uri, UriParser& fileuri, std::ostream &out_stats)
 {
     if ( fileuri.scheme() != "file" )
     {
@@ -591,10 +666,10 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
     // Add some extra parameters.
     srt_target_uri["transtype"] = "file";
 
-    return DoUpload(srt_target_uri, path, filename);
+    return DoUpload(srt_target_uri, path, filename, out_stats);
 }
 
-bool Download(UriParser& srt_source_uri, UriParser& fileuri)
+bool Download(UriParser& srt_source_uri, UriParser& fileuri, std::ostream &out_stats)
 {
     if (fileuri.scheme() != "file" )
     {
@@ -606,6 +681,6 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri)
     ExtractPath(path, Ref(directory), Ref(filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
-    return DoDownload(srt_source_uri, directory, filename);
+    return DoDownload(srt_source_uri, directory, filename, out_stats);
 }
 
