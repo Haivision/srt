@@ -2733,15 +2733,16 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 char target[MAX_SID_LENGTH+1];
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
-                string fec = target;
+                string fltcfg = target;
 
-                if (!checkApplyFilterConfig(fec))
+                HLOGC(mglog.Debug, log << "PEER'S FILTER CONFIG [" << fltcfg << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
+
+                if (!checkApplyFilterConfig(fltcfg))
                 {
-                    LOGC(mglog.Error, log << "PEER'S FEC CONFIG '" << fec << "' has been rejected");
+                    LOGC(mglog.Error, log << "PEER'S FILTER CONFIG [" << fltcfg << "] has been rejected");
                     return false;
                 }
 
-                HLOGC(mglog.Debug, log << "CONNECTOR'S FEC CONFIG [" << fec << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
             else if ( cmd == SRT_CMD_NONE )
             {
@@ -2828,6 +2829,16 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
                     x != cfg.parameters.end(); ++x)
             {
                 mycfg.parameters[x->first] = x->second;
+            }
+        }
+        else
+        {
+            // On a listener, only apply those that you haven't set
+            for (map<string,string>::iterator x = cfg.parameters.begin();
+                    x != cfg.parameters.end(); ++x)
+            {
+                if (!mycfg.parameters.count(x->first))
+                    mycfg.parameters[x->first] = x->second;
             }
         }
 
