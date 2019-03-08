@@ -31,10 +31,18 @@ enum SRT_ARQLevel
 };
 
 
-struct FilterConfig
+struct SrtFilterConfig
 {
     std::string type;
     std::map<std::string, std::string> parameters;
+};
+
+struct SrtFilterInitializer
+{
+    SRTSOCKET socket_id;
+    int32_t snd_isn;
+    int32_t rcv_isn;
+    size_t payload_size;
 };
 
 struct SrtPacket
@@ -54,22 +62,19 @@ struct SrtPacket
 };
 
 
-bool ParseCorrectorConfig(std::string s, FilterConfig& out);
+bool ParseCorrectorConfig(std::string s, SrtFilterConfig& out);
 
 
 class SrtPacketFilterBase
 {
-    SRTSOCKET m_socket_id;
-    int32_t m_snd_isn;
-    int32_t m_rcv_isn;
-    size_t m_payload_size;
+    SrtFilterInitializer initParams;
 
 protected:
 
-    SRTSOCKET socketID() { return m_socket_id; }
-    int32_t sndISN() { return m_snd_isn; }
-    int32_t rcvISN() { return m_rcv_isn; }
-    size_t payloadSize() { return m_payload_size; }
+    SRTSOCKET socketID() { return initParams.socket_id; }
+    int32_t sndISN() { return initParams.snd_isn; }
+    int32_t rcvISN() { return initParams.rcv_isn; }
+    size_t payloadSize() { return initParams.payload_size; }
 
     friend class PacketFilter;
 
@@ -81,7 +86,7 @@ protected:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    SrtPacketFilterBase()
+    SrtPacketFilterBase(const SrtFilterInitializer& i): initParams(i)
     {
     }
 

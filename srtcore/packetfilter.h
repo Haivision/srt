@@ -28,7 +28,7 @@ public:
 
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
-    typedef SrtPacketFilterBase* corrector_create_t(std::vector<SrtPacket>&, const std::string& config);
+    typedef SrtPacketFilterBase* filter_create_t(const SrtFilterInitializer& init, std::vector<SrtPacket>&, const std::string& config);
 
 private:
     // Temporarily changed to linear searching, until this is exposed
@@ -36,16 +36,16 @@ private:
     // Note that this is a pointer to function :)
 
     // The list of builtin names that are reserved.
-    static std::set<std::string> builtin_correctors;
-    typedef std::map<std::string, corrector_create_t*> correctors_map_t;
-    static correctors_map_t correctors;
+    static std::set<std::string> builtin_filters;
+    typedef std::map<std::string, filter_create_t*> filters_map_t;
+    static filters_map_t filters;
 
     // This is a corrector container.
-    SrtPacketFilterBase* corrector;
+    SrtPacketFilterBase* m_filter;
     void Check()
     {
 #if ENABLE_DEBUG
-        if (!corrector)
+        if (!m_filter)
             abort();
 #endif
         // Don't do any check for now.
@@ -58,8 +58,8 @@ public:
     template <class Target>
     struct Creator
     {
-        static SrtPacketFilterBase* Create(std::vector<SrtPacket>& provided, const std::string& confstr)
-        { return new Target(provided, confstr); }
+        static SrtPacketFilterBase* Create(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr)
+        { return new Target(init, provided, confstr); }
     };
 
     static bool IsBuiltin(const std::string&);
@@ -70,31 +70,31 @@ public:
         if (IsBuiltin(name))
             return false;
 
-        correctors[name] = Creator<NewCorrector>::Create;
+        filters[name] = Creator<NewCorrector>::Create;
         return true;
     }
 
     static bool exists(const std::string& type)
     {
-        return correctors.count(type);
+        return filters.count(type);
     }
 
     // Corrector is optional, so this check should be done always
     // manually.
-    bool installed() { return corrector; }
+    bool installed() { return m_filter; }
     operator bool() { return installed(); }
 
-    SrtPacketFilterBase* operator->() { Check(); return corrector; }
+    SrtPacketFilterBase* operator->() { Check(); return m_filter; }
 
     // In the beginning it's initialized as first, builtin default.
     // Still, it will be created only when requested.
-    PacketFilter(): corrector(), sndctl(), unitq() {}
+    PacketFilter(): m_filter(), m_sndctlpkt(), m_unitq() {}
 
     // Copy constructor - important when listener-spawning
     // Things being done:
     // 1. The corrector is individual, so don't copy it. Set NULL.
     // 2. This will be configued anyway basing on possibly a new rule set.
-    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): corrector(), unitq() {}
+    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_unitq() {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -102,7 +102,7 @@ public:
     // pin oneself in into CUDT for receiving event signals.
     bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
 
-    static bool correctConfig(const FilterConfig& c);
+    static bool correctConfig(const SrtFilterConfig& c);
 
     // Will delete the pinned in corrector object.
     // This must be defined in *.cpp file due to virtual
@@ -113,23 +113,23 @@ public:
     size_t extraSize();
     void feedSource(ref_t<CPacket> r_packet);
     SRT_ARQLevel arqLevel();
-    bool packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg);
+    bool packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg);
     void receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs);
 
 protected:
     void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
 
     // Sender part
-    SrtPacket* sndctl;
+    SrtPacket* m_sndctlpkt;
 
     // Receiver part
-    CUnitQueue* unitq;
-    std::vector<SrtPacket> provided;
+    CUnitQueue* m_unitq;
+    std::vector<SrtPacket> m_provided;
 };
 
 
-inline size_t PacketFilter::extraSize() { return corrector->extraSize(); }
-inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { return corrector->feedSource(*r_packet); }
-inline SRT_ARQLevel PacketFilter::arqLevel() { return corrector->arqLevel(); }
+inline size_t PacketFilter::extraSize() { return m_filter->extraSize(); }
+inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { return m_filter->feedSource(*r_packet); }
+inline SRT_ARQLevel PacketFilter::arqLevel() { return m_filter->arqLevel(); }
 
 #endif

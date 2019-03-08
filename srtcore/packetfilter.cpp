@@ -22,7 +22,7 @@
 
 using namespace std;
 
-bool ParseCorrectorConfig(std::string s, FilterConfig& out)
+bool ParseCorrectorConfig(std::string s, SrtFilterConfig& out)
 {
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
@@ -62,7 +62,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
 {
     const CPacket& rpkt = unit->m_Packet;
 
-    if (corrector->receive(rpkt, *r_loss_seqs))
+    if (m_filter->receive(rpkt, *r_loss_seqs))
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
@@ -72,10 +72,10 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
     }
 
     // Pack first recovered packets, if any.
-    if (!provided.empty())
+    if (!m_provided.empty())
     {
-        HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << provided.size() << "):");
-        InsertRebuilt(*r_incoming, unitq);
+        HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
+        InsertRebuilt(*r_incoming, m_unitq);
     }
 
     // Now that all units have been filled as they should be,
@@ -112,20 +112,20 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
 
 }
 
-bool PacketFilter::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
+bool PacketFilter::packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
 {
-    bool have = corrector->packControlPacket(*sndctl, seq);
+    bool have = m_filter->packControlPacket(*m_sndctlpkt, seq);
     if (!have)
         return false;
 
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
     uint32_t* hdr = r_packet.get().getHeader();
-    memcpy(hdr, sndctl->hdr, SRT_PH__SIZE * sizeof(*hdr));
+    memcpy(hdr, m_sndctlpkt->hdr, SRT_PH__SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
-    r_packet.get().m_pcData = sndctl->buffer;
-    r_packet.get().setLength(sndctl->length);
+    r_packet.get().m_pcData = m_sndctlpkt->buffer;
+    r_packet.get().setLength(m_sndctlpkt->length);
 
     // This sets only the Packet Boundary flags, while all other things:
     // - Order
@@ -146,10 +146,10 @@ bool PacketFilter::packCorrectionPacket(ref_t<CPacket> r_packet, int32_t seq, in
 
 void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
-    if (provided.empty())
+    if (m_provided.empty())
         return;
 
-    for (vector<SrtPacket>::iterator i = provided.begin(); i != provided.end(); ++i)
+    for (vector<SrtPacket>::iterator i = m_provided.begin(); i != m_provided.end(); ++i)
     {
         CUnit* u = uq->getNextAvailUnit();
         if (!u)
@@ -176,16 +176,16 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         incoming.push_back(u);
     }
 
-    provided.clear();
+    m_provided.clear();
 }
 
 bool PacketFilter::IsBuiltin(const string& s)
 {
-    return builtin_correctors.count(s);
+    return builtin_filters.count(s);
 }
 
-std::set<std::string> PacketFilter::builtin_correctors;
-PacketFilter::correctors_map_t PacketFilter::correctors;
+std::set<std::string> PacketFilter::builtin_filters;
+PacketFilter::filters_map_t PacketFilter::filters;
 
 void PacketFilter::globalInit()
 {
@@ -195,43 +195,37 @@ void PacketFilter::globalInit()
     // which is guaranteed to run the initializing
     // procedures only once per process.
 
-    correctors["fec"] = &Creator<FECFilterBuiltin>::Create;
-    builtin_correctors.insert("fec");
+    filters["fec"] = &Creator<FECFilterBuiltin>::Create;
+    builtin_filters.insert("fec");
 }
 
 bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
-    FilterConfig cfg;
+    SrtFilterConfig cfg;
     if (!ParseCorrectorConfig(confstr, cfg))
         return false;
 
     // Extract the "type" key from parameters, or use
     // builtin if lacking.
-    string type = cfg.parameters["type"];
-
-    correctors_map_t::iterator selector;
-    if ( type == "")
-        selector = correctors.begin();
-    else
-    {
-        selector = correctors.find(type);
-        if (selector == correctors.end())
-            return false;
-    }
-
-    // Found a corrector, so call the creation function
-    corrector = (*selector->second)(provided, confstr);
-    if (!corrector)
+    filters_map_t::iterator selector = filters.find(cfg.type);
+    if (selector == filters.end())
         return false;
 
-    sndctl = new SrtPacket(0); // This only sets the 'length'.
+    SrtFilterInitializer init;
+    init.socket_id = parent->socketID();
+    init.snd_isn = parent->sndSeqNo();
+    init.rcv_isn = parent->rcvSeqNo();
+    init.payload_size = parent->OPT_PayloadSize();
 
-    unitq = uq;
 
-    corrector->m_socket_id = parent->socketID();
-    corrector->m_snd_isn = parent->sndSeqNo();
-    corrector->m_rcv_isn = parent->rcvSeqNo();
-    corrector->m_payload_size = parent->OPT_PayloadSize();
+    // Found a corrector, so call the creation function
+    m_filter = (*selector->second)(init, m_provided, confstr);
+    if (!m_filter)
+        return false;
+
+    m_sndctlpkt = new SrtPacket(0); // This only sets the 'length'.
+
+    m_unitq = uq;
 
     // The corrector should have pinned in all events
     // that are of its interest. It's stated that
@@ -239,7 +233,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     return true;
 }
 
-bool PacketFilter::correctConfig(const FilterConfig& conf)
+bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
 {
     const string* pname = map_getp(conf.parameters, "type");
 
@@ -249,8 +243,8 @@ bool PacketFilter::correctConfig(const FilterConfig& conf)
     if (*pname == "adaptive")
         return true;
 
-    correctors_map_t::iterator x = correctors.find(*pname);
-    if (x == correctors.end())
+    filters_map_t::iterator x = filters.find(*pname);
+    if (x == filters.end())
         return false;
 
     return true;
@@ -258,7 +252,7 @@ bool PacketFilter::correctConfig(const FilterConfig& conf)
 
 PacketFilter::~PacketFilter()
 {
-    delete sndctl;
-    delete corrector;
+    delete m_sndctlpkt;
+    delete m_filter;
 }
 

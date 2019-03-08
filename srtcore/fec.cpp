@@ -24,7 +24,8 @@
 
 using namespace std;
 
-FECFilterBuiltin::FECFilterBuiltin(vector<SrtPacket>& provided, const std::string& confstr):
+FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr):
+    SrtPacketFilterBase(init),
     m_fallback_level(SRT_ARQ_ONREQ),
     rcv(provided)
 {

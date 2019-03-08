@@ -2791,7 +2791,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
 bool CUDT::checkApplyFilterConfig(const std::string& confstr)
 {
-    FilterConfig cfg;
+    SrtFilterConfig cfg;
     if (!ParseCorrectorConfig(confstr, cfg))
         return false;
 
@@ -2810,7 +2810,7 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
                 return false;
         }
 
-        FilterConfig mycfg;
+        SrtFilterConfig mycfg;
         if (!ParseCorrectorConfig(m_OPT_PktFilterConfigString, mycfg))
             return false;
 
@@ -2825,7 +2825,7 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
             m_OPT_PktFilterConfigString = confstr;
         }
 
-        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: EfFiltertive config: " << m_OPT_PktFilterConfigString);
+        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: Effective config: " << m_OPT_PktFilterConfigString);
     }
     else
     {
@@ -7522,7 +7522,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       }
       reason = "reXmit";
    }
-   else if (m_PacketFilter && m_PacketFilter.packCorrectionPacket(
+   else if (m_PacketFilter && m_PacketFilter.packControlPacket(
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {

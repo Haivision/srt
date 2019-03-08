@@ -10,7 +10,7 @@
 
 class FECFilterBuiltin: public SrtPacketFilterBase
 {
-    FilterConfig cfg;
+    SrtFilterConfig cfg;
     size_t m_number_cols;
     size_t m_number_rows;
 
@@ -191,7 +191,7 @@ private:
 
 public:
 
-    FECFilterBuiltin(std::vector<SrtPacket>& provided, const std::string& confstr);
+    FECFilterBuiltin(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr);
 
     // Sender side
 
