@@ -289,6 +289,17 @@ public:
     { return *m_data; }
 };
 
+// This is required for Printable function if you have a container of pairs,
+// but this function has a different definition for C++11 and C++03.
+namespace srt_pair_op
+{
+    template <class Value1, class Value2>
+    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    {
+        s << "{" << v.first << " " << v.second << "}";
+        return s;
+    }
+}
 
 #if HAVE_CXX11
 
@@ -335,6 +346,7 @@ using UniquePtr = std::unique_ptr<T>;
 template <class Container, class Value = typename Container::value_type, typename... Args> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
 {
+    using namespace srt_pair_op;
     std::ostringstream os;
     Print(os, args...);
     os << "[ ";
@@ -347,6 +359,7 @@ std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... a
 template <class Container> inline
 std::string Printable(const Container& in)
 {
+    using namespace srt_pair_op;
     using Value = typename Container::value_type;
     return Printable(in, Value());
 }
@@ -360,6 +373,13 @@ auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Ma
 
 template<typename Map, typename Key>
 auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
+{
+    auto it = m.find(key);
+    return it == m.end() ? nullptr : std::addressof(it->second);
+}
+
+template<typename Map, typename Key>
+auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 {
     auto it = m.find(key);
     return it == m.end() ? nullptr : std::addressof(it->second);
@@ -420,16 +440,6 @@ public:
 
     operator bool () { return 0!= get(); }
 };
-
-namespace srt_pair_op
-{
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
-    {
-        s << "{" << v.first << " " << v.second << "}";
-        return s;
-    }
-}
 
 // A primitive one-argument version of Printable
 template <class Container> inline

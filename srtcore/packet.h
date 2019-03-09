@@ -404,8 +404,9 @@ public:
 
    // Packet interface
    char* data() { return m_pcData; }
-   size_t size() { return getLength(); }
-   uint32_t header(SrtPktHeaderFields field) { return m_nHeader[field]; }
+   const char* data() const { return m_pcData; }
+   size_t size() const { return getLength(); }
+   uint32_t header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
    std::string MessageFlagStr()
 #if ENABLE_LOGGING

@@ -306,9 +306,9 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[" << vert_gx << "][" << vert_pos << "] "
                 << ( clip_column ? "" : "<NO-COLUMN-CLIP>")
-                << " size=" << packet.getLength()
+                << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
-                << " !" << BufferStamp(packet.m_pcData, packet.getLength()));
+                << " !" << BufferStamp(packet.data(), packet.size()));
 
         // 3. The group should be check for the necessity of being closed.
         // Note that FEC packet extraction doesn't change the state of the
@@ -335,9 +335,9 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
         // The above logging instruction in case of no columns
         HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "]"
-                << " size=" << packet.getLength()
+                << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
-                << " !" << BufferStamp(packet.m_pcData, packet.getLength()));
+                << " !" << BufferStamp(packet.data(), packet.size()));
         HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
     }
 
@@ -357,7 +357,7 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
 
-    uint16_t length_net = htons(pkt.getLength());
+    uint16_t length_net = htons(pkt.size());
     uint8_t kflg = uint8_t(pkt.getMsgCryptoFlags());
 
     // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
@@ -366,7 +366,7 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
     // unlike the contents of the payload, where the length will be written.
     uint32_t timestamp_hw = pkt.getMsgTimeStamp();
 
-    ClipData(g, length_net, kflg, timestamp_hw, pkt.m_pcData, pkt.getLength());
+    ClipData(g, length_net, kflg, timestamp_hw, pkt.data(), pkt.size());
 
     HLOGC(mglog.Debug, log << "FEC DATA PKT CLIP: " << hex
             << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
@@ -384,9 +384,9 @@ void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
 
-    const char* fec_header = pkt.m_pcData;
+    const char* fec_header = pkt.data();
     const char* payload = fec_header + 4;
-    size_t payload_clip_len = pkt.getLength() - 4;
+    size_t payload_clip_len = pkt.size() - 4;
 
     const uint8_t* flag_clip = (const uint8_t*)(fec_header + 1);
     const uint16_t* length_clip = (const uint16_t*)(fec_header + 2);
@@ -587,7 +587,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (rpkt.getMsgSeq() == 0)
     {
         // Interpret the first byte of the contents.
-        const char* payload = rpkt.m_pcData;
+        const char* payload = rpkt.data();
         isfec.colx = payload[0];
         if (isfec.colx == -1)
         {
