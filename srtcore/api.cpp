@@ -205,6 +205,8 @@ int CUDTUnited::startup()
          throw CUDTException(MJ_SETUP, MN_NONE,  WSAGetLastError());
    #endif
 
+   PacketFilter::globalInit();
+
    //init CTimer::EventLock
 
    if (m_bGCStatus)

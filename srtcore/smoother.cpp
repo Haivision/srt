@@ -313,7 +313,11 @@ public:
         // For FileSmoother, treat non-full-buffer situation as an end-of-message situation;
         // request ACK to be sent immediately.
         if (pkt.getLength() < m_parent->maxPayloadSize())
+        {
+            // This is not a regular fixed size packet...
+            // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
             return true;
+        }
 
         return false;
     }

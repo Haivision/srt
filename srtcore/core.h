@@ -69,6 +69,7 @@ modified by
 #include "queue.h"
 #include "handshake.h"
 #include "smoother.h"
+#include "packetfilter.h"
 #include "utilities.h"
 
 #include <haicrypt.h>
@@ -156,6 +157,7 @@ class CUDT
     friend class CRcvQueue;
     friend class CSndUList;
     friend class CRcvUList;
+    friend class PacketFilter;
 
 private: // constructor and desctructor
 
@@ -353,6 +355,7 @@ private:
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -581,6 +584,12 @@ private:
     std::vector<EventSlot> m_Slots[TEV__SIZE];
     Smoother m_Smoother;
 
+    // Packet filtering
+    PacketFilter m_PacketFilter;
+    std::string m_OPT_PktFilterConfigString;
+    SRT_ARQLevel m_PktFilterRexmitLevel;
+    std::string m_sPeerPktFilterConfigString;
+
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
@@ -699,6 +708,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
+    void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
     int packData(CPacket& packet, uint64_t& ts);
     int processData(CUnit* unit);
     void processClose();
@@ -719,6 +729,12 @@ private: // Trace
     int m_iRecvNAKTotal;                         // total number of received NAK packets
     int m_iSndDropTotal;
     int m_iRcvDropTotal;
+
+    int m_iSndFilterExtraTotal;
+    int m_iRcvFilterExtraTotal;
+    int m_iRcvFilterSupplyTotal;
+    int m_iRcvFilterLossTotal;
+
     uint64_t m_ullBytesSentTotal;                // total number of bytes sent,  including retransmissions
     uint64_t m_ullBytesRecvTotal;                // total number of received bytes
     uint64_t m_ullRcvBytesLossTotal;             // total number of loss bytes (estimate)
@@ -745,6 +761,12 @@ private: // Trace
     int m_iTraceReorderDistance;
     double m_fTraceBelatedTime;
     int64_t m_iTraceRcvBelated;
+
+    int m_iSndFilterExtra;
+    int m_iRcvFilterExtra;
+    int m_iRcvFilterSupply;
+    int m_iRcvFilterLoss;
+
     uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
     uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)
