@@ -178,7 +178,7 @@ int main( int argc, char** argv )
         cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
 #ifndef _WIN32
         cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
-        cerr << "\t-tm - timeout mode (0 - since app start - default; 1 - like 0, but cancel on connect; 2 - since connect - TBD)\n";
+        cerr << "\t-tm:<mode=0> - timeout mode (0 - since app start; 1 - like 0, but cancel on connect)\n";
 #endif
         cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
