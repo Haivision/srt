@@ -477,7 +477,7 @@ int main( int argc, char** argv )
                                 if (timeout_mode == 1 && timeout > 0)
                                 {
                                     if (!quiet)
-				        cerr << "TIMEOUT: cancel\n";
+                                        cerr << "TIMEOUT: cancel\n";
                                     alarm(0);
                                 }
 #endif
