@@ -23,6 +23,7 @@
 #include "packetfilter_builtin.h"
 
 using namespace std;
+using namespace srt_logging;
 
 FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr):
     SrtPacketFilterBase(init),

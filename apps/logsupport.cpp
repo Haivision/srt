@@ -44,9 +44,9 @@ map<string, int> srt_level_names
 
 
 
-logging::LogLevel::type SrtParseLogLevel(string level)
+srt_logging::LogLevel::type SrtParseLogLevel(string level)
 {
-    using namespace logging;
+    using namespace srt_logging;
 
     if ( level.empty() )
         return LogLevel::fatal;
@@ -74,9 +74,9 @@ logging::LogLevel::type SrtParseLogLevel(string level)
     return LogLevel::type(i->second);
 }
 
-set<logging::LogFA> SrtParseLogFA(string fa)
+set<srt_logging::LogFA> SrtParseLogFA(string fa)
 {
-    using namespace logging;
+    using namespace srt_logging;
 
     set<LogFA> fas;
 

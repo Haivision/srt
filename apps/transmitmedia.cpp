@@ -288,7 +288,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         Error(UDT::getlasterror(), "srt_bind");
     }
 
-    Verb() << " listen...\n";
+    Verb() << " listen...";
 
     stat = srt_listen(m_bindsock, backlog);
     if ( stat == SRT_ERROR )
@@ -332,7 +332,7 @@ bool SrtCommon::AcceptNewClient()
     srt_close(m_bindsock);
     m_bindsock = SRT_INVALID_SOCK;
 
-    Verb() << " connected.\n";
+    Verb() << " connected.";
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
@@ -349,7 +349,7 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
     InitParameters(host, par);
 
     Verb() << "Opening SRT " << (dir_output ? "target" : "source") << " " << m_mode
-        << " on " << host << ":" << port << "\n";
+        << " on " << host << ":" << port;
 
     if ( m_mode == "caller" )
         OpenClient(host, port);
@@ -486,7 +486,7 @@ void SrtCommon::ConnectClient(string host, int port)
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
 
-    Verb() << "Connecting to " << host << ":" << port << "\n";
+    Verb() << "Connecting to " << host << ":" << port;
 
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
@@ -504,7 +504,7 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
-    Verb() << "\nERROR #" << udtResult << ": " << message << "\n";
+    Verb() << "\nERROR #" << udtResult << ": " << message;
 
     udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
@@ -526,7 +526,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     sockaddr_in localsa = CreateAddrInet(adapter, port);
     sockaddr* plsa = (sockaddr*)&localsa;
 
-    Verb() << "Binding a server on " << adapter << ":" << port << "\n";
+    Verb() << "Binding a server on " << adapter << ":" << port;
 
     stat = srt_bind(m_sock, plsa, sizeof localsa);
     if ( stat == SRT_ERROR )
@@ -537,7 +537,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
-    Verb() << "Connecting to " << host << ":" << port << "\n";
+    Verb() << "Connecting to " << host << ":" << port;
 
     stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
@@ -553,7 +553,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 
 void SrtCommon::Close()
 {
-    Verb() << "SrtCommon: DESTROYING CONNECTION, closing sockets (rt%" << m_sock << " ls%" << m_bindsock << ")...\n";
+    Verb() << "SrtCommon: DESTROYING CONNECTION, closing sockets (rt%" << m_sock << " ls%" << m_bindsock << ")...";
 
     if ( m_sock != SRT_INVALID_SOCK )
     {
@@ -567,7 +567,7 @@ void SrtCommon::Close()
         m_bindsock = SRT_INVALID_SOCK ;
     }
 
-    Verb() << "SrtCommon: ... done.\n";
+    Verb() << "SrtCommon: ... done.";
 }
 
 SrtCommon::~SrtCommon()
@@ -618,17 +618,23 @@ bool SrtSource::Read(size_t chunk, bytevector& data)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, clear_stats);
-    clear_stats = false;
-    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
+    const bool need_bw_report    = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
+
+    if (need_bw_report || need_stats_report)
     {
-        PrintSrtBandwidth(perf.mbpsBandwidth);
-    }
-    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
-    {
-        PrintSrtStats(m_sock, perf);
-        clear_stats = !transmit_total_stats;
+        CBytePerfMon perf;
+        srt_bstats(m_sock, &perf, clear_stats);
+        clear_stats = false;
+        if (need_bw_report)
+        {
+            PrintSrtBandwidth(perf.mbpsBandwidth);
+        }
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+            clear_stats = !transmit_total_stats;
+        }
     }
 
     ++counter;
@@ -664,17 +670,23 @@ bool SrtTarget::Write(const bytevector& data)
         return false;
     }
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, clear_stats);
-    clear_stats = false;
-    if ( transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1 )
+    const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
+
+    if (need_bw_report || need_stats_report)
     {
-        PrintSrtBandwidth(perf.mbpsBandwidth);
-    }
-    if ( transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1)
-    {
-        PrintSrtStats(m_sock, perf);
-        clear_stats = !transmit_total_stats;
+        CBytePerfMon perf;
+        srt_bstats(m_sock, &perf, clear_stats);
+        clear_stats = false;
+        if (need_bw_report)
+        {
+            PrintSrtBandwidth(perf.mbpsBandwidth);
+        }
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+            clear_stats = !transmit_total_stats;
+        }
     }
 
     ++counter;
@@ -983,10 +995,10 @@ protected:
             int ttl = stoi(attr.at("ttl"));
             int res = setsockopt(m_sock, IPPROTO_IP, IP_TTL, (const char*)&ttl, sizeof ttl);
             if (res == -1)
-                Verb() << "WARNING: failed to set 'ttl' (IP_TTL) to " << ttl << "\n";
+                Verb() << "WARNING: failed to set 'ttl' (IP_TTL) to " << ttl;
             res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof ttl);
             if (res == -1)
-                Verb() << "WARNING: failed to set 'ttl' (IP_MULTICAST_TTL) to " << ttl << "\n";
+                Verb() << "WARNING: failed to set 'ttl' (IP_MULTICAST_TTL) to " << ttl;
 
             attr.erase("ttl");
         }
@@ -1001,7 +1013,7 @@ protected:
                 string value = m_options.at(o.name);
                 bool ok = o.apply<SocketOption::SYSTEM>(m_sock, value);
                 if ( !ok )
-                    Verb() << "WARNING: failed to set '" << o.name << "' to " << value << "\n";
+                    Verb() << "WARNING: failed to set '" << o.name << "' to " << value;
             }
         }
     }

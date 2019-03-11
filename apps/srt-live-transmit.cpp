@@ -235,8 +235,8 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
     char NAME[] = "SRTLIB";

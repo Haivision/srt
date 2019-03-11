@@ -21,6 +21,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt_logging;
 
 bool ParseCorrectorConfig(std::string s, SrtFilterConfig& out)
 {

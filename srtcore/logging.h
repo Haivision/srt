@@ -54,7 +54,7 @@ written by
 // LOGC uses an iostream-like syntax, using the special 'log' symbol.
 // This symbol isn't visible outside the log macro parameters.
 // Usage: LOGC(mglog.Debug, log << param1 << param2 << param3);
-#define LOGC(logdes, args) if (logdes.CheckEnabled()) { logging::LogDispatcher::Proxy log(logdes); log.setloc(__FILE__, __LINE__, __FUNCTION__); args; }
+#define LOGC(logdes, args) if (logdes.CheckEnabled()) { srt_logging::LogDispatcher::Proxy log(logdes); log.setloc(__FILE__, __LINE__, __FUNCTION__); args; }
 
 // LOGF uses printf-like style formatting.
 // Usage: LOGF(mglog.Debug, "%s: %d", param1.c_str(), int(param2));
@@ -90,7 +90,7 @@ written by
 
 #endif
 
-namespace logging
+namespace srt_logging
 {
 
 struct LogConfig
@@ -133,7 +133,8 @@ struct SRT_API LogDispatcher
 private:
     int fa;
     LogLevel::type level;
-    std::string prefix;
+    static const size_t MAX_PREFIX_SIZE = 32;
+    char prefix[MAX_PREFIX_SIZE+1];
     LogConfig* src_config;
     pthread_mutex_t mutex;
 
@@ -141,13 +142,27 @@ private:
 
 public:
 
-    LogDispatcher(int functional_area, LogLevel::type log_level, const std::string& pfx, LogConfig& config):
+    LogDispatcher(int functional_area, LogLevel::type log_level, const char* your_pfx,
+            const char* logger_pfx /*[[nullable]]*/, LogConfig& config):
         fa(functional_area),
         level(log_level),
-        prefix(pfx),
-        //enabled(false),
         src_config(&config)
     {
+        // XXX stpcpy desired, but not enough portable
+        // Composing the exact prefix is not critical, so simply
+        // cut the prefix, if the length is exceeded
+
+        // See Logger::Logger; we know this has normally 2 characters,
+        // except !!FATAL!!, which has 9. Still less than 32.
+        strcpy(prefix, your_pfx);
+
+        // If the size of the FA name together with severity exceeds the size,
+        // just skip the former.
+        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
+        {
+            strcat(prefix, ":");
+            strcat(prefix, logger_pfx);
+        }
         pthread_mutex_init(&mutex, 0);
     }
 
@@ -346,7 +361,6 @@ struct LogDispatcher::Proxy
 
 class Logger
 {
-    std::string m_prefix;
     int m_fa;
     LogConfig& m_config;
 
@@ -358,15 +372,14 @@ public:
     LogDispatcher Error;
     LogDispatcher Fatal;
 
-    Logger(int functional_area, LogConfig& config, std::string globprefix = std::string()):
-        m_prefix( globprefix == "" ? globprefix : ": " + globprefix),
+    Logger(int functional_area, LogConfig& config, const char* logger_pfx = NULL):
         m_fa(functional_area),
         m_config(config),
-        Debug ( m_fa, LogLevel::debug, " D" + m_prefix, m_config ),
-        Note  ( m_fa, LogLevel::note,  ".N" + m_prefix, m_config ),
-        Warn  ( m_fa, LogLevel::warning, "!W" + m_prefix, m_config ),
-        Error ( m_fa, LogLevel::error, "*E" + m_prefix, m_config ),
-        Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!" + m_prefix, m_config )
+        Debug ( m_fa, LogLevel::debug, " D", logger_pfx, m_config ),
+        Note  ( m_fa, LogLevel::note,  ".N", logger_pfx, m_config ),
+        Warn  ( m_fa, LogLevel::warning, "!W", logger_pfx, m_config ),
+        Error ( m_fa, LogLevel::error, "*E", logger_pfx, m_config ),
+        Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!", logger_pfx, m_config )
     {
     }
 

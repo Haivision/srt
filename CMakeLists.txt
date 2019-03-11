@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.0")
+#project(SRT VERSION "1.3.2")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -22,10 +22,12 @@ include(FindThreads)
 include(CheckFunctionExists)
 
 # Platform shortcuts
+string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -77,6 +79,7 @@ endif()
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -93,7 +96,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
-set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
+set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -310,6 +313,9 @@ if(WIN32)
 elseif(DARWIN)
 	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
 	add_definitions(-DOSX=1)
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -694,7 +700,18 @@ macro(srt_add_application name sources)
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
-if ( ENABLE_CXX11 )
+## FIXME: transmitmedia.cpp does not build on OpenBSD
+##    Issue: https://github.com/Haivision/srt/issues/590
+if (BSD
+   AND ${SYSNAME_LC} MATCHES "^openbsd$")
+   set(ENABLE_APPS OFF)
+endif()
+## The applications currently require c++11.
+if (NOT ENABLE_CXX11)
+   set(ENABLE_APPS OFF)
+endif()
+
+if (ENABLE_APPS)
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
@@ -712,25 +729,6 @@ if ( ENABLE_CXX11 )
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
-
-	# For backward compatibility with the old name
-	if (SYMLINKABLE)
-		set (REPLI_COMMAND create_symlink )
-		# It appears impossible to get the filename component from the generator
-		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
-		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
-	else()
-		set (REPLI_COMMAND copy)
-		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
-	endif()
-
-	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
-	add_custom_command(
-		TARGET srt-live-transmit
-		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
-	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
