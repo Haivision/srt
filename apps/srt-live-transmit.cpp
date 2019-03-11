@@ -176,8 +176,10 @@ int main( int argc, char** argv )
     if ( params.size() != 2 )
     {
         cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
+#ifndef _WIN32
         cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
-        cerr << "\t-taoc - abort timeout on connect (default no)\n";
+        cerr << "\t-tm - timeout mode (0 - since app start - default; 1 - like 0, but cancel on connect; 2 - since connect - TBD)\n";
+#endif
         cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
@@ -191,7 +193,7 @@ int main( int argc, char** argv )
     }
 
     int timeout = stoi(Option("0", "t", "to", "timeout"), 0, 0);
-    bool timeout_abrt_conn = Option("no", "taoc", "timeout-abort-on-connect") != "no";
+    int timeout_mode = stoi(Option("0", "tm", "timeout-mode"), 0, 0);
     unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
     if ( chunk == 0 )
     {
@@ -472,7 +474,7 @@ int main( int argc, char** argv )
                                         << endl;
                                 }
 #ifndef _WIN32
-                                if (timeout_abrt_conn && timeout > 0)
+                                if (timeout_mode == 1 && timeout > 0)
                                 {
                                     if (!quiet)
 				        cerr << "TIMEOUT: cancel\n";
