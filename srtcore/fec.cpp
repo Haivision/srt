@@ -811,56 +811,98 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     // collected at least 1 packet in the next group. Do not dismiss
     // any groups here otherwise - all will be decided during column
     // processing.
-    if (m_number_rows == 1)
-    {
-        // The conditional row dismissal in row-only configuration.
-        // In this configuration, cells and rows go hand-in-hand,
-        // so you dismiss a row and then the row-length of cells to
-        // make them both base sequence number in sync.
-        //
-        // The condition that should trigger a row dismissal is the following:
-        // - there is more than one row right now, and EITHER:
-        //   - there are more than two rows
-        //   - the second row collected at least half of the size
 
-        if (rcv.rowq.size() > 2
-                || (rcv.rowq.size() > 1 && CSeqNo::seqoff(rcv.rowq[1].base, seq) > int(m_number_cols/3)))
-		{
-			// This procedure is a row-only row dismissal.
-			// When columns are used, rows will be dismissed only together
-			// with the last column supporting it.
+	bool want_collect_irrecover = false;
+	bool want_remove_cells = false;
 
-			CollectIrrecoverRow(rcv.rowq[0], irrecover);
-
-			// Collect irrecoverable with EARLY setting, but still do not
-			// remove the row until the crossing it column is alive.
-			HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
-			// Take the oldest row group, and:
-			// - delete it
-			// - delete from rcv.cells the size of one dow (m_number_cols)
-
-			rcv.rowq.pop_front();
-
-			// When columns are not used, also dismiss that number of bits.
-			// Use safe version
-			size_t ersize = min(m_number_cols, rcv.cells.size());
-			rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
-			rcv.cell_base = CSeqNo::incseq(rcv.cell_base, m_number_cols);
-		}
-    }
-	else if (m_fallback_level == SRT_ARQ_ONREQ)
+	if (rcv.rowq.size() > 1)
 	{
-		// In this case try to collect irrecoverable from the
-		// rows that are in the past towards the current one.
-        if (rcv.rowq.size() > 2
-                || (rcv.rowq.size() > 1 &&  CSeqNo::seqoff(rcv.rowq[1].base, seq) > int(m_number_cols/3)))
+		if (m_number_rows == 1)
 		{
-			// This procedure is a row-only row dismissal.
-			// When columns are used, rows will be dismissed only together
-			// with the last column supporting it.
-
-			CollectIrrecoverRow(rcv.rowq[0], irrecover);
+			want_remove_cells = true;
+			want_collect_irrecover = true;
 		}
+		else if (m_fallback_level == SRT_ARQ_ONREQ)
+		{
+			want_collect_irrecover = true;
+		}
+	}
+
+	if (want_collect_irrecover)
+	{
+		int current = rcv.rowq.size() - 2;
+		// We know we have at least 2 rows.
+		// This value is then 0 or more.
+		int past = current - 1;
+
+		// To trigger irrecoverable collection, the current sequence
+		// must be further than 1/3 of the row size to start from
+		// the previous row. Otherwise, start with the past-previous
+		// one, as long as it still exists.
+
+		bool early SRT_ATR_UNUSED = false;
+		if (past > 0)
+		{
+			// If you already have at least 3 rows, sweep starting from
+			// the before-previous one (this will become 0 when the number
+			// of rows is exactly 3).
+			--past;
+		}
+		else
+		{
+			// If you have 2 rows, then in the current row (1) there must
+			// be the sequence passing already the 1/3 of the size. Otherwise
+			// decrease past to make it -1 and not pass the next test.
+			if (CSeqNo::seqoff(rcv.rowq[1].base, seq) <= int(m_number_cols/3))
+			{
+				--past;
+			}
+			else
+			{
+				early = true;
+			}
+		}
+
+		if (past >= 0)
+		{
+			// Collect irrecoverable since the 'past' index up to 0.
+			// If want_remove_cells, also remove these rows and corresponding cells.
+
+			int nrowremove = 1 + past;
+			HLOGC(mglog.Debug, log << "Collecting irrecoverable packets from " << nrowremove << " ROWS per offset "
+					<< CSeqNo::seqoff(rcv.rowq[1].base, seq) << " vs. " << m_number_cols << "/3");
+
+			for (int i = 0; i <= past; ++i)
+			{
+				CollectIrrecoverRow(rcv.rowq[i], irrecover);
+			}
+
+			if (want_remove_cells)
+			{
+				size_t npktremove = sizeRow() * nrowremove;
+				size_t ersize = min(npktremove, rcv.cells.size());
+
+				HLOGC(mglog.Debug, log << "FEC/H: Dismissing rows n=" << nrowremove
+						<< ", starting at %" << rcv.rowq[0].base
+						<< " AND " << npktremove << " CELLS, base switch %"
+						<< rcv.cell_base << " -> %" << rcv.rowq[past].base);
+
+				rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + 1 + past);
+				rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
+
+				// We state that we have removed as many cells as for the removed
+				// rows. In case when the number of cells proved to be less than that,
+				// it will simply remove all cells. So now set the cell base to be
+				// in sync with the row base.
+				rcv.cell_base = rcv.rowq[0].base;
+			}
+		}
+		else
+		{
+			HLOGC(mglog.Debug, log << "FEC: NOT collecting irrecover from rows: distance="
+					<< CSeqNo::seqoff(rcv.rowq[0].base, seq));
+		}
+
 	}
 
     return true;
