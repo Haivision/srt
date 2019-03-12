@@ -33,7 +33,7 @@ int main( int argc, char** argv )
     srt_startup();
 
     printf("srt socket\n");
-    ss = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    ss = srt_create_socket();
     if ( ss == SRT_ERROR )
     {
         fprintf(stderr, "srt_socket: %s\n", srt_getlasterror_str());
@@ -48,7 +48,6 @@ int main( int argc, char** argv )
     }
 
     printf("srt setsockflag\n");
-    srt_setsockflag(ss, SRTO_TWOWAYDATA, &yes, sizeof yes);
     srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes);
 
     printf("srt bind\n");
