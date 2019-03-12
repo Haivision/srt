@@ -388,7 +388,7 @@ public:
    char*& m_pcData;                     // alias: data/control information
 
    //static const int m_iPktHdrSize;	// packet header size
-   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = PH_SIZE * sizeof(uint32_t)
+   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH__SIZE * sizeof(uint32_t)
 
    // Used in many computations
    // Actually this can be also calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).

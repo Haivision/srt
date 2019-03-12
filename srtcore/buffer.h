@@ -381,7 +381,8 @@ public:
    int debugGetSize() const;
    bool empty() const;
 
-   // Required by FEC facility to use as a storage for rebuilt packets
+   // Required by PacketFilter facility to use as a storage
+   // for provided packets
    CUnitQueue* getUnitQueue()
    {
        return m_pUnitQueue;

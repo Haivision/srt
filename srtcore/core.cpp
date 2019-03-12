@@ -1720,7 +1720,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     bool have_kmreq = false;
     bool have_sid = false;
     bool have_smoother = false;
-    bool have_fec = false;
+    bool have_filter = false;
 
     // Install the SRT extensions
     hs.m_iType |= CHandShake::HS_EXT_HSREQ;
@@ -1740,20 +1740,20 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // If this is a response, we have also information
     // on the peer. If Peer is NOT FEC capable, don't
     // put FEC config, even if agent is capable.
-    bool peer_fec_capable = true;
+    bool peer_filter_capable = true;
     if (srths_cmd == SRT_CMD_HSRSP)
     {
         if (m_sPeerPktFilterConfigString != "")
         {
-            peer_fec_capable = true;
+            peer_filter_capable = true;
         }
         else if (m_lPeerSrtVersion >= SrtVersion(1, 3, 3))
         {
-            peer_fec_capable = true;
+            peer_filter_capable = true;
         }
         else
         {
-            peer_fec_capable = false;
+            peer_filter_capable = false;
         }
     }
 
@@ -1765,9 +1765,9 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     // the FEC config string from the peer and therefore
     // possibly confronted with the contents of m_OPT_FECConfigString,
     // and if it decided to go with FEC, it will be nonempty.
-    if (peer_fec_capable && m_OPT_PktFilterConfigString != "")
+    if (peer_filter_capable && m_OPT_PktFilterConfigString != "")
     {
-        have_fec = true;
+        have_filter = true;
         hs.m_iType |= CHandShake::HS_EXT_CONFIG;
         logext += ",FEC";
     }
@@ -1883,7 +1883,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             << ": offset=" << offset << " SMOOTHER size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
-    if (have_fec)
+    if (have_filter)
     {
         offset += ra_size;
         pcmdspec = p+offset;
@@ -2674,7 +2674,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     }
 
     bool have_smoother = false;
-    bool have_fec = false;
+    bool have_filter = false;
     string agsm = m_Smoother.selected_name();
     if (agsm == "")
     {
@@ -2742,13 +2742,13 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
             }
             else if ( cmd == SRT_CMD_FILTER )
             {
-                if (have_fec)
+                if (have_filter)
                 {
                     LOGC(mglog.Error, log << "FILTER BLOCK REPEATED!");
                     return false;
                 }
                 // Declare that fec has been received
-                have_fec = true;
+                have_filter = true;
 
                 // XXX This is the maximum string, but FEC config
                 // shall be normally limited somehow, especially if used
@@ -7539,7 +7539,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    string reason;
 
    bool new_packet_packed = false;
-   bool fec_ctl_pkt = false;
+   bool filter_ctl_pkt = false;
 
    // Loss retransmission always has higher priority.
    packet.m_iSeqNo = m_pSndLossList->getLostSeq();
@@ -7604,7 +7604,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
        HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet ready - packing instead of data.");
        payload = packet.getLength();
        reason = "FEC";
-       fec_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
+       filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
        // Stats
        ++m_iSndFilterExtra;
@@ -7612,7 +7612,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    }
    else
    {
-      // If no loss, and no FEC control packet, pack a new packet.
+      // If no loss, and no packetfilter control packet, pack a new packet.
 
       // check congestion/flow window limit
       int cwnd = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
@@ -7666,7 +7666,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    // In case when this is a FEC/CTL packet, the m_iTimeStamp field already
    // contains the exactly needed value, and it's a timestamp clip, not a real
    // timestamp.
-   if (!fec_ctl_pkt)
+   if (!filter_ctl_pkt)
    {
        if (m_bPeerTsbPd)
        {

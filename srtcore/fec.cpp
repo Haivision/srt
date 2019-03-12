@@ -19,8 +19,7 @@
 #include "packet.h"
 #include "logging.h"
 
-// Defines DefaultCorrector
-#include "packetfilter_builtin.h"
+#include "fec.h"
 
 using namespace std;
 using namespace srt_logging;

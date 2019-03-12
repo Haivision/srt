@@ -590,7 +590,7 @@ public:
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
-   /// That is, it returns a negative value of seq1 < seq2,
+   /// That is, it returns a negative value if seq1 < seq2,
    /// positive if seq1 > seq2, and zero if they are equal.
    /// The only tolerable use of this function is only when you
    /// compare two values and it works faster than seqoff, however
@@ -606,7 +606,7 @@ public:
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test
-   /// if this distance is larger. Prior to calling this function the
+   /// if this distance is larger). Prior to calling this function the
    /// caller must be certain that @a seq2 is a sequence coming from a
    /// later time than @a seq1, and still, of course, this distance didn't
    /// exceed m_iMaxSeqNo.

@@ -219,11 +219,9 @@ PacketFilter::filters_map_t PacketFilter::filters;
 
 void PacketFilter::globalInit()
 {
-    // Add the builtin correctors to the global map.
-    // Users may add their correctors after that.
-    // This function is called from CUDTUnited::startup,
-    // which is guaranteed to run the initializing
-    // procedures only once per process.
+	// Add here builtin packet filters and mark them
+	// as builtin. This will disallow users to register
+	// external filters with the same name.
 
     filters["fec"] = &Creator<FECFilterBuiltin>::Create;
     builtin_filters.insert("fec");
