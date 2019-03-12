@@ -112,7 +112,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     // Setup the bit matrix, initialize everything with false.
 
     // Vertical size (y)
-    rcv.cells.resize(sizeCol() * sizeRow());
+    rcv.cells.resize(sizeCol() * sizeRow(), false);
 
     // These sequence numbers are both the value of ISN-1 at the moment
     // when the handshake is done. The sender ISN is generated here, the
@@ -927,17 +927,31 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = cix;
+#if ENABLE_HEAVY_LOGGING
+			// For heavy logging case, show all cells in the range
+			LOGC(mglog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+					<< " (+" << cix << "): MISSING");
+
+#else
 
             // Find just one. No more that just one shall be found
             // because it was checked earlier that we have collected
             // all but just one packet.
             break;
+#endif
         }
+#if ENABLE_HEAVY_LOGGING
+		else
+		{
+			LOGC(mglog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+					<< " (+" << cix << "): exists");
+		}
+#endif
     }
 
     if (offset == -1)
     {
-        LOGC(mglog.Fatal, log << "FEC: IPE: rebuilding attempt, but no lost packet found");
+        LOGC(mglog.Fatal, log << "FEC/H: IPE: rebuilding attempt, but no lost packet found");
         return -1; // sanity, shouldn't happen
     }
 
@@ -966,17 +980,31 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = cix;
+#if ENABLE_HEAVY_LOGGING
+			// For heavy logging case, show all cells in the range
+			LOGC(mglog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+					<< " (+" << cix << "): MISSING");
+
+#else
 
             // Find just one. No more that just one shall be found
             // because it was checked earlier that we have collected
             // all but just one packet.
             break;
+#endif
         }
+#if ENABLE_HEAVY_LOGGING
+		else
+		{
+			LOGC(mglog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+					<< " (+" << cix << "): exists");
+		}
+#endif
     }
 
     if (offset == -1)
     {
-        LOGC(mglog.Fatal, log << "FEC: IPE: rebuilding attempt, but no lost packet found");
+        LOGC(mglog.Fatal, log << "FEC/V: IPE: rebuilding attempt, but no lost packet found");
         return -1; // sanity, shouldn't happen
     }
 
