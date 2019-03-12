@@ -750,6 +750,48 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
     g.dismissed = true;
 }
 
+static inline char CellMark(const std::deque<bool>& cells, int index)
+{
+	if (index >= int(cells.size()))
+		return '/';
+
+	return cells[index] ? '#' : '.';
+}
+
+#if ENABLE_HEAVY_LOGGING
+static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size)
+{
+	int i = 0;
+	// Shift to the first empty cell
+	for ( ; i < int(cells.size()); ++i)
+		if (cells[i] == false)
+			break;
+
+	if (i == int(cells.size()))
+	{
+		LOGC(mglog.Debug, log << "FEC: ... cell[0-" << (cells.size()-1) << "]: ALL CELLS EXIST");
+		return;
+	}
+
+	// Ok, we have some empty cells, so just adjust to the start of a row.
+	i -= i % row_size;
+	if (i < 0)
+		i = 0; // you never know...
+
+	for ( ; i < int(cells.size()); i += row_size )
+	{
+		std::ostringstream os;
+		os << "cell[" << i << "-" << (i+row_size-1) << "] %" << CSeqNo::incseq(base, i) << ":";
+		for (int y = 0; y < row_size; ++y)
+		{
+			os << " " << CellMark(cells, i+y);
+		}
+		LOGP(mglog.Debug, os.str());
+	}
+}
+#else
+static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size) {}
+#endif
 
 bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
 {
@@ -895,6 +937,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
 				// it will simply remove all cells. So now set the cell base to be
 				// in sync with the row base.
 				rcv.cell_base = rcv.rowq[0].base;
+				DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
 			}
 		}
 		else
@@ -1243,15 +1286,21 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq)
     // determine, which exactly packet is lost and needs rebuilding.
     int cellsize = rcv.cells.size();
     int cell_offset = CSeqNo::seqoff(rcv.cell_base, seq);
+	bool resized SRT_ATR_UNUSED = false;
     if (cell_offset >= cellsize)
     {
         // Expand the cell container with zeros, excluding the 'cell_offset'.
         // Resize normally up to the required size, just set the lastmost
         // item to true.
+		resized = true;
         rcv.cells.resize(cell_offset+1, false);
     }
     rcv.cells[cell_offset] = true;
-    HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cell base=%" << rcv.cell_base << "+" << rcv.cells.size());
+
+	HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cells base=%"
+			<< rcv.cell_base << "[" << cell_offset << "]+" << rcv.cells.size() << " :");
+
+	DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
 }
 
 bool FECFilterBuiltin::IsLost(int32_t seq)
@@ -1443,16 +1492,20 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             // If rows were removed, so remove also cells
             if (nrowrem > 0)
             {
-                int nrem;
                 int32_t newbase = rcv.rowq[0].base;
-                if (oldrowbase == rcv.cell_base)
+
+				// This value SHOULD be == nrowrem * sizeRow(), but this
+				// calculation is safe against bugs. Report them, if found, though.
+				int nrem = CSeqNo::seqoff(rcv.cell_base, newbase);
+
+                if (oldrowbase != rcv.cell_base)
                 {
-                    nrem = nrowrem;
+                    LOGC(mglog.Error, log << "FEC: CELL/ROW base discrepancy, calculating and resynchronizing");
                 }
                 else
                 {
-                    LOGC(mglog.Error, log << "FEC: CELL/ROW base discrepancy, calculating and resynchronizing");
-                    nrem = CSeqNo::seqoff(rcv.cell_base, newbase);
+                    HLOGC(mglog.Debug, log << "FEC: will remove " << nrem << " cells, SHOULD BE = "
+							<< (nrowrem * sizeRow()));
                 }
 
                 if (nrem > 0)
@@ -1471,6 +1524,8 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
                     rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nrem);
                     rcv.cell_base = newbase;
+
+					DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
                 }
                 else
                 {
