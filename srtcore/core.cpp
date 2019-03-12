@@ -6305,6 +6305,13 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
       m_ullTraceRcvBytesLoss = 0;
 #endif
+
+      m_iSndFilterExtra = 0;
+      m_iRcvFilterExtra = 0;
+
+      m_iRcvFilterSupply = 0;
+      m_iRcvFilterLoss = 0;
+
       m_LastSampleTime = currtime;
    }
 }

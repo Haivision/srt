@@ -705,7 +705,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
     int offset = CSeqNo::seqoff(base, g.base);
     if (offset < 0)
     {
-        LOGC(mglog.Error, log << "!!!");
+        LOGC(mglog.Error, log << "FEC: IPE: row base %" << g.base << " is PAST to cell base %" << base);
         return;
     }
 
@@ -713,7 +713,9 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
     // Sanity check, if all cells are really filled.
     if (maxoff > rcv.cells.size())
     {
-        LOGC(mglog.Error, log << "!!!");
+        LOGC(mglog.Error, log << "FEC: IPE: Collecting loss from row %"
+				<< g.base << "+" << m_number_cols << " while cells <= %"
+				<< CSeqNo::seqoff(rcv.cell_base, rcv.cells.size()-1));
         return;
     }
 
@@ -809,7 +811,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
     // collected at least 1 packet in the next group. Do not dismiss
     // any groups here otherwise - all will be decided during column
     // processing.
-    if (m_number_rows == 1 || m_fallback_level == SRT_ARQ_ONREQ)
+    if (m_number_rows == 1)
     {
         // The conditional row dismissal in row-only configuration.
         // In this configuration, cells and rows go hand-in-hand,
@@ -822,33 +824,44 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         //   - the second row collected at least half of the size
 
         if (rcv.rowq.size() > 2
-                || (rcv.rowq.size() > 1 && rcv.rowq[1].collected > m_number_cols/2))
-        {
-            // This procedure is a row-only row dismissal.
-            // When columns are used, rows will be dismissed only together
-            // with the last column supporting it.
+                || (rcv.rowq.size() > 1 && CSeqNo::seqoff(rcv.rowq[1].base, seq) > int(m_number_cols/3)))
+		{
+			// This procedure is a row-only row dismissal.
+			// When columns are used, rows will be dismissed only together
+			// with the last column supporting it.
 
-            CollectIrrecoverRow(rowg, irrecover);
+			CollectIrrecoverRow(rcv.rowq[0], irrecover);
 
-            // Collect irrecoverable with EARLY setting, but still do not
-            // remove the row until the crossing it column is alive.
-            if (m_number_rows == 1)
-            {
-                HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
-                // Take the oldest row group, and:
-                // - delete it
-                // - delete from rcv.cells the size of one dow (m_number_cols)
+			// Collect irrecoverable with EARLY setting, but still do not
+			// remove the row until the crossing it column is alive.
+			HLOGC(mglog.Debug, log << "FEC/H: Dismissing one row, starting at %" << rcv.rowq[0].base);
+			// Take the oldest row group, and:
+			// - delete it
+			// - delete from rcv.cells the size of one dow (m_number_cols)
 
-                rcv.rowq.pop_front();
+			rcv.rowq.pop_front();
 
-                // When columns are not used, also dismiss that number of bits.
-                // Use safe version
-                size_t ersize = min(m_number_cols, rcv.cells.size());
-                rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
-                rcv.cell_base = CSeqNo::incseq(rcv.cell_base, m_number_cols);
-            }
-        }
+			// When columns are not used, also dismiss that number of bits.
+			// Use safe version
+			size_t ersize = min(m_number_cols, rcv.cells.size());
+			rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
+			rcv.cell_base = CSeqNo::incseq(rcv.cell_base, m_number_cols);
+		}
     }
+	else if (m_fallback_level == SRT_ARQ_ONREQ)
+	{
+		// In this case try to collect irrecoverable from the
+		// rows that are in the past towards the current one.
+        if (rcv.rowq.size() > 2
+                || (rcv.rowq.size() > 1 &&  CSeqNo::seqoff(rcv.rowq[1].base, seq) > int(m_number_cols/3)))
+		{
+			// This procedure is a row-only row dismissal.
+			// When columns are used, rows will be dismissed only together
+			// with the last column supporting it.
+
+			CollectIrrecoverRow(rcv.rowq[0], irrecover);
+		}
+	}
 
     return true;
 }
@@ -1331,6 +1344,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             // Do some sanity checks first.
 
             size_t nrowrem = 0;
+			int32_t oldrowbase = rcv.rowq[0].base; // before it gets deleted
             if (rcv.rowq.size() > numberRows())
             {
                 int32_t newrowbase = rcv.rowq[numberRows()].base;
@@ -1361,7 +1375,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             {
                 int nrem;
                 int32_t newbase = rcv.rowq[0].base;
-                if (newbase == rcv.cell_base)
+                if (oldrowbase == rcv.cell_base)
                 {
                     nrem = nrowrem;
                 }
