@@ -18,11 +18,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
+
 
 #include "srt.h"
 
-int main( int argc, char** argv )
+int main(int argc, char** argv)
 {
     int ss, st;
     struct sockaddr_in sa;
@@ -34,15 +34,16 @@ int main( int argc, char** argv )
 
     printf("srt socket\n");
     ss = srt_create_socket();
-    if ( ss == SRT_ERROR )
+    if (ss == SRT_ERROR)
     {
         fprintf(stderr, "srt_socket: %s\n", srt_getlasterror_str());
         return 1;
     }
 
     printf("srt bind address\n");
+    sa.sin_family = AF_INET;
     sa.sin_port = htons(atoi(argv[2]));
-    if ( inet_pton(AF_INET, argv[1], &sa.sin_addr) != 1)
+    if (inet_pton(AF_INET, argv[1], &sa.sin_addr) != 1)
     {
         return 1;
     }
@@ -52,15 +53,15 @@ int main( int argc, char** argv )
 
     printf("srt bind\n");
     st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
-    if ( st == SRT_ERROR )
+    if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_bind: %s\n", srt_getlasterror_str());
         return 1;
     }
 
     printf("srt listen\n");
-    st = srt_listen(ss, 1);
-    if ( st == SRT_ERROR )
+    st = srt_listen(ss, 2);
+    if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_listen: %s\n", srt_getlasterror_str());
         return 1;
@@ -76,7 +77,7 @@ int main( int argc, char** argv )
         printf("srt recvmsg #%d... ",i);
         char msg[2048];
         st = srt_recvmsg(their_fd, msg, sizeof msg);
-        if (st == SRT_ERROR )
+        if (st == SRT_ERROR)
         {
             fprintf(stderr, "srt_recvmsg: %s\n", srt_getlasterror_str());
             goto end;
@@ -88,7 +89,7 @@ int main( int argc, char** argv )
 end:
     printf("srt close\n");
     st = srt_close(ss);
-    if ( st == SRT_ERROR )
+    if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_close: %s\n", srt_getlasterror_str());
         return 1;
