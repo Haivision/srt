@@ -7856,15 +7856,7 @@ int CUDT::processData(CUnit* unit)
    }
    if ( !lossdata.empty() )
    {
-       sendCtrl(UMSG_LOSSREPORT, NULL,
-#if (__cplusplus >= 201103L)
-           // ::std::vector<>.data() is c++11.
-           lossdata.data(),
-#else
-           // This is portable.
-           &lossdata[0],
-#endif
-           lossdata.size());
+       sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
    }
 
    // This is not a regular fixed size packet...
