@@ -472,17 +472,28 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
 
     if (snd.row.collected >= m_number_cols)
     {
-        HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
-        // SHIP THE HORIZONTAL FEC packet.
-        PackControl(snd.row, -1, rpkt, seq);
+		if (!m_cols_only)
+		{
+			HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
+			// SHIP THE HORIZONTAL FEC packet.
+			PackControl(snd.row, -1, rpkt, seq);
 
-        HLOGC(mglog.Debug, log << "...PACKET size=" << rpkt.length
-                << " TS=" << rpkt.hdr[SRT_PH_TIMESTAMP]
-                << " !" << BufferStamp(rpkt.buffer, rpkt.length));
+			HLOGC(mglog.Debug, log << "...PACKET size=" << rpkt.length
+					<< " TS=" << rpkt.hdr[SRT_PH_TIMESTAMP]
+					<< " !" << BufferStamp(rpkt.buffer, rpkt.length));
+
+		}
 
         // RESET THE HORIZONTAL GROUP.
+		// ALWAYS, even in columns-only.
         ResetGroup(snd.row);
-        return true;
+
+		if (!m_cols_only)
+		{
+			// In columns-only you didn't pack anything, so check
+			// for column control.
+			return true;
+		}
     }
 
     // Handle the special case of m_number_rows == 1, which
