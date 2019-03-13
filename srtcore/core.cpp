@@ -7855,7 +7855,17 @@ int CUDT::processData(CUnit* unit)
 
    }
    if ( !lossdata.empty() )
-       sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
+   {
+       sendCtrl(UMSG_LOSSREPORT, NULL,
+#if (__cplusplus >= 201103L)
+           // ::std::vector<>.data() is c++11.
+           lossdata.data(),
+#else
+           // This is portable.
+           &lossdata[0],
+#endif
+           lossdata.size());
+   }
 
    // This is not a regular fixed size packet...
    // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
