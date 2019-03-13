@@ -894,7 +894,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         {
             ClipControlPacket(rowg, rpkt);
             rowg.fec = true;
-            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq);
+            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq << " base=%" << rowg.base);
         }
         else
         {
@@ -1440,7 +1440,8 @@ bool FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, lo
         {
             ClipControlPacket(colg, rpkt);
             colg.fec = true;
-            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col));
+            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col)
+					<< " base=%" << colg.base);
         }
         else
         {
