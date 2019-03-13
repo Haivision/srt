@@ -300,6 +300,19 @@ int main( int argc, char** argv )
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
 
+    // Print format
+    string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        transmit_printformat_json = true;
+    }
+    else if (pf != "default")
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
+
+
     // Options that require integer conversion
     size_t bandwidth;
     size_t stoptime;

@@ -584,6 +584,14 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         signed char colx;
     } isfec = { false, false, -1 };
 
+	// The sequence number must be checked prematurely, or it can otherwise
+	// cause large resource allocation. This might be even survived, provided
+	// that this will make the packet seen as exceeding the series 0 matrix,
+	// so all matrices in previous series should be dismissed thereafter. But
+	// this short living resource spike may be destructive, so let's do
+	// matrix dismissal FIRST before this packet is going to be handled.
+	CheckLargeDrop(rpkt.getSeqNo());
+
     if (rpkt.getMsgSeq() == 0)
     {
         // Interpret the first byte of the contents.
@@ -615,7 +623,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
             HLOGC(mglog.Debug, log << "FEC: packet %" << rpkt.getSeqNo() << " "
                     << (past ? "in the PAST" : "already known") << ", IGNORING.");
 
-            return false;
+            return true;
         }
 
         want_packet = true;
@@ -692,6 +700,69 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     // 2. If this is a regular packet, use it for building the FEC group.
     // - ARQ_ALWAYS: always return true and leave loss_seqs empty.
     // - others: return false and return nothing in loss_seqs
+}
+
+void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
+{
+	// Ok, first try to pick up the column and series
+
+    int offset = CSeqNo::seqoff(rcv.colq[0].base, seqno);
+    if (offset < 0)
+    {
+        return;
+    }
+
+	// Number of column - regardless of series.
+	int colx = offset % numberCols();
+
+	// Base sequence from the group series 0 in this column
+
+	// [[assert rcv.colq.size() >= numberCols()]];
+    int32_t colbase = rcv.colq[colx].base;
+
+	// Offset between this base and seqno
+    int coloff = CSeqNo::seqoff(colbase, seqno);
+
+	// Might be that it's in the row above the column,
+	// still it's not a large-drop
+	if (coloff < 0)
+	{
+		return;
+	}
+
+	size_t matrix = numberRows() * numberCols();
+
+	int colseries = coloff / matrix;
+
+	if (colseries > 2)
+	{
+		// Ok, now define the new ABSOLUTE BASE. This is the base of the column 0
+		// column group from the series previous towards this one.
+		int32_t oldbase = rcv.colq[0].base;
+		int32_t newbase = CSeqNo::incseq(oldbase, (colseries-1) * matrix);
+
+		LOGC(mglog.Warn, log << "FEC: LARGE DROP detected! Resetting all groups. Base: %" << oldbase
+				<< " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
+
+		rcv.rowq.clear();
+		rcv.colq.clear();
+		rcv.cells.clear();
+
+		rcv.rowq.resize(1);
+		HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first row");
+		ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+
+		if (sizeCol() > 1)
+		{
+			// Size: cols
+			// Step: rows (the next packet in the group is one row later)
+			// Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+			HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
+			ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_number_rows+1, newbase);
+		}
+
+		rcv.cell_base = newbase;
+	}
 }
 
 void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
@@ -1206,20 +1277,25 @@ int FECFilterBuiltin::ExtendRows(int rowx)
     // index is > 2*m_number_cols. If so, shrink
     // the container first.
 
-    if (rowx > int(m_number_cols*2))
-    {
-        LOGC(mglog.Error, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING");
-
-        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
-        rowx -= m_number_cols;
-    }
-
 #if ENABLE_HEAVY_LOGGING
     LOGC(mglog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
         LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
 #endif
+
+    if (rowx > int(m_number_cols*3))
+    {
+        LOGC(mglog.Error, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
+
+        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
+        rowx -= m_number_cols;
+
+		// With rows, delete also an appropriate number of cells.
+		int nerase = min(int(rcv.cells.size()), CSeqNo::seqoff(rcv.cell_base, rcv.rowq[0].base));
+		rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nerase);
+		rcv.cell_base = rcv.rowq[0].base;
+    }
 
     // Create and configure next groups.
     size_t old = rcv.rowq.size();
@@ -1261,11 +1337,18 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq)
 
     // Hang in the receiver group first.
     size_t rowx = offset / m_number_cols;
+
+	/*
+	   Don't.
+	   Leaving this code for future if needed, but this check should not be done.
+	   The resource management for "crazy" sequence numbers is done in the beginning,
+	   so simply TRUST THIS SEQUENCE, no matter what. After the check it won't do any harm.
     if (rowx > numberRows()*2) // past twice the matrix
     {
         LOGC(mglog.Error, log << "FEC/H: Packet %" << seq << " is in the far future, ignoring");
         return -1;
     }
+	*/
 
     // The packet might have come completely out of the blue.
     // The row group container must be prepared to extend
@@ -1298,7 +1381,8 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq)
     rcv.cells[cell_offset] = true;
 
 	HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cells base=%"
-			<< rcv.cell_base << "[" << cell_offset << "]+" << rcv.cells.size() << " :");
+			<< rcv.cell_base << "[" << cell_offset << "]+" << rcv.cells.size()
+			<< (resized ? "(resized)":"") << " :");
 
 	DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
 }
@@ -1431,7 +1515,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     {
         int32_t lastbase = rcv.colq[lastx].base;
 
-        // Compare this seqwuence with the sequence that caused the update
+        // Compare the base sequence with the sequence that caused the update
         int dist = CSeqNo::seqoff(lastbase, seq);
 
         // Shift this distance by the distance between the first and last
@@ -1469,7 +1553,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                 int32_t newrowbase = rcv.rowq[numberRows()].base;
                 if (newbase != newrowbase)
                 {
-                    LOGC(mglog.Error, log << "ROW/COL base DISCREPANCY! Looking up lineraly for the right row.");
+                    LOGC(mglog.Error, log << "FEC: IPE: ROW/COL base DISCREPANCY:  Looking up lineraly for the right row.");
 
                     // Fallback implementation in order not to break everything
                     for (size_t r = 0; r < rcv.rowq.size(); ++r)
@@ -1759,8 +1843,40 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // once the last row of the first series is closed.
         LOGC(mglog.Error, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
 
-        rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + sizeRow());
-        colgx -= sizeRow();
+		// Delete one series of columns.
+		int32_t oldbase SRT_ATR_UNUSED = rcv.colq[0].base;
+        rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
+        colgx -= numberCols();
+		int32_t newbase = rcv.colq[0].base;
+
+		// Delete also appropriate number of rows for one series
+		rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + numberRows());
+
+		// Sanity-check if the resulting row absolute base is equal to column
+		if (rcv.rowq[0].base != newbase)
+		{
+			LOGC(mglog.Error, log << "FEC/V: IPE: removal of " << numberRows()
+					<< " rows ships no same seq: rowbase=%"
+					<< rcv.rowq[0].base
+					<< " colbase=%" << oldbase << " -> %" << newbase << " - RESETTING ROWS");
+
+			// How much you need, depends on the columns.
+			size_t nseries = rcv.colq.size() / numberCols() + 1;
+			size_t needrows = nseries * numberRows();
+
+			rcv.rowq.clear();
+			rcv.rowq.resize(needrows);
+			int32_t rowbase = newbase;
+			for (size_t i = 0; i < rcv.rowq.size(); ++i)
+			{
+				ConfigureGroup(rcv.rowq[i], rowbase, 1, sizeRow());
+				rowbase = CSeqNo::incseq(newbase, sizeRow());
+			}
+		}
+
+		size_t ncellrem = CSeqNo::seqoff(rcv.cell_base, newbase);
+		rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ncellrem);
+		rcv.cell_base = newbase;
 
         // Note that after this shift, column groups that were
         // in particular column, remain in that column.

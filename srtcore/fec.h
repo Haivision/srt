@@ -171,6 +171,7 @@ private:
 
     // Receiving
 
+	void CheckLargeDrop(int32_t seqno);
     int ExtendRows(int rowx);
     int ExtendColumns(int colgx);
     void MarkCellReceived(int32_t seq);

@@ -1229,7 +1229,8 @@ static string PacketInfo(const CPacket& pkt)
         // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
         // Declaring that the peer supports rexmit flag cuts off the highest bit from
         // the displayed number.
-        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength();
+        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength()
+			<< " flags: " << PacketMessageFlagStr(pkt.m_iMsgNo);
     }
 
     return os.str();
