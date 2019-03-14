@@ -17,6 +17,7 @@ class FECFilterBuiltin: public SrtPacketFilterBase
     // Configuration
     SRT_ARQLevel m_fallback_level;
     bool m_cols_only;
+    bool m_arrangement_staircase;
 
 public:
 

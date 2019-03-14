@@ -457,6 +457,20 @@ std::string Printable(const Container& in)
 }
 
 template<typename Map, typename Key>
+typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(const Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
 typename Map::mapped_type* map_getp(Map& m, const Key& key)
 {
     typename Map::iterator it = m.find(key);

@@ -27,6 +27,7 @@ using namespace srt_logging;
 FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr):
     SrtPacketFilterBase(init),
     m_fallback_level(SRT_ARQ_ONREQ),
+    m_arrangement_staircase(true),
     rcv(provided)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
@@ -41,7 +42,18 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     // - number_cols < 1
     // - number_rows [-1, 0]
 
-    string colspec = cfg.parameters["cols"], rowspec = cfg.parameters["rows"];
+    string arspec = map_get(cfg.parameters, "layout");
+
+    string shorter = arspec.size() > 5 ? arspec.substr(0, 5) : arspec;
+    if (shorter == "even")
+        m_arrangement_staircase = false;
+    else if (shorter != "" && shorter != "stair")
+    {
+        LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: value for 'layout' must be 'even' or 'staircase'");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
 
     int out_rows = 1;
     int out_cols = atoi(colspec.c_str());
@@ -73,6 +85,18 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     {
         m_number_rows = out_rows;
         m_cols_only = false;
+    }
+
+    if (m_arrangement_staircase)
+    {
+        // Staircase has currently a limitation that both sizes must be equal.
+        // This will be fixed later, but still, at least the limitation that one
+        // must be multiplicity of the other will still apply.
+        if (m_number_rows != 1 && m_number_rows != m_number_cols)
+        {
+            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: with layout=staircase (default), 'rows' must be = 'cols' or 1");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
     }
 
     // Extra interpret level, if found, default never.
@@ -167,10 +191,12 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         // Size: cols
         // Step: rows (the next packet in the group is one row later)
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+        int gslip = m_arrangement_staircase ? 1 + sizeRow() : 1;
+
         HLOGP(mglog.Debug, "FEC: INIT: sender first N columns");
-        ConfigureColumns(snd.cols, numberCols(), sizeCol(), m_number_rows+1, snd_isn);
+        ConfigureColumns(snd.cols, numberCols(), sizeCol(), gslip, snd_isn);
         HLOGP(mglog.Debug, "FEC: INIT: receiver first N columns");
-        ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_number_rows+1, rcv_isn);
+        ConfigureColumns(rcv.colq, numberCols(), sizeCol(), gslip, rcv_isn);
     }
 
     // The bit markers that mark the received/lost packets will be expanded
@@ -246,10 +272,6 @@ void FECFilterBuiltin::ResetGroup(Group& g)
 
 void FECFilterBuiltin::feedSource(CPacket& packet)
 {
-    // Handy aliases.
-    size_t col_size = m_number_rows;
-    size_t row_size = m_number_cols;
-
     // Hang on the matrix. Find by packet->getSeqNo().
 
     //    (The "absolute base" is the cell 0 in vertical groups)
@@ -261,7 +283,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
     int horiz_pos = baseoff;
 
-    if (CheckGroupClose(snd.row, horiz_pos, row_size))
+    if (CheckGroupClose(snd.row, horiz_pos, sizeRow()))
     {
         HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
     }
@@ -269,12 +291,12 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     snd.row.collected++;
 
     // Don't do any column feeding if using column size 1
-    if (col_size > 1)
+    if (sizeCol() > 1)
     {
         // 1. Get the number of group in both vertical and horizontal groups:
         //    - Vertical: offset towards base (% row size, but with updated Base seq unnecessary)
         // (Just for a case).
-        int vert_gx = baseoff % row_size;
+        int vert_gx = baseoff % sizeRow();
 
         // 2. Define the position of this packet in the group
         //    - Horizontal: offset towards base (of the given group, not absolute!)
@@ -288,10 +310,13 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
         // the future, and "this sequence" is in a group that is already closed.
         // In this case simply can't clip the packet in the column group.
 
-        bool clip_column = vert_off >= 0 && col_size > 1;
+        bool clip_column = vert_off >= 0 && sizeCol() > 1;
+
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
+                << " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
         // SANITY: check if the rule applies on the group
-        if (vert_off % row_size)
+        if (vert_off % sizeRow())
         {
             LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
                     << " WRONG with horiz base=%" << base);
@@ -300,7 +325,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        int vert_pos = vert_off / row_size;
+        int vert_pos = vert_off / sizeRow();
 
         HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
@@ -321,7 +346,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
         if (clip_column)
         {
-            if (CheckGroupClose(snd.cols[vert_gx], vert_pos, col_size))
+            if (CheckGroupClose(snd.cols[vert_gx], vert_pos, sizeCol()))
             {
                 HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
             }
