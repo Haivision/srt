@@ -7855,7 +7855,9 @@ int CUDT::processData(CUnit* unit)
 
    }
    if ( !lossdata.empty() )
-       sendCtrl(UMSG_LOSSREPORT, NULL, lossdata.data(), lossdata.size());
+   {
+       sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
+   }
 
    // This is not a regular fixed size packet...
    // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
