@@ -701,7 +701,7 @@ private: // synchronization: mutexes and conditions
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
-    void setupCC();
+    bool setupCC();
     void updateCC(ETransmissionEvent, EventVariant arg);
     bool createCrypter(HandshakeSide side, bool bidi);
 
