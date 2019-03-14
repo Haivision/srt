@@ -97,6 +97,11 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
             LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: with layout=staircase (default), 'rows' must be = 'cols' or 1");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
+        m_column_slip = 1 + sizeRow();
+    }
+    else
+    {
+        m_column_slip = 1;
     }
 
     // Extra interpret level, if found, default never.
@@ -191,12 +196,11 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         // Size: cols
         // Step: rows (the next packet in the group is one row later)
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
-        int gslip = m_arrangement_staircase ? 1 + sizeRow() : 1;
 
         HLOGP(mglog.Debug, "FEC: INIT: sender first N columns");
-        ConfigureColumns(snd.cols, numberCols(), sizeCol(), gslip, snd_isn);
+        ConfigureColumns(snd.cols, numberCols(), sizeCol(), m_column_slip, snd_isn);
         HLOGP(mglog.Debug, "FEC: INIT: receiver first N columns");
-        ConfigureColumns(rcv.colq, numberCols(), sizeCol(), gslip, rcv_isn);
+        ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_column_slip, rcv_isn);
     }
 
     // The bit markers that mark the received/lost packets will be expanded
@@ -794,7 +798,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
 			// Step: rows (the next packet in the group is one row later)
 			// Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
 			HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
-			ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_number_rows+1, newbase);
+			ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_column_slip, newbase);
 		}
 
 		rcv.cell_base = newbase;
@@ -1945,7 +1949,6 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
 
     size_t gsize = numberCols(); // number of columns in one series
     size_t gstep = sizeRow();    // seq diff bw. two consex elements in the column (stats)
-    size_t gslip = 1 + gstep; // + gstep is to make a staircase arrangement
 
     // Each iteration of this loop adds one series of columns.
     // One series count numberCols() columns.
@@ -1962,11 +1965,11 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups, size "
                 << rcv.colq.size() << " -> " << (rcv.colq.size() + gsize)
                 << ", last base=%" << sbase << " step=" << gstep
-                << " size=" << gsize << " %slip=" << gslip);
+                << " size=" << gsize << " %slip=" << m_column_slip);
 
         // Every call to this function extends the given container
         // by 'gsize' number and configures each so added column accordingly.
-        ConfigureColumns(rcv.colq, gsize, gstep, gslip, sbase);
+        ConfigureColumns(rcv.colq, gsize, gstep, m_column_slip, sbase);
     }
 
 #if ENABLE_HEAVY_LOGGING
