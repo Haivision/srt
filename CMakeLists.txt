@@ -365,7 +365,7 @@ if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (WIN32 AND NOT MINGW)
 	# find pthread
-	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include C:/pthread-win64/include)
 	if (PTHREAD_INCLUDE_DIR)
 		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 	else()
