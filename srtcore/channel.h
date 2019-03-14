@@ -106,6 +106,11 @@ public:
 
    void setRcvBufSize(int size);
 
+   /// Set the IPV6ONLY option.
+   /// @param [in] IPV6ONLY value.
+
+   void setIpV6Only(bool ipV6Only);
+
       /// Query the socket address that the channel is using.
       /// @param [out] addr pointer to store the returned socket address.
 
@@ -174,6 +179,7 @@ private:
 #endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
+   bool m_bIpV6Only;                    // IPV6_V6ONLY option
    sockaddr_any m_BindAddr;
 };
 

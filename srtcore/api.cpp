@@ -1691,6 +1691,7 @@ void CUDTUnited::updateMux(
 #endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
+   m.m_pChannel->setIpV6Only(s->m_pUDT->m_bIpV6Only);
 
    try
    {
