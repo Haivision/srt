@@ -19,7 +19,7 @@ class FECFilterBuiltin: public SrtPacketFilterBase
     bool m_cols_only;
     bool m_arrangement_staircase;
     size_t m_column_slip;
-    int m_steepness;
+    int m_multiplyer;
 
 public:
 
@@ -159,9 +159,7 @@ private:
 
     void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
     template <class Container>
-    void ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int32_t isn);
-
-    static int32_t descendSequence(int32_t seq, size_t gslip, int steepness, int count);
+    void ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int mult, int32_t isn);
 
     void ResetGroup(Group& g);
 
