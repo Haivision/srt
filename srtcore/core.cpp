@@ -7149,6 +7149,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // protect packet retransmission
       CGuard::enterCS(m_AckLock);
 
+      int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
+
       // decode loss list message and insert loss into the sender loss list
       for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++ i)
       {
@@ -7167,6 +7169,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             {
                // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                secure = false;
+               wrong_loss = losslist_hi;
                // XXX leaveCS: really necessary? 'break' will break the 'for' loop, not the 'switch' statement.
                // and the leaveCS is done again next to the 'for' loop end.
                CGuard::leaveCS(m_AckLock);
@@ -7199,6 +7202,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             {
                //seq_a must not be greater than the most recent sent seq
                secure = false;
+               wrong_loss = losslist[i];
                CGuard::leaveCS(m_AckLock);
                break;
             }
@@ -7213,7 +7217,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       if (!secure)
       {
-         HLOGF(mglog.Debug, "WARNING: out-of-band LOSSREPORT received; considered bug or attack");
+         LOGC(mglog.Warn, log << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo << " vs loss %" << wrong_loss);
          //this should not happen: attack or bug
          m_bBroken = true;
          m_iBrokenCounter = 0;
@@ -8055,7 +8059,7 @@ int CUDT::processData(CUnit* unit)
               }
           }
 
-          HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
+          HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
                   << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
                   << packet.MessageFlagStr());
 
