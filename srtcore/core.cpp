@@ -4810,7 +4810,10 @@ void CUDT::setupCC()
 
     // Smoother will retrieve whatever parameters it needs
     // from *this.
-    m_Smoother.configure(this);
+    if ( !m_Smoother.configure(this))
+    {
+        return; // XXX add error handling
+    }
 
     // XXX Configure FEC module
     if (m_OPT_PktFilterConfigString != "")
@@ -4821,7 +4824,10 @@ void CUDT::setupCC()
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
         HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_PktFilterConfigString);
-        m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString);
+        if (!m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString))
+        {
+            return; // XXX add error handling
+        }
 
         m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }
