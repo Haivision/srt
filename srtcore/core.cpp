@@ -3968,7 +3968,10 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
-    setupCC();
+    if (!setupCC())
+    {
+        return CONN_REJECT;
+    }
 
     // And, I am connected too.
     m_bConnecting = false;
@@ -4707,7 +4710,11 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }
 
-   setupCC();
+   if (!setupCC())
+   {
+       hs->m_iReqType = URQ_ERROR_REJECT;
+       throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+   }
 
    m_pPeerAddr = (AF_INET == m_iIPversion) ? (sockaddr*)new sockaddr_in : (sockaddr*)new sockaddr_in6;
    memcpy(m_pPeerAddr, peer, (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
@@ -4794,7 +4801,7 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     return m_pCryptoControl->init(side, bidirectional);
 }
 
-void CUDT::setupCC()
+bool CUDT::setupCC()
 {
     // Prepare configuration object,
     // Create the CCC object and configure it.
@@ -4810,7 +4817,10 @@ void CUDT::setupCC()
 
     // Smoother will retrieve whatever parameters it needs
     // from *this.
-    m_Smoother.configure(this);
+    if ( !m_Smoother.configure(this))
+    {
+        return false;
+    }
 
     // XXX Configure FEC module
     if (m_OPT_PktFilterConfigString != "")
@@ -4821,7 +4831,10 @@ void CUDT::setupCC()
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
         HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_PktFilterConfigString);
-        m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString);
+        if (!m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString))
+        {
+            return false;
+        }
 
         m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }
@@ -4840,6 +4853,7 @@ void CUDT::setupCC()
         << " bw=" << m_iBandwidth);
 
     updateCC(TEV_INIT, TEV_INIT_RESET);
+    return true;
 }
 
 void CUDT::considerLegacySrtHandshake(uint64_t timebase)
