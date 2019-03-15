@@ -67,6 +67,15 @@ modified by
 #include "udt.h"
 #include "utilities.h"
 
+
+#ifdef _DEBUG
+#include <assert.h>
+#define SRT_ASSERT(cond) assert(cond)
+#else
+#define SRT_ASSERT(cond)
+#endif
+
+
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation
@@ -685,7 +694,7 @@ public:
 
     void add(int32_t lo, int32_t hi)
     {
-        int32_t end = lo + CSeqNo::seqcmp(hi, lo);
+        int32_t end = CSeqNo::incseq(hi);
         for (int32_t i = lo; i != end; i = CSeqNo::incseq(i))
             add(i);
     }
@@ -701,7 +710,7 @@ public:
         }
 
         // Calculate the distance between this seq and the oldest one.
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff > int(SIZE) )
         {
             // Size exceeded. Drop the oldest sequences.
@@ -739,7 +748,7 @@ public:
     void remove(int32_t seq)
     {
         // Check if is in range. If not, ignore.
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff < 0 )
             return; // already out of array
         if ( seqdiff > SIZE )
@@ -750,7 +759,7 @@ public:
 
     bool find(int32_t seq) const
     {
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff < 0 )
             return false; // already out of array
         if ( size_t(seqdiff) > SIZE )

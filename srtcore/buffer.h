@@ -207,11 +207,12 @@ class CRcvBuffer
 {
 public:
 
-   // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working for. Required to find
-   // some way to do this, possibly by having a "reverse pointer".
-   // Currently just "unimplemented".
-   std::string CONID() const { return ""; }
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working for. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
+
 
    CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
    ~CRcvBuffer();
@@ -394,14 +395,14 @@ private:
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer
    int m_iSize;                         // size of the protocol buffer
-   CUnitQueue* m_pUnitQueue;		// the shared unit queue
+   CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)
    int m_iLastAckPos;                   // the last ACKed position (exclusive)
-					// EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
-   int m_iMaxPos;			// the furthest data position
+                                        // EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
+   int m_iMaxPos;                       // the furthest data position
 
-   int m_iNotch;			// the starting read point of the first unit
+   int m_iNotch;                        // the starting read point of the first unit
 
    pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer

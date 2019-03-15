@@ -73,13 +73,18 @@ modified by
 
 #include <haicrypt.h>
 
-extern logging::Logger
+namespace srt_logging
+{
+
+extern Logger
     glog,
-    blog,
+//    blog,
     mglog,
     dlog,
     tslog,
     rxlog;
+
+}
 
 
 // XXX Utility function - to be moved to utilities.h?
