@@ -4427,6 +4427,12 @@ void* CUDT::tsbpd(void* param)
           bool passack = true; //Get next packet to wait for even if not acked
 
           rxready = self->m_pRcvBuffer->getRcvFirstMsg(Ref(tsbpdtime), Ref(passack), Ref(skiptoseqno), Ref(current_pkt_seq));
+
+          HLOGC(tslog.Debug, log << "NEXT PKT CHECK: rdy=" << rxready
+                  << boolalpha << " passack=" << passack
+                  << " skipto=%" << skiptoseqno
+                  << " current=%" << current_pkt_seq
+                  << " buf-base=%" << self->m_iRcvLastSkipAck);
           /*
            * VALUES RETURNED:
            *
@@ -6610,6 +6616,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       {
          int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
+         int32_t oldack SRT_ATR_UNUSED = m_iRcvLastSkipAck;
          m_iRcvLastAck = ack;
          m_iRcvLastSkipAck = ack;
 
@@ -6627,6 +6634,8 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
          // will signal m_RecvDataCond when there's time to play for particular
          // data packet.
+         HLOGC(dlog.Debug, log << "ACK: clip %" << oldack << "-%" << ack
+                 << ", REVOKED " << acksize << " from RCV buffer");
 
          if (m_bTsbPd)
          {
@@ -7939,7 +7948,6 @@ int CUDT::processData(CUnit* unit)
    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
    loss_seqs_t filter_loss_seqs;
    loss_seqs_t srt_loss_seqs;
-   bool record_loss = true;          // Check for loss yourself and record them
    bool report_recorded_loss = true; // Report immediately recorded loss
    vector<CUnit*> incoming;
    bool was_orderly_sent = true;
@@ -7962,18 +7970,14 @@ int CUDT::processData(CUnit* unit)
       vector<CUnit*> undec_units;
       if (m_PacketFilter)
       {
-          record_loss = m_PktFilterRexmitLevel != SRT_ARQ_NEVER;
           report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
 
           // Stuff this data into the corrector
           m_PacketFilter.receive(unit, Ref(incoming), Ref(filter_loss_seqs));
-          HLOGC(mglog.Debug, log << "(FEC) fed data, received " << incoming.size() << " pkts, "
+          HLOGC(mglog.Debug, log << "(FILTER) fed data, received " << incoming.size() << " pkts, "
                   << Printable(filter_loss_seqs) << " loss to report, "
-                  << (record_loss ? "" : "DO NOT ")
-                  << "check for losses later"
-                  << (record_loss ? (report_recorded_loss
-                          ? " AND REPORT THEM"
-                          : ", but do not report them") : ""));
+                  << (report_recorded_loss ? "FIND & REPORT LOSSES YOURSELF"
+                      : "REPORT ONLY THOSE"));
       }
       else
       {
@@ -8013,7 +8017,7 @@ int CUDT::processData(CUnit* unit)
               m_fTraceBelatedTime = double(bltime)/1000.0;
 
               HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
-                      << " offset=" << offset << " (BELATED" << rexmitstat[pktrexmitflag] << rexmit_reason
+                      << " offset=" << offset << " (BELATED/" << rexmitstat[pktrexmitflag] << rexmit_reason
                       << ") FLAGS: " << packet.MessageFlagStr());
               continue;
           }
@@ -8086,7 +8090,7 @@ int CUDT::processData(CUnit* unit)
               ;
               HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
           }
-          else if (record_loss)
+          else
           {
               HLOGC(mglog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
                       << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
@@ -8272,7 +8276,6 @@ int CUDT::processData(CUnit* unit)
    // can be quite well optimized.
 
    vector<int32_t> lossdata;
-   if (record_loss)
    {
        CGuard lg(m_RcvLossLock);
 
