@@ -4428,8 +4428,9 @@ void* CUDT::tsbpd(void* param)
 
           rxready = self->m_pRcvBuffer->getRcvFirstMsg(Ref(tsbpdtime), Ref(passack), Ref(skiptoseqno), Ref(current_pkt_seq));
 
-          HLOGC(tslog.Debug, log << "NEXT PKT CHECK: rdy=" << rxready
-                  << boolalpha << " passack=" << passack
+          HLOGC(tslog.Debug, log << boolalpha
+                  << "NEXT PKT CHECK: rdy=" << rxready
+                  << " passack=" << passack
                   << " skipto=%" << skiptoseqno
                   << " current=%" << current_pkt_seq
                   << " buf-base=%" << self->m_iRcvLastSkipAck);
@@ -8061,7 +8062,7 @@ int CUDT::processData(CUnit* unit)
 
           }
 
-          if (m_pRcvBuffer->addData(unit, offset) < 0)
+          if (m_pRcvBuffer->addData(*i, offset) < 0)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
