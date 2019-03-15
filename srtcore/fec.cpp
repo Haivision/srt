@@ -94,7 +94,8 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         int rem = m_number_cols % m_number_rows;
         if (rem || m_multiplyer == 0)
         {
-            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: with layout=staircase (default), 'rows' must be = 'cols' * N, or 1");
+            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: multi-square required by cols/rows. Must have 'rows' = N * " << m_number_cols
+                    << " (N*cols)" << ", have " << m_number_rows);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -221,20 +222,14 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     // isn: sequence number of the first packet in the first group
 
     size_t zero = which.size();
+
+    // The first series of initialization should embrace:
+    // - if multiplyer == 1, EVERYTHING (also the case of SOLID matrix)
+    // - if more, ONLY THE FIRST SQUARE.
+    size_t end = m_multiplyer == 1 ? zero + numberCols() : zero + numberRows();
     which.resize(zero + numberCols());
 
-    size_t end;
-    if (m_multiplyer == 1)
-    {
-        end = which.size();
-    }
-    else
-    {
-        // If you have a m_multiplyer, the first loop initializes
-        // only so many columns as the size of the column, the
-        // next will be initialized in additional loops.
-        end = sizeCol();
-    }
+    HLOGC(mglog.Debug, log << "ConfigureColumns: FIRST " << (end - zero) << " columns, START AT: " << zero);
 
     // Initialize straight way all groups in the size.
     // In case of staircase arrangement, along with one diagonal
@@ -258,8 +253,12 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         // granted that sizeRow() = sizeCol() * m_multiplyer.
 
         int32_t seqno = CSeqNo::incseq(isn, m * sizeCol());
+        size_t begin = zero + m * sizeCol();
         size_t end = zero + (m + 1)*sizeCol();
-        for (size_t i = zero + m * sizeCol(); i < end; ++i)
+
+        HLOGC(mglog.Debug, log << "ConfigureColumns: NEXT SQR " << (end - begin)
+                << " columns, START AT: " << begin);
+        for (size_t i = begin; i < end; ++i)
         {
             ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
             seqno = CSeqNo::incseq(seqno, m_column_slip);
