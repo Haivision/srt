@@ -140,8 +140,8 @@ void CChannel::open(const sockaddr* addr)
    #endif
       throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
-   if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_bIpV6Only), sizeof(m_bIpV6Only)))
-      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+   if (m_iIPversion == AF_INET6) // (not an error if it fails)
+      ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_bIpV6Only), sizeof(m_bIpV6Only));
 
    if (NULL != addr)
    {
