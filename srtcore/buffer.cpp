@@ -786,6 +786,8 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
       m_iMaxPos = offset + 1;
 
    if (m_pUnit[pos] != NULL) {
+      HLOGC(dlog.Debug, log << "addData: unit %" << unit->m_Packet.m_iSeqNo
+              << " rejected, already exists");
       return -1;
    }
    m_pUnit[pos] = unit;
@@ -793,19 +795,21 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
 
    m_pUnitQueue->makeUnitGood(unit);
 
+   HLOGC(dlog.Debug, log << "addData: unit %" << unit->m_Packet.m_iSeqNo
+           << " accepted, off=" << offset << " POS=" << pos);
    return 0;
 }
 
 int CRcvBuffer::readBuffer(char* data, int len)
 {
-   int p = m_iStartPos;
-   int lastack = m_iLastAckPos;
-   int rs = len;
+    int p = m_iStartPos;
+    int lastack = m_iLastAckPos;
+    int rs = len;
 #if ENABLE_HEAVY_LOGGING
-   char* begin = data;
+    char* begin = data;
 #endif
 
-   uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : uint64_t());
+    uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : uint64_t());
 
    HLOGC(dlog.Debug, log << CONID() << "readBuffer: start=" << p << " lastack=" << lastack);
    while ((p != lastack) && (rs > 0))
@@ -944,10 +948,12 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     /* Check the acknowledged packets */
     if (getRcvReadyMsg(r_tsbpdtime, r_curpktseq))
     {
+        HLOGC(dlog.Debug, log << "getRcvFirstMsg: ready CONTIG packet: %" << (*r_curpktseq));
         return true;
     }
     else if (*r_tsbpdtime != 0)
     {
+        HLOGC(dlog.Debug, log << "getRcvFirstMsg: no packets found");
         return false;
     }
 
@@ -1001,6 +1007,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
         {
             /* There are packets in the sequence not received yet */
             haslost = true;
+            HLOGC(dlog.Debug, log << "getRcvFirstMsg: empty hole at *" << i);
         }
         else
         {
@@ -1019,6 +1026,9 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
                     *r_curpktseq = skipseqno;
                 }
 
+                HLOGC(dlog.Debug, log << "getRcvFirstMsg: found ready packet, nSKIPPED: "
+                        << ((i - m_iLastAckPos + m_iSize) % m_iSize));
+
                 // NOTE: if haslost is not set, it means that this is the VERY FIRST
                 // packet, that is, packet currently at pos = m_iLastAckPos. There's no
                 // possibility that it is so otherwise because:
@@ -1026,6 +1036,8 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
                 // ...
                 return true;
             }
+            HLOGC(dlog.Debug, log << "getRcvFirstMsg: found NOT READY packet, nSKIPPED: "
+                    << ((i - m_iLastAckPos + m_iSize) % m_iSize));
             // ... and if this first good packet WASN'T ready to play, THIS HERE RETURNS NOW, TOO,
             // just states that there's no ready packet to play.
             // ...
@@ -1035,6 +1047,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
         // the 'haslost' is set, which means that it continues only to find the first valid
         // packet after stating that the very first packet isn't valid.
     }
+    HLOGC(dlog.Debug, log << "getRcvFirstMsg: found NO PACKETS");
     return false;
 }
 
@@ -1069,7 +1082,10 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             int64_t towait = (*tsbpdtime - CTimer::getTime());
             if (towait > 0)
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: found packet, but not ready to play (only in " << (towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+                        << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+                        << " pkt %" << curpktseq.get()
+                        << " NOT ready to play (only in " << (towait/1000.0) << "ms)");
                 return false;
             }
 
@@ -1080,7 +1096,10 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
             }
             else
             {
-                HLOGC(mglog.Debug, log << "getRcvReadyMsg: packet seq=" << curpktseq.get() << " ready to play (delayed " << (-towait/1000.0) << "ms)");
+                HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+                        << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+                        << " pkt %" << curpktseq.get()
+                        << " ready to play (delayed " << (-towait/1000.0) << "ms)");
                 return true;
             }
         }
@@ -1612,8 +1631,9 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             {
                 static uint64_t prev_now;
                 static uint64_t prev_srctime;
+                CPacket& pkt = m_pUnit[p]->m_Packet;
 
-                int32_t seq = m_pUnit[p]->m_Packet.m_iSeqNo;
+                int32_t seq = pkt.m_iSeqNo;
 
                 uint64_t nowtime = CTimer::getTime();
                 //CTimer::rdtsc(nowtime);
@@ -1623,8 +1643,12 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
-                    "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq
+                        << " from POS=" << p << " T="
+                        << FormatTime(srctime) << " in " << (timediff/1000.0)
+                        << "ms - TIME-PREVIOUS: PKT: " << (srctimediff/1000.0)
+                        << " LOCAL: " << (nowdiff/1000.0)
+                        << " !" << BufferStamp(pkt.data(), pkt.size()));
 
                 prev_now = nowtime;
                 prev_srctime = srctime;
