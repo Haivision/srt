@@ -90,14 +90,14 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 
     if (m_arrangement_staircase)
     {
-        // Staircase has currently a limitation that both sizes must be equal.
-        // This will be fixed later, but still, at least the limitation that one
-        // must be multiplicity of the other will still apply.
-        if (m_number_rows != 1 && m_number_rows != m_number_cols)
+        m_multiplyer = m_number_cols / m_number_rows;
+        int rem = m_number_cols % m_number_rows;
+        if (rem || m_multiplyer == 0)
         {
-            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: with layout=staircase (default), 'rows' must be = 'cols' or 1");
+            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: with layout=staircase (default), 'rows' must be = 'cols' * N, or 1");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
+
         m_column_slip = 1 + sizeRow();
     }
     else
@@ -199,9 +199,9 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
 
         HLOGP(mglog.Debug, "FEC: INIT: sender first N columns");
-        ConfigureColumns(snd.cols, numberCols(), sizeCol(), m_column_slip, m_multiplyer, snd_isn);
+        ConfigureColumns(snd.cols, snd_isn);
         HLOGP(mglog.Debug, "FEC: INIT: receiver first N columns");
-        ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_column_slip, m_multiplyer, rcv_isn);
+        ConfigureColumns(rcv.colq, rcv_isn);
     }
 
     // The bit markers that mark the received/lost packets will be expanded
@@ -210,27 +210,27 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 }
 
 template <class Container>
-void FECFilterBuiltin::ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int multiplyer, int32_t isn)
+void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
 {
     // This is to initialize the first set of groups.
 
     // which: group vector.
-    // gsize: number of packets in one group
-    // gstep: seqdiff between two packets consecutive in the group
-    // gslip: seqdiff between the first packet in one group and first packet in the next group
+    // numberCols(): number of packets in one group
+    // sizeCol(): seqdiff between two packets consecutive in the group
+    // m_column_slip: seqdiff between the first packet in one group and first packet in the next group
     // isn: sequence number of the first packet in the first group
 
     size_t zero = which.size();
-    which.resize(zero + gsize);
+    which.resize(zero + numberCols());
 
     size_t end;
-    if (multiplyer == 1)
+    if (m_multiplyer == 1)
     {
         end = which.size();
     }
     else
     {
-        // If you have a multiplyer, the first loop initializes
+        // If you have a m_multiplyer, the first loop initializes
         // only so many columns as the size of the column, the
         // next will be initialized in additional loops.
         end = sizeCol();
@@ -241,31 +241,30 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, size_t gsize, size_t g
     int32_t seqno = isn;
     for (size_t i = zero; i < end; ++i)
     {
-        ConfigureGroup(which[i], seqno, gstep, gstep * gsize);
-        seqno = CSeqNo::incseq(seqno, gslip);
+        ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
+        seqno = CSeqNo::incseq(seqno, m_column_slip);
     }
 
-    if (multiplyer == 1)
+    if (m_multiplyer == 1)
         return;
 
     // The multiple-staircase case.
-    for (int m = 1; m < multiplyer; ++m)
+    for (int m = 1; m < m_multiplyer; ++m)
     {
         // First, shitft the seqno to the base seq in the
         // column of the repeated staircase. It's the column
         // with first index sizeCol(), although the number of
         // all columns in a series is sizeRow(), and we have
-        // granted that sizeRow() = sizeCol() * multiplyer.
+        // granted that sizeRow() = sizeCol() * m_multiplyer.
 
         int32_t seqno = CSeqNo::incseq(isn, m * sizeCol());
         size_t end = zero + (m + 1)*sizeCol();
         for (size_t i = zero + m * sizeCol(); i < end; ++i)
         {
-            ConfigureGroup(which[i], seqno, gstep, gstep * gsize);
-            seqno = CSeqNo::incseq(seqno, gslip);
+            ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
+            seqno = CSeqNo::incseq(seqno, m_column_slip);
         }
     }
-
 }
 
 void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop)
@@ -836,7 +835,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
 			// Step: rows (the next packet in the group is one row later)
 			// Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
 			HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
-			ConfigureColumns(rcv.colq, numberCols(), sizeCol(), m_column_slip, m_multiplyer, newbase);
+			ConfigureColumns(rcv.colq, newbase);
 		}
 
 		rcv.cell_base = newbase;
@@ -1985,9 +1984,6 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
     // Start with the series that doesn't exist
     int old_series = rcv.colq.size() / numberCols();
 
-    size_t gsize = numberCols(); // number of columns in one series
-    size_t gstep = sizeRow();    // seq diff bw. two consex elements in the column (stats)
-
     // Each iteration of this loop adds one series of columns.
     // One series count numberCols() columns.
     for (int s = old_series; s <= series; ++s)
@@ -2001,13 +1997,12 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // THIS REMAINS TRUE NO MATTER IF WE USE STRAIGNT OR STAIRCASE ARRANGEMENT.
         int32_t sbase = CSeqNo::incseq(base, (numberCols()*numberRows()) * s);
         HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups, size "
-                << rcv.colq.size() << " -> " << (rcv.colq.size() + gsize)
-                << ", last base=%" << sbase << " step=" << gstep
-                << " size=" << gsize << " %slip=" << m_column_slip);
+                << rcv.colq.size() << " -> " << (rcv.colq.size() + numberCols())
+                << ", last base=%" << sbase);
 
         // Every call to this function extends the given container
         // by 'gsize' number and configures each so added column accordingly.
-        ConfigureColumns(rcv.colq, gsize, gstep, m_column_slip, m_multiplyer, sbase);
+        ConfigureColumns(rcv.colq, sbase);
     }
 
 #if ENABLE_HEAVY_LOGGING

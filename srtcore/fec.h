@@ -159,7 +159,7 @@ private:
 
     void ConfigureGroup(Group& g, int32_t seqno, size_t gstep, size_t drop);
     template <class Container>
-    void ConfigureColumns(Container& which, size_t gsize, size_t gstep, size_t gslip, int mult, int32_t isn);
+    void ConfigureColumns(Container& which, int32_t isn);
 
     void ResetGroup(Group& g);
 
