@@ -1164,9 +1164,9 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
 
     int offset = -1;
 
-
-    for (size_t cix = baseoff; cix < baseoff + m_number_cols*m_number_rows; cix += m_number_rows)
+    for (size_t col = 0; col < sizeCol(); ++col)
     {
+        size_t cix = baseoff + (col * sizeRow());
         if (!rcv.CellAt(cix))
         {
             offset = cix;
@@ -1552,7 +1552,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     // - get the series for this column
     // - if series is 0, just return
 
-    int series = colgx / sizeCol();
+    int series = colgx / numberCols();
     if (series == 0)
         return;
 
@@ -1564,19 +1564,40 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     set<int32_t> loss;
 
     int colx = colgx % sizeCol();
+
+    HLOGC(mglog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
+            << " at INDEX=" << colgx << " col=" << colx
+            << " series=" << series << " - looking up candidates...");
+
     // Series 0 means simply that colx is the index in the container
     for (int i = colx; i >= 0; --i)
     {
         RcvGroup& pg = rcv.colq[i];
         if (pg.dismissed)
+        {
+            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base="
+                    << pg.base << " ALREADY DISMISSED, done.");
             break; // don't look for any preceding column, if this is dismissed
+        }
+
+        HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base="
+                << pg.base << " - collecting losses.");
 
         pg.dismissed = true; // mark irrecover already collected
         for (size_t sof = 0; sof < pg.step * sizeCol(); sof += pg.step)
         {
             int32_t lseq = CSeqNo::incseq(pg.base, sof);
             if (!IsLost(lseq))
+            {
                 loss.insert(lseq);
+                HLOGC(mglog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
+                        << " lost");
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
+                        << " EXISTS");
+            }
         }
     }
 
@@ -1995,9 +2016,10 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // base increased by one matrix size times series number.
         // THIS REMAINS TRUE NO MATTER IF WE USE STRAIGNT OR STAIRCASE ARRANGEMENT.
         int32_t sbase = CSeqNo::incseq(base, (numberCols()*numberRows()) * s);
-        HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups, size "
-                << rcv.colq.size() << " -> " << (rcv.colq.size() + numberCols())
-                << ", last base=%" << sbase);
+        HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups series " << s
+                << ", size " << rcv.colq.size() << " -> "
+                << (rcv.colq.size() + numberCols())
+                << ", base=%" << base << " -> %" << sbase);
 
         // Every call to this function extends the given container
         // by 'gsize' number and configures each so added column accordingly.
