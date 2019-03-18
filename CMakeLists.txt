@@ -689,6 +689,9 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (srt_libspec_static AND CMAKE_DL_LIBS)
+		target_link_libraries(${name} ${CMAKE_DL_LIBS})
+	endif()
 endmacro()
 
 macro(srt_add_application name sources)
