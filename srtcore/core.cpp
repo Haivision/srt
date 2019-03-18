@@ -6285,7 +6285,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
 
-   ctrlpkt.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_StartTime);
+   ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);;
 
    int nbsent = 0;
    int local_prevack = 0;
@@ -6332,9 +6332,6 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
          break;
       }
-
-      uint64_t currtime_tk;
-      CTimer::rdtsc(currtime_tk);
 
       // There are new received packets to acknowledge, update related information.
       /* tsbpd thread may also call ackData when skipping packet so protect code */
