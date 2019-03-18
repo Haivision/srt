@@ -21,7 +21,7 @@ build_script:
   - ps: if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' } else { $VS_VERSION='2015' }
   - ps: $env:VS_VERSION = $VS_VERSION
   # get pthreads
-  - ps: Install-Package cinegy.pthreads-$Env:PLATFORM -Version 2.9.1.17 
+  - ps: nuget install cinegy.pthreads-$Env:FOLDER_PLATFORM -version 2.9.1.17
   # build SRT
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
