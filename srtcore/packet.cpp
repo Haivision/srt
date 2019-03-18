@@ -194,15 +194,16 @@ m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
 
 void CPacket::allocate(size_t alloc_buffer_size)
 {
-    m_PacketVector[PV_DATA].set(new char[alloc_buffer_size], alloc_buffer_size);
+    m_pcData = new char[alloc_buffer_size];
     m_data_owned = true;
 }
 
 void CPacket::deallocate()
 {
+    setLength(0);
     if (m_data_owned)
-        delete [] (char*)m_PacketVector[PV_DATA].data();
-    m_PacketVector[PV_DATA].set(NULL, 0);
+        delete [] m_pcData;
+    m_pcData = 0;
 }
 
 CPacket::~CPacket()
