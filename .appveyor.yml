@@ -21,24 +21,11 @@ build_script:
   - ps: if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' } else { $VS_VERSION='2015' }
   - ps: $env:VS_VERSION = $VS_VERSION
   # get pthreads
-  - ps: nuget restore
-
-   # build pthread
-#  - git clone https://github.com/GerHobbelt/pthread-win32.git C:/pthread-src
-#  - ps: msbuild C:/pthread-src/pthread.${VS_VERSION}.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
-#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM
-#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/include
-#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/lib
-#  - ps: cp C:/pthread-src/*.h C:/pthread-$FOLDER_PLATFORM/include
-#  - ps: cp C:/pthread-src/bin/$($DEVENV_PLATFORM)_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-$FOLDER_PLATFORM/lib
-
-
+  - ps: Install-Package cinegy.pthreads-$Env:PLATFORM -Version 2.9.1.17 
   # build SRT
-  - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013' }
-  - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
-  - ps: if ( $VS_VERSION -eq '2013' ) { $ENABLE_UNITTESTS = 'OFF' } else { $ENABLE_UNITTESTS = 'ON' }
+  - ps: if ( $VS_VERSION -eq '2015' ) { $ENABLE_UNITTESTS = 'ON' } else { $ENABLE_UNITTESTS = 'OFF' }
   - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
   

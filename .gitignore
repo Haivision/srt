@@ -1,0 +1,23 @@
+/.vs
+/Release
+/Debug
+/x64
+/CMakeFiles
+/packages
+/srt-file-transmit.dir
+/srt-live-transmit.dir
+/srt-multiplex.dir
+/srt_shared.dir
+/srt_static.dir
+/srt_virtual.dir
+/srtsupport_virtual.dir
+/haicrypt_virtual.dir
+CMakeCache.txt
+scripts/generate-configure-options - Copy.tcl
+*.vcxproj
+*.filters
+version.h
+srt.pc
+haisrt.pc
+cmake_install.cmake
+SRT.sln
