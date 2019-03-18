@@ -28,7 +28,6 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     SrtPacketFilterBase(init),
     m_fallback_level(SRT_ARQ_ONREQ),
     m_arrangement_staircase(true),
-    m_multiplyer(1),
     rcv(provided)
 {
     if (!ParseCorrectorConfig(confstr, cfg))
@@ -86,24 +85,6 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     {
         m_number_rows = out_rows;
         m_cols_only = false;
-    }
-
-    if (m_arrangement_staircase)
-    {
-        m_multiplyer = m_number_cols / m_number_rows;
-        int rem = m_number_cols % m_number_rows;
-        if (rem || m_multiplyer == 0)
-        {
-            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: multi-square required by cols/rows. Must have 'rows' = N * " << m_number_cols
-                    << " (N*cols)" << ", have " << m_number_rows);
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        m_column_slip = 1 + sizeRow();
-    }
-    else
-    {
-        m_column_slip = 1;
     }
 
     // Extra interpret level, if found, default never.
@@ -226,42 +207,51 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     // The first series of initialization should embrace:
     // - if multiplyer == 1, EVERYTHING (also the case of SOLID matrix)
     // - if more, ONLY THE FIRST SQUARE.
-    size_t end = m_multiplyer == 1 ? zero + numberCols() : zero + numberRows();
     which.resize(zero + numberCols());
 
-    HLOGC(mglog.Debug, log << "ConfigureColumns: FIRST " << (end - zero) << " columns, START AT: " << zero);
-
-    // Initialize straight way all groups in the size.
-    // In case of staircase arrangement, along with one diagonal
-    int32_t seqno = isn;
-    for (size_t i = zero; i < end; ++i)
+    if (!m_arrangement_staircase)
     {
-        ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
-        seqno = CSeqNo::incseq(seqno, m_column_slip);
-    }
-
-    if (m_multiplyer == 1)
-        return;
-
-    // The multiple-staircase case.
-    for (int m = 1; m < m_multiplyer; ++m)
-    {
-        // First, shitft the seqno to the base seq in the
-        // column of the repeated staircase. It's the column
-        // with first index sizeCol(), although the number of
-        // all columns in a series is sizeRow(), and we have
-        // granted that sizeRow() = sizeCol() * m_multiplyer.
-
-        int32_t seqno = CSeqNo::incseq(isn, m * sizeCol());
-        size_t begin = zero + m * sizeCol();
-        size_t end = zero + (m + 1)*sizeCol();
-
-        HLOGC(mglog.Debug, log << "ConfigureColumns: NEXT SQR " << (end - begin)
-                << " columns, START AT: " << begin);
-        for (size_t i = begin; i < end; ++i)
+        HLOGC(mglog.Debug, log << "ConfigureColumns: new "
+                << numberCols() << " columns, START AT: " << zero);
+        // With even arrangement, just use a plain loop.
+        // Initialize straight way all groups in the size.
+        int32_t seqno = isn;
+        for (size_t i = zero; i < which.size(); ++i)
         {
             ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
-            seqno = CSeqNo::incseq(seqno, m_column_slip);
+            seqno = CSeqNo::incseq(seqno);
+        }
+        return;
+    }
+
+    // With staircase, the next column's base sequence is
+    // shifted by 1 AND the length of the row. When this shift
+    // becomes below the column 0 bottom, reset it to the row 0
+    // and continue.
+
+    // Start here. The 'isn' is still the absolute base sequence value.
+    size_t offset = 0;
+
+    HLOGC(mglog.Debug, log << "ConfigureColumns: " << (which.size() - zero)
+            << " columns, START AT: " << zero);
+
+    for (size_t i = zero; i < which.size(); ++i)
+    {
+        int32_t seq = CSeqNo::incseq(isn, offset);
+        ConfigureGroup(which[i], seq, sizeCol(), sizeCol() * numberCols());
+
+        size_t col = i - zero;
+        if (col % numberRows() == numberRows() - 1)
+        {
+            offset = col + 1; // +1 because we want it for the next column
+            HLOGC(mglog.Debug, log << "ConfigureColumns: ... (resetting to column 0: +"
+                    << offset << " %" << CSeqNo::incseq(isn, offset));
+        }
+        else
+        {
+            offset += 1 + sizeRow();
+            HLOGC(mglog.Debug, log << "ConfigureColumns: ... (continue +"
+                    << offset << " %" << CSeqNo::incseq(isn, offset));
         }
     }
 }
