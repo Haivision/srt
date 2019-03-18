@@ -9,7 +9,6 @@ configuration:
 
 image:
   - Visual Studio 2015
-  - Visual Studio 2013
 
 platform:
   - x64
@@ -21,14 +20,19 @@ build_script:
   - ps: if ( $Env:PLATFORM -eq 'x86' ) { $FOLDER_PLATFORM = 'win32' } else { $FOLDER_PLATFORM = 'win64' }
   - ps: if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' } else { $VS_VERSION='2015' }
   - ps: $env:VS_VERSION = $VS_VERSION
-  # build pthread
-  - git clone https://github.com/GerHobbelt/pthread-win32.git C:/pthread-src
-  - ps: msbuild C:/pthread-src/pthread.${VS_VERSION}.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
-  - ps: mkdir C:/pthread-$FOLDER_PLATFORM
-  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/include
-  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/lib
-  - ps: cp C:/pthread-src/*.h C:/pthread-$FOLDER_PLATFORM/include
-  - ps: cp C:/pthread-src/bin/$($DEVENV_PLATFORM)_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-$FOLDER_PLATFORM/lib
+  # get pthreads
+  - ps: nuget restore
+
+   # build pthread
+#  - git clone https://github.com/GerHobbelt/pthread-win32.git C:/pthread-src
+#  - ps: msbuild C:/pthread-src/pthread.${VS_VERSION}.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM
+#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/include
+#  - ps: mkdir C:/pthread-$FOLDER_PLATFORM/lib
+#  - ps: cp C:/pthread-src/*.h C:/pthread-$FOLDER_PLATFORM/include
+#  - ps: cp C:/pthread-src/bin/$($DEVENV_PLATFORM)_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-$FOLDER_PLATFORM/lib
+
+
   # build SRT
   - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013' }
   - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64' }
