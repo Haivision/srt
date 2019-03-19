@@ -1594,7 +1594,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
     set<int32_t> loss;
 
-    int colx = colgx % sizeCol();
+    int colx = colgx % numberCols();
 
     HLOGC(mglog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
             << " at INDEX=" << colgx << " col=" << colx
@@ -1606,10 +1606,34 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         RcvGroup& pg = rcv.colq[i];
         if (pg.dismissed)
         {
-            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base="
+            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                     << pg.base << " ALREADY DISMISSED, done.");
-            break; // don't look for any preceding column, if this is dismissed
+            continue;
         }
+
+        // With multi-staircase it may happen that THIS column contains
+        // sequences that are all in the past, but the PREVIOUS column
+        // has some in the future, because THIS column is the top of
+        // the second staircase, and PREVIOUS is the bottom stair of
+        // the first staircase. When this is confirmed, simply skip
+        // the columns that have the highest sequence in the future
+        // because they can't be dismissed yet. Jump them over, so maybe
+        // they can be dismissed in future.
+        int this_col_offset = CSeqNo::seqoff(pg.base, seq);
+        int last_seq_offset = this_col_offset - (sizeCol()-1)*sizeRow();
+
+        if (last_seq_offset < 0)
+        {
+            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
+                    << pg.base << " TOO EARLY (last=%"
+                    << CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
+                    << ")");
+            continue;
+        }
+
+        // NOTE: If it was standing on the second staircase top, there's
+        // still a chance that it hits the staircase top of the first
+        // staircase and will dismiss it as well.
 
         HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base="
                 << pg.base << " - collecting losses.");
