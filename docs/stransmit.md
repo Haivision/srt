@@ -130,7 +130,7 @@ Some parameters handled for SRT medium are specific, all others are socket optio
 
 All other parameters are SRT socket options. Here are some most characteristic options:
 
-- **latency**: Sets the maximum accepted transmission latency and should by >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
+- **latency**: Sets the maximum accepted transmission latency and should be >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
 - **passphrase**: Sets the password for the encrypted transmission.
 - **pbkeylen**:  Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
 - **tlpktdrop**: Whether to drop packets that are not delivered on time. Default is on.
