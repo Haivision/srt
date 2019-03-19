@@ -5,3 +5,4 @@ test_buffer.cpp
 test_connection_timeout.cpp
 test_seqno.cpp
 test_strict_encription.cpp
+test_fec_rebuilding.cpp

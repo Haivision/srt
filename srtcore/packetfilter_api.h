@@ -84,7 +84,11 @@ protected:
     // -N: The N value still specifies the size, but in particular
     //     dimension there is no filter control packet formed nor expected.
 
+public:
+
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+
+protected:
 
     SrtPacketFilterBase(const SrtFilterInitializer& i): initParams(i)
     {

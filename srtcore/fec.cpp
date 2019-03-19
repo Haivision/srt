@@ -718,7 +718,14 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
                 << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_row));
     }
 
-    if (!isfec.row) // == regular packet or FEC/COL
+    if (!ok)
+    {
+        // Just informative.
+        LOGC(mglog.Error, log << "FEC/H: rebuilding FAILED.");
+    }
+
+    // Don't do HangVertical in case of row-only configuration
+    if (!isfec.row && m_number_rows > 1) // == regular packet or FEC/COL
     {
         ok = HangVertical(rpkt, isfec.colx, irrecover_col);
         HLOGC(mglog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
@@ -729,7 +736,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (!ok)
     {
         // Just informative.
-        LOGC(mglog.Error, log << "FEC: rebuilding FAILED.");
+        LOGC(mglog.Error, log << "FEC/V: rebuilding FAILED.");
     }
 
     // Pack the following packets as irrecoverable:
@@ -772,35 +779,72 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
 {
 	// Ok, first try to pick up the column and series
 
-    int offset = CSeqNo::seqoff(rcv.colq[0].base, seqno);
+    int offset = CSeqNo::seqoff(rcv.rowq[0].base, seqno);
     if (offset < 0)
     {
         return;
     }
 
-	// Number of column - regardless of series.
-	int colx = offset % numberCols();
+    // For row-only configuration, check only parts referring
+    // to a row.
+    if (m_number_rows == 1)
+    {
+        // We have no columns. So just check if exceeds 5* the row size.
+        // If so, clear the rows and reconfigure them.
+        if (offset > int(5 * sizeRow()))
+        {
+            // Calculate the new row base, without breaking the current
+            // layout. Make a skip by some number of rows so that the new
+            // first row is prepared to receive this packet.
 
-	// Base sequence from the group series 0 in this column
+            int32_t oldbase = rcv.rowq[0].base;
+            size_t rowdist = offset / sizeRow();
+            int32_t newbase = CSeqNo::incseq(oldbase, rowdist * sizeRow());
 
-	// [[assert rcv.colq.size() >= numberCols()]];
+            LOGC(mglog.Warn, log << "FEC: LARGE DROP detected! Resetting row groups. Base: %" << oldbase
+                    << " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
+
+            rcv.rowq.clear();
+            rcv.cells.clear();
+
+            rcv.rowq.resize(1);
+            HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first row");
+            ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+        }
+
+        return;
+    }
+
+    bool reset_anyway = false;
+    if (offset != CSeqNo::seqoff(rcv.colq[0].base, seqno))
+    {
+        reset_anyway = true;
+		HLOGC(mglog.Debug, log << "FEC: IPE: row.base %" << rcv.rowq[0].base << " != %" << rcv.colq[0].base << " - resetting");
+    }
+
+    // Number of column - regardless of series.
+    int colx = offset % numberCols();
+
+    // Base sequence from the group series 0 in this column
+
+    // [[assert rcv.colq.size() >= numberCols()]];
     int32_t colbase = rcv.colq[colx].base;
 
-	// Offset between this base and seqno
+    // Offset between this base and seqno
     int coloff = CSeqNo::seqoff(colbase, seqno);
 
-	// Might be that it's in the row above the column,
-	// still it's not a large-drop
-	if (coloff < 0)
-	{
-		return;
-	}
+    // Might be that it's in the row above the column,
+    // still it's not a large-drop
+    if (coloff < 0)
+    {
+        return;
+    }
 
-	size_t matrix = numberRows() * numberCols();
+    size_t matrix = numberRows() * numberCols();
 
-	int colseries = coloff / matrix;
+    int colseries = coloff / matrix;
 
-	if (colseries > 2)
+	if (colseries > 2 || reset_anyway)
 	{
 		// Ok, now define the new ABSOLUTE BASE. This is the base of the column 0
 		// column group from the series previous towards this one.
@@ -818,14 +862,11 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
 		HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first row");
 		ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
 
-		if (sizeCol() > 1)
-		{
-			// Size: cols
-			// Step: rows (the next packet in the group is one row later)
-			// Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
-			HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
-			ConfigureColumns(rcv.colq, newbase);
-		}
+        // Size: cols
+        // Step: rows (the next packet in the group is one row later)
+        // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+        HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
+        ConfigureColumns(rcv.colq, newbase);
 
 		rcv.cell_base = newbase;
 	}
