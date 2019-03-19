@@ -6740,7 +6740,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
           // acknowledge the sending buffer (remove data that predate 'ack')
           m_pSndBuffer->ackData(offset);
 
-          int64_t currtime = currtime_tk/m_ullCPUFrequency;
+          const int64_t currtime = CTimer::getTime();
           // record total time used for sending
           CGuard::enterCS(m_StatsLock);
           m_stats.sndDuration += currtime - m_stats.sndDurationCounter;
