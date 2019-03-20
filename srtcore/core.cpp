@@ -1426,6 +1426,11 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
         }
     }
 
+	if (m_bRcvNakReport)
+	{
+		srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
+	}
+
     // I support SRT_OPT_REXMITFLG. Do you?
     srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
