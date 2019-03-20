@@ -1,0 +1,7 @@
+
+
+SOURCES
+srt_shared.rc
+
+PRIVATE HEADERS
+../version.h

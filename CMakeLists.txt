@@ -223,6 +223,7 @@ else()
 		-DHAICRYPT_USE_OPENSSL_EVP=1
 		-DHAICRYPT_USE_OPENSSL_AES
 	)
+	
 endif()
 
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
@@ -289,6 +290,7 @@ set (haicrypt_libspec VIRTUAL)
 set (srtpack_libspec_common)
 if (srt_libspec_shared)
 	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
+
 endif()
 if (srt_libspec_static)
 	list(APPEND srtpack_libspec_common ${TARGET_srt}_static)
@@ -465,6 +467,9 @@ MafReadDir(srtcore filelist.maf
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
+if(APPVEYOR_BUILD_NUMBER)
+  set(APPVEYOR_BUILD_NUMBER_STRING APPVEYOR_BUILD_NUMBER)
+endif()
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
@@ -476,6 +481,15 @@ if (ENABLE_SHARED)
 	foreach (tar srt_virtual haicrypt_virtual)
 		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
 	endforeach()
+		
+	#add resource files to shared library, to 
+	if (WIN32)
+		MafReadDir(srtcore filelist_win32_shared.maf
+			SOURCES SOURCES_srt_shared_win32
+			PRIVATE_HEADERS HEADERS_srt_shared_win32
+		)
+		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
+	endif()
 endif()
 
 # Manual handling of dependency on virtual library
@@ -485,7 +499,7 @@ endif()
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt} ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
@@ -493,6 +507,8 @@ if (srt_libspec_shared)
 	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
+		set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		#target_sources(${TARGET_srt}_shared OBJECT ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
