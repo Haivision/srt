@@ -41,7 +41,7 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const logging::LogFA SRT_LOGFA_APP = 10;
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
 
 using namespace std;
 
@@ -327,7 +327,7 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 

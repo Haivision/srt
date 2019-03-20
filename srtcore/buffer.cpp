@@ -58,8 +58,7 @@ modified by
 #include "logging.h"
 
 using namespace std;
-
-extern logging::Logger mglog, dlog, tslog;
+using namespace srt_logging;
 
 CSndBuffer::CSndBuffer(int size, int mss):
 m_BufLock(),
@@ -743,8 +742,7 @@ CRcvBuffer::~CRcvBuffer()
    {
       if (m_pUnit[i] != NULL)
       {
-         m_pUnit[i]->m_iFlag = CUnit::FREE;
-         -- m_pUnitQueue->m_iCount;
+          m_pUnitQueue->makeUnitFree(m_pUnit[i]);
       }
    }
 
@@ -795,10 +793,9 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
       m_iMaxPos = offset + 1;
 
    m_pUnit[pos] = unit;
-   countBytes(1, unit->m_Packet.getLength());
+   countBytes(1, (int) unit->m_Packet.getLength());
 
-   unit->m_iFlag = CUnit::GOOD;
-   ++ m_pUnitQueue->m_iCount;
+   m_pUnitQueue->makeUnitGood(unit);
 
    return 0;
 }
@@ -824,7 +821,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
               break; /* too early for this unit, return whatever was copied */
       }
 
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
+      int unitsize = (int) m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
          unitsize = rs;
 
@@ -837,8 +834,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
       {
          CUnit* tmp = m_pUnit[p];
          m_pUnit[p] = NULL;
-         tmp->m_iFlag = CUnit::FREE;
-         -- m_pUnitQueue->m_iCount;
+         m_pUnitQueue->makeUnitFree(tmp);
 
          if (++ p == m_iSize)
             p = 0;
@@ -866,7 +862,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 
    while ((p != lastack) && (rs > 0))
    {
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
+      int unitsize = (int) m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
          unitsize = rs;
 
@@ -878,8 +874,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
       {
          CUnit* tmp = m_pUnit[p];
          m_pUnit[p] = NULL;
-         tmp->m_iFlag = CUnit::FREE;
-         -- m_pUnitQueue->m_iCount;
+         m_pUnitQueue->makeUnitFree(tmp);
 
          if (++ p == m_iSize)
             p = 0;
@@ -911,7 +906,7 @@ void CRcvBuffer::ackData(int len)
             continue;
 
         pkts++;
-        bytes += m_pUnit[i]->m_Packet.getLength();
+        bytes += (int) m_pUnit[i]->m_Packet.getLength();
     }
     if (pkts > 0)
         countBytes(pkts, bytes, true);
@@ -1130,9 +1125,8 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> r_cu
         {
             r_pu = NULL;
             rmpkts++;
-            rmbytes += pkt.getLength();
-            pu->m_iFlag = CUnit::FREE;
-            --m_pUnitQueue->m_iCount;
+            rmbytes += (int) pkt.getLength();
+            m_pUnitQueue->makeUnitFree(pu);
 
             m_iStartPos = shift_forward(m_iStartPos);
         }
@@ -1654,7 +1648,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     int rs = len;
     while (p != (q + 1) % m_iSize)
     {
-        int unitsize = m_pUnit[p]->m_Packet.getLength();
+        int unitsize = (int) m_pUnit[p]->m_Packet.getLength();
         if ((rs >= 0) && (unitsize > rs))
             unitsize = rs;
 
@@ -1682,7 +1676,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
                     "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
 
                 prev_now = nowtime;
@@ -1695,8 +1689,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
         {
             CUnit* tmp = m_pUnit[p];
             m_pUnit[p] = NULL;
-            tmp->m_iFlag = CUnit::FREE;
-            -- m_pUnitQueue->m_iCount;
+            m_pUnitQueue->makeUnitFree(tmp);
         }
         else
             m_pUnit[p]->m_iFlag = CUnit::PASSACK;
@@ -1781,9 +1774,8 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
         CUnit* tmp = m_pUnit[m_iStartPos];
         m_pUnit[m_iStartPos] = NULL;
         rmpkts++;
-        rmbytes += tmp->m_Packet.getLength();
-        tmp->m_iFlag = CUnit::FREE;
-        -- m_pUnitQueue->m_iCount;
+        rmbytes += (int) tmp->m_Packet.getLength();
+        m_pUnitQueue->makeUnitFree(tmp);
 
         if (++ m_iStartPos == m_iSize)
             m_iStartPos = 0;

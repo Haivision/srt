@@ -226,7 +226,7 @@ int main( int argc, char** argv )
         transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
         transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
     }
-    catch (std::invalid_argument)
+    catch (std::invalid_argument &)
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
@@ -235,8 +235,8 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
     char NAME[] = "SRTLIB";
@@ -508,9 +508,9 @@ int main( int argc, char** argv )
                                 // force re-connection
                                 srt_epoll_remove_usock(pollid, s);
                                 if (issource)
-                                    src.release();
+                                    src.reset();
                                 else
-                                    tar.release();
+                                    tar.reset();
                             }
                         }
                         break;

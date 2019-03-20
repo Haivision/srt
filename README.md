@@ -8,7 +8,7 @@
 
 # Introduction
 
-Secure Reliable Transport (SRT) is a proprietary transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.
+Secure Reliable Transport (SRT) is an open source transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.
 
 |    |    |
 | --- | --- |
@@ -20,11 +20,9 @@ SRT is applied to contribution and distribution endpoints as part of a video str
 
 As audio/video packets are streamed from a source to a destination device, SRT detects and adapts to the real-time network conditions between the two endpoints. SRT helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks, such as the Internet. Its error recovery mechanism minimizes the packet loss typical of Internet connections. And SRT supports AES encryption for end-to-end security, keeping your streams safe from prying eyes.
 
-[Join the conversation](https://join.slack.com/t/srtalliance/shared_invite/enQtMjY5MzY4MjQ0Njc4LTJjYWYzMmYzN2RjYWI4MWMxZDdiYTE4OTZlMDE4YWQyOGJhNTgwYjIzOTdiODY5OGE4YTQ4ZGZjN2Y0OTI5ZTA) in the #development channel on [Slack](https://srtalliance.slack.com).
-
 # Guides
 * [Why SRT Was Created](docs/why-srt-was-created.md)
-* [Using the `stransmit` App](docs/stransmit.md)
+* [Using the `srt-live-transmit` and `srt-file-transmit` Apps](docs/stransmit.md)
 * [SRT Encryption](docs/encryption.md)
 * [API](docs/API.md)
 * [Reporting problems](docs/reporting.md)
@@ -150,7 +148,7 @@ e. Copy include files to `C:\pthread-win32\include` - the following ones:
 
 It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them: 
 ```
-OPENSSL_ROOT_DIR=<path to OpenSSL instalation>
+OPENSSL_ROOT_DIR=<path to OpenSSL installation>
 OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
 OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
 

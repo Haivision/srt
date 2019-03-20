@@ -20,7 +20,7 @@ written by
 using namespace std;
 
 
-namespace logging
+namespace srt_logging
 {
 
 // Note: advise() and prevent() functions are being called
@@ -110,7 +110,7 @@ std::string FormatTime(uint64_t time)
 // Some logging imps
 #if ENABLE_LOGGING
 
-logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
 	if (that_enabled)
 	{
@@ -122,7 +122,7 @@ logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabl
 	}
 }
 
-logging::LogDispatcher::Proxy LogDispatcher::operator()()
+LogDispatcher::Proxy LogDispatcher::operator()()
 {
 	return Proxy(*this);
 }

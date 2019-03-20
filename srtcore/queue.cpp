@@ -64,6 +64,7 @@ modified by
 #include "queue.h"
 
 using namespace std;
+using namespace srt_logging;
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),
@@ -262,6 +263,24 @@ CUnit* CUnitQueue::getNextAvailUnit()
          l_perf_stats.found = false;
 #endif
    return NULL;
+}
+
+
+void CUnitQueue::makeUnitFree(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
+    unit->m_iFlag = CUnit::FREE;
+    --m_iCount;
+}
+
+
+void CUnitQueue::makeUnitGood(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
+    unit->m_iFlag = CUnit::GOOD;
+    ++m_iCount;
 }
 
 
@@ -516,7 +535,7 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    ThreadName tn("SRT:SndQ:worker");
    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
    {
-	   m_WorkerThread = pthread_t();
+       m_WorkerThread = pthread_t();
        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
    }
 }
@@ -638,7 +657,7 @@ int CSndQueue::sendto(const sockaddr* addr, CPacket& packet)
 {
    // send out the packet immediately (high priority), this is a control packet
    m_pChannel->sendto(addr, packet);
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 
@@ -1056,7 +1075,7 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
@@ -1098,7 +1117,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     ThreadName tn("SRT:RcvQ:worker");
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
-		m_WorkerThread = pthread_t();
+        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1106,7 +1125,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 void* CRcvQueue::worker(void* param)
 {
    CRcvQueue* self = (CRcvQueue*)param;
-   sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
+   sockaddr_any sa (self->m_UnitQueue.getIPversion());
    int32_t id = 0;
 
    THREAD_STATE_INIT("SRT:RcvQ:worker");
@@ -1566,7 +1585,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
    if (i->second.empty())
       m_mBuffer.erase(i);
 
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 int CRcvQueue::setListener(CUDT* u)

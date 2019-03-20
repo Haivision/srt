@@ -91,9 +91,7 @@ modified by
 #endif
 
 using namespace std;
-
-
-extern logging::Logger mglog;
+using namespace srt_logging;
 
 CChannel::CChannel():
 m_iIPversion(AF_INET),
@@ -366,7 +364,7 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
-#if ENABLE_LOGGING
+#if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
 
     if (packet.isControl())
@@ -466,9 +464,9 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     }
 
 #ifndef _WIN32
-    msghdr mh;
     if (select_ret > 0)
     {
+        msghdr mh;
         mh.msg_name = addr;
         mh.msg_namelen = m_iSockAddrSize;
         mh.msg_iov = packet.m_PacketVector;
@@ -480,7 +478,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         recv_size = ::recvmsg(m_iSocket, &mh, 0);
         msg_flags = mh.msg_flags;
     }
-    size_t& ref_data_len = mh.msg_iov[CPacket::PV_DATA].iov_len;
 
     // Note that there are exactly four groups of possible errors
     // reported by recvmsg():
@@ -622,26 +619,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         goto Return_error;
     }
 
-#ifndef _WIN32
-
-    // What is actually happening here is that there are two buffers supplied for the recvmsg call:
-    // [ HEADER (size=CPacket::HDR_SIZE) ] [ DATA (size = CUDT::m_zMaxPayloadSize) ]
-    // Which returns with:
-    // [ HEADER (as above) ] [DATA (size can be shorter)]
-    // As we supply only 2 buffers, we know that [DATA] is the last one, and we know
-    // that if the received size exceeds CPacket::HDR_SIZE (there's a check above),
-    // then the DATA buffer effective size = returned data size - the size of the
-    // HEADER buffer, which is CPacket::HDR_SIZE.
-
-    // Theoretically you should walk through the buffers and subsequently decrease
-    // the returned size by the size of the iterated buffer, but the check of the
-    // header size and decrease by it here will result in the same.
-    ref_data_len = recv_size - CPacket::HDR_SIZE;
-
-#else
-
     packet.setLength(recv_size - CPacket::HDR_SIZE);
-#endif
 
     // convert back into local host order
     // XXX use NtoHLA().
@@ -665,6 +643,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     return RST_OK;
 
 Return_error:
-    packet.setLength(0); // XXX This probably isn't correctly checked in other parts of code, FIX IT.
+    packet.setLength(-1);
     return status;
 }

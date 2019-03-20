@@ -74,13 +74,18 @@ modified by
 
 #include <haicrypt.h>
 
-extern logging::Logger
+namespace srt_logging
+{
+
+extern Logger
     glog,
-    blog,
+//    blog,
     mglog,
     dlog,
     tslog,
     rxlog;
+
+}
 
 
 // XXX Utility function - to be moved to utilities.h?
@@ -902,6 +907,8 @@ DENY_UPDATE(TEV_RECEIVE);
 template <ETransmissionEvent Ev> inline
 void CUDT::updateCC(typename EventMapping<Ev>::type arg)
 {
+	using namespace srt_logging;
+
     typedef typename EventMapping<Ev>::type arg_t;
 
     HLOGC(mglog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(Ev));
