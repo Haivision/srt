@@ -297,8 +297,12 @@ public:
 // between C++03 SRT and C++11 applications as well as between C++ standard
 // library and SRT when SRT is compiled in C++11 mode (as it happens on
 // Darwin/clang).
+// An additional problem is though that std::reference_wrapper<T> will
+// not match the ref_t<X> type when it's a function parameter for a function
+// template where X is a template parameter. Therefore it must return
+// the ref_t<X> type, not std::reference_wrapper<X>.
 template <class In>
-inline auto Ref(In& i) -> decltype(std::ref(i)) { return std::ref(i); }
+inline ref_t<In> Ref(In& i) { return std::ref(i); }
 
 template <class In>
 inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
