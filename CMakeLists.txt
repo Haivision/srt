@@ -469,7 +469,7 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{OS})
+	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
 else()
 	message(STATUS "AppVeyor build environment NOT detected: NOT adding build number to version header")
