@@ -350,49 +350,58 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 	// the future, and "this sequence" is in a group that is already closed.
 	// In this case simply can't clip the packet in the column group.
 
-	bool clip_column = vert_off >= 0 && sizeCol() > 1;
-
 	HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
 			<< " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
-	// SANITY: check if the rule applies on the group
-	if (vert_off % sizeRow())
+	if (vert_off >= 0 && sizeCol() > 1)
 	{
-		LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
-				<< " WRONG with horiz base=%" << base << "coloff(" << vert_off
-				<< ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
+		// BEWARE! X % Y with different signedness upgrades int to unsigned!
 
-		// Do not place it, it would be wrong.
-		return;
-	}
+		// SANITY: check if the rule applies on the group
+		if (vert_off % sizeRow())
+		{
+			LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
+					<< " WRONG with horiz base=%" << base << "coloff(" << vert_off
+					<< ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
 
-	int vert_pos = vert_off / sizeRow();
+			// Do not place it, it would be wrong.
+			return;
+		}
 
-	HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
-			<< " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-			<< ")[" << vert_gx << "][" << vert_pos << "] "
-			<< ( clip_column ? "" : "<NO-COLUMN-CLIP>")
-			<< " size=" << packet.size()
-			<< " TS=" << packet.getMsgTimeStamp()
-			<< " !" << BufferStamp(packet.data(), packet.size()));
+		int vert_pos = vert_off / sizeRow();
 
-	// 3. The group should be check for the necessity of being closed.
-	// Note that FEC packet extraction doesn't change the state of the
-	// VERTICAL groups (it can be potentially extracted multiple times),
-	// only the horizontal in order to mark that the vertical FEC is
-	// extracted already. So, anyway, check if the group limit was reached
-	// and it wasn't closed.
-	// 4. Apply the clip
-	// 5. Increase collected.
+		HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+				<< " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+				<< ")[" << vert_gx << "][" << vert_pos << "] "
+				<< " size=" << packet.size()
+				<< " TS=" << packet.getMsgTimeStamp()
+				<< " !" << BufferStamp(packet.data(), packet.size()));
 
-	if (clip_column)
-	{
+		// 3. The group should be check for the necessity of being closed.
+		// Note that FEC packet extraction doesn't change the state of the
+		// VERTICAL groups (it can be potentially extracted multiple times),
+		// only the horizontal in order to mark that the vertical FEC is
+		// extracted already. So, anyway, check if the group limit was reached
+		// and it wasn't closed.
+		// 4. Apply the clip
+		// 5. Increase collected.
+
 		if (CheckGroupClose(snd.cols[vert_gx], vert_pos, sizeCol()))
 		{
 			HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
 		}
 		ClipPacket(snd.cols[vert_gx], packet);
 		snd.cols[vert_gx].collected++;
+	}
+	else
+	{
+
+		HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+				<< " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+				<< ")[" << vert_gx << "]<NO-COLUMN-CLIP>"
+				<< " size=" << packet.size()
+				<< " TS=" << packet.getMsgTimeStamp()
+				<< " !" << BufferStamp(packet.data(), packet.size()));
 	}
 	HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
 }
