@@ -1112,6 +1112,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
         if (freeunit)
         {
+			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED");
             CUnit* tmp = m_pUnit[i];
             m_pUnit[i] = NULL;
             rmpkts++;
@@ -1624,6 +1625,8 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
         if ((rs >= 0) && (unitsize > rs))
             unitsize = rs;
 
+		HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
+
         if (unitsize > 0)
         {
             memcpy(data, m_pUnit[p]->m_Packet.m_pcData, unitsize);
@@ -1668,12 +1671,16 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
         if (!passack)
         {
+			HLOGC(dlog.Debug, log << CONID() << "readMsg: FREEING UNIT POS=" << p);
             CUnit* tmp = m_pUnit[p];
             m_pUnit[p] = NULL;
             m_pUnitQueue->makeUnitFree(tmp);
         }
         else
+		{
+			HLOGC(dlog.Debug, log << CONID() << "readMsg: PASSACK UNIT POS=" << p);
             m_pUnit[p]->m_iFlag = CUnit::PASSACK;
+		}
 
         if (++ p == m_iSize)
             p = 0;
