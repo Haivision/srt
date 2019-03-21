@@ -8084,7 +8084,7 @@ int CUDT::processData(CUnit* unit)
               excessive = false;
               if (unit->m_Packet.getMsgCryptoFlags())
               {
-                  undec_units.push_back(unit);
+                  undec_units.push_back(*i);
               }
           }
 
