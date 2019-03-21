@@ -1065,6 +1065,9 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         /* Skip any invalid skipped/dropped packets */
         if (m_pUnit[i] == NULL)
         {
+			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+					<< " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+					<< " SKIPPED - no unit there");
             if (++ m_iStartPos == m_iSize)
                 m_iStartPos = 0;
             continue;
@@ -1074,6 +1077,9 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
         if (m_pUnit[i]->m_iFlag != CUnit::GOOD)
         {
+			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+					<< " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+					<< " SKIPPED - unit not good");
             freeunit = true;
         }
         else
