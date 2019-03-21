@@ -359,7 +359,8 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 	if (vert_off % sizeRow())
 	{
 		LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
-				<< " WRONG with horiz base=%" << base << "coloff % sizeRow = " << (vert_off % sizeRow()));
+				<< " WRONG with horiz base=%" << base << "coloff(" << vert_off
+				<< ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
 
 		// Do not place it, it would be wrong.
 		return;
