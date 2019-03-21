@@ -1655,6 +1655,10 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             }
 #endif
         }
+		else
+		{
+			HLOGC(dlog.Debug, log << CONID() << "readMsg: SKIPPED POS=" << p << " - ZERO SIZE UNIT");
+		}
 
         if (!passack)
         {
