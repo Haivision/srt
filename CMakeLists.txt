@@ -467,10 +467,15 @@ MafReadDir(srtcore filelist.maf
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
-if(APPVEYOR_BUILD_NUMBER)
-  set(APPVEYOR_BUILD_NUMBER_STRING APPVEYOR_BUILD_NUMBER)
+if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
+	set(SRT_VERSION_BUILD ON)
+	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{OS})
+	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+else()
+	message(STATUS "AppVeyor build environment NOT detected: NOT adding build number to version header")
 endif()
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
+
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
