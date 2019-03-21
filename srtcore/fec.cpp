@@ -1664,12 +1664,116 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         }
     }
 
+	// COLUMN DISMISAL:
+
+	// 1. We can only dismiss ONE SERIES OF COLUMNS - OR NOTHING.
+	// 2. The triggering 'seq' must be past ANY sequence embraced
+	// by any group in the first series of columns.
+
+	// Useful information:
+	//
+	// 1. It's not known from upside, which column contains a sequence
+	//    number that reaches FURTHEST. The safe statement is then:
+	//    - For even arrangement, it must be past BASE0 + matrix size
+	//    - For staircase arrangement - BASE0 + matrix size * 2.
+
+	int32_t base0 = rcv.colq[0].base;
+	int this_off = CSeqNo::seqoff(base0, seq);
+
+	int mindist =
+		m_arrangement_staircase ?
+			(numberCols() * numberRows() * 2)
+		:
+			(numberCols() * numberRows());
+
+    bool any_dismiss SRT_ATR_UNUSED = false;
+
+	// if (base0 +% mindist) <% seq
+	if (this_off < mindist)
+	{
+		HLOGC(mglog.Debug, log << "FEC/V: NOT dismissing any columns at %" << seq
+				<< ", need to pass %" << CSeqNo::incseq(base0, mindist));
+	}
+	else if (rcv.colq.size() < numberCols())
+	{
+		HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
+				<< " with required %" << CSeqNo::incseq(base0, mindist)
+				<< " but col container size still " << rcv.colq.size());
+	}
+	else
+	{
+		// The condition for dismissal is now. The number of dismissed columns
+		// is numberCols(), regardless of the required 'mindinst'.
+		any_dismiss = true;
+
+		int32_t newbase = rcv.colq[numberCols()].base;
+		int32_t newbase_row = rcv.rowq[numberRows()].base;
+		int matrix_size = numberCols() * numberRows();
+
+		HLOGC(mglog.Debug, log << "FEC/V: DISMISSING " << numberCols() << " COLS. Base %"
+				<< rcv.colq[0].base << " -> %" << newbase
+				<< " AND " << numberRows() << " ROWS Base %"
+				<< rcv.rowq[0].base << " -> %" << newbase_row
+				<< " AND " << matrix_size << " cells");
+
+		rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
+
+#if ENABLE_HEAVY_LOGGING
+    LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+
+    for (size_t i = 0; i < rcv.colq.size(); ++i)
+        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+#endif
+
+		// Now erase accordingly one matrix of rows.
+		// Sanity check
+		if (newbase_row != newbase)
+		{
+			LOGC(mglog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
+					<< newbase << " row=%" << newbase_row << " - DELETING ALL ROWS");
+
+			// Delete all rows and reinitialize them.
+			rcv.rowq.clear();
+			rcv.rowq.resize(1);
+			ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+		}
+		else
+		{
+			// Remove "legally" a matrix of rows.
+			rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + numberRows());
+		}
+
+		// And now accordingly remove cells. Exactly one matrix of cells.
+		// Sanity check first.
+		int32_t newbase_cell = CSeqNo::incseq(rcv.cell_base, matrix_size);
+		if (newbase != newbase_cell)
+		{
+			LOGC(mglog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
+					<< newbase << " row=%" << newbase_row << " - DELETING ALL ROWS");
+
+			// Try to shift it gently first. Find the cell that matches the base.
+			int shift = CSeqNo::seqoff(rcv.cell_base, newbase);
+			if (shift < 0)
+				rcv.cells.clear();
+			else
+				rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + shift);
+		}
+		else
+		{
+			rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + matrix_size);
+		}
+		rcv.cell_base = newbase;
+		DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
+	}
+
+	/*
+	   OLD UNUSED CODE, leaving for historical reasons
+
     // - check the last sequence of last column in series 0
     // - if passed sequence number is earlier than this, just return
     // - now that seq is newer than the last in the last column,
     //    - dismiss whole series 0 column groups
 
-    bool any_dismiss SRT_ATR_UNUSED = false;
     // First, index of the last column
     size_t lastx = numberCols()-1;
     if (lastx < rcv.colq.size())
@@ -1694,7 +1798,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // SRT - if needed - will simply send LOSSREPORT request for all
         // packets that are lossreported and all older ones.
 
-        if (dist > 0 && rcv.colq.size() > numberCols() /*sanity*/)
+        if (dist > 0 && rcv.colq.size() > numberCols() )
         {
             any_dismiss = true;
             int32_t newbase = rcv.colq[numberCols()].base;
@@ -1786,6 +1890,8 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
         }
     }
+
+//	*/
 
     // Now all collected lost packets translate into the range list format
     TranslateLossRecords(loss, irrecover);
