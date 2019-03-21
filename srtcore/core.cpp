@@ -7978,7 +7978,7 @@ int CUDT::processData(CUnit* unit)
       */
       CGuard recvbuf_acklock(m_AckLock);
 
-      vector<CUnit*> undec_units;
+      //vector<CUnit*> undec_units;
       if (m_PacketFilter)
       {
           report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
@@ -8072,38 +8072,49 @@ int CUDT::processData(CUnit* unit)
 
           }
 
+		  bool adding_successful = true;
           if (m_pRcvBuffer->addData(*i, offset) < 0)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
               exc_type = "UNACKED";
+			  adding_successful = false;
           }
           else
           {
               exc_type = "ACCEPTED";
               excessive = false;
               if (unit->m_Packet.getMsgCryptoFlags())
-              {
-                  undec_units.push_back(*i);
-              }
+			  {
+				  EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
+				  if ( rc != ENCS_CLEAR )
+				  {
+					  // Could not decrypt
+					  // Keep packet in received buffer
+					  // Crypto flags are still set
+					  // It will be acknowledged
+					  m_iTraceRcvUndecrypt += 1;
+					  m_ullTraceRcvBytesUndecrypt += pktsz;
+					  m_iRcvUndecryptTotal += 1;
+					  m_ullRcvBytesUndecryptTotal += pktsz;
+					  // Log message degraded to debug because it may happen very often
+					  HLOGC(dlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+					  adding_successful = false;
+					  exc_type = "UNDECRYPTED";
+				  }
+				  //undec_units.push_back(*i);
+			  }
           }
 
           HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
                   << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
                   << packet.MessageFlagStr());
 
-          if  (rpkt.getMsgCryptoFlags())
+		  // Decryption should have made the crypto flags EK_NOENC.
+		  // Otherwise it's an error.
+		  if (adding_successful)
           {
-              /*
-               * Crypto flags not cleared means that decryption failed
-               * Do no ask loss packets retransmission
-               */
-              ;
-              HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
-          }
-          else
-          {
-              HLOGC(mglog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
+              HLOGC(dlog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
                       << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
               if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
               {
@@ -8172,6 +8183,8 @@ int CUDT::processData(CUnit* unit)
           return -1;
       }
 
+	  /*
+
       bool decr SRT_ATR_UNUSED = true;
       for (vector<CUnit*>::iterator ue = undec_units.begin(); ue != undec_units.end(); ++ue)
       {
@@ -8181,12 +8194,10 @@ int CUDT::processData(CUnit* unit)
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
           if ( rc != ENCS_CLEAR )
           {
-              /*
-               * Could not decrypt
-               * Keep packet in received buffer
-               * Crypto flags are still set
-               * It will be acknowledged
-               */
+              // Could not decrypt
+              // Keep packet in received buffer
+              // Crypto flags are still set
+              // It will be acknowledged
               m_iTraceRcvUndecrypt += 1;
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
@@ -8199,6 +8210,7 @@ int CUDT::processData(CUnit* unit)
       HLOGC(dlog.Debug, log << "crypter: data "
               << (undec_units.empty() ? " not encrypted, returning as plain " : "encrypted, decrypting ")
               << (decr ? "OK" : "FAILED"));
+			  */
 
    }  /* End of recvbuf_acklock*/
 
