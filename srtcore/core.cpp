@@ -7874,9 +7874,9 @@ void CUDT::sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& loss
 
 }
 
-int CUDT::processData(CUnit* unit)
+int CUDT::processData(CUnit* in_unit)
 {
-   CPacket& packet = unit->m_Packet;
+   CPacket& packet = in_unit->m_Packet;
 
    // XXX This should be called (exclusively) here:
    //m_pRcvBuffer->addLocalTsbPdDriftSample(packet.getMsgTimeStamp());
@@ -7984,7 +7984,7 @@ int CUDT::processData(CUnit* unit)
           report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
 
           // Stuff this data into the corrector
-          m_PacketFilter.receive(unit, Ref(incoming), Ref(filter_loss_seqs));
+          m_PacketFilter.receive(in_unit, Ref(incoming), Ref(filter_loss_seqs));
           HLOGC(mglog.Debug, log << "(FILTER) fed data, received " << incoming.size() << " pkts, "
                   << Printable(filter_loss_seqs) << " loss to report, "
                   << (report_recorded_loss ? "FIND & REPORT LOSSES YOURSELF"
@@ -7993,13 +7993,13 @@ int CUDT::processData(CUnit* unit)
       else
       {
           // Stuff in just one packet that has come in.
-          incoming.push_back(unit);
+          incoming.push_back(in_unit);
       }
 
       bool excessive = true; // stays true unless it was successfully added
 
       // Needed for possibly check for needsQuickACK.
-      bool incoming_belated = ( CSeqNo::seqcmp(unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0 );
+      bool incoming_belated = ( CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0 );
 
       // Loop over all incoming packets that were filtered out.
       // In case when there is no filter, there's just one packet in 'incoming',
@@ -8084,7 +8084,7 @@ int CUDT::processData(CUnit* unit)
           {
               exc_type = "ACCEPTED";
               excessive = false;
-              if (unit->m_Packet.getMsgCryptoFlags())
+              if (u->m_Packet.getMsgCryptoFlags())
 			  {
 				  EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
 				  if ( rc != ENCS_CLEAR )
