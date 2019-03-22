@@ -1614,14 +1614,15 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             << " at INDEX=" << colgx << " col=" << colx
             << " series=" << series << " - looking up candidates...");
 
-    // Series 0 means simply that colx is the index in the container
-    for (int i = colx; i >= 0; --i)
+    // Walk through all column groups in series 0. Collect irrecov's
+	// from every group, for which the incoming 'seq' is in future.
+	for (size_t i = 0; i < numberCols(); ++i)
     {
         RcvGroup& pg = rcv.colq[i];
         if (pg.dismissed)
         {
             HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
-                    << pg.base << " ALREADY DISMISSED, done.");
+                    << pg.base << " ALREADY DISMISSED, skipping.");
             continue;
         }
 
@@ -1649,8 +1650,10 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // still a chance that it hits the staircase top of the first
         // staircase and will dismiss it as well.
 
-        HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base="
-                << pg.base << " - collecting losses.");
+		HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
+				<< pg.base << " - PAST last=%"
+				<< CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
+				<< " - collecting losses.");
 
         pg.dismissed = true; // mark irrecover already collected
         for (size_t sof = 0; sof < pg.step * sizeCol(); sof += pg.step)
