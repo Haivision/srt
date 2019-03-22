@@ -218,7 +218,13 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         int32_t seqno = isn;
         for (size_t i = zero; i < which.size(); ++i)
         {
-            ConfigureGroup(which[i], seqno, sizeCol(), sizeCol() * numberCols());
+			// ARGS:
+			// - seqno: sequence number of the first packet in the group
+			// - step: distance between two consecutive packets in the group
+			// - drop: distance between base sequence numbers in groups in consecutive series
+			// (meaning: with row size 6, group with index 2 and 8 are in the
+			// same column 2, lying in 0 and 1 series respectively).
+            ConfigureGroup(which[i], seqno, sizeRow(), sizeCol() * numberCols());
             seqno = CSeqNo::incseq(seqno);
         }
         return;
