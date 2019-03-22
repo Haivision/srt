@@ -244,7 +244,7 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     for (size_t i = zero; i < which.size(); ++i)
     {
         int32_t seq = CSeqNo::incseq(isn, offset);
-        ConfigureGroup(which[i], seq, sizeCol(), sizeCol() * numberCols());
+        ConfigureGroup(which[i], seq, sizeRow(), sizeCol() * numberCols());
 
         size_t col = i - zero;
         if (col % numberRows() == numberRows() - 1)
