@@ -5907,11 +5907,6 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    if (m_bBroken || m_bClosing)
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-   /* 
-   * RecvLock to protect consistency (pkts vs. bytes vs. timespan) of Recv buffer stats.
-   * Send buffer stats protected in send buffer class
-   */
-   CGuard recvguard(m_RecvLock);
    CGuard statsguard(m_StatsLock);
 
    uint64_t currtime = CTimer::getTime();
