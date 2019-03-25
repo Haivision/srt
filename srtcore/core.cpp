@@ -6382,6 +6382,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
              }
              // acknowledge any waiting epolls to read
              s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+             CTimer::triggerEvent();
          }
          CGuard::enterCS(m_AckLock);
       }
