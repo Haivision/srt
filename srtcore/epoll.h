@@ -62,16 +62,13 @@ modified by
 struct CEPollDesc
 {
    int m_iID;                                // epoll ID
-   std::set<SRTSOCKET> m_sUDTSocksOut;       // set of UDT sockets waiting for write events
-   std::set<SRTSOCKET> m_sUDTSocksIn;        // set of UDT sockets waiting for read events
-   std::set<SRTSOCKET> m_sUDTSocksEx;        // set of UDT sockets waiting for exceptions
+  std::map<SRTSOCKET, std::pair<int, int>>	m_sUDTSocksWait;   // set of UDT sockets waiting for events pair<WATCH, STATE>
 
    int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
-   std::set<SRTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
-   std::set<SRTSOCKET> m_sUDTReads;          // UDT sockets ready for read
-   std::set<SRTSOCKET> m_sUDTExcepts;        // UDT sockets with exceptions (connection broken, etc.)
+   
+   std::map<SRTSOCKET, int> m_sUDTSocksSet;    // UDT sockets ready for some events
 };
 
 class CEPoll
@@ -96,7 +93,7 @@ public: // for CUDTUnited API
       /// @param [in] events events to watch.
       /// @return 0 if success, otherwise an error number.
 
-   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL);
+   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL) { return update_usock(eid, u, events); }
 
       /// add a system socket to an EPoll.
       /// @param [in] eid EPoll ID.
@@ -111,7 +108,7 @@ public: // for CUDTUnited API
       /// @param [in] u UDT socket ID.
       /// @return 0 if success, otherwise an error number.
 
-   int remove_usock(const int eid, const SRTSOCKET& u);
+   int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null);}
 
       /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
       /// @param [in] eid EPoll ID.
@@ -146,6 +143,14 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
+      /// wait for EPoll events or timeout optimized + explicit ERR case + trigger mode option (candidate to replace the previous)
+      /// @param [in] eid EPoll ID.
+      /// @param [out] fds sets (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR).
+	  /// @param [in] msTimeOut timeout threshold, in milliseconds.
+	  /// @param [in] pickup events to get a trigger(edge) mode.
+      /// @return number of sockets available for IO.
+   int wait(const int eid, std::map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, int pickup = 0);
+ 
       /// close and release an EPoll.
       /// @param [in] eid EPoll ID.
       /// @return 0 if success, otherwise an error number.

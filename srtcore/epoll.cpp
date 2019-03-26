@@ -123,25 +123,6 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return desc.m_iID;
 }
 
-int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
-{
-   CGuard pg(m_EPollLock);
-
-   map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
-   if (p == m_mPolls.end())
-      throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
-
-   if (!events || (*events & UDT_EPOLL_IN))
-      p->second.m_sUDTSocksIn.insert(u);
-   if (!events || (*events & UDT_EPOLL_OUT))
-      p->second.m_sUDTSocksOut.insert(u);
-   // Connecting timeout not signalled without EPOLL_ERR 
-   if (!events || (*events & UDT_EPOLL_ERR))
-      p->second.m_sUDTSocksEx.insert(u);
-
-   return 0;
-}
-
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    CGuard pg(m_EPollLock);
@@ -210,30 +191,6 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
-{
-   CGuard pg(m_EPollLock);
-
-   map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
-   if (p == m_mPolls.end())
-      throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
-
-   p->second.m_sUDTSocksIn.erase(u);
-   p->second.m_sUDTSocksOut.erase(u);
-   p->second.m_sUDTSocksEx.erase(u);
-
-   /*
-   * We are no longer interested in signals from this socket
-   * If some are up, they will unblock EPoll forever.
-   * Clear them.
-   */
-   p->second.m_sUDTReads.erase(u);
-   p->second.m_sUDTWrites.erase(u);
-   p->second.m_sUDTExcepts.erase(u);
-
-   return 0;
-}
-
 int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
    CGuard pg(m_EPollLock);
@@ -273,34 +230,19 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-   if (!events || (*events & UDT_EPOLL_IN))
-      p->second.m_sUDTSocksIn.insert(u);
-   else
+  int evts = events ? *events : (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
+	if(evts)
    {
-      p->second.m_sUDTSocksIn.erase(u);
-      /*
-      * We are no longer interested in this event from this socket
-      * If some are up, they will unblock EPoll forever.
-      * Clear them.
-      */
-      p->second.m_sUDTReads.erase(u);
+		pair<int, int>& wait = p->second.m_sUDTSocksWait[u];
+		wait.first = evts; // watching
+		evts = wait.first & wait.second; // watching & state!
+		if(evts) {
+			p->second.m_sUDTSocksSet[u] = evts;
+			return 0;
    }
-
-   if (!events || (*events & UDT_EPOLL_OUT))
-      p->second.m_sUDTSocksOut.insert(u);
-   else
-   {
-      p->second.m_sUDTSocksOut.erase(u);
-      p->second.m_sUDTWrites.erase(u);
-   }
-   if (!events || (*events & UDT_EPOLL_ERR))
-      p->second.m_sUDTSocksEx.insert(u);
-   else
-   {
-      p->second.m_sUDTSocksEx.erase(u);
-      p->second.m_sUDTExcepts.erase(u);
-   }
-
+	} else 
+		p->second.m_sUDTSocksWait.erase(u);
+	p->second.m_sUDTSocksSet.erase(u);
    return 0;
 }
 
@@ -369,6 +311,38 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
+int CEPoll::wait(const int eid, map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, int pickup)
+{
+	int64_t entertime = CTimer::getTime();
+	for(;;) {
+		{
+			CGuard pg(m_EPollLock);
+			map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+			if (p == m_mPolls.end())
+				throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+			if (p->second.m_sUDTSocksWait.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
+				throw CUDTException(MJ_NOTSUP, MN_INVAL);
+			
+			fdsSet = p->second.m_sUDTSocksSet;
+			if(pickup>=0)
+			{ // pickup events (trigger mode)
+				if (pickup < (int)fdsSet.size())
+					p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), std::next(p->second.m_sUDTSocksSet.begin(), pickup));
+				else
+					p->second.m_sUDTSocksSet.clear();
+			}
+		}
+
+		if(!fdsSet.empty())
+			return fdsSet.size();
+		
+		if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+			 throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+		CTimer::waitForEvent();
+	};
+	return 0;
+}
+
 int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
@@ -395,7 +369,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
          throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
       }
 
-      if (p->second.m_sUDTSocksIn.empty() && p->second.m_sUDTSocksOut.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
+      if (p->second.m_sUDTSocksWait.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
       {
          // no socket is being monitored, this may be a deadlock
          CGuard::leaveCS(m_EPollLock);
@@ -403,20 +377,17 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       }
 
       // Sockets with exceptions are returned to both read and write sets.
-      if ((NULL != readfds) && (!p->second.m_sUDTReads.empty() || !p->second.m_sUDTExcepts.empty()))
-      {
-         *readfds = p->second.m_sUDTReads;
-         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
-            readfds->insert(*i);
-         total += p->second.m_sUDTReads.size() + p->second.m_sUDTExcepts.size();
+		for(map<SRTSOCKET, int>::const_iterator it = p->second.m_sUDTSocksSet.begin(); it != p->second.m_sUDTSocksSet.end(); ++ it) {
+			if(readfds && ((it->second & UDT_EPOLL_IN) || (it->second & UDT_EPOLL_ERR))) {
+				if(readfds->insert(it->first).second)
+					++total;
       }
-      if ((NULL != writefds) && (!p->second.m_sUDTWrites.empty() || !p->second.m_sUDTExcepts.empty()))
-      {
-         *writefds = p->second.m_sUDTWrites;
-         for (set<SRTSOCKET>::const_iterator i = p->second.m_sUDTExcepts.begin(); i != p->second.m_sUDTExcepts.end(); ++ i)
-            writefds->insert(*i);
-         total += p->second.m_sUDTWrites.size() + p->second.m_sUDTExcepts.size();
-      }
+			if(writefds && ((it->second & UDT_EPOLL_OUT) || (it->second & UDT_EPOLL_ERR))) {
+				if(writefds->insert(it->first).second)
+					++total;
+			}
+		}
+			
 
       if (lrfds || lwfds)
       {
@@ -476,7 +447,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                FD_SET(*i, &readfds);
             if (lwfds)
                FD_SET(*i, &writefds);
-            if (*i > max_fd)
+            if ((int)*i > max_fd)
               max_fd = *i;
         }
 
@@ -536,22 +507,6 @@ int CEPoll::release(const int eid)
    return 0;
 }
 
-namespace
-{
-
-void update_epoll_sets(const SRTSOCKET& uid, const set<SRTSOCKET>& watch, set<SRTSOCKET>& result, bool enable)
-{
-   if (enable && (watch.find(uid) != watch.end()))
-   {
-      result.insert(uid);
-   }
-   else if (!enable)
-   {
-      result.erase(uid);
-   }
-}
-
-}  // namespace
 
 int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
 {
@@ -569,12 +524,33 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
       }
       else
       {
-         if ((events & UDT_EPOLL_IN) != 0)
-            update_epoll_sets(uid, p->second.m_sUDTSocksIn, p->second.m_sUDTReads, enable);
-         if ((events & UDT_EPOLL_OUT) != 0)
-            update_epoll_sets(uid, p->second.m_sUDTSocksOut, p->second.m_sUDTWrites, enable);
-         if ((events & UDT_EPOLL_ERR) != 0)
-            update_epoll_sets(uid, p->second.m_sUDTSocksEx, p->second.m_sUDTExcepts, enable);
+		const map<SRTSOCKET, pair<int, int>>::iterator& it = p->second.m_sUDTSocksWait.find(uid);
+		if(it==p->second.m_sUDTSocksWait.end())
+			continue;
+		// compute new states
+		pair<int, int>& wait(it->second);
+		if(enable)
+			events = wait.second | events;
+		else
+			events = wait.second & (~events);
+		// compute states changes!
+		int changes = wait.second ^ events; // oldState XOR newState
+		if(!changes)
+			continue; // no changes!
+		// assign new state
+		wait.second = events;
+		// filter change relating what is watching
+		if(!(changes &= wait.first))
+			continue; // no change watching
+		// set events changes!
+		if(!enable)
+		{ // bits change from 1 to 0
+			pair<map<SRTSOCKET, int>::iterator, bool> it = p->second.m_sUDTSocksSet.insert(pair<SRTSOCKET, int>(uid, 0));
+			if(it.second || !(it.first->second &= ~changes))  // all bits are 0 => remove SocksSet!
+				p->second.m_sUDTSocksSet.erase(it.first);
+		}
+		else // bits change from 0 to 1
+			p->second.m_sUDTSocksSet[uid] |= changes;
       }
    }
 

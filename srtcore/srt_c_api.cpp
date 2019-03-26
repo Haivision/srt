@@ -280,6 +280,17 @@ int srt_epoll_wait(
     		lrfds, lrnum, lwfds, lwnum);
 }
 
+int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool triggerMode)
+{
+    return UDT::epoll_wait2(
+    		eid,
+    		fdsSet,
+			fdsSize,
+    		msTimeOut,
+    		triggerMode);
+}
+
+
 int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)

@@ -501,7 +501,7 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
     // Using an enum prevents treating int automatically as enum,
     // requires explicit enum to be passed here, and minimizes the
     // risk that the right side value will contain multiple flags.
-    return flags & int(eflg);
+    return (flags & int(eflg)) > 0;
 }
 #endif
 
@@ -626,6 +626,12 @@ SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+typedef struct SRT_EPOLL_EVENT_
+{
+	SRTSOCKET fd;
+	int       events; // UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR
+} SRT_EPOLL_EVENT;
+SRT_API int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool triggerMode=false);
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control
