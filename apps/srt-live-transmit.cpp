@@ -429,9 +429,7 @@ int main( int argc, char** argv )
                     }
                     else if (tar && tar->GetSRTSocket() != s)
                     {
-                        cerr << "Unexpected socket poll: " << s;
-                        doabort = true;
-                        break;
+                        continue;
                     }
 
                     const char * dirstring = (issource)? "source" : "target";
