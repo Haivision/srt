@@ -26,7 +26,7 @@ build_script:
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' ) { $ENABLE_UNITTESTS = 'ON' } else { $ENABLE_UNITTESTS = 'OFF' }
-  - ps: mkdir -p .build && cd .build
+  - ps: mkdir -p .build; cd .build
   - ps: cmake .. -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
   
