@@ -2608,7 +2608,7 @@ int CUDT::epoll_wait(
    )
 {
     // if fdsSet is NULL and waiting time is infinite, then this would be a deadlock
-    if (!fdsSet || !fdsSize && (msTimeOut < 0)) {
+    if ((!fdsSet || !fdsSize) && (msTimeOut < 0)) {
         s_UDTUnited.setError(new CUDTException(MJ_NOTSUP, MN_INVAL, 0));
         return ERROR;
     }
