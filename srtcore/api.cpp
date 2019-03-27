@@ -1383,12 +1383,12 @@ int CUDTUnited::epoll_wait(
 }
 
 int CUDTUnited::epoll_wait(
-	const int eid,
-	map<SRTSOCKET, int>& fds,
-	int64_t msTimeOut,
-	int pickup)
+   const int eid,
+   map<SRTSOCKET, int>& fds,
+   int64_t msTimeOut,
+   int pickup)
 {
-	return m_EPoll.wait(eid, fds, msTimeOut, pickup);
+   return m_EPoll.wait(eid, fds, msTimeOut, pickup);
 }
 
 int CUDTUnited::epoll_release(const int eid)
@@ -2600,28 +2600,28 @@ int CUDT::epoll_wait(
 }
 
 int CUDT::epoll_wait(
-	const int eid, 
-	map<SRTSOCKET, int>& fds, 
-	int64_t msTimeOut, 
-	int pickup
-	)
+   const int eid, 
+   map<SRTSOCKET, int>& fds, 
+   int64_t msTimeOut, 
+   int pickup
+   )
 {
-	try
-	{
-		return s_UDTUnited.epoll_wait(eid, fds, msTimeOut, pickup);
-	}
-	catch (CUDTException e)
-	{
-		s_UDTUnited.setError(new CUDTException(e));
-		return ERROR;
-	}
-	catch (std::exception& ee)
-	{
-		LOGC(mglog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
-			<< typeid(ee).name() << ": " << ee.what());
-		s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
-		return ERROR;
-	}
+   try
+   {
+      return s_UDTUnited.epoll_wait(eid, fds, msTimeOut, pickup);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
 }
 
 int CUDT::epoll_release(const int eid)
@@ -3074,15 +3074,15 @@ int epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut
    int total = CUDT::epoll_wait(eid, tmpFdsSet, msTimeOut, triggerMode ? fdsSize : 0);
    if (total > 0)
    {
-	   total = 0;
-     for (map<SRTSOCKET, int>::const_iterator it = tmpFdsSet.begin(); it != tmpFdsSet.end(); ++ it)
-    {
-        if (total >= fdsSize)
+      total = 0;
+      for (map<SRTSOCKET, int>::const_iterator it = tmpFdsSet.begin(); it != tmpFdsSet.end(); ++ it)
+      {
+         if (total >= fdsSize)
             break;
-        SRT_EPOLL_EVENT& event = fdsSet[total ++];
-		event.fd = it->first;
-		event.events = it->second;
-    }
+         SRT_EPOLL_EVENT& event = fdsSet[total ++];
+         event.fd = it->first;
+         event.events = it->second;
+      }
    }
    return total;
 }

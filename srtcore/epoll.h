@@ -62,7 +62,7 @@ modified by
 struct CEPollDesc
 {
    int m_iID;                                // epoll ID
-  std::map<SRTSOCKET, std::pair<int, int>>	m_sUDTSocksWait;   // set of UDT sockets waiting for events pair<WATCH, STATE>
+   std::map<SRTSOCKET, std::pair<int, int> >	m_sUDTSocksWait;   // set of UDT sockets waiting for events pair<WATCH, STATE>
 
    int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors

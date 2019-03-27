@@ -210,13 +210,13 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 #ifdef LINUX
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #else
@@ -232,15 +232,15 @@ int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_sso
 
 int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
-	int srt_ev = 0;
+    int srt_ev = 0;
 
-	if (events) {
+    if (events) {
         srt_ev = *events;
-	} else {
-		srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-	}
+    } else {
+        srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    }
 
-	return CUDT::epoll_update_usock(eid, u, &srt_ev);
+    return CUDT::epoll_update_usock(eid, u, &srt_ev);
 }
 
 int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
@@ -250,13 +250,13 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 #ifdef LINUX
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
 #else
@@ -268,26 +268,26 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 }
 
 int srt_epoll_wait(
-		int eid,
-		SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
-		int64_t msTimeOut,
-        SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
+      int eid,
+      SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
+      int64_t msTimeOut,
+      SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
 {
     return UDT::epoll_wait2(
-    		eid,
-    		readfds, rnum, writefds, wnum,
-    		msTimeOut,
-    		lrfds, lrnum, lwfds, lwnum);
+        eid,
+        readfds, rnum, writefds, wnum,
+        msTimeOut,
+        lrfds, lrnum, lwfds, lwnum);
 }
 
 int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool triggerMode)
 {
     return UDT::epoll_wait2(
-    		eid,
-    		fdsSet,
-			fdsSize,
-    		msTimeOut,
-    		triggerMode);
+        eid,
+        fdsSet,
+        fdsSize,
+        msTimeOut,
+        triggerMode);
 }
 
 
