@@ -208,17 +208,15 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
     int flag = 0;
 
 #ifdef LINUX
-    if (events) {
+    if (events)
         flag = *events;
-    } else {
+    else
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    if (events) {
+    if (events)
         flag = *events;
-    } else {
+    else
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
 #else
     flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 #endif
@@ -234,11 +232,11 @@ int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
     int srt_ev = 0;
 
-    if (events) {
+    if (events)
         srt_ev = *events;
-    } else {
+    else
         srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
+
 
     return CUDT::epoll_update_usock(eid, u, &srt_ev);
 }
@@ -248,17 +246,15 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
     int flag = 0;
 
 #ifdef LINUX
-    if (events) {
+    if (events)
         flag = *events;
-    } else {
+    else
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    if (events) {
+    if (events)
         flag = *events;
-    } else {
+    else
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
 #else
     flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 #endif
@@ -280,14 +276,14 @@ int srt_epoll_wait(
         lrfds, lrnum, lwfds, lwnum);
 }
 
-int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool triggerMode)
+int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
 {
     return UDT::epoll_wait2(
         eid,
         fdsSet,
         fdsSize,
         msTimeOut,
-        triggerMode);
+        edgeMode);
 }
 
 

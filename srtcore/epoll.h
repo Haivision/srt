@@ -143,12 +143,13 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
-      /// wait for EPoll events or timeout optimized + explicit ERR case + trigger mode option (candidate to replace the previous)
+      /// wait for EPoll events or timeout optimized with an explicit ERR event and the edge mode option.
       /// @param [in] eid EPoll ID.
       /// @param [out] fds sets (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR).
-	  /// @param [in] msTimeOut timeout threshold, in milliseconds.
-	  /// @param [in] pickup events to get a trigger(edge) mode.
+      /// @param [in] msTimeOut timeout threshold, in milliseconds.
+      /// @param [in] pickup events to get a edge trigger mode (0 means level trigger mode).
       /// @return number of sockets available for IO.
+
    int wait(const int eid, std::map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, int pickup = 0);
  
       /// close and release an EPoll.

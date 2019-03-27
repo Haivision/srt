@@ -224,26 +224,26 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 // Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-   CGuard pg(m_EPollLock);
-
-   map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
-   if (p == m_mPolls.end())
-      throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
-
-   int evts = events ? *events : (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
-   if(evts)
-   {
-      pair<int, int>& wait = p->second.m_sUDTSocksWait[u];
-      wait.first = evts; // watching
-      evts = wait.first & wait.second; // watching & state!
-      if(evts) {
-         p->second.m_sUDTSocksSet[u] = evts;
-         return 0;
-      }
-   } else 
-      p->second.m_sUDTSocksWait.erase(u);
-   p->second.m_sUDTSocksSet.erase(u);
-   return 0;
+    CGuard pg(m_EPollLock);
+    
+    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+    if (p == m_mPolls.end())
+        throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+    
+    int evts = events ? *events : (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
+    if(evts)
+    {
+        pair<int, int>& wait = p->second.m_sUDTSocksWait[u];
+        wait.first = evts; // watching
+        evts = wait.first & wait.second; // watching & state!
+        if(evts) {
+            p->second.m_sUDTSocksSet[u] = evts;
+            return 0;
+       }
+    } else 
+        p->second.m_sUDTSocksWait.erase(u);
+    p->second.m_sUDTSocksSet.erase(u);
+    return 0;
 }
 
 int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
@@ -313,34 +313,41 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::wait(const int eid, map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, int pickup)
 {
-   int64_t entertime = CTimer::getTime();
-   for(;;) {
-      {
-         CGuard pg(m_EPollLock);
-         map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
-         if (p == m_mPolls.end())
-            throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
-         if (p->second.m_sUDTSocksWait.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL);
-         
-         fdsSet = p->second.m_sUDTSocksSet;
-         if(pickup>=0)
-         { // pickup events (trigger mode)
-            if (pickup < (int)fdsSet.size())
-               p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), std::next(p->second.m_sUDTSocksSet.begin(), pickup));
-            else
-               p->second.m_sUDTSocksSet.clear();
-         }
-      }
+    int64_t entertime = CTimer::getTime();
+    while(true)
+    {
+        {
+            CGuard pg(m_EPollLock);
+            map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+            if (p == m_mPolls.end())
+                throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+            if (p->second.m_sUDTSocksWait.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            
+            fdsSet = p->second.m_sUDTSocksSet;
+            if(pickup>=0)
+            { // pickup events (edge mode)
+				if (pickup < (int)fdsSet.size())
+				{
+					map<SRTSOCKET, int>::iterator next = p->second.m_sUDTSocksSet.begin();
+					std::advance(next, pickup);
+					p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), next);
+				}
+				else
+                    p->second.m_sUDTSocksSet.clear();
+            }
+        }
 
-      if(!fdsSet.empty())
-         return fdsSet.size();
-      
-      if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
-          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
-      CTimer::waitForEvent();
-   };
-   return 0;
+        if(!fdsSet.empty())
+            return fdsSet.size();
+        
+        if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+
+        CTimer::waitForEvent();
+    }
+
+    return 0;
 }
 
 int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
@@ -377,12 +384,15 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       }
 
       // Sockets with exceptions are returned to both read and write sets.
-      for(map<SRTSOCKET, int>::const_iterator it = p->second.m_sUDTSocksSet.begin(); it != p->second.m_sUDTSocksSet.end(); ++ it) {
-         if(readfds && ((it->second & UDT_EPOLL_IN) || (it->second & UDT_EPOLL_ERR))) {
+      for(map<SRTSOCKET, int>::const_iterator it = p->second.m_sUDTSocksSet.begin(); it != p->second.m_sUDTSocksSet.end(); ++ it) 
+      {
+         if(readfds && ((it->second & UDT_EPOLL_IN) || (it->second & UDT_EPOLL_ERR))) 
+         {
             if(readfds->insert(it->first).second)
                ++total;
          }
-         if(writefds && ((it->second & UDT_EPOLL_OUT) || (it->second & UDT_EPOLL_ERR))) {
+         if(writefds && ((it->second & UDT_EPOLL_OUT) || (it->second & UDT_EPOLL_ERR))) 
+         {
             if(writefds->insert(it->first).second)
                ++total;
          }
@@ -509,52 +519,59 @@ int CEPoll::release(const int eid)
 
 int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
 {
-   CGuard pg(m_EPollLock);
+    CGuard pg(m_EPollLock);
 
-   map<int, CEPollDesc>::iterator p;
+    map<int, CEPollDesc>::iterator p;
 
-   vector<int> lost;
-   for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
-   {
-      p = m_mPolls.find(*i);
-      if (p == m_mPolls.end())
-      {
-         lost.push_back(*i);
-      }
-      else
-      {
-         const map<SRTSOCKET, pair<int, int>>::iterator& it = p->second.m_sUDTSocksWait.find(uid);
-         if(it==p->second.m_sUDTSocksWait.end())
-            continue;
-         // compute new states
-         pair<int, int>& wait(it->second);
-         if(enable)
-            events = wait.second | events;
-         else
-            events = wait.second & (~events);
-         // compute states changes!
-         int changes = wait.second ^ events; // oldState XOR newState
-         if(!changes)
-            continue; // no changes!
-         // assign new state
-         wait.second = events;
-         // filter change relating what is watching
-         if(!(changes &= wait.first))
-            continue; // no change watching
-         // set events changes!
-         if(!enable)
-         { // bits change from 1 to 0
-            pair<map<SRTSOCKET, int>::iterator, bool> it = p->second.m_sUDTSocksSet.insert(pair<SRTSOCKET, int>(uid, 0));
-            if(it.second || !(it.first->second &= ~changes))  // all bits are 0 => remove SocksSet!
-               p->second.m_sUDTSocksSet.erase(it.first);
-         }
-         else // bits change from 0 to 1
-            p->second.m_sUDTSocksSet[uid] |= changes;
-      }
-   }
+    vector<int> lost;
+    for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
+    {
+        p = m_mPolls.find(*i);
+        if (p == m_mPolls.end())
+        {
+            lost.push_back(*i);
+        }
+        else
+        {
+            const map<SRTSOCKET, pair<int, int>>::iterator& it = p->second.m_sUDTSocksWait.find(uid);
+            if(it==p->second.m_sUDTSocksWait.end())
+                continue;
+            // compute new states
+            pair<int, int>& wait(it->second);
+            if(enable)
+                events = wait.second | events;
+            else
+                events = wait.second & (~events);
+            // compute states changes!
+            int changes = wait.second ^ events; // oldState XOR newState
+            if(!changes)
+                continue; // no changes!
+            // assign new state
+            wait.second = events;
+            // filter change relating what is watching
+            changes &= wait.first;
+            if(!changes)
+                continue; // no change watching
+            // set events changes!
+            if(!enable)
+            { // bits change from 1 to 0
+                pair<map<SRTSOCKET, int>::iterator, bool> it = p->second.m_sUDTSocksSet.insert(pair<SRTSOCKET, int>(uid, 0));
+                if (it.second) // new row with all bits to 0 => remove
+                    p->second.m_sUDTSocksSet.erase(it.first);
+                else
+                {
+                    it.first->second &= ~changes;
+                    if (!it.first->second)  // all bits are now set to 0 => remove SocksSet!
+                        p->second.m_sUDTSocksSet.erase(it.first);
+                }
+            }
+            else // bits change from 0 to 1
+                p->second.m_sUDTSocksSet[uid] |= changes;
+        }
+    }
 
-   for (vector<int>::iterator i = lost.begin(); i != lost.end(); ++ i)
-      eids.erase(*i);
+    for (vector<int>::iterator i = lost.begin(); i != lost.end(); ++ i)
+        eids.erase(*i);
 
-   return 0;
+    return 0;
 }

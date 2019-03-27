@@ -3063,15 +3063,19 @@ int epoll_wait2(
    return ret;
 }
 
-int epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool triggerMode)
+int epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
 {
+    // if fdsSet is NULL and waiting time is infinite, then this would be a deadlock
+    if (!fdsSet && (msTimeOut < 0))
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    // This API is an alternative format for epoll_wait, created for
    // compatability with other languages. Users need to pass in an array
    // for holding the returned sockets, with the maximum array length
    // stored in *rnum, etc., which will be updated with returned number
    // of sockets.
    map<SRTSOCKET, int> tmpFdsSet;
-   int total = CUDT::epoll_wait(eid, tmpFdsSet, msTimeOut, triggerMode ? fdsSize : 0);
+   int total = CUDT::epoll_wait(eid, tmpFdsSet, msTimeOut, edgeMode ? fdsSize : 0);
    if (total > 0)
    {
       total = 0;
