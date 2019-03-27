@@ -533,7 +533,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
         }
         else
         {
-            const map<SRTSOCKET, pair<int, int>>::iterator& it = p->second.m_sUDTSocksWait.find(uid);
+            const map<SRTSOCKET, pair<int, int> >::iterator& it = p->second.m_sUDTSocksWait.find(uid);
             if(it==p->second.m_sUDTSocksWait.end())
                 continue;
             // compute new states
