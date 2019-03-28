@@ -48,11 +48,6 @@ FUNCTION(join_arguments outvar)
 	set (${outvar} ${output} PARENT_SCOPE)
 ENDFUNCTION()
 
-macro(srt_install_symlink filepath sympath)
-    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${filepath} ${sympath})")
-    install(CODE "message(\"-- Created symlink: ${sympath} -> ${filepath}\")")
-endmacro(srt_install_symlink)
-
 # LEGACY. PLEASE DON'T USE ANYMORE.
 MACRO(MafRead maffile)
 	message(WARNING "MafRead is deprecated. Please use MafReadDir instead")
