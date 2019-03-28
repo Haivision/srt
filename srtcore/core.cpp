@@ -847,11 +847,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
    case SRTO_IPV6ONLY:
-	   if (m_bConnected)
-		   throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-	   m_bIpV6Only = bool_int_value(optval, optlen);
-	   break;
+      if (m_bConnected)
+         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+      
+      m_bIpV6Only = bool_int_value(optval, optlen);
+      break;
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -1126,9 +1126,9 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       break;
 
    case SRTO_IPV6ONLY:
-	   optlen = sizeof(int32_t);
-	   *(int32_t*)optval = m_bIpV6Only;
-	   break;
+      optlen = sizeof(int32_t);
+      *(int32_t*)optval = m_bIpV6Only;
+      break;
 
    default:
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);

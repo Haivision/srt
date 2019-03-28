@@ -103,7 +103,7 @@ m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:u
 #endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
-m_bIpV6Only(1)
+m_bIpV6Only(false)
 {
 }
 
@@ -116,7 +116,7 @@ m_iIpToS(-1),
 #endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
-m_bIpV6Only(1),
+m_bIpV6Only(false),
 m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
@@ -199,7 +199,7 @@ void CChannel::setUDPSockOpt()
       if ((0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_iRcvBufSize, sizeof(int))) ||
           (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&m_iSndBufSize, sizeof(int))))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-   #endif	  
+   #endif
 
 #ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
