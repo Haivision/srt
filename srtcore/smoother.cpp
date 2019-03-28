@@ -34,6 +34,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt_logging;
 
 SmootherBase::SmootherBase(CUDT* parent)
 {
@@ -490,9 +491,8 @@ RATE_LIMIT:
         // using FileSmoother, so relying on SRTO_TRANSTYPE rather than
         // just SRTO_SMOOTHER is recommended.
         int32_t lossbegin = SEQNO_VALUE::unwrap(losslist[0]);
-        int seqdiff = CSeqNo::seqcmp(lossbegin, m_iLastDecSeq);
 
-        if (seqdiff > 0)
+        if (CSeqNo::seqcmp(lossbegin, m_iLastDecSeq) > 0)
         {
             m_dLastDecPeriod = m_dPktSndPeriod;
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
@@ -520,7 +520,7 @@ RATE_LIMIT:
             m_iLastDecSeq = m_parent->sndSeqNo();
             HLOGC(mglog.Debug, log << "FileSmoother: LOSS:PERIOD lseq=" << lossbegin
                 << ", dseq=" << m_iLastDecSeq
-                << ", seqdiff=" << seqdiff
+                << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
                 << ", sndperiod=" << m_dPktSndPeriod << "us");
@@ -529,7 +529,7 @@ RATE_LIMIT:
         {
             HLOGC(mglog.Debug, log << "FileSmoother: LOSS:STILL lseq=" << lossbegin
                 << ", dseq=" << m_iLastDecSeq
-                << ", seqdiff=" << seqdiff
+                << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
                 << ", sndperiod=" << m_dPktSndPeriod << "us");

@@ -196,6 +196,11 @@ struct BandwidthGuard
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
+namespace srt_logging
+{
+    extern Logger glog;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -306,7 +311,7 @@ int main( int argc, char** argv )
         transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
         stoptime = stoul(Option("0", "d", "stoptime"));
     }
-    catch (std::invalid_argument)
+    catch (std::invalid_argument &)
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
@@ -315,8 +320,8 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
     char NAME[] = "SRTLIB";
@@ -444,7 +449,6 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
-    extern logging::Logger glog;
     try
     {
         for (;;)

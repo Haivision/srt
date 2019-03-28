@@ -902,7 +902,7 @@ std::unique_ptr<Medium> main_listener;
 
 size_t default_chunk = 4096;
 
-const logging::LogFA SRT_LOGFA_APP = 10;
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
 
 int OnINT_StopService(int)
 {
@@ -953,7 +953,7 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     if (logfa == "")
     {
@@ -963,7 +963,7 @@ int main( int argc, char** argv )
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
         UDT::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.

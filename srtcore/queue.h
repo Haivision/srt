@@ -75,14 +75,13 @@ struct CUnit
 
 class CUnitQueue
 {
-friend class CRcvQueue;
-friend class CRcvBuffer;
 
 public:
+
    CUnitQueue();
    ~CUnitQueue();
 
-public:
+public:     // Storage size operations
 
       /// Initialize the unit queue.
       /// @param [in] size queue size
@@ -102,10 +101,22 @@ public:
 
    int shrink();
 
+public:     // Operations on units
+
       /// find an available unit for incoming packet.
       /// @return Pointer to the available unit, NULL if not found.
 
    CUnit* getNextAvailUnit();
+
+
+   void makeUnitFree(CUnit * unit);
+
+   void makeUnitGood(CUnit * unit);
+
+public:
+
+    inline int getIPversion() const { return m_iIPversion; }
+
 
 private:
    struct CQEntry
