@@ -292,7 +292,7 @@ void CChannel::setRcvBufSize(int size)
    m_iRcvBufSize = size;
 }
 
-void CChannel::setIpV6Only(bool ipV6Only) 
+void CChannel::setIpV6Only(int ipV6Only) 
 {
    m_iIpV6Only = ipV6Only;
 }

@@ -109,7 +109,7 @@ public:
    /// Set the IPV6ONLY option.
    /// @param [in] IPV6ONLY value.
 
-   void setIpV6Only(bool ipV6Only);
+   void setIpV6Only(int ipV6Only);
 
       /// Query the socket address that the channel is using.
       /// @param [out] addr pointer to store the returned socket address.
