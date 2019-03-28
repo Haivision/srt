@@ -26,18 +26,9 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     vector<string> dummy;
     vector<string>& fails = failures ? *failures : dummy;
 
-    if ( options.count("passphrase") )
+    SocketOption::Mode mode = SocketOption::CALLER;
+    if (host != "--") // for this value it will always return CALLER
     {
-        /*
-        // Insert default
-        if ( options.count("pbkeylen") == 0 )
-        {
-            options["pbkeylen"] = "16"; // m_output_direction ? "16" : "0";
-        }
-        */
-    }
-
-    SocketOption::Mode mode;
     string modestr = "default";
 
     if ( options.count("mode") )
@@ -75,6 +66,8 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     {
         mode = SocketOption::FAILURE;
         fails.push_back("mode");
+        }
+
     }
 
     bool all_clear = true;

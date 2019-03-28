@@ -63,7 +63,7 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <win/wintime.h>
 #endif
 
@@ -190,7 +190,7 @@ int CUDTUnited::startup()
       return 0;
 
    // Global initialization code
-   #ifdef WIN32
+   #ifdef _WIN32
       WORD wVersionRequested;
       WSADATA wsaData;
       wVersionRequested = MAKEWORD(2, 2);
@@ -240,7 +240,7 @@ int CUDTUnited::cleanup()
    // the application cleanup section, this can be temporarily
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
-#ifndef WIN32
+#ifndef _WIN32
    pthread_mutex_destroy(&m_GCStopLock);
    pthread_cond_destroy(&m_GCStopCond);
 #endif
@@ -248,7 +248,7 @@ int CUDTUnited::cleanup()
    m_bGCStatus = false;
 
    // Global destruction code
-   #ifdef WIN32
+   #ifdef _WIN32
       WSACleanup();
    #endif
 
@@ -439,15 +439,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
    catch (...)
    {
-       // The mapped socket should be now unmapped to preserve the situation that
-       // was in the original UDT code.
-       // In SRT additionally the acceptAndRespond() function (it was called probably
-       // connect() in UDT code) may fail, in which case this socket should not be
-       // further processed and should be removed.
-       {
-           CGuard cg(m_ControlLock);
-           m_Sockets.erase(ns->m_SocketID);
-       }
        error = 1;
        goto ERR_ROLLBACK;
    }
@@ -497,9 +488,20 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
+      SRTSOCKET id = ns->m_SocketID;
       ns->m_pUDT->close();
       ns->m_Status = SRTS_CLOSED;
       ns->m_TimeStamp = CTimer::getTime();
+      // The mapped socket should be now unmapped to preserve the situation that
+      // was in the original UDT code.
+      // In SRT additionally the acceptAndRespond() function (it was called probably
+      // connect() in UDT code) may fail, in which case this socket should not be
+      // further processed and should be removed.
+      {
+          CGuard cg(m_ControlLock);
+          m_Sockets.erase(id);
+          m_ClosedSockets[id] = ns;
+      }
 
       return -1;
    }
@@ -1807,7 +1809,7 @@ void* CUDTUnited::garbageCollect(void* p)
        INCREMENT_THREAD_ITERATIONS();
        self->checkBrokenSockets();
 
-       //#ifdef WIN32
+       //#ifdef _WIN32
        //      self->checkTLSValue();
        //#endif
 

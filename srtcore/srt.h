@@ -35,7 +35,7 @@ written by
 //use -D_WIN32_WINNT=0x0501
 
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
@@ -95,7 +95,7 @@ extern "C" {
 
 typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
 
-#ifdef WIN32
+#ifdef _WIN32
    #ifndef __MINGW__
       typedef SOCKET SYSSOCKET;
    #else
@@ -172,13 +172,14 @@ typedef enum SRT_SOCKOPT {
     SRTO_RCVLATENCY,      // TsbPd receiver delay (mSec) to absorb burst of missed packet retransmission
     SRTO_PEERLATENCY,     // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
     SRTO_MINVERSION,      // Minimum SRT version needed for the peer (peers with less version will get connection reject)
-    SRTO_STREAMID,         // A string set to a socket and passed to the listener's accepted socket
-    SRTO_SMOOTHER,         // Smoother selection (congestion control algorithm)
-    SRTO_MESSAGEAPI,
-    SRTO_PAYLOADSIZE,
-    SRTO_TRANSTYPE,         // Transmission type (set of options required for given transmission type)
-    SRTO_KMREFRESHRATE,
-    SRTO_KMPREANNOUNCE
+    SRTO_STREAMID,        // A string set to a socket and passed to the listener's accepted socket
+    SRTO_SMOOTHER,        // Smoother selection (congestion control algorithm)
+    SRTO_MESSAGEAPI,      // In File mode, use message API (portions of data with boundaries)
+    SRTO_PAYLOADSIZE,     // Maximum payload size sent in one UDP packet (0 if unlimited)
+    SRTO_TRANSTYPE,       // Transmission type (set of options required for given transmission type)
+    SRTO_KMREFRESHRATE,   // After sending how many packets the encryption key should be flipped to the new key
+    SRTO_KMPREANNOUNCE,   // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
+    SRTO_STRICTENC,       // Connection to be rejected or quickly broken when one side encryption set or bad password
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:

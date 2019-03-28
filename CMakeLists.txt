@@ -19,6 +19,7 @@ include(haiUtil)
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
+include(CheckFunctionExists)
 
 # Platform shortcuts
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -61,6 +62,20 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
+
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
 # use ENABLE_LOGGING=NO in cmake or
@@ -84,9 +99,11 @@ option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
+option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
-option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
+option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
+option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
@@ -145,8 +162,25 @@ endif()
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
+# symbol exists in win32, but function does not.
+if(WIN32)
+	if(ENABLE_INET_PTON)
+		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
+		check_function_exists(inet_pton HAVE_INET_PTON)
+		add_definitions(-D_WIN32_WINNT=0x0600)
+	else()
+		add_definitions(-D_WIN32_WINNT=0x0501)
+	endif()
+else()
+	check_function_exists(inet_pton HAVE_INET_PTON)
+endif()
+if (DEFINED HAVE_INET_PTON)
+	add_definitions(-DHAVE_INET_PTON=1)
+endif()
+
 # find OpenSSL
 if ( USE_GNUTLS )
+	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 	set (SSL_REQUIRED_MODULES "gnutls nettle")
 	if (WIN32)
 		if (MINGW)
@@ -163,45 +197,45 @@ if ( USE_GNUTLS )
 	link_directories(
 		${SSL_LIBRARY_DIRS}
 	)
-	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
 else()
+		message(STATUS "SSL Dependency: using OpenSSL (default)")
 
-	if (USE_OPENSSL_PC)
-
-	        # Only use the .pc files if we actually try to find them
-	        set (SSL_REQUIRED_MODULES "openssl libcrypto zlib")
-
-		pkg_check_modules(SSL REQUIRED ${SSL_REQUIRED_MODULES})
-
-		# We have some cases when pkg-config is improperly configured
-		# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
-		# is set (also through `configure`), then we have this problem. If so,
-		# set forcefully the -I and -L contents to prefix/include and
-		# prefix/lib.
-
-		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-		if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-			message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-			set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
-			set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+		# if OPENSSL_ROOT_DIR or USE_OPENSSL_PC are set, we assume
+		# that the user wants to use find_package(OpenSSL) method to
+		# find OpenSSL package. Otherwise default to pkg-config.
+		if (NOT OPENSSL_ROOT_DIR OR USE_OPENSSL_PC)
+			pkg_check_modules(SSL "openssl libcrypto")
 		endif()
+		if (SSL_FOUND)
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+
+			# We have some cases when pkg-config is improperly configured
+			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
+			# is set (also through `configure`), then we have this problem. If so,
+			# set forcefully the -I and -L contents to prefix/include and
+			# prefix/lib.
+			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+				set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+				set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+			endif()
+			endif()
+
+			link_directories(
+				${SSL_LIBRARY_DIRS}
+			)
+			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+		else()
+			find_package(OpenSSL REQUIRED)
+			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-
-		link_directories(
-			${SSL_LIBRARY_DIRS}
-		)
-		message(STATUS "SSL REPORT: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-	else()
-
-		find_package(OpenSSL REQUIRED)
-		set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-		set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-	endif()
 	add_definitions(
 		-DHAICRYPT_USE_OPENSSL_EVP=1
 		-DHAICRYPT_USE_OPENSSL_AES
 	)
-	message(STATUS "SSL Dependency: using OpenSSL (default)")
 endif()
 
 message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
@@ -277,6 +311,7 @@ set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
@@ -351,7 +386,7 @@ elseif (WIN32 AND NOT MINGW)
 		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
 	endif()
 
-	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib)
+	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
 	if (PTHREAD_LIBRARY)
 		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	else()
@@ -402,6 +437,13 @@ endif()
 # Make the OBJECT library for haicrypt and srt. Then they'll be bound into
 # real libraries later, either one common, or separate.
 
+# This is needed for Xcode to properly handle CMake OBJECT Libraries
+# From docs (https://cmake.org/cmake/help/latest/command/add_library.html#object-libraries):
+#
+# ... Some native build systems (such as Xcode) may not like targets that have only object files,
+# so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>.
+set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
+
 add_library(haicrypt_virtual OBJECT ${SOURCES_haicrypt} ${SOURCES_common})
 
 # NOTE: The "virtual library" is a library specification that cmake
@@ -427,7 +469,7 @@ configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra})
+add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt})
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
@@ -443,7 +485,7 @@ endif()
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
     set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
@@ -457,7 +499,7 @@ if (srt_libspec_shared)
 endif()
 
 if (srt_libspec_static)
-	add_library(${TARGET_srt}_static STATIC ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
@@ -478,7 +520,7 @@ if (srt_libspec_static)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
-		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32.lib ws2_32.lib)
+		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
 	endif()
 endif()
 
@@ -496,15 +538,10 @@ endif()
 
 target_include_directories(haicrypt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-# Only set the libraries directly if they're in the Requires.private
-if (NOT SSL_REQUIRED_MODULES)
-  set (SRT_LIBS_PRIVATE ${SSL_LIBRARIES})
-endif()
-
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 elseif (MINGW)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} wsock32.lib ws2_32.lib)
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32)
 endif()
 
 # ---
@@ -579,19 +616,18 @@ if (NOT DEFINED INSTALLDIR)
 	get_filename_component(INSTALLDIR ${INSTALLDIR} ABSOLUTE)
 endif()
 
-# XXX
-# These two flags are required if compiling a C application
-# The problem is that pkg-config cannot return flags that are
-# suitable for C or C++ only - just "cflags", and for C by default.
+# Required if linking a C application.
 # This may cause trouble when you want to compile your app with static libstdc++;
 # if your build requires it, you'd probably remove -lstdc++ from the list
 # obtained by `pkg-config --libs`.
-#
-# Some sensible solution for that is desired. Currently turned on only on demand.
-if (ENABLE_C_DEPS)
-if ( LINUX )
-	set (IFNEEDED_SRT_LDFLAGS "-lstdc++ -lm")
-endif()
+if(ENABLE_CXX_DEPS)
+   foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
+      if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+      else()
+         set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+      endif()
+   endforeach()
 endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
@@ -655,8 +691,8 @@ macro(srt_make_application name)
 	target_link_libraries(${name} ${srt_link_library})
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
@@ -706,17 +742,16 @@ if ( ENABLE_CXX11 )
 		install(PROGRAMS ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 
-	# srt-file-transmit must be temporarily blocked on Windows because it's not yet portable
-	if (NOT WIN32)
-		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
-	endif()
+	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+    else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -737,20 +772,18 @@ if ( ENABLE_CXX11 )
 
 		srt_add_testprogram(utility-test)
 		if (NOT WIN32)
-		   # This program is symlinked under git-cygwin.
-		   # Avoid misleading syntax error.
-	       srt_add_testprogram(uriparser-test)
-	       target_compile_options(uriparser-test PRIVATE -DTEST)
-	       target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+		    # This program is symlinked under git-cygwin.
+		    # Avoid misleading syntax error.
+	        srt_add_testprogram(uriparser-test)
+	        target_compile_options(uriparser-test PRIVATE -DTEST)
+	        target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
-		if (NOT WIN32)
-			# Still portability problem on Windows
-			srt_add_testprogram(srt-test-file)
-			srt_make_application(srt-test-file)
-		endif()
+
+		srt_add_testprogram(srt-test-file)
+		srt_make_application(srt-test-file)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
@@ -777,6 +810,37 @@ if (ENABLE_EXAMPLES)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
 endif()
+
+
+if (ENABLE_UNITTESTS)
+	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+	include(googletest)
+	fetch_googletest(
+		${PROJECT_SOURCE_DIR}/scripts
+		${PROJECT_BINARY_DIR}/googletest
+	)
+
+	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp)
+	srt_make_application(test_srt)
+
+	target_link_libraries(
+		test_srt
+		gtest_main
+		${srt_link_library}
+		${PTHREAD_LIBRARY}
+		)
+
+	add_test(
+		NAME
+			test_srt
+		COMMAND
+			${CMAKE_BINARY_DIR}/test_srt
+	)
+
+	enable_testing()
+
+endif()
+
 
 install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
 

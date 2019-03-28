@@ -19,7 +19,7 @@
 #include <iterator>
 #include <map>
 #include <srt.h>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <sys/ioctl.h>
 #endif
 
@@ -101,6 +101,10 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
+#ifdef PLEASE_LOG
+#include "logging.h"
+#endif
+
 class FileTarget: public virtual Target
 {
     ofstream ofile;
@@ -111,12 +115,23 @@ public:
     void Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+#endif
     }
 
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() override { ofile.close(); }
+    void Close() override
+    {
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Close";
+#endif
+        ofile.close();
+    }
 };
 
 // Can't base this class on FileSource and FileTarget classes because they use two
@@ -1025,7 +1040,7 @@ protected:
             ip_mreq mreq;
             mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
             mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
-#ifdef WIN32
+#ifdef _WIN32
             const char* mreq_arg = (const char*)&mreq;
             const auto status_error = SOCKET_ERROR;
 #else
@@ -1033,7 +1048,7 @@ protected:
             const auto status_error = -1;
 #endif
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(__CYGWIN__)
             // On Windows it somehow doesn't work when bind()
             // is called with multicast address. Write the address
             // that designates the network device here.
@@ -1104,7 +1119,7 @@ protected:
 
     ~UdpCommon()
     {
-#ifdef WIN32
+#ifdef _WIN32
         if (m_sock != -1)
         {
             shutdown(m_sock, SD_BOTH);

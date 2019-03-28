@@ -54,7 +54,7 @@ modified by
 #define __UDT_WINDOW_H__
 
 
-#ifndef WIN32
+#ifndef _WIN32
    #include <sys/time.h>
    #include <time.h>
 #endif
