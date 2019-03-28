@@ -263,6 +263,7 @@ CUDT::CUDT()
    m_bOPT_StrictEncryption = true;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
+   m_bIpV6Only = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
    //Runtime
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
@@ -844,7 +845,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
-    default:
+   case SRTO_IPV6ONLY:
+      if (m_bConnected)
+         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+      m_bIpV6Only = bool_int_value(optval, optlen);
+      break;
+
+   default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 }
@@ -1114,6 +1122,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_STRICTENC:
       optlen = sizeof (int32_t); // also with TSBPDMODE and SENDER
       *(int32_t*)optval = m_bOPT_StrictEncryption;
+      break;
+
+   case SRTO_IPV6ONLY:
+      optlen = sizeof(int32_t);
+      *(int32_t*)optval = m_bIpV6Only;
       break;
 
    default:
