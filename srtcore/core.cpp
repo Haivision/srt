@@ -307,7 +307,7 @@ CUDT::CUDT(const CUDT& ancestor)
 #endif
    m_iSndTimeOut = ancestor.m_iSndTimeOut;
    m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
-   m_bReuseAddr = true;	// this must be true, because all accepted sockets shared the same port with the listener
+   m_bReuseAddr = true; // this must be true, because all accepted sockets share the same port with the listener
    m_llMaxBW = ancestor.m_llMaxBW;
 #ifdef SRT_ENABLE_IPOPTS
    m_iIpTTL = ancestor.m_iIpTTL;
@@ -4725,8 +4725,8 @@ bool CUDT::close()
             if (m_ullLingerExpiration == 0)
                m_ullLingerExpiration = entertime + m_Linger.l_linger * uint64_t(1000000);
 
-			HLOGC(mglog.Debug, log << "CUDT::close: linger-nonblocking, setting expire time T="
-					<< FormatTime(m_ullLingerExpiration));
+            HLOGC(mglog.Debug, log << "CUDT::close: linger-nonblocking, setting expire time T="
+                    << FormatTime(m_ullLingerExpiration));
 
             return false;
          }
