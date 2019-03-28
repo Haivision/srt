@@ -628,8 +628,8 @@ SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* wr
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
 typedef struct SRT_EPOLL_EVENT_
 {
-	SRTSOCKET fd;
-	int       events; // UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR
+    SRTSOCKET fd;
+    int       events; // UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR
 } SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode=false);
 SRT_API int srt_epoll_release(int eid);

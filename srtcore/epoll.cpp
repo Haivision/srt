@@ -236,11 +236,13 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
         pair<int, int>& wait = p->second.m_sUDTSocksWait[u];
         wait.first = evts; // watching
         evts = wait.first & wait.second; // watching & state!
-        if(evts) {
+        if(evts) 
+        {
             p->second.m_sUDTSocksSet[u] = evts;
             return 0;
-       }
-    } else 
+        }
+    } 
+    else 
         p->second.m_sUDTSocksWait.erase(u);
     p->second.m_sUDTSocksSet.erase(u);
     return 0;
@@ -325,15 +327,15 @@ int CEPoll::wait(const int eid, map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, 
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             
             fdsSet = p->second.m_sUDTSocksSet;
-            if(pickup>=0)
+            if (pickup >= 0)
             { // pickup events (edge mode)
-				if (pickup < (int)fdsSet.size())
-				{
-					map<SRTSOCKET, int>::iterator next = p->second.m_sUDTSocksSet.begin();
-					std::advance(next, pickup);
-					p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), next);
-				}
-				else
+                if (pickup < (int)fdsSet.size())
+                {
+                   map<SRTSOCKET, int>::iterator next = p->second.m_sUDTSocksSet.begin();
+                   std::advance(next, pickup);
+                   p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), next);
+                }
+                else
                     p->second.m_sUDTSocksSet.clear();
             }
         }
