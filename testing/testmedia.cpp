@@ -457,23 +457,20 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
     }
 
-    SrtConfigurePost(sock, m_options);
+    // host is only checked for emptiness and depending on that the connection mode is selected.
+    // Here we are not exactly interested with that information.
+    vector<string> failures;
 
-    for (auto o: srt_options)
+    SrtConfigurePost(sock, m_options, &failures);
+
+
+    if (!failures.empty())
     {
-        if ( o.binding == SocketOption::POST && m_options.count(o.name) )
+        if (Verbose::on)
         {
-            string value = m_options.at(o.name);
-            bool ok = o.apply<SocketOption::SRT>(sock, value);
-            if (Verbose::on)
-            {
-                string dir_name = DirectionName(m_direction);
-
-                if ( !ok )
-                    Verb() << "WARNING: failed to set '" << o.name << "' (post, " << dir_name << ") to " << value;
-                else
-                    Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
-            }
+            Verb() << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
+            Verb();
         }
     }
 
@@ -513,7 +510,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         if (Verbose::on )
         {
             Verb() << "WARNING: failed to set options: ";
-            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
             Verb();
         }
 
@@ -744,16 +741,24 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
-    if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
-    {
-        Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-    }
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
+    CBytePerfMon perf;
+    if (need_stats_report || need_bw_report)
     {
-        PrintSrtStats(m_sock, perf);
+        // clear only if stats report is to be read
+        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+
+        if (need_bw_report)
+        {
+            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
+        }
+
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+        }
     }
 
     ++counter;

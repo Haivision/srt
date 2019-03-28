@@ -35,6 +35,7 @@ set internal_options {
 # Options that refer directly to variables used in CMakeLists.txt
 set cmake_options {
     cygwin-use-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
+    enable-unittests "Should the unit tests be enabled (default: OFF)"
     enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
     enable-c-deps "Extra library dependencies in srt.pc for C language (default: OFF)"
     enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"

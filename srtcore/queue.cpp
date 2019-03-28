@@ -64,6 +64,7 @@ modified by
 #include "queue.h"
 
 using namespace std;
+using namespace srt_logging;
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),
@@ -232,6 +233,24 @@ CUnit* CUnitQueue::getNextAvailUnit()
    increase();
 
    return NULL;
+}
+
+
+void CUnitQueue::makeUnitFree(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
+    unit->m_iFlag = CUnit::FREE;
+    --m_iCount;
+}
+
+
+void CUnitQueue::makeUnitGood(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
+    unit->m_iFlag = CUnit::GOOD;
+    ++m_iCount;
 }
 
 
@@ -486,7 +505,7 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    ThreadName tn("SRT:SndQ:worker");
    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
    {
-	   m_WorkerThread = pthread_t();
+       m_WorkerThread = pthread_t();
        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
    }
 }
@@ -608,7 +627,7 @@ int CSndQueue::sendto(const sockaddr* addr, CPacket& packet)
 {
    // send out the packet immediately (high priority), this is a control packet
    m_pChannel->sendto(addr, packet);
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 
@@ -977,6 +996,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
                 {
                     LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
+                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
 #if ENABLE_HEAVY_LOGGING
                     ++debug_nfail;
@@ -1025,7 +1045,7 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
@@ -1067,7 +1087,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     ThreadName tn("SRT:RcvQ:worker");
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
-		m_WorkerThread = pthread_t();
+        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1075,7 +1095,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 void* CRcvQueue::worker(void* param)
 {
    CRcvQueue* self = (CRcvQueue*)param;
-   sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
+   sockaddr_any sa (self->m_UnitQueue.getIPversion());
    int32_t id = 0;
 
    THREAD_STATE_INIT("SRT:RcvQ:worker");
@@ -1088,7 +1108,7 @@ void* CRcvQueue::worker(void* param)
        EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa);
        if (rst == RST_OK)
        {
-           if ( id < 0 )
+           if (id < 0)
            {
                // User error on peer. May log something, but generally can only ignore it.
                // XXX Think maybe about sending some "connection rejection response".
@@ -1533,7 +1553,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
    if (i->second.empty())
       m_mBuffer.erase(i);
 
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 int CRcvQueue::setListener(CUDT* u)
