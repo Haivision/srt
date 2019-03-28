@@ -820,7 +820,7 @@ std::string ConnectStatusStr(EConnectStatus cst)
 
 std::string TransmissionEventStr(ETransmissionEvent ev)
 {
-    static const std::string vals [] =
+    static const char* const vals [] =
     {
         "init",
         "ack",

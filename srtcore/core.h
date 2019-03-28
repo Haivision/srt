@@ -369,7 +369,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    void close();
+    bool close();
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.

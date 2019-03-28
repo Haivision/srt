@@ -137,6 +137,8 @@ int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
     // for a case when the instance would use UDP. SRT does it on its own, independently.
+    srt_startup();
+
     if ( !SysInitializeNetwork() )
         throw std::runtime_error("Can't initialize network!");
 
@@ -146,6 +148,7 @@ int main( int argc, char** argv )
     {
         ~NetworkCleanup()
         {
+            srt_cleanup();
             SysCleanupNetwork();
         }
     } cleanupobj;
