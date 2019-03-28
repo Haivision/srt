@@ -179,7 +179,7 @@ private:
 #endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
-   bool m_bIpV6Only;                    // IPV6_V6ONLY option
+   int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
    sockaddr_any m_BindAddr;
 };
 
