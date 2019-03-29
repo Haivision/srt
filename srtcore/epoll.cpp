@@ -316,7 +316,8 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
 {
     int64_t entertime = CTimer::getTime();
-    if (!fdsSet && fdsSize)
+    // if fdsSet is NULL and waiting time is infinite, then this would be a deadlock
+    if ((!fdsSet || !fdsSize) && (msTimeOut < 0))
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
     while (true)
