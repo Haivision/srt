@@ -313,10 +313,13 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::wait(const int eid, map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, int pickup)
+int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
 {
     int64_t entertime = CTimer::getTime();
-    while(true)
+    if (!fdsSet && fdsSize)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL);
+
+    while (true)
     {
         {
             CGuard pg(m_EPollLock);
@@ -325,26 +328,27 @@ int CEPoll::wait(const int eid, map<SRTSOCKET, int>& fdsSet, int64_t msTimeOut, 
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
             if (p->second.m_sUDTSocksWait.empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
-            
-            fdsSet = p->second.m_sUDTSocksSet;
-            if (pickup >= 0)
-            { // pickup events (edge mode)
-                if (pickup < (int)fdsSet.size())
+            int total = p->second.m_sUDTSocksSet.size();
+            if (total)
+            {
+                int size = 0;
+                map<SRTSOCKET, int>::const_iterator it = p->second.m_sUDTSocksSet.begin();
+                while (size < fdsSize && it != p->second.m_sUDTSocksSet.end())
                 {
-                   map<SRTSOCKET, int>::iterator next = p->second.m_sUDTSocksSet.begin();
-                   std::advance(next, pickup);
-                   p->second.m_sUDTSocksSet.erase(p->second.m_sUDTSocksSet.begin(), next);
+                    SRT_EPOLL_EVENT& event = fdsSet[size++];
+                    event.fd = it->first;
+                    event.events = it->second;
+                    if (edgeMode)
+                        p->second.m_sUDTSocksSet.erase(it++);
+                    else
+                        ++it;
                 }
-                else
-                    p->second.m_sUDTSocksSet.clear();
+                return total;
             }
         }
 
-        if(!fdsSet.empty())
-            return fdsSet.size();
-        
         if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
-             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+            throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
         CTimer::waitForEvent();
     }

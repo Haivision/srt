@@ -38,7 +38,7 @@ TEST(CEPoll, InfiniteWait2)
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
 
-    ASSERT_EQ(srt_epoll_wait2(epoll_id, nullptr, 0, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, nullptr, 0, -1), SRT_ERROR);
 
     try
     {
@@ -90,7 +90,7 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_wait2(epoll_id, events, 2, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     try
     {
@@ -159,7 +159,7 @@ TEST(CEPoll, WaitEmptyCall2)
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
-    ASSERT_EQ(srt_epoll_wait2(epoll_id, NULL, 0, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 0, -1), SRT_ERROR);
 
     try
     {
@@ -239,7 +239,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_wait2(epoll_id, events, 2, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     try
     {

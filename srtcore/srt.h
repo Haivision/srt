@@ -631,7 +631,7 @@ typedef struct SRT_EPOLL_EVENT_
     SRTSOCKET fd;
     int       events; // UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR
 } SRT_EPOLL_EVENT;
-SRT_API int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode=false);
+SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, int edgeMode/*=false*/);
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control
