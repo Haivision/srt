@@ -333,7 +333,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
             if (total)
             {
                 int size = 0;
-                map<SRTSOCKET, int>::const_iterator it = p->second.m_sUDTSocksSet.begin();
+                map<SRTSOCKET, int>::iterator it = p->second.m_sUDTSocksSet.begin();
                 while (size < fdsSize && it != p->second.m_sUDTSocksSet.end())
                 {
                     SRT_EPOLL_EVENT& event = fdsSet[size++];
