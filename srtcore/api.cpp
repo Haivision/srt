@@ -1382,13 +1382,14 @@ int CUDTUnited::epoll_wait(
    return m_EPoll.wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
 }
 
-int CUDTUnited::epoll_wait(
+int CUDTUnited::epoll_uwait(
    const int eid,
-   map<SRTSOCKET, int>& fds,
+   SRT_EPOLL_EVENT* fdsSet,
+   int fdsSize, 
    int64_t msTimeOut,
-   int pickup)
+   bool edgeMode)
 {
-   return m_EPoll.wait(eid, fds, msTimeOut, pickup);
+   return m_EPoll.uwait(eid, fdsSet, fdsSize, msTimeOut, edgeMode);
 }
 
 int CUDTUnited::epoll_release(const int eid)
@@ -2600,42 +2601,16 @@ int CUDT::epoll_wait(
    }
 }
 
-int CUDT::epoll_wait(
-   const int eid, 
-   SRT_EPOLL_EVENT* fdsSet, 
+int CUDT::epoll_uwait(
+   const int eid,
+   SRT_EPOLL_EVENT* fdsSet,
    int fdsSize,
-   int64_t msTimeOut, 
-   int pickup
-   )
+   int64_t msTimeOut,
+   bool modeEdge)
 {
-    // if fdsSet is NULL and waiting time is infinite, then this would be a deadlock
-    if ((!fdsSet || !fdsSize) && (msTimeOut < 0)) {
-        s_UDTUnited.setError(new CUDTException(MJ_NOTSUP, MN_INVAL, 0));
-        return ERROR;
-    }
-
    try
    {
-      // This API is an alternative format for epoll_wait, created for
-      // compatibility with other languages. Users need to pass in an array
-      // for holding the returned sockets, with the maximum array length
-      // stored in *rnum, etc., which will be updated with returned number
-      // of sockets.
-      map<SRTSOCKET, int> tmpFdsSet;
-      int total = s_UDTUnited.epoll_wait(eid, tmpFdsSet, msTimeOut, pickup);
-      if (total > 0)
-      {
-          total = 0;
-          for (map<SRTSOCKET, int>::const_iterator it = tmpFdsSet.begin(); it != tmpFdsSet.end(); ++it)
-          {
-              if (total >= fdsSize)
-                  break;
-              SRT_EPOLL_EVENT& event = fdsSet[total++];
-              event.fd = it->first;
-              event.events = it->second;
-          }
-      }
-	  return total;
+      return s_UDTUnited.epoll_uwait(eid, fdsSet, fdsSize, msTimeOut, modeEdge);
    }
    catch (CUDTException e)
    {
@@ -3090,9 +3065,9 @@ int epoll_wait2(
    return ret;
 }
 
-int epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
+int epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
 {
-   return CUDT::epoll_wait(eid, fdsSet, fdsSize, msTimeOut, edgeMode ? fdsSize : 0);
+   return CUDT::epoll_uwait(eid, fdsSet, fdsSize, msTimeOut, edgeMode);
 }
 
 int epoll_release(int eid)

@@ -276,14 +276,14 @@ int srt_epoll_wait(
         lrfds, lrnum, lwfds, lwnum);
 }
 
-int srt_epoll_wait2(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, bool edgeMode)
+int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, int edgeMode)
 {
-    return UDT::epoll_wait2(
+    return UDT::epoll_uwait(
         eid,
         fdsSet,
         fdsSize,
         msTimeOut,
-        edgeMode);
+        edgeMode != 0);
 }
 
 
