@@ -1113,7 +1113,22 @@ until a readiness state occurs.
 * `msTimeOut` : Timeout specified in milliseconds, or special values (0 or -1)
 * `edgeMode` : The triggered mode (default is 0 for **level-triggered**)
 
-The `SRT_MSGCTRL` structure:
+- Returns:
+
+  * The total amount of user socket (SRT socket) states changed. Note that this
+can be larger than `fdsSize`, in this case and if `edgeMode` is true only `fdsSize`
+events are returned in the `fdsSet` and the remaining events can be retrieved by
+a new call to this function
+  * -1 in case of error
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
+This is reported only if `msTimeOut` was \>=0, otherwise the function waits
+indefinitely.
+
+The `SRT_EPOLL_EVENT` structure:
 
 ```
 typedef struct SRT_EPOLL_EVENT_
@@ -1129,21 +1144,6 @@ typedef struct SRT_EPOLL_EVENT_
 Note that when the `SRT_EPOLL_ERR` is set the error cannot be retrieved
 with `srt_getlasterror` but it means that the socket is closed and the 
 socket state can be read using `srt_getsockstate`.
-
-- Returns:
-
-  * The total amount of user socket (SRT socket) states changed. Note that this
-can be larger than `fdsSize`, in this case and if `edgeMode` is true only `fdsSize`
-events are returned in the `fdsSet` and the remaining events can be retrieved by
-a new call to this function
-  * -1 in case of error
-
-- Errors:
-
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
-  * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
-This is reported only if `msTimeOut` was \>=0, otherwise the function waits
-indefinitely.
 
 ### srt_epoll_release
 ```
