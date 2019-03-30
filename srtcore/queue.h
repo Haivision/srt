@@ -520,6 +520,7 @@ struct CMultiplexer
 #endif
    int m_iMSS;			// Maximum Segment Size
    int m_iRefCount;		// number of UDT instances that are associated with this multiplexer
+   int m_iIpV6Only;     // IPV6_V6ONLY option
    bool m_bReusable;		// if this one can be shared with others
 
    int m_iID;			// multiplexer ID
