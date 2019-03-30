@@ -1127,7 +1127,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
 
    case SRTO_IPV6ONLY:
       optlen = sizeof(int);
-	  *(int*)optval = m_iIpV6Only;
+      *(int*)optval = m_iIpV6Only;
       break;
 
    default:
