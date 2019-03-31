@@ -159,7 +159,7 @@ TEST(CEPoll, WaitEmptyCall2)
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 0, -1, 0), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1, 0), SRT_ERROR);
 
     try
     {
