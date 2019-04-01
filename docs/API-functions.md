@@ -1127,6 +1127,8 @@ a new call to this function
   * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
 This is reported only if `msTimeOut` was \>=0, otherwise the function waits
 indefinitely.
+  * `SRT_EINVPARAM`: Bad parameter usage as a fdsSize>0 whereas fdsSet is null,
+can be raised too when msTimeout>0 and there is no more socket monitored.
 
 The `SRT_EPOLL_EVENT` structure:
 
