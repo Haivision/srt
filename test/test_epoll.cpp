@@ -385,7 +385,7 @@ TEST(CEPoll, HandleEpollEvent2)
         EXPECT_EQ(0, 1);
     }
 
-        try
+    try
     {
         EXPECT_EQ(epoll.release(epoll_id), 0);
     }
