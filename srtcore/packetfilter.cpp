@@ -32,10 +32,6 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
     if (!PacketFilter::exists(out.type))
         return false;
 
-    // Minimum arguments are: rows,cols.
-    if (parts.size() < 2)
-        return false;
-
     for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
     {
         vector<string> keyval;
