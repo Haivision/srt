@@ -372,7 +372,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
-   if (!readfds && !writefds && !lrfds && lwfds && (msTimeOut < 0))
+   if (!readfds && !writefds && !lrfds && !lwfds && (msTimeOut < 0))
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    // Clear these sets in case the app forget to do it.
@@ -439,15 +439,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             }
          }
          #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-         #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-         // 
-         // for iOS setting a timeout of 1ms for kevent and not doing CTimer::waitForEvent(); in the code below
-         // gives us a 10% cpu boost.
-         //
-         struct timespec tmout = {0, 1000000};
-         #else
          struct timespec tmout = {0, 0};
-         #endif
          const int max_events = p->second.m_sLocals.size();
          struct kevent ke[max_events];
 
@@ -518,10 +510,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-      #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      #else
       CTimer::waitForEvent();
-      #endif
    }
 
    return 0;

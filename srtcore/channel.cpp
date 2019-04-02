@@ -219,7 +219,9 @@ void CChannel::setUDPSockOpt()
          }
          else //Assuming AF_INET6
          {
+#ifdef IPV6_TCLASS
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+#endif
                throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
          }
       }
@@ -309,7 +311,9 @@ int CChannel::getIpToS() const
    }
    else
    {
+#ifdef IPV6_TCLASS
       ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (char *)&m_iIpToS, &size);
+#endif
    }
    return m_iIpToS;
 }

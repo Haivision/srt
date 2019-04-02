@@ -100,7 +100,7 @@ make
 
 The 64-bit devel package can be downloaded from here:
 
-     http://slproweb.com/download/Win64OpenSSL-1_0_2a.exe
+     http://slproweb.com/download/Win64OpenSSL-1_0_2r.exe
 
 	 
 (Note that the last letter or version number may be changed and older versions

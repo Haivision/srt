@@ -74,8 +74,9 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
     else
     {
         // Packet not to be passthru, update stats
-        ++m_parent->m_iRcvFilterExtra;
-        ++m_parent->m_iRcvFilterExtraTotal;
+        CGuard lg(m_parent->m_StatsLock);
+        ++m_parent->m_stats.rcvFilterExtra;
+        ++m_parent->m_stats.rcvFilterExtraTotal;
     }
 
     // r_loss_seqs enters empty into this function and can be only filled here.
@@ -87,8 +88,9 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         int dist = CSeqNo::seqoff(i->first, i->second) + 1;
         if (dist > 0)
         {
-            m_parent->m_iRcvFilterLoss += dist;
-            m_parent->m_iRcvFilterLossTotal += dist;
+            CGuard lg(m_parent->m_StatsLock);
+            m_parent->m_stats.rcvFilterLoss += dist;
+            m_parent->m_stats.rcvFilterLossTotal += dist;
         }
         else
         {
@@ -102,10 +104,12 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
     {
         HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
 
-        m_parent->m_iRcvFilterSupply += m_provided.size();
-        m_parent->m_iRcvFilterSupplyTotal += m_provided.size();
-
+        size_t nsupply = m_provided.size();
         InsertRebuilt(*r_incoming, m_unitq);
+
+        CGuard lg(m_parent->m_StatsLock);
+        m_parent->m_stats.rcvFilterSupply += nsupply;
+        m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
     }
 
     // Now that all units have been filled as they should be,

@@ -176,7 +176,10 @@ int main( int argc, char** argv )
     if ( params.size() != 2 )
     {
         cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
+#ifndef _WIN32
         cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
+        cerr << "\t-tm:<mode=0> - timeout mode (0 - since app start; 1 - like 0, but cancel on connect)\n";
+#endif
         cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
         cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
         cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
@@ -190,6 +193,7 @@ int main( int argc, char** argv )
     }
 
     int timeout = stoi(Option("0", "t", "to", "timeout"), 0, 0);
+    int timeout_mode = stoi(Option("0", "tm", "timeout-mode"), 0, 0);
     unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
     if ( chunk == 0 )
     {
@@ -371,7 +375,8 @@ int main( int argc, char** argv )
                 }
 
                 // IN because we care for state transitions only
-                int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                // OUT - to check the connection state changes
+                int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
                 switch(tar->uri.type())
                 {
                 case UriParser::SRT:
@@ -393,11 +398,12 @@ int main( int argc, char** argv )
             }
 
             int srtrfdslen = 2;
-            SRTSOCKET srtrfds[2];
+            int srtwfdslen = 2;
+            SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
             if (srt_epoll_wait(pollid,
-                &srtrfds[0], &srtrfdslen, 0, 0,
+                &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
                 &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
             {
@@ -410,19 +416,20 @@ int main( int argc, char** argv )
                 }
 
                 bool doabort = false;
-                for (int i = 0; i < srtrfdslen; i++)
+                for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
                 {
+                    SRTSOCKET s = srtrwfds[i];
+                    if (s == SRT_INVALID_SOCK)
+                        continue;
+
                     bool issource = false;
-                    SRTSOCKET s = srtrfds[i];
-                    if (src->GetSRTSocket() == s)
+                    if (src && src->GetSRTSocket() == s)
                     {
                         issource = true;
                     }
-                    else if (tar->GetSRTSocket() != s)
+                    else if (tar && tar->GetSRTSocket() != s)
                     {
-                        cerr << "Unexpected socket poll: " << s;
-                        doabort = true;
-                        break;
+                        continue;
                     }
 
                     const char * dirstring = (issource)? "source" : "target";
@@ -469,6 +476,14 @@ int main( int argc, char** argv )
                                         <<  " connection"
                                         << endl;
                                 }
+#ifndef _WIN32
+                                if (timeout_mode == 1 && timeout > 0)
+                                {
+                                    if (!quiet)
+                                        cerr << "TIMEOUT: cancel\n";
+                                    alarm(0);
+                                }
+#endif
                                 if (issource)
                                     srcConnected = true;
                                 else
@@ -530,6 +545,18 @@ int main( int argc, char** argv )
                                 if (!quiet)
                                     cerr << "SRT target connected" << endl;
                                 tarConnected = true;
+                                if (tar->uri.type() == UriParser::SRT)
+                                {
+                                    const int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+                                    // Disable OUT event polling when connected
+                                    if (srt_epoll_update_usock(pollid,
+                                        tar->GetSRTSocket(), &events))
+                                    {
+                                        cerr << "Failed to add SRT destination to poll, "
+                                            << tar->GetSRTSocket() << endl;
+                                        return 1;
+                                    }
+                                }
                             }
                         }
 
