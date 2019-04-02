@@ -819,10 +819,6 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		SOURCES SOURCES_unittests
 	)
 	
-	MafReadDir(test filelist.maf
-		SOURCES SOURCES_unittests
-	)
-	
 	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
 	srt_add_program(test_srt ${SOURCES_unittests})
