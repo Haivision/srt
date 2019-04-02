@@ -23,7 +23,7 @@
 using namespace std;
 using namespace srt_logging;
 
-bool ParseCorrectorConfig(std::string s, SrtFilterConfig& out)
+bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
 {
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
@@ -236,7 +236,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     m_parent = parent;
 
     SrtFilterConfig cfg;
-    if (!ParseCorrectorConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, cfg))
         return false;
 
     // Extract the "type" key from parameters, or use

@@ -854,31 +854,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       {
           string arg ((char*)optval, optlen);
           // Parse the configuration string prematurely
-          vector<string> args;
-          Split(arg, ',', back_inserter(args));
-          // The syntax for configuration is:
-          // - arguments separated by comma
-          // - first two arguments are: horizontal size, vertical size
-          // - following arguments must have label:value
-          if (args.size() < 2)
+          SrtFilterConfig fc;
+          if (!ParseFilterConfig(arg, fc))
           {
-              LOGC(mglog.Error, log << "SRTO_FEC: Syntax: <rowsize>,<columnsize>[,extras...]; no comma found");
+              LOGC(mglog.Error,
+                      log << "SRTO_FILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "
+                      "FILTERTYPE (" << fc.type << ") must be installed (or builtin)");
               throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-          }
-
-          // Check the extras if they have a correct form
-          if (args.size() > 2)
-          {
-              for (size_t i = 2; i < args.size(); ++i)
-              {
-                  vector<string> aval;
-                  Split(args[i], ':', back_inserter(aval));
-                  if (aval.size() != 2)
-                  {
-                      LOGC(mglog.Error, log << "SRTO_FEC: For extra arguments (after rows and cols) the syntax is label:value");
-                      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-                  }
-              }
           }
 
           m_OPT_PktFilterConfigString = arg;
@@ -1746,8 +1728,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
 
     // If this is a response, we have also information
-    // on the peer. If Peer is NOT FEC capable, don't
-    // put FEC config, even if agent is capable.
+    // on the peer. If Peer is NOT filter capable, don't
+    // put filter config, even if agent is capable.
     bool peer_filter_capable = true;
     if (srths_cmd == SRT_CMD_HSRSP)
     {
@@ -1766,18 +1748,18 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
     }
 
     // Now, if this is INITIATOR, then it has its
-    // FEC config already set, if configured, otherwise
-    // it should not attach the FEC config extension.
+    // filter config already set, if configured, otherwise
+    // it should not attach the filter config extension.
 
     // If this is a RESPONDER, then it has already received
-    // the FEC config string from the peer and therefore
+    // the filter config string from the peer and therefore
     // possibly confronted with the contents of m_OPT_FECConfigString,
-    // and if it decided to go with FEC, it will be nonempty.
+    // and if it decided to go with filter, it will be nonempty.
     if (peer_filter_capable && m_OPT_PktFilterConfigString != "")
     {
         have_filter = true;
         hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext += ",FEC";
+        logext += ",filter";
     }
 
     string sm = m_Smoother.selected_name();
@@ -1906,8 +1888,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         ra_size = wordsize;
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FILTER) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after FEC [" << m_OPT_PktFilterConfigString << "] length=" << m_OPT_PktFilterConfigString.size() << " alignedln=" << aligned_bytesize
-            << ": offset=" << offset << " FEC size=" << ra_size << " space left: " << (total_ra_size - offset));
+        HLOGC(mglog.Debug, log << "createSrtHandshake: after filter [" << m_OPT_PktFilterConfigString << "] length=" << m_OPT_PktFilterConfigString.size() << " alignedln=" << aligned_bytesize
+            << ": offset=" << offset << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
     // When encryption turned on
@@ -2755,10 +2737,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     LOGC(mglog.Error, log << "FILTER BLOCK REPEATED!");
                     return false;
                 }
-                // Declare that fec has been received
+                // Declare that filter has been received
                 have_filter = true;
 
-                // XXX This is the maximum string, but FEC config
+                // XXX This is the maximum string, but filter config
                 // shall be normally limited somehow, especially if used
                 // together with SID!
                 char target[MAX_SID_LENGTH+1];
@@ -2824,7 +2806,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 bool CUDT::checkApplyFilterConfig(const std::string& confstr)
 {
     SrtFilterConfig cfg;
-    if (!ParseCorrectorConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, cfg))
         return false;
 
     // Now extract the type, if present, and
@@ -2843,7 +2825,7 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
         }
 
         SrtFilterConfig mycfg;
-        if (!ParseCorrectorConfig(m_OPT_PktFilterConfigString, mycfg))
+        if (!ParseFilterConfig(m_OPT_PktFilterConfigString, mycfg))
             return false;
 
         // Check only if both have set a filter of the same type.
@@ -4848,7 +4830,7 @@ bool CUDT::setupCC()
         return false;
     }
 
-    // Configure FEC module
+    // Configure filter module
     if (m_OPT_PktFilterConfigString != "")
     {
         // This string, when nonempty, defines that the corrector shall be
@@ -4856,7 +4838,7 @@ bool CUDT::setupCC()
 
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
-        HLOGC(mglog.Debug, log << "FEC: Configuring Corrector: " << m_OPT_PktFilterConfigString);
+        HLOGC(mglog.Debug, log << "filter: Configuring Corrector: " << m_OPT_PktFilterConfigString);
         if (!m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString))
         {
             return false;
@@ -7697,9 +7679,9 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
                Ref(packet), m_iSndCurrSeqNo,
                m_pCryptoControl->getSndCryptoFlags()))
    {
-       HLOGC(mglog.Debug, log << "FEC: FEC/CTL packet ready - packing instead of data.");
+       HLOGC(mglog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
        payload = packet.getLength();
-       reason = "FEC";
+       reason = "filter";
        filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
        // Stats
@@ -7812,7 +7794,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 
    if (new_packet_packed && m_PacketFilter)
    {
-       HLOGC(mglog.Debug, log << "FEC: Feeding packet for source clip");
+       HLOGC(mglog.Debug, log << "filter: Feeding packet for source clip");
        m_PacketFilter.feedSource(Ref(packet));
    }
 
@@ -8232,11 +8214,11 @@ int CUDT::processData(CUnit* in_unit)
           }
       }
 
-      // This is moved earlier after introducing FEC because it shouldn't
+      // This is moved earlier after introducing filter because it shouldn't
       // be executed in case when the packet was rejected by the receiver buffer.
       // However now the 'excessive' condition may be true also in case when
       // a truly non-excessive packet has been received, just it has been temporarily
-      // stored for better times by the FEC module. This way 'excessive' is also true,
+      // stored for better times by the filter module. This way 'excessive' is also true,
       // although the old condition that a packet with a newer sequence number has arrived
       // or arrived unorderly may still be satisfied.
       if (!incoming_belated && was_orderly_sent)
@@ -8343,7 +8325,7 @@ int CUDT::processData(CUnit* in_unit)
    // With NEVER, nothing is to be reported.
    if (!filter_loss_seqs.empty())
    {
-       HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (FEC): " << Printable(filter_loss_seqs));
+       HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
        sendLossReport(filter_loss_seqs);
 
        if (m_bTsbPd)

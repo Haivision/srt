@@ -30,7 +30,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     m_arrangement_staircase(true),
     rcv(provided)
 {
-    if (!ParseCorrectorConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     // Configuration supported:

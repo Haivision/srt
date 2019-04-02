@@ -62,7 +62,7 @@ struct SrtPacket
 };
 
 
-bool ParseCorrectorConfig(std::string s, SrtFilterConfig& out);
+bool ParseFilterConfig(std::string s, SrtFilterConfig& out);
 
 
 class SrtPacketFilterBase
