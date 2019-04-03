@@ -991,6 +991,6 @@ std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
     return pretty_function.substr(pos+2);
 }
 
-} // (end namespace srt_logging)
-
 #endif
+
+} // (end namespace srt_logging)
