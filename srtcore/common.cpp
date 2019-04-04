@@ -839,6 +839,9 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
+// Some logging imps
+#if ENABLE_LOGGING
+
 namespace srt_logging
 {
 
@@ -862,24 +865,22 @@ std::string FormatTime(uint64_t time)
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
 }
-// Some logging imps
-#if ENABLE_LOGGING
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	if (that_enabled)
-	{
+    if (that_enabled)
+    {
         i_file = "";
         i_line = 0;
         flags = that.src_config->flags;
-		// Create logger prefix
-		that.CreateLogLinePrefix(os);
-	}
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
 }
 
 LogDispatcher::Proxy LogDispatcher::operator()()
 {
-	return Proxy(*this);
+    return Proxy(*this);
 }
 
 void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
@@ -991,6 +992,6 @@ std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
     return pretty_function.substr(pos+2);
 }
 
-#endif
-
 } // (end namespace srt_logging)
+
+#endif
