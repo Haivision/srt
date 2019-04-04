@@ -4846,11 +4846,11 @@ bool CUDT::setupCC()
 
         m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }
-	else
-	{
-		// When we have no filter, ARQ should work in ALWAYS mode.
-		m_PktFilterRexmitLevel = SRT_ARQ_ALWAYS;
-	}
+    else
+    {
+        // When we have no filter, ARQ should work in ALWAYS mode.
+        m_PktFilterRexmitLevel = SRT_ARQ_ALWAYS;
+    }
 
     // Override the value of minimum NAK interval, per Smoother's wish.
     // When default 0 value is returned, the current value set by CUDT
@@ -8064,15 +8064,15 @@ int CUDT::processData(CUnit* in_unit)
           string exc_type = "EXPECTED";
           if (offset < 0)
           {
-          CGuard::enterCS(m_StatsLock);
+              CGuard::enterCS(m_StatsLock);
               exc_type = "BELATED";
-          m_stats.traceRcvBelated++;
+              m_stats.traceRcvBelated++;
               uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
               uint64_t bltime = CountIIR(
-                  uint64_t(m_stats.traceBelatedTime)*1000,
+                      uint64_t(m_stats.traceBelatedTime)*1000,
                       CTimer::getTime() - tsbpdtime, 0.2);
-          m_stats.traceBelatedTime = double(bltime)/1000.0;
-          CGuard::leaveCS(m_StatsLock);
+              m_stats.traceBelatedTime = double(bltime)/1000.0;
+              CGuard::leaveCS(m_StatsLock);
               HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
                       << " offset=" << offset << " (BELATED/" << rexmitstat[pktrexmitflag] << rexmit_reason
                       << ") FLAGS: " << packet.MessageFlagStr());
@@ -8124,16 +8124,16 @@ int CUDT::processData(CUnit* in_unit)
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
               exc_type = "UNACKED";
-			  adding_successful = false;
+              adding_successful = false;
           }
           else
           {
               exc_type = "ACCEPTED";
               excessive = false;
               if (u->m_Packet.getMsgCryptoFlags())
-			  {
-				  EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
-				  if ( rc != ENCS_CLEAR )
+              {
+                  EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
+                  if ( rc != ENCS_CLEAR )
                   {
                       // Could not decrypt
                       // Keep packet in received buffer
@@ -8152,8 +8152,7 @@ int CUDT::processData(CUnit* in_unit)
                       adding_successful = false;
                       exc_type = "UNDECRYPTED";
                   }
-				  //undec_units.push_back(*i);
-			  }
+              }
           }
 
           HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
@@ -8196,7 +8195,6 @@ int CUDT::processData(CUnit* in_unit)
                           m_stats.traceRcvBytesLoss += lossbytes;
                           m_stats.rcvBytesLossTotal += lossbytes;
                       }
-
                   }
               }
           }
@@ -8237,36 +8235,6 @@ int CUDT::processData(CUnit* in_unit)
           return -1;
       }
 
-	  /*
-
-      bool decr SRT_ATR_UNUSED = true;
-      for (vector<CUnit*>::iterator ue = undec_units.begin(); ue != undec_units.end(); ++ue)
-      {
-          // Crypto should be already created during connection process,
-          // this is rather a kinda sanity check.
-          CUnit* u = *ue;
-          EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
-          if ( rc != ENCS_CLEAR )
-          {
-              // Could not decrypt
-              // Keep packet in received buffer
-              // Crypto flags are still set
-              // It will be acknowledged
-              CGuard::enterCS(m_StatsLock);
-              m_stats.traceRcvUndecrypt += 1;
-              m_stats.traceRcvBytesUndecrypt += pktsz;
-              m_stats.m_rcvUndecryptTotal += 1;
-              m_stats.m_rcvBytesUndecryptTotal += pktsz;
-              decr = false;
-              CGuard::leaveCS(m_StatsLock);
-          }
-      }
-
-
-      HLOGC(dlog.Debug, log << "crypter: data "
-              << (undec_units.empty() ? " not encrypted, returning as plain " : "encrypted, decrypting ")
-              << (decr ? "OK" : "FAILED"));
-			  */
 
    }  /* End of recvbuf_acklock*/
 
