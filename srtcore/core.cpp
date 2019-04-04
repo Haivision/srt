@@ -8093,10 +8093,11 @@ int CUDT::processData(CUnit* in_unit)
                   // lowest sequence in the empty buffer and the incoming sequence
                   // that exceeds the buffer size. Receiving data in this situation
                   // is no longer possible and this is a point of no return.
-
-                  LOGC(mglog.Error,
-                          log << CONID() <<
-                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+                  LOGC(mglog.Error, log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                      );
 
                   // This is a scoped lock with AckLock, but for the moment
                   // when processClose() is called this lock must be taken out,
