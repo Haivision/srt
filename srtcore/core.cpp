@@ -8015,6 +8015,33 @@ int CUDT::processData(CUnit* in_unit)
    if ( m_bPeerRexmitFlag )
        initial_loss_ttl = m_iReorderTolerance;
 
+
+   // After introduction of packet filtering, the "recordable loss detection"
+   // does not exactly match the true loss detection. When a FEC filter is
+   // working, for example, then getting one group filled with all packet but
+   // the last one and the FEC control packet, in this special case this packet
+   // won't be notified at all as lost because it will be recovered by the
+   // filter immediately before anyone notices what happened (and the loss
+   // detection for the further functionality is checked only afterwards,
+   // and in this case the immediate recovery makes the loss to not be noticed
+   // at all).
+   //
+   // Because of that the check for losses must happen BEFORE passing the packet
+   // to the filter and before the filter could recover the packet before anyone
+   // notices :)
+
+
+   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection, for stats.
+   {
+       CGuard lg(m_StatsLock);
+       int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
+       m_stats.traceRcvLoss += loss;
+       m_stats.rcvLossTotal += loss;
+       uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+       m_stats.traceRcvBytesLoss += lossbytes;
+       m_stats.rcvBytesLossTotal += lossbytes;
+   }
+
    {
       /*
       * Start of offset protected section
@@ -8168,34 +8195,22 @@ int CUDT::processData(CUnit* in_unit)
                       << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
               if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
               {
+                  int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                  int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
+
+                  srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
+
+                  if ( initial_loss_ttl )
                   {
-                      int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-                      int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
+                      // pack loss list for (possibly belated) NAK
+                      // The LOSSREPORT will be sent in a while.
 
-                      srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                      if ( initial_loss_ttl )
+                      for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                       {
-                          // pack loss list for (possibly belated) NAK
-                          // The LOSSREPORT will be sent in a while.
-
-                          for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                          {
-                              m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                          }
-                          HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
-                          reorder_prevent_lossreport = true;
+                          m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
                       }
-
-                      {
-                          CGuard lg(m_StatsLock);
-                          int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, rpkt.m_iSeqNo) - 2;
-                          m_stats.traceRcvLoss += loss;
-                          m_stats.rcvLossTotal += loss;
-                          uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-                          m_stats.traceRcvBytesLoss += lossbytes;
-                          m_stats.rcvBytesLossTotal += lossbytes;
-                      }
+                      HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
+                      reorder_prevent_lossreport = true;
                   }
               }
           }
