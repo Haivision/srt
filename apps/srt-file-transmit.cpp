@@ -42,27 +42,6 @@ written by
 #endif
 
 
-bool Upload(UriParser& srt, UriParser& file, std::ostream &out_stats);
-bool Download(UriParser& srt, UriParser& file, std::ostream &out_stats);
-
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-
-static size_t g_buffer_size = 1456;
-static bool g_skip_flushing = false;
-
-map<string, string> g_options;
-
-string Option(string deflt = "") { return deflt; }
-
-template <class... Args>
-string Option(string deflt, string key, Args... further_keys)
-{
-    map<string, string>::iterator i = g_options.find(key);
-    if (i == g_options.end())
-        return Option(deflt, further_keys...);
-    return i->second;
-}
-
 using namespace std;
 
 static bool interrupt = false;
@@ -72,171 +51,172 @@ void OnINT_ForceExit(int)
     interrupt = true;
 }
 
-int main( int argc, char** argv )
+
+struct FileTransmitConfig
 {
-    vector<string> args;
-    copy(argv + 1, argv + argc, back_inserter(args));
+    unsigned long chunk_size;
+    bool skip_flushing;
+    bool quiet = false;
+    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
+    set<srt_logging::LogFA> logfas;
+    string logfile;
+    int bw_report = 0;
+    int stats_report = 0;
+    string stats_out;
+    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    bool full_stats = false;
 
-    // Check options
-    vector<string> params;
+    string source;
+    string target;
+};
 
-    for (string a : args)
+
+void PrintOptionHelp(const set<string> &opt_names, const string &value, const string &desc)
+{
+    cerr << "\t";
+    int i = 0;
+    for (auto opt : opt_names)
     {
-        if (a[0] == '-')
+        if (i++) cerr << ", ";
+        cerr << "-" << opt;
+    }
+
+    if (!value.empty())
+        cerr << ":" << value;
+    cerr << "\t- " << desc << "\n";
+}
+
+
+int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
+{
+    const set<string>
+        o_chunk     = { "c", "chunk" },
+        o_no_flush  = { "sf", "skipflush" },
+        o_bwreport  = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
+        o_statsrep  = { "s", "stats", "stats-report-frequency" },
+        o_statsout  = { "statsout" },
+        o_statspf   = { "pf", "statspf" },
+        o_statsfull = { "f", "fullstats" },
+        o_loglevel  = { "ll", "loglevel" },
+        o_logfa     = { "logfa" },
+        o_logfile   = { "logfile" },
+        o_quiet     = { "q", "quiet" },
+        o_verbose   = { "v", "verbose" },
+        o_help      = { "h", "help" },
+        o_version   = { "version" };
+
+    const vector<OptionScheme> optargs = {
+        { o_chunk,        OptionScheme::ARG_ONE },
+        { o_no_flush,     OptionScheme::ARG_NONE },
+        { o_bwreport,     OptionScheme::ARG_ONE },
+        { o_statsrep,     OptionScheme::ARG_ONE },
+        { o_statsout,     OptionScheme::ARG_ONE },
+        { o_statspf,      OptionScheme::ARG_ONE },
+        { o_statsfull,    OptionScheme::ARG_NONE },
+        { o_loglevel,     OptionScheme::ARG_ONE },
+        { o_logfa,        OptionScheme::ARG_ONE },
+        { o_logfile,      OptionScheme::ARG_ONE },
+        { o_quiet,        OptionScheme::ARG_NONE },
+        { o_verbose,      OptionScheme::ARG_NONE },
+        { o_help,         OptionScheme::ARG_NONE },
+        { o_version,      OptionScheme::ARG_NONE }
+    };
+
+    options_t params = ProcessOptions(argv, argc, optargs);
+
+    if (params[""].size() != 2)
+    {
+        cerr << "Can't parse source and target URIs.\n";
+        if (params[""].size() > 0)
         {
-            string key = a.substr(1);
-            size_t pos = key.find(':');
-            if (pos == string::npos)
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos + 1);
-            key = key.substr(0, pos);
-            g_options[key] = value;
-            continue;
+            cerr << "The following options are passed without a key: ";
+            copy(params[""].begin(), params[""].end(), ostream_iterator<string>(cerr, ", "));
+            cerr << endl;
         }
-
-        params.push_back(a);
+        params["help"].clear(); // Enable help to print it further
     }
 
-    if (params.size() != 2)
+
+    if (Option<OutBool>(params, false, o_help))
     {
-        cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
-        cerr << "\t-t:<timeout=0> - exit timer in seconds\n";
-        cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
-        cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
-        cerr << "\t-buffer:<buffer> - set SRT buffer\n";
-        cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
-        cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
-        cerr << "\t-pf:<format> - printformat (json or default)\n";
-        cerr << "\t-statsreport:<filename> - stats report file name (cout for output to cout, or a filename)\n";
-        cerr << "\t-f - full counters in stats-report (prints total statistics)\n";
-        cerr << "\t-q - quiet mode (default no)\n";
-        cerr << "\t-v - verbose mode (default no)\n";
-        return 1;
+        cout << "SRT sample application to transmit files.\n";
+        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        cerr << "Usage: srt-file-transmit [options] <input-uri> <output-uri>\n";
+        cerr << "\n";
+
+        PrintOptionHelp(o_chunk, "<chunk=1456>", "max size of data read in one step");
+        PrintOptionHelp(o_no_flush, "", "skip output file flushing");
+        PrintOptionHelp(o_bwreport, "<every_n_packets=0>", "bandwidth report frequency");
+        PrintOptionHelp(o_statsrep, "<every_n_packets=0>", "frequency of status report");
+        PrintOptionHelp(o_statsout, "<stats_output=stdout>", "stats output [stdout|filename]");
+        PrintOptionHelp(o_statspf, "<format=default>", "stats printing format [json|csv|default]");
+        PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
+        PrintOptionHelp(o_loglevel, "<level=error>", "log level [fatal,error,info,note,warning]");
+        PrintOptionHelp(o_logfa, "<fas=general,...>", "log functional area [all,general,bstats,control,data,tsbpd,rexmit]");
+        PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
+        PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
+        PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
+        PrintOptionHelp(o_verbose, "", "verbose mode (default off)");
+        cerr << "\n";
+        cerr << "\t-h,-help - show this help\n";
+        cerr << "\t-version - print SRT library version\n";
+        cerr << "\n";
+        cerr << "\t<input-uri>  - [srt://<ip>:<port>?<query>,udp://<ip>:<port>?<query>,file:///<path>,file://con]\n";
+        cerr << "\t<output-uri> - [srt://<ip>:<port>?<query>,udp://<ip>:<port>?<query>,file:///<path>,file://con]\n";
+
+        return 2;
     }
 
-    int timeout = stoi(Option("0", "t", "to", "timeout"), 0, 0);
-    unsigned long chunk = stoul(Option("0", "c", "chunk"), 0, 0);
-    if (chunk == 0)
+    if (Option<OutBool>(params, false, o_version))
     {
-        chunk = SRT_LIVE_DEF_PLSIZE;
+        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        return 2;
+    }
+
+    cfg.chunk_size    = stoul(Option<OutString>(params, "1316", o_chunk));
+    cfg.skip_flushing = Option<OutBool>(params, false, o_no_flush);
+    cfg.bw_report     = stoi(Option<OutString>(params, "0", o_bwreport));
+    cfg.stats_report  = stoi(Option<OutString>(params, "0", o_statsrep));
+    cfg.stats_out     = Option<OutString>(params, "stdout", o_statsout);
+    const string pf   = Option<OutString>(params, "default", o_statsout);
+    if (pf == "default")
+    {
+        cfg.stats_pf = PRINT_FORMAT_2COLS;
+    }
+    else if (pf == "json")
+    {
+        cfg.stats_pf = PRINT_FORMAT_JSON;
+    }
+    else if (pf == "csv")
+    {
+        cfg.stats_pf = PRINT_FORMAT_CSV;
     }
     else
     {
-        transmit_chunk_size = chunk;
-    }
-
-    bool quiet = Option("no", "q", "quiet") != "no";
-    Verbose::on = !quiet && Option("no", "v", "verbose") != "no";
-    string loglevel = Option("error", "loglevel");
-    string logfa = Option("general", "logfa");
-    string logfile = Option("", "logfile");
-    bool autoreconnect = Option("yes", "a", "auto") != "no";
-    transmit_total_stats = Option("no", "f", "fullstats") != "no";
-
-    const string sf = Option("no", "skipflush");
-    if (sf == "" || !false_names.count(sf))
-        ::g_skip_flushing = true;
-
-    const string bs = Option("", "buffer");
-    if (bs != "")
-        ::g_buffer_size = stoi(bs);
-
-
-    // Print format
-    const string pf = Option("default", "pf", "printformat");
-    if (pf == "json")
-    {
-        printformat = PRINT_FORMAT_JSON;
-    }
-    if (pf == "csv")
-    {
-        printformat = PRINT_FORMAT_CSV;
-    }
-    else if (pf != "default")
-    {
+        cfg.stats_pf = PRINT_FORMAT_2COLS;
         cerr << "ERROR: Unsupported print format: " << pf << endl;
         return 1;
     }
 
-    try
-    {
-        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
-        transmit_stats_report = stoul(Option("0", "s", "stats", "stats-report-frequency"));
-    }
-    catch (std::invalid_argument &)
-    {
-        cerr << "ERROR: Incorrect integer number specified for an option.\n";
-        return 1;
-    }
+    cfg.full_stats = Option<OutBool>(params, false, o_statsfull);
+    cfg.loglevel   = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
+    cfg.logfas     = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.logfile    = Option<OutString>(params, "", o_logfile);
+    cfg.quiet      = Option<OutBool>(params, "no", o_quiet);
 
+    if (Option<OutBool>(params, "no", o_verbose))
+        Verbose::on = !cfg.quiet;
 
-    std::ofstream logfile_stream; // leave unused if not set
+    cfg.source = params[""].at(0);
+    cfg.target = params[""].at(1);
 
-    srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
-        srt_addlogfa(*i);
-
-
-    std::ofstream logfile_stats; // leave unused if not set
-    const string statsfile = Option("cout", "statsfile");
-    if (statsfile != "" && statsfile != "cout")
-    {
-        logfile_stats.open(statsfile.c_str());
-        if (!logfile_stats)
-        {
-            cerr << "ERROR: Can't open '" << statsfile << "' for writing stats. Fallback to cout.\n";
-            logfile_stats.close();
-        }
-    }
-
-    ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
-
-    string source = params[0];
-    string target = params[1];
-
-    UriParser us(source), ut(target);
-
-    Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
-
-    signal(SIGINT,  OnINT_ForceExit);
-    signal(SIGTERM, OnINT_ForceExit);
-
-    try
-    {
-        if (us.scheme() == "srt")
-        {
-            if (ut.scheme() != "file")
-            {
-                cerr << "SRT to FILE should be specified\n";
-                return 1;
-            }
-            Download(us, ut, out_stats);
-        }
-        else if (ut.scheme() == "srt")
-        {
-            if (us.scheme() != "file")
-            {
-                cerr << "FILE to SRT should be specified\n";
-                return 1;
-            }
-            Upload(ut, us, out_stats);
-        }
-        else
-        {
-            cerr << "SRT URI must be one of given media.\n";
-            return 1;
-        }
-    }
-    catch (std::exception& x)
-    {
-        cerr << "ERROR: " << x.what() << endl;
-        return 1;
-    }
-
+    cout << cfg.source << endl;
+    cout << cfg.target << endl;
 
     return 0;
 }
+
+
 
 void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
 {
@@ -272,14 +252,18 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         // the fixed uri.
         static const size_t s_max_path = 4096; // don't care how proper this is
         char tmppath[s_max_path];
-        char* gwd = getcwd(tmppath, s_max_path);
+#ifdef _WIN32
+        const char* gwd = _getcwd(tmppath, s_max_path);
+#else
+        const char* gwd = getcwd(tmppath, s_max_path);
+#endif
         if ( !gwd )
         {
             // Don't bother with that now. We need something better for
             // that anyway.
             throw std::invalid_argument("Path too long");
         }
-        string wd = gwd;
+        const string wd = gwd;
 
         directory = wd + "/" + directory;
     }
@@ -288,7 +272,8 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
     *fname = filename;
 }
 
-bool DoUpload(UriParser& ut, string path, string filename, std::ostream &out_stats)
+bool DoUpload(UriParser& ut, string path, string filename,
+              const FileTransmitConfig &cfg, std::ostream &out_stats)
 {
     bool result = false;
     unique_ptr<Target> tar;
@@ -404,8 +389,8 @@ bool DoUpload(UriParser& ut, string path, string filename, std::ostream &out_sta
 
         if (connected)
         {
-            vector<char> buf(::g_buffer_size);
-            size_t n = ifile.read(buf.data(), ::g_buffer_size).gcount();
+            vector<char> buf(cfg.chunk_size);
+            size_t n = ifile.read(buf.data(), cfg.chunk_size).gcount();
             size_t shift = 0;
             while (n > 0)
             {
@@ -439,7 +424,7 @@ bool DoUpload(UriParser& ut, string path, string filename, std::ostream &out_sta
         }
     }
 
-    if ( result && !::g_skip_flushing )
+    if (result && !cfg.skip_flushing)
     {
         assert(s != SRT_INVALID_SOCK);
 
@@ -477,7 +462,8 @@ exit:
     return result;
 }
 
-bool DoDownload(UriParser& us, string directory, string filename, std::ostream &out_stats)
+bool DoDownload(UriParser& us, string directory, string filename,
+                const FileTransmitConfig &cfg, std::ostream &out_stats)
 {
     bool result = false;
     unique_ptr<Source> src;
@@ -593,7 +579,7 @@ bool DoDownload(UriParser& us, string directory, string filename, std::ostream &
 
         if (connected)
         {
-            vector<char> buf(::g_buffer_size);
+            vector<char> buf(cfg.chunk_size);
             int n;
 
             if(!ofile.is_open())
@@ -611,7 +597,7 @@ bool DoDownload(UriParser& us, string directory, string filename, std::ostream &
                 cerr << "Writing output to [" << directory << "]" << endl;
             }
 
-            n = src->Read(::g_buffer_size, buf, out_stats);
+            n = src->Read(cfg.chunk_size, buf, out_stats);
             if (n == SRT_ERROR)
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
@@ -646,7 +632,8 @@ exit:
     return result;
 }
 
-bool Upload(UriParser& srt_target_uri, UriParser& fileuri, std::ostream &out_stats)
+bool Upload(UriParser& srt_target_uri, UriParser& fileuri,
+            const FileTransmitConfig &cfg, std::ostream &out_stats)
 {
     if ( fileuri.scheme() != "file" )
     {
@@ -666,10 +653,11 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri, std::ostream &out_sta
     // Add some extra parameters.
     srt_target_uri["transtype"] = "file";
 
-    return DoUpload(srt_target_uri, path, filename, out_stats);
+    return DoUpload(srt_target_uri, path, filename, cfg, out_stats);
 }
 
-bool Download(UriParser& srt_source_uri, UriParser& fileuri, std::ostream &out_stats)
+bool Download(UriParser& srt_source_uri, UriParser& fileuri,
+              const FileTransmitConfig &cfg, std::ostream &out_stats)
 {
     if (fileuri.scheme() != "file" )
     {
@@ -681,6 +669,110 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri, std::ostream &out_s
     ExtractPath(path, Ref(directory), Ref(filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
-    return DoDownload(srt_source_uri, directory, filename, out_stats);
+    return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
 }
+
+
+int main(int argc, char** argv)
+{
+    FileTransmitConfig cfg;
+    const int parse_ret = parse_args(cfg, argc, argv);
+    if (parse_ret != 0)
+        return parse_ret == 1 ? EXIT_FAILURE : 0;
+
+    //
+    // Set global config variables
+    //
+    if (cfg.chunk_size != SRT_LIVE_MAX_PLSIZE)
+        transmit_chunk_size = cfg.chunk_size;
+    printformat = cfg.stats_pf;
+    transmit_bw_report = cfg.bw_report;
+    transmit_stats_report = cfg.stats_report;
+    transmit_total_stats = cfg.full_stats;
+
+    //
+    // Set SRT log levels and functional areas
+    //
+    srt_setloglevel(cfg.loglevel);
+    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+        srt_addlogfa(*i);
+
+    //
+    // SRT log handler
+    //
+    std::ofstream logfile_stream; // leave unused if not set
+    if (!cfg.logfile.empty())
+    {
+        logfile_stream.open(cfg.logfile.c_str());
+        if (!logfile_stream)
+        {
+            cerr << "ERROR: Can't open '" << cfg.logfile.c_str() << "' for writing - fallback to cerr\n";
+        }
+        else
+        {
+            UDT::setlogstream(logfile_stream);
+        }
+    }
+
+    //
+    // SRT stats output
+    //
+    std::ofstream logfile_stats; // leave unused if not set
+    if (cfg.stats_out != "" && cfg.stats_out != "stdout")
+    {
+        logfile_stats.open(cfg.stats_out.c_str());
+        if (!logfile_stats)
+        {
+            cerr << "ERROR: Can't open '" << cfg.stats_out << "' for writing stats. Fallback to stdout.\n";
+            logfile_stats.close();
+        }
+    }
+
+    ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
+
+    // File transmission code
+
+    UriParser us(cfg.source), ut(cfg.target);
+
+    Verb() << "SOURCE type=" << us.scheme() << ", TARGET type=" << ut.scheme();
+
+    signal(SIGINT, OnINT_ForceExit);
+    signal(SIGTERM, OnINT_ForceExit);
+
+    try
+    {
+        if (us.scheme() == "srt")
+        {
+            if (ut.scheme() != "file")
+            {
+                cerr << "SRT to FILE should be specified\n";
+                return 1;
+            }
+            Download(us, ut, cfg, out_stats);
+        }
+        else if (ut.scheme() == "srt")
+        {
+            if (us.scheme() != "file")
+            {
+                cerr << "FILE to SRT should be specified\n";
+                return 1;
+            }
+            Upload(ut, us, cfg, out_stats);
+        }
+        else
+        {
+            cerr << "SRT URI must be one of given media.\n";
+            return 1;
+        }
+    }
+    catch (std::exception& x)
+    {
+        cerr << "ERROR: " << x.what() << endl;
+        return 1;
+    }
+
+
+    return 0;
+}
+
 
