@@ -232,9 +232,9 @@ static void PrintSrtBandwidth(double mbpsBandwidth)
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
-    if ( Verbose::on )
+    if (Verbose::on && !par.empty())
     {
-        cerr << "Parameters:\n";
+        Verb() << "SRT parameters specified:\n";
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             cerr << "\t" << i->first << " = '" << i->second << "'\n";

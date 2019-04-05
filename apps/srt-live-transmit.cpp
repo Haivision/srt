@@ -243,7 +243,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
-        PrintOptionHelp(o_quiet,     "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
         cerr << "\n";
         cerr << "\t-h,-help - show this help\n";
@@ -290,20 +289,17 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.full_stats   = Option<OutBool>(params, false, o_statsfull);
     cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
-    cfg.log_internal = Option<OutBool>(params, "no", o_log_internal);
+    cfg.log_internal = Option<OutBool>(params, false, o_log_internal);
     cfg.logfile      = Option<OutString>(params, "", o_logfile);
-    cfg.quiet        = Option<OutBool>(params, "no", o_quiet);
+    cfg.quiet        = Option<OutBool>(params, false, o_quiet);
     
-    if (Option<OutBool>(params, "no", o_verbose))
+    if (Option<OutBool>(params, false, o_verbose))
         Verbose::on = !cfg.quiet;
 
-    cfg.auto_reconnect = Option<OutBool>(params, "no", o_autorecon);
+    cfg.auto_reconnect = Option<OutBool>(params, true, o_autorecon);
 
     cfg.source = params[""].at(0);
     cfg.target = params[""].at(1);
-
-    cout << cfg.source << endl;
-    cout << cfg.target << endl;
 
     return 0;
 }
@@ -534,14 +530,6 @@ int main(int argc, char** argv)
                 100,
                 &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
             {
-                if ((false))
-                {
-                    cerr << "Event:"
-                        << " srtrfdslen " << srtrfdslen
-                        << " sysrfdslen " << sysrfdslen
-                        << endl;
-                }
-
                 bool doabort = false;
                 for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
                 {
@@ -562,10 +550,6 @@ int main(int argc, char** argv)
                     const char * dirstring = (issource) ? "source" : "target";
 
                     SRT_SOCKSTATUS status = srt_getsockstate(s);
-                    if ((false) && status != SRTS_CONNECTED)
-                    {
-                        cerr << dirstring << " status " << status << endl;
-                    }
                     switch (status)
                     {
                     case SRTS_LISTENING:

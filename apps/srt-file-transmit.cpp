@@ -158,7 +158,6 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_logfa, "<fas=general,...>", "log functional area [all,general,bstats,control,data,tsbpd,rexmit]");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
-        PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose, "", "verbose mode (default off)");
         cerr << "\n";
         cerr << "\t-h,-help - show this help\n";
@@ -205,16 +204,13 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     cfg.loglevel   = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
     cfg.logfas     = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
     cfg.logfile    = Option<OutString>(params, "", o_logfile);
-    cfg.quiet      = Option<OutBool>(params, "no", o_quiet);
+    cfg.quiet      = Option<OutBool>(params, false, o_quiet);
 
-    if (Option<OutBool>(params, "no", o_verbose))
+    if (Option<OutBool>(params, false, o_verbose))
         Verbose::on = !cfg.quiet;
 
     cfg.source = params[""].at(0);
     cfg.target = params[""].at(1);
-
-    cout << cfg.source << endl;
-    cout << cfg.target << endl;
 
     return 0;
 }
