@@ -128,10 +128,12 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 struct LiveTransmitConfig
 {
     int timeout = 0;
+    int timeout_mode = 0;
     int chunk_size = SRT_LIVE_DEF_PLSIZE;
     bool quiet = false;
     srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
     set<srt_logging::LogFA> logfas;
+    bool log_internal;
     string logfile;
     int bw_report = 0;
     int stats_report = 0;
@@ -164,7 +166,8 @@ void PrintOptionHelp(const set<string> &opt_names, const string &value, const st
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
     const set<string>
-        o_timeout       = { "t", "to", "timeout" }, 
+        o_timeout       = { "t", "to", "timeout" },
+        o_timeout_mode  = { "tm", "timeout-mode" },
         o_autorecon     = { "a", "auto", "autoreconnect" },
         o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
@@ -174,6 +177,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_statsfull     = { "f", "fullstats" },
         o_loglevel      = { "ll", "loglevel" },
         o_logfa         = { "logfa" },
+        o_log_internal  = { "loginternal"},
         o_logfile       = { "logfile" },
         o_quiet         = { "q", "quiet" },
         o_verbose       = { "v", "verbose" },
@@ -181,21 +185,23 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_version       = { "version" };
 
     const vector<OptionScheme> optargs = {
-        { o_timeout,   OptionScheme::ARG_ONE },
-        { o_autorecon, OptionScheme::ARG_ONE },
-        { o_chunk,     OptionScheme::ARG_ONE },
-        { o_bwreport,  OptionScheme::ARG_ONE },
-        { o_statsrep,  OptionScheme::ARG_ONE },
-        { o_statsout,  OptionScheme::ARG_ONE },
-        { o_statspf,   OptionScheme::ARG_ONE },
-        { o_statsfull, OptionScheme::ARG_NONE },
-        { o_loglevel,  OptionScheme::ARG_ONE },
-        { o_logfa,     OptionScheme::ARG_ONE },
-        { o_logfile,   OptionScheme::ARG_ONE },
-        { o_quiet,     OptionScheme::ARG_NONE },
-        { o_verbose,   OptionScheme::ARG_NONE },
-        { o_help,      OptionScheme::ARG_NONE },
-        { o_version,   OptionScheme::ARG_NONE }
+        { o_timeout,      OptionScheme::ARG_ONE },
+        { o_timeout_mode, OptionScheme::ARG_ONE },
+        { o_autorecon,    OptionScheme::ARG_ONE },
+        { o_chunk,        OptionScheme::ARG_ONE },
+        { o_bwreport,     OptionScheme::ARG_ONE },
+        { o_statsrep,     OptionScheme::ARG_ONE },
+        { o_statsout,     OptionScheme::ARG_ONE },
+        { o_statspf,      OptionScheme::ARG_ONE },
+        { o_statsfull,    OptionScheme::ARG_NONE },
+        { o_loglevel,     OptionScheme::ARG_ONE },
+        { o_logfa,        OptionScheme::ARG_ONE },
+        { o_log_internal, OptionScheme::ARG_NONE },
+        { o_logfile,      OptionScheme::ARG_ONE },
+        { o_quiet,        OptionScheme::ARG_NONE },
+        { o_verbose,      OptionScheme::ARG_NONE },
+        { o_help,         OptionScheme::ARG_NONE },
+        { o_version,      OptionScheme::ARG_NONE }
     };
 
     options_t params = ProcessOptions(argv, argc, optargs);
@@ -219,7 +225,10 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         cerr << "SRT Library version: " << SRT_VERSION << endl;
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
+#ifndef _WIN32
         PrintOptionHelp(o_timeout,   "<timeout=0>", "exit timer in seconds");
+        PrintOptionHelp(o_timeout_mode, "<mode=0>", "timeout mode (0 - since app start; 1 - like 0, but cancel on connect");
+#endif
         PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode [yes|no]");
         PrintOptionHelp(o_chunk,     "<chunk=1316>", "max size of data read in one step");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
@@ -229,6 +238,9 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
         PrintOptionHelp(o_loglevel,  "<level=error>", "log level [fatal,error,info,note,warning]");
         PrintOptionHelp(o_logfa,     "<fas=general,...>", "log functional area [all,general,bstats,control,data,tsbpd,rexmit]");
+        //PrintOptionHelp(o_log_internal, "", "use internal logger");
+        PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
+        PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
         PrintOptionHelp(o_quiet,     "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
         cerr << "\n";
@@ -248,6 +260,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
+    cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
     cfg.chunk_size   = stoi(Option<OutString>(params, "1316", o_chunk));
     cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
@@ -272,11 +285,12 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         return 1;
     }
 
-    cfg.full_stats = Option<OutBool>(params, false, o_statsfull);
-    cfg.loglevel   = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
-    cfg.logfas     = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
-    cfg.logfile    = Option<OutString>(params, "", o_logfile);
-    cfg.quiet      = Option<OutBool>(params, "no", o_quiet);
+    cfg.full_stats   = Option<OutBool>(params, false, o_statsfull);
+    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
+    cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.log_internal = Option<OutBool>(params, "no", o_log_internal);
+    cfg.logfile      = Option<OutString>(params, "", o_logfile);
+    cfg.quiet        = Option<OutBool>(params, "no", o_quiet);
     
     if (Option<OutBool>(params, "no", o_verbose))
         Verbose::on = !cfg.quiet;
@@ -339,7 +353,7 @@ int main(int argc, char** argv)
     //
     std::ofstream logfile_stream; // leave unused if not set
     char NAME[] = "SRTLIB";
-    if (cfg.logfile.empty())
+    if (cfg.log_internal)
     {
         srt_setlogflags(0
             | SRT_LOGF_DISABLE_TIME
@@ -349,7 +363,7 @@ int main(int argc, char** argv)
         );
         srt_setloghandler(NAME, TestLogHandler);
     }
-    else
+    else if (!cfg.logfile.empty())
     {
         logfile_stream.open(cfg.logfile.c_str());
         if (!logfile_stream)
@@ -378,7 +392,6 @@ int main(int argc, char** argv)
     }
 
     ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
-
 
 #ifdef _WIN32
 
@@ -586,7 +599,7 @@ int main(int argc, char** argv)
                                         << endl;
                                 }
 #ifndef _WIN32
-                                if (timeout_mode == 1 && timeout > 0)
+                                if (cfg.timeout_mode == 1 && timeout > 0)
                                 {
                                     if (!cfg.quiet)
                                         cerr << "TIMEOUT: cancel\n";
