@@ -124,20 +124,23 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 
     options_t params = ProcessOptions(argv, argc, optargs);
 
-    if (params[""].size() != 2)
+          bool print_help    = Option<OutBool>(params, false, o_help);
+    const bool print_version = Option<OutBool>(params, false, o_version);
+
+    if (params[""].size() != 2 && !print_help && !print_version)
     {
-        cerr << "Can't parse source and target URIs.\n";
+        cerr << "ERROR. Invalid syntax. Specify source and target URIs.\n";
         if (params[""].size() > 0)
         {
             cerr << "The following options are passed without a key: ";
             copy(params[""].begin(), params[""].end(), ostream_iterator<string>(cerr, ", "));
             cerr << endl;
         }
-        params["help"].clear(); // Enable help to print it further
+        print_help = true; // Enable help to print it further
     }
 
 
-    if (Option<OutBool>(params, false, o_help))
+    if (print_help)
     {
         cout << "SRT sample application to transmit files.\n";
         cerr << "SRT Library version: " << SRT_VERSION << endl;
