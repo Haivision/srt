@@ -3908,6 +3908,7 @@ void CUDT::applyResponseSettings()
     m_iRcvLastSkipAck = m_iRcvLastAck;
     m_iRcvLastAckAck = m_ConnRes.m_iISN;
     m_iRcvCurrSeqNo = m_ConnRes.m_iISN - 1;
+    m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
 
@@ -4642,6 +4643,7 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    m_iRcvLastSkipAck = m_iRcvLastAck;
    m_iRcvLastAckAck = hs->m_iISN;
    m_iRcvCurrSeqNo = hs->m_iISN - 1;
+   m_iRcvCurrPhySeqNo = hs->m_iISN - 1;
 
    m_PeerID = hs->m_iID;
    hs->m_iID = m_SocketID;
@@ -8030,16 +8032,28 @@ int CUDT::processData(CUnit* in_unit)
    // to the filter and before the filter could recover the packet before anyone
    // notices :)
 
-
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection, for stats.
+   if (packet.getMsgSeq() != 0) // disregard filter-control packets, their seq may mean nothing
    {
-       CGuard lg(m_StatsLock);
-       int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
-       m_stats.traceRcvLoss += loss;
-       m_stats.rcvLossTotal += loss;
-       uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-       m_stats.traceRcvBytesLoss += lossbytes;
-       m_stats.rcvBytesLossTotal += lossbytes;
+       int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
+       if (diff > 1)
+       {
+           CGuard lg(m_StatsLock);
+           int loss = diff - 1; // loss is all that is above diff == 1
+           m_stats.traceRcvLoss += loss;
+           m_stats.rcvLossTotal += loss;
+           uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+           m_stats.traceRcvBytesLoss += lossbytes;
+           m_stats.rcvBytesLossTotal += lossbytes;
+           HLOGC(mglog.Debug, log << "LOSS STATS: n=" << loss << " SEQ: ["
+                   << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " " << CSeqNo::decseq(packet.m_iSeqNo) << "]");
+
+       }
+
+       if (diff > 0)
+       {
+           // Record if it was further than latest
+           m_iRcvCurrPhySeqNo = packet.m_iSeqNo;
+       }
    }
 
    {
