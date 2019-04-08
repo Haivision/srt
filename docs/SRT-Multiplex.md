@@ -91,4 +91,3 @@ the resource is not found, the connection is closed immediately.
 
 The srt-multiplex program works the same way for connections initiated by a 
 caller or a listener.
-

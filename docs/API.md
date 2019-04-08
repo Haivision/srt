@@ -1174,6 +1174,3 @@ buffer size is too small for a single message to fit in it.
 Note that you can use any of the sending and receiving functions
 for sending and receiving messages, except sendfile/recvfile, which
 are dedicated exclusively for Buffer API. 
-
-
-

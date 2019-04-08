@@ -144,7 +144,3 @@ appropriate delay is applied before delivering to the output. This ensures that 
 time intervals between two consecutive packets at the delivery application are identical 
 to the intervals between these same packets at the moment they were passed to SRT 
 for streaming.
-
-
-
-
