@@ -250,7 +250,7 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
         if (moreoptions && a[0] == '-')
         {
             string key(a + 1);  // omit '-'
-            size_t pos = key.find_first_of(":=");
+            size_t pos = key.find_first_of(":");
             if (pos == string::npos)
                 pos = key.find(' ');
             string value = pos == string::npos ? "" : key.substr(pos + 1);

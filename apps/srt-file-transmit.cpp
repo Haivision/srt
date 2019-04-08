@@ -163,8 +163,9 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
         cerr << "\t-h,-help - show this help\n";
         cerr << "\t-version - print SRT library version\n";
         cerr << "\n";
-        cerr << "\t<input-uri>  - [srt://<ip>:<port>?<query>,udp://<ip>:<port>?<query>,file:///<path>,file://con]\n";
-        cerr << "\t<output-uri> - [srt://<ip>:<port>?<query>,udp://<ip>:<port>?<query>,file:///<path>,file://con]\n";
+        cerr << "\t<input-uri>  - [scheme://HOST:PORT/PATH?PARAM1=VALUE&PARAM2=VALUE]\n";
+        cerr << "\t<output-uri> - [scheme://HOST:PORT/PATH?PARAM1=VALUE&PARAM2=VALUE]\n";
+        cerr << "\tSupported schemes: srt, udp, file, file://con for stdout\n";
 
         return 2;
     }
@@ -723,7 +724,7 @@ int main(int argc, char** argv)
         if (!logfile_stats)
         {
             cerr << "ERROR: Can't open '" << cfg.stats_out << "' for writing stats. Fallback to stdout.\n";
-            logfile_stats.close();
+            return 1;
         }
     }
 
