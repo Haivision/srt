@@ -171,7 +171,7 @@ shell (using quotes or backslash).
 - **-chunk, -c** - use given size of the buffer. When 0, it uses default 1316, which is the maximum size for a single SRT sending call
 - **-verbose, -v** - display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**
 - **-stats", -stats-report-frequency, -s** - Output periodic SRT statistics reports to the standard output or file (see **-statsout**).
-- **-statsout"** - SRT statistics output: standard output (**stdout**) or filename.
+- **-statsout"** - SRT statistics output: filename. Without this option specified the statistics will be printed to standard output.
 - **-pf, -statspf** - SRT statistics print format. Values: **json**, **csv**, **default**.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
 - **-logfa** - selected FAs in SRT to be logged (default: all is enabled, that is, you can filter out log messages comong from only wanted FAs using this option)

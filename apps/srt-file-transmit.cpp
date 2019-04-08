@@ -151,7 +151,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_no_flush, "", "skip output file flushing");
         PrintOptionHelp(o_bwreport, "<every_n_packets=0>", "bandwidth report frequency");
         PrintOptionHelp(o_statsrep, "<every_n_packets=0>", "frequency of status report");
-        PrintOptionHelp(o_statsout, "<stats_output=stdout>", "stats output [stdout|filename]");
+        PrintOptionHelp(o_statsout, "<filename>", "output stats to file");
         PrintOptionHelp(o_statspf, "<format=default>", "stats printing format [json|csv|default]");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
         PrintOptionHelp(o_loglevel, "<level=error>", "log level [fatal,error,info,note,warning]");
@@ -180,8 +180,8 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     cfg.skip_flushing = Option<OutBool>(params, false, o_no_flush);
     cfg.bw_report     = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report  = stoi(Option<OutString>(params, "0", o_statsrep));
-    cfg.stats_out     = Option<OutString>(params, "stdout", o_statsout);
-    const string pf   = Option<OutString>(params, "default", o_statsout);
+    cfg.stats_out     = Option<OutString>(params, "", o_statsout);
+    const string pf   = Option<OutString>(params, "default", o_statspf);
     if (pf == "default")
     {
         cfg.stats_pf = PRINT_FORMAT_2COLS;
@@ -726,6 +726,10 @@ int main(int argc, char** argv)
             cerr << "ERROR: Can't open '" << cfg.stats_out << "' for writing stats. Fallback to stdout.\n";
             return 1;
         }
+    }
+    else if (cfg.bw_report != 0 || cfg.stats_report != 0)
+    {
+        g_stats_are_printed_to_stdout = true;
     }
 
     ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;

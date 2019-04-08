@@ -235,7 +235,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_chunk,     "<chunk=1316>", "max size of data read in one step");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
-        PrintOptionHelp(o_statsout,  "<stats_output=stdout>", "stats output [stdout|filename]");
+        PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
         PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format [json|csv|default]");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
         PrintOptionHelp(o_loglevel,  "<level=error>", "log level [fatal,error,info,note,warning]");
@@ -266,8 +266,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.chunk_size   = stoi(Option<OutString>(params, "1316", o_chunk));
     cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
-    cfg.stats_out    = Option<OutString>(params, "stdout", o_statsout);
-    const string pf  = Option<OutString>(params, "default", o_statsout);
+    cfg.stats_out    = Option<OutString>(params, "", o_statsout);
+    const string pf  = Option<OutString>(params, "default", o_statspf);
     if (pf == "default")
     {
         cfg.stats_pf = PRINT_FORMAT_2COLS;
@@ -380,7 +380,7 @@ int main(int argc, char** argv)
     // SRT stats output
     //
     std::ofstream logfile_stats; // leave unused if not set
-    if (cfg.stats_out != "" && cfg.stats_out != "stdout")
+    if (cfg.stats_out != "")
     {
         logfile_stats.open(cfg.stats_out.c_str());
         if (!logfile_stats)
@@ -388,6 +388,10 @@ int main(int argc, char** argv)
             cerr << "ERROR: Can't open '" << cfg.stats_out << "' for writing stats. Fallback to stdout.\n";
             logfile_stats.close();
         }
+    }
+    else if (cfg.bw_report != 0 || cfg.stats_report != 0)
+    {
+        g_stats_are_printed_to_stdout = true;
     }
 
     ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;

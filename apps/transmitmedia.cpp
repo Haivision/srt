@@ -35,6 +35,7 @@
 
 using namespace std;
 
+bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
@@ -1195,8 +1196,18 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     default:
         break; // do nothing, return nullptr
     case UriParser::FILE:
-        if ( u.host() == "con" || u.host() == "console" )
-            ptr.reset( CreateConsole<Base>() );
+        if (u.host() == "con" || u.host() == "console")
+        {
+            if (IsOutput<Base>() && (
+                (Verbose::on && Verbose::cverb == &cout)
+                || g_stats_are_printed_to_stdout))
+            {
+                cerr << "ERROR: file://con with -v or -r or -s would result in mixing the data and text info.\n";
+                cerr << "ERROR: HINT: you can stream through a FIFO (named pipe)\n";
+                throw invalid_argument("incorrect parameter combination");
+            }
+            ptr.reset(CreateConsole<Base>());
+        }
 // Disable regular file support for the moment
 #if 0
         else
