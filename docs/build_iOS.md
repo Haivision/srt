@@ -44,3 +44,4 @@ In **Build settings** tab find **Header Search Paths** setting
 and add paths to SRT library sources (you should add srt, srt/common and srt/common directories). 
  
 
+ 
