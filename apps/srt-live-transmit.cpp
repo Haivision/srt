@@ -248,9 +248,13 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         cerr << "\t-h,-help - show this help\n";
         cerr << "\t-version - print SRT library version\n";
         cerr << "\n";
-        cerr << "\t<input-uri>  - [scheme://HOST:PORT/PATH?PARAM1=VALUE&PARAM2=VALUE]\n";
-        cerr << "\t<output-uri> - [scheme://HOST:PORT/PATH?PARAM1=VALUE&PARAM2=VALUE]\n";
-        cerr << "\tSupported schemes: srt, udp, file://con for stdout\n";
+        cerr << "\t<input-uri>  - URI specifying a medium to read from\n";
+        cerr << "\t<output-uri> - URI specifying a medium to write to\n";
+        cerr << "URI syntax: SCHEME://HOST:PORT/PATH?PARAM1=VALUE&PARAM2=VALUE...\n";
+        cerr << "Supported schemes:\n";
+        cerr << "\tsrt: use HOST, PORT, and PARAM for setting socket options\n";
+        cerr << "\tudp: use HOST, PORT and PARAM for some UDP specific settings\n";
+        cerr << "\tfile: only as file://con for using stdin or stdout\n";
 
         return 2;
     }
