@@ -57,7 +57,7 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &out_stats = cout) override
+    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -77,7 +77,6 @@ public:
 
     bool IsOpen() override { return bool(ifile); }
     bool End() override { return ifile.eof(); }
-    //~FileSource() { ifile.close(); }
 };
 
 class FileTarget: public Target
@@ -93,10 +92,10 @@ public:
         return !(ofile.bad());
     }
 
-    int Write(const char* data, size_t size, ostream &out_stats = cout) override
+    int Write(const char* data, size_t size, ostream &SRT_ATR_UNUSED = cout) override
     {
         ofile.write(data, size);
-        return !(ofile.bad()) ? size : false;
+        return !(ofile.bad()) ? size : 0;
     }
 
     bool IsOpen() override { return !!ofile; }
@@ -841,7 +840,7 @@ public:
 #endif
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &out_stats = cout) override
+    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -880,7 +879,7 @@ public:
 #endif
     }
 
-    int Write(const char* data, size_t len, ostream &out_stats = cout) override
+    int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
         cout.write(data, len);
         return len;
@@ -1110,7 +1109,7 @@ public:
         eof = false;
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &out_stats = cout) override
+    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -1147,7 +1146,7 @@ public:
         Setup(host, port, attr);
     }
 
-    int Write(const char* data, size_t len, ostream &out_stats = cout) override
+    int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
         int stat = sendto(m_sock, data, len, 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )

@@ -594,7 +594,7 @@ int main(int argc, char** argv)
                                     << endl;
                             }
 #ifndef _WIN32
-                            if (cfg.timeout_mode == 1 && timeout > 0)
+                            if (cfg.timeout_mode == 1 && cfg.timeout > 0)
                             {
                                 if (!cfg.quiet)
                                     cerr << "TIMEOUT: cancel\n";
@@ -645,7 +645,7 @@ int main(int argc, char** argv)
                                 tar.reset();
 
 #ifndef _WIN32
-                            if (cfg.timeout_mode == 1 && timeout > 0)
+                            if (cfg.timeout_mode == 1 && cfg.timeout > 0)
                             {
                                 if (!cfg.quiet)
                                     cerr << "TIMEOUT: will interrupt after " << cfg.timeout << "s\n";
