@@ -19,11 +19,18 @@
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
+extern bool g_stats_are_printed_to_stdout;
 extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
-extern bool printformat_json;
+enum PrintFormat
+{
+    PRINT_FORMAT_2COLS,
+    PRINT_FORMAT_JSON,
+    PRINT_FORMAT_CSV
+};
+extern PrintFormat printformat;
 
 class Location
 {
@@ -35,7 +42,7 @@ public:
 class Source: public Location
 {
 public:
-    virtual bool Read(size_t chunk, bytevector& data) = 0;
+    virtual bool Read(size_t chunk, bytevector& data, std::ostream &out_stats = std::cout) = 0;
     virtual bool IsOpen() = 0;
     virtual bool End() = 0;
     static std::unique_ptr<Source> Create(const std::string& url);
@@ -58,6 +65,7 @@ public:
 class Target: public Location
 {
 public:
+    virtual int Write(const char* data, size_t size, std::ostream &out_stats = std::cout) = 0;
     virtual bool Write(const bytevector& portion) = 0;
     virtual bool IsOpen() = 0;
     virtual bool Broken() = 0;

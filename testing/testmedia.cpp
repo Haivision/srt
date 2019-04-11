@@ -33,7 +33,7 @@
 
 using namespace std;
 
-std::ostream* transmit_cverb = nullptr;
+
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
@@ -176,9 +176,9 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
-    if ( Verbose::on )
+    if ( Verbose::on && !par.empty())
     {
-        Verb() << "Parameters:\n";
+        Verb() << "SRT parameters specified:\n";
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
@@ -1224,10 +1224,10 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         if ( u.host() == "con" || u.host() == "console" )
         {
             if ( IsOutput<Base>() && (
-                        (Verbose::on && transmit_cverb == &cout)
-                        || transmit_bw_report) )
+                        (Verbose::on && Verbose::cverb == &cout)
+                        || transmit_bw_report || transmit_stats_report) )
             {
-                cerr << "ERROR: file://con with -v or -r would result in mixing the data and text info.\n";
+                cerr << "ERROR: file://con with -v or -r or -s would result in mixing the data and text info.\n";
                 cerr << "ERROR: HINT: you can stream through a FIFO (named pipe)\n";
                 throw invalid_argument("incorrect parameter combination");
             }
