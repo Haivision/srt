@@ -1181,24 +1181,24 @@ void CUDT::clearData()
    m_stats.rcvDropTotal             = 0;
    m_stats.traceRcvDrop             = 0;
 
-   m_stats.m_rcvUndecryptTotal        = 0;
+   m_stats.m_rcvUndecryptTotal      = 0;
    m_stats.traceRcvUndecrypt        = 0;
 
-   m_stats.bytesSentTotal         = 0;
-   m_stats.bytesRecvTotal         = 0;
-   m_stats.bytesRetransTotal      = 0;
-   m_stats.traceBytesSent         = 0;
-   m_stats.traceBytesRecv         = 0;
-   m_stats.traceBytesRetrans      = 0;
+   m_stats.bytesSentTotal           = 0;
+   m_stats.bytesRecvTotal           = 0;
+   m_stats.bytesRetransTotal        = 0;
+   m_stats.traceBytesSent           = 0;
+   m_stats.traceBytesRecv           = 0;
+   m_stats.traceBytesRetrans        = 0;
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
-   m_stats.traceRcvBytesLoss      = 0;
+   m_stats.traceRcvBytesLoss        = 0;
 #endif
-   m_stats.sndBytesDropTotal      = 0;
-   m_stats.rcvBytesDropTotal      = 0;
-   m_stats.traceSndBytesDrop      = 0;
-   m_stats.traceRcvBytesDrop      = 0;
+   m_stats.sndBytesDropTotal        = 0;
+   m_stats.rcvBytesDropTotal        = 0;
+   m_stats.traceSndBytesDrop        = 0;
+   m_stats.traceRcvBytesDrop        = 0;
    m_stats.m_rcvBytesUndecryptTotal = 0;
-   m_stats.traceRcvBytesUndecrypt = 0;
+   m_stats.traceRcvBytesUndecrypt   = 0;
 
    m_stats.sndDuration = m_stats.m_sndDurationTotal = 0;
    CGuard::leaveCS(m_StatsLock);
@@ -2817,10 +2817,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
 
-    CGuard::enterCS(m_StatsLock);
     uint64_t now = CTimer::getTime();
     reqpkt.m_iTimeStamp = int32_t(now - m_stats.startTime);
-    CGuard::leaveCS(m_StatsLock);
 
     HLOGC(mglog.Debug, log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (" << now << "). SENDING HS: " << m_ConnReq.show());
 
@@ -2880,7 +2878,6 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             if (m_bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
 
-            CGuard::enterCS(m_StatsLock);
             now = CTimer::getTime();
 #if ENABLE_HEAVY_LOGGING
             {
@@ -2892,7 +2889,6 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
             m_llLastReqTime = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_stats.startTime);
-            CGuard::leaveCS(m_StatsLock);
             m_pSndQueue->sendto(serv_addr, reqpkt);
         }
         else
@@ -3080,10 +3076,8 @@ bool CUDT::processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const
     CPacket request;
     request.setControl(UMSG_HANDSHAKE);
     request.allocate(m_iMaxSRTPayloadSize);
-    CGuard::enterCS(m_StatsLock);
     uint64_t now = CTimer::getTime();
     request.m_iTimeStamp = int(now - m_stats.startTime);
-    CGuard::leaveCS(m_StatsLock);
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: REQ-TIME: HIGH (" << now << "). Should prevent too quick responses.");
     m_llLastReqTime = now;
@@ -3472,11 +3466,9 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // catalyzer here and may turn the entity on the right track faster. When
         // AGREEMENT is missed, it may have kinda initial tearing.
 
-        CGuard::enterCS(m_StatsLock);
         const uint64_t now = CTimer::getTime();
         m_llLastReqTime = now;
         rpkt.m_iTimeStamp = int32_t(now - m_stats.startTime);
-        CGuard::leaveCS(m_StatsLock);
         HLOGC(mglog.Debug, log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH (" << now << ").");
 
         m_pSndQueue->sendto(serv_addr, rpkt);
@@ -4710,9 +4702,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 void CUDT::addressAndSend(CPacket& pkt)
 {
     pkt.m_iID = m_PeerID;
-    CGuard::enterCS(m_StatsLock);
     pkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-    CGuard::leaveCS(m_StatsLock);
 
     m_pSndQueue->sendto(m_pPeerAddr, pkt);
 }
@@ -6326,9 +6316,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
 
-   CGuard::enterCS(m_StatsLock);
    ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-   CGuard::leaveCS(m_StatsLock);
 
    int nbsent = 0;
    int local_prevack = 0;
@@ -6498,9 +6486,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          }
 
          ctrlpkt.m_iID = m_PeerID;
-         CGuard::enterCS(m_StatsLock);
          ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-         CGuard::leaveCS(m_StatsLock);
          nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
          DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
@@ -7141,11 +7127,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          if ( createSrtHandshake(Ref(response), Ref(initdata), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize) )
          {
              response.m_iID = m_PeerID;
-             CGuard::enterCS(m_StatsLock);
              uint64_t currtime_tk;
              CTimer::rdtsc(currtime_tk);
              response.m_iTimeStamp = int(currtime_tk/m_ullCPUFrequency - m_stats.startTime);
-             CGuard::leaveCS(m_StatsLock);
              int nbsent = m_pSndQueue->sendto(m_pPeerAddr, response);
              if (nbsent)
              {
@@ -7459,7 +7443,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       reason = "normal";
    }
 
-   CGuard::enterCS(m_StatsLock);
    if (m_bPeerTsbPd)
    {
        /*
@@ -7478,7 +7461,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    {
        packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
    }
-   CGuard::leaveCS(m_StatsLock);
 
    packet.m_iID = m_PeerID;
    packet.setLength(payload);
@@ -8200,9 +8182,7 @@ int32_t CUDT::bake(const sockaddr* addr, int32_t current_cookie, int correction)
                 (m_iIPversion == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6),
                 clienthost, sizeof(clienthost), clientport, sizeof(clientport),
                 NI_NUMERICHOST|NI_NUMERICSERV);
-        CGuard::enterCS(m_StatsLock);
         int64_t timestamp = ((CTimer::getTime() - m_stats.startTime) / 60000000) + distractor - correction; // secret changes every one minute
-        CGuard::leaveCS(m_StatsLock);
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
         union
@@ -8341,9 +8321,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
 
       size_t size = packet.getLength();
       hs.store_to(packet.m_pcData, Ref(size));
-      CGuard::enterCS(m_StatsLock);
       packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-      CGuard::leaveCS(m_StatsLock);
       m_pSndQueue->sendto(addr, packet);
       return URQ_INDUCTION;
    }
@@ -8414,9 +8392,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
        size_t size = CHandShake::m_iContentSize;
        hs.store_to(packet.m_pcData, Ref(size));
        packet.m_iID = id;
-       CGuard::enterCS(m_StatsLock);
        packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-       CGuard::leaveCS(m_StatsLock);
        m_pSndQueue->sendto(addr, packet);
    }
    else
@@ -8464,9 +8440,7 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
            size_t size = CHandShake::m_iContentSize;
            hs.store_to(packet.m_pcData, Ref(size));
            packet.m_iID = id;
-           CGuard::enterCS(m_StatsLock);
            packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-           CGuard::leaveCS(m_StatsLock);
            m_pSndQueue->sendto(addr, packet);
        }
        else
