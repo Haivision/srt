@@ -34,10 +34,11 @@ written by
 int HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_pp)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	int pad_factor = (HCRYPT_CTX_MODE_AESECB == crypto->ctx->mode ? 128/8 : 1);
 
 	ASSERT(NULL != crypto);
 	ASSERT(NULL != crypto->cipher);
+
+	int pad_factor = (HCRYPT_CTX_MODE_AESECB == crypto->ctx->mode ? 128/8 : 1);
 
 	if (NULL != crypto->cipher->getinbuf) {
 		ASSERT(NULL != crypto->cipher_data);
