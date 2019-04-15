@@ -307,7 +307,7 @@ CUDT::CUDT(const CUDT& ancestor)
 #endif
    m_iSndTimeOut = ancestor.m_iSndTimeOut;
    m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
-   m_bReuseAddr = true;	// this must be true, because all accepted sockets shared the same port with the listener
+   m_bReuseAddr = true; // this must be true, because all accepted sockets share the same port with the listener
    m_llMaxBW = ancestor.m_llMaxBW;
 #ifdef SRT_ENABLE_IPOPTS
    m_iIpTTL = ancestor.m_iIpTTL;
@@ -4702,7 +4702,8 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
         // Don't call this function in "non-regen mode" (sending only),
         // if this side is RESPONDER. This shall be called only with
         // regeneration request, which is required by the sender.
-        m_pCryptoControl->sendKeysToPeer(regen);
+        if (m_pCryptoControl)
+            m_pCryptoControl->sendKeysToPeer(regen);
     }
 }
 
@@ -4717,13 +4718,13 @@ void CUDT::addressAndSend(CPacket& pkt)
 }
 
 
-void CUDT::close()
+bool CUDT::close()
 {
    // NOTE: this function is called from within the garbage collector thread.
 
    if (!m_bOpened)
    {
-      return;
+      return false;
    }
 
    HLOGC(mglog.Debug, log << CONID() << " - closing socket:");
@@ -4746,7 +4747,10 @@ void CUDT::close()
             if (m_ullLingerExpiration == 0)
                m_ullLingerExpiration = entertime + m_Linger.l_linger * uint64_t(1000000);
 
-            return;
+            HLOGC(mglog.Debug, log << "CUDT::close: linger-nonblocking, setting expire time T="
+                    << FormatTime(m_ullLingerExpiration));
+
+            return false;
          }
 
          #ifndef _WIN32
@@ -4786,7 +4790,7 @@ void CUDT::close()
    // XXX What's this, could any of the above actions make it !m_bOpened?
    if (!m_bOpened)
    {
-      return;
+      return true;
    }
 
    // Inform the threads handler to stop.
@@ -4857,6 +4861,8 @@ void CUDT::close()
    m_ullRcvPeerStartTime = 0;
 
    m_bOpened = false;
+
+   return true;
 }
 
 /*
@@ -7608,7 +7614,7 @@ int CUDT::processData(CUnit* unit)
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
-   static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+   static const char* const rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
 
 
