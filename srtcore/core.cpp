@@ -1764,6 +1764,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
         memset(p+offset, 0, aligned_bytesize);
         memcpy(p+offset, m_sStreamName.data(), m_sStreamName.size());
+        // Preswap to little endian (in place due to possible padding zeros)
+        HtoILA((uint32_t*)(p+offset), (uint32_t*)(p+offset), wordsize);
 
         ra_size = wordsize;
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_SID) | HS_CMDSPEC_SIZE::wrap(ra_size);
@@ -1791,7 +1793,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         size_t aligned_bytesize = wordsize*4;
 
         memset(p+offset, 0, aligned_bytesize);
+
         memcpy(p+offset, sm.data(), sm.size());
+        // Preswap to little endian (in place due to possible padding zeros)
+        HtoILA((uint32_t*)(p+offset), (uint32_t*)(p+offset), wordsize);
 
         ra_size = wordsize;
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_SMOOTHER) | HS_CMDSPEC_SIZE::wrap(ra_size);
@@ -2608,6 +2613,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 char target[MAX_SID_LENGTH+1];
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
+
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+
                 m_sStreamName = target;
                 HLOGC(mglog.Debug, log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
@@ -2624,6 +2633,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 char target[MAX_SID_LENGTH+1];
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+
                 string sm = target;
 
                 // As the smoother has been declared by the peer,
