@@ -938,6 +938,15 @@ not connected, or the highest version supported by the peer if connected.
 - The version format in hex is 0xXXYYZZ for x.y.z in human readable form, 
 where x = ("%d", (version>>16) & 0xff), etc.
 - SET could eventually be supported for testing 
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_IPV6ONLY`   | 1.4.0 | pre     |   `bool`  | true   | true     | false  |
+
+- **[GET or SET]** - Set system socket flag IPV6ONLY. When set a listening socket
+accepts IPv4 client (its address will be in a IPv4-mapped IPv6 format).
+
 
 
 
