@@ -471,6 +471,16 @@ regular development.*
 - *Sender: user configurable, default: 64*
 ---
 
+| OptName           | Since | Binding | Type   | Units  | Default            | Range |
+| ----------------- | ----- | ------- | ------ | ------ | ------------------ | ------|
+| `SRTO_IPV6ONLY`   | 1.4.0 | pre     | `bool` | true   | (platform default) | -1..1 |
+
+- **[GET or SET]** - Set system socket flag IPV6ONLY. When set to 0 a listening
+socket binding an IPv6 address accepts also IPv4 clients (their addresses will be 
+formatted as IPv4-mapped IPv6 addresses). By default (-1) this option is not set 
+and the platform default value is used.
+---
+
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
@@ -937,15 +947,7 @@ on `SRTO_MSS` value. *SRT recommended value:* `1024*1024`
 not connected, or the highest version supported by the peer if connected.
 - The version format in hex is 0xXXYYZZ for x.y.z in human readable form, 
 where x = ("%d", (version>>16) & 0xff), etc.
-- SET could eventually be supported for testing 
----
-
-| OptName           | Since | Binding | Type      | Units  | Default  | Range  |
-| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
-| `SRTO_IPV6ONLY`   | 1.4.0 | pre     |   `bool`  | true   | true     | false  |
-
-- **[GET or SET]** - Set system socket flag IPV6ONLY. When set a listening socket
-accepts IPv4 client (its address will be in a IPv4-mapped IPv6 format).
+- SET could eventually be supported for testing
 
 
 
