@@ -30,7 +30,7 @@
 #include "core.h"
 #include "queue.h"
 #include "packet.h"
-#include "smoother.h"
+#include "congctl.h"
 #include "logging.h"
 
 using namespace std;
