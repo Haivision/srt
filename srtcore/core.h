@@ -512,7 +512,7 @@ private: // Identification
 
     // XXX Deprecated field. In any place where it's used, UDT_DGRAM is
     // the only allowed value. The functionality of distinguishing the transmission
-    // method is now in m_Smoother.
+    // method is now in m_CongCtl.
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
@@ -579,7 +579,7 @@ private:
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV__SIZE];
-    Smoother m_Smoother;
+    CongestionController m_CongCtl;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -805,7 +805,7 @@ private: // for UDP multiplexer
     CSNode* m_pSNode;               // node information for UDT list used in snd queue
     CRNode* m_pRNode;               // node information for UDT list used in rcv queue
 
-public: // For smoother
+public: // For CongestionController
     const CSndQueue* sndQueue() { return m_pSndQueue; }
     const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
 

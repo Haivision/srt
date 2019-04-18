@@ -173,7 +173,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERLATENCY,         // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
    SRTO_MINVERSION,          // Minimum SRT version needed for the peer (peers with less version will get connection reject)
    SRTO_STREAMID,            // A string set to a socket and passed to the listener's accepted socket
-   SRTO_SMOOTHER,            // Smoother selection (congestion control algorithm)
+   SRTO_CONGESTION,          // Congestion controller type selection
    SRTO_MESSAGEAPI,          // In File mode, use message API (portions of data with boundaries)
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
    SRTO_TRANSTYPE,           // Transmission type (set of options required for given transmission type)
@@ -198,10 +198,10 @@ static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
-// known as Smoother and settable by SRTO_SMOOTHER, or more generally by
-// SRTO_TRANSTYPE. The freed number has been reused for a read-only option
-// SRTO_ISN. This option should have never been used anywhere, just for safety
-// this is temporarily declared as deprecated.
+// settable by SRTO_CONGESTION, or more generally by SRTO_TRANSTYPE. The freed
+// number has been reused for a read-only option SRTO_ISN. This option should
+// have never been used anywhere, just for safety this is temporarily declared
+// as deprecated.
 static const SRT_SOCKOPT SRTO_CC SRT_ATR_DEPRECATED = (SRT_SOCKOPT)3;
 
 // These two flags were derived from UDT, but they were never used.
@@ -217,6 +217,9 @@ static const SRT_SOCKOPT SRTO_MSGTTL SRT_ATR_DEPRECATED = (SRT_SOCKOPT)11;
 // so SRTO_PBKEYLEN should be used for both cases.
 static const SRT_SOCKOPT SRTO_SNDPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)38;
 static const SRT_SOCKOPT SRTO_RCVPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)39;
+
+// Keeping old name for compatibility (deprecated)
+static const SRT_SOCKOPT SRTO_SMOOTHER SRT_ATR_DEPRECATED = SRTO_CONGESTION;
 
 typedef enum SRT_TRANSTYPE
 {

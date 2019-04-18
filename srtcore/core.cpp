@@ -272,14 +272,14 @@ CUDT::CUDT()
 
    m_pCache = NULL;
 
-   // Default smoother is "live".
-   // Available builtin smoother: "file".
-   // Other smoothers can be registerred.
+   // Default congctl is "live".
+   // Available builtin congctl: "file".
+   // Other congctls can be registerred.
 
-   // Note that 'select' returns false if there's no such smoother.
-   // If so, smoother becomes unselected. Calling 'configure' on an
-   // unselected smoother results in exception.
-   m_Smoother.select("live");
+   // Note that 'select' returns false if there's no such congctl.
+   // If so, congctl becomes unselected. Calling 'configure' on an
+   // unselected congctl results in exception.
+   m_CongCtl.select("live");
 }
 
 CUDT::CUDT(const CUDT& ancestor)
@@ -337,10 +337,10 @@ CUDT::CUDT(const CUDT& ancestor)
 
    m_pCache = ancestor.m_pCache;
 
-   // Smoother's copy constructor copies the selection,
-   // but not the underlying smoother object. After
+   // CongestionController's copy constructor copies the selection,
+   // but not the underlying congctl object. After
    // copy-constructed, the 'configure' must be called on it again.
-   m_Smoother = ancestor.m_Smoother;
+   m_CongCtl = ancestor.m_CongCtl;
 }
 
 CUDT::~CUDT()
@@ -715,7 +715,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_sStreamName.assign((const char*)optval, optlen);
         break;
 
-    case SRTO_SMOOTHER:
+    case SRTO_CONGESTION:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -730,7 +730,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             if (val == "vod")
                 val = "file";
 
-            bool res = m_Smoother.select(val);
+            bool res = m_CongCtl.select(val);
             if (!res)
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -769,7 +769,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           // Default live options:
           // - tsbpd: on
           // - latency: 120ms
-          // - smoother: live
+          // - congctl: live
           // - extraction method: message (reading call extracts one message)
           m_bOPT_TsbPd = true;
           m_iOPT_TsbPdDelay = SRT_LIVE_DEF_LATENCY_MS;
@@ -779,14 +779,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bMessageAPI = true;
           m_bRcvNakReport = true;
           m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
-          m_Smoother.select("live");
+          m_CongCtl.select("live");
           break;
 
       case SRTT_FILE:
           // File transfer mode:
           // - tsbpd: off
           // - latency: 0
-          // - smoother: file (original UDT congestion control)
+          // - congctl: file (original UDT congestion control)
           // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
           m_bOPT_TsbPd = false;
           m_iOPT_TsbPdDelay = 0;
@@ -796,7 +796,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bMessageAPI = false;
           m_bRcvNakReport = false;
           m_zOPT_ExpPayloadSize = 0; // use maximum
-          m_Smoother.select("file");
+          m_CongCtl.select("file");
           break;
 
       default:
@@ -1093,9 +1093,9 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = m_sStreamName.size();
       break;
 
-   case SRTO_SMOOTHER:
+   case SRTO_CONGESTION:
       {
-          string tt = m_Smoother.selected_name();
+          string tt = m_CongCtl.selected_name();
           strcpy((char*)optval, tt.c_str());
           optlen = tt.size();
       }
@@ -1254,7 +1254,7 @@ void CUDT::open()
       XXX This code is blocked because the value of
       m_ullMinNakInt_tk will be overwritten again in setupCC.
       And in setupCC it will have an opportunity to make the
-      value overridden according to the statements in the Smoother.
+      value overridden according to the statements in the CongestionController.
 
 #ifdef SRT_ENABLE_NAKREPORT
    if (m_bRcvNakReport)
@@ -1673,7 +1673,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     bool have_kmreq = false;
     bool have_sid = false;
-    bool have_smoother = false;
+    bool have_congctl = false;
 
     // Install the SRT extensions
     hs.m_iType |= CHandShake::HS_EXT_HSREQ;
@@ -1689,12 +1689,12 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     }
 
-    string sm = m_Smoother.selected_name();
+    string sm = m_CongCtl.selected_name();
     if (sm != "" && sm != "live")
     {
-        have_smoother = true;
+        have_congctl = true;
         hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext += ",SMOOTHER";
+        logext += ",CONGCTL";
     }
 
     // Prevent adding KMRSP only in case when BOTH:
@@ -1772,14 +1772,14 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             << ": offset=" << offset << " SID size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
-    if (have_smoother)
+    if (have_congctl)
     {
-        // Pass the smoother to the other side as informational.
-        // The other side should reject connection if it uses a different smoother.
-        // The other side should also respond with the smoother it uses, if its non-default (for backward compatibility).
+        // Pass the congctl to the other side as informational.
+        // The other side should reject connection if it uses a different congctl.
+        // The other side should also respond with the congctl it uses, if its non-default (for backward compatibility).
 
-        // XXX Consider change the smoother settings in the listener socket to "adaptive"
-        // smoother and also "adaptive" value of CUDT::m_bMessageAPI so that the caller
+        // XXX Consider change the congctl settings in the listener socket to "adaptive"
+        // congctl and also "adaptive" value of CUDT::m_bMessageAPI so that the caller
         // may ask for whatever kind of transmission it wants, or select transmission
         // type differently for different connections, however with the same listener.
 
@@ -1794,10 +1794,10 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         memcpy(p+offset, sm.data(), sm.size());
 
         ra_size = wordsize;
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_SMOOTHER) | HS_CMDSPEC_SIZE::wrap(ra_size);
+        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_CONGESTION) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after SMOOTHER [" << sm << "] length=" << sm.size() << " alignedln=" << aligned_bytesize
-            << ": offset=" << offset << " SMOOTHER size=" << ra_size << " space left: " << (total_ra_size - offset));
+        HLOGC(mglog.Debug, log << "createSrtHandshake: after CONGCTL [" << sm << "] length=" << sm.size() << " alignedln=" << aligned_bytesize
+            << ": offset=" << offset << " CONGCTL size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
     // When encryption turned on
@@ -2571,12 +2571,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         }
     }
 
-    bool have_smoother = false;
-    string agsm = m_Smoother.selected_name();
+    bool have_congctl = false;
+    string agsm = m_CongCtl.selected_name();
     if (agsm == "")
     {
         agsm = "live";
-        m_Smoother.select("live");
+        m_CongCtl.select("live");
     }
 
     if ( IsSet(ext_flags, CHandShake::HS_EXT_CONFIG) )
@@ -2611,31 +2611,31 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 m_sStreamName = target;
                 HLOGC(mglog.Debug, log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_SMOOTHER )
+            else if ( cmd == SRT_CMD_CONGESTION )
             {
-                if (have_smoother)
+                if (have_congctl)
                 {
-                    LOGC(mglog.Error, log << "SMOOTHER BLOCK REPEATED!");
+                    LOGC(mglog.Error, log << "CONGCTL BLOCK REPEATED!");
                     return false;
                 }
-                // Declare that smoother has been received
-                have_smoother = true;
+                // Declare that congctl has been received
+                have_congctl = true;
 
                 char target[MAX_SID_LENGTH+1];
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
                 string sm = target;
 
-                // As the smoother has been declared by the peer,
-                // check if your smoother is compatible.
+                // As the congctl has been declared by the peer,
+                // check if your congctl is compatible.
                 // sm cannot be empty, but the agent's sm can be empty meaning live.
                 if (sm != agsm)
                 {
-                    LOGC(mglog.Error, log << "PEER'S SMOOTHER '" << sm << "' does not match AGENT'S SMOOTHER '" << agsm << "'");
+                    LOGC(mglog.Error, log << "PEER'S CONGCTL '" << sm << "' does not match AGENT'S CONGCTL '" << agsm << "'");
                     return false;
                 }
 
-                HLOGC(mglog.Debug, log << "CONNECTOR'S SMOOTHER [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
+                HLOGC(mglog.Debug, log << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
             else if ( cmd == SRT_CMD_NONE )
             {
@@ -2672,10 +2672,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         return true;
     }
 
-    // If agent has set some nondefault smoother, then smoother is expected from the peer.
-    if (agsm != "live" && !have_smoother)
+    // If agent has set some nondefault congctl, then congctl is expected from the peer.
+    if (agsm != "live" && !have_congctl)
     {
-        LOGC(mglog.Error, log << "HS EXT: Agent uses '" << agsm << "' smoother, but peer DID NOT DECLARE smoother (assuming 'live').");
+        LOGC(mglog.Error, log << "HS EXT: Agent uses '" << agsm << "' congctl, but peer DID NOT DECLARE congctl (assuming 'live').");
         return false;
     }
 
@@ -3041,8 +3041,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
     // Parameters at the end.
     HLOGC(mglog.Debug, log << "startConnect: END. Parameters:"
         " mss=" << m_iMSS <<
-        " max-cwnd-size=" << m_Smoother->cgWindowMaxSize() <<
-        " cwnd-size=" << m_Smoother->cgWindowSize() <<
+        " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize() <<
+        " cwnd-size=" << m_CongCtl->cgWindowSize() <<
         " rtt=" << m_iRTT <<
         " bw=" << m_iBandwidth);
 }
@@ -4604,14 +4604,14 @@ void CUDT::setupCC()
     //if (bidirectional || m_bDataSender || m_bTwoWayData)
     //    m_bPeerTsbPd = m_bOPT_TsbPd;
 
-    // Smoother will retrieve whatever parameters it needs
+    // CongestionController will retrieve whatever parameters it needs
     // from *this.
-    m_Smoother.configure(this);
+    m_CongCtl.configure(this);
 
-    // Override the value of minimum NAK interval, per Smoother's wish.
+    // Override the value of minimum NAK interval, per CongestionController's wish.
     // When default 0 value is returned, the current value set by CUDT
     // is preserved.
-    uint64_t min_nak_tk = m_Smoother->minNAKInterval();
+    uint64_t min_nak_tk = m_CongCtl->minNAKInterval();
     if ( min_nak_tk )
         m_ullMinNakInt_tk = min_nak_tk;
 
@@ -4864,14 +4864,14 @@ int CUDT::send(const char* data, int len)
    // throw an exception if not connected
    if (m_bBroken || m_bClosing)
       throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-   else if (!m_bConnected || !m_Smoother.ready())
+   else if (!m_bConnected || !m_CongCtl.ready())
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
    if (len <= 0)
       return 0;
 
-   // Check if the current smoother accepts the call with given parameters.
-   if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER, Smoother::STAD_SEND, data, len, -1, false))
+   // Check if the current congctl accepts the call with given parameters.
+   if (!m_CongCtl->checkTransArgs(CongestionController::STA_BUFFER, CongestionController::STAD_SEND, data, len, -1, false))
       throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
@@ -4957,7 +4957,7 @@ int CUDT::send(const char* data, int len)
 
 int CUDT::receiveBuffer(char* data, int len)
 {
-    if (!m_Smoother->checkTransArgs(Smoother::STA_BUFFER, Smoother::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(CongestionController::STA_BUFFER, CongestionController::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     CGuard recvguard(m_RecvLock);
@@ -5156,7 +5156,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    else if (!m_bConnected || !m_Smoother.ready())
+    else if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (len <= 0)
@@ -5168,19 +5168,19 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     int msttl = mctrl.msgttl;
     bool inorder = mctrl.inorder;
 
-    // Sendmsg isn't restricted to the smoother type, however the smoother
+    // Sendmsg isn't restricted to the congctl type, however the congctl
     // may want to have something to say here.
-    // NOTE: Smoother is also allowed to throw CUDTException() by itself!
+    // NOTE: CongestionController is also allowed to throw CUDTException() by itself!
     {
-        Smoother::TransAPI api = Smoother::STA_MESSAGE;
+        CongestionController::TransAPI api = CongestionController::STA_MESSAGE;
         CodeMinor mn = MN_INVALMSGAPI;
         if ( !m_bMessageAPI )
         {
-            api = Smoother::STA_BUFFER;
+            api = CongestionController::STA_BUFFER;
             mn = MN_INVALBUFFERAPI;
         }
 
-        if (!m_Smoother->checkTransArgs(api, Smoother::STAD_SEND, data, len, msttl, inorder))
+        if (!m_CongCtl->checkTransArgs(api, CongestionController::STAD_SEND, data, len, msttl, inorder))
             throw CUDTException(MJ_NOTSUP, mn, 0);
     }
 
@@ -5355,7 +5355,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
 int CUDT::recv(char* data, int len)
 {
-    if (!m_bConnected || !m_Smoother.ready())
+    if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (len <= 0)
@@ -5375,7 +5375,7 @@ int CUDT::recv(char* data, int len)
 
 int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 {
-    if (!m_bConnected || !m_Smoother.ready())
+    if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (len <= 0)
@@ -5397,7 +5397,7 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 
 int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 {
-    if (!m_bConnected || !m_Smoother.ready())
+    if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (len <= 0)
@@ -5415,10 +5415,10 @@ int CUDT::recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> mctrl)
 int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 {
     SRT_MSGCTRL& mctrl = *r_mctrl;
-    // Recvmsg isn't restricted to the smoother type, it's the most
+    // Recvmsg isn't restricted to the congctl type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
-    if (!m_Smoother->checkTransArgs(Smoother::STA_MESSAGE, Smoother::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(CongestionController::STA_MESSAGE, CongestionController::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard(m_RecvLock);
@@ -5578,13 +5578,13 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 {
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    else if (!m_bConnected || !m_Smoother.ready())
+    else if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (size <= 0 && size != -1)
         return 0;
 
-    if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_SEND, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(CongestionController::STA_FILE, CongestionController::STAD_SEND, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
@@ -5696,7 +5696,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
 
 int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
 {
-    if (!m_bConnected || !m_Smoother.ready())
+    if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
     {
@@ -5708,7 +5708,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
     if (size <= 0)
         return 0;
 
-    if (!m_Smoother->checkTransArgs(Smoother::STA_FILE, Smoother::STAD_RECV, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(CongestionController::STA_FILE, CongestionController::STAD_RECV, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (m_bTsbPd)
@@ -5984,7 +5984,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->byteMSS = m_iMSS;
 
    perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW)
-       : m_Smoother.ready() ? Bps2Mbps(m_Smoother->sndBandwidth())
+       : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth())
        : 0;
 
    //<
@@ -6092,16 +6092,16 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 
 void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 {
-    // Special things that must be done HERE, not in Smoother,
+    // Special things that must be done HERE, not in CongestionController,
     // because it involves the input buffer in CUDT. It would be
-    // slightly dangerous to give Smoother access to it.
+    // slightly dangerous to give CongestionController access to it.
 
-    // According to the rules, the smoother should be ready at the same
+    // According to the rules, the congctl should be ready at the same
     // time when the sending buffer. For sanity check, check both first.
-    if (!m_Smoother.ready() || !m_pSndBuffer)
+    if (!m_CongCtl.ready() || !m_pSndBuffer)
     {
-        LOGC(mglog.Error, log << "updateCC: CAN'T DO UPDATE - smoother "
-            << (m_Smoother.ready() ? "ready" : "NOT READY")
+        LOGC(mglog.Error, log << "updateCC: CAN'T DO UPDATE - congctl "
+            << (m_CongCtl.ready() ? "ready" : "NOT READY")
             << "; sending buffer "
             << (m_pSndBuffer ? "NOT CREATED" : "created"));
 
@@ -6135,8 +6135,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
                 m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
                 0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
 
-            // Note: setting bw == 0 uses BW_INFINITE value in LiveSmoother
-            m_Smoother->updateBandwidth(m_llMaxBW, bw);
+            // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
+            m_CongCtl->updateBandwidth(m_llMaxBW, bw);
 
             if (only_input == TEV_INIT_OHEADBW)
             {
@@ -6154,7 +6154,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         }
     }
 
-    // This part is also required only by LiveSmoother, however not
+    // This part is also required only by LiveCC, however not
     // moved there due to that it needs access to CSndBuffer.
     if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER)
     {
@@ -6178,7 +6178,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
              * Keep previously set maximum in that case (inputbw == 0).
              */
             if (inputbw != 0)
-                m_Smoother->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
+                m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
 
             CGuard::enterCS(m_StatsLock);
             if ((m_stats.sentTotal > SND_INPUTRATE_MAX_PACKETS) && (period < SND_INPUTRATE_RUNNING_US))
@@ -6189,22 +6189,22 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
     HLOGC(mglog.Debug, log << "udpateCC: emitting signal for EVENT:" << TransmissionEventStr(evt));
 
-    // Now execute a smoother-defined action for that event.
+    // Now execute a congctl-defined action for that event.
     EmitSignal(evt, arg);
 
     // This should be done with every event except ACKACK and SEND/RECEIVE
-    // After any action was done by the smoother, update the congestion window and sending interval.
+    // After any action was done by the congctl, update the congestion window and sending interval.
     if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
     {
         // This part comes from original UDT.
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_ullInterval_tk = (uint64_t)(m_Smoother->pktSndPeriod_us() * m_ullCPUFrequency);
-        m_dCongestionWindow = m_Smoother->cgWindowSize();
+        m_ullInterval_tk = (uint64_t)(m_CongCtl->pktSndPeriod_us() * m_ullCPUFrequency);
+        m_dCongestionWindow = m_CongCtl->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
-        HLOGC(mglog.Debug, log << "updateCC: updated values from smoother: interval=" << m_ullInterval_tk
-            << "tk (" << m_Smoother->pktSndPeriod_us() << "us) cgwindow="
+        HLOGC(mglog.Debug, log << "updateCC: updated values from congctl: interval=" << m_ullInterval_tk
+            << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
             << std::setprecision(3) << m_dCongestionWindow);
 #endif
     }
@@ -6554,14 +6554,14 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
           // update next NAK time, which should wait enough time for the retansmission, but not too long
           m_ullNAKInt_tk = (m_iRTT + 4 * m_iRTTVar) * m_ullCPUFrequency;
 
-          // Fix the NAKreport period according to the smoother
-          m_ullNAKInt_tk = m_Smoother->updateNAKInterval(
+          // Fix the NAKreport period according to the congctl
+          m_ullNAKInt_tk = m_CongCtl->updateNAKInterval(
                   m_ullNAKInt_tk,
                   m_RcvTimeWindow.getPktRcvSpeed(),
                   m_pRcvLossList->getLossLength()
           );
 
-          // This is necessary because a smoother need not wish to define
+          // This is necessary because a congctl need not wish to define
           // its own minimum interval, in which case the default one is used.
           if (m_ullNAKInt_tk < m_ullMinNakInt_tk)
               m_ullNAKInt_tk = m_ullMinNakInt_tk;
@@ -6872,7 +6872,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
           // Update Estimated Bandwidth and packet delivery rate
           // m_iRcvRate = m_iDeliveryRate;
-          // ^^ This has been removed because with the Smoother class
+          // ^^ This has been removed because with the CongestionController class
           // instead of reading the m_iRcvRate local field this will read
           // cudt->deliveryRate() instead.
       }
@@ -7029,7 +7029,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_iLastDecSeq = m_iSndCurrSeqNo;
       // XXX Note as interesting fact: this is only prepared for handling,
       // but nothing in the code is sending this message. Probably predicted
-      // for a custom smoother. There's a predicted place to call it under
+      // for a custom congctl. There's a predicted place to call it under
       // UMSG_ACKACK handling, but it's commented out.
 
       break;
@@ -7245,7 +7245,7 @@ void CUDT::updateSrtSndSettings()
     {
         /* We are TsbPd sender */
         // XXX Check what happened here.
-        //m_iPeerTsbPdDelay_ms = m_Smoother->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
+        //m_iPeerTsbPdDelay_ms = m_CongCtl->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
         /* 
          * For sender to apply Too-Late Packet Drop
          * option (m_bTLPktDrop) must be enabled and receiving peer shall support it
@@ -7919,8 +7919,8 @@ int CUDT::processData(CUnit* unit)
 
    // This is not a regular fixed size packet...
    // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
-   // (if the smoother says so).
-   if (m_Smoother->needsQuickACK(packet))
+   // (if the congctl says so).
+   if (m_CongCtl->needsQuickACK(packet))
    {
        CTimer::rdtsc(m_ullNextACKTime_tk);
    }
@@ -8486,16 +8486,16 @@ void CUDT::checkTimers()
 
     if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
             // OR the number of sent packets since last ACK has reached
-            // the smoother-defined value of ACK Interval
-            // (note that none of the builtin smoothers defines ACK Interval)
-            || (m_Smoother->ACKInterval() > 0 && m_iPktCount >= m_Smoother->ACKInterval()))
+            // the congctl-defined value of ACK Interval
+            // (note that none of the builtin congctls defines ACK Interval)
+            || (m_CongCtl->ACKInterval() > 0 && m_iPktCount >= m_CongCtl->ACKInterval()))
     {
         // ACK timer expired or ACK interval is reached
 
         sendCtrl(UMSG_ACK);
         CTimer::rdtsc(currtime_tk);
 
-        int ack_interval_tk = m_Smoother->ACKPeriod() > 0 ? m_Smoother->ACKPeriod() * m_ullCPUFrequency : m_ullACKInt_tk;
+        int ack_interval_tk = m_CongCtl->ACKPeriod() > 0 ? m_CongCtl->ACKPeriod() * m_ullCPUFrequency : m_ullACKInt_tk;
         m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
 
         m_iPktCount = 0;
@@ -8547,9 +8547,9 @@ void CUDT::checkTimers()
     // There's nothing in the original code that alters these values.
 
     uint64_t next_exp_time_tk;
-    if (m_Smoother->RTO())
+    if (m_CongCtl->RTO())
     {
-        next_exp_time_tk = m_ullLastRspTime_tk + m_Smoother->RTO() * m_ullCPUFrequency;
+        next_exp_time_tk = m_ullLastRspTime_tk + m_CongCtl->RTO() * m_ullCPUFrequency;
     }
     else
     {
@@ -8593,12 +8593,12 @@ void CUDT::checkTimers()
             << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk)*m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
 
         /* 
-         * This part is only used with FileSmoother. This retransmits
+         * This part is only used with FileCC. This retransmits
          * unacknowledged packet only when nothing in the loss list.
          * This does not work well for real-time data that is delayed too much.
-         * For LiveSmoother, see the case of SRM_FASTREXMIT later in function.
+         * For LiveCC, see the case of SRM_FASTREXMIT later in function.
          */
-        if (m_Smoother->rexmitMethod() == Smoother::SRM_LATEREXMIT)
+        if (m_CongCtl->rexmitMethod() == CongestionController::SRM_LATEREXMIT)
         {
             // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
             // recver: Send out a keep-alive packet
@@ -8661,7 +8661,7 @@ void CUDT::checkTimers()
     // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
     //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
     //         Not required if peer send Periodic NAK Reports.
-    if (m_Smoother->rexmitMethod() == Smoother::SRM_FASTREXMIT
+    if (m_CongCtl->rexmitMethod() == CongestionController::SRM_FASTREXMIT
             // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
             // there's no "blind rexmit" done at all. The only other rexmit method
             // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
