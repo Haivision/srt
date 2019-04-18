@@ -106,8 +106,8 @@ public:
 
    void setRcvBufSize(int size);
 
-   /// Set the IPV6ONLY option.
-   /// @param [in] IPV6ONLY value.
+      /// Set the IPV6ONLY option.
+      /// @param [in] IPV6ONLY value.
 
    void setIpV6Only(int ipV6Only);
 
