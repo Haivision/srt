@@ -1,11 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
- * 
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- * 
+ *
  */
 
 #ifndef INC__SMOOTHER_H
@@ -13,7 +13,9 @@
 
 #include <map>
 #include <string>
+#include <map>
 #include <utility>
+#include "common.h"
 
 class CUDT;
 class SmootherBase;
@@ -26,18 +28,36 @@ class Smoother
     // for a user-defined smoother.
     // Note that this is a pointer to function :)
 
-    static const size_t N_SMOOTHERS = 2;
     // The first/second is to mimic the map.
     typedef struct { const char* first; smoother_create_t* second; } NamePtr;
-    static NamePtr smoothers[N_SMOOTHERS];
+    static NamePtr builtin_smoothers[];
+    typedef std::map<std::string, smoother_create_t*> smoothers_map_t;
+    static smoothers_map_t smoothers;
 
     // This is a smoother container.
     SmootherBase* smoother;
-    size_t selector;
-
+    smoothers_map_t::iterator selector;
     void Check();
 
 public:
+
+    template <class Target>
+    struct Creator
+    {
+        static SmootherBase* Create(CUDT* parent) { return new Target(parent); }
+    };
+
+    static bool IsBuiltin(const std::string&);
+
+    template <class NewSmoother>
+    static bool add(const std::string& name)
+    {
+        if (IsBuiltin(name))
+            return false;
+
+        smoothers[name] = Creator<NewSmoother>::Create;
+        return true;
+    }
 
     // If you predict to allow something to be done on smoother also
     // before it is configured, call this first. If you need it configured,
@@ -46,39 +66,24 @@ public:
     SmootherBase* operator->() { Check(); return smoother; }
 
     // In the beginning it's uninitialized
-    Smoother(): smoother(), selector(N_SMOOTHERS) {}
-
-    struct IsName
-    {
-        std::string n;
-        IsName(std::string nn): n(nn) {}
-        bool operator()(NamePtr np) { return n == np.first; }
-    };
+    Smoother() : smoother(), selector(smoothers.end()) {}
 
     // You can call select() multiple times, until finally
     // the 'configure' method is called.
-    bool select(const std::string& name)
-    {
-        NamePtr* end = smoothers+N_SMOOTHERS;
-        NamePtr* try_selector = std::find_if(smoothers, end, IsName(name));
-        if (try_selector == end)
-            return false;
-        selector = try_selector - smoothers;
-        return true;
-    }
+    bool select(const std::string& name);
 
     std::string selected_name()
     {
-        if (selector == N_SMOOTHERS)
+        if (selector == smoothers.end())
             return "";
-        return smoothers[selector].first;
+        return selector->first;
     }
 
     // Copy constructor - important when listener-spawning
     // Things being done:
     // 1. The smoother is individual, so don't copy it. Set NULL.
     // 2. The selected name is copied so that it's configured correctly.
-    Smoother(const Smoother& source): smoother(), selector(source.selector) {}
+    Smoother(const Smoother& source) : smoother(), selector(source.selector) {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -181,7 +186,7 @@ public:
     }
 
     // A smoother is allowed to agree or disagree on the use of particular API.
-    virtual bool checkTransArgs(Smoother::TransAPI , Smoother::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
+    virtual bool checkTransArgs(Smoother::TransAPI, Smoother::TransDir, const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
     {
         return true;
     }

@@ -356,8 +356,8 @@ private:
                     m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
                     HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
-                        << " sndperiod=" << m_dPktSndPeriod << "us = mega/("
-                        << m_parent->deliveryRate() << "B/s)");
+                        << " sndperiod=" << m_dPktSndPeriod << "us = 1M/("
+                        << m_parent->deliveryRate() << " pkts/s)");
                 }
                 else
                 {
@@ -396,7 +396,7 @@ private:
         if ((m_dPktSndPeriod > m_dLastDecPeriod) && ((m_parent->bandwidth() / 9) < B))
             B = m_parent->bandwidth() / 9;
         if (B <= 0)
-            inc = 1.0 / m_parent->MSS();
+            inc = 1.0 / m_parent->MSS();    // was inc = 0.01;
         else
         {
             // inc = max(10 ^ ceil(log10( B * MSS * 8 ) * Beta / MSS, 1/MSS)
@@ -404,7 +404,7 @@ private:
 
             inc = pow(10.0, ceil(log10(B * m_parent->MSS() * 8.0))) * 0.0000015 / m_parent->MSS();
 
-            if (inc < 1.0/m_parent->MSS())
+            if (inc < 1.0/m_parent->MSS())  // was < 0.01 then 0.01
                 inc = 1.0/m_parent->MSS();
         }
 
@@ -430,7 +430,7 @@ RATE_LIMIT:
 #endif
 
         HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:"
-            << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
+            << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize << " inc = " << inc
             << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")"
             " SYSTEM BUFFER LEFT: " << udp_buffer_free);
 #endif
@@ -584,26 +584,45 @@ RATE_LIMIT:
 
 #undef SSLOT
 
-template <class Target>
-struct Creator
+Smoother::NamePtr Smoother::builtin_smoothers[] =
 {
-    static SmootherBase* Create(CUDT* parent) { return new Target(parent); }
+    {"live", Creator<LiveSmoother>::Create },
+    {"file", Creator<FileSmoother>::Create }
 };
 
-Smoother::NamePtr Smoother::smoothers[N_SMOOTHERS] =
+bool Smoother::IsBuiltin(const string& s)
+{
+    size_t size = sizeof builtin_smoothers / sizeof(builtin_smoothers[0]);
+    for (size_t i = 0; i < size; ++i)
+        if (s == builtin_smoothers[i].first)
+            return true;
+
+    return false;
+}
+
+
+Smoother::smoothers_map_t Smoother::smoothers =
 {
     {"live", Creator<LiveSmoother>::Create },
     {"file", Creator<FileSmoother>::Create }
 };
 
 
+
+bool Smoother::select(const std::string& name)
+{
+    selector = smoothers.find(name);
+    return selector != smoothers.end();
+}
+
+
 bool Smoother::configure(CUDT* parent)
 {
-    if (selector == N_SMOOTHERS)
+    if (selector == smoothers.end())
         return false;
 
     // Found a smoother, so call the creation function
-    smoother = (*smoothers[selector].second)(parent);
+    smoother = (*selector->second)(parent);
 
     // The smoother should have pinned in all events
     // that are of its interest. It's stated that
