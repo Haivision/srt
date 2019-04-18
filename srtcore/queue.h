@@ -507,23 +507,23 @@ private:
 
 struct CMultiplexer
 {
-   CSndQueue* m_pSndQueue;	// The sending queue
-   CRcvQueue* m_pRcvQueue;	// The receiving queue
-   CChannel* m_pChannel;	// The UDP channel for sending and receiving
-   CTimer* m_pTimer;		// The timer
+   CSndQueue* m_pSndQueue;  // The sending queue
+   CRcvQueue* m_pRcvQueue;  // The receiving queue
+   CChannel* m_pChannel;    // The UDP channel for sending and receiving
+   CTimer* m_pTimer;        // The timer
 
-   int m_iPort;			// The UDP port number of this multiplexer
-   int m_iIPversion;		// IP version
+   int m_iPort;         // The UDP port number of this multiplexer
+   int m_iIPversion;    // IP version
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
 #endif
-   int m_iMSS;			// Maximum Segment Size
-   int m_iRefCount;		// number of UDT instances that are associated with this multiplexer
+   int m_iMSS;          // Maximum Segment Size
+   int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
    int m_iIpV6Only;     // IPV6_V6ONLY option
-   bool m_bReusable;		// if this one can be shared with others
+   bool m_bReusable;    // if this one can be shared with others
 
-   int m_iID;			// multiplexer ID
+   int m_iID;           // multiplexer ID
 };
 
 #endif
