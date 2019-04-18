@@ -180,6 +180,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
    SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
    SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
+   SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -501,7 +502,7 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
     // Using an enum prevents treating int automatically as enum,
     // requires explicit enum to be passed here, and minimizes the
     // risk that the right side value will contain multiple flags.
-    return flags & int(eflg);
+    return (flags & int(eflg)) != 0;
 }
 #endif
 

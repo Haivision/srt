@@ -1656,6 +1656,7 @@ void CUDTUnited::updateMux(
             &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
             && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
+            && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
             &&  i->second.m_bReusable)
          {
             if (i->second.m_iPort == port)
@@ -1682,6 +1683,7 @@ void CUDTUnited::updateMux(
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
 #endif
    m.m_iRefCount = 1;
+   m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
@@ -1692,6 +1694,8 @@ void CUDTUnited::updateMux(
 #endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
+   if (s->m_pUDT->m_iIpV6Only != -1)
+      m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
 
    try
    {

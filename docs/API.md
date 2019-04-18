@@ -471,6 +471,16 @@ regular development.*
 - *Sender: user configurable, default: 64*
 ---
 
+| OptName           | Since | Binding | Type  | Units | Default            | Range |
+| ----------------- | ----- | ------- | ----- | ----- | ------------------ | ------|
+| `SRTO_IPV6ONLY`   | 1.4.0 | pre     | `int` | n/a   | (platform default) | -1..1 |
+
+- **[GET or SET]** - Set system socket flag IPV6ONLY. When set to 0 a listening
+socket binding an IPv6 address accepts also IPv4 clients (their addresses will be 
+formatted as IPv4-mapped IPv6 addresses). By default (-1) this option is not set 
+and the platform default value is used.
+---
+
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
