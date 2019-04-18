@@ -579,7 +579,7 @@ private:
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV__SIZE];
-    CongestionController m_CongCtl;
+    SrtCongestion m_CongCtl;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -805,7 +805,7 @@ private: // for UDP multiplexer
     CSNode* m_pSNode;               // node information for UDT list used in snd queue
     CRNode* m_pRNode;               // node information for UDT list used in rcv queue
 
-public: // For CongestionController
+public: // For SrtCongestion
     const CSndQueue* sndQueue() { return m_pSndQueue; }
     const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
 

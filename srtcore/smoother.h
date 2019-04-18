@@ -20,7 +20,7 @@ class SrtCongestionControlBase;
 
 typedef SrtCongestionControlBase* srtcc_create_t(CUDT* parent);
 
-class CongestionController
+class SrtCongestion
 {
     // Temporarily changed to linear searching, until this is exposed
     // for a user-defined controller.
@@ -46,7 +46,7 @@ public:
     SrtCongestionControlBase* operator->() { Check(); return congctl; }
 
     // In the beginning it's uninitialized
-    CongestionController(): congctl(), selector(N_CONTROLLERS) {}
+    SrtCongestion(): congctl(), selector(N_CONTROLLERS) {}
 
     struct IsName
     {
@@ -78,7 +78,7 @@ public:
     // Things being done:
     // 1. The congctl is individual, so don't copy it. Set NULL.
     // 2. The selected name is copied so that it's configured correctly.
-    CongestionController(const CongestionController& source): congctl(), selector(source.selector) {}
+    SrtCongestion(const SrtCongestion& source): congctl(), selector(source.selector) {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -89,7 +89,7 @@ public:
     // Will delete the pinned in congctl object.
     // This must be defined in *.cpp file due to virtual
     // destruction.
-    ~CongestionController();
+    ~SrtCongestion();
 
     enum RexmitMethod
     {
@@ -181,12 +181,12 @@ public:
     }
 
     // Particular controller is allowed to agree or disagree on the use of particular API.
-    virtual bool checkTransArgs(CongestionController::TransAPI , CongestionController::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
+    virtual bool checkTransArgs(SrtCongestion::TransAPI , SrtCongestion::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
     {
         return true;
     }
 
-    virtual CongestionController::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
+    virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
     virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
     {

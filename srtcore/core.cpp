@@ -337,7 +337,7 @@ CUDT::CUDT(const CUDT& ancestor)
 
    m_pCache = ancestor.m_pCache;
 
-   // CongestionController's copy constructor copies the selection,
+   // SrtCongestion's copy constructor copies the selection,
    // but not the underlying congctl object. After
    // copy-constructed, the 'configure' must be called on it again.
    m_CongCtl = ancestor.m_CongCtl;
@@ -1254,7 +1254,7 @@ void CUDT::open()
       XXX This code is blocked because the value of
       m_ullMinNakInt_tk will be overwritten again in setupCC.
       And in setupCC it will have an opportunity to make the
-      value overridden according to the statements in the CongestionController.
+      value overridden according to the statements in the SrtCongestion.
 
 #ifdef SRT_ENABLE_NAKREPORT
    if (m_bRcvNakReport)
@@ -4604,11 +4604,11 @@ void CUDT::setupCC()
     //if (bidirectional || m_bDataSender || m_bTwoWayData)
     //    m_bPeerTsbPd = m_bOPT_TsbPd;
 
-    // CongestionController will retrieve whatever parameters it needs
+    // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
     m_CongCtl.configure(this);
 
-    // Override the value of minimum NAK interval, per CongestionController's wish.
+    // Override the value of minimum NAK interval, per SrtCongestion's wish.
     // When default 0 value is returned, the current value set by CUDT
     // is preserved.
     uint64_t min_nak_tk = m_CongCtl->minNAKInterval();
@@ -4871,7 +4871,7 @@ int CUDT::send(const char* data, int len)
       return 0;
 
    // Check if the current congctl accepts the call with given parameters.
-   if (!m_CongCtl->checkTransArgs(CongestionController::STA_BUFFER, CongestionController::STAD_SEND, data, len, -1, false))
+   if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_SEND, data, len, -1, false))
       throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
    CGuard sendguard(m_SendLock);
@@ -4957,7 +4957,7 @@ int CUDT::send(const char* data, int len)
 
 int CUDT::receiveBuffer(char* data, int len)
 {
-    if (!m_CongCtl->checkTransArgs(CongestionController::STA_BUFFER, CongestionController::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     CGuard recvguard(m_RecvLock);
@@ -5170,17 +5170,17 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
     // Sendmsg isn't restricted to the congctl type, however the congctl
     // may want to have something to say here.
-    // NOTE: CongestionController is also allowed to throw CUDTException() by itself!
+    // NOTE: SrtCongestion is also allowed to throw CUDTException() by itself!
     {
-        CongestionController::TransAPI api = CongestionController::STA_MESSAGE;
+        SrtCongestion::TransAPI api = SrtCongestion::STA_MESSAGE;
         CodeMinor mn = MN_INVALMSGAPI;
         if ( !m_bMessageAPI )
         {
-            api = CongestionController::STA_BUFFER;
+            api = SrtCongestion::STA_BUFFER;
             mn = MN_INVALBUFFERAPI;
         }
 
-        if (!m_CongCtl->checkTransArgs(api, CongestionController::STAD_SEND, data, len, msttl, inorder))
+        if (!m_CongCtl->checkTransArgs(api, SrtCongestion::STAD_SEND, data, len, msttl, inorder))
             throw CUDTException(MJ_NOTSUP, mn, 0);
     }
 
@@ -5418,7 +5418,7 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     // Recvmsg isn't restricted to the congctl type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
-    if (!m_CongCtl->checkTransArgs(CongestionController::STA_MESSAGE, CongestionController::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard(m_RecvLock);
@@ -5584,7 +5584,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
     if (size <= 0 && size != -1)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(CongestionController::STA_FILE, CongestionController::STAD_SEND, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
@@ -5708,7 +5708,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
     if (size <= 0)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(CongestionController::STA_FILE, CongestionController::STAD_RECV, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (m_bTsbPd)
@@ -6092,9 +6092,9 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
 
 void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 {
-    // Special things that must be done HERE, not in CongestionController,
+    // Special things that must be done HERE, not in SrtCongestion,
     // because it involves the input buffer in CUDT. It would be
-    // slightly dangerous to give CongestionController access to it.
+    // slightly dangerous to give SrtCongestion access to it.
 
     // According to the rules, the congctl should be ready at the same
     // time when the sending buffer. For sanity check, check both first.
@@ -6872,7 +6872,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
           // Update Estimated Bandwidth and packet delivery rate
           // m_iRcvRate = m_iDeliveryRate;
-          // ^^ This has been removed because with the CongestionController class
+          // ^^ This has been removed because with the SrtCongestion class
           // instead of reading the m_iRcvRate local field this will read
           // cudt->deliveryRate() instead.
       }
@@ -8598,7 +8598,7 @@ void CUDT::checkTimers()
          * This does not work well for real-time data that is delayed too much.
          * For LiveCC, see the case of SRM_FASTREXMIT later in function.
          */
-        if (m_CongCtl->rexmitMethod() == CongestionController::SRM_LATEREXMIT)
+        if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT)
         {
             // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
             // recver: Send out a keep-alive packet
@@ -8661,7 +8661,7 @@ void CUDT::checkTimers()
     // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
     //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
     //         Not required if peer send Periodic NAK Reports.
-    if (m_CongCtl->rexmitMethod() == CongestionController::SRM_FASTREXMIT
+    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT
             // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
             // there's no "blind rexmit" done at all. The only other rexmit method
             // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
