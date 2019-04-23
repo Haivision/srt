@@ -66,13 +66,13 @@ struct SocketOption
 template<>
 inline int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, size);
+    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 template<>
 inline int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
 {
-    return ::setsockopt(socket, proto, sym, (const char *)data, size);
+    return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
 
 template<>

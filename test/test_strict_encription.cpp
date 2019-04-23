@@ -351,7 +351,7 @@ public:
         const int epoll_res = WaitOnEpoll(expect);
 
         auto accepting_thread = std::thread([&] {
-            if (epoll_res != SRT_SUCCESS)
+            if (epoll_res == SRT_ERROR)
                 return;
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,

@@ -94,7 +94,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bool Read(size_t chunk, bytevector& data) override;
+    bool Read(size_t chunk, bytevector& data, ostream& out_stats = cout) override;
 
     /*
        In this form this isn't needed.
@@ -134,6 +134,7 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
+    int Write(const char* data, size_t size, ostream &out_stats = cout) override;
     bool Write(const bytevector& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
