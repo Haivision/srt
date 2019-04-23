@@ -631,23 +631,14 @@ int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
         data.resize(chunk);
 
     const int stat = srt_recvmsg(m_sock, data.data(), (int) chunk);
-    if (stat == SRT_ERROR)
+    if (stat <= 0)
     {
-        // EAGAIN for SRT READING
-        if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
-        {
-            data.clear();
-        }
-        return stat;
-    }
-
-    if (stat == 0)
-    {
+        data.clear();
         return stat;
     }
 
     chunk = size_t(stat);
-    if ( chunk < data.size() )
+    if (chunk < data.size())
         data.resize(chunk);
 
     const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
