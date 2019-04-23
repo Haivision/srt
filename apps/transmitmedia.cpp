@@ -821,7 +821,7 @@ public:
 
         bool st = cin.read(data.data(), chunk).good();
         chunk = cin.gcount();
-        if (chunk == 0 && !st)
+        if (chunk == 0 || !st)
         {
             data.clear();
             return 0;
@@ -829,8 +829,6 @@ public:
 
         if (chunk < data.size())
             data.resize(chunk);
-        if (data.empty())
-            return 0;
 
         return (int) chunk;
     }
