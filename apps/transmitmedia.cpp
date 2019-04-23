@@ -57,7 +57,7 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -67,12 +67,12 @@ public:
         if ( nread < data.size() )
             data.resize(nread);
 
-        if ( data.empty() )
+        if (data.empty())
         {
-            return false;
+            return 0;
         }
 
-        return true;
+        return (int) nread;
     }
 
     bool IsOpen() override { return bool(ifile); }
@@ -86,16 +86,10 @@ public:
 
     FileTarget(const string& path): ofile(path, ios::out | ios::trunc | ios::binary) {}
 
-    bool Write(const bytevector& data) override
-    {
-        ofile.write(data.data(), data.size());
-        return !(ofile.bad());
-    }
-
     int Write(const char* data, size_t size, ostream &SRT_ATR_UNUSED = cout) override
     {
         ofile.write(data, size);
-        return !(ofile.bad()) ? size : 0;
+        return !(ofile.bad()) ? (int) size : 0;
     }
 
     bool IsOpen() override { return !!ofile; }
@@ -629,35 +623,28 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
     hostport_copy = os.str();
 }
 
-bool SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
+int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
 {
     static unsigned long counter = 1;
 
     if (data.size() < chunk)
         data.resize(chunk);
 
-    bool ready = true;
-    int stat;
-    do
+    const int stat = srt_recvmsg(m_sock, data.data(), (int) chunk);
+    if (stat == SRT_ERROR)
     {
-        stat = srt_recvmsg(m_sock, data.data(), chunk);
-        if ( stat == SRT_ERROR )
+        // EAGAIN for SRT READING
+        if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
         {
-            // EAGAIN for SRT READING
-            if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
-            {
-                data.clear();
-                return false;
-            }
-            Error(UDT::getlasterror(), "recvmsg");
+            data.clear();
         }
-
-        if ( stat == 0 )
-        {
-            throw ReadEOF(hostport_copy);
-        }
+        return stat;
     }
-    while (!ready);
+
+    if (stat == 0)
+    {
+        return stat;
+    }
 
     chunk = size_t(stat);
     if ( chunk < data.size() )
@@ -682,7 +669,7 @@ bool SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
 
     ++counter;
 
-    return true;
+    return stat;
 }
 
 int SrtTarget::ConfigurePre(SRTSOCKET sock)
@@ -707,7 +694,7 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
 {
     static unsigned long counter = 1;
 
-    int stat = srt_sendmsg2(m_sock, data, size, nullptr);
+    int stat = srt_sendmsg2(m_sock, data, (int) size, nullptr);
     if (stat == SRT_ERROR)
     {
         return stat;
@@ -735,10 +722,6 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
     return stat;
 }
 
-bool SrtTarget::Write(const bytevector& data) 
-{
-    return -1 != Write(data.data(), data.size());
-}
 
 SrtModel::SrtModel(string host, int port, map<string,string> par)
 {
@@ -840,25 +823,25 @@ public:
 #endif
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
 
         bool st = cin.read(data.data(), chunk).good();
         chunk = cin.gcount();
-        if ( chunk == 0 && !st )
+        if (chunk == 0 && !st)
         {
             data.clear();
-            return false;
+            return 0;
         }
 
-        if ( chunk < data.size() )
+        if (chunk < data.size())
             data.resize(chunk);
-        if ( data.empty() )
-            return false;
+        if (data.empty())
+            return 0;
 
-        return true;
+        return (int) chunk;
     }
 
     bool IsOpen() override { return cin.good(); }
@@ -882,12 +865,7 @@ public:
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
         cout.write(data, len);
-        return len;
-    }
-
-    bool Write(const bytevector& data) override
-    {
-        return 0 != Write(data.data(), data.size());
+        return (int) len;
     }
 
     bool IsOpen() override { return cout.good(); }
@@ -1109,7 +1087,7 @@ public:
         eof = false;
     }
 
-    bool Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -1117,19 +1095,19 @@ public:
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if ( stat < 1 )
+        if (stat < 1)
         {
             if (SysError() != EWOULDBLOCK)
                 eof = true;
             data.clear();
-            return false;
+            return stat;
         }
 
         chunk = size_t(stat);
         if ( chunk < data.size() )
             data.resize(chunk);
 
-        return true;
+        return stat;
     }
 
     bool IsOpen() override { return m_sock != -1; }
@@ -1156,11 +1134,6 @@ public:
             return stat;
         }
         return stat;
-    }
-
-    bool Write(const bytevector& data) override
-    {
-        return -1 != Write(data.data(), data.size());
     }
 
     bool IsOpen() override { return m_sock != -1; }
