@@ -712,10 +712,24 @@ int main(int argc, char** argv)
                     {
                         std::shared_ptr<bytevector> pdata(
                             new bytevector(cfg.chunk_size));
-                        if (!src->Read(cfg.chunk_size, *pdata, out_stats) || (*pdata).empty())
+
+                        const int res = src->Read(cfg.chunk_size, *pdata, out_stats);
+
+                        if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
+                        {
+                            if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                                break;
+
+                            throw std::runtime_error(
+                                string("error: recvmsg: ") + string(srt_getlasterror_str())
+                            );
+                        }
+
+                        if (res == 0 || pdata->empty())
                         {
                             break;
                         }
+
                         dataqueue.push_back(pdata);
                         receivedBytes += (*pdata).size();
                     }

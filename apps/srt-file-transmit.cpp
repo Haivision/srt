@@ -180,7 +180,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
         return 2;
     }
 
-    cfg.chunk_size    = stoul(Option<OutString>(params, "1316", o_chunk));
+    cfg.chunk_size    = stoul(Option<OutString>(params, "1456", o_chunk));
     cfg.skip_flushing = Option<OutBool>(params, false, o_no_flush);
     cfg.bw_report     = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report  = stoi(Option<OutString>(params, "0", o_statsrep));
@@ -584,16 +584,15 @@ bool DoDownload(UriParser& us, string directory, string filename,
         if (connected)
         {
             vector<char> buf(cfg.chunk_size);
-            int n;
 
-            if(!ofile.is_open())
+            if (!ofile.is_open())
             {
                 const char * fn = id.empty() ? filename.c_str() : id.c_str();
                 directory.append("/");
                 directory.append(fn);
                 ofile.open(directory.c_str(), ios::out | ios::trunc | ios::binary);
 
-                if(!ofile.is_open())
+                if (!ofile.is_open())
                 {
                     cerr << "Error opening file [" << directory << "]" << endl;
                     goto exit;
@@ -601,7 +600,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                 cerr << "Writing output to [" << directory << "]" << endl;
             }
 
-            n = src->Read(cfg.chunk_size, buf, out_stats);
+            int n = src->Read(cfg.chunk_size, buf, out_stats);
             if (n == SRT_ERROR)
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
