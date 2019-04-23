@@ -720,7 +720,9 @@ int main(int argc, char** argv)
                             if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                                 break;
 
-                            throw std::runtime_error(string("error: recvmsg: ") + string(srt_getlasterror_str()));
+                            throw std::runtime_error(
+                                string("error: recvmsg: ") + string(srt_getlasterror_str())
+                            );
                         }
 
                         if (res == 0 || pdata->empty())
