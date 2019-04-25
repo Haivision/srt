@@ -189,7 +189,7 @@ def main():
 
     t.join()
 
-    logger.info("file://con <srt-live-transmit> -> srt -> <srt-live-transmit> -> file://con: validation {}".format("succeeded" if is_valid else "failed"))
+    logger.info("file://con srt-live-transmit -> srt -> srt-live-transmit -> file://con: validation {}".format("succeeded" if is_valid else "failed"))
 
     cleanup_process('srt-live-transmit (SND)', snd_srt_process)
     cleanup_process('srt-live-transmit (RCV)', rcv_srt_process)

@@ -31,7 +31,6 @@ matrix:
                 - gcc-mingw-w64-x86-64
                 - gcc-mingw-w64
                 - g++-mingw-w64-x86-64
-                - python3.6
           before_script:
             - git clone -b OpenSSL_1_1_1-stable https://github.com/openssl/openssl.git openssl
             - cd openssl
