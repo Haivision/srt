@@ -37,7 +37,6 @@ matrix:
             - cd openssl
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
-            - sudo apt-get install python3-pip python3-setuptools
             - cd ..
           env: BUILD_TYPE=Release
 script:
