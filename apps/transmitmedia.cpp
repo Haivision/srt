@@ -889,6 +889,7 @@ public:
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
         cout.write(data, len);
+        cout.flush();
         return (int) len;
     }
 

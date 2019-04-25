@@ -450,6 +450,9 @@ int main(int argc, char** argv)
     size_t lastReportedtLostBytes = 0;
     std::time_t writeErrorLogTimer(std::time(nullptr));
 
+    UriParser::Type srcUriType = UriParser::Type::UNKNOWN;
+    bool srcReadMore = false;
+
     try {
         // Now loop until broken
         while (!int_state && !timer_state)
@@ -463,7 +466,8 @@ int main(int argc, char** argv)
                     return 1;
                 }
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-                switch (src->uri.type())
+                srcUriType = src->uri.type();
+                switch (srcUriType)
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
@@ -538,8 +542,8 @@ int main(int argc, char** argv)
             SYSSOCKET sysrfds[2];
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
-                100,
-                &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
+                (srcReadMore ? 0 : 100),
+                &sysrfds[0], &sysrfdslen, 0, 0) >= 0 || srcReadMore)
             {
                 bool doabort = false;
                 for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
@@ -664,14 +668,20 @@ int main(int argc, char** argv)
                             if (!srcConnected)
                             {
                                 if (!cfg.quiet)
+                                {
                                     cerr << "SRT source connected" << endl;
+                                    cerr.flush();
+                                }
                                 srcConnected = true;
                             }
                         }
                         else if (!tarConnected)
                         {
                             if (!cfg.quiet)
+                            {
                                 cerr << "SRT target connected" << endl;
+                                cerr.flush();
+                            }
                             tarConnected = true;
                             if (tar->uri.type() == UriParser::SRT)
                             {
@@ -717,31 +727,27 @@ int main(int argc, char** argv)
                 std::list<std::shared_ptr<bytevector>> dataqueue;
                 if (src.get() && (srtrfdslen || sysrfdslen))
                 {
-                    while (dataqueue.size() < 10)
+                    size_t srcChunksToRead = 10;
+                    while (dataqueue.size() < srcChunksToRead)
                     {
                         std::shared_ptr<bytevector> pdata(
                             new bytevector(cfg.chunk_size));
-
-                        const int res = src->Read(cfg.chunk_size, *pdata, out_stats);
-
-                        if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
-                        {
-                            if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
-                                break;
-
-                            throw std::runtime_error(
-                                string("error: recvmsg: ") + string(srt_getlasterror_str())
-                            );
-                        }
-
-                        if (res == 0 || pdata->empty())
+                        if (!src->Read(cfg.chunk_size, *pdata, out_stats) || (*pdata).empty())
                         {
                             break;
                         }
-
                         dataqueue.push_back(pdata);
                         receivedBytes += (*pdata).size();
                     }
+
+#ifdef _WIN32
+                    srcReadMore = false;
+                    // Check if read up to max number of chunks from stdin
+                    if (srcUriType == UriParser::Type::FILE && dataqueue.size() >= srcChunksToRead)
+                    {
+                        srcReadMore = true;
+                    }
+#endif
                 }
 
                 // if no target, let received data fall to the floor
