@@ -57,7 +57,5 @@ script:
     - make
     - python --version
     - python3 --version
-    - python3.6 --version
-    - echo "$TRAVIS_PYTHON_VERSION"
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then python3 ./scripts/python/test-apps.py; fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi

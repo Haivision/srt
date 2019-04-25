@@ -48,7 +48,7 @@ def create_process(name, args):
         ProcessHasNotBeenCreated
         ProcessHasNotBeenStarted
     """
-    cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
+    #cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
 
     try:
         logger.debug('Starting process: {}'.format(name))
@@ -58,8 +58,8 @@ def create_process(name, args):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=False,
+            #creationflags=cf
             bufsize=1,
-            creationflags=cf
         )
     except OSError as e:
         raise ProcessHasNotBeenCreated('{}. Error: {}'.format(name, e))
