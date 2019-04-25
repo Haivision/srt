@@ -51,31 +51,27 @@ def create_process(name, args):
     cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
 
     try:
-        logger.debug(f'Starting process: {name}')
+        logger.debug('Starting process: {}'.format(name))
         process = subprocess.Popen(
             args, 
             stdin =subprocess.PIPE,
-            #stdin =fi,
             stdout=subprocess.PIPE,
-            #stdout = f,
             stderr=subprocess.PIPE,
             universal_newlines=False,
             bufsize=1,
             creationflags=cf
         )
     except OSError as e:
-        raise ProcessHasNotBeenCreated(f'{name}. Error: {e}')
+        raise ProcessHasNotBeenCreated('{}. Error: {}'.format(name, e))
 
     # Check that the process has started successfully and has not terminated
     # because of an error
     time.sleep(1)
-    logger.debug(f'Checking that the process has started successfully: {name}')
+    logger.debug('Checking that the process has started successfully: {}'.format(name))
     is_running, returncode = process_is_running(process)
     if not is_running:
         raise ProcessHasNotBeenStartedSuccessfully(
-            f'{name}, '
-            f'returncode: {returncode}, '
-            f'stderr: {process.stderr.readlines()}'
+            "{}, returncode {}, stderr: {}".format(name, returncode, process.stderr.readlines())
         )
 
     logger.debug('Started successfully')
@@ -96,7 +92,7 @@ def cleanup_process(name, process):
     # https://stefan.sofa-rockers.org/2013/08/15/handling-sub-process-hierarchies-python-linux-os-x/
     #process.stdout.close()
     #process.stdin.close()
-    logger.debug(f'Terminating the process: {name}')
+    logger.debug('Terminating the process: {}'.format(name))
     logger.debug('OS: {}'.format(sys.platform))
 
     sig = signal.CTRL_C_EVENT if sys.platform == 'win32' else signal.SIGINT
@@ -124,12 +120,12 @@ def cleanup_process(name, process):
     # however process_is_running(process) becomes False
     is_running, _ = process_is_running(process)
     if is_running:
-        logger.debug(f'Killing the process: {name}')
+        logger.debug('Killing the process: {}'.format(name))
         process.kill()
         time.sleep(1)
     is_running, _ = process_is_running(process)
     if is_running:
-        raise ProcessHasNotBeenKilled(f'{name}, id: {process.pid}')
+        raise ProcessHasNotBeenKilled('{}, id: {}'.format(name, process.pid))
     logger.debug('Killed')
 
 
@@ -154,10 +150,9 @@ def main():
     # https://www.devdungeon.com/content/working-binary-data-python
     buffer = bytearray([(1 + i % 255) for i in range(0, 1315)]) + bytearray([0])
 
-    print("RCV:")
-    print(rcv_srt_process.stderr.readline())
-    print("SND:")
-    print(snd_srt_process.stderr.readline())
+    logger.debug("RCV: {}".format(rcv_srt_process.stderr.readline()))
+    logger.debug("SND: {}".format(snd_srt_process.stderr.readline()))
+
     #print("RCV:")
     #print(rcv_srt_process.stderr.readline())
     #print("SND:")
@@ -167,13 +162,11 @@ def main():
 
     def background_stuff():
         target_values = buffer.copy()
-        #i, e = rcv_srt_process.communicate()
-        #print(i)
         for i in range(0, maxLoops):
             target_values[0] = 1 + i % 255
             data = rcv_srt_process.stdout.read(1316)
             is_valid = target_values == data
-            print("Packet {}  size {} {}".format(i, len(data), "valid" if is_valid else "invalid"))
+            logger.debug("Packet {}  size {} {}".format(i, len(data), "valid" if is_valid else "invalid"))
             if not is_valid:
                 return
 
@@ -183,7 +176,7 @@ def main():
     while index < maxLoops:
         time.sleep(0.01)
         # Send data to the subprocess
-        logger.debug(f'Sending bytestring {index}')
+        logger.debug('Sending bytestring {}'.format(index))
         buffer[0] = 1 + index % 255
         snd_srt_process.stdin.write(buffer)
         snd_srt_process.stdin.flush()
