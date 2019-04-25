@@ -35,11 +35,13 @@ matrix:
                 - gcc-mingw-w64-x86-64
                 - gcc-mingw-w64
                 - g++-mingw-w64-x86-64
+                - python3.6
           before_script:
             - git clone -b OpenSSL_1_1_1-stable https://github.com/openssl/openssl.git openssl
             - cd openssl
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
+            - sudo apt-get install python3-pip python3-setuptools
             - cd ..
           env: BUILD_TYPE=Release
 script:
@@ -54,6 +56,8 @@ script:
       fi
     - make
     - python --version
+    - python3 --version
+    - python3.6 --version
     - echo "$TRAVIS_PYTHON_VERSION"
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then python ./scripts/python/test-apps.py; fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
