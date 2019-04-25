@@ -385,7 +385,7 @@ public:
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
 
-   void silence()
+   void setClosing()
    {
        m_bClosing = true;
    }
@@ -458,7 +458,7 @@ public:
 
    int recvfrom(int32_t id, ref_t<CPacket> packet);
 
-   void silence()
+   void setClosing()
    {
        m_bClosing = true;
    }

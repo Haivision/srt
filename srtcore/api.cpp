@@ -1619,8 +1619,8 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       // The queues must be silenced before closing the channel
       // because this will cause error to be returned in any operation
       // being currently done in the queues, if any.
-      mx.m_pSndQueue->silence();
-      mx.m_pRcvQueue->silence();
+      mx.m_pSndQueue->setClosing();
+      mx.m_pRcvQueue->setClosing();
       mx.m_pChannel->close();
       delete mx.m_pSndQueue;
       delete mx.m_pRcvQueue;
