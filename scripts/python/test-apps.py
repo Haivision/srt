@@ -9,7 +9,7 @@ from threading import Thread
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)-15s [%(levelname)s] %(message)s',
 )
 logger = logging.getLogger(__name__)
@@ -58,8 +58,8 @@ def create_process(name, args):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=False,
-            #creationflags=cf
-            bufsize=1,
+            #creationflags=cf,
+            bufsize=1
         )
     except OSError as e:
         raise ProcessHasNotBeenCreated('{}. Error: {}'.format(name, e))
@@ -96,15 +96,15 @@ def cleanup_process(name, process):
     logger.debug('OS: {}'.format(sys.platform))
 
     sig = signal.CTRL_C_EVENT if sys.platform == 'win32' else signal.SIGINT
-    if sys.platform == 'win32':
-        if sig in [signal.SIGINT, signal.CTRL_C_EVENT]:
-            sig = signal.CTRL_C_EVENT
-        elif sig in [signal.SIGBREAK, signal.CTRL_BREAK_EVENT]:
-            sig = signal.CTRL_BREAK_EVENT
-        else:
-            sig = signal.SIGTERM
-    
-    process.send_signal(signal.CTRL_C_EVENT)
+    #if sys.platform == 'win32':
+    #    if sig in [signal.SIGINT, signal.CTRL_C_EVENT]:
+    #        sig = signal.CTRL_C_EVENT
+    #    elif sig in [signal.SIGBREAK, signal.CTRL_BREAK_EVENT]:
+    #        sig = signal.CTRL_BREAK_EVENT
+    #    else:
+    #        sig = signal.SIGTERM
+
+    process.send_signal(sig)
     for i in range(3):
         time.sleep(1)
         is_running, returncode = process_is_running(process)
@@ -141,7 +141,7 @@ def main():
     args = ["./srt-live-transmit", "srt://127.0.0.1:4200", "file://con"]
     rcv_srt_process = create_process('srt-live-transmit (RCV)', args)
 
-    #time.sleep(5)
+    time.sleep(3)
 
     index = 0
     maxLoops = 1500
@@ -158,22 +158,27 @@ def main():
     #print("SND:")
     #print(snd_srt_process.stderr.readline())
 
-    is_valid = False
+    is_valid = True
 
-    def background_stuff():
+    def background_stuff(is_valid):
         target_values = buffer.copy()
         for i in range(0, maxLoops):
             target_values[0] = 1 + i % 255
             data = rcv_srt_process.stdout.read(1316)
             is_valid = target_values == data
-            logger.debug("Packet {}  size {} {}".format(i, len(data), "valid" if is_valid else "invalid"))
-            if not is_valid:
+            message = "Packet {}  size {} ".format(i, len(data))
+            if is_valid:
+                logger.debug(message + "valid")
+            else:
+                logger.error(message + "invalid")
+                logger.info("RECEIVED: {}".format(data))
+                logger.info("EXPECTED: {}".format(target_values))
                 return
 
-    t = Thread(target=background_stuff)
+    t = Thread(target=background_stuff, args=[is_valid])
     t.start()
 
-    while index < maxLoops:
+    while index < maxLoops and is_valid:
         time.sleep(0.01)
         # Send data to the subprocess
         logger.debug('Sending bytestring {}'.format(index))
@@ -183,6 +188,9 @@ def main():
         index += 1
 
     t.join()
+
+    logger.info("Validation {}".format("succeeded" if is_valid else "failed"))
+
     cleanup_process('srt-live-transmit (SND)', snd_srt_process)
     cleanup_process('srt-live-transmit (RCV)', rcv_srt_process)
 
