@@ -1,7 +1,5 @@
 language: cpp
 dist: trusty
-python:
-    - 3.6
 
 addons:
     apt:
@@ -17,7 +15,6 @@ matrix:
     include:
         - env: BUILD_TYPE=Debug
         - env: BUILD_TYPE=Release
-        - python: 3.6
         - os: osx
           osx_image: xcode10.2
           env: BUILD_TYPE=Debug
@@ -25,7 +22,6 @@ matrix:
           osx_image: xcode10.2
           env: BUILD_TYPE=Release
         - os: linux
-          python: 3.6
           compiler: x86_64-w64-mingw32-g++
           addons:
             apt:
