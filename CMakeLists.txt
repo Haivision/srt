@@ -54,10 +54,10 @@ endif()
 # Set CMAKE_BUILD_TYPE properly, now that you know
 # that ENABLE_DEBUG is set as it should.
 
-if (ENABLE_DEBUG EQUAL 1)
-	set (CMAKE_BUILD_TYPE "Debug")
-elseif (ENABLE_DEBUG EQUAL 2)
+if (ENABLE_DEBUG EQUAL 2)
 	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
+	set (CMAKE_BUILD_TYPE "Debug")
 else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
