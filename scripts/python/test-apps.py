@@ -135,10 +135,10 @@ def main():
     #config_path = pathlib.Path(config)
     #config_data = load_config_data(config_path)
     #args = ["srt-live-transmit.exe", "file://con", "srt://:4200"]
-    args = ["srt-live-transmit", "file://con", "srt://:4200"]
+    args = ["./srt-live-transmit", "file://con", "srt://:4200"]
     snd_srt_process = create_process('srt-live-transmit (SND)', args)
 
-    args = ["srt-live-transmit", "srt://127.0.0.1:4200", "file://con"]
+    args = ["./srt-live-transmit", "srt://127.0.0.1:4200", "file://con"]
     rcv_srt_process = create_process('srt-live-transmit (RCV)', args)
 
     #time.sleep(5)
