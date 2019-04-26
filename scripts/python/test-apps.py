@@ -48,19 +48,29 @@ def create_process(name, args):
         ProcessHasNotBeenCreated
         ProcessHasNotBeenStarted
     """
-    #cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
+    cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
 
     try:
         logger.debug('Starting process: {}'.format(name))
-        process = subprocess.Popen(
-            args, 
-            stdin =subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=False,
-            #creationflags=cf,
-            bufsize=1
-        )
+        if sys.platform == 'win32':
+            process = subprocess.Popen(
+                args, 
+                stdin =subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=False,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                bufsize=1
+            )
+        else:
+            process = subprocess.Popen(
+                args, 
+                stdin =subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=False,
+                bufsize=1
+            )
     except OSError as e:
         raise ProcessHasNotBeenCreated('{}. Error: {}'.format(name, e))
 
@@ -131,6 +141,7 @@ def cleanup_process(name, process):
 
 
 def main():
+    logger.info("Starting srt-live-transmit localhost autotest")
     #logger.debug(f'Parsing config file {config}')
     #config_path = pathlib.Path(config)
     #config_data = load_config_data(config_path)
@@ -153,10 +164,13 @@ def main():
     logger.debug("RCV: {}".format(rcv_srt_process.stderr.readline()))
     logger.debug("SND: {}".format(snd_srt_process.stderr.readline()))
 
-    #print("RCV:")
-    #print(rcv_srt_process.stderr.readline())
-    #print("SND:")
-    #print(snd_srt_process.stderr.readline())
+    # The following is not working. Somehow the messages do not appear on stderr.
+    # srt-live-transmit prints 'SRT source connected' and '"SRT target connected"'
+    # to stderr, but the following reading functions from the pipes never return.
+    # Added flushing to srt-live-transmit, but does not help.
+    # Therefore have to comment this out until solved.
+    #logger.debug("RCV: {}".format(rcv_srt_process.stderr.readline()))
+    #logger.debug("SND: {}".format(snd_srt_process.stderr.readline()))
 
     is_valid = True
 
