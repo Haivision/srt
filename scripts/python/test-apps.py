@@ -48,7 +48,6 @@ def create_process(name, args):
         ProcessHasNotBeenCreated
         ProcessHasNotBeenStarted
     """
-    cf = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else None
 
     try:
         logger.debug('Starting process: {}'.format(name))
