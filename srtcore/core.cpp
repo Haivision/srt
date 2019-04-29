@@ -610,6 +610,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_PASSPHRASE:
+#ifdef SRT_ENABLE_ENCRYPTION
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -622,10 +623,18 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_CryptoSecret.typ = HAICRYPT_SECTYP_PASSPHRASE;
         m_CryptoSecret.len = (optlen <= (int)sizeof(m_CryptoSecret.str) ? optlen : (int)sizeof(m_CryptoSecret.str));
         memcpy(m_CryptoSecret.str, optval, m_CryptoSecret.len);
+#else
+        if (optlen == 0)
+            break;
+
+        LOGC(mglog.Error, log << "SRTO_PASSPHRASE: encryption not enabled at compile time");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
         break;
 
     case SRTO_PBKEYLEN:
     case _DEPRECATED_SRTO_SNDPBKEYLEN:
+#ifdef SRT_ENABLE_ENCRYPTION
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         {
@@ -677,6 +686,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
             m_iSndCryptoKeyLen = v;
         }
+#else
+        LOGC(mglog.Error, log << "SRTO_PASSPHRASE: encryption not enabled at compile time");
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+#endif
         break;
 
     case SRTO_NAKREPORT:
@@ -2377,7 +2390,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
 }
 
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
-bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len)
+bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data SRT_ATR_UNUSED, size_t* out_len)
 {
     // Initialize out_len to 0 to handle the unencrypted case
     if ( out_len )
@@ -2506,6 +2519,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     {
         HLOGC(mglog.Debug, log << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
 
+#ifdef SRT_ENABLE_ENCRYPTION
         if (!m_pCryptoControl->hasPassphrase())
         {
             if (m_bOPT_StrictEncryption)
@@ -2583,6 +2597,19 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
             break;
         }
+#else
+        // When encryption is not enabled at compile time, behave as if encryption wasn't set,
+        // so accordingly to StrictEncryption flag.
+
+        if (m_bOPT_StrictEncryption)
+        {
+            LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting per strict requirement");
+            return false;
+        }
+
+        LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - still allowing connection.");
+        encrypted = true;
+#endif
     }
 
     bool have_smoother = false;
