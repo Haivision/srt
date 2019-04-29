@@ -688,7 +688,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
 #else
         LOGC(mglog.Error, log << "SRTO_PASSPHRASE: encryption not enabled at compile time");
-        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
         break;
 
