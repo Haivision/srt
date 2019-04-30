@@ -8616,7 +8616,7 @@ void CUDT::checkTimers()
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk)*m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
+            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
 
         /* 
          * This part is only used with FileSmoother. This retransmits
