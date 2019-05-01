@@ -1604,19 +1604,28 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       return;
    }
 
-   m->second.m_iRefCount --;
+   CMultiplexer& mx = m->second;
+
+   mx.m_iRefCount --;
    // HLOGF(mglog.Debug, "unrefing underlying socket for %u: %u\n",
-   //    u, m->second.m_iRefCount);
-   if (0 == m->second.m_iRefCount)
+   //    u, mx.m_iRefCount);
+   if (0 == mx.m_iRefCount)
    {
        HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket %"
            << u << " - deleting muxer bound to port "
-           << m->second.m_pChannel->bindAddressAny().hport());
-      m->second.m_pChannel->close();
-      delete m->second.m_pSndQueue;
-      delete m->second.m_pRcvQueue;
-      delete m->second.m_pTimer;
-      delete m->second.m_pChannel;
+           << mx.m_pChannel->bindAddressAny().hport());
+      // The channel has no access to the queues and
+      // it looks like the multiplexer is the master of all of them.
+      // The queues must be silenced before closing the channel
+      // because this will cause error to be returned in any operation
+      // being currently done in the queues, if any.
+      mx.m_pSndQueue->setClosing();
+      mx.m_pRcvQueue->setClosing();
+      mx.m_pChannel->close();
+      delete mx.m_pSndQueue;
+      delete mx.m_pRcvQueue;
+      delete mx.m_pTimer;
+      delete mx.m_pChannel;
       m_mMultiplexer.erase(m);
    }
 }
@@ -1656,6 +1665,7 @@ void CUDTUnited::updateMux(
             &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
             && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
+            && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
             &&  i->second.m_bReusable)
          {
             if (i->second.m_iPort == port)
@@ -1682,6 +1692,7 @@ void CUDTUnited::updateMux(
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
 #endif
    m.m_iRefCount = 1;
+   m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
@@ -1692,6 +1703,8 @@ void CUDTUnited::updateMux(
 #endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
+   if (s->m_pUDT->m_iIpV6Only != -1)
+      m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
 
    try
    {

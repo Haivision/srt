@@ -453,6 +453,10 @@ int main(int argc, char** argv)
     UriParser::Type srcUriType = UriParser::Type::UNKNOWN;
     bool srcReadMore = false;
 
+#ifdef _WIN32
+    HANDLE hStdIn = INVALID_HANDLE_VALUE;
+#endif
+
     try {
         // Now loop until broken
         while (!int_state && !timer_state)
@@ -488,6 +492,9 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::FILE:
+#ifdef _WIN32
+                    hStdIn = ::GetStdHandle(STD_INPUT_HANDLE);
+#endif                
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
                     {
@@ -534,6 +541,19 @@ int main(int argc, char** argv)
                 lostBytes = 0;
                 lastReportedtLostBytes = 0;
             }
+
+#ifdef _WIN32
+            // Workaround Issue #646:
+            // On unix (POSIX), stdin is a valid FD with value 0. But not on Windows. This means that the first time epoll
+            // hits on Windows is when the connection is done for SRT target. After that you will not receive any other events
+            // from the poll. Furthermore, if you have connected and there is nothing in the stdin buffer waiting to be read, you 
+            // will not read anything at all, because the polling event will never happen
+            srcReadMore = false;
+            if (srcUriType == UriParser::Type::FILE && tarConnected && ::WaitForSingleObject(hStdIn, 0) == WAIT_OBJECT_0)
+            {
+                srcReadMore = true;
+            }
+#endif
 
             int srtrfdslen = 2;
             int srtwfdslen = 2;
@@ -712,27 +732,31 @@ int main(int argc, char** argv)
                 std::list<std::shared_ptr<bytevector>> dataqueue;
                 if (src.get() && (srtrfdslen || sysrfdslen))
                 {
-                    size_t srcChunksToRead = 10;
-                    while (dataqueue.size() < srcChunksToRead)
+                    while (dataqueue.size() < 10)
                     {
                         std::shared_ptr<bytevector> pdata(
                             new bytevector(cfg.chunk_size));
-                        if (!src->Read(cfg.chunk_size, *pdata, out_stats) || (*pdata).empty())
+
+                        const int res = src->Read(cfg.chunk_size, *pdata, out_stats);
+
+                        if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
+                        {
+                            if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                                break;
+
+                            throw std::runtime_error(
+                                string("error: recvmsg: ") + string(srt_getlasterror_str())
+                            );
+                        }
+
+                        if (res == 0 || pdata->empty())
                         {
                             break;
                         }
+
                         dataqueue.push_back(pdata);
                         receivedBytes += (*pdata).size();
                     }
-
-#ifdef _WIN32
-                    srcReadMore = false;
-                    // Check if read up to max number of chunks from stdin
-                    if (srcUriType == UriParser::Type::FILE && dataqueue.size() >= srcChunksToRead)
-                    {
-                        srcReadMore = true;
-                    }
-#endif
                 }
 
                 // if no target, let received data fall to the floor
