@@ -1178,8 +1178,9 @@ for more details.
 
 Declares the `SRTO_TLPKTDROP` flag of the party. This is important
 because both parties must cooperate in this process. In HSv5, if both
-directions are TSBPD, both use this setting. This flag must always be
- set in live mode.
+directions are TSBPD, both use this setting. While it is not always
+necessary to set this flag in live mode, it is the default and most
+recommended setting.
 
 (4) `SRT_OPT_NAKREPORT`: The party will do periodic NAK reporting.
 
@@ -1512,14 +1513,15 @@ in places that have been modified in SRT to support live transmission.
 This feature is supported by HSv5 only. Its value is a string of
 the user's choice that can be passed from the Caller to the Listener.
 
-The Stream ID is a string of up to 512 characters that an Initiator can pass to
-a Responder. To use this feature, an application should set it on a Caller
-socket using the `SRTO_STREAMID` option. Upon connection, the accepted socket
-on the Listener side will have exactly the same value set, and it can be
-retrieved using the same option. This gives the Listener a chance to decide
-what to do with this connection - such as to decide which stream to send
-in the case where the Listener is the stream Sender. This feature is not
-intended to be used for Rendezvous connections.
+The Stream ID is a string of up to 512 characters that a Caller can pass to a
+Listener (it's actually passed from an Initiator to a Responder in general, but
+in Rendezvous mode this feature doesn't make sense). To use this feature, an
+application should set it on a Caller socket using the `SRTO_STREAMID` option.
+Upon connection, the accepted socket on the Listener side will have exactly the
+same value set, and it can be retrieved using the same option. This gives the
+Listener a chance to decide what to do with this connection - such as to decide
+which stream to send in the case where the Listener is the stream Sender. This
+feature is not intended to be used for Rendezvous connections.
 
 [Return to top of page](#srt-handshake)
 
