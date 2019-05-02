@@ -610,10 +610,12 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_PASSPHRASE:
-#ifdef SRT_ENABLE_ENCRYPTION
+        // For consistency, throw exception when connected,
+        // no matter if otherwise the password can be set.
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
+#ifdef SRT_ENABLE_ENCRYPTION
         // Password must be 10-80 characters.
         // Or it can be empty to clear the password.
         if ( (optlen != 0) && (optlen < 10 || optlen > HAICRYPT_SECRET_MAX_SZ) )
@@ -634,9 +636,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_PBKEYLEN:
     case _DEPRECATED_SRTO_SNDPBKEYLEN:
-#ifdef SRT_ENABLE_ENCRYPTION
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+#ifdef SRT_ENABLE_ENCRYPTION
         {
             int v = *(int*)optval;
             int allowed [4] = {
@@ -687,7 +689,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_iSndCryptoKeyLen = v;
         }
 #else
-        LOGC(mglog.Error, log << "SRTO_PASSPHRASE: encryption not enabled at compile time");
+        LOGC(mglog.Error, log << "SRTO_PBKEYLEN: encryption not enabled at compile time");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
         break;
