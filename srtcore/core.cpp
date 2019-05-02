@@ -3821,7 +3821,7 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     return CONN_ACCEPT;
 }
 
-void CUDT::checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield)
+void CUDT::checkUpdateCryptoKeyLen(const char* loghdr SRT_ATR_UNUSED, int32_t typefield)
 {
     int enc_flags = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(typefield);
 

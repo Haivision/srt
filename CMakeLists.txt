@@ -64,6 +64,20 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
+
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
 # use ENABLE_LOGGING=NO in cmake or
@@ -694,8 +708,8 @@ macro(srt_make_application name)
 	endif()
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
@@ -735,8 +749,10 @@ if (ENABLE_APPS)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+	else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -767,7 +783,6 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
 
-		# Still portability problem on Windows
 		srt_add_testprogram(srt-test-file)
 		srt_make_application(srt-test-file)
 
