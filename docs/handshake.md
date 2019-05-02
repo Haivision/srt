@@ -687,7 +687,7 @@ IP address, when the socket is bound to INADDR_ANY, or to the same IP address to
 which the socket was bound. If the cookies are identical (for any reason), the 
 connection will not be made until new, unique cookies are generated (after a 
 delay of up to one minute). In the case of an application "connecting to itself", 
-the cookies will always be identical, and so the connection will never be made).
+the cookies will always be identical, and so the connection will never be made.
 
 When one party's cookie value is greater than its peer's, it wins the cookie 
 contest and becomes Initiator (the other party becomes the Responder).
