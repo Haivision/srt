@@ -1253,7 +1253,9 @@ static string PacketInfo(const CPacket& pkt)
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
 {
-#ifdef NO_BUSY_WAITING
+#if !USE_BUSY_WAITING
+    // This might be not really necessary, and probably
+    // not good for extensive bidirectional communication.
     m_pTimer->tick();
 #endif
 
