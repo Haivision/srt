@@ -7546,20 +7546,20 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
    }
    else
    {
-      #ifndef NO_BUSY_WAITING
-         ts_tk = entertime_tk + m_ullInterval_tk;
-      #else
-         if (m_ullTimeDiff_tk >= m_ullInterval_tk)
-         {
-            ts_tk = entertime_tk;
-            m_ullTimeDiff_tk -= m_ullInterval_tk;
-         }
-         else
-         {
-            ts_tk = entertime_tk + m_ullInterval_tk - m_ullTimeDiff_tk;
-            m_ullTimeDiff_tk = 0;
-         }
-      #endif
+#if USE_BUSY_WAITING
+      ts_tk = entertime_tk + m_ullInterval_tk;
+#else
+      if (m_ullTimeDiff_tk >= m_ullInterval_tk)
+      {
+         ts_tk = entertime_tk;
+         m_ullTimeDiff_tk -= m_ullInterval_tk;
+      }
+      else
+      {
+         ts_tk = entertime_tk + m_ullInterval_tk - m_ullTimeDiff_tk;
+         m_ullTimeDiff_tk = 0;
+      }
+#endif
    }
 
    m_ullTargetTime_tk = ts_tk;
