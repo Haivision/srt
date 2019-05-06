@@ -6671,7 +6671,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       int32_t* ackdata = (int32_t*)ctrlpkt.m_pcData;
 
       // process a lite ACK
-      if (ctrlpkt.getLength() == SEND_LITE_ACK)
+      if (ctrlpkt.getLength() == (size_t)SEND_LITE_ACK)
       {
          ack = *ackdata;
          if (CSeqNo::seqcmp(ack, m_iSndLastAck) >= 0)
@@ -7622,7 +7622,9 @@ int CUDT::processData(CUnit* unit)
    }
 
    int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+#if ENABLE_HEAVY_LOGGING
    static const char* const rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+#endif
    string rexmit_reason;
 
 
