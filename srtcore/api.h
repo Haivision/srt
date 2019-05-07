@@ -73,7 +73,7 @@ public:
    CUDTSocket();
    ~CUDTSocket();
 
-   SRT_SOCKSTATUS m_Status;                       //< current socket state
+   SRT_SOCKSTATUS m_Status;                  //< current socket state
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 

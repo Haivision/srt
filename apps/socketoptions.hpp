@@ -60,47 +60,49 @@ struct SocketOption
     static int setso(int socket, int protocol, int symbol, const void* data, size_t size);
 
     template<Type T>
-    void extract(std::string value, OptionValue& val) const;
+    bool extract(std::string value, OptionValue& val) const;
 };
 
-template<> inline
-int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+template<>
+inline int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, size);
+    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
-template<> inline
-int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
+template<>
+inline int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
 {
-    return ::setsockopt(socket, proto, sym, (const char *)data, size);
+    return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
 
-template<> inline
-void SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue& o) const
+template<>
+inline bool SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue& o) const
 {
     o.s = value;
     o.value = o.s.data();
     o.size = o.s.size();
+    return true;
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::INT>(std::string value, OptionValue& o) const
+inline bool SocketOption::extract<SocketOption::INT>(std::string value, OptionValue& o) const
 {
     try
     {
         o.i = stoi(value, 0, 0);
         o.value = &o.i;
         o.size = sizeof o.i;
-        return;
+        return true;
     }
     catch (...) // stoi throws
     {
-        return; // do not change o
+        return false; // do not change o
     }
+    return false;
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::INT64>(std::string value, OptionValue& o) const
+inline bool SocketOption::extract<SocketOption::INT64>(std::string value, OptionValue& o) const
 {
     try
     {
@@ -108,16 +110,17 @@ inline void SocketOption::extract<SocketOption::INT64>(std::string value, Option
         o.l = vall; // int64_t resolves to either 'long long', or 'long' being 64-bit integer
         o.value = &o.l;
         o.size = sizeof o.l;
-        return ;
+        return true;
     }
     catch (...) // stoll throws
     {
-        return ;
+        return false;
     }
+    return false;
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::BOOL>(std::string value, OptionValue& o) const
+inline bool SocketOption::extract<SocketOption::BOOL>(std::string value, OptionValue& o) const
 {
     bool val;
     if ( false_names.count(value) )
@@ -125,15 +128,16 @@ inline void SocketOption::extract<SocketOption::BOOL>(std::string value, OptionV
     else if ( true_names.count(value) )
         val = true;
     else
-        return;
+        return false;
 
     o.b = val;
     o.value = &o.b;
     o.size = sizeof o.b;
+    return true;
 }
 
 template<>
-inline void SocketOption::extract<SocketOption::ENUM>(std::string value, OptionValue& o) const
+inline bool SocketOption::extract<SocketOption::ENUM>(std::string value, OptionValue& o) const
 {
     if (valmap)
     {
@@ -144,7 +148,7 @@ inline void SocketOption::extract<SocketOption::ENUM>(std::string value, OptionV
             o.i = p->second;
             o.value = &o.i;
             o.size = sizeof o.i;
-            return;
+            return true;
         }
     }
 
@@ -154,20 +158,22 @@ inline void SocketOption::extract<SocketOption::ENUM>(std::string value, OptionV
         o.i = stoi(value, 0, 0);
         o.value = &o.i;
         o.size = sizeof o.i;
-        return;
+        return true;
     }
     catch (...) // stoi throws
     {
-        return; // do not change o
+        return false; // do not change o
     }
+    return false;
 }
 
 template <SocketOption::Domain D, SocketOption::Type T>
 inline bool SocketOption::applyt(int socket, std::string value) const
 {
     OptionValue o; // common meet point
-    extract<T>(value, o);
-    int result = setso<D>(socket, protocol, symbol, o.value, o.size);
+    int result = -1;
+    if (extract<T>(value, o))
+        result = setso<D>(socket, protocol, symbol, o.value, o.size);
     return result != -1;
 }
 

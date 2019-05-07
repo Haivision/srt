@@ -32,7 +32,10 @@ written by
 
 std::string KmStateStr(SRT_KM_STATE state);
 
-extern logging::Logger mglog;
+namespace srt_logging
+{
+extern Logger mglog;
+}
 
 #endif
 
@@ -152,6 +155,10 @@ public:
     ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
+#if ENABLE_LOGGING
+        using srt_logging::mglog;
+#endif
+
         m_SndKmLastTime = CTimer::getTime();
         if (runtime)
         {

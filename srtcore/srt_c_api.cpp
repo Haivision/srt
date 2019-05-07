@@ -54,7 +54,7 @@ int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpso
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
-int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int32_t forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
@@ -213,7 +213,7 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -253,7 +253,7 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -284,17 +284,17 @@ int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    UDT::setloglevel(logging::LogLevel::type(ll));
+    UDT::setloglevel(srt_logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(logging::LogFA(fa));
+    UDT::addlogfa(srt_logging::LogFA(fa));
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(logging::LogFA(fa));
+    UDT::dellogfa(srt_logging::LogFA(fa));
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)

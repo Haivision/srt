@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.0")
+#project(SRT VERSION "1.3.2")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -22,10 +22,12 @@ include(FindThreads)
 include(CheckFunctionExists)
 
 # Platform shortcuts
+string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -36,7 +38,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.1)
+set (SRT_VERSION 1.3.2)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -52,15 +54,29 @@ endif()
 # Set CMAKE_BUILD_TYPE properly, now that you know
 # that ENABLE_DEBUG is set as it should.
 
-if (ENABLE_DEBUG EQUAL 1)
-	set (CMAKE_BUILD_TYPE "Debug")
-elseif (ENABLE_DEBUG EQUAL 2)
+if (ENABLE_DEBUG EQUAL 2)
 	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
+	set (CMAKE_BUILD_TYPE "Debug")
 else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
+
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
 
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
@@ -77,6 +93,7 @@ endif()
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -94,7 +111,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
-set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
+set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 set (DISPLAY_LOGGING DISABLED)
 if (NOT ENABLE_LOGGING)
@@ -315,9 +332,11 @@ if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
 	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
 elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1; MACOSX_RPATH=OFF")
+	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
 	add_definitions(-DOSX=1)
-	set(MACOSX_RPATH OFF)
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -463,6 +482,7 @@ MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
 	PUBLIC_HEADERS HEADERS_srt
 	PROTECTED_HEADERS HEADERS_srt
+	PRIVATE_HEADERS HEADERS_srt_private
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
@@ -496,6 +516,8 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
+	elseif (APPLE)
+		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
 endif()
 
@@ -695,15 +717,29 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (srt_libspec_static AND CMAKE_DL_LIBS)
+		target_link_libraries(${name} ${CMAKE_DL_LIBS})
+	endif()
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
-if ( ENABLE_CXX11 )
+## FIXME: transmitmedia.cpp does not build on OpenBSD
+##    Issue: https://github.com/Haivision/srt/issues/590
+if (BSD
+   AND ${SYSNAME_LC} MATCHES "^openbsd$")
+   set(ENABLE_APPS OFF)
+endif()
+## The applications currently require c++11.
+if (NOT ENABLE_CXX11)
+   set(ENABLE_APPS OFF)
+endif()
+
+if (ENABLE_APPS)
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
@@ -721,33 +757,16 @@ if ( ENABLE_CXX11 )
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
-
-	# For backward compatibility with the old name
-	if (SYMLINKABLE)
-		set (REPLI_COMMAND create_symlink )
-		# It appears impossible to get the filename component from the generator
-		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
-		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
-	else()
-		set (REPLI_COMMAND copy)
-		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
-	endif()
-
-	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
-	add_custom_command(
-		TARGET srt-live-transmit
-		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
-	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+	else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -778,7 +797,6 @@ if ( ENABLE_CXX11 )
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
 
-		# Still portability problem on Windows
 		srt_add_testprogram(srt-test-file)
 		srt_make_application(srt-test-file)
 
@@ -803,26 +821,44 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(recvfile.cpp apps/logsupport.cpp)
 	srt_make_application(recvfile)
 
+	srt_add_example(test-c-client.c)
+	srt_make_application(test-c-client)
+
+	srt_add_example(test-c-server.c)
+	srt_make_application(test-c-server)
+
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
 endif()
 
 
-if (ENABLE_UNITTESTS)
+if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-	include(googletest)
-	fetch_googletest(
-		${PROJECT_SOURCE_DIR}/scripts
-		${PROJECT_BINARY_DIR}/googletest
-	)
 
-	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp test/test_strict_encription.cpp)
+	find_package(GTest 1.8)
+	if (NOT GTEST_FOUND)
+		message(STATUS "GTEST not found! Fetching from git.")
+		include(googletest)
+		fetch_googletest(
+			${PROJECT_SOURCE_DIR}/scripts
+			${PROJECT_BINARY_DIR}/googletest
+		)
+		set(GTEST_BOTH_LIBRARIES "gtest_main" CACHE STRING "Add gtest_main target")
+	endif()
+
+	MafReadDir(test filelist.maf
+		SOURCES SOURCES_unittests
+	)
+	
+	message(STATUS "Unit test sources: ${SOURCES_unittests}")
+
+	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
 
 	target_link_libraries(
 		test_srt
-		gtest_main
+		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
 		)
