@@ -196,17 +196,13 @@ void CTimer::sleepto(uint64_t nexttime)
    uint64_t t;
    rdtsc(t);
 
-   while (t < m_ullSchedTime)
-   {
 #ifndef NO_BUSY_WAITING
-#ifdef IA32
-       __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-#elif IA64
-       __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
-#elif AMD64
-       __asm__ volatile ("nop; nop; nop; nop; nop;");
-#endif
+   uint64_t dt = s_ullCPUFrequency * 10000;
+   while (t < m_ullSchedTime && m_ullSchedTime - t >= dt)
 #else
+   while (t < m_ullSchedTime)
+#endif
+   {
        timeval now;
        timespec timeout;
        gettimeofday(&now, 0);
@@ -225,10 +221,25 @@ void CTimer::sleepto(uint64_t nexttime)
        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
        pthread_mutex_unlock(&m_TickLock);
        THREAD_RESUMED();
+
+       rdtsc(t);
+   }
+
+#ifndef NO_BUSY_WAITING
+   while (t < m_ullSchedTime)
+   {
+#ifdef IA32
+       __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+#elif IA64
+       __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+#elif AMD64
+       __asm__ volatile ("nop; nop; nop; nop; nop;");
 #endif
 
        rdtsc(t);
    }
+#endif
+
 }
 
 void CTimer::interrupt()

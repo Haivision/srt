@@ -64,8 +64,6 @@ written by
    #define SRT_API __attribute__ ((visibility("default")))
 #endif
 
-#define NO_BUSY_WAITING
-
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300

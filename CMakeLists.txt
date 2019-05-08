@@ -87,6 +87,7 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_C_DEPS "Extra library dependencies in srt.pc for C language" OFF)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
+option(ENABLE_BUSY_WAITING "Should enable busy waiting for adjusting IAT of packets" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
 
@@ -795,3 +796,9 @@ if ( ENABLE_SUFLIP )
 	target_link_libraries(suflip ${srt_link_library})
 	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif ()
+
+if ( NOT ENABLE_BUSY_WAITING )
+      add_definitions(
+               -DNO_BUSY_WAITING
+        )
+endif()
