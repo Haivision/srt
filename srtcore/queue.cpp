@@ -319,9 +319,13 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
       }
 
       remove_(u);
+      insert_(1, u);
+      return;
    }
 
-   insert_(1, u);
+   listguard.forceUnlock();
+
+   insert(1, u);
 }
 
 int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
