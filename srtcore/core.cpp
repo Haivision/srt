@@ -7325,6 +7325,80 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
     }
 }
 
+
+int CUDT::packLostData(CPacket& packet, uint64_t& origintime)
+{
+    // protect m_iSndLastDataAck from updating by ACK processing
+    CGuard ackguard(m_AckLock);
+
+    while ((packet.m_iSeqNo = m_pSndLossList->getLostSeq()) >= 0)
+    {
+        const int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
+        if (offset < 0)
+        {
+            LOGC(dlog.Error, log << "IPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
+                << packet.m_iSeqNo << ", m_iSndLastDataAck " << m_iSndLastDataAck
+                << ")=" << offset << ". Continue");
+            continue;
+        }
+
+        int msglen;
+
+        const int payload = m_pSndBuffer->readData(&(packet.m_pcData), offset, packet.m_iMsgNo, origintime, msglen);
+        SRT_ASSERT(payload != 0);
+        if (payload == -1)
+        {
+            int32_t seqpair[2];
+            seqpair[0] = packet.m_iSeqNo;
+            seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
+            sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, 8);
+
+            // only one msg drop request is necessary
+            m_pSndLossList->remove(seqpair[1]);
+
+            // skip all dropped packets
+            if (CSeqNo::seqcmp(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1])) < 0)
+                m_iSndCurrSeqNo = CSeqNo::incseq(seqpair[1]);
+
+            continue;
+        }
+        // NOTE: This is just a sanity check. Returning 0 is impossible to happen
+        // in case of retransmission. If the offset was a positive value, then the
+        // block must exist in the old blocks because it wasn't yet cut off by ACK
+        // and has been already recorded as sent (otherwise the peer wouldn't send
+        // back the loss report). May something happen here in case when the send
+        // loss record has been updated by the FASTREXMIT.
+        else if (payload == 0)
+            continue;
+
+        // At this point we no longer need the ACK lock,
+        // because we are going to return from the function.
+        // Therefore unlocking in order not to block other threads.
+        ackguard.forceUnlock();
+
+        CGuard::enterCS(m_StatsLock);
+        ++m_stats.traceRetrans;
+        ++m_stats.retransTotal;
+        m_stats.traceBytesRetrans += payload;
+        m_stats.bytesRetransTotal += payload;
+        CGuard::leaveCS(m_StatsLock);
+
+        // Despite the contextual interpretation of packet.m_iMsgNo around
+        // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
+        // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
+        // So, set here the rexmit flag if the peer understands it.
+        if (m_bPeerRexmitFlag)
+        {
+            packet.m_iMsgNo |= PACKET_SND_REXMIT;
+        }
+
+        return payload;
+    }
+
+    return 0;
+}
+
+
 int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 {
    int payload = 0;
@@ -7365,62 +7439,10 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
 
    string reason;
 
-   // Loss retransmission always has higher priority.
-   packet.m_iSeqNo = m_pSndLossList->getLostSeq();
-   if (packet.m_iSeqNo >= 0)
+   payload = packLostData(packet, origintime);
+   if (payload > 0)
    {
-      // protect m_iSndLastDataAck from updating by ACK processing
-      CGuard ackguard(m_AckLock);
-
-      int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
-      if (offset < 0)
-         return 0;
-
-      int msglen;
-
-      payload = m_pSndBuffer->readData(&(packet.m_pcData), offset, packet.m_iMsgNo, origintime, msglen);
-
-      if (-1 == payload)
-      {
-         int32_t seqpair[2];
-         seqpair[0] = packet.m_iSeqNo;
-         seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
-         sendCtrl(UMSG_DROPREQ, &packet.m_iMsgNo, seqpair, 8);
-
-         // only one msg drop request is necessary
-         m_pSndLossList->remove(seqpair[1]);
-
-         // skip all dropped packets
-         if (CSeqNo::seqcmp(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1])) < 0)
-             m_iSndCurrSeqNo = CSeqNo::incseq(seqpair[1]);
-
-         return 0;
-      }
-      // NOTE: This is just a sanity check. Returning 0 is impossible to happen
-      // in case of retransmission. If the offset was a positive value, then the
-      // block must exist in the old blocks because it wasn't yet cut off by ACK
-      // and has been already recorded as sent (otherwise the peer wouldn't send
-      // back the loss report). May something happen here in case when the send
-      // loss record has been updated by the FASTREXMIT.
-      else if (payload == 0)
-         return 0;
-
-      CGuard::enterCS(m_StatsLock);
-      ++ m_stats.traceRetrans;
-      ++ m_stats.retransTotal;
-      m_stats.traceBytesRetrans += payload;
-      m_stats.bytesRetransTotal += payload;
-      CGuard::leaveCS(m_StatsLock);
-
-      // Kinda confusion here. Despite the contextual interpretation of packet.m_iMsgNo around
-      // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
-      // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
-      // So, set here the rexmit flag if the peer understands it.
-      if ( m_bPeerRexmitFlag )
-      {
-          packet.m_iMsgNo |= PACKET_SND_REXMIT;
-      }
-      reason = "reXmit";
+       reason = "reXmit";
    }
    else
    {
