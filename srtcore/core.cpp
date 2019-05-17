@@ -7368,7 +7368,7 @@ int CUDT::packLostData(CPacket& packet, uint64_t& origintime)
             LOGC(dlog.Error, log << "IPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
                 << packet.m_iSeqNo << ", m_iSndLastDataAck " << m_iSndLastDataAck
                 << ")=" << offset << ". Continue");
-            continue;
+            return 0;
         }
 
         int msglen;
@@ -7398,7 +7398,7 @@ int CUDT::packLostData(CPacket& packet, uint64_t& origintime)
         // back the loss report). May something happen here in case when the send
         // loss record has been updated by the FASTREXMIT.
         else if (payload == 0)
-            continue;
+            return 0;
 
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
