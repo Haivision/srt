@@ -282,12 +282,12 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                     }
                     else if (s.type == OptionScheme::ARG_ONE)
                     {
-                        params[current_key].push_back(value);
+                        if (!value.empty())
+                            params[current_key].push_back(value);
                     }
                     type = s.type;
                     goto Found;
                 }
-
             }
             // Not found: set ARG_NONE.
             // cout << "*D KEY '" << current_key << "' assumed type NONE\n";
