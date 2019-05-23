@@ -13,7 +13,9 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-
+#ifdef _WIN32
+#include <direct.h>
+#endif
 #include <iostream>
 #include <iterator>
 #include <vector>
@@ -33,16 +35,20 @@ written by
 #include "verbose.hpp"
 #include "testmedia.hpp"
 
+#ifndef S_ISDIR
+#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
+#endif
+
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const logging::LogFA SRT_LOGFA_APP = 10;
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
 
 static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
-
 
 int main( int argc, char** argv )
 {
@@ -77,7 +83,7 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 
@@ -169,9 +175,9 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         // Glue in the absolute prefix of the current directory
         // to make it absolute. This is needed to properly interpret
         // the fixed uri.
-        static const size_t MAX_PATH = 4096; // don't care how proper this is
-        char tmppath[MAX_PATH];
-        char* gwd = getcwd(tmppath, MAX_PATH);
+        static const size_t s_max_path = 4096; // don't care how proper this is
+        char tmppath[s_max_path];
+        char* gwd = getcwd(tmppath, s_max_path);
         if ( !gwd )
         {
             // Don't bother with that now. We need something better for that anyway.
@@ -214,7 +220,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     // Use a manual loop for reading from SRT
     vector<char> buf(::g_buffer_size);
 
-    ifstream ifile(path);
+    ifstream ifile(path, ios::binary);
     if ( !ifile )
     {
         cerr << "Error opening file: '" << path << "'";
@@ -302,7 +308,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
     }
     else
     {
-        // Check if destination is a regular file, of so, allow to overwrite.
+        // Check if destination is a regular file, if so, allow to overwrite.
         // Otherwise reject.
         if (!S_ISREG(state.st_mode))
         {
@@ -311,7 +317,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
         }
     }
 
-    ofstream ofile(path, ios::out | ios::trunc);
+    ofstream ofile(path, ios::out | ios::trunc | ios::binary);
     if ( !ofile.good() )
     {
         cerr << "Download: can't create output file: " << path;

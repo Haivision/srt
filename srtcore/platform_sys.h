@@ -10,13 +10,13 @@
 #ifndef INC__PLATFORM_SYS_H
 #define INC__PLATFORM_SYS_H
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
-   #include <inttypes.h>
    #include <stdint.h>
+   #include <inttypes.h>
    #if defined(_MSC_VER)
       #pragma warning(disable:4251)
    #endif

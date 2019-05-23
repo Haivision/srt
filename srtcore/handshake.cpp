@@ -50,6 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 
 #include "udt.h"
+#include "core.h"
 #include "handshake.h"
 #include "utilities.h"
 
@@ -57,8 +58,8 @@ using namespace std;
 
 
 CHandShake::CHandShake():
-m_iVersion(AF_UNSPEC),
-m_iType(UDT_UNDEFINED),
+m_iVersion(0),
+m_iType(0), // Universal: UDT_UNDEFINED or no flags
 m_iISN(0),
 m_iMSS(0),
 m_iFlightFlagSize(0),
@@ -164,23 +165,39 @@ string CHandShake::show()
 
     // XXX HS version symbols should be probably declared inside
     // CHandShake, not CUDT.
-    if ( m_iVersion > 4 )
+    if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        string ext;
-
-        if ( m_iType & HS_EXT_HSREQ )
-            ext += "HSREQ ";
-
-        if ( m_iType & HS_EXT_KMREQ )
-            ext += "KMREQ ";
-
-        if ( ext == "" )
-            ext = "(no extensions)";
-
-        so << ext;
+        so << "EXT: ";
+        if (m_iType == 0) // no flags at all
+            so << "none";
+        else
+            so << ExtensionFlagStr(m_iType);
     }
 
     return so.str();
+}
+
+string CHandShake::ExtensionFlagStr(int32_t fl)
+{
+    std::ostringstream out;
+    if ( fl & HS_EXT_HSREQ )
+        out << " hsx";
+    if ( fl & HS_EXT_KMREQ )
+        out << " kmx";
+    if ( fl & HS_EXT_CONFIG )
+        out << " config";
+
+    int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+    if (kl != 0)
+    {
+        out << " AES-" << kl;
+    }
+    else
+    {
+        out << " no-pbklen";
+    }
+
+    return out.str();
 }
 
 

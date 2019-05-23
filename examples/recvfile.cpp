@@ -1,4 +1,4 @@
-#ifndef WIN32
+#ifndef _WIN32
    #include <arpa/inet.h>
    #include <netdb.h>
 #else
@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(logging::LogLevel::debug);
+   srt_setloglevel(srt_logging::LogLevel::debug);
 
    struct addrinfo hints, *peer;
 

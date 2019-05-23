@@ -353,7 +353,7 @@ UDT_API int setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void* 
 UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
 UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
 
-UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0LL);
+UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len, uint64_t& srctime);
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
 
@@ -387,10 +387,10 @@ UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
 // This is a C++ SRT API extension. This is not a part of legacy UDT API.
-UDT_API void setloglevel(logging::LogLevel::type ll);
-UDT_API void addlogfa(logging::LogFA fa);
-UDT_API void dellogfa(logging::LogFA fa);
-UDT_API void resetlogfa(std::set<logging::LogFA> fas);
+UDT_API void setloglevel(srt_logging::LogLevel::type ll);
+UDT_API void addlogfa(srt_logging::LogFA fa);
+UDT_API void dellogfa(srt_logging::LogFA fa);
+UDT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
 UDT_API void resetlogfa(const int* fara, size_t fara_size);
 UDT_API void setlogstream(std::ostream& stream);
 UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
@@ -406,8 +406,8 @@ UDT_API std::string getstreamid(UDTSOCKET u);
 // are free to create their own logger configuration objects for their
 // own logger FA objects, or create their own. The object of this type
 // is required to initialize the logger FA object.
-namespace logging { struct LogConfig; }
-UDT_API extern logging::LogConfig srt_logger_config;
+namespace srt_logging { struct LogConfig; }
+UDT_API extern srt_logging::LogConfig srt_logger_config;
 
 
 #endif /* __cplusplus */

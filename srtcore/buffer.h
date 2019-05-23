@@ -207,11 +207,12 @@ class CRcvBuffer
 {
 public:
 
-   // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working for. Required to find
-   // some way to do this, possibly by having a "reverse pointer".
-   // Currently just "unimplemented".
-   std::string CONID() const { return ""; }
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working for. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
+
 
    CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
    ~CRcvBuffer();
@@ -317,7 +318,6 @@ public:
        return m_iLastAckPos != m_iStartPos;
    }
    CPacket* getRcvReadyPacket();
-   bool isReadyToPlay(const CPacket* p, uint64_t& tsbpdtime);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
       ///    @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -382,9 +382,10 @@ public:
    bool empty() const;
 private:
 
-   /// thread safe bytes counter
+   /// thread safe bytes counter of the Recv & Ack buffer
+   /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
    /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.
-   // XXX Please document.
+   /// @param [in] acked true when adding new pkt in RcvBuffer; false when acking/removing pkts to/from buffer
 
    void countBytes(int pkts, int bytes, bool acked = false);
 
@@ -394,14 +395,14 @@ private:
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer
    int m_iSize;                         // size of the protocol buffer
-   CUnitQueue* m_pUnitQueue;		// the shared unit queue
+   CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)
    int m_iLastAckPos;                   // the last ACKed position (exclusive)
-					// EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
-   int m_iMaxPos;			// the furthest data position
+                                        // EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
+   int m_iMaxPos;                       // the furthest data position
 
-   int m_iNotch;			// the starting read point of the first unit
+   int m_iNotch;                        // the starting read point of the first unit
 
    pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer

@@ -17,7 +17,7 @@
 #include <set>
 #include <vector>
 
-#if WIN32
+#if _WIN32
 
 // Keep this below commented out.
 // This is for a case when you need cpp debugging on Windows.
@@ -60,7 +60,7 @@ inline void SysCleanupNetwork() {}
 
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 #else
 inline int SysError() { return errno; }
@@ -68,6 +68,25 @@ inline int SysError() { return errno; }
 
 sockaddr_in CreateAddrInet(const std::string& name, unsigned short port);
 std::string Join(const std::vector<std::string>& in, std::string sep);
+
+
+inline bool CheckTrue(const std::vector<std::string>& in)
+{
+    if (in.empty())
+        return true;
+
+    const std::set<std::string> false_vals = { "0", "no", "off", "false" };
+    if (false_vals.count(in[0]))
+        return false;
+
+    return true;
+
+    //if (in[0] != "false" && in[0] != "off")
+    //    return true;
+
+    //return false;
+}
+
 
 typedef std::map<std::string, std::vector<std::string>> options_t;
 
@@ -82,6 +101,13 @@ struct OutString
     typedef std::string type;
     static type process(const options_t::mapped_type& i) { return Join(i, " "); }
 };
+
+struct OutBool
+{
+    typedef bool type;
+    static type process(const options_t::mapped_type& i) { return CheckTrue(i); }
+};
+
 
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }

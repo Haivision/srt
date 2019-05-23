@@ -58,23 +58,68 @@ modified by
 #include "common.h"
 #include "utilities.h"
 
-#ifdef WIN32
 
-// XXX REFACTOR THIS.
-
-// Instead of providing this, the appropriate equivalent system type on Windows
-// should be used. Then, instead of `iovec`, some portable definition should
-// be used. See the definition of WSARecvMsg for details.
-
-// Note that iovec is part of CPacket definition, so the common type name should
-// be used there. Fortunately, the Windows definition differs only by field names.
-
-   struct iovec
-   {
-      int iov_len;
-      char* iov_base;
-   };
+//////////////////////////////////////////////////////////////////////////////
+// The purpose of the IOVector class is to proide a platform-independet interface
+// to the WSABUF on Windows and iovec on Linux, that can be easilly converted
+// to the native structure for use in WSARecvFrom() and recvmsg(...) functions 
+class IOVector
+#ifdef _WIN32
+	: public WSABUF
+#else
+	: public iovec
 #endif
+{
+public:
+
+	inline void set(void  *buffer, size_t length)
+	{
+#ifdef _WIN32
+		len = (ULONG)length;
+		buf = (CHAR*)buffer;
+#else
+		iov_base = (void*)buffer;
+		iov_len = length;
+#endif
+	}
+
+	inline char*& dataRef()
+	{
+#ifdef _WIN32
+		return buf;
+#else
+		return (char*&) iov_base;
+#endif
+	}
+
+	inline char* data()
+	{
+#ifdef _WIN32
+		return buf;
+#else
+		return (char*)iov_base;
+#endif
+	}
+
+	inline size_t size() const
+	{
+#ifdef _WIN32
+		return (size_t) len;
+#else
+		return iov_len;
+#endif
+	}
+
+	inline void setLength(size_t length)
+	{
+#ifdef _WIN32
+		len = length;
+#else
+		iov_len = length;
+#endif
+	}
+};
+
 
 /// To define packets in order in the buffer. This is public due to being used in buffer.
 enum PacketBoundary
@@ -203,7 +248,7 @@ public:
       /// Read the packet vector.
       /// @return Pointer to the packet vector.
 
-   iovec* getPacketVector();
+   IOVector* getPacketVector();
 
    uint32_t* getHeader() { return m_nHeader; }
 
@@ -358,7 +403,7 @@ protected:
    // For example, something like that:
    // class IoVector: public iovec { public: size_t size() { return iov_len; } char* data() { return iov_base; } };
    // class IoVector: public WSAMSG { public: size_t size() { return len; } char* data() { return buf; } };
-   iovec m_PacketVector[PV_SIZE];             //< The 2-demension vector of UDT packet [header, data]
+   IOVector m_PacketVector[PV_SIZE];             //< The 2-demension vector of UDT packet [header, data]
 
    int32_t __pad;
    bool m_data_owned;

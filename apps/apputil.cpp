@@ -117,8 +117,7 @@ string Join(const vector<string>& in, string sep)
     return os.str();
 }
 
-
-options_t ProcessOptions(char* const* argv, int argc, vector<OptionScheme> scheme)
+options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
 {
     using namespace std;
 
@@ -132,9 +131,16 @@ options_t ProcessOptions(char* const* argv, int argc, vector<OptionScheme> schem
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if ( moreoptions && a[0] == '-' )
+        if (moreoptions && a[0] == '-')
         {
-            current_key = a+1;
+            string key(a + 1);  // omit '-'
+            size_t pos = key.find_first_of(":");
+            if (pos == string::npos)
+                pos = key.find(' ');
+            string value = pos == string::npos ? "" : key.substr(pos + 1);
+            key = key.substr(0, pos);
+
+            current_key = key;
             if ( current_key == "-" )
             {
                 // The -- argument terminates the options.
@@ -153,15 +159,19 @@ options_t ProcessOptions(char* const* argv, int argc, vector<OptionScheme> schem
                 if (s.names.count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if ( s.type == OptionScheme::ARG_NONE )
+                    if (s.type == OptionScheme::ARG_NONE )
                     {
                         // Anyway, consider it already processed.
                         break;
                     }
+                    else if (s.type == OptionScheme::ARG_ONE)
+                    {
+                        if (!value.empty())
+                            params[current_key].push_back(value);
+                    }
                     type = s.type;
                     goto Found;
                 }
-
             }
             // Not found: set ARG_NONE.
             // cout << "*D KEY '" << current_key << "' assumed type NONE\n";
@@ -192,6 +202,7 @@ Found:
 
     return params;
 }
+
 
 static vector<sockaddr_any> GetLocalInterfaces()
 {
