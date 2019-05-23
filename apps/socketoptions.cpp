@@ -26,48 +26,44 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     vector<string> dummy;
     vector<string>& fails = failures ? *failures : dummy;
 
-    SocketOption::Mode mode = SocketOption::CALLER;
-    if (host != "--") // for this value it will always return CALLER
+    SocketOption::Mode mode;
+    string modestr = "default";
+
+    if ( options.count("mode") )
     {
-        string modestr = "default";
+        modestr = options["mode"];
+    }
 
-        if ( options.count("mode") )
-        {
-            modestr = options["mode"];
-        }
-
-        if ( modestr == "client" || modestr == "caller" )
-        {
-            mode = SocketOption::CALLER;
-        }
-        else if ( modestr == "server" || modestr == "listener" )
-        {
+    if ( modestr == "client" || modestr == "caller" )
+    {
+        mode = SocketOption::CALLER;
+    }
+    else if ( modestr == "server" || modestr == "listener" )
+    {
+        mode = SocketOption::LISTENER;
+    }
+    else if ( modestr == "default" )
+    {
+        // Use the following convention:
+        // 1. Server for source, Client for target
+        // 2. If host is empty, then always server.
+        if ( host == "" )
             mode = SocketOption::LISTENER;
-        }
-        else if ( modestr == "default" )
-        {
-            // Use the following convention:
-            // 1. Server for source, Client for target
-            // 2. If host is empty, then always server.
-            if ( host == "" )
-                mode = SocketOption::LISTENER;
-            //else if ( !dir_output )
-            //mode = "server";
-            else
-            {
-                // Host is given, so check also "adapter"
-                if ( options.count("adapter") )
-                    mode = SocketOption::RENDEZVOUS;
-                else
-                    mode = SocketOption::CALLER;
-            }
-        }
+        //else if ( !dir_output )
+        //mode = "server";
         else
         {
-            mode = SocketOption::FAILURE;
-            fails.push_back("mode");
+            // Host is given, so check also "adapter"
+            if ( options.count("adapter") )
+                mode = SocketOption::RENDEZVOUS;
+            else
+                mode = SocketOption::CALLER;
         }
-
+    }
+    else
+    {
+        mode = SocketOption::FAILURE;
+        fails.push_back("mode");
     }
 
     bool all_clear = true;

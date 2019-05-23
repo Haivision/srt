@@ -105,8 +105,8 @@ struct MediumPair
 
         if (!initial_portion.empty())
         {
-            tar->Write(initial_portion);
-            if ( tar->Broken() )
+            tar->Write(initial_portion.data(), initial_portion.size());
+            if (tar->Broken())
             {
                 applog.Note() << "OUTPUT BROKEN for loop: " << name;
                 return;
@@ -121,7 +121,9 @@ struct MediumPair
                 ostringstream sout;
                 alarm(1);
                 bytevector data;
-                src->Read(chunk, data);
+                const int read_res = src->Read(chunk, data);
+
+
                 alarm(0);
                 if (alarm_state)
                 {
@@ -138,8 +140,8 @@ struct MediumPair
                     applog.Note() << sout.str();
                     break;
                 }
-                tar->Write(data);
-                if ( tar->Broken() )
+                tar->Write(data.data(), data.size());
+                if (tar->Broken())
                 {
                     sout << " OUTPUT broken";
                     applog.Note() << sout.str();

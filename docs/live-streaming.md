@@ -72,7 +72,7 @@ time based on the timestamps in the stream.
 
 2. Not all frames are I-Frames. Most of the frames sent in the video stream are
 "difference frames" (P or B frames), which can only be decoded if all preceding (or even
-succeding) frames are already received. As you can guess, difference frames are much 
+succeeding) frames are already received. As you can guess, difference frames are much 
 shorter than I-Frames, so there is much less data in a whole "frame package" to 
 transport, even though these frames still cover the same time period ("duration"). 
 
@@ -144,7 +144,3 @@ appropriate delay is applied before delivering to the output. This ensures that 
 time intervals between two consecutive packets at the delivery application are identical 
 to the intervals between these same packets at the moment they were passed to SRT 
 for streaming.
-
-
-
-

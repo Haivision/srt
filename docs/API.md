@@ -471,6 +471,16 @@ regular development.*
 - *Sender: user configurable, default: 64*
 ---
 
+| OptName           | Since | Binding | Type  | Units | Default            | Range |
+| ----------------- | ----- | ------- | ----- | ----- | ------------------ | ------|
+| `SRTO_IPV6ONLY`   | 1.4.0 | pre     | `int` | n/a   | (platform default) | -1..1 |
+
+- **[GET or SET]** - Set system socket flag IPV6ONLY. When set to 0 a listening
+socket binding an IPv6 address accepts also IPv4 clients (their addresses will be 
+formatted as IPv4-mapped IPv6 addresses). By default (-1) this option is not set 
+and the platform default value is used.
+---
+
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
@@ -792,15 +802,14 @@ if at least one party may be SRT below version 1.3.0 and does not support *HSv5*
 
 | OptName               | Since | Binding | Type          | Units      | Default  | Range            |
 | --------------------- | ----- | ------- | ------------- | ---------- | -------- | ---------------- |
-| `SRTO_SMOOTHER`       | 1.3.0 | pre     | `const char*` | predefined | "live"   | "live" or "file" |
+| `SRTO_CONGESTION`       | 1.3.0 | pre     | `const char*` | predefined | "live"   | "live" or "file" |
 
-- **[SET]** - The type of Smoother used for the transmission for that socket, 
-which is responsible for the transmission and congestion control. The Smoother 
-type must be exactly the same on both connecting parties, otherwise the 
-connection is rejected. 
-- ***TODO: might be reasonable to allow an "adaptive" value of the Smoother, 
-which will accept either of the smoother types when the other party enforces it, 
-and rejected if both sides are "adaptive"***
+- **[SET]** - The type of congestion controller used for the transmission for
+that socket. Its type must be exactly the same on both connecting parties,
+otherwise the connection is rejected. 
+- ***TODO: might be reasonable to allow an "adaptive" congestion controller,
+which will make the side that sets it accept whatever controller type is set
+by the peer, including different per connection***
 ---
 
 | OptName               | Since | Binding | Type  | Units  | Default          | Range  |
@@ -982,7 +991,7 @@ options respectively
 * BLIND REXMIT: A situation where packets that were sent are still not
 acknowledged, either in expected time frame, or when another ACK has
 come for the same number, but no packets have been reported as lost,
-or at least not for all still unacknowledged packets. The Smoother
+or at least not for all still unacknowledged packets. The congestion control
 class is responsible for the algorithm for taking care of this
 situation, which is either FASTREXMIT or LATEREXMIT. This will be
 expained below.
@@ -1000,7 +1009,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following parameters:
 * `SRTO_MESSAGEAPI` = true
 * `SRTO_NAKREPORT` = true
 * `SRTO_PAYLOADSIZE` = 1316
-* `SRTO_SMOOTHER` = "live"
+* `SRTO_CONGESTION` = "live"
 
 In this mode, every call to a sending function is allowed to send only
 so much data, as declared by `SRTO_PAYLOADSIZE`, whose value is still
@@ -1013,15 +1022,14 @@ sender side, and when it is received by the receiver application (that
 is, the data are kept in the buffer and declared as not received, until
 the time comes for the packet to "play").
 
-This mode uses the `LiveSmoother` Smoother class for congestion control, which
-puts only a slight limitation on the bandwidth, if needed, just to add extra
-time, if the distance between two consecutive packets would be too short for
-the defined speed limit. Note that this smoother is not predicted to work with 
-"virtually infinite" ingest speeds (such as, for example, reading
-directly from a file). Therefore the application is not allowed to stream data
-with maximum speed -- it must take care that the speed of data being sent is in
-rhythm with timestamps in the live stream. Otherwise the behavior is undefined
-and might be surprisingly disappointing.
+This mode uses the `LiveCC` congestion control class, which puts only a slight
+limitation on the bandwidth, if needed, just to add extra time, if the distance
+between two consecutive packets would be too short for the defined speed limit.
+Note that it is not predicted to work with "virtually infinite" ingest speeds
+(such as, for example, reading directly from a file). Therefore the application
+is not allowed to stream data with maximum speed -- it must take care that the
+speed of data being sent is in rhythm with timestamps in the live stream.
+Otherwise the behavior is undefined and might be surprisingly disappointing.
 
 The reading function will always return only a payload that was
 sent, and it will HANGUP until the time to play has come for this
@@ -1058,7 +1066,7 @@ mentioned in the list above, are crucial for Live mode and shall not be
 changed.
 
 The BLIND REXMIT situation is resolved using the FASTREXMIT algorithm by
-LiveSmoother: sending non-acknowledged packets blindly on the
+LiveCC: sending non-acknowledged packets blindly on the
 premise that the receiver lingers too long before acknowledging them.
 This mechanism isn't used (that is, the BLIND REXMIT situation isn't
 handled at all) when `SRTO_NAKREPORT` is set by the peer -- the NAKREPORT
@@ -1077,7 +1085,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following parameters:
 * `SRTO_MESSAGEAPI` = false
 * `SRTO_NAKREPORT` = false
 * `SRTO_PAYLOADSIZE` = 0
-* `SRTO_SMOOTHER` = "file"
+* `SRTO_CONGESTION` = "file"
 
 In this mode, calling a sending function is allowed to potentially send
 virtually any size of data. The sending function will HANGUP only if the
@@ -1096,15 +1104,15 @@ only be used in this mode: `srt_sendfile` and `srt_recvfile`. These
 functions can be used to transmit the whole file, or a fragment of it,
 based on the offset and size.
 
-This mode uses the `FileSmoother` Smoother class for congestion control,
-which is a direct copy of the UDT's `CUDTCC` congestion control class,
-adjusted to the needs of SRT's Smoother framework. This class generally
-sends the data with maximum speed in the beginning, until the flight
-window is full, and then keeps the speed at the edge of the flight
-window, only slowing down in the case where packet loss was detected. The
-bandwidth usage can be directly limited by `SRTO_MAXBW` option.
+This mode uses the `FileCC` congestion control class, which is a direct copy of
+the UDT's `CUDTCC` congestion control class, adjusted to the needs of SRT's
+congestion control framework. This class generally sends the data with maximum
+speed in the beginning, until the flight window is full, and then keeps the
+speed at the edge of the flight window, only slowing down in the case where
+packet loss was detected. The bandwidth usage can be directly limited by
+`SRTO_MAXBW` option.
 
-The BLIND REXMIT situation is resolved in FileSmoother using the LATEREXMIT
+The BLIND REXMIT situation is resolved in FileCC using the LATEREXMIT
 algorithm: when the repeated ACK was received for the same packet, or when the
 loss list is empty and the flight window is full, all packets since the last
 ACK are sent again (that's more or less the TCP behavior, but in contrast to
@@ -1123,8 +1131,8 @@ Transmission method: Message
 Setting `SRTO_TRANSTYPE` to `SRTT_FILE` and then `SRTO_MESSAGEAPI` to
 true implies usage of the Message transmission method. Parameters are set as
 described above for the Buffer method, with the exception of `SRTO_MESSAGEAPI`, and 
-FileSmoother is also used in this mode. It differs from the Buffer method,
-however, in terms of the rules concerning sending and receiving.
+the "file" congestion controller is also used in this mode. It differs from the
+Buffer method, however, in terms of the rules concerning sending and receiving.
 
 **HISTORICAL INFO**: The library that SRT was based on, UDT, somewhat misleadingly
 used the terms STREAM and DGRAM, and used the system symbols `SOCK_STREAM` and 
@@ -1174,6 +1182,3 @@ buffer size is too small for a single message to fit in it.
 Note that you can use any of the sending and receiving functions
 for sending and receiving messages, except sendfile/recvfile, which
 are dedicated exclusively for Buffer API. 
-
-
-

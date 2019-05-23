@@ -518,7 +518,8 @@ void SrtMedium::Init()
 void SrtMedium::ConfigurePre(SRTSOCKET so)
 {
     vector<string> fails;
-    SrtConfigurePre(so, "--", m_options, &fails);
+    m_options["mode"] = "caller";
+    SrtConfigurePre(so, "", m_options, &fails);
     if (!fails.empty())
     {
         cerr << "Failed options: " << Printable(fails) << endl;

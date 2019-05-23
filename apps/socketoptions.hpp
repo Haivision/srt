@@ -66,13 +66,13 @@ struct SocketOption
 template<>
 inline int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, size);
+    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 template<>
 inline int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
 {
-    return ::setsockopt(socket, proto, sym, (const char *)data, size);
+    return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
 
 template<>
@@ -224,7 +224,7 @@ const SocketOption srt_options [] {
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "minversion", 0, SRTO_MINVERSION, SocketOption::PRE, SocketOption::INT, nullptr},
     { "streamid", 0, SRTO_STREAMID, SocketOption::PRE, SocketOption::STRING, nullptr},
-    { "smoother", 0, SRTO_SMOOTHER, SocketOption::PRE, SocketOption::STRING, nullptr},
+    { "congestion", 0, SRTO_CONGESTION, SocketOption::PRE, SocketOption::STRING, nullptr},
     { "messageapi", 0, SRTO_MESSAGEAPI, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
