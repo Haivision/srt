@@ -224,7 +224,7 @@ const SocketOption srt_options [] {
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "minversion", 0, SRTO_MINVERSION, SocketOption::PRE, SocketOption::INT, nullptr},
     { "streamid", 0, SRTO_STREAMID, SocketOption::PRE, SocketOption::STRING, nullptr},
-    { "smoother", 0, SRTO_SMOOTHER, SocketOption::PRE, SocketOption::STRING, nullptr},
+    { "congestion", 0, SRTO_CONGESTION, SocketOption::PRE, SocketOption::STRING, nullptr},
     { "messageapi", 0, SRTO_MESSAGEAPI, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },

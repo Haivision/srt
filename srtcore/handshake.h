@@ -73,7 +73,7 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_KMREQ = 3,
       SRT_CMD_KMRSP = 4,
       SRT_CMD_SID = 5,
-      SRT_CMD_SMOOTHER = 6,
+      SRT_CMD_CONGESTION = 6,
       SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
 
 enum SrtDataStruct
