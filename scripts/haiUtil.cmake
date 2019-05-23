@@ -48,11 +48,6 @@ FUNCTION(join_arguments outvar)
 	set (${outvar} ${output} PARENT_SCOPE)
 ENDFUNCTION()
 
-macro(srt_install_symlink filepath sympath)
-    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${filepath} ${sympath})")
-    install(CODE "message(\"-- Created symlink: ${sympath} -> ${filepath}\")")
-endmacro(srt_install_symlink)
-
 # LEGACY. PLEASE DON'T USE ANYMORE.
 MACRO(MafRead maffile)
 	message(WARNING "MafRead is deprecated. Please use MafReadDir instead")
@@ -240,3 +235,9 @@ MACRO(GetMafHeaders directory outvar)
 	SEPARATE_ARGUMENTS(${outvar})
 	adddirname(${CMAKE_SOURCE_DIR}/${directory} "${${outvar}}" ${outvar})
 ENDMACRO(GetMafHeaders)
+
+function (getVarsWith _prefix _varResult)
+    get_cmake_property(_vars VARIABLES)
+    string (REGEX MATCHALL "(^|;)${_prefix}[A-Za-z0-9_]*" _matchedVars "${_vars}")
+    set (${_varResult} ${_matchedVars} PARENT_SCOPE)
+endfunction()

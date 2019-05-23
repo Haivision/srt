@@ -23,7 +23,7 @@
 // SRT_IMPORT_EVENT  (includes kevent on Mac)
 
 
-#ifdef WIN32
+#ifdef _WIN32
    #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
    #include <winsock2.h>
    #include <ws2tcpip.h>
@@ -34,13 +34,10 @@
    #include <win/wintime.h>
    #endif
 
+   #include <stdint.h>
+   #include <inttypes.h>
    #if defined(_MSC_VER)
-      #include <stdint.h>
-      #include <win/inttypes.h>
       #pragma warning(disable:4251)
-   #elif defined(__MINGW32__)
-      #include <inttypes.h>
-      #include <stdint.h>
    #endif
 #else
 

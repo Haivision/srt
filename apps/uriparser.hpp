@@ -46,14 +46,14 @@ public:
     std::string uri() { return m_origUri; }
     std::string proto();
     std::string scheme() { return proto(); }
-    std::string host();
-    std::string port();
-    unsigned short int portno();
+    std::string host() const;
+    std::string port() const;
+    unsigned short int portno() const;
     std::string hostport() { return host() + ":" + port(); }
     std::string path();
     std::string queryValue(const std::string& strKey);
     ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
-    const std::map<std::string, std::string>& parameters() { return m_mapQuery; }
+    const std::map<std::string, std::string>& parameters() const { return m_mapQuery; }
 
 private:
     void Parse(const std::string& strUrl, DefaultExpect);

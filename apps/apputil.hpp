@@ -12,7 +12,7 @@
 #ifndef INC__APPCOMMON_H
 #define INC__APPCOMMON_H
  
-#if WIN32
+#if _WIN32
 
 // Keep this below commented out.
 // This is for a case when you need cpp debugging on Windows.
@@ -76,7 +76,7 @@ inline void SysCleanupNetwork() {}
 // See:
 //    https://msdn.microsoft.com/en-us/library/windows/desktop/ms742214(v=vs.85).aspx
 //    http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-#ifdef __MINGW32__
+#if defined(_WIN32) && !defined(HAVE_INET_PTON)
 static inline int inet_pton(int af, const char * src, void * dst)
 {
    struct sockaddr_storage ss;
@@ -115,9 +115,9 @@ static inline int inet_pton(int af, const char * src, void * dst)
 
    return 0;
 }
-#endif // __MINGW__
+#endif // _WIN32 && !HAVE_INET_PTON
 
-#ifdef WIN32
+#ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 #else
 inline int SysError() { return errno; }
@@ -162,6 +162,25 @@ inline std::string Join(const std::vector<std::string>& in, std::string sep)
     return os.str();
 }
 
+
+inline bool CheckTrue(const std::vector<std::string>& in)
+{
+    if (in.empty())
+        return true;
+
+    const std::set<std::string> false_vals = { "0", "no", "off", "false" };
+    if (false_vals.count(in[0]))
+        return false;
+
+    return true;
+
+    //if (in[0] != "false" && in[0] != "off")
+    //    return true;
+
+    //return false;
+}
+
+
 typedef std::map<std::string, std::vector<std::string>> options_t;
 
 struct OutList
@@ -174,6 +193,13 @@ struct OutString
 {
     typedef std::string type;
     static type process(const options_t::mapped_type& i) { return Join(i, " "); }
+};
+
+
+struct OutBool
+{
+    typedef bool type;
+    static type process(const options_t::mapped_type& i) { return CheckTrue(i); }
 };
 
 
@@ -221,9 +247,16 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if ( moreoptions && a[0] == '-' )
+        if (moreoptions && a[0] == '-')
         {
-            current_key = a+1;
+            string key(a + 1);  // omit '-'
+            size_t pos = key.find_first_of(":");
+            if (pos == string::npos)
+                pos = key.find(' ');
+            string value = pos == string::npos ? "" : key.substr(pos + 1);
+            key = key.substr(0, pos);
+
+            current_key = key;
             if ( current_key == "-" )
             {
                 // The -- argument terminates the options.
@@ -242,15 +275,19 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 if (s.names.count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if ( s.type == OptionScheme::ARG_NONE )
+                    if (s.type == OptionScheme::ARG_NONE )
                     {
                         // Anyway, consider it already processed.
                         break;
                     }
+                    else if (s.type == OptionScheme::ARG_ONE)
+                    {
+                        if (!value.empty())
+                            params[current_key].push_back(value);
+                    }
                     type = s.type;
                     goto Found;
                 }
-
             }
             // Not found: set ARG_NONE.
             // cout << "*D KEY '" << current_key << "' assumed type NONE\n";

@@ -22,7 +22,7 @@ written by
 #include <sys/types.h>
 #include <stdlib.h>     /* NULL */
 #include <string.h>     /* memcpy */
-#ifdef WIN32
+#ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <stdint.h>
@@ -34,10 +34,11 @@ written by
 int HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_pp)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	int pad_factor = (HCRYPT_CTX_MODE_AESECB == crypto->ctx->mode ? 128/8 : 1);
 
 	ASSERT(NULL != crypto);
 	ASSERT(NULL != crypto->cipher);
+
+	int pad_factor = (HCRYPT_CTX_MODE_AESECB == crypto->ctx->mode ? 128/8 : 1);
 
 	if (NULL != crypto->cipher->getinbuf) {
 		ASSERT(NULL != crypto->cipher_data);
@@ -47,7 +48,7 @@ int HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_
 			return(-1);
 		}
 	} else {
-#ifndef WIN32
+#ifndef _WIN32
 		ASSERT(crypto->inbuf != NULL);
 #endif
 		size_t in_len = crypto->msg_info->pfx_len + hcryptMsg_PaddedLen(data_len, pad_factor);

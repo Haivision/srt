@@ -6,8 +6,8 @@ configuration:
   - Debug
 
 image:
-  - Visual Studio 2013
   - Visual Studio 2015
+  - Visual Studio 2013
 
 platform:
   - x64
@@ -24,8 +24,12 @@ build_script:
   - ps: cp C:/pthread-src/bin/x64_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-win32/lib
   # build SRT
   - ps: if ( $VS_VERSION -eq "2013" ) { $CMAKE_GENERATOR = "Visual Studio 12 2013 Win64" } else { $CMAKE_GENERATOR = "Visual Studio 14 2015 Win64" }
-  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION
+  - ps: if ( $VS_VERSION -eq "2013" ) { $ENABLE_UNITTESTS = "OFF" } else { $ENABLE_UNITTESTS = "ON" }
+  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64
+  
+test_script:
+  - ps: if ( $VS_VERSION -ne "2013" ) { ctest --extra-verbose -C $Env:CONFIGURATION }
   
 after_build:
 - cmd: >-

@@ -22,7 +22,7 @@ written by
 #include <haicrypt.h>
 #include "hcrypt.h"
 
-#ifndef WIN32
+#ifndef _WIN32
 
 /* RFC6070 PBKDF2 Tests Vectors */
 
@@ -221,4 +221,4 @@ int main(int argc, char *argv[])
 	return(nbe);
 }
 
-#endif // WIN32
+#endif // _WIN32
