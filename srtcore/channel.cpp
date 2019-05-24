@@ -128,6 +128,7 @@ m_BindAddr(version)
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 
    // Do the check for ancillary data buffer size, kinda assertion
+   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeAlike);
 
    if (+CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
            || +CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))

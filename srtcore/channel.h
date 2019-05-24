@@ -216,8 +216,7 @@ private:
    // As CMSG_SPACE is a runtime value (at least on this MinGW), it can only be runtime-checked.
    // It will be done in CChannel constructor.
 
-   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeAlike);
-   mutable char m_acCmsgBuffer [CMSG_MAX_SPACE]; // Reserved space for ancillary data with pktinfo
+   mutable char m_acCmsgBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
 
 #ifndef _WIN32 // This feature is not enabled on Windows, for now.
    sockaddr_any getTargetAddress(const msghdr& msg) const
