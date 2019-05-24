@@ -89,6 +89,10 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
+set (ENABLE_PKTINFO_DEFAULT 1)
+if (WIN32)
+	set (ENABLE_PKTINFO_DEFAULT 0)
+endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
@@ -100,6 +104,7 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_PKTINFO "Should pktinfo usage be enabled" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
@@ -112,6 +117,13 @@ option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building 
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
+
+if (WIN32)
+	if (ENABLE_PKTINFO)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
+	endif()
+endif()
+
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -369,6 +381,11 @@ endif()
 if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
+
+if (ENABLE_PKTINFO)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+endif()
+
 
 if (ENABLE_THREAD_CHECK)
 	add_definitions(

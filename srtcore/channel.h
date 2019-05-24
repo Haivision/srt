@@ -182,6 +182,8 @@ private:
    int m_iRcvBufSize;                   // UDP receiving buffer size
    int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
    sockaddr_any m_BindAddr;
+
+#ifdef SRT_ENABLE_PKTINFO
    bool m_bBindMasked;                  // True if m_BindAddr is INADDR_ANY. Need for quick check.
 
    // This is 'mutable' because it's a utility buffer defined here
@@ -192,33 +194,23 @@ private:
    //
    // size_t s = max( CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)) )
    //
-   // there are few problems:
-   //
-   // 1. We don't have C++11 so we can't rely on std::max being constexpr (fixable)
-   // 2. The CMSG_SPACE macro seems to be defined correctly as constant expression, BUT:
-   //    - The definition contains ALIGNMENT value
-   //    - Most platforms check it with adding 1-decreased size_t and clearing the bits
-   //    - Others try to check how {char a; T test;} structure gest space for 'a'
-   //    - And some (MinGW) uses some builtin alignment macros, which...
-   //       - for the compiler look like a function call AND HENCE AREN'T const expr
-   //
-   // Because of this reason, in order to have any static size of an internal array,
-   // we need to simply align a close enough size.
+   // On some platforms however CMSG_SPACE macro can't be resolved as constexpr.
 
    struct CMSGNodeAlike
    {
        cmsghdr hdr;
-       in_pktinfo in4;
-       in6_pktinfo in6;
+       union
+       {
+           in_pktinfo in4;
+           in6_pktinfo in6;
+       };
        size_t extrafill;
    };
 
-   // As CMSG_SPACE is a runtime value (at least on this MinGW), it can only be runtime-checked.
-   // It will be done in CChannel constructor.
-
    mutable char m_acCmsgBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
 
-#ifndef _WIN32 // This feature is not enabled on Windows, for now.
+   // This feature is not enabled on Windows, for now.
+   // This is also turned off in case of MinGW
    sockaddr_any getTargetAddress(const msghdr& msg) const
    {
        // Loop through IP header messages
@@ -295,7 +287,9 @@ private:
 
        return false;
    }
-#endif // _WIN32
+
+#endif // SRT_ENABLE_PKTINFO
+
 };
 
 

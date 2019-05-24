@@ -42,6 +42,7 @@ set cmake_options {
     enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
     enable-logging "Should logging be enabled (default: ON)"
     enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
+	enable-pktinfo "Should pktinfo reading and using be enabled (default: ON, Windows: OFF)"
     enable-separate-haicrypt "Should haicrypt be built as a separate library file (default: OFF)"
     enable-shared "Should libsrt be built as a shared library (default: ON)"
     enable-static "Should libsrt be built as a static library (default: ON)"
