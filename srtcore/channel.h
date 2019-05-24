@@ -187,14 +187,36 @@ private:
    // This is 'mutable' because it's a utility buffer defined here
    // to avoid unnecessary re-allocations.
 
-   // Unfortunately, this isn't C++11 and we can't rely on that std::max uses constexpr.
-   // We need a macro.
-#define SRT_CHN_MAX(a, b) ((a) > (b) ? (a) : (b))
+   // Calculating the required space is extremely tricky, and whereas on most
+   // platforms it's possible to define it this way:
+   //
+   // size_t s = max( CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)) )
+   //
+   // there are few problems:
+   //
+   // 1. We don't have C++11 so we can't rely on std::max being constexpr (fixable)
+   // 2. The CMSG_SPACE macro seems to be defined correctly as constant expression, BUT:
+   //    - The definition contains ALIGNMENT value
+   //    - Most platforms check it with adding 1-decreased size_t and clearing the bits
+   //    - Others try to check how {char a; T test;} structure gest space for 'a'
+   //    - And some (MinGW) uses some builtin alignment macros, which...
+   //       - for the compiler look like a function call AND HENCE AREN'T const expr
+   //
+   // Because of this reason, in order to have any static size of an internal array,
+   // we need to simply align a close enough size.
 
-   static const size_t CMSG_MAX_SPACE = SRT_CHN_MAX(CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)));
+   struct CMSGNodeAlike
+   {
+       cmsghdr hdr;
+       in_pktinfo in4;
+       in6_pktinfo in6;
+       size_t extrafill;
+   };
 
-#undef SRT_CHN_MAX
+   // As CMSG_SPACE is a runtime value (at least on this MinGW), it can only be runtime-checked.
+   // It will be done in CChannel constructor.
 
+   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeAlike);
    mutable char m_acCmsgBuffer [CMSG_MAX_SPACE]; // Reserved space for ancillary data with pktinfo
 
 #ifndef _WIN32 // This feature is not enabled on Windows, for now.
@@ -226,6 +248,12 @@ private:
        return sockaddr_any(m_BindAddr.family());
    }
 
+   // IMPORTANT!!! This function shall be called EXCLUSIVELY just before
+   // calling ::sendmsg function. It uses a static buffer to supply data
+   // for the call, and it is state that the sending part in CChannel
+   // object is used in exclusively one thread (SndQ:worker). The socket
+   // is generally used by more threads at once (also RcvQ:worker), but
+   // the m_acCmsgBuffer buffer is used only for sending.
    bool setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
    {
        // In contrast to an advice followed on the net, there's no case of putting

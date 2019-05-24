@@ -126,6 +126,19 @@ m_iIpV6Only(-1),
 m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+
+   // Do the check for ancillary data buffer size, kinda assertion
+
+   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
+           || CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))
+   {
+       LOGC(mglog.Fatal, log << "Size of CMSG_MAX_SPACE="
+               << CMSG_MAX_SPACE << " too short for cmsg "
+               << CMSG_SPACE(sizeof(in_pktinfo)) << ", "
+               << CMSG_SPACE(sizeof(in6_pktinfo)) << " - PLEASE FIX");
+       throw CUDTException(MJ_SETUP, MN_NONE, 0);
+   }
+
 }
 
 CChannel::~CChannel()
