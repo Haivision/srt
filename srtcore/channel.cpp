@@ -129,8 +129,8 @@ m_BindAddr(version)
 
    // Do the check for ancillary data buffer size, kinda assertion
 
-   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
-           || CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))
+   if (+CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
+           || +CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))
    {
        LOGC(mglog.Fatal, log << "Size of CMSG_MAX_SPACE="
                << CMSG_MAX_SPACE << " too short for cmsg "
