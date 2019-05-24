@@ -444,8 +444,9 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID << " sourceIP="
+        << " target=%" << packet.m_iID
 #ifdef SRT_ENABLE_PKTINFO
+        << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(&source_addr) : "default")
 #endif
         << spec.str());
@@ -572,8 +573,8 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
             // data. This might be interesting for the connection to
             // know to which address the packet should be sent back during
             // the handshake and then addressed when sending during connection.
-            mh.msg_control = m_acCmsgBuffer;
-            mh.msg_controllen = sizeof m_acCmsgBuffer;
+            mh.msg_control = m_acCmsgRecvBuffer;
+            mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
         }
 #else
         mh.msg_control = NULL;

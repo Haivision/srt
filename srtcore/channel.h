@@ -183,6 +183,8 @@ private:
    int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
    sockaddr_any m_BindAddr;
 
+   // This feature is not enabled on Windows, for now.
+   // This is also turned off in case of MinGW
 #ifdef SRT_ENABLE_PKTINFO
    bool m_bBindMasked;                  // True if m_BindAddr is INADDR_ANY. Need for quick check.
 
@@ -207,10 +209,13 @@ private:
        size_t extrafill;
    };
 
-   mutable char m_acCmsgBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
+   mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
+   mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
 
-   // This feature is not enabled on Windows, for now.
-   // This is also turned off in case of MinGW
+   // IMPORTANT!!! This function shall be called EXCLUSIVELY just after
+   // calling ::recvmsg function. It uses a static buffer to supply data
+   // for the call, and it's stated that only one thread is trying to
+   // use a CChannel object in receiving mode.
    sockaddr_any getTargetAddress(const msghdr& msg) const
    {
        // Loop through IP header messages
@@ -241,10 +246,8 @@ private:
 
    // IMPORTANT!!! This function shall be called EXCLUSIVELY just before
    // calling ::sendmsg function. It uses a static buffer to supply data
-   // for the call, and it is state that the sending part in CChannel
-   // object is used in exclusively one thread (SndQ:worker). The socket
-   // is generally used by more threads at once (also RcvQ:worker), but
-   // the m_acCmsgBuffer buffer is used only for sending.
+   // for the call, and it's stated that only one thread is trying to
+   // use a CChannel object in sending mode.
    bool setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
    {
        // In contrast to an advice followed on the net, there's no case of putting
@@ -254,7 +257,7 @@ private:
 
        if (adr.family() == AF_INET)
        {
-           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_control = m_acCmsgSendBuffer;
            mh.msg_controllen = CMSG_SPACE(sizeof(in_pktinfo));
            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
 
@@ -271,7 +274,7 @@ private:
 
        if (adr.family() == AF_INET6)
        {
-           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_control = m_acCmsgSendBuffer;
            mh.msg_controllen = CMSG_SPACE(sizeof(in6_pktinfo));
            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
 
