@@ -38,10 +38,8 @@ written by
    Yunhong Gu, last updated 05/05/2009
 *****************************************************************************/
 
-#ifdef _WIN32
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-#endif
+
+#include "platform_sys.h"
 
 #include <cstring>
 #include "cache.h"

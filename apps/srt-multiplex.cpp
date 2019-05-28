@@ -47,8 +47,8 @@ using namespace std;
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-const logging::LogFA SRT_LOGFA_APP = 10;
-logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
@@ -105,8 +105,8 @@ struct MediumPair
 
         if (!initial_portion.empty())
         {
-            tar->Write(initial_portion);
-            if ( tar->Broken() )
+            tar->Write(initial_portion.data(), initial_portion.size());
+            if (tar->Broken())
             {
                 applog.Note() << "OUTPUT BROKEN for loop: " << name;
                 return;
@@ -121,7 +121,9 @@ struct MediumPair
                 ostringstream sout;
                 alarm(1);
                 bytevector data;
-                src->Read(chunk, data);
+                const int read_res = src->Read(chunk, data);
+
+
                 alarm(0);
                 if (alarm_state)
                 {
@@ -138,8 +140,8 @@ struct MediumPair
                     applog.Note() << sout.str();
                     break;
                 }
-                tar->Write(data);
-                if ( tar->Broken() )
+                tar->Write(data.data(), data.size());
+                if (tar->Broken())
                 {
                     sout << " OUTPUT broken";
                     applog.Note() << sout.str();
@@ -545,7 +547,7 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 

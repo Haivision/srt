@@ -50,10 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifdef _WIN32
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-#endif
+#include "platform_sys.h"
+
 #include <cstring>
 
 #include "common.h"
@@ -64,6 +62,7 @@ modified by
 #include "queue.h"
 
 using namespace std;
+using namespace srt_logging;
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),
@@ -235,6 +234,24 @@ CUnit* CUnitQueue::getNextAvailUnit()
 }
 
 
+void CUnitQueue::makeUnitFree(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
+    unit->m_iFlag = CUnit::FREE;
+    --m_iCount;
+}
+
+
+void CUnitQueue::makeUnitGood(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
+    unit->m_iFlag = CUnit::GOOD;
+    ++m_iCount;
+}
+
+
 CSndUList::CSndUList():
     m_pHeap(NULL),
     m_iArrayLength(4096),
@@ -320,6 +337,21 @@ int CSndUList::pop(ref_t<sockaddr*> r_addr, ref_t<CPacket> r_pkt, ref_t<sockaddr
 
    CUDT* u = m_pHeap[0]->m_pUDT;
    remove_(u);
+
+#define UST(field) ( (u->m_b##field) ? "+" : "-" ) << #field << " "
+
+   HLOGC(mglog.Debug, log << "SND:pop: requesting packet from @" << u->socketID()
+           << " STATUS: "
+           << UST(Listening)
+           << UST(Connecting)
+           << UST(Connected)
+           << UST(Closing)
+           << UST(Shutdown)
+           << UST(Broken)
+           << UST(PeerHealth)
+           << UST(Opened)
+        );
+#undef UST
 
    if (!u->m_bConnected || u->m_bBroken)
       return -1;
@@ -489,7 +521,7 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    ThreadName tn("SRT:SndQ:worker");
    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
    {
-	   m_WorkerThread = pthread_t();
+       m_WorkerThread = pthread_t();
        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
    }
 }
@@ -612,7 +644,7 @@ int CSndQueue::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any&
 {
    // send out the packet immediately (high priority), this is a control packet
    m_pChannel->sendto(addr, packet, src);
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 
@@ -1030,7 +1062,7 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
     {
 
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
@@ -1076,7 +1108,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     ThreadName tn("SRT:RcvQ:worker");
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
-		m_WorkerThread = pthread_t();
+        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1084,7 +1116,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 void* CRcvQueue::worker(void* param)
 {
    CRcvQueue* self = (CRcvQueue*)param;
-   sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
+   sockaddr_any sa (self->m_UnitQueue.getIPversion());
    int32_t id = 0;
 
    THREAD_STATE_INIT("SRT:RcvQ:worker");
@@ -1430,6 +1462,21 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
         EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
 
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_pPeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
+
         // It might be that this is a data packet, which has turned the connection
         // into "connected" state, removed the connector (so since now every next packet
         // will land directly in the queue), but this data packet shall still be delivered.
@@ -1544,7 +1591,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
    if (i->second.empty())
       m_mBuffer.erase(i);
 
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 int CRcvQueue::setListener(CUDT* u)

@@ -50,22 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-
-#ifndef _WIN32
-   #include <cstring>
-   #include <cerrno>
-   #include <unistd.h>
-   #if __APPLE__
-      #include "TargetConditionals.h"
-   #endif
-   #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      #include <mach/mach_time.h>
-   #endif
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <win/wintime.h>
-#endif
+#define SRT_IMPORT_TIME 1
+#include "platform_sys.h"
 
 #if ENABLE_THREAD_LOGGING
 #include <iostream>
@@ -132,12 +118,10 @@ void CTimer::rdtsc(uint64_t &x)
       x = hval;
       x = (x << 32) | lval;
    #elif defined(_WIN32)
-      //HANDLE hCurThread = ::GetCurrentThread(); 
-      //DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1); 
-      BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
-      //SetThreadAffinityMask(hCurThread, dwOldMask);
-      if (!ret)
-         x = getTime() * s_ullCPUFrequency;
+      // This function should not fail, because we checked the QPC
+      // when calling to QueryPerformanceFrequency. If it failed,
+      // the m_bUseMicroSecond was set to true.
+      QueryPerformanceCounter((LARGE_INTEGER *)&x);
    #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
       x = mach_absolute_time();
    #else
@@ -150,27 +134,27 @@ uint64_t CTimer::readCPUFrequency()
 {
    uint64_t frequency = 1;  // 1 tick per microsecond.
 
-   #if defined(IA32) || defined(IA64) || defined(AMD64)
-      uint64_t t1, t2;
+#if defined(IA32) || defined(IA64) || defined(AMD64)
+    uint64_t t1, t2;
 
-      rdtsc(t1);
-      timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 100000000;
-      nanosleep(&ts, NULL);
-      rdtsc(t2);
+    rdtsc(t1);
+    timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 100000000;
+    nanosleep(&ts, NULL);
+    rdtsc(t2);
 
-      // CPU clocks per microsecond
-      frequency = (t2 - t1) / 100000;
-   #elif defined(_WIN32)
-      int64_t ccf;
-      if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
-         frequency = ccf / 1000000;
-   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      mach_timebase_info_data_t info;
-      mach_timebase_info(&info);
-      frequency = info.denom * uint64_t(1000) / info.numer;
-   #endif
+    // CPU clocks per microsecond
+    frequency = (t2 - t1) / 100000;
+#elif defined(_WIN32)
+    LARGE_INTEGER counts_per_sec;
+    if (QueryPerformanceFrequency(&counts_per_sec))
+        frequency = counts_per_sec.QuadPart / 1000000;
+#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+    mach_timebase_info_data_t info;
+    mach_timebase_info(&info);
+    frequency = info.denom * uint64_t(1000) / info.numer;
+#endif
 
    // Fall back to microsecond if the resolution is not high enough.
    if (frequency < 10)
@@ -257,15 +241,20 @@ uint64_t CTimer::getTime()
 
     //For other systems without microsecond level resolution, add to this conditional compile
 #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    uint64_t x;
-    rdtsc(x);
-    return x / s_ullCPUFrequency;
-    //Specific fix may be necessary if rdtsc is not available either.
-#else
+    // Otherwise we will have an infinite recursive functions calls
+    if (m_bUseMicroSecond == false)
+    {
+        uint64_t x;
+        rdtsc(x);
+        return x / s_ullCPUFrequency;
+    }
+    // Specific fix may be necessary if rdtsc is not available either.
+    // Going further on Apple platforms might cause issue, fixed with PR #301.
+    // But it is very unlikely for the latest platforms.
+#endif
     timeval t;
     gettimeofday(&t, 0);
     return t.tv_sec * uint64_t(1000000) + t.tv_usec;
-#endif
 }
 
 void CTimer::triggerEvent()
@@ -1039,7 +1028,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmreq",
         "EXT:kmrsp",
         "EXT:sid",
-        "EXT:smoother"
+        "EXT:congctl"
     };
 
 
@@ -1059,20 +1048,19 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
 std::string ConnectStatusStr(EConnectStatus cst)
 {
-    return (cst == CONN_CONTINUE
-        ? "INDUCED/CONCLUDING"
-        : cst == CONN_ACCEPT
-        ? "ACCEPTED"
-        : cst == CONN_RENDEZVOUS
-        ? "RENDEZVOUS (HSv5)"
-        : cst == CONN_AGAIN
-        ? "AGAIN"
-        : "REJECTED");
+    return
+          cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
+        : cst == CONN_RUNNING ? "RUNNING"
+        : cst == CONN_ACCEPT ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN ? "AGAIN"
+        : cst == CONN_CONFUSED ? "MISSING HANDSHAKE"
+        : "REJECTED";
 }
 
 std::string TransmissionEventStr(ETransmissionEvent ev)
 {
-    static const std::string vals [] =
+    static const char* const vals [] =
     {
         "init",
         "ack",
@@ -1091,7 +1079,13 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-std::string logging::FormatTime(uint64_t time)
+// Some logging imps
+#if ENABLE_LOGGING
+
+namespace srt_logging
+{
+
+std::string FormatTime(uint64_t time)
 {
     using namespace std;
 
@@ -1111,27 +1105,25 @@ std::string logging::FormatTime(uint64_t time)
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
 }
-// Some logging imps
-#if ENABLE_LOGGING
 
-logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	if (that_enabled)
-	{
+    if (that_enabled)
+    {
         i_file = "";
         i_line = 0;
         flags = that.src_config->flags;
-		// Create logger prefix
-		that.CreateLogLinePrefix(os);
-	}
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
 }
 
-logging::LogDispatcher::Proxy logging::LogDispatcher::operator()()
+LogDispatcher::Proxy LogDispatcher::operator()()
 {
-	return Proxy(*this);
+    return Proxy(*this);
 }
 
-void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
 
@@ -1177,7 +1169,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     }
 }
 
-std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 {
     if ( pretty_function == "" )
         return "";
@@ -1239,4 +1231,7 @@ std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_functi
 
     return pretty_function.substr(pos+2);
 }
+
+} // (end namespace srt_logging)
+
 #endif
