@@ -5223,7 +5223,7 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    int res = m_pRcvBuffer->readBuffer(data, len);
+    const int res = m_pRcvBuffer->readBuffer(data, len);
 
     /* Kick TsbPd thread to schedule next wakeup (if running) */
     if (m_bTsbPd)

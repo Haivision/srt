@@ -239,7 +239,10 @@ public:
     std::string CONID() const { return ""; }
 
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
+      /// Construct the buffer.
+      /// @param [in] queue  CUnitQueue that actually holds the units (packets)
+      /// @param [in] bufsize_pkts in units (packets)
+   CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = 65536);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -270,7 +273,11 @@ public:
    void ackData(int len);
 
       /// Query how many buffer space left for data receiving.
+      /// Actually only acknowledged packets, that are still in the buffer,
+      /// are considered to take buffer space.
+      ///
       /// @return size of available buffer space (including user buffer) for data receiving.
+      ///         Not counting unacknowledged packets.
 
    int getAvailBufSize() const;
 
@@ -419,7 +426,7 @@ private:
 
 private:
    CUnit** m_pUnit;                     // pointer to the protocol buffer
-   int m_iSize;                         // size of the protocol buffer
+   int m_iSize;                         // size of the protocol buffer in units
    CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)
