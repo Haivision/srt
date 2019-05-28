@@ -42,8 +42,6 @@ written by
 #endif
 
 
-
-
 using namespace std;
 
 static bool interrupt = false;

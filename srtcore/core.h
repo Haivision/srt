@@ -68,7 +68,7 @@ modified by
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
-#include "smoother.h"
+#include "congctl.h"
 #include "utilities.h"
 
 #include <haicrypt.h>
@@ -454,7 +454,7 @@ private:
     /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
     /// @param clear [in] flag to decide if the local performance trace should be cleared. 
     /// @param instantaneous [in] flag to request instantaneous data 
-    /// instead of moving averages. 
+    /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
     /// Mark sequence contained in the given packet as not lost. This
@@ -512,7 +512,7 @@ private: // Identification
 
     // XXX Deprecated field. In any place where it's used, UDT_DGRAM is
     // the only allowed value. The functionality of distinguishing the transmission
-    // method is now in m_Smoother.
+    // method is now in m_CongCtl.
     UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
@@ -580,7 +580,7 @@ private:
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV__SIZE];
-    Smoother m_Smoother;
+    SrtCongestion m_CongCtl;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -703,6 +703,14 @@ private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
     int packData(ref_t<CPacket> packet, ref_t<uint64_t> ts, ref_t<sockaddr_any> src_adr);
+    /// Pack a packet from a list of lost packets.
+    ///
+    /// @param packet [in, out] a packet structure to fill
+    /// @param origintime [in, out] origin timestamp of the packet
+    ///
+    /// @return payload size on success, <=0 on failure
+    int packLostData(CPacket& packet, uint64_t& origintime);
+
     int processData(CUnit* unit);
     void processClose();
     int processConnectRequest(const sockaddr* addr, CPacket& packet);
@@ -807,7 +815,7 @@ private: // for UDP multiplexer
     CSNode* m_pSNode;               // node information for UDT list used in snd queue
     CRNode* m_pRNode;               // node information for UDT list used in rcv queue
 
-public: // For smoother
+public: // For SrtCongestion
     const CSndQueue* sndQueue() { return m_pSndQueue; }
     const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
 

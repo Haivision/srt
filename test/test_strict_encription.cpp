@@ -324,6 +324,7 @@ public:
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
         ASSERT_EQ(SetStrictEncryption(PEER_CALLER, test.strictenc[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
+
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
@@ -524,6 +525,7 @@ const char* TestStrictEncryption::m_socket_state[] = {
  */
 TEST_F(TestStrictEncryption, PasswordLength)
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
@@ -546,6 +548,9 @@ TEST_F(TestStrictEncryption, PasswordLength)
 
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
+#else
+    EXPECT_EQ(SetPassword(PEER_CALLER, "whateverpassword"), SRT_ERROR);
+#endif
 }
 
 
@@ -581,30 +586,35 @@ TEST_F(TestStrictEncryption, SetGetDefault)
     CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_A_1, Strict_On_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_A_2, Strict_On_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_A_3, Strict_On_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_A_4, Strict_On_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_A_5, Strict_On_On_Pwd_None_None)
 
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_B_1, Strict_On_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_B_2, Strict_On_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_B_3, Strict_On_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_B_4, Strict_On_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_B_5, Strict_On_Off_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_C_1, Strict_Off_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_C_2, Strict_Off_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_C_3, Strict_Off_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_C_4, Strict_Off_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_C_5, Strict_Off_On_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_D_1, Strict_Off_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_D_2, Strict_Off_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_D_3, Strict_Off_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_D_4, Strict_Off_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_D_5, Strict_Off_Off_Pwd_None_None)
 

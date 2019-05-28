@@ -30,13 +30,13 @@
 #include "core.h"
 #include "queue.h"
 #include "packet.h"
-#include "smoother.h"
+#include "congctl.h"
 #include "logging.h"
 
 using namespace std;
 using namespace srt_logging;
 
-SmootherBase::SmootherBase(CUDT* parent)
+SrtCongestionControlBase::SrtCongestionControlBase(CUDT* parent)
 {
     m_parent = parent;
     m_dMaxCWndSize = m_parent->flowWindowSize();
@@ -45,9 +45,9 @@ SmootherBase::SmootherBase(CUDT* parent)
     m_dPktSndPeriod = 1;
 }
 
-void Smoother::Check()
+void SrtCongestion::Check()
 {
-    if (!smoother)
+    if (!congctl)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 }
 
@@ -55,7 +55,7 @@ void Smoother::Check()
 // Requires "Me" name by which a class refers to itself
 #define SSLOT(method) EventSlot(this, &Me:: method)
 
-class LiveSmoother: public SmootherBase
+class LiveCC: public SrtCongestionControlBase
 {
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
     int      m_iSndAvgPayloadSize;  //Average Payload Size of packets to xmit
@@ -65,11 +65,11 @@ class LiveSmoother: public SmootherBase
     int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
     int m_iNakReportAccel;                       // NAK Report Period (RTT) accelerator
 
-    typedef LiveSmoother Me; // required for SSLOT macro
+    typedef LiveCC Me; // required for SSLOT macro
 
 public:
 
-    LiveSmoother(CUDT* parent): SmootherBase(parent)
+    LiveCC(CUDT* parent): SrtCongestionControlBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
@@ -80,7 +80,7 @@ public:
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
 
-        HLOGC(mglog.Debug, log << "Creating LiveSmoother: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize);
 
         updatePktSndPeriod();
 
@@ -96,20 +96,20 @@ public:
         parent->ConnectSignal(TEV_ACK, SSLOT(updatePktSndPeriod_onAck));
     }
 
-    bool checkTransArgs(Smoother::TransAPI api, Smoother::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
+    bool checkTransArgs(SrtCongestion::TransAPI api, SrtCongestion::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
     {
-        if (api != Smoother::STA_MESSAGE)
+        if (api != SrtCongestion::STA_MESSAGE)
         {
-            LOGC(mglog.Error, log << "LiveSmoother: invalid API use. Only sendmsg/recvmsg allowed.");
+            LOGC(mglog.Error, log << "LiveCC: invalid API use. Only sendmsg/recvmsg allowed.");
             return false;
         }
 
-        if (dir == Smoother::STAD_SEND)
+        if (dir == SrtCongestion::STAD_SEND)
         {
             // For sending, check if the size of data doesn't exceed the maximum live packet size.
             if (size > m_zMaxPayloadSize)
             {
-                LOGC(mglog.Error, log << "LiveSmoother: payload size: " << size << " exceeds maximum allowed " << m_zMaxPayloadSize);
+                LOGC(mglog.Error, log << "LiveCC: payload size: " << size << " exceeds maximum allowed " << m_zMaxPayloadSize);
                 return false;
             }
         }
@@ -118,7 +118,7 @@ public:
             // For receiving, check if the buffer has enough space to keep the payload.
             if (size < m_zMaxPayloadSize)
             {
-                LOGC(mglog.Error, log << "LiveSmoother: buffer size: " << size << " is too small for the maximum possible " << m_zMaxPayloadSize);
+                LOGC(mglog.Error, log << "LiveCC: buffer size: " << size << " is too small for the maximum possible " << m_zMaxPayloadSize);
                 return false;
             }
         }
@@ -147,7 +147,7 @@ private:
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
         m_iSndAvgPayloadSize = avg_iir<128, int>(m_iSndAvgPayloadSize, packet.getLength());
-        HLOGC(mglog.Debug, log << "LiveSmoother: avg payload size updated: " << m_iSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "LiveCC: avg payload size updated: " << m_iSndAvgPayloadSize);
     }
 
     void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
@@ -166,7 +166,7 @@ private:
         // packet = payload + header
         double pktsize = m_iSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000*1000.0 * (pktsize/m_llSndMaxBW);
-        HLOGC(mglog.Debug, log << "LiveSmoother: sending period updated: " << m_iSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_iSndAvgPayloadSize);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -208,9 +208,9 @@ private:
         setMaxBW(bw);
     }
 
-    Smoother::RexmitMethod rexmitMethod() ATR_OVERRIDE
+    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
     {
-        return Smoother::SRM_FASTREXMIT;
+        return SrtCongestion::SRM_FASTREXMIT;
     }
 
     uint64_t updateNAKInterval(uint64_t nakint_tk, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
@@ -242,11 +242,11 @@ private:
 };
 
 
-class FileSmoother: public SmootherBase
+class FileCC: public SrtCongestionControlBase
 {
-    typedef FileSmoother Me; // Required by SSLOT macro
+    typedef FileCC Me; // Required by SSLOT macro
 
-    // Fields from CCC not used by LiveSmoother
+    // Fields from CCC not used by LiveCC
     int m_iACKPeriod;
 
     // Fields from CUDTCC
@@ -265,7 +265,7 @@ class FileSmoother: public SmootherBase
     int64_t m_maxSR;
 
 public:
-    FileSmoother(CUDT* parent): SmootherBase(parent)
+    FileCC(CUDT* parent): SrtCongestionControlBase(parent)
     {
         // Note that this function is called at the moment of
         // calling m_Smoother.configure(this). It is placed more less
@@ -296,13 +296,13 @@ public:
         parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(slowdownSndPeriod));
         parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
 
-        HLOGC(mglog.Debug, log << "Creating FileSmoother");
+        HLOGC(mglog.Debug, log << "Creating FileCC");
     }
 
-    bool checkTransArgs(Smoother::TransAPI, Smoother::TransDir, const char* , size_t , int , bool ) ATR_OVERRIDE
+    bool checkTransArgs(SrtCongestion::TransAPI, SrtCongestion::TransDir, const char* , size_t , int , bool ) ATR_OVERRIDE
     {
         // XXX
-        // The FileSmoother has currently no restrictions, although it should be
+        // The FileCC has currently no restrictions, although it should be
         // rather required that the "message" mode or "buffer" mode be used on both sides the same.
         // This must be somehow checked separately.
         return true;
@@ -310,7 +310,7 @@ public:
 
     bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
     {
-        // For FileSmoother, treat non-full-buffer situation as an end-of-message situation;
+        // For FileCC, treat non-full-buffer situation as an end-of-message situation;
         // request ACK to be sent immediately.
         if (pkt.getLength() < m_parent->maxPayloadSize())
             return true;
@@ -323,7 +323,7 @@ public:
         if (maxbw != 0)
         {
             m_maxSR = maxbw;
-            HLOGC(mglog.Debug, log << "FileSmoother: updated BW: " << m_maxSR);
+            HLOGC(mglog.Debug, log << "FileCC: updated BW: " << m_maxSR);
         }
     }
 
@@ -354,7 +354,7 @@ private:
                 if (m_parent->deliveryRate() > 0)
                 {
                     m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
-                    HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:ENDED) wndsize="
+                    HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = mega/("
                         << m_parent->deliveryRate() << "B/s)");
@@ -362,7 +362,7 @@ private:
                 else
                 {
                     m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
-                    HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:ENDED) wndsize="
+                    HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = wndsize/(RTT+RCIV) RTT="
                         << m_parent->RTT() << " RCIV=" << m_iRCInterval);
@@ -370,7 +370,7 @@ private:
             }
             else
             {
-                HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:KEPT) wndsize="
+                HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:KEPT) wndsize="
                     << m_dCWndSize << "/" << m_dMaxCWndSize
                     << " sndperiod=" << m_dPktSndPeriod << "us");
             }
@@ -429,7 +429,7 @@ RATE_LIMIT:
         int udp_buffer_free = -1;
 #endif
 
-        HLOGC(mglog.Debug, log << "FileSmoother: UPD (slowstart:"
+        HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:"
             << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
             << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")"
             " SYSTEM BUFFER LEFT: " << udp_buffer_free);
@@ -442,7 +442,7 @@ RATE_LIMIT:
             if (m_dPktSndPeriod < minSP)
             {
                 m_dPktSndPeriod = minSP;
-                HLOGC(mglog.Debug, log << "FileSmoother: BW limited to " << m_maxSR
+                HLOGC(mglog.Debug, log << "FileCC: BW limited to " << m_maxSR
                     << " - SLOWDOWN sndperiod=" << m_dPktSndPeriod << "us");
             }
         }
@@ -460,7 +460,7 @@ RATE_LIMIT:
         // is called with a nonempty loss list.
         if ( losslist_size == 0 )
         {
-            LOGC(mglog.Error, log << "IPE: FileSmoother: empty loss list!");
+            LOGC(mglog.Error, log << "IPE: FileCC: empty loss list!");
             return;
         }
 
@@ -471,13 +471,13 @@ RATE_LIMIT:
             if (m_parent->deliveryRate() > 0)
             {
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
-                HLOGC(mglog.Debug, log << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
+                HLOGC(mglog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
                     << m_parent->deliveryRate() << ")");
             }
             else
             {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
-                HLOGC(mglog.Debug, log << "FileSmoother: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
+                HLOGC(mglog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
                     << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")");
             }
 
@@ -488,8 +488,8 @@ RATE_LIMIT:
         // In contradiction to UDT, TEV_LOSSREPORT will be reported also when
         // the lossreport is being sent again, periodically, as a result of
         // NAKREPORT feature. You should make sure that NAKREPORT is off when
-        // using FileSmoother, so relying on SRTO_TRANSTYPE rather than
-        // just SRTO_SMOOTHER is recommended.
+        // using FileCC, so relying on SRTO_TRANSTYPE rather than
+        // just SRTO_CONGESTION is recommended.
         int32_t lossbegin = SEQNO_VALUE::unwrap(losslist[0]);
 
         if (CSeqNo::seqcmp(lossbegin, m_iLastDecSeq) > 0)
@@ -508,7 +508,7 @@ RATE_LIMIT:
             m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
             if (m_iDecRandom < 1)
                 m_iDecRandom = 1;
-            HLOGC(mglog.Debug, log << "FileSmoother: LOSS:NEW lastseq=" << m_iLastDecSeq
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:NEW lastseq=" << m_iLastDecSeq
                 << ", rand=" << m_iDecRandom
                 << " avg NAK:" << m_iAvgNAKNum
                 << ", sndperiod=" << m_dPktSndPeriod << "us");
@@ -518,7 +518,7 @@ RATE_LIMIT:
             // 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
             m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
             m_iLastDecSeq = m_parent->sndSeqNo();
-            HLOGC(mglog.Debug, log << "FileSmoother: LOSS:PERIOD lseq=" << lossbegin
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:PERIOD lseq=" << lossbegin
                 << ", dseq=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
@@ -527,7 +527,7 @@ RATE_LIMIT:
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FileSmoother: LOSS:STILL lseq=" << lossbegin
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:STILL lseq=" << lossbegin
                 << ", dseq=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
@@ -553,13 +553,13 @@ RATE_LIMIT:
             if (m_parent->deliveryRate() > 0)
             {
                 m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
-                HLOGC(mglog.Debug, log << "FileSmoother: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
+                HLOGC(mglog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS mega/rate (rate="
                     << m_parent->deliveryRate() << ")");
             }
             else
             {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
-                HLOGC(mglog.Debug, log << "FileSmoother: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
+                HLOGC(mglog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
                     << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
@@ -575,9 +575,9 @@ RATE_LIMIT:
         }
     }
 
-    Smoother::RexmitMethod rexmitMethod() ATR_OVERRIDE
+    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
     {
-        return Smoother::SRM_LATEREXMIT;
+        return SrtCongestion::SRM_LATEREXMIT;
     }
 };
 
@@ -587,32 +587,32 @@ RATE_LIMIT:
 template <class Target>
 struct Creator
 {
-    static SmootherBase* Create(CUDT* parent) { return new Target(parent); }
+    static SrtCongestionControlBase* Create(CUDT* parent) { return new Target(parent); }
 };
 
-Smoother::NamePtr Smoother::smoothers[N_SMOOTHERS] =
+SrtCongestion::NamePtr SrtCongestion::congctls[N_CONTROLLERS] =
 {
-    {"live", Creator<LiveSmoother>::Create },
-    {"file", Creator<FileSmoother>::Create }
+    {"live", Creator<LiveCC>::Create },
+    {"file", Creator<FileCC>::Create }
 };
 
 
-bool Smoother::configure(CUDT* parent)
+bool SrtCongestion::configure(CUDT* parent)
 {
-    if (selector == N_SMOOTHERS)
+    if (selector == N_CONTROLLERS)
         return false;
 
-    // Found a smoother, so call the creation function
-    smoother = (*smoothers[selector].second)(parent);
+    // Found a congctl, so call the creation function
+    congctl = (*congctls[selector].second)(parent);
 
-    // The smoother should have pinned in all events
+    // The congctl should have pinned in all events
     // that are of its interest. It's stated that
     // it's ready after creation.
-    return !!smoother;
+    return !!congctl;
 }
 
-Smoother::~Smoother()
+SrtCongestion::~SrtCongestion()
 {
-    delete smoother;
-    smoother = 0;
+    delete congctl;
+    congctl = 0;
 }
