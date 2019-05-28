@@ -3007,14 +3007,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             if (cst == CONN_REJECT)
                 sendCtrl(UMSG_SHUTDOWN);
 
-            if ( cst != CONN_CONTINUE )
+            if (cst != CONN_CONTINUE && cst != CONN_CONFUSED)
                 break; // --> OUTSIDE-LOOP
 
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
 
             // new request/response should be sent out immediately on receving a response
-            HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW, should resend request quickly.");
+            HLOGC(mglog.Debug, log << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst) << ", REQ-TIME: LOW.");
             m_llLastReqTime = 0;
 
             // Now serialize the handshake again to the existing buffer so that it's
@@ -3055,6 +3055,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
+
+        HLOGC(mglog.Debug, log << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
 
 #if ENABLE_HEAVY_LOGGING
         // Non-fatal assertion
@@ -3411,7 +3413,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // when HSREQ was interpreted (to store HSRSP extension).
         m_ConnReq.m_extension = true;
 
-        HLOGC(mglog.Debug, log << "processConnectResponse: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
+        HLOGC(mglog.Debug, log << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
         rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
@@ -3616,11 +3618,19 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        return postConnect(response, hsv5, eout, synchro);
    }
 
-   if ( !response.isControl(UMSG_HANDSHAKE) )
+   if (!response.isControl(UMSG_HANDSHAKE))
    {
-       LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
-           << MessageTypeStr(response.getType(), response.getExtendedType()));
-       return CONN_REJECT;
+       if (!response.isControl())
+       {
+           LOGC(mglog.Error, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
+       }
+       else
+       {
+           LOGC(mglog.Error, log << CONID()
+                   << "processConnectResponse: received NOT UMSG_HANDSHAKE before connection established: "
+                   << MessageTypeStr(response.getType(), response.getExtendedType()));
+       }
+       return CONN_CONFUSED;
    }
 
    if (m_bRendezvous)
@@ -3842,6 +3852,16 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
+
+    // XXX Problem around CONN_CONFUSED!
+    // If some too-eager packets were received from a listener
+    // that thinks it's connected, but his last handshake was missed,
+    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // function will want to delete them all, so it would be nice
+    // if these packets can be re-delivered. Of course the listener
+    // should be prepared to resend them (as every packet can be lost
+    // on UDP), but it's kinda overkill when we have them already and
+    // can dispatch them.
 
     // Remove from rendezvous queue (in this particular case it's
     // actually removing the socket that undergoes asynchronous HS processing).
@@ -4627,7 +4647,10 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
            << " sourceIP=" << SockaddrToString(&m_SourceAddr));
    }
 #endif
+
+#ifndef TEST_DISABLE_FINAL_HANDSHAKE
    m_pSndQueue->sendto(peer, response, m_SourceAddr);
+#endif
 }
 
 
