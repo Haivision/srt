@@ -84,7 +84,6 @@ protected:
 
 class SrtSource: public Source, public SrtCommon
 {
-    // (unused?) int srt_epoll = -1;
     std::string hostport_copy;
 public:
 
@@ -94,7 +93,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bool Read(size_t chunk, bytevector& data) override;
+    int Read(size_t chunk, bytevector& data, ostream& out_stats = cout) override;
 
     /*
        In this form this isn't needed.
@@ -134,7 +133,7 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    bool Write(const bytevector& data) override;
+    int Write(const char* data, size_t size, ostream &out_stats = cout) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }

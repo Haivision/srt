@@ -46,6 +46,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************
 written by
    Yunhong Gu, last updated 01/27/2011
+#ifdef unix
 modified by
    Haivision Systems Inc.
 *****************************************************************************/
@@ -53,7 +54,7 @@ modified by
 #ifndef __UDT_CHANNEL_H__
 #define __UDT_CHANNEL_H__
 
-
+#include "platform_sys.h"
 #include "udt.h"
 #include "packet.h"
 #include "netinet_any.h"
@@ -107,6 +108,11 @@ public:
       /// @param [in] size expected UDP receiving buffer size.
 
    void setRcvBufSize(int size);
+
+      /// Set the IPV6ONLY option.
+      /// @param [in] IPV6ONLY value.
+
+   void setIpV6Only(int ipV6Only);
 
       /// Query the socket address that the channel is using.
       /// @param [out] addr pointer to store the returned socket address.
@@ -174,24 +180,42 @@ private:
 #endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
+   int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
    sockaddr_any m_BindAddr;
+
+   // This feature is not enabled on Windows, for now.
+   // This is also turned off in case of MinGW
+#ifdef SRT_ENABLE_PKTINFO
    bool m_bBindMasked;                  // True if m_BindAddr is INADDR_ANY. Need for quick check.
 
    // This is 'mutable' because it's a utility buffer defined here
    // to avoid unnecessary re-allocations.
 
-   // Unfortunately, this isn't C++11 and we can't rely on that std::max uses constexpr.
-   // We need a macro.
-#define SRT_CHN_MAX(a, b) ((a) > (b) ? (a) : (b))
+   // Calculating the required space is extremely tricky, and whereas on most
+   // platforms it's possible to define it this way:
+   //
+   // size_t s = max( CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)) )
+   //
+   // On some platforms however CMSG_SPACE macro can't be resolved as constexpr.
 
-   //static const size_t CMSG_MAX_SPACE = SRT_CHN_MAX(CMSG_SPACE(sizeof(in_pktinfo)), CMSG_SPACE(sizeof(in6_pktinfo)));
-   //XXX Experimental
-   static const size_t CMSG_MAX_SPACE = CMSG_SPACE(sizeof(in_pktinfo)) + CMSG_SPACE(sizeof(in6_pktinfo));
+   struct CMSGNodeAlike
+   {
+       cmsghdr hdr;
+       union
+       {
+           in_pktinfo in4;
+           in6_pktinfo in6;
+       };
+       size_t extrafill;
+   };
 
-#undef SRT_CHN_MAX
+   mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
+   mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
 
-   mutable char m_acCmsgBuffer [CMSG_MAX_SPACE]; // Reserved space for ancillary data with pktinfo
-
+   // IMPORTANT!!! This function shall be called EXCLUSIVELY just after
+   // calling ::recvmsg function. It uses a static buffer to supply data
+   // for the call, and it's stated that only one thread is trying to
+   // use a CChannel object in receiving mode.
    sockaddr_any getTargetAddress(const msghdr& msg) const
    {
        // Loop through IP header messages
@@ -220,6 +244,10 @@ private:
        return sockaddr_any(m_BindAddr.family());
    }
 
+   // IMPORTANT!!! This function shall be called EXCLUSIVELY just before
+   // calling ::sendmsg function. It uses a static buffer to supply data
+   // for the call, and it's stated that only one thread is trying to
+   // use a CChannel object in sending mode.
    bool setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
    {
        // In contrast to an advice followed on the net, there's no case of putting
@@ -229,7 +257,7 @@ private:
 
        if (adr.family() == AF_INET)
        {
-           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_control = m_acCmsgSendBuffer;
            mh.msg_controllen = CMSG_SPACE(sizeof(in_pktinfo));
            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
 
@@ -246,7 +274,7 @@ private:
 
        if (adr.family() == AF_INET6)
        {
-           mh.msg_control = m_acCmsgBuffer;
+           mh.msg_control = m_acCmsgSendBuffer;
            mh.msg_controllen = CMSG_SPACE(sizeof(in6_pktinfo));
            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
 
@@ -262,6 +290,9 @@ private:
 
        return false;
    }
+
+#endif // SRT_ENABLE_PKTINFO
+
 };
 
 

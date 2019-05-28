@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <chrono>
 
 #ifdef _WIN32
 #define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
@@ -17,6 +18,16 @@ extern "C" {
 #include "srt.h"
 
 
+/**
+ * The test creates a socket and tries to connect to a localhost port 5555
+ * in a non-blocking mode. This means we wait on epoll for a notification
+ * about SRT_EPOLL_OUT | SRT_EPOLL_ERR events on the socket calling srt_epoll_wait(...).
+ * The test expects a connection timeout to happen within the time,
+ * set with SRTO_CONNTIMEO (500 ms).
+ * The expected behavior is to return from srt_epoll_wait(...)
+ *
+ * @remarks  Inspired by Max Tomilov (maxtomilov) in issue #468
+*/
 TEST(Core, ConnectionTimeout) {
     ASSERT_EQ(srt_startup(), 0);
 
@@ -64,6 +75,9 @@ TEST(Core, ConnectionTimeout) {
         int wlen = 2;
         SRTSOCKET write[2];
 
+        using namespace std;
+        const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
+
         // Here we check the connection timeout.
         // Epoll timeout is set 100 ms greater than socket's TTL
         EXPECT_EQ(srt_epoll_wait(pollid, read, &rlen,
@@ -74,6 +88,13 @@ TEST(Core, ConnectionTimeout) {
          * sockets with exceptions are returned to both read and write sets.
         */
                  , 2);
+        // Check the actual timeout
+        const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
+        const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
+        // Confidence interval border : +/-50 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 50);
+        EXPECT_GE(delta_ms, connection_timeout_ms - 50);
+        cerr << "Timeout was: " << delta_ms << "\n";
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
