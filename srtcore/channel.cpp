@@ -50,8 +50,11 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+/*
 #ifndef _WIN32
    #if __APPLE__
+      #define __APPLE_USE_RFC_3542
+      //#define __POSIX_C_SOURCE
       #include "TargetConditionals.h"
    #endif
    #include <sys/socket.h>
@@ -68,6 +71,9 @@ modified by
    #include <ws2tcpip.h>
    #include <mswsock.h>
 #endif
+*/
+
+#include "platform_sys.h"
 
 #include <iostream>
 #include <iomanip> // Logging 
@@ -114,6 +120,22 @@ m_iIpV6Only(-1),
 m_BindAddr(version)
 {
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+
+#ifdef SRT_ENABLE_PKTINFO
+   // Do the check for ancillary data buffer size, kinda assertion
+   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeAlike);
+
+   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
+           || CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))
+   {
+       LOGC(mglog.Fatal, log << "Size of CMSG_MAX_SPACE="
+               << CMSG_MAX_SPACE << " too short for cmsg "
+               << CMSG_SPACE(sizeof(in_pktinfo)) << ", "
+               << CMSG_SPACE(sizeof(in6_pktinfo)) << " - PLEASE FIX");
+       throw CUDTException(MJ_SETUP, MN_NONE, 0);
+   }
+#endif
+
 }
 
 CChannel::~CChannel()
@@ -143,7 +165,9 @@ void CChannel::open(const sockaddr* addr)
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
       memcpy(&m_BindAddr, addr, namelen);
       m_BindAddr.len = namelen;
+#ifdef SRT_ENABLE_PKTINFO
       m_bBindMasked = m_BindAddr.isany();
+#endif
    }
    else
    {
@@ -166,9 +190,11 @@ void CChannel::open(const sockaddr* addr)
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = (socklen_t) res->ai_addrlen;
 
+#ifdef SRT_ENABLE_PKTINFO
       // We know that this is intentionally bound now to "any",
       // so the requester-destination address must be remembered and passed.
       m_bBindMasked = true;
+#endif
 
       ::freeaddrinfo(res);
    }
@@ -263,6 +289,7 @@ void CChannel::setUDPSockOpt()
       throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #endif
 
+#ifdef SRT_ENABLE_PKTINFO
     if (m_bBindMasked)
     {
         HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
@@ -271,6 +298,7 @@ void CChannel::setUDPSockOpt()
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
     }
+#endif
 }
 
 void CChannel::close() const
@@ -356,7 +384,7 @@ void CChannel::setIpToS(int tos)
 
 int CChannel::ioctlQuery(int type) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     int res = ::ioctl(m_iSocket, type, &value);
     if ( res != -1 )
@@ -367,7 +395,7 @@ int CChannel::ioctlQuery(int type) const
 
 int CChannel::sockoptQuery(int level, int option) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     socklen_t len = sizeof (int);
     int res = ::getsockopt(m_iSocket, level, option, &value, &len);
@@ -390,7 +418,7 @@ void CChannel::getPeerAddr(sockaddr* addr) const
 }
 
 
-int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& source_addr) const
+int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
 {
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
@@ -410,8 +438,11 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID << " sourceIP="
+        << " target=%" << packet.m_iID
+#ifdef SRT_ENABLE_PKTINFO
+        << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(&source_addr) : "default")
+#endif
         << spec.str());
 #endif
 
@@ -438,6 +469,8 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
       mh.msg_iov = (iovec*)packet.m_PacketVector;
       mh.msg_iovlen = 2;
       bool have_set_src = false;
+
+#ifdef SRT_ENABLE_PKTINFO
       if (m_bBindMasked && !source_addr.isany())
       {
           if ( !setSourceAddress(mh, source_addr))
@@ -450,6 +483,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
               have_set_src = true;
           }
       }
+#endif
 
       if (!have_set_src)
       {
@@ -510,13 +544,16 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     }
 
 #ifndef _WIN32
+    msghdr mh; // will not be used on failure
+
     if (select_ret > 0)
     {
-        msghdr mh;
         mh.msg_name = addr;
         mh.msg_namelen = m_iSockAddrSize;
         mh.msg_iov = packet.m_PacketVector;
         mh.msg_iovlen = 2;
+
+#ifdef SRT_ENABLE_PKTINFO
         if (!m_bBindMasked)
         {
             // We don't need ancillary data - the source address
@@ -530,24 +567,19 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
             // data. This might be interesting for the connection to
             // know to which address the packet should be sent back during
             // the handshake and then addressed when sending during connection.
-            mh.msg_control = m_acCmsgBuffer;
-            mh.msg_controllen = sizeof m_acCmsgBuffer;
+            mh.msg_control = m_acCmsgRecvBuffer;
+            mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
         }
+#else
+        mh.msg_control = NULL;
+        mh.msg_controllen = 0;
+#endif
+
         mh.msg_flags = 0;
 
 
         recv_size = ::recvmsg(m_iSocket, &mh, 0);
         msg_flags = mh.msg_flags;
-
-        if (m_bBindMasked && recv_size != -1)
-        {
-            // Extract the address. Set it explicitly; if this returns address that isany(),
-            // it will simply set this on the packet so that it behaves as if nothing was
-            // extracted (it will "fail the old way").
-            packet.m_DestAddr = getTargetAddress(mh);
-            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: ANY BOUND, retrieved DEST ADDR: " << SockaddrToString(&packet.m_DestAddr));
-        }
-
     }
 
     // Note that there are exactly four groups of possible errors
@@ -588,6 +620,16 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         goto Return_error;
     }
 
+#ifdef SRT_ENABLE_PKTINFO
+    if (m_bBindMasked)
+    {
+        // Extract the address. Set it explicitly; if this returns address that isany(),
+        // it will simply set this on the packet so that it behaves as if nothing was
+        // extracted (it will "fail the old way").
+        packet.m_DestAddr = getTargetAddress(mh);
+        HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: ANY BOUND, retrieved DEST ADDR: " << SockaddrToString(&packet.m_DestAddr));
+    }
+#endif
 #else
     // XXX REFACTORING NEEDED!
     // This procedure uses the WSARecvFrom function that just reads

@@ -835,7 +835,7 @@ public:
 
     bool IsOpen() override { return cin.good(); }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() { return 0; };
+    int GetSysSocket() override { return 0; };
 };
 
 class ConsoleTarget: public Target
@@ -859,7 +859,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() { return 0; };
+    int GetSysSocket() override { return 0; };
 };
 
 template <class Iface> struct Console;
@@ -1102,7 +1102,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1128,7 +1128,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() override { return m_sock; };
 };
 
 template <class Iface> struct Udp;

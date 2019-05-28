@@ -13,6 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cstring>
 #include <string>
 #include <sstream>
