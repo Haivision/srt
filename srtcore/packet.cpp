@@ -159,13 +159,18 @@ modified by
 //      For any single loss or consectutive loss less than 2 packets, use
 //      the original sequence numbers in the field.
 
+#include "platform_sys.h"
 
 #include <cstring>
 #include "packet.h"
 #include "logging.h"
 #include "handshake.h"
 
-extern logging::Logger mglog;
+namespace srt_logging
+{
+    extern Logger mglog;
+}
+using namespace srt_logging;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():
@@ -479,10 +484,10 @@ std::string CPacket::MessageFlagStr()
 
     stringstream out;
 
-    static const string boundary [] = { "PB_SUBSEQUENT", "PB_LAST", "PB_FIRST", "PB_SOLO" };
-    static const string order [] = { "ORD_RELAXED", "ORD_REQUIRED" };
-    static const string crypto [] = { "EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR" };
-    static const string rexmit [] = { "SN_ORIGINAL", "SN_REXMIT" };
+    static const char* const boundary [] = { "PB_SUBSEQUENT", "PB_LAST", "PB_FIRST", "PB_SOLO" };
+    static const char* const order [] = { "ORD_RELAXED", "ORD_REQUIRED" };
+    static const char* const crypto [] = { "EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR" };
+    static const char* const rexmit [] = { "SN_ORIGINAL", "SN_REXMIT" };
 
     out << boundary[int(getMsgBoundary())] << " ";
     out << order[int(getMsgOrderFlag())] << " ";

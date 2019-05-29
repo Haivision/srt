@@ -240,6 +240,11 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, ref_t<stri
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
+namespace srt_logging
+{
+    extern Logger glog;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -446,8 +451,8 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
 
@@ -578,7 +583,6 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
-    extern logging::Logger glog;
     try
     {
         for (;;)

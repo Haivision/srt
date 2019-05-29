@@ -2,6 +2,6 @@
 
 source prepare_build
 
-./configure --CMAKE_PREFIX_PATH=$install_dir --CMAKE_INSTALL_PREFIX=$install_dir
+./configure --use-openssl-pc=OFF --CMAKE_PREFIX_PATH=$install_dir --CMAKE_INSTALL_PREFIX=$install_dir
 make
 make install

@@ -50,22 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifdef LINUX
-   #include <sys/epoll.h>
-   #include <unistd.h>
-#endif
-#if __APPLE__
-   #include "TargetConditionals.h"
-#endif
-#if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-   #include <sys/types.h>
-   #include <sys/event.h>
-   #include <sys/time.h>
-   #include <unistd.h>
-#endif
-#if defined(__ANDROID__) || defined(ANDROID)
-   #include <sys/select.h>
-#endif
+#define SRT_IMPORT_EVENT
+#include "platform_sys.h"
+
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
@@ -78,7 +65,12 @@ modified by
 
 using namespace std;
 
-extern logging::Logger mglog, dlog;
+namespace srt_logging
+{
+    extern Logger dlog;
+}
+
+using srt_logging::dlog;
 
 CEPoll::CEPoll():
 m_iIDSeed(0)
@@ -106,7 +98,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
        */
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
-   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+   #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    localid = kqueue();
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
@@ -173,7 +165,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_ADD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -249,7 +241,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
    epoll_event ev;  // ev is ignored, for compatibility with old Linux kernel only.
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_DEL, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke;
 
    //
@@ -335,7 +327,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_MOD, s, &ev) < 0)
       throw CUDTException();
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    struct kevent ke[2];
    int num = 0;
 
@@ -375,7 +367,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
-   if (!readfds && !writefds && !lrfds && lwfds && (msTimeOut < 0))
+   if (!readfds && !writefds && !lrfds && !lwfds && (msTimeOut < 0))
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    // Clear these sets in case the app forget to do it.
@@ -441,16 +433,8 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                ++ total;
             }
          }
-         #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-         #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-         // 
-         // for iOS setting a timeout of 1ms for kevent and not doing CTimer::waitForEvent(); in the code below
-         // gives us a 10% cpu boost.
-         //
-         struct timespec tmout = {0, 1000000};
-         #else
+         #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
          struct timespec tmout = {0, 0};
-         #endif
          const int max_events = p->second.m_sLocals.size();
          struct kevent ke[max_events];
 
@@ -521,10 +505,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
          throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-      #if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      #else
       CTimer::waitForEvent();
-      #endif
    }
 
    return 0;
@@ -541,7 +522,7 @@ int CEPoll::release(const int eid)
    #ifdef LINUX
    // release local/system epoll descriptor
    ::close(i->second.m_iLocalID);
-   #elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+   #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
    ::close(i->second.m_iLocalID);
    #endif
 

@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.0")
+#project(SRT VERSION "1.3.2")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -22,10 +22,12 @@ include(FindThreads)
 include(CheckFunctionExists)
 
 # Platform shortcuts
+string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(SYMLINKABLE LINUX OR DARWIN OR CYGWIN)
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -36,7 +38,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.1)
+set (SRT_VERSION 1.3.2)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -52,15 +54,29 @@ endif()
 # Set CMAKE_BUILD_TYPE properly, now that you know
 # that ENABLE_DEBUG is set as it should.
 
-if (ENABLE_DEBUG EQUAL 1)
-	set (CMAKE_BUILD_TYPE "Debug")
-elseif (ENABLE_DEBUG EQUAL 2)
+if (ENABLE_DEBUG EQUAL 2)
 	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
+	set (CMAKE_BUILD_TYPE "Debug")
 else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
+
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
 
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
@@ -73,10 +89,15 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
+set (ENABLE_PKTINFO_DEFAULT 1)
+if (WIN32)
+	set (ENABLE_PKTINFO_DEFAULT 0)
+endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -84,19 +105,28 @@ option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_THREAD_LOGGING "Should logging for thread/mutex/CV be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_PKTINFO "Should pktinfo usage be enabled" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
+option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
-set(TARGET_srt "srt" CACHE STRING "The name for the haisrt library")
+set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 set (DISPLAY_LOGGING DISABLED)
+if (WIN32)
+	if (ENABLE_PKTINFO)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
+	endif()
+endif()
+
+
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
 else()
@@ -177,28 +207,25 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
-# find OpenSSL
-if ( USE_GNUTLS )
-	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
-	set (SSL_REQUIRED_MODULES "gnutls nettle")
-	if (WIN32)
-		if (MINGW)
-			set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+if (ENABLE_ENCRYPTION)
+	if ( USE_GNUTLS )
+		set (SSL_REQUIRED_MODULES "gnutls nettle")
+		if (WIN32)
+			if (MINGW)
+				set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+			endif()
 		endif()
-	endif()
- 
-	pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
+	 
+		pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
-	add_definitions(
-		-DUSE_GNUTLS=1
-	)
+		add_definitions(
+			-DUSE_GNUTLS=1
+		)
 
-	link_directories(
-		${SSL_LIBRARY_DIRS}
-	)
-else()
-		message(STATUS "SSL Dependency: using OpenSSL (default)")
-
+		link_directories(
+			${SSL_LIBRARY_DIRS}
+		)
+	else()
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
@@ -225,18 +252,24 @@ else()
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-	add_definitions(
-		-DHAICRYPT_USE_OPENSSL_EVP=1
-		-DHAICRYPT_USE_OPENSSL_AES
-	)
-endif()
+		add_definitions(
+			-DHAICRYPT_USE_OPENSSL_EVP=1
+			-DHAICRYPT_USE_OPENSSL_AES
+		)
+	endif()
 
-message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+	add_definitions(-DSRT_ENABLE_ENCRYPTION)
+	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
+	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+else()
+	message(STATUS "ENCRYPTION: DISABLED")
+endif()
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -315,9 +348,11 @@ if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
 	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
 elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1; MACOSX_RPATH=OFF")
+	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
 	add_definitions(-DOSX=1)
-	set(MACOSX_RPATH OFF)
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -360,6 +395,11 @@ endif()
 if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
+
+if (ENABLE_PKTINFO)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+endif()
+
 
 if (ENABLE_THREAD_CHECK)
 	add_definitions(
@@ -413,17 +453,19 @@ endif()
 # Target: haicrypt.
 # Completing sources and installable headers. Flag settings will follow.
 # ---
-if ( USE_GNUTLS )
-	set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
-else()
-	set (HAICRYPT_FILELIST_MAF "filelist.maf")
-endif()
+if (ENABLE_ENCRYPTION)
+	if ( USE_GNUTLS )
+		set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
+	else()
+		set (HAICRYPT_FILELIST_MAF "filelist.maf")
+	endif()
 
-MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
-	SOURCES SOURCES_haicrypt
-	PUBLIC_HEADERS HEADERS_haicrypt
-	PROTECTED_HEADERS HEADERS_haicrypt
-)
+	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
+		SOURCES SOURCES_haicrypt
+		PUBLIC_HEADERS HEADERS_haicrypt
+		PROTECTED_HEADERS HEADERS_haicrypt
+	)
+endif()
 
 if (WIN32)
 	MafReadDir(common filelist_win32.maf
@@ -463,6 +505,7 @@ MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
 	PUBLIC_HEADERS HEADERS_srt
 	PROTECTED_HEADERS HEADERS_srt
+	PRIVATE_HEADERS HEADERS_srt_private
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
@@ -491,11 +534,15 @@ if (srt_libspec_shared)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
-	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
+	if (ENABLE_ENCRYPTION)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
+	elseif (APPLE)
+		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
 endif()
 
@@ -517,7 +564,9 @@ if (srt_libspec_static)
 	endif()
 
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_static)
-	target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
+	if (ENABLE_ENCRYPTION)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
@@ -695,15 +744,29 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (srt_libspec_static AND CMAKE_DL_LIBS)
+		target_link_libraries(${name} ${CMAKE_DL_LIBS})
+	endif()
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
-if ( ENABLE_CXX11 )
+## FIXME: transmitmedia.cpp does not build on OpenBSD
+##    Issue: https://github.com/Haivision/srt/issues/590
+if (BSD
+   AND ${SYSNAME_LC} MATCHES "^openbsd$")
+   set(ENABLE_APPS OFF)
+endif()
+## The applications currently require c++11.
+if (NOT ENABLE_CXX11)
+   set(ENABLE_APPS OFF)
+endif()
+
+if (ENABLE_APPS)
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
@@ -721,33 +784,16 @@ if ( ENABLE_CXX11 )
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
-
-	# For backward compatibility with the old name
-	if (SYMLINKABLE)
-		set (REPLI_COMMAND create_symlink )
-		# It appears impossible to get the filename component from the generator
-		# expression $<TARGET_FILE:srt-live-transmit>, hence we predict it as:
-		set (srt_live_transmit_name srt-live-transmit${CMAKE_EXECUTABLE_SUFFIX})
-	else()
-		set (REPLI_COMMAND copy)
-		set (srt_live_transmit_name $<TARGET_FILE:srt-live-transmit>)
-	endif()
-
-	set (stransmit_path $<TARGET_FILE_DIR:srt-live-transmit>/stransmit${CMAKE_EXECUTABLE_SUFFIX})
-	add_custom_command(
-		TARGET srt-live-transmit
-		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E ${REPLI_COMMAND} ${srt_live_transmit_name} ${stransmit_path})
-	install(FILES ${stransmit_path} DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+	else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -778,7 +824,6 @@ if ( ENABLE_CXX11 )
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
 
-		# Still portability problem on Windows
 		srt_add_testprogram(srt-test-file)
 		srt_make_application(srt-test-file)
 
@@ -803,26 +848,44 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(recvfile.cpp apps/logsupport.cpp)
 	srt_make_application(recvfile)
 
+	srt_add_example(test-c-client.c)
+	srt_make_application(test-c-client)
+
+	srt_add_example(test-c-server.c)
+	srt_make_application(test-c-server)
+
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
 endif()
 
 
-if (ENABLE_UNITTESTS)
+if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-	include(googletest)
-	fetch_googletest(
-		${PROJECT_SOURCE_DIR}/scripts
-		${PROJECT_BINARY_DIR}/googletest
-	)
 
-	srt_add_program(test_srt test/test_buffer.cpp test/test_connection_timeout.cpp test/test_strict_encription.cpp)
+	find_package(GTest 1.8)
+	if (NOT GTEST_FOUND)
+		message(STATUS "GTEST not found! Fetching from git.")
+		include(googletest)
+		fetch_googletest(
+			${PROJECT_SOURCE_DIR}/scripts
+			${PROJECT_BINARY_DIR}/googletest
+		)
+		set(GTEST_BOTH_LIBRARIES "gtest_main" CACHE STRING "Add gtest_main target")
+	endif()
+
+	MafReadDir(test filelist.maf
+		SOURCES SOURCES_unittests
+	)
+	
+	message(STATUS "Unit test sources: ${SOURCES_unittests}")
+
+	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
 
 	target_link_libraries(
 		test_srt
-		gtest_main
+		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
 		)
