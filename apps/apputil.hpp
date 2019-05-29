@@ -398,6 +398,13 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                     }
                     */
                     type = s.type;
+
+                    if ( vals == 1 && type == OptionScheme::ARG_ONE )
+                    {
+                        // Argument for one-arg option already consumed,
+                        // so set to free args.
+                        goto EndOfArgs;
+                    }
                     goto Found;
                 }
 
