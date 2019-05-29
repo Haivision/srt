@@ -162,6 +162,23 @@ inline std::string Join(const std::vector<std::string>& in, std::string sep)
     return os.str();
 }
 
+inline bool CheckTrue(const std::vector<std::string>& in)
+{
+    if (in.empty())
+        return true;
+
+    const std::set<std::string> false_vals = { "0", "no", "off", "false" };
+    if (false_vals.count(in[0]))
+        return false;
+
+    return true;
+
+    //if (in[0] != "false" && in[0] != "off")
+    //    return true;
+
+    //return false;
+}
+
 template<class Number>
 Number StrToNumber(const std::string& )
 {
@@ -233,6 +250,33 @@ struct OutNumberAs
 };
 
 
+struct OutBool
+{
+    typedef bool type;
+    static type process(const options_t::mapped_type& i) { return CheckTrue(i); }
+};
+
+struct OptionName
+{
+    std::string helptext;
+    std::string main_name;
+    std::set<std::string> names;
+
+    template <class... Args>
+    OptionName(std::string ht, std::string first, Args... rest)
+        : helptext(ht), main_name(first),
+          names {first, rest...}
+    {
+    }
+
+    OptionName(std::initializer_list<std::string> args): main_name(*args.begin()), names(args) {}
+
+    operator std::set<std::string>() { return names; }
+    operator const std::set<std::string>() const { return names; }
+};
+
+
+
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
 
@@ -246,9 +290,9 @@ typename OutType::type Option(const options_t& options, OutValue deflt, std::str
 }
 
 template <class OutType, class OutValue> inline
-typename OutType::type Option(const options_t& options, OutValue deflt, const std::set<std::string>& keys)
+typename OutType::type Option(const options_t& options, OutValue deflt, const OptionName& oname)
 {
-    for (auto key: keys)
+    for (auto key: oname.names)
     {
         auto i = options.find(key);
         if ( i != options.end() )
@@ -267,25 +311,6 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
     }
     return false;
 }
-
-struct OptionName
-{
-    std::string helptext;
-    std::string main_name;
-    std::set<std::string> names;
-
-    template <class... Args>
-    OptionName(std::string ht, std::string first, Args... rest)
-        : helptext(ht), main_name(first),
-          names {first, rest...}
-    {
-    }
-
-    OptionName(std::initializer_list<std::string> args): main_name(*args.begin()), names(args) {}
-
-    operator std::set<std::string>() { return names; }
-};
-
 
 struct OptionScheme
 {
@@ -308,10 +333,20 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if ( moreoptions && a[0] == '-' )
+        if (moreoptions && a[0] == '-')
         {
             size_t seppos; // (see goto, it would jump over initialization)
             current_key = a+1;
+            /* XXX ALTERNATIVE IMP, please review
+            string key(a + 1);  // omit '-'
+            size_t pos = key.find_first_of(":");
+            if (pos == string::npos)
+                pos = key.find(' ');
+            string value = pos == string::npos ? "" : key.substr(pos + 1);
+            key = key.substr(0, pos);
+
+            current_key = key;
+            */
             if ( current_key == "-" )
             {
                 // The -- argument terminates the options.
@@ -350,11 +385,18 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 if (s.id.names.count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if ( s.type == OptionScheme::ARG_NONE )
+                    if (s.type == OptionScheme::ARG_NONE)
                     {
                         // Anyway, consider it already processed.
                         break;
                     }
+                    /* XXX ALTERNATIVE IMP, please review
+                    else if (s.type == OptionScheme::ARG_ONE)
+                    {
+                        if (!value.empty())
+                            params[current_key].push_back(value);
+                    }
+                    */
                     type = s.type;
                     goto Found;
                 }
