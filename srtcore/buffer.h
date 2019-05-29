@@ -220,11 +220,11 @@ class CRcvBuffer
 {
 public:
 
-   // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working for. Required to find
-   // some way to do this, possibly by having a "reverse pointer".
-   // Currently just "unimplemented".
-   std::string CONID() const { return ""; }
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working for. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
 
    static const int DEFAULT_SIZE = 65536;
    CRcvBuffer(CUnitQueue* queue, int bufsize = DEFAULT_SIZE);
@@ -331,7 +331,6 @@ public:
        return m_iLastAckPos != m_iStartPos;
    }
    CPacket* getRcvReadyPacket();
-   bool isReadyToPlay(const CPacket* p, uint64_t& tsbpdtime);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
       ///    @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -383,8 +382,7 @@ private:
        CUnit* u = m_pUnit[p];
        m_pUnit[p] = NULL;
        size_t rmbytes = u->m_Packet.getLength();
-       u->m_iFlag = CUnit::FREE;
-       --m_pUnitQueue->m_iCount;
+       m_pUnitQueue->makeUnitFree(u);
        return rmbytes;
    }
 
@@ -411,6 +409,7 @@ public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
 
+   uint64_t debugGetDeliveryTime(int offset);
 private:
 
    /// thread safe bytes counter of the Recv & Ack buffer
@@ -446,14 +445,14 @@ private:
 private:
    CUnit** m_pUnit;                  // Array of pointed units collected in the buffer
    int m_iSize;                      // Size of the internal array
-   CUnitQueue* m_pUnitQueue;		 // the shared unit queue
+   CUnitQueue* m_pUnitQueue;         // the shared unit queue
 
    int m_iStartPos;                  // HEAD: first packet available for reading
    int m_iLastAckPos;                // the last ACKed position (exclusive), follows the last readable
-   int m_iMaxPos;			         // delta between contiguous-TAIL and reception-TAIL
+   int m_iMaxPos;                    // delta between acked-TAIL and reception-TAIL
 
 
-   int m_iNotch;			         // the starting read point of the first unit
+   int m_iNotch;                     // the starting read point of the first unit
                                      // (this is required for stream reading mode; it's
                                      // the position in the first unit in the list
                                      // up to which data are already retrieved;

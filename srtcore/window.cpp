@@ -50,6 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cmath>
 #include <cstring>
 #include "common.h"

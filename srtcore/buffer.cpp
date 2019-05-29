@@ -50,6 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cstring>
 #include <cmath>
 #include "buffer.h"
@@ -58,8 +60,7 @@ modified by
 #include "logging.h"
 
 using namespace std;
-
-extern logging::Logger mglog, dlog, tslog;
+using namespace srt_logging;
 
 CSndBuffer::CSndBuffer(int size, int mss):
 m_BufLock(),
@@ -743,8 +744,7 @@ CRcvBuffer::~CRcvBuffer()
    {
       if (m_pUnit[i] != NULL)
       {
-         m_pUnit[i]->m_iFlag = CUnit::FREE;
-         -- m_pUnitQueue->m_iCount;
+          m_pUnitQueue->makeUnitFree(m_pUnit[i]);
       }
    }
 
@@ -791,10 +791,9 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
       return -1;
    }
    m_pUnit[pos] = unit;
-   countBytes(1, unit->m_Packet.getLength());
+   countBytes(1, (int) unit->m_Packet.getLength());
 
-   unit->m_iFlag = CUnit::GOOD;
-   ++ m_pUnitQueue->m_iCount;
+   m_pUnitQueue->makeUnitGood(unit);
 
    return 0;
 }
@@ -820,7 +819,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
               break; /* too early for this unit, return whatever was copied */
       }
 
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
+      int unitsize = (int) m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
          unitsize = rs;
 
@@ -833,6 +832,10 @@ int CRcvBuffer::readBuffer(char* data, int len)
       {
           freeUnitAt(p);
           p = shift_forward(p);
+          /* XXX
+          in freeUnitAt(p) use:
+                  m_pUnitQueue->makeUnitFree(tmp);
+                  */
 
          m_iNotch = 0;
       }
@@ -857,7 +860,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 
    while ((p != lastack) && (rs > 0))
    {
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
+      int unitsize = (int) m_pUnit[p]->m_Packet.getLength() - m_iNotch;
       if (unitsize > rs)
          unitsize = rs;
 
@@ -897,7 +900,7 @@ void CRcvBuffer::ackData(int len)
               continue;
 
           pkts++;
-          bytes += m_pUnit[i]->m_Packet.getLength();
+          bytes += (int) m_pUnit[i]->m_Packet.getLength();
       }
       if (pkts > 0) countBytes(pkts, bytes, true);
    }
@@ -1032,6 +1035,21 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
         // packet after stating that the very first packet isn't valid.
     }
     return false;
+}
+
+uint64_t CRcvBuffer::debugGetDeliveryTime(int offset)
+{
+    int i;
+    if (offset > 0)
+        i = shift(m_iStartPos, offset);
+    else
+        i = m_iStartPos;
+
+    CUnit* u = m_pUnit[i];
+    if (!u || u->m_iFlag != CUnit::GOOD)
+        return 0;
+
+    return getPktTsbPdTime(u->m_Packet.getMsgTimeStamp());
 }
 
 bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curpktseq)
@@ -1578,7 +1596,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     int past_q = shift_forward(q);
     while (p != past_q)
     {
-        int unitsize = m_pUnit[p]->m_Packet.getLength();
+        int unitsize = (int) m_pUnit[p]->m_Packet.getLength();
         if ((rs >= 0) && (unitsize > rs))
             unitsize = rs;
 
@@ -1606,7 +1624,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << logging::FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
+                HLOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq << " T=" << FormatTime(srctime) << " in " << (timediff/1000.0) << "ms - "
                     "TIME-PREVIOUS: PKT: " << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0));
 
                 prev_now = nowtime;

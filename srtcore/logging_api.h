@@ -50,7 +50,7 @@ written by
 typedef void SRT_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 #ifdef __cplusplus
-namespace logging
+namespace srt_logging
 {
 
 

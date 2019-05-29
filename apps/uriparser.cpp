@@ -60,17 +60,17 @@ UriParser::Type UriParser::type()
     return m_uriType;
 }
 
-string UriParser::host(void)
+string UriParser::host(void) const
 {
     return m_host;
 }
 
-string UriParser::port(void)
+string UriParser::port(void) const
 {
     return m_port;
 }
 
-unsigned short int UriParser::portno(void)
+unsigned short int UriParser::portno(void) const
 {
     // This returns port in numeric version. Fallback to 0.
     try

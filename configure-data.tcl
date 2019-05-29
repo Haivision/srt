@@ -35,11 +35,14 @@ set internal_options {
 # Options that refer directly to variables used in CMakeLists.txt
 set cmake_options {
     cygwin-use-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
+    enable-encryption "Should encryption features be enabled (default: ON)"
+    enable-unittests "Should the unit tests be enabled (default: OFF)"
     enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
     enable-c-deps "Extra library dependencies in srt.pc for C language (default: OFF)"
     enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
     enable-logging "Should logging be enabled (default: ON)"
     enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
+	enable-pktinfo "Should pktinfo reading and using be enabled (default: ON, Windows: OFF)"
     enable-separate-haicrypt "Should haicrypt be built as a separate library file (default: OFF)"
     enable-shared "Should libsrt be built as a shared library (default: ON)"
     enable-static "Should libsrt be built as a static library (default: ON)"
