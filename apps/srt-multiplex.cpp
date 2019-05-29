@@ -123,7 +123,6 @@ struct MediumPair
                 bytevector data;
                 const int read_res = src->Read(chunk, data);
 
-
                 alarm(0);
                 if (alarm_state)
                 {
@@ -133,8 +132,8 @@ struct MediumPair
                         break;
                     continue;
                 }
-                sout << " << " << data.size() << "  ->  ";
-                if ( data.empty() && src->End() )
+                sout << " << " << read_res << "  ->  ";
+                if (read_res <= 0 || (data.empty() && src->End()))
                 {
                     sout << "EOS";
                     applog.Note() << sout.str();
