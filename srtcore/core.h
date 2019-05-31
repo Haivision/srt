@@ -68,18 +68,23 @@ modified by
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
-#include "smoother.h"
+#include "congctl.h"
 #include "utilities.h"
 
 #include <haicrypt.h>
 
-extern logging::Logger
+namespace srt_logging
+{
+
+extern Logger
     glog,
-    blog,
+//    blog,
     mglog,
     dlog,
     tslog,
     rxlog;
+
+}
 
 
 // XXX Utility function - to be moved to utilities.h?
@@ -631,6 +636,7 @@ public:
 
     bool applyGroupTime(ref_t<uint64_t> r_start_time, ref_t<uint64_t> r_peer_start_time)
     {
+        using srt_logging::mglog;
         if (m_StartTime == 0)
         {
             // The first socket, defines the group time for the whole group.
@@ -856,7 +862,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_StartTime,
         // otherwise it may go unnoticed with clock skew.
-        return int(from_time - m_StartTime);
+        return int(from_time - m_stats.startTime);
     }
 
     void setPacketTS(CPacket& p, uint64_t local_time)
@@ -988,7 +994,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    void close();
+    bool close();
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.
@@ -1077,7 +1083,7 @@ private:
     /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
     /// @param clear [in] flag to decide if the local performance trace should be cleared. 
     /// @param instantaneous [in] flag to request instantaneous data 
-    /// instead of moving averages. 
+    /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
     /// Mark sequence contained in the given packet as not lost. This
@@ -1126,7 +1132,7 @@ private:
 
     uint64_t socketStartTime()
     {
-        return m_StartTime;
+        return m_stats.startTime;
     }
 
     // TSBPD thread main function.
@@ -1201,13 +1207,14 @@ private: // Identification
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
+    int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV__SIZE];
-    Smoother m_Smoother;
+    SrtCongestion m_CongCtl;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -1243,8 +1250,8 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;            // Packet sending time window
 
-    volatile uint64_t m_ullInterval_tk;             // Inter-packet time, in CPU clock cycles
-    uint64_t m_ullTimeDiff_tk;                      // aggregate difference in inter-packet time
+    volatile uint64_t m_ullInterval_tk;          // Inter-packet time, in CPU clock cycles
+    uint64_t m_ullTimeDiff_tk;                   // aggregate difference in inter-packet time
 
     volatile int m_iFlowWindowSize;              // Flow control window size
     volatile double m_dCongestionWindow;         // congestion window size
@@ -1303,30 +1310,30 @@ private: // Sending related data
 
     uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
     int32_t m_iISN;                              // Initial Sequence Number
-    bool m_bPeerTsbPd;                            // Peer accept TimeStamp-Based Rx mode
-    bool m_bPeerTLPktDrop;                        // Enable sender late packet dropping
-    bool m_bPeerNakReport;                    // Sender's peer (receiver) issues Periodic NAK Reports
-    bool m_bPeerRexmitFlag;                   // Receiver supports rexmit flag in payload packets
+    bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
+    bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
+    bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
+    bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
-    CRcvBuffer* m_pRcvBuffer;               //< Receiver buffer
-    CRcvLossList* m_pRcvLossList;           //< Receiver loss list
-    std::deque<CRcvFreshLoss> m_FreshLoss;  //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
-    int m_iReorderTolerance;                //< Current value of dynamic reorder tolerance
-    int m_iMaxReorderTolerance;             //< Maximum allowed value for dynamic reorder tolerance
-    int m_iConsecEarlyDelivery;             //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
-    int m_iConsecOrderedDelivery;           //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
+    CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
+    CRcvLossList* m_pRcvLossList;                //< Receiver loss list
+    std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+    int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
+    int m_iMaxReorderTolerance;                  //< Maximum allowed value for dynamic reorder tolerance
+    int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
+    int m_iConsecOrderedDelivery;                //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
 
-    CACKWindow<1024> m_ACKWindow;             //< ACK history window
-    CPktTimeWindow<16, 64> m_RcvTimeWindow;   //< Packet arrival time window
+    CACKWindow<1024> m_ACKWindow;                //< ACK history window
+    CPktTimeWindow<16, 64> m_RcvTimeWindow;      //< Packet arrival time window
 
     int32_t m_iRcvLastAck;                       //< Last sent ACK
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
-    uint64_t m_ullLastAckTime_tk;                   // Timestamp of last ACK
+    uint64_t m_ullLastAckTime_tk;                // Timestamp of last ACK
     int32_t m_iRcvLastAckAck;                    // Last sent ACK that has been acknowledged
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     int32_t m_iRcvCurrSeqNo;                     // Largest received sequence number
@@ -1363,6 +1370,8 @@ private: // synchronization: mutexes and conditions
 
     pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
 
+    pthread_mutex_t m_StatsLock;                 // used to synchronize access to trace statistics
+
     void initSynch();
     void destroySynch();
     void releaseSynch();
@@ -1387,6 +1396,14 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
+    /// Pack a packet from a list of lost packets.
+    ///
+    /// @param packet [in, out] a packet structure to fill
+    /// @param origintime [in, out] origin timestamp of the packet
+    ///
+    /// @return payload size on success, <=0 on failure
+    int packLostData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_origintime);
+
     int packData(ref_t<CPacket> packet, ref_t<uint64_t> ts, ref_t<sockaddr_any> src_adr);
     int processData(CUnit* unit);
     void processClose();
@@ -1397,54 +1414,58 @@ private: // Generation and processing of packets
 
 
 private: // Trace
-    uint64_t m_StartTime;                        // timestamp when the UDT entity is started
-    int64_t m_llSentTotal;                       // total number of sent data packets, including retransmissions
-    int64_t m_llRecvTotal;                       // total number of received packets
-    int m_iSndLossTotal;                         // total number of lost packets (sender side)
-    int m_iRcvLossTotal;                         // total number of lost packets (receiver side)
-    int m_iRetransTotal;                         // total number of retransmitted packets
-    int m_iSentACKTotal;                         // total number of sent ACK packets
-    int m_iRecvACKTotal;                         // total number of received ACK packets
-    int m_iSentNAKTotal;                         // total number of sent NAK packets
-    int m_iRecvNAKTotal;                         // total number of received NAK packets
-    int m_iSndDropTotal;
-    int m_iRcvDropTotal;
-    uint64_t m_ullBytesSentTotal;                // total number of bytes sent,  including retransmissions
-    uint64_t m_ullBytesRecvTotal;                // total number of received bytes
-    uint64_t m_ullRcvBytesLossTotal;             // total number of loss bytes (estimate)
-    uint64_t m_ullBytesRetransTotal;             // total number of retransmitted bytes
-    uint64_t m_ullSndBytesDropTotal;
-    uint64_t m_ullRcvBytesDropTotal;
-    int m_iRcvUndecryptTotal;
-    uint64_t m_ullRcvBytesUndecryptTotal;
-    int64_t m_llSndDurationTotal;		// total real time for sending
 
-    uint64_t m_LastSampleTime;                   // last performance sample time
-    int64_t m_llTraceSent;                       // number of packets sent in the last trace interval
-    int64_t m_llTraceRecv;                       // number of packets received in the last trace interval
-    int m_iTraceSndLoss;                         // number of lost packets in the last trace interval (sender side)
-    int m_iTraceRcvLoss;                         // number of lost packets in the last trace interval (receiver side)
-    int m_iTraceRetrans;                         // number of retransmitted packets in the last trace interval
-    int m_iSentACK;                              // number of ACKs sent in the last trace interval
-    int m_iRecvACK;                              // number of ACKs received in the last trace interval
-    int m_iSentNAK;                              // number of NAKs sent in the last trace interval
-    int m_iRecvNAK;                              // number of NAKs received in the last trace interval
-    int m_iTraceSndDrop;
-    int m_iTraceRcvDrop;
-    int m_iTraceRcvRetrans;
-    int m_iTraceReorderDistance;
-    double m_fTraceBelatedTime;
-    int64_t m_iTraceRcvBelated;
-    uint64_t m_ullTraceBytesSent;                // number of bytes sent in the last trace interval
-    uint64_t m_ullTraceBytesRecv;                // number of bytes sent in the last trace interval
-    uint64_t m_ullTraceRcvBytesLoss;             // number of bytes bytes lost in the last trace interval (estimate)
-    uint64_t m_ullTraceBytesRetrans;             // number of bytes retransmitted in the last trace interval
-    uint64_t m_ullTraceSndBytesDrop;
-    uint64_t m_ullTraceRcvBytesDrop;
-    int m_iTraceRcvUndecrypt;
-    uint64_t m_ullTraceRcvBytesUndecrypt;
-    int64_t m_llSndDuration;			// real time for sending
-    int64_t m_llSndDurationCounter;		// timers to record the sending duration
+    struct CoreStats
+    {
+        uint64_t startTime;                 // timestamp when the UDT entity is started
+        int64_t sentTotal;                  // total number of sent data packets, including retransmissions
+        int64_t recvTotal;                  // total number of received packets
+        int sndLossTotal;                   // total number of lost packets (sender side)
+        int rcvLossTotal;                   // total number of lost packets (receiver side)
+        int retransTotal;                   // total number of retransmitted packets
+        int sentACKTotal;                   // total number of sent ACK packets
+        int recvACKTotal;                   // total number of received ACK packets
+        int sentNAKTotal;                   // total number of sent NAK packets
+        int recvNAKTotal;                   // total number of received NAK packets
+        int sndDropTotal;
+        int rcvDropTotal;
+        uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
+        uint64_t bytesRecvTotal;            // total number of received bytes
+        uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
+        uint64_t bytesRetransTotal;         // total number of retransmitted bytes
+        uint64_t sndBytesDropTotal;
+        uint64_t rcvBytesDropTotal;
+        int m_rcvUndecryptTotal;
+        uint64_t m_rcvBytesUndecryptTotal;
+        int64_t m_sndDurationTotal;         // total real time for sending
+
+        uint64_t lastSampleTime;            // last performance sample time
+        int64_t traceSent;                  // number of packets sent in the last trace interval
+        int64_t traceRecv;                  // number of packets received in the last trace interval
+        int traceSndLoss;                   // number of lost packets in the last trace interval (sender side)
+        int traceRcvLoss;                   // number of lost packets in the last trace interval (receiver side)
+        int traceRetrans;                   // number of retransmitted packets in the last trace interval
+        int sentACK;                        // number of ACKs sent in the last trace interval
+        int recvACK;                        // number of ACKs received in the last trace interval
+        int sentNAK;                        // number of NAKs sent in the last trace interval
+        int recvNAK;                        // number of NAKs received in the last trace interval
+        int traceSndDrop;
+        int traceRcvDrop;
+        int traceRcvRetrans;
+        int traceReorderDistance;
+        double traceBelatedTime;
+        int64_t traceRcvBelated;
+        uint64_t traceBytesSent;            // number of bytes sent in the last trace interval
+        uint64_t traceBytesRecv;            // number of bytes sent in the last trace interval
+        uint64_t traceRcvBytesLoss;         // number of bytes bytes lost in the last trace interval (estimate)
+        uint64_t traceBytesRetrans;         // number of bytes retransmitted in the last trace interval
+        uint64_t traceSndBytesDrop;
+        uint64_t traceRcvBytesDrop;
+        int traceRcvUndecrypt;
+        uint64_t traceRcvBytesUndecrypt;
+        int64_t sndDuration;                // real time for sending
+        int64_t sndDurationCounter;         // timers to record the sending duration
+    } m_stats;
 
 public:
 
@@ -1456,10 +1477,10 @@ public:
 
 private: // Timers
     uint64_t m_ullCPUFrequency;               // CPU clock frequency, used for Timer, ticks per microsecond
-    uint64_t m_ullNextACKTime_tk;			  // Next ACK time, in CPU clock cycles, same below
-    uint64_t m_ullNextNAKTime_tk;			  // Next NAK time
+    uint64_t m_ullNextACKTime_tk;             // Next ACK time, in CPU clock cycles, same below
+    uint64_t m_ullNextNAKTime_tk;             // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;		  // SYN interval
+    volatile uint64_t m_ullSYNInt_tk;         // SYN interval
     volatile uint64_t m_ullACKInt_tk;         // ACK interval
     volatile uint64_t m_ullNAKInt_tk;         // NAK interval
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
@@ -1468,10 +1489,10 @@ private: // Timers
     uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
     uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
 
-    int m_iPktCount;				// packet counter for ACK
-    int m_iLightACKCount;			// light ACK counter
+    int m_iPktCount;                          // packet counter for ACK
+    int m_iLightACKCount;                     // light ACK counter
 
-    uint64_t m_ullTargetTime_tk;			// scheduled time of next packet sending
+    uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
 
@@ -1482,15 +1503,15 @@ public: // For the use of CCryptoControl
 
 
 private: // for UDP multiplexer
-    CSndQueue* m_pSndQueue;			// packet sending queue
-    CRcvQueue* m_pRcvQueue;			// packet receiving queue
-    sockaddr_any m_PeerAddr;		// peer address
+    CSndQueue* m_pSndQueue;         // packet sending queue
+    CRcvQueue* m_pRcvQueue;         // packet receiving queue
+    sockaddr_any m_PeerAddr;        // peer address
     sockaddr_any m_SourceAddr;      // override UDP source address with this one when sending
-    uint32_t m_piSelfIP[4];			// local UDP IP address
-    CSNode* m_pSNode;				// node information for UDT list used in snd queue
+    uint32_t m_piSelfIP[4];         // local UDP IP address
+    CSNode* m_pSNode;               // node information for UDT list used in snd queue
     CRNode* m_pRNode;               // node information for UDT list used in rcv queue
 
-public: // For smoother
+public: // For SrtCongestion
     const CSndQueue* sndQueue() { return m_pSndQueue; }
     const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
 

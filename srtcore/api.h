@@ -95,7 +95,7 @@ public:
 
    void construct();
 
-   SRT_SOCKSTATUS m_Status;                       //< current socket state
+   SRT_SOCKSTATUS m_Status;                  //< current socket state
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
@@ -258,6 +258,8 @@ public:
 
    void deleteGroup(CUDTGroup* g)
    {
+       using srt_logging::mglog;
+
        CGuard cg(m_GlobControlLock, "GlobControl");
 
        CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);

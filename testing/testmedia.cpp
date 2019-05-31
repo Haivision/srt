@@ -40,13 +40,15 @@
 
 using namespace std;
 
-std::ostream* transmit_cverb = nullptr;
+using srt_logging::SockStatusStr;
+
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
-logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+// Do not unblock. Copy this to an app that uses applog and set appropriate name.
+//srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
 string DirectionName(SRT_EPOLL_OPT direction)
 {
@@ -114,6 +116,10 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
+#ifdef PLEASE_LOG
+#include "logging.h"
+#endif
+
 class FileTarget: public virtual Target
 {
     ofstream ofile;
@@ -124,12 +130,23 @@ public:
     void Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+#ifdef PLEASE_LOG
+        extern srt_logging::Logger applog;
+        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+#endif
     }
 
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() override { ofile.close(); }
+    void Close() override
+    {
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Close";
+#endif
+        ofile.close();
+    }
 };
 
 // Can't base this class on FileSource and FileTarget classes because they use two
@@ -189,9 +206,9 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
 void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
-    if ( Verbose::on )
+    if ( Verbose::on && !par.empty())
     {
-        Verb() << "Parameters:\n";
+        Verb() << "SRT parameters specified:\n";
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
@@ -586,23 +603,20 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return result;
     }
 
-    SrtConfigurePost(sock, m_options);
+    // host is only checked for emptiness and depending on that the connection mode is selected.
+    // Here we are not exactly interested with that information.
+    vector<string> failures;
 
-    for (auto o: srt_options)
+    SrtConfigurePost(sock, m_options, &failures);
+
+
+    if (!failures.empty())
     {
-        if ( o.binding == SocketOption::POST && m_options.count(o.name) )
+        if (Verbose::on)
         {
-            string value = m_options.at(o.name);
-            bool ok = o.apply<SocketOption::SRT>(sock, value);
-            if (Verbose::on)
-            {
-                string dir_name = DirectionName(m_direction);
-
-                if ( !ok )
-                    Verb() << "WARNING: failed to set '" << o.name << "' (post, " << dir_name << ") to " << value;
-                else
-                    Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
-            }
+            Verb() << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
+            Verb();
         }
     }
 
@@ -642,7 +656,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         if (Verbose::on )
         {
             Verb() << "WARNING: failed to set options: ";
-            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
             Verb();
         }
 
@@ -1816,8 +1830,11 @@ bytevector SrtSource::Read(size_t chunk)
             throw ReadEOF(hostport_copy);
         }
 
+#if PLEASE_LOG
+        extern srt_logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
                 << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+#endif
 
         Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
     }
@@ -1827,6 +1844,9 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
@@ -1834,15 +1854,20 @@ bytevector SrtSource::Read(size_t chunk)
 #endif
 
     CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
-    if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
+    if (need_stats_report || need_bw_report)
     {
-        Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-    }
+        // clear only if stats report is to be read
+        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
 
-    if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
-    {
-        PrintSrtStats(m_sock, perf);
+        if (need_bw_report)
+        {
+            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
+        }
+
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+        }
     }
 
     ++counter;
@@ -2344,10 +2369,10 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         if ( u.host() == "con" || u.host() == "console" )
         {
             if ( IsOutput<Base>() && (
-                        (Verbose::on && transmit_cverb == &cout)
-                        || transmit_bw_report) )
+                        (Verbose::on && Verbose::cverb == &cout)
+                        || transmit_bw_report || transmit_stats_report) )
             {
-                cerr << "ERROR: file://con with -v or -r would result in mixing the data and text info.\n";
+                cerr << "ERROR: file://con with -v or -r or -s would result in mixing the data and text info.\n";
                 cerr << "ERROR: HINT: you can stream through a FIFO (named pipe)\n";
                 throw invalid_argument("incorrect parameter combination");
             }

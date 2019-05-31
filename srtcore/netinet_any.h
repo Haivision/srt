@@ -212,13 +212,6 @@ struct sockaddr_any
         }
     };
 
-    bool operator==(const sockaddr_any& c2) const
-    {
-        return Equal()(*this, c2);
-    }
-
-    bool operator!=(const sockaddr_any& c2) const { return !(*this == c2); }
-
     struct EqualAddress
     {
         bool operator()(const sockaddr_any& c1, const sockaddr_any& c2)
@@ -258,6 +251,13 @@ struct sockaddr_any
             return sin.sin_addr.s_addr == INADDR_ANY;
         return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
     }
+
+    bool operator==(const sockaddr_any& other) const
+    {
+        return Equal()(*this, other);
+    }
+
+    bool operator!=(const sockaddr_any& other) const { return !(*this == other); }
 };
 
 template<> struct sockaddr_any::TypeMap<AF_INET> { typedef sockaddr_in type; };
