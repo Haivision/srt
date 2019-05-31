@@ -3618,7 +3618,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        else
        {
            LOGC(mglog.Error, log << CONID()
-                   << "processConnectResponse: received NOT UMSG_HANDSHAKE before connection established: "
+                   << "processConnectResponse: CONFUSED: expected UMSG_HANDSHAKE as connection not yet established, got: "
                    << MessageTypeStr(response.getType(), response.getExtendedType()));
        }
        return CONN_CONFUSED;
@@ -4626,9 +4626,12 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
    }
 #endif
 
-#ifndef TEST_DISABLE_FINAL_HANDSHAKE
+   // NOTE: BLOCK THIS instruction in order to cause the final
+   // handshake to be missed and cause the problem solved in PR #417.
+   // When missed this message, the caller should not accept packets
+   // coming as connected, but continue repeated handshake until finally
+   // received the listener's handshake.
    m_pSndQueue->sendto(peer, response);
-#endif
 }
 
 
