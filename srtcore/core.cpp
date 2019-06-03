@@ -261,6 +261,7 @@ CUDT::CUDT()
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
+   m_iOPT_ResponseTimeout = COMM_RESPONSE_TIMEOUT_US;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -324,6 +325,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
+   m_iOPT_ResponseTimeout = ancestor.m_iOPT_ResponseTimeout;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -861,6 +863,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
+   case SRTO_RSPTIMEO:
+
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        m_iOPT_ResponseTimeout = *(int*)optval;
+        break;
+
    case SRTO_IPV6ONLY:
       if (m_bConnected)
          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -1143,6 +1152,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_IPV6ONLY:
       optlen = sizeof(int);
       *(int*)optval = m_iIpV6Only;
+      break;
+
+   case SRTO_RSPTIMEO:
+      *(int*)optval = m_iOPT_ResponseTimeout;
+      optlen = sizeof(int);
       break;
 
    default:
@@ -8643,7 +8657,7 @@ void CUDT::checkTimers()
         // Haven't received any information from the peer, is it dead?!
         // timeout: at least 16 expirations and must be greater than 5 seconds
         if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > COMM_RESPONSE_TIMEOUT_US * m_ullCPUFrequency))
+                && (currtime_tk - m_ullLastRspTime_tk > m_iOPT_ResponseTimeout * m_ullCPUFrequency))
         {
             //
             // Connection is broken.
@@ -8669,7 +8683,7 @@ void CUDT::checkTimers()
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
+            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+m_iOPT_ResponseTimeout) << "us");
 
         /* 
          * This part is only used with FileCC. This retransmits
