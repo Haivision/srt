@@ -342,7 +342,11 @@ TEST(CEPoll, NotifyConnectionBreak)
     // Wait for the caller to close connection
     // There should be no wait, as epoll should wait untill connection is closed.
     EXPECT_EQ(close_res.get(), SRT_SUCCESS);
-    EXPECT_EQ(srt_getsockstate(sock), SRTS_BROKEN);
+    const SRT_SOCKSTATUS state = srt_getsockstate(sock);
+    const bool state_valid = state == SRTS_BROKEN || state == SRTS_CLOSING || state == SRTS_CLOSED;
+    EXPECT_TRUE(state_valid);
+    if (!state_valid)
+        cerr << "socket state: " << state << endl;
 
     EXPECT_EQ(srt_cleanup(), 0);
 }
