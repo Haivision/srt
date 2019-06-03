@@ -173,7 +173,7 @@ private:
 
 private:
 
-   UDPSOCKET m_iSocket;                 // socket descriptor
+   int m_iSocket;                 // socket descriptor
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;

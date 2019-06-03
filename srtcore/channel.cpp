@@ -450,7 +450,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_a
     }
 
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID
+        << " target=@" << packet.m_iID
 #ifdef SRT_ENABLE_PKTINFO
         << " sourceIP="
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(source_addr) : "default")
