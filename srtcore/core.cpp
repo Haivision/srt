@@ -261,7 +261,7 @@ CUDT::CUDT()
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
-   m_iOPT_ResponseTimeout = COMM_RESPONSE_TIMEOUT_US;
+   m_iOPT_ResponseTimeout = COMM_RESPONSE_TIMEOUT_MS;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -8654,10 +8654,12 @@ void CUDT::checkTimers()
 
     if (currtime_tk > next_exp_time_tk)
     {
+        // ms -> us
+        const int RESPONSE_TIMEOUT = m_iOPT_ResponseTimeout*1000;
         // Haven't received any information from the peer, is it dead?!
         // timeout: at least 16 expirations and must be greater than 5 seconds
         if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > m_iOPT_ResponseTimeout * m_ullCPUFrequency))
+                && (currtime_tk - m_ullLastRspTime_tk > RESPONSE_TIMEOUT * m_ullCPUFrequency))
         {
             //
             // Connection is broken.
@@ -8683,7 +8685,7 @@ void CUDT::checkTimers()
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+m_iOPT_ResponseTimeout) << "us");
+            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+RESPONSE_TIMEOUT) << "us");
 
         /* 
          * This part is only used with FileCC. This retransmits
