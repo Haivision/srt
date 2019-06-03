@@ -237,7 +237,8 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
 {
     using namespace std;
 
-    string current_key = "";
+    string current_key;
+    string extra_arg;
     size_t vals = 0;
     OptionScheme::Args type = OptionScheme::ARG_VAR; // This is for no-option-yet or consumed
     map<string, vector<string>> params;
@@ -249,14 +250,8 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
         // cout << "*D ARG: '" << a << "'\n";
         if (moreoptions && a[0] == '-')
         {
-            string key(a + 1);  // omit '-'
-            size_t pos = key.find_first_of(":");
-            if (pos == string::npos)
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos + 1);
-            key = key.substr(0, pos);
-
-            current_key = key;
+            size_t seppos; // (see goto, it would jump over initialization)
+            current_key = a+1;
             if ( current_key == "-" )
             {
                 // The -- argument terminates the options.
@@ -266,8 +261,28 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 moreoptions = false;
                 goto EndOfArgs;
             }
+
+            // Maintain the backward compatibility with argument specified after :
+            // or with one string separated by space inside.
+            seppos = current_key.find(':');
+            if (seppos == string::npos)
+                seppos = current_key.find(' ');
+            if (seppos != string::npos)
+            {
+                // Old option specification.
+                extra_arg = current_key.substr(seppos + 1);
+                current_key = current_key.substr(0, 0 + seppos);
+            }
+
             params[current_key].clear();
             vals = 0;
+
+            if (extra_arg != "")
+            {
+                params[current_key].push_back(extra_arg);
+                ++vals;
+                extra_arg.clear();
+            }
 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
             for (auto s: scheme)
@@ -275,16 +290,19 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 if (s.names.count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if (s.type == OptionScheme::ARG_NONE )
+                    if (s.type == OptionScheme::ARG_NONE)
                     {
                         // Anyway, consider it already processed.
                         break;
                     }
-                    else if (s.type == OptionScheme::ARG_ONE)
-                    {
-                        params[current_key].push_back(value);
-                    }
                     type = s.type;
+
+                    if ( vals == 1 && type == OptionScheme::ARG_ONE )
+                    {
+                        // Argument for one-arg option already consumed,
+                        // so set to free args.
+                        goto EndOfArgs;
+                    }
                     goto Found;
                 }
 

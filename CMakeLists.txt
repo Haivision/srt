@@ -64,6 +64,20 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
+getVarsWith(ENFORCE_ enforcers)
+foreach(ef ${enforcers})
+	set (val ${${ef}})
+	if (NOT val STREQUAL "")
+		set(val =${val})
+	endif()
+	string(LENGTH ENFORCE_ pflen)
+	string(LENGTH ${ef} eflen)
+	math(EXPR alen ${eflen}-${pflen})
+	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+	add_definitions(-D${ef}${val})
+endforeach()
+
 # option defaults
 # XXX CHANGE: Logging is enabled now by default,
 # use ENABLE_LOGGING=NO in cmake or
@@ -90,6 +104,7 @@ option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library path
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
+option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -169,28 +184,25 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
-# find OpenSSL
-if ( USE_GNUTLS )
-	message(STATUS "SSL Dependency: using GNUTLS with Nettle, as requested")
-	set (SSL_REQUIRED_MODULES "gnutls nettle")
-	if (WIN32)
-		if (MINGW)
-			set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+if (ENABLE_ENCRYPTION)
+	if ( USE_GNUTLS )
+		set (SSL_REQUIRED_MODULES "gnutls nettle")
+		if (WIN32)
+			if (MINGW)
+				set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+			endif()
 		endif()
-	endif()
- 
-	pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
+	 
+		pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
-	add_definitions(
-		-DUSE_GNUTLS=1
-	)
+		add_definitions(
+			-DUSE_GNUTLS=1
+		)
 
-	link_directories(
-		${SSL_LIBRARY_DIRS}
-	)
-else()
-		message(STATUS "SSL Dependency: using OpenSSL (default)")
-
+		link_directories(
+			${SSL_LIBRARY_DIRS}
+		)
+	else()
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
@@ -217,18 +229,24 @@ else()
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-	add_definitions(
-		-DHAICRYPT_USE_OPENSSL_EVP=1
-		-DHAICRYPT_USE_OPENSSL_AES
-	)
-endif()
+		add_definitions(
+			-DHAICRYPT_USE_OPENSSL_EVP=1
+			-DHAICRYPT_USE_OPENSSL_AES
+		)
+	endif()
 
-message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+	add_definitions(-DSRT_ENABLE_ENCRYPTION)
+	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
+	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+else()
+	message(STATUS "ENCRYPTION: DISABLED")
+endif()
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -404,17 +422,19 @@ endif()
 # Target: haicrypt.
 # Completing sources and installable headers. Flag settings will follow.
 # ---
-if ( USE_GNUTLS )
-	set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
-else()
-	set (HAICRYPT_FILELIST_MAF "filelist.maf")
-endif()
+if (ENABLE_ENCRYPTION)
+	if ( USE_GNUTLS )
+		set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
+	else()
+		set (HAICRYPT_FILELIST_MAF "filelist.maf")
+	endif()
 
-MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
-	SOURCES SOURCES_haicrypt
-	PUBLIC_HEADERS HEADERS_haicrypt
-	PROTECTED_HEADERS HEADERS_haicrypt
-)
+	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
+		SOURCES SOURCES_haicrypt
+		PUBLIC_HEADERS HEADERS_haicrypt
+		PROTECTED_HEADERS HEADERS_haicrypt
+	)
+endif()
 
 if (WIN32)
 	MafReadDir(common filelist_win32.maf
@@ -483,7 +503,9 @@ if (srt_libspec_shared)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
-	target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
+	if (ENABLE_ENCRYPTION)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 	elseif (MINGW)
@@ -511,7 +533,9 @@ if (srt_libspec_static)
 	endif()
 
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_static)
-	target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
+	if (ENABLE_ENCRYPTION)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ${SSL_LIBRARIES})
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
@@ -694,8 +718,8 @@ macro(srt_make_application name)
 	endif()
 endmacro()
 
-macro(srt_add_application name sources)
-	srt_add_program(${name} apps/${name}.cpp ${sources})
+macro(srt_add_application name) # ARGN=sources...
+	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
@@ -735,8 +759,10 @@ if (ENABLE_APPS)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
-   else()
+	else()
 		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
+		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -767,7 +793,6 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
 
-		# Still portability problem on Windows
 		srt_add_testprogram(srt-test-file)
 		srt_make_application(srt-test-file)
 

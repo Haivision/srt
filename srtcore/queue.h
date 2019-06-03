@@ -385,6 +385,11 @@ public:
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
 
+   void setClosing()
+   {
+       m_bClosing = true;
+   }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -452,6 +457,11 @@ public:
       /// @return Data size of the packet
 
    int recvfrom(int32_t id, ref_t<CPacket> packet);
+
+   void setClosing()
+   {
+       m_bClosing = true;
+   }
 
 private:
    static void* worker(void* param);
