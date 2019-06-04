@@ -2587,16 +2587,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 int res = m_pCryptoControl->processSrtMsg_KMREQ(begin+1, bytelen, out_data, Ref(*out_len), HS_VERSION_SRT1);
                 if ( res != SRT_CMD_KMRSP )
                 {
-                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADSECRET)
-                    {
-                        m_RejectReason = SRT_REJ_BADSECRET;
-                    }
-                    else
-                    {
-                        m_RejectReason = SRT_REJ_STRICTENC;
-                    }
+                    m_RejectReason = SRT_REJ_IPE;
                     // Something went wrong.
-                    HLOGC(mglog.Debug, log << "interpretSrtHandshake: KMREQ processing failed - returned " << res);
+                    HLOGC(mglog.Debug, log << "interpretSrtHandshake: IPE/EPE KMREQ processing failed - returned " << res);
                     return false;
                 }
                 if (*out_len == 1)
@@ -2605,7 +2598,14 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     // This is inacceptable in case of strict encryption.
                     if (m_bOPT_StrictEncryption)
                     {
-                        m_RejectReason = SRT_REJ_STRICTENC;
+                        if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADSECRET)
+                        {
+                            m_RejectReason = SRT_REJ_BADSECRET;
+                        }
+                        else
+                        {
+                            m_RejectReason = SRT_REJ_STRICTENC;
+                        }
                         LOGC(mglog.Error, log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
                         return false;
                     }

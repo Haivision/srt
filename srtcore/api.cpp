@@ -454,6 +454,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
    catch (...)
    {
+       // Extract the error that was set in this new failed entity.
+       *r_error = ns->m_pUDT->m_RejectReason;
        error = 1;
        goto ERR_ROLLBACK;
    }

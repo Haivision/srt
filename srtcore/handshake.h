@@ -220,6 +220,7 @@ enum UDTRequestType
     URQ_REJ_PEER,        // connection was rejected by peer
     URQ_REJ_RESOURCE,    // internal problem with resource allocation
     URQ_REJ_ROGUE,       // incorrect data in handshake messages
+    URQ_REJ_BACKLOG,     // backlog exceeded
     URQ_REJ_IPE,         // internal program error
     URQ_REJ_CLOSE,       // socket is closing
     URQ_REJ_VERSION,     // peer is older version than agent's minimum set
