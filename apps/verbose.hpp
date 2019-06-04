@@ -39,6 +39,13 @@ class Log
 
 public:
 
+    Log():
+        noeol(false)
+#if SRT_ENABLE_VERBOSE_LOCK
+        ,lockline(false)
+#endif
+    {}
+
     template <class V>
     Log& operator<<(const V& arg)
     {
