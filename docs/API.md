@@ -483,6 +483,29 @@ and the platform default value is used.
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMREFRESHRATE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000000| 0..unlimited |
+
+- **[GET or SET]** - number of packets to be transmitted after which the encryption
+key will be switched to the new one. The process involves "preannounce" when the new
+key is sent to the receiver, and "decommission" when the old key is no longer used;
+this extra period is customized with `SRTO_KMPREANNOUNCE` option.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMPREANNOUNCE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000 | see below |
+
+- **[GET or SET]** - number of packets to be transmitted between new key preannounce
+and the moment of key switching, as well as between the key switching and the old
+key decommissioning. In other words, when the key is about to be switched to the new
+one, it's sent to the receiver ("preannounced") this number of packets before switching
+and this number of packtes after swiching the old key will be decommissioned.
+The allowed range for the value is then between 1 and half of the current value of
+`SRTO_KMREFRESHRATE` option.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
 
 - **[GET]** - Keying Material state. This is a legacy option that is equivalent 
@@ -829,6 +852,24 @@ set, based on MSS value. For desired result, configure MSS first.***
 
 | OptName               | Since | Binding | Type  | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_SNDDROPDELAY`   | 1.3.2 | pre     | `int` | ms     | 0        |        |
+
+- **[SET]** - sets the extra delay for the decision of the data sender to make
+sender TLPKTDROP, that is, discard loss-reported packets stating that it's already
+too late to send them and the receiver would discard them anyway, even if received.
+The time after which this state is in force consists of the following ingredients:
+   - peer-receiver's latency
+   - THIS OPTION (default 0)
+   - (for the above together, not less than 1000ms)
+   - `2*` ACK interval (20ms currently)
+
+- This option will be ineffective when the value is less than 1000 - `SRTO_PEERLATENCY`.
+Above this value it extends the time tolerance for retransmitting packets at the
+expens of more likely retransmitting them uselessly.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
 | `SRTO_SNDKMSTATE`     | 1.2.0 | post    | enum  | n/a    | n/a      |        |
 
 - **[GET]** - Peer KM state on receiver side for `SRTO_KMSTATE`
@@ -882,6 +923,29 @@ interpretation of the contents of this string. As this uses internally the
 (udt.h): `UDT::setstreamid` and `UDT::getstreamid`. This option doesn't make sense 
 in Rendezvous connection; the result might be that simply one side will override 
 the value from the other side and it's the matter of luck which one would win
+---
+
+| OptName           | Since | Binding | Type            | Units | Default  | Range  |
+| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
+
+- When this option is set (default) then only such connections are allowed that
+are "strictly encrypted", that is, only when:
+   - both parties are not encrypted
+   - both parties are encrypted and have the same passphrase.
+- In all other cases the connection will be rejected.
+- When this option is unset, then the following combinations of connection
+configuration will be allowed with appropriate limitations:
+   - Both parties encrypted with different passphrases. The connection is allowed,
+     however data transmission is impossible in any direction.
+   - Only one party has set encryption. In this case the data transmission is
+     possible as unencrypted from the unencrypted party to the encrypted party,
+     but not in the opposite direction.
+- The non-strictly-encrypted connections allowed is desired by several specific
+SRT appliances which are required to properly show the state as to whether the
+connection is possible to be done, just report the inability to decrypt the
+incoming transmission as a different kind of problem.
+
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
