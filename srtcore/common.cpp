@@ -839,6 +839,33 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
+const char* srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Strictly-encrypted condition not met",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter type collision"
+};
+
+const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+{
+    int id = rid & ~SRT_REJ_PEERREP; // disregard peer reported
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
+}
+
 // Some logging imps
 #if ENABLE_LOGGING
 

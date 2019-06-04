@@ -117,17 +117,42 @@ int CHandShake::load_from(const char* buf, size_t size)
 }
 
 #ifdef ENABLE_LOGGING
+
+const char* srt_rejectreason_name [] = {
+    "UNKNOWN",
+    "SYSTEM",
+    "PEER",
+    "RESOURCE",
+    "ROGUE",
+    "BACKLOG",
+    "IPE",
+    "CLOSE",
+    "VERSION",
+    "RDVCOOKIE",
+    "BADSECRET",
+    "STRICTENC",
+    "MESSAGEAPI",
+    "CONGESTION",
+    "FILTER",
+};
+
 std::string RequestTypeStr(UDTRequestType rq)
 {
+    if (rq >= URQ_FAILURE_TYPES)
+    {
+        SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
+        int id = rej & ~SRT_REJ_PEERREP;
+        bool peer = rej & SRT_REJ_PEERREP;
+        return std::string("ERROR:") + srt_rejectreason_name[id]
+            + (peer ? "(peer)":"");
+    }
+
     switch ( rq )
     {
     case URQ_INDUCTION: return "induction";
     case URQ_WAVEAHAND: return "waveahand";
     case URQ_CONCLUSION: return "conclusion";
     case URQ_AGREEMENT: return "agreement";
-    case URQ_ERROR_INVALID: return "ERROR:invalid";
-    case URQ_ERROR_REJECT: return "ERROR:reject";
-    case URQ_DONE: return "done(HSv5RDV)";
 
     default: return "INVALID";
     }

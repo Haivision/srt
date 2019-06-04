@@ -213,11 +213,39 @@ enum UDTRequestType
     // Errors reported by the peer, also used as useless error codes
     // in handshake processing functions.
     URQ_FAILURE_TYPES = 1000,
-    URQ_ERROR_REJECT = 1002,
-    URQ_ERROR_INVALID = 1004
+
+    // Repeated codes from SRT_REJ_* here for convenience and
+    // compiler warning prevention, but they should not be used directly.
+    URQ_REJ_SYSTEM,      // broken due to system function error
+    URQ_REJ_PEER,        // connection was rejected by peer
+    URQ_REJ_RESOURCE,    // internal problem with resource allocation
+    URQ_REJ_ROGUE,       // incorrect data in handshake messages
+    URQ_REJ_IPE,         // internal program error
+    URQ_REJ_CLOSE,       // socket is closing
+    URQ_REJ_VERSION,     // peer is older version than agent's minimum set
+    URQ_REJ_RDVCOOKIE,   // rendezvous cookie collision
+    URQ_REJ_BADSECRET,   // wrong password
+    URQ_REJ_STRICTENC,   // illegal setup for strictly-encrypted
+    URQ_REJ_MESSAGEAPI,  // streamapi/messageapi collision
+    URQ_REJ_CONGESTION,  // incompatible congestion-controller type
+    URQ_REJ_FILTER       // incompatible packet filter
 };
 
+inline UDTRequestType URQFailure(SRT_REJECT_REASON reason)
+{
+    return UDTRequestType(URQ_FAILURE_TYPES + int(reason));
+}
 
+inline SRT_REJECT_REASON RejectReasonForURQ(UDTRequestType req)
+{
+    if (req < URQ_FAILURE_TYPES || req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
+        return SRT_REJ_UNKNOWN;
+    return SRT_REJECT_REASON( (req - URQ_FAILURE_TYPES) | SRT_REJ_PEERREP);
+}
+
+// DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).
+const UDTRequestType URQ_ERROR_REJECT SRT_ATR_DEPRECATED = (UDTRequestType)1002; // == 1000 + SRT_REJ_PEER
+const UDTRequestType URQ_ERROR_INVALID SRT_ATR_DEPRECATED = (UDTRequestType)1004; // == 1000 + SRT_REJ_ROGUE
 
 // XXX Change all uses of that field to UDTRequestType when possible
 #if ENABLE_LOGGING
