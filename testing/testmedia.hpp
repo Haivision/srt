@@ -14,6 +14,7 @@
 #include <string>
 #include <map>
 #include <stdexcept>
+#include <deque>
 
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
@@ -46,10 +47,9 @@ protected:
     {
         string host;
         int port;
-        SRTSOCKET socket;
-        int status;
+        SRTSOCKET socket = SRT_INVALID_SOCK;
 
-        Connection(string h, int p): host(h), port(p), socket(-1), status(-1) {}
+        Connection(string h, int p): host(h), port(p) {}
     };
 
     int srt_epoll = -1;
@@ -66,6 +66,7 @@ protected:
     vector<SRT_SOCKGROUPDATA> m_group_data;
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
+    bool m_listener_group = false;
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
 
@@ -127,6 +128,9 @@ public:
     }
 
     bytevector Read(size_t chunk) override;
+    bytevector GroupRead(size_t chunk);
+    bool GroupCheckPacketAhead(bytevector& output);
+
 
     /*
        In this form this isn't needed.

@@ -1560,6 +1560,7 @@ void CRcvQueue::stopWorker()
         return; // do nothing else, this would cause a hangup or crash.
     }
 
+    HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
     pthread_join(m_WorkerThread, NULL);
 }

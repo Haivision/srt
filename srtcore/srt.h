@@ -551,10 +551,19 @@ SRT_API SRTSOCKET srt_socket       (int, int, int) SRT_ATR_DEPRECATED;
 SRT_API SRTSOCKET srt_create_socket();
 
 // Group management
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
 SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
 SRT_API       int srt_exclude      (SRTSOCKET socket);
 SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
+SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, int sys_udp_sock);
@@ -572,6 +581,13 @@ SRT_API       int srt_connect_bind (SRTSOCKET u,
                                     const struct sockaddr* target, int target_len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
+                                    
+SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
+SRT_API int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source /*nullable*/, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize);
+
+
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
@@ -579,14 +595,6 @@ SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-
-typedef struct SRT_SocketGroupData_
-{
-    SRTSOCKET id;
-    SRT_SOCKSTATUS status;
-    int result;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-} SRT_SOCKGROUPDATA;
 
 // XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_

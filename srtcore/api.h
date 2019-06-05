@@ -210,7 +210,7 @@ public:
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
    int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
-   int groupConnect(ref_t<CUDTGroup> g, const sockaddr_any& source, const sockaddr_any& target);
+   int groupConnect(CUDTGroup* g, const sockaddr_any& source, SRT_SOCKGROUPDATA targets [], int arraysize);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -241,14 +241,37 @@ public:
    {
        CGuard cg(m_GlobControlLock, "GlobControl");
        // This only ensures that the element exists.
-       CUDTGroup& g = m_Groups[id];
-       g.m_pGlobal = this;
-       return g;
+       // If the element was newly added, it will be NULL.
+       CUDTGroup*& g = m_Groups[id];
+       if (!g)
+       {
+           // This is a reference to the cell, so it will
+           // rewrite it into the map.
+           g = new CUDTGroup;
+       }
+
+       // Now we are sure that g is not NULL,
+       // and persistence of this object is in the map.
+       // The reference to the object can be safely returned here.
+       return *g;
    }
 
    void deleteGroup(CUDTGroup* g)
    {
+       using srt_logging::mglog;
+
        CGuard cg(m_GlobControlLock, "GlobControl");
+
+       CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
+       if (pg)
+           delete pg;
+       else
+       {
+           LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+           // still delete it.
+           delete g;
+       }
+
        m_Groups.erase(g->m_GroupID);
    }
 
@@ -259,8 +282,8 @@ public:
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)
        {
-           if (i->second.peerid() == peergroup)
-               return &i->second;
+           if (i->second->peerid() == peergroup)
+               return i->second;
        }
        return NULL;
    }
@@ -274,7 +297,7 @@ private:
 
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
-   typedef std::map<SRTSOCKET, CUDTGroup> groups_t;
+   typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
 
    sockets_t m_Sockets;
    groups_t m_Groups;

@@ -176,6 +176,8 @@ public:
         GST_BROKEN    // The last operation broke the socket, it should be closed.
     };
 
+    static std::string StateStr(GroupState);
+
     struct SocketData
     {
         SRTSOCKET id;
@@ -228,7 +230,7 @@ public:
 
     gli_t find(SRTSOCKET id)
     {
-        CGuard g(m_GroupLock);
+        CGuard g(m_GroupLock, "Group");
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f == m_Group.end())
         {
@@ -246,23 +248,47 @@ public:
     // PRIOR TO calling this function.
     bool remove(SRTSOCKET id)
     {
-        CGuard g(m_GroupLock);
+        bool s = false;
+        CGuard g(m_GroupLock, "Group");
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
         {
             m_Group.erase(f);
+
+            // Reset sequence numbers on a dead group so that they are
+            // initialized anew with the new alive connection within
+            // the group.
+            // XXX The problem is that this should be done after the
+            // socket is considered DISCONNECTED, not when it's being
+            // closed. After being disconnected, the sequence numbers
+            // are no longer valid, and will be reinitialized when the
+            // socket is connected again. This may stay as is for now
+            // as in SRT it's not predicted to do anything with the socket
+            // that was disconnected other than immediately closing it.
+            if (m_Group.empty())
+            {
+                m_iLastSchedSeqNo = 0;
+                setInitialRxSequence(-1);
+            }
+            s = true;
         }
 
-        return false;
+        if (m_Group.empty())
+        {
+            m_bOpened = false;
+        }
+
+        return s;
     }
 
     bool empty()
     {
-        CGuard g(m_GroupLock);
+        CGuard g(m_GroupLock, "Group");
         return m_Group.empty();
     }
 
     void resetStateOn(CUDTSocket* sock);
+    void setFreshConnected(CUDTSocket* sock);
 
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
@@ -289,6 +315,7 @@ public:
     void addEPoll(int eid);
     void removeEPoll(int eid);
 
+    void syncWithSocket(const CUDT& core);
     int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
 
 #if ENABLE_HEAVY_LOGGING
@@ -315,13 +342,44 @@ private:
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
     bool m_bSynRecving;
+    bool m_bSynSending;
     bool m_bTsbPd;
     bool m_bTLPktDrop;
+    int64_t m_iTsbPdDelay_us;
+    int m_RcvEID;
+    class CEPollDesc* m_RcvEpolld;
+    int m_SndEID;
+    class CEPollDesc* m_SndEpolld;
+
+    int m_iSndTimeOut;                           // sending timeout in milliseconds
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
-    pthread_t m_RcvTsbPdThread;
-    pthread_cond_t m_RcvTsbPdCond;
-    CRcvBuffer* m_pRcvBuffer;
-    bool m_bOpened;                    // Set to true on a first use
+
+    // Start times for TsbPd. These times shall be synchronized
+    // between all sockets in the group. The first connected one
+    // defines it, others shall derive it. The value 0 decides if
+    // this has been already set.
+    uint64_t m_StartTime;
+    uint64_t m_RcvPeerStartTime;
+
+    struct ReadPos
+    {
+        int32_t sequence;
+        std::vector<char> packet;
+        SRT_MSGCTRL mctrl;
+        ReadPos(int32_t s): sequence(s), mctrl(srt_msgctrl_default) {}
+    };
+    std::map<SRTSOCKET, ReadPos> m_Positions;
+
+    ReadPos* checkPacketAhead();
+
+    // This is the sequence number of a packet that has been previously
+    // delivered. Initially it should be set to -1 so that the sequence read
+    // from the first delivering socket will be taken as a good deal.
+    volatile int32_t m_RcvBaseSeqNo;
+
+
+    bool m_bOpened;    // Set to true when at least one link is at least pending
+    bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
 
     // There's no simple way of transforming config
@@ -330,23 +388,67 @@ private:
     // for setting later on a socket.
     std::vector<ConfigItem> m_config;
 
-    pthread_cond_t m_RecvDataCond;
-    volatile int32_t m_iRcvDeliveredSeqNo; // Seq of the payload last delivered
-    volatile int32_t m_iRcvContiguousSeqNo; // Seq of the freshest payload stored in the buffer with no loss-gap
+    // Signal for the blocking user thread that the packet
+    // is ready to deliver.
+    pthread_cond_t m_RcvDataCond;
+    pthread_mutex_t m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
-
 public:
+
+    // Required after the call on newGroup on the listener side.
+    // On the listener side the group is lazily created just before
+    // accepting a new socket and therefore always open.
+    void setOpen() { m_bOpened = true; }
 
     std::string CONID() const
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "%" << m_GroupID << ":";
+        os << "@" << m_GroupID << ":";
         return os.str();
 #else
         return "";
 #endif
     }
+
+    void setInitialRxSequence(int32_t)
+    {
+        // The app-reader doesn't care about the real sequence number.
+        // The first provided one will be taken as a good deal; even if
+        // this is going to be past the ISN, at worst it will be caused
+        // by TLPKTDROP.
+        m_RcvBaseSeqNo = -1;
+    }
+
+    bool applyGroupTime(ref_t<uint64_t> r_start_time, ref_t<uint64_t> r_peer_start_time)
+    {
+        using srt_logging::mglog;
+        if (m_StartTime == 0)
+        {
+            // The first socket, defines the group time for the whole group.
+            m_StartTime = *r_start_time;
+            m_RcvPeerStartTime = *r_peer_start_time;
+            return true;
+        }
+
+        // Sanity check. This should never happen, fix the bug if found!
+        if (m_RcvPeerStartTime == 0)
+        {
+            LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
+            // Kinda fallback, but that's not too safe.
+            m_RcvPeerStartTime = *r_peer_start_time;
+        }
+
+        // The redundant connection, derive the times
+        *r_start_time = m_StartTime;
+        *r_peer_start_time = m_RcvPeerStartTime;
+
+        return false;
+    }
+
+    bool getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp);
+
+    bool applyGroupSequences(SRTSOCKET, ref_t<int32_t> r_snd_isn, ref_t<int32_t> r_rcv_isn);
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
@@ -355,14 +457,12 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, std::set<int>&, epollset, m_sPollID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
 
     // Required for SRT_tsbpdLoop
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
-    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
-    SRTU_PROPERTY_RO(pthread_cond_t*, recvDataCond, &m_RecvDataCond);
-    SRTU_PROPERTY_RO(pthread_cond_t*, recvTsbPdCond, &m_RcvTsbPdCond);
     SRTU_PROPERTY_RO(CUDTUnited*, uglobal, m_pGlobal);
     SRTU_PROPERTY_RO(std::set<int>&, pollset, m_sPollID);
 };
@@ -412,6 +512,8 @@ public: //API
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen);
+    static int connectLinks(SRTSOCKET grp, const sockaddr* source /*[[nullable]]*/, int namelen,
+            SRT_SOCKGROUPDATA links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -657,7 +759,7 @@ private:
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], int hsreq_type_cmd);
     SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
-    void synchronizeGroupTime(CUDTGroup* grp);
+    void synchronizeWithGroup(CUDTGroup* grp);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -956,24 +1058,17 @@ private: // Sending related data
     //   always increased by one in this call, otherwise it will be increased by the number of blocks
     //   scheduled for sending.
 
-    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileSmoother, formerly CUDTCC)
+    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileCC, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
 
-    void setInitialSndSeq(int32_t isn, bool initial = true)
+    void setInitialSndSeq(int32_t isn)
     {
         // m_iLastDecSeq = isn - 1; <-- purpose unknown; duplicate from FileSmoother?
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = isn - 1;
-
-        // This should NOT be done at the "in the flight" situation
-        // because after the initial stage there are more threads using
-        // these fields, and this field has a different affinity than
-        // the others, and is practically a source of this value, just
-        // pushed through a queue barrier.
-        if (initial)
-            m_iSndNextSeqNo = isn;
+        m_iSndNextSeqNo = isn;
         m_iSndLastAck2 = isn;
     }
 

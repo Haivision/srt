@@ -23,6 +23,7 @@
 #include <sys/ioctl.h>
 #endif
 
+// SRT protected includes
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
@@ -39,6 +40,7 @@
 
 using namespace std;
 
+using srt_logging::SockStatusStr;
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -51,7 +53,7 @@ size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 string DirectionName(SRT_EPOLL_OPT direction)
 {
     string dir_name;
-    if (direction)
+    if (direction & ~SRT_EPOLL_ERR)
     {
         if (direction & SRT_EPOLL_IN)
         {
@@ -129,7 +131,7 @@ public:
     {
         ofile.write(data.data(), data.size());
 #ifdef PLEASE_LOG
-        extern logging::Logger applog;
+        extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
 #endif
     }
@@ -432,7 +434,33 @@ void SrtCommon::AcceptNewClient()
         Error(UDT::getlasterror(), "srt_accept");
     }
 
-    Verb() << " connected.";
+    if (m_sock & SRTGROUP_MASK)
+    {
+        m_listener_group = true;
+        // There might be added a poller, remove it.
+        // We need it work different way.
+
+        if (srt_epoll != -1)
+        {
+            Verb() << "(Group: erasing epoll " << srt_epoll << ") " << VerbNoEOL;
+            srt_epoll_release(srt_epoll);
+        }
+
+        // Don't add any sockets, they will have to be added
+        // anew every time again.
+        srt_epoll = srt_epoll_create();
+
+        // Group data must have a size of at least 1
+        // otherwise the srt_group_data() call will fail
+        if (m_group_data.empty())
+            m_group_data.resize(1);
+
+        Verb() << " connected(group epoll " << srt_epoll <<").";
+    }
+    else
+    {
+        Verb() << " connected.";
+    }
     ::transmit_throw_on_interrupt = false;
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
@@ -697,7 +725,14 @@ void SrtCommon::OpenGroupClient()
     {
         // Note: here the GROUP is added to the poller.
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+
     }
+
+    // Don't check this. Should this fail, the above would already.
+
+    // XXX Now do it regardless whether it's blocking or non-blocking
+    // mode - reading from group is currently manually from every socket.
+    srt_epoll = srt_epoll_create();
 
     // ConnectClient can't be used here, the code must
     // be more-less repeated. In this case the situation
@@ -709,37 +744,108 @@ void SrtCommon::OpenGroupClient()
 
     Verb() << "REDUNDANT connections with " << m_group_nodes.size() << " nodes:";
 
+    if (m_group_data.empty())
+        m_group_data.resize(1);
+
+    vector<SRT_SOCKGROUPDATA> targets;
+    int namelen = sizeof (sockaddr_in);
+
+    Verb() << "Connecting to nodes:";
     int i = 1;
     for (Connection& c: m_group_nodes)
     {
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "[" << i << "] Connecting to node " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
         ++i;
+        targets.push_back(srt_prepare_endpoint(psa, namelen));
+    }
 
-        int insock = srt_connect(m_sock, psa, sizeof sa);
-        if (insock == SRT_ERROR)
-        {
-            // Whatever. Skip the node.
-            Verb() << "FAILED: ";
-        }
-        else
-        {
-            int stat = ConfigurePost(insock);
-            if (stat == -1)
-            {
-                // This kind of error must reject the whole operation.
-                // Usually you'll get this error on the first socket,
-                // and doing this on the others would result in the same.
-                Error(UDT::getlasterror(), "ConfigurePost");
-            }
+    int fisock = srt_connect_group(m_sock, 0, namelen, targets.data(), targets.size());
+    if (fisock == SRT_ERROR)
+    {
+        Error(UDT::getlasterror(), "srt_connect_group");
+    }
 
-            // Have socket, store it into the group socket array.
-            c.socket = insock;
-            c.status = 0;
-            any_node = true;
+    // Configuration change applied on a group should
+    // spread the setting on all sockets.
+    ConfigurePost(m_sock);
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        // As m_group_nodes is simply transformed into 'targets',
+        // one index can be used to index them all. You don't
+        // have to check if they have equal addresses because they
+        // are equal by definition.
+        if (targets[i].id != -1 && targets[i].status < SRTS_BROKEN)
+        {
+            m_group_nodes[i].socket = targets[i].id;
         }
     }
+
+    // Now check which sockets were successful, only those
+    // should be added to epoll.
+    size_t size = m_group_data.size();
+    stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    if (stat == -1 && size > m_group_data.size())
+    {
+        // Just too small buffer. Resize and continue.
+        m_group_data.resize(size);
+        stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    }
+
+    if (stat == -1)
+    {
+        Error("srt_group_data");
+    }
+    m_group_data.resize(size);
+
+    for (size_t i = 0; i < m_group_nodes.size(); ++i)
+    {
+        SRTSOCKET insock = m_group_nodes[i].socket;
+        if (insock == -1)
+        {
+            Verb() << "TARGET '" << SockaddrToString(targets[i].peeraddr) << "' connection failed.";
+            continue;
+        }
+
+        /*
+        if (!m_blocking_mode)
+        {
+            // EXPERIMENTAL version. Add all sockets to epoll
+            // in the direction used for this medium.
+            int modes = m_direction;
+            srt_epoll_add_usock(srt_epoll, insock, &modes);
+            Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
+        }
+        */
+
+        // Have socket, store it into the group socket array.
+        any_node = true;
+    }
+
+    stat = ConfigurePost(m_sock);
+    if (stat == -1)
+    {
+        // This kind of error must reject the whole operation.
+        // Usually you'll get this error on the first socket,
+        // and doing this on the others would result in the same.
+        Error(UDT::getlasterror(), "ConfigurePost");
+    }
+
+
+    Verb() << "Group connection report:";
+    for (auto& d: m_group_data)
+    {
+        // id, status, result, peeraddr
+        Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+    }
+
+    /*
+
+       XXX Temporarily disabled, until the nonblocking mode
+       is added to groups.
 
     // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
     if ( !m_blocking_mode )
@@ -752,7 +858,12 @@ void SrtCommon::OpenGroupClient()
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
         int len = 2;
         SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
+        if ( srt_epoll_wait(srt_conn_epoll,
+                    NULL, NULL,
+                    ready, &len,
+                    -1, // Wait infinitely
+                    NULL, NULL,
+                    NULL, NULL) != -1 )
         {
             Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
         }
@@ -761,6 +872,7 @@ void SrtCommon::OpenGroupClient()
             Error(UDT::getlasterror(), "srt_epoll_wait");
         }
     }
+    */
 
     if (!any_node)
     {
@@ -915,31 +1027,57 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         Error("Too many unpredicted sockets in the group");
     }
 
+    // Clear the active flag in all nodes so that they are reactivated
+    // if they are in the group list, REGARDLESS OF THE STATUS. We need to
+    // see all connections that are in the nodes, but not in the group,
+    // and this one would have to be activated.
+    const SRT_SOCKGROUPDATA* gend = grpdata + grpdata_size;
+    for (auto& n: m_group_nodes)
+    {
+        bool active = (find_if(grpdata, gend,
+                    [&n] (const SRT_SOCKGROUPDATA& sg) { return sg.id == n.socket; }) != gend);
+        if (!active)
+            n.socket = SRT_INVALID_SOCK;
+    }
+
     // Note: sockets are not necessarily in the same order. Find
     // the socket by id.
     for (size_t i = 0; i < grpdata_size; ++i)
     {
-        SRTSOCKET id = grpdata[i].id;
+        const SRT_SOCKGROUPDATA& d = grpdata[i];
+        SRTSOCKET id = d.id;
 
-        SRT_SOCKSTATUS status = grpdata[i].status;
-        int result = grpdata[i].result;
+        SRT_SOCKSTATUS status = d.status;
+        int result = d.result;
 
         if (result != -1 && status == SRTS_CONNECTED)
         {
             // Everything's ok. Don't do anything.
             continue;
         }
+        // id, status, result, peeraddr
+        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
 
-        auto pgi = find_if(m_group_nodes.begin(), m_group_nodes.end(), [id](Connection& c) { return c.socket == id; });
-        if (pgi == m_group_nodes.end())
+        if (status >= SRTS_BROKEN)
         {
-            // A new socket appeared out of the blue. Internal error?
-            Error("Unregisterred socket ID appeared in the status. INTERNAL ERROR.");
+            Verb() << "NOTE: socket @" << id << " is pending for destruction, waiting for it.";
         }
+    }
 
-        sockaddr_in sa = CreateAddrInet(pgi->host, pgi->port);
+    // This was only informative. Now we check all nodes if they
+    // are not active
+
+    int i = 1;
+    for (auto& n: m_group_nodes)
+    {
+        // Check which nodes are no longer active and activate them.
+        if (n.socket != SRT_INVALID_SOCK)
+            continue;
+
+        sockaddr_in sa = CreateAddrInet(n.host, n.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "[" << i << "] RECONNECTING to node " << pgi->host << ":" << pgi->port << " ... " << VerbNoEOL;
+        Verb() << "[" << i << "] RECONNECTING to node " << n.host << ":" << n.port << " ... " << VerbNoEOL;
         ++i;
 
         int insock = srt_connect(m_sock, psa, sizeof sa);
@@ -950,13 +1088,8 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
         else
         {
-            ConfigurePost(insock);
-            // Ignore error this time. It's unlikely that an error
-            // will pop up at the time of reconnecting.
-
             // Have socket, store it into the group socket array.
-            pgi->socket = insock;
-            pgi->status = 0;
+            n.socket = insock;
         }
     }
 }
@@ -969,15 +1102,19 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
     hostport_copy = os.str();
 }
 
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
-    SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool have_group = !m_group_nodes.empty();
+
     bytevector data(chunk);
+
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool ready = true;
     int stat;
+
     do
     {
         if (have_group)
@@ -996,7 +1133,7 @@ bytevector SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
                 {
-                    Verb() << "AGAIN: - waiting for data by epoll...";
+                    Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
                     SRTSOCKET sready[2];
@@ -1015,6 +1152,14 @@ bytevector SrtSource::Read(size_t chunk)
         {
             throw ReadEOF(hostport_copy);
         }
+
+#if PLEASE_LOG
+        extern srt_logging::Logger applog;
+        LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
+                << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+#endif
+
+        Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
     }
     while (!ready);
 
@@ -1025,7 +1170,7 @@ bytevector SrtSource::Read(size_t chunk)
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if (have_group)
+    if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
@@ -1087,12 +1232,12 @@ void SrtTarget::Write(const bytevector& data)
         int ready[2];
         int len = 2;
         if ( srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_epoll)");
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool have_group = !m_group_nodes.empty();
-    if (have_group)
+    if (have_group || m_listener_group)
     {
         mctrl.grpdata = m_group_data.data();
         mctrl.grpdata_size = m_group_data.size();
@@ -1110,6 +1255,8 @@ void SrtTarget::Write(const bytevector& data)
 
     if (have_group)
     {
+        // For listener group this is not necessary. The group information
+        // is updated in mctrl.
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
 }

@@ -208,16 +208,34 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, ref_t<stri
     vector<string> adrs;
     map<string,string> uriparam;
     bool first = true;
+    bool allow_raw_spec = false;
     for (auto uris: spec)
     {
-        UriParser uri(uris);
-        if (uri.type() != UriParser::SRT)
+        UriParser uri(uris, UriParser::EXPECT_HOST);
+        if (!allow_raw_spec && uri.type() != UriParser::SRT)
         {
-            cerr << ": Multiple media must be all with SRT scheme.\n";
+            cerr << ": Multiple media must be all with SRT scheme, or srt://* as first.\n";
             return false;
         }
 
-        adrs.push_back(uri.host() + ":" + uri.port());
+        if (uri.host() == "*")
+        {
+            allow_raw_spec = true;
+            first = false;
+            uriparam = uri.parameters();
+
+            // This does not specify the address, only options and URI.
+            continue;
+        }
+
+        string aspec = uri.host() + ":" + uri.port();
+        if (aspec[0] == ':' || aspec[aspec.size()-1] == ':')
+        {
+            cerr << "Empty host or port in the address specification: " << uris << endl;
+            return false;
+        }
+
+        adrs.push_back(aspec);
         if (first)
         {
             uriparam = uri.parameters();
@@ -225,15 +243,20 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, ref_t<stri
         }
     }
 
-    outspec = "srt:////group?type=redundancy";
+    outspec = "srt:////group?";
+    if (map_getp(uriparam, "type") == nullptr)
+        uriparam["type"] = "redundancy";
+
     for (auto& name_value: uriparam)
     {
         string name, value; tie(name, value) = name_value;
-        outspec += "&" + name + "=" + value;
+        outspec += name + "=" + value + "&";
     }
-    outspec += "&nodes=";
+    outspec += "nodes=";
     for (string& a: adrs)
         outspec += a + ",";
+
+    Verb() << "NOTE: " << prefix << " specification set as: " << (*r_outspec);
 
     return true;
 }
@@ -357,6 +380,38 @@ int main( int argc, char** argv )
         }
     }
 
+    // Check verbose option before extracting the argument so that Verb()s
+    // can be displayed also when they report something about option parsing.
+    string verbose_val = Option<OutString>(params, "no", o_verbose);
+
+    int verbch = 1; // default cerr
+    if (verbose_val != "no")
+    {
+        Verbose::on = true;
+        try
+        {
+            verbch = stoi(verbose_val);
+        }
+        catch (...)
+        {
+            verbch = 1;
+        }
+        if (verbch != 1)
+        {
+            if (verbch != 2)
+            {
+                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                return 1;
+            }
+            Verbose::cverb = &std::cerr;
+        }
+        else
+        {
+            Verbose::cverb = &std::cout;
+        }
+    }
+
+
     if (!need_help)
     {
         // Redundancy is then simply recognized by the fact that there are
@@ -407,35 +462,6 @@ int main( int argc, char** argv )
     
     size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
     transmit_bw_report = Option<OutNumber>(params, "0", o_report);
-    string verbose_val = Option<OutString>(params, "no", o_verbose);
-
-    int verbch = 1; // default cerr
-    if (verbose_val != "no")
-    {
-        Verbose::on = true;
-        try
-        {
-            verbch = stoi(verbose_val);
-        }
-        catch (...)
-        {
-            verbch = 1;
-        }
-        if (verbch != 1)
-        {
-            if (verbch != 2)
-            {
-                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
-                return 1;
-            }
-            Verbose::cverb = &std::cerr;
-        }
-        else
-        {
-            Verbose::cverb = &std::cout;
-        }
-    }
-
     bool crashonx = OptionPresent(params, o_crash);
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
@@ -563,7 +589,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << args[0] << "' --> '" << args[1] << "'";
+    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)

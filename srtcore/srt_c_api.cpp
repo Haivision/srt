@@ -44,6 +44,8 @@ SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
 int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
+int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
 // int srt_bind_multicast()
 
 // Binding and connection management
@@ -58,6 +60,23 @@ int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* target, int target_len)
 {
     return CUDT::connect(u, source, source_len, target, target_len);
+}
+
+SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen)
+{
+    SRT_SOCKGROUPDATA data;
+    data.result = 0;
+    data.status = SRTS_INIT;
+    data.id = -1;
+    memcpy(&data.peeraddr, adr, namelen);
+    return data;
+}
+
+int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize)
+{
+    return CUDT::connectLinks(group, source, sourcelen, name, arraysize);
 }
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
@@ -149,6 +168,7 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 }
 
 extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0, 0, 0 };
+
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
     *mctrl = srt_msgctrl_default;
