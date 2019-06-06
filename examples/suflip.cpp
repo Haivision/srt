@@ -8,7 +8,7 @@
  * 
  */
 
-// This is a simplified version of stransmit, which does not use C++11,
+// This is a simplified version of srt-live-transmit, which does not use C++11,
 // however its functionality is limited to SRT to UDT only.
 
 #include <iostream>
