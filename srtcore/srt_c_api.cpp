@@ -168,6 +168,7 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 }
 
 extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0, 0, 0 };
+
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
     *mctrl = srt_msgctrl_default;
