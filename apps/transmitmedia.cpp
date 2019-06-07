@@ -1102,7 +1102,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1128,7 +1128,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 template <class Iface> struct Udp;
