@@ -1011,7 +1011,17 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 // In the below call, only the underlying `processRendezvous` function will be attempting
                 // to interpret these data (for caller-listener this was already done by `processConnectRequest`
                 // before calling this function), and it checks for the data presence.
-                if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
+                bool success;
+                if (i->m_iID != response.m_iID)
+                { 
+                    success = i->m_pUDT->processAsyncConnectRequest(RST_AGAIN, CONN_AGAIN, response, i->m_pPeerAddr);
+                }
+                else
+                {
+                    success = i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr);
+                }
+
+                if (!success)
                 {
                     // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
                     // its already set in this case.
