@@ -678,6 +678,15 @@ different in 1.2.0 (HSv4) and 1.3.0 (HSv5):
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range         |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
+| `SRTO_PEERIDLETIMEO`  | 1.3.3 | pre     | `int32_t` | msec   | 5000     | positive only |
+
+- The maximum time in `[ms]` to wait until any packet is received from peer since
+the last such packet reception. If this time is passed, connection is considered
+broken on timeout.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range         |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
 | `SRTO_PEERLATENCY`    | 1.3.0 | pre     | `int32_t` | msec   | 0        | positive only |
 
 - The latency value (as described in `SRTO_RCVLATENCY`) that is set by the sender 
