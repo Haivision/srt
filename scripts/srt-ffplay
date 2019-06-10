@@ -27,5 +27,5 @@ if [[ -z $SRCLOC ]]; then
 	exit 1
 fi
 
-$DIRNAME/stransmit "$1" file://con/ | ffplay -
+$DIRNAME/srt-live-transmit "$1" file://con/ | ffplay -
 
