@@ -964,7 +964,7 @@ the value from the other side and it's the matter of luck which one would win
 | `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
 
 - **[SET]** - This option defines whether the connection is allowed for only
-"strictly encrypted" case.
+"strictly encrypted" cases.
 
 When this option is set to TRUE (default), connections are allowed only when:
    - neither party has enabled encryption
@@ -972,20 +972,19 @@ When this option is set to TRUE (default), connections are allowed only when:
 
 In other cases the connection will be rejected.
 
-When this option is set to FALSE, then connection for the remaining combinations
-("non-stricly-encrypted") is allowed, however the transmission will be
-appropriately impaired:
+When this option is set to FALSE **by both parties of the connection**, the
+following combinations of encryption setup will be allowed for connection (with
+appropriate limitations):
 
    - both parties have enabled encryption with different passphrase
       - transmission not possible in either direction
    - only one party has enabled encryption
       - unencrypted transmission possible only from unencrypted party to encrypted one
 
-Setting `SRTO_STRICTENC` to FALSE can be useful only for very specific appliances,
-where you want to distinguish the problem of making a connection (so you want it to
-succeed, even if the transmission would be impaired) and the problem with
-encryption, as well as in this particular case allowing for unencrypted stream
-transmission isn't treated as insecure.
+Setting the `SRTO_STRICTENC`option to FALSE can be useful in situations where
+it is important to know whether a connection is possible. The inability to
+decrypt an incoming transmission can be reported as a different kind of
+problem.
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
