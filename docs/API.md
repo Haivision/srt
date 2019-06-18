@@ -963,10 +963,10 @@ the value from the other side and it's the matter of luck which one would win
 | ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
 | `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
 
-- **[SET]** - This option defines whether the connection is allowed for only
-"strictly encrypted" cases.
+- **[SET]** - This option, when set to TRUE, allows connection only if the
+encryption setup of the connection parties is a "strictly encrypted" case,
+that is:
 
-When this option is set to TRUE (default), connections are allowed only when:
    - neither party has enabled encryption
    - both parties have enabled encryption with the same passphrase
 
