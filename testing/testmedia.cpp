@@ -295,7 +295,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
     m_bindsock = srt_create_socket();
     if ( m_bindsock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+        Error(UDT::getlasterror(), "srt_create_socket");
 
     int stat = ConfigurePre(m_bindsock);
     if ( stat == SRT_ERROR )
@@ -587,9 +587,9 @@ void SrtCommon::OpenClient(string host, int port)
 
 void SrtCommon::PrepareClient()
 {
-    m_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    m_sock = srt_create_socket();
     if ( m_sock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+        Error(UDT::getlasterror(), "srt_create_socket");
 
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
