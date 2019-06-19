@@ -48,6 +48,7 @@ struct sockaddr_any
         if (src->sa_family == AF_INET)
         {
             memcpy(&sin, src, sizeof sin);
+            len = sizeof sin;
         }
         else if (src->sa_family == AF_INET6)
         {
@@ -55,6 +56,7 @@ struct sockaddr_any
             // of src->sa_family or any other data
             // in the source structure, so make sure it's correct first.
             memcpy(&sin6, src, sizeof sin6);
+            len = sizeof sin6;
         }
         else
         {
