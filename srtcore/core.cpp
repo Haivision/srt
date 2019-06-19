@@ -258,6 +258,7 @@ CUDT::CUDT()
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
+   m_iOPT_PeerIdleTimeout = COMM_RESPONSE_TIMEOUT_MS;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -319,6 +320,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
+   m_iOPT_PeerIdleTimeout = ancestor.m_iOPT_PeerIdleTimeout;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -858,6 +860,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
+   case SRTO_PEERIDLETIMEO:
+
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        m_iOPT_PeerIdleTimeout = *(int*)optval;
+        break;
+
    case SRTO_IPV6ONLY:
       if (m_bConnected)
          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -1140,6 +1149,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_IPV6ONLY:
       optlen = sizeof(int);
       *(int*)optval = m_iIpV6Only;
+      break;
+
+   case SRTO_PEERIDLETIMEO:
+      *(int*)optval = m_iOPT_PeerIdleTimeout;
+      optlen = sizeof(int);
       break;
 
    default:
@@ -3623,7 +3637,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        else
        {
            LOGC(mglog.Error, log << CONID()
-                   << "processConnectResponse: received NOT UMSG_HANDSHAKE before connection established: "
+                   << "processConnectResponse: CONFUSED: expected UMSG_HANDSHAKE as connection not yet established, got: "
                    << MessageTypeStr(response.getType(), response.getExtendedType()));
        }
        return CONN_CONFUSED;
@@ -4637,9 +4651,12 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
    }
 #endif
 
-#ifndef TEST_DISABLE_FINAL_HANDSHAKE
+   // NOTE: BLOCK THIS instruction in order to cause the final
+   // handshake to be missed and cause the problem solved in PR #417.
+   // When missed this message, the caller should not accept packets
+   // coming as connected, but continue repeated handshake until finally
+   // received the listener's handshake.
    m_pSndQueue->sendto(peer, response, m_SourceAddr);
-#endif
 }
 
 
@@ -8987,10 +9004,12 @@ void CUDT::checkTimers()
 
     if (currtime_tk > next_exp_time_tk)
     {
+        // ms -> us
+        const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout*1000;
         // Haven't received any information from the peer, is it dead?!
         // timeout: at least 16 expirations and must be greater than 5 seconds
         if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > COMM_RESPONSE_TIMEOUT_US * m_ullCPUFrequency))
+                && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
         {
             //
             // Connection is broken.
@@ -9016,7 +9035,7 @@ void CUDT::checkTimers()
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
+            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
 
         /* 
          * This part is only used with FileCC. This retransmits
