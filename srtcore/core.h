@@ -561,7 +561,7 @@ public: // internal API
     // Note: use notation with X*1000*1000* ... instead of million zeros in a row.
     // In C++17 there is a possible notation of 5'000'000 for convenience, but that's
     // something only for a far future.
-    static const int COMM_RESPONSE_TIMEOUT_US = 5*1000*1000; // 5 seconds
+    static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000; // 5 seconds
     static const int COMM_RESPONSE_MAX_EXP = 16;
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
@@ -975,6 +975,7 @@ private: // Identification
     bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
     bool m_bOPT_GroupConnect;
     std::string m_sStreamName;
+    int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
