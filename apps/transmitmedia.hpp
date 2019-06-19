@@ -53,8 +53,8 @@ public:
     void StealFrom(SrtCommon& src);
     bool AcceptNewClient();
 
-    SRTSOCKET Socket() { return m_sock; }
-    SRTSOCKET Listener() { return m_bindsock; }
+    SRTSOCKET Socket() const { return m_sock; }
+    SRTSOCKET Listener() const { return m_bindsock; }
 
     virtual void Close();
 
@@ -111,13 +111,14 @@ public:
     bool End() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
 
-    SRTSOCKET GetSRTSocket() override
+    SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
             socket = SrtCommon::Listener();
         return socket;
     }
+
     bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
@@ -147,7 +148,7 @@ public:
         return bytes;
     }
 
-    SRTSOCKET GetSRTSocket() override
+    SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
