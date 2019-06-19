@@ -16,12 +16,6 @@
 #include "srt.h"
 
 
-#ifdef __GNUC__
-#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
-#else
-#  define UNUSED(x) UNUSED_ ## x
-#endif
-
 
 enum PEER_TYPE
 {
@@ -104,9 +98,6 @@ static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
 
-static const int SRT_E_TIMEOUT = MJ_AGAIN * 1000 + MN_XMTIMEOUT;
-static const int SRT_E_REJECT  = MJ_SETUP * 1000 + MN_RDAVAIL;
-
 
 /*
  * TESTING SCENARIO
@@ -126,21 +117,21 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
         // STRICTENC         |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |  connect_ret   accept_ret      |ret | error          | rnum|wnum | caller              accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -438,7 +429,7 @@ private:
 
 
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking & UNUSED(expect))
+int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
 {
     return SRT_SUCCESS;
 }

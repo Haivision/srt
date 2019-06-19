@@ -23,8 +23,8 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "transmitbase.hpp"
-#include "transmitmedia.hpp"
+#include "testmediabase.hpp"
+#include "testmedia.hpp"
 #include "netinet_any.h"
 #include "threadname.h"
 #include "verbose.hpp"
@@ -105,7 +105,7 @@ struct MediumPair
 
         if (!initial_portion.empty())
         {
-            tar->Write(initial_portion.data(), initial_portion.size());
+            tar->Write(initial_portion);
             if (tar->Broken())
             {
                 applog.Note() << "OUTPUT BROKEN for loop: " << name;
@@ -120,9 +120,7 @@ struct MediumPair
             {
                 ostringstream sout;
                 alarm(1);
-                bytevector data;
-                const int read_res = src->Read(chunk, data);
-
+                bytevector data = src->Read(chunk);
 
                 alarm(0);
                 if (alarm_state)
@@ -140,7 +138,7 @@ struct MediumPair
                     applog.Note() << sout.str();
                     break;
                 }
-                tar->Write(data.data(), data.size());
+                tar->Write(data);
                 if (tar->Broken())
                 {
                     sout << " OUTPUT broken";

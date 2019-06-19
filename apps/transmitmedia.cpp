@@ -835,7 +835,7 @@ public:
 
     bool IsOpen() override { return cin.good(); }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() override { return 0; };
+    int GetSysSocket() const override { return 0; };
 };
 
 class ConsoleTarget: public Target
@@ -859,7 +859,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() override { return 0; };
+    int GetSysSocket() const override { return 0; };
 };
 
 template <class Iface> struct Console;
@@ -1083,7 +1083,7 @@ public:
 
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, (sockaddr*)&sa, &si);
         if (stat < 1)
         {
             if (SysError() != EWOULDBLOCK)
@@ -1102,7 +1102,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
 
-    int GetSysSocket() override { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1115,7 +1115,7 @@ public:
 
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
-        int stat = sendto(m_sock, data, len, 0, (sockaddr*)&sadr, sizeof sadr);
+        int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
         {
             if ((false))
@@ -1128,7 +1128,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() override { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 template <class Iface> struct Udp;
