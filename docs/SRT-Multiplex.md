@@ -6,6 +6,11 @@ multiple streams in one direction. This tool demonstrates two SRT features:
  specified by IP address and port) for multiple SRT connections
  - the use of the `streamid` socket option to identify multiplexed resources
 
+NOTE: due to changes in the common code that can't be properly handled in the
+current form of srt-multiplex, this application is temporarily blocked. Instead
+the `srt-test-multiplex` application was added with the same functionality,
+although it's recommended for testing purposes only.
+
 #### Usage
 
 `srt-multiplex <SRT-URI> -i <INPUT-URI1>[id] <INPUT-URI2>[id]...`

@@ -355,9 +355,14 @@ int CChannel::getIpTTL() const
    {
       ::getsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (char *)&m_iIpTTL, &size);
    }
-   else
+   else if (m_BindAddr.family() == AF_INET6)
    {
       ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (char *)&m_iIpTTL, &size);
+   }
+   else
+   {
+       // If family is unspecified, the socket probably doesn't exist.
+       return -1;
    }
    return m_iIpTTL;
 }
@@ -369,11 +374,16 @@ int CChannel::getIpToS() const
    {
       ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (char *)&m_iIpToS, &size);
    }
-   else
+   else if (m_BindAddr.family() == AF_INET6)
    {
 #ifdef IPV6_TCLASS
       ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (char *)&m_iIpToS, &size);
 #endif
+   }
+   else
+   {
+       // If family is unspecified, the socket probably doesn't exist.
+       return -1;
    }
    return m_iIpToS;
 }
