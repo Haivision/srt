@@ -383,7 +383,16 @@ public:
 
    void skipData(int len);
 
-   bool empty() { return m_iStartPos == m_iLastAckPos; }
+   bool empty()
+   {
+       // This will not always return the intended value,
+       // that is, it may return false when the buffer really is
+       // empty - but it will return true then in one of next calls.
+       // This function will be always called again at some point
+       // if it returned false, and on true the connection
+       // is going to be broken - so this behavior is acceptable.
+       return m_iStartPos == m_iLastAckPos;
+   }
    bool full() { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
    int capacity() { return m_iSize-1; }
 

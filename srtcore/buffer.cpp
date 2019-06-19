@@ -859,10 +859,6 @@ int CRcvBuffer::readBuffer(char* data, int len)
       {
           freeUnitAt(p);
           p = shift_forward(p);
-          /* XXX
-          in freeUnitAt(p) use:
-                  m_pUnitQueue->makeUnitFree(tmp);
-                  */
 
          m_iNotch = 0;
       }

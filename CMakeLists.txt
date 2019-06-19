@@ -798,7 +798,8 @@ if (ENABLE_APPS)
 		# https://github.com/Haivision/srt/issues/177
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
 	else()
-		srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		# srt-multiplex temporarily blocked
+		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
 		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
@@ -837,6 +838,9 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
 		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
+
+		srt_add_testprogram(srt-test-multiplex)
+		srt_make_application(srt-test-multiplex)
 	endif()
 
 endif()

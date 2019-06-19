@@ -125,7 +125,7 @@ into single network units with appropriate time intervals between them. This can
 be done by an application with explicit knowledge of the type of stream and how to 
 transform it into time-divided single network transport units.
 
-The `stransmit` application, or any other application that uses SRT for
+The `srt-live-transmit` application, or any other application that uses SRT for
 reading, should always read data in 1316-byte segments (network transport units) and
 feed each such unit into the call to an appropriate `srt_send*` function. The
 important part of this process is that these 1316-byte units appear at precise times 

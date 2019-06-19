@@ -58,7 +58,7 @@ void SrtCongestion::Check()
 class LiveCC: public SrtCongestionControlBase
 {
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    int      m_iSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    size_t   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
 
     // NAKREPORT stuff.
@@ -69,18 +69,19 @@ class LiveCC: public SrtCongestionControlBase
 
 public:
 
-    LiveCC(CUDT* parent): SrtCongestionControlBase(parent)
+    LiveCC(CUDT* parent)
+        : SrtCongestionControlBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if ( m_zMaxPayloadSize == 0 )
             m_zMaxPayloadSize = parent->maxPayloadSize();
-        m_iSndAvgPayloadSize = m_zMaxPayloadSize;
+        m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
 
-        HLOGC(mglog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_iSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_zSndAvgPayloadSize);
 
         updatePktSndPeriod();
 
@@ -141,13 +142,13 @@ private:
 
         // XXX NOTE: TEV_SEND is sent from CSndQueue::worker thread, which is
         // different to threads running any other events (TEV_CHECKTIMER and TEV_ACK).
-        // The m_iSndAvgPayloadSize field is however left unguarded because as
-        // 'int' type it's considered atomic, as well as there's no other modifier
-        // of this field. Worst case scenario, the procedure running in CRcvQueue::worker
+        // The m_zSndAvgPayloadSize field is however left unguarded because 
+        // there's no other modifier of this field.
+        // Worst case scenario, the procedure running in CRcvQueue::worker
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
-        m_iSndAvgPayloadSize = avg_iir<128, int>(m_iSndAvgPayloadSize, packet.getLength());
-        HLOGC(mglog.Debug, log << "LiveCC: avg payload size updated: " << m_iSndAvgPayloadSize);
+        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
+        HLOGC(mglog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
     }
 
     void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
@@ -164,10 +165,10 @@ private:
     void updatePktSndPeriod()
     {
         // packet = payload + header
-        double pktsize = m_iSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
-        m_dPktSndPeriod = 1000*1000.0 * (pktsize/m_llSndMaxBW);
+        const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
+        m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
-                << " by avg pktsize=" << m_iSndAvgPayloadSize);
+                << " by avg pktsize=" << m_zSndAvgPayloadSize);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -251,22 +252,37 @@ class FileCC: public SrtCongestionControlBase
     int m_iACKPeriod;
 
     // Fields from CUDTCC
-    int m_iRCInterval;			// UDT Rate control interval
-    uint64_t m_LastRCTime;		// last rate increase time
-    bool m_bSlowStart;			// if in slow start phase
-    int32_t m_iLastAck;			// last ACKed seq no
-    bool m_bLoss;			// if loss happened since last rate increase
-    int32_t m_iLastDecSeq;		// max pkt seq no sent out when last decrease happened
-    double m_dLastDecPeriod;		// value of pktsndperiod when last decrease happened
-    int m_iNAKCount;                     // NAK counter
-    int m_iDecRandom;                    // random threshold on decrease by number of loss events
-    int m_iAvgNAKNum;                    // average number of NAKs per congestion
-    int m_iDecCount;			// number of decreases in a congestion epoch
+    int m_iRCInterval;          // UDT Rate control interval
+    uint64_t m_LastRCTime;      // last rate increase time
+    bool m_bSlowStart;          // if in slow start phase
+    int32_t m_iLastAck;         // last ACKed seq no
+    bool m_bLoss;               // if loss happened since last rate increase
+    int32_t m_iLastDecSeq;      // max pkt seq no sent out when last decrease happened
+    double m_dLastDecPeriod;    // value of pktsndperiod when last decrease happened
+    int m_iNAKCount;            // NAK counter
+    int m_iDecRandom;           // random threshold on decrease by number of loss events
+    int m_iAvgNAKNum;           // average number of NAKs per congestion
+    int m_iDecCount;            // number of decreases in a congestion epoch
 
     int64_t m_maxSR;
 
 public:
-    FileCC(CUDT* parent): SrtCongestionControlBase(parent)
+
+    FileCC(CUDT* parent)
+        : SrtCongestionControlBase(parent)
+        , m_iACKPeriod(CUDT::COMM_SYN_INTERVAL_US)
+        , m_iRCInterval(CUDT::COMM_SYN_INTERVAL_US)
+        , m_LastRCTime(CTimer::getTime())
+        , m_bSlowStart(true)
+        , m_iLastAck(parent->sndSeqNo())
+        , m_bLoss(false)
+        , m_iLastDecSeq(CSeqNo::decseq(m_iLastAck))
+        , m_dLastDecPeriod(1)
+        , m_iNAKCount(0)
+        , m_iDecRandom(1)
+        , m_iAvgNAKNum(0)
+        , m_iDecCount(0)
+        , m_maxSR(0)
     {
         // Note that this function is called at the moment of
         // calling m_Smoother.configure(this). It is placed more less
@@ -274,26 +290,11 @@ public:
         // in the original UDT code. So, old CUDTCC::init() can be moved
         // to constructor.
 
-        m_iRCInterval = CUDT::COMM_SYN_INTERVAL_US;
-        m_LastRCTime = CTimer::getTime();
-        m_iACKPeriod = CUDT::COMM_SYN_INTERVAL_US;
-
-        m_bSlowStart = true;
-        m_iLastAck = parent->sndSeqNo();
-        m_bLoss = false;
-        m_iLastDecSeq = CSeqNo::decseq(m_iLastAck);
-        m_dLastDecPeriod = 1;
-        m_iAvgNAKNum = 0;
-        m_iNAKCount = 0;
-        m_iDecRandom = 1;
-
         // SmotherBase
         m_dCWndSize = 16;
         m_dPktSndPeriod = 1;
 
-        m_maxSR = 0;
-
-        parent->ConnectSignal(TEV_ACK, SSLOT(updateSndPeriod));
+        parent->ConnectSignal(TEV_ACK,        SSLOT(updateSndPeriod));
         parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(slowdownSndPeriod));
         parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
 
@@ -333,12 +334,9 @@ private:
     // SLOTS
     void updateSndPeriod(ETransmissionEvent, EventVariant arg)
     {
-        int ack = arg.get<EventVariant::ACK>();
+        const int ack = arg.get<EventVariant::ACK>();
 
-        int64_t B = 0;
-        double inc = 0;
-
-        uint64_t currtime = CTimer::getTime();
+        const uint64_t currtime = CTimer::getTime();
         if (currtime - m_LastRCTime < (uint64_t)m_iRCInterval)
             return;
 
@@ -358,7 +356,7 @@ private:
                     HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = mega/("
-                        << m_parent->deliveryRate() << "B/s)");
+                        << m_parent->deliveryRate() << "pkts/s)");
                 }
                 else
                 {
@@ -381,37 +379,35 @@ private:
             m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->RTT() + m_iRCInterval) + 16;
         }
 
-        // During Slow Start, no rate increase
-        if (m_bSlowStart)
+        // No rate increase during Slow Start
+        if (!m_bSlowStart)
         {
-            goto RATE_LIMIT;
+            if (m_bLoss)
+            {
+                m_bLoss = false;
+            }
+            else
+            {
+                double inc = 0;
+                int64_t B = (int64_t)(m_parent->bandwidth() - 1000000.0 / m_dPktSndPeriod);
+                if ((m_dPktSndPeriod > m_dLastDecPeriod) && ((m_parent->bandwidth() / 9) < B))
+                    B = m_parent->bandwidth() / 9;
+                if (B <= 0)
+                    inc = 1.0 / m_parent->MSS();    // was inc = 0.01; in UDT
+                else
+                {
+                    // inc = max(10 ^ ceil(log10( B * MSS * 8 ) * Beta / MSS, 1/MSS)
+                    // Beta = 1.5 * 10^(-6)
+
+                    inc = pow(10.0, ceil(log10(B * m_parent->MSS() * 8.0))) * 0.0000015 / m_parent->MSS();
+
+                    if (inc < 1.0 / m_parent->MSS())
+                        inc = 1.0 / m_parent->MSS();
+                }
+
+                m_dPktSndPeriod = (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval);
+            }
         }
-
-        if (m_bLoss)
-        {
-            m_bLoss = false;
-            goto RATE_LIMIT;
-        }
-
-        B = (int64_t)(m_parent->bandwidth() - 1000000.0 / m_dPktSndPeriod);
-        if ((m_dPktSndPeriod > m_dLastDecPeriod) && ((m_parent->bandwidth() / 9) < B))
-            B = m_parent->bandwidth() / 9;
-        if (B <= 0)
-            inc = 1.0 / m_parent->MSS();
-        else
-        {
-            // inc = max(10 ^ ceil(log10( B * MSS * 8 ) * Beta / MSS, 1/MSS)
-            // Beta = 1.5 * 10^(-6)
-
-            inc = pow(10.0, ceil(log10(B * m_parent->MSS() * 8.0))) * 0.0000015 / m_parent->MSS();
-
-            if (inc < 1.0/m_parent->MSS())
-                inc = 1.0/m_parent->MSS();
-        }
-
-        m_dPktSndPeriod = (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval);
-
-RATE_LIMIT:
 
 #if ENABLE_HEAVY_LOGGING
         // Try to do reverse-calculation for m_dPktSndPeriod, as per minSP below

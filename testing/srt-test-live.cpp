@@ -11,7 +11,7 @@
 // NOTE: This application uses C++11.
 
 // This program uses quite a simple architecture, which is mainly related to
-// the way how it's invoked: stransmit <source> <target> (plus options).
+// the way how it's invoked: srt-test-live <source> <target> (plus options).
 //
 // The media for <source> and <target> are filled by abstract classes
 // named Source and Target respectively. Most important virtuals to

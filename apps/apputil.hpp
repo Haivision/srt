@@ -337,16 +337,6 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
         {
             size_t seppos; // (see goto, it would jump over initialization)
             current_key = a+1;
-            /* XXX ALTERNATIVE IMP, please review
-            string key(a + 1);  // omit '-'
-            size_t pos = key.find_first_of(":");
-            if (pos == string::npos)
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos + 1);
-            key = key.substr(0, pos);
-
-            current_key = key;
-            */
             if ( current_key == "-" )
             {
                 // The -- argument terminates the options.
@@ -390,13 +380,6 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                         // Anyway, consider it already processed.
                         break;
                     }
-                    /* XXX ALTERNATIVE IMP, please review
-                    else if (s.type == OptionScheme::ARG_ONE)
-                    {
-                        if (!value.empty())
-                            params[current_key].push_back(value);
-                    }
-                    */
                     type = s.type;
 
                     if ( vals == 1 && type == OptionScheme::ARG_ONE )
