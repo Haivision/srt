@@ -235,11 +235,6 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
-            if (m_group_type != "redundancy")
-            {
-                Error("With //group, only type=redundancy is currently supported");
-            }
-
             vector<string> nodes;
             Split(par["nodes"], ',', back_inserter(nodes));
 
@@ -711,7 +706,8 @@ void SrtCommon::OpenGroupClient()
     // Resolve group type.
     if (m_group_type == "redundancy")
         type = SRT_GTYPE_REDUNDANT;
-    // else if blah blah blah...
+    else if (m_group_type == "backup")
+        type = SRT_GTYPE_BACKUP;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
@@ -728,7 +724,6 @@ void SrtCommon::OpenGroupClient()
     {
         // Note: here the GROUP is added to the poller.
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT);
-
     }
 
     // Don't check this. Should this fail, the above would already.

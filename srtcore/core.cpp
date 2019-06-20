@@ -10369,7 +10369,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype):
         m_bOpened(false),
         m_bConnected(false),
         m_bClosing(false),
-        m_iLastSchedSeqNo(0)
+        m_iLastSchedSeqNo(0),
+        m_iLastSchedMsgNo(0)
 {
     CGuard::createMutex(m_GroupLock);
     CGuard::createMutex(m_RcvDataLock);
@@ -13069,7 +13070,7 @@ RETRY_READING:
             // embrace everything below.
 
             // We need to first qualify the sequence, just for a case
-            if (m_RcvBaseSeqNo != -1 && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+            if (m_RcvBaseSeqNo != -1 && seqDiscrepancy(mctrl))
             {
                 // This error should be returned if the link turns out
                 // to be the only one, or set to the group data.
@@ -13355,7 +13356,6 @@ bool CUDTGroup::seqDiscrepancy(SRT_MSGCTRL& mctrl)
 
     return dif > CSeqNo::m_iSeqNoTH/2;
 }
-
 
 string CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
