@@ -545,6 +545,9 @@ typedef enum SRT_GROUP_TYPE
 {
     SRT_GTYPE_UNDEFINED,
     SRT_GTYPE_REDUNDANT,
+    SRT_GTYPE_BACKUP,
+    SRT_GTYPE_BONDING,
+    SRT_GTYPE_MULTICAST,
     // ...
     SRT_GTYPE__END
 } SRT_GROUP_TYPE;
@@ -568,6 +571,7 @@ typedef struct SRT_SocketGroupData_
     SRT_SOCKSTATUS status;
     int result;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    int priority;
 } SRT_SOCKGROUPDATA;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -592,7 +596,7 @@ SRT_API       int srt_connect_bind (SRTSOCKET u,
                                     const struct sockaddr* target, int target_len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
-                                    
+
 SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
 SRT_API int srt_connect_group(SRTSOCKET group,
         const struct sockaddr* source /*nullable*/, int sourcelen,

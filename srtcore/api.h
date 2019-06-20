@@ -237,7 +237,7 @@ public:
 
    CUDTException* getError();
 
-   CUDTGroup& addGroup(SRTSOCKET id)
+   CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
        CGuard cg(m_GlobControlLock, "GlobControl");
        // This only ensures that the element exists.
@@ -247,7 +247,7 @@ public:
        {
            // This is a reference to the cell, so it will
            // rewrite it into the map.
-           g = new CUDTGroup;
+           g = new CUDTGroup(type);
        }
 
        // Now we are sure that g is not NULL,

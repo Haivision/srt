@@ -181,6 +181,8 @@ const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
 
+typedef RollNumber<MSGNO_SEQ::size, 1> MsgNo;
+
 
 // constexpr in C++11 !
 inline int32_t PacketBoundaryBits(PacketBoundary o) { return MSGNO_PACKET_BOUNDARY::wrap(int32_t(o)); }

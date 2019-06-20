@@ -170,7 +170,8 @@ void CSndBuffer::addBuffer(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl
     int32_t inorder = r_mctrl.get().inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     HLOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
-        << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
+        << size << " packets (" << len << " bytes) to send, msgno="
+        << (msgno ? msgno : m_iNextMsgNo)
         << (inorder ? "" : " NOT") << " in order");
 
     // The sequence number passed to this function is the sequence number
@@ -179,7 +180,18 @@ void CSndBuffer::addBuffer(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl
     // and then return the accordingly modified sequence number in the reference.
 
     Block* s = m_pLastBlock;
-    msgno = m_iNextMsgNo;
+
+    if (msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
+        msgno = m_iNextMsgNo;
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: OVERWRITTEN by msgno supplied by caller: msgno=" << msgno);
+        m_iNextMsgNo = msgno;
+    }
+
     for (int i = 0; i < size; ++ i)
     {
         int pktlen = len - i * m_iMSS;
@@ -238,9 +250,7 @@ void CSndBuffer::addBuffer(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
-    m_iNextMsgNo ++;
-    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
-        m_iNextMsgNo = 1;
+    m_iNextMsgNo = ++MsgNo(m_iNextMsgNo);
 }
 
 void CSndBuffer::setInputRateSmpPeriod(int period)
@@ -425,6 +435,22 @@ int CSndBuffer::readData(ref_t<CPacket> r_packet, ref_t<uint64_t> srctime, int k
    HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
 
    return readlen;
+}
+
+int32_t CSndBuffer::getMsgNoAt(const int offset)
+{
+   CGuard bufferguard(m_BufLock, "Buf");
+
+   Block* p = m_pFirstBlock;
+   // XXX Suboptimal procedure to keep the blocks identifiable
+   // by sequence number. Consider using some circular buffer.
+   for (int i = 0; i < offset && p; ++ i)
+      p = p->m_pNext;
+
+   if (!p)
+       return 0;
+
+   return p->getMsgSeq();
 }
 
 int CSndBuffer::readData(const int offset, ref_t<CPacket> r_packet, ref_t<uint64_t> r_srctime, ref_t<int> r_msglen)

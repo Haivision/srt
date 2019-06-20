@@ -653,9 +653,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
         // With app reader, do not set groupPacketArrival (block the
         // provider array feature completely for now).
 
-#ifndef SRT_ENABLE_APP_READER
+
+        /* SETUP HERE IF NEEDED
         ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
-#endif
+        */
     }
     else
     {
@@ -1118,13 +1119,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         CUDTGroup::gli_t f = g.add(g.prepareData(ns));
         ns->m_IncludedIter = f;
         ns->m_IncludedGroup = &g;
+        f->priority = targets[tii].priority;
 
         // XXX This should be reenabled later, this should
         // be probably still in use to exchange information about
         // packets assymetrically lost. But for no other purpose.
-#ifndef SRT_ENABLE_APP_READER
+        /*
         ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
-#endif
+        */
 
         int isn = g.currentSchedSequence();
 
@@ -2560,7 +2562,7 @@ CUDTGroup& CUDT::newGroup(int type)
     SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
-    return s_UDTUnited.addGroup(id).id(id).type(SRT_GROUP_TYPE(type));
+    return s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).id(id);
 }
 
 SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)

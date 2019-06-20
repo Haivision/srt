@@ -68,6 +68,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen)
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
+    data.priority = 0;
     memcpy(&data.peeraddr, adr, namelen);
     return data;
 }

@@ -134,12 +134,9 @@ enum GroupDataItem
 {
     GRPD_GROUPID,
     GRPD_GROUPTYPE,
+    GRPD_PRIORITY,
 
-    /* That was an early concept, not to be used.
-    GRPD_MASTERID,
-    GRPD_MASTERTDIFF,
-    */
-    /// end
+
     GRPD__SIZE
 };
 
@@ -172,10 +169,27 @@ public:
     enum GroupState
     {
         GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
-        GST_IDLE,     // The socket should be activated at the next operation immediately.
+        GST_IDLE,     // The socket is ready to be activated
         GST_RUNNING,  // The socket was already activated and is in use
         GST_BROKEN    // The last operation broke the socket, it should be closed.
     };
+
+    // Note that the use of states may differ in particular group types:
+    //
+    // Redundancy: links that are freshly connected become PENDING and then IDLE only
+    // for a short moment to be activated immediately at the nearest sending operation.
+    //
+    // Bonding: like with redundancy, just that the link activation gets its shared percentage
+    // of traffic balancing
+    //
+    // Multicast: The link is never idle. The data are always sent over the UDP multicast link
+    // and the receiver simply gets subscribed and reads packets once it's ready.
+    //
+    // Backup: The link stays idle until it's activated, and the activation can only happen
+    // at the moment when the currently active link is "suspected of being likely broken"
+    // (the current active link fails to receive ACK in a time when two ACKs should already
+    // be received). After a while when the current active link is confirmed broken, it turns
+    // into broken state.
 
     static std::string StateStr(GroupState);
 
@@ -193,131 +207,10 @@ public:
         bool ready_read;
         bool ready_write;
         bool ready_error;
+
+        // Configuration
+        int priority;
     };
-
-#ifdef SRT_ENABLE_APP_READER
-#else
-
-    // This object will be placed at the position in the
-    // buffer assigned to packet's sequence number. When extracting
-    // the data to be delivered to the output, this defines, from
-    // which socket the data should be read to get the packet of that
-    // sequence. The data are read until the packet with this sequence
-    // is found. The play time defines when exactly the packet should be
-    // given up to the application.
-    struct Provider
-    {
-        uint64_t playtime;
-        std::vector<CUDT*> provider; // XXX may be not the most optimal
-        bool signedoff;
-
-        Provider(): playtime(0), signedoff(false) {}
-
-        struct FUpdate
-        {
-            uint64_t playtime;
-            CUDT* provider;
-            FUpdate(CUDT* prov, uint64_t pt): playtime(pt), provider(prov) {}
-            void operator()(Provider& accessed, bool isnew)
-            {
-                if (isnew)
-                {
-                    accessed.playtime = playtime;
-                    accessed.provider.clear();
-                    accessed.provider.push_back(provider);
-                }
-                else
-                {
-                    std::vector<CUDT*>& ap = accessed.provider;
-                    // This might be called multiple times for the same packet,
-                    // so find the provider if it isn't there already
-                    std::vector<CUDT*>::iterator f = std::find(ap.begin(),
-                            ap.end(), provider);
-                    if (f == ap.end())
-                        ap.push_back(provider);
-                }
-            }
-        };
-
-        struct FValid
-        {
-            bool operator()(const Provider& p) { return !p.provider.empty() && p.signedoff; }
-        };
-    };
-
-    // This object keeps the data extracted from the packet and waiting
-    // to be delivered to the application when the time comes. The CPacket
-    // object is used here because it already provides the automatic allocation
-    // facility. It's not the best that can be used here, but there's no better
-    // alternative, provided we need to keep the receiver buffer untouched.
-    struct Pending
-    {
-        uint64_t playtime;
-        SRT_MSGCTRL msgctrl;
-        char* buffer;
-        int size;
-        bool owned;
-
-        void move_from(Pending& sec)
-        {
-            playtime = sec.playtime;
-            msgctrl = sec.msgctrl;
-
-            // Move the allocated buffer to the new packet.
-            // Other data are not important, this is only for
-            // data passing.
-            buffer = sec.buffer;
-            size = sec.size;
-            owned = true;
-
-            sec.buffer = NULL;
-            sec.owned = false;
-        }
-
-        Pending(): playtime(0), msgctrl(srt_msgctrl_default), buffer(NULL), owned(false)
-        {
-        }
-
-        char* release()
-        {
-            char* b = buffer;
-            dispose();
-            buffer = NULL;
-            return b;
-        }
-
-        void dispose()
-        {
-            if (owned)
-            {
-                delete [] buffer;
-            }
-        }
-
-        ~Pending()
-        {
-            dispose();
-        }
-
-        void allocate(int bufsize)
-        {
-            if (owned)
-            {
-                if (bufsize == size)
-                    return;
-                delete [] buffer;
-            }
-
-            buffer = new char[bufsize];
-            size = bufsize;
-            owned = true;
-        }
-
-    private:
-        Pending(const Pending&);
-    };
-
-#endif
 
     struct ConfigItem
     {
@@ -350,7 +243,7 @@ public:
     };
 
 
-    CUDTGroup();
+    CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
     static SocketData prepareData(CUDTSocket* s);
@@ -415,6 +308,9 @@ public:
             m_bConnected = false;
         }
 
+        // XXX BUGFIX
+        m_Positions.erase(id);
+
         return s;
     }
 
@@ -429,6 +325,13 @@ public:
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
     int send(const char* buf, int len, ref_t<SRT_MSGCTRL> mc);
+    int sendRedundant(const char* buf, int len, ref_t<SRT_MSGCTRL> mc);
+    int sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> mc);
+
+    // For Backup, sending all previous packet
+    int sendBackupRexmit(CUDT& core, ref_t<SRT_MSGCTRL> r_mc);
+
+
     int recv(char* buf, int len, ref_t<SRT_MSGCTRL> mc);
 
     void close();
@@ -491,6 +394,9 @@ public:
 #else
     void debugGroup() {}
 #endif
+
+    void ackMessage(int32_t msgno);
+
 private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
@@ -516,6 +422,18 @@ private:
     bool m_selfManaged;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
+    struct BufferedMessage
+    {
+        SRT_MSGCTRL mc;
+        std::vector<char> buffer;
+    };
+    std::deque< BufferedMessage > m_SenderBuffer;
+    int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer
+
+    // THIS function must be called only in a function for a group type
+    // that does use sender buffer.
+    void addMessageToBuffer(const char* buf, size_t len, ref_t<SRT_MSGCTRL> mc);
+
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
     bool m_bSynRecving;
@@ -523,7 +441,6 @@ private:
     bool m_bTsbPd;
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
-#ifdef SRT_ENABLE_APP_READER
     int m_RcvEID;
     class CEPollDesc* m_RcvEpolld;
     int m_SndEID;
@@ -555,34 +472,6 @@ private:
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
-#else
-    pthread_t m_RcvInterceptorThread;
-
-    // This buffer gets updated when a packet with some seq number has come.
-    // This gives the TSBPD thread clue that a packet is ready for extraction
-    // for given sequence number. This is also a central packet information for
-    // other sockets in the group to know whether the packet recovery for jumped-over
-    // sequences shall be undertaken or not.
-    CircularBuffer<Provider> m_Providers;
-    CircularBuffer<Pending> m_Pending;
-
-    // This condition shall be signaled when a packet arrives
-    // at the position earlier than the current earliest sequence.
-    // Including when the provider buffer is currently empty.
-    pthread_cond_t m_RcvPacketAhead;
-
-    // This is the sequence number of the position [0] in m_Providers buffer.
-    volatile int32_t m_RcvBaseSeqNo;
-
-    // This is the sequence number that is next available for extraction.
-    // May be equal to m_RcvBaseSeqNo if you have a packet at head ready.
-    // This sequence should be updated in case when the buffer was empty
-    // and when the newly coming packet has a sequence less than this.
-    volatile int32_t m_RcvReadySeqNo;
-
-    // Incremented with a new packet arriving
-    volatile int32_t m_RcvLatestSeqNo;
-#endif
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
@@ -599,6 +488,7 @@ private:
     pthread_cond_t m_RcvDataCond;
     pthread_mutex_t m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+    volatile int32_t m_iLastSchedMsgNo;
 public:
 
     // Required after the call on newGroup on the listener side.
@@ -617,7 +507,6 @@ public:
 #endif
     }
 
-#if SRT_ENABLE_APP_READER
     void setInitialRxSequence(int32_t)
     {
         // The app-reader doesn't care about the real sequence number.
@@ -626,13 +515,8 @@ public:
         // by TLPKTDROP.
         m_RcvBaseSeqNo = -1;
     }
-#else
-    void setInitialRxSequence(int32_t seq)
-    {
-        m_RcvBaseSeqNo = m_RcvReadySeqNo = m_RcvLatestSeqNo = CSeqNo::decseq(seq);
-    }
-#endif
 
+    bool seqDiscrepancy(SRT_MSGCTRL& mctrl);
 
     bool applyGroupTime(ref_t<uint64_t> r_start_time, ref_t<uint64_t> r_peer_start_time)
     {
@@ -1031,11 +915,7 @@ private:
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
-#ifdef SRT_ENABLE_APP_READER
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int erh = 1 /*throw exception*/);
-#else
-    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m, int32_t uptoseq = CSeqNo::m_iMaxSeqNo);
-#endif
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
     size_t dropMessage(int32_t seqtoskip);
@@ -1487,6 +1367,8 @@ private: // Timers
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
     volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
     volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
+    volatile uint64_t m_ullTmpActiveTime_tk;  // time since temporary activated, or 0 if not temporary activated
+    volatile uint64_t m_ullUnstableSince_tk;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
     uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
     uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem
 

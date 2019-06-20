@@ -118,7 +118,6 @@ public:
 
    int readData(ref_t<CPacket> r_packet, ref_t<uint64_t> origintime, int kflgs);
 
-
       /// Find data position to pack a DATA packet for a retransmission.
       /// @param [out] data the pointer to the data position.
       /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -131,6 +130,8 @@ public:
 
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
+
+   int32_t getMsgNoAt(const int offset);
 
    void ackData(int offset);
 

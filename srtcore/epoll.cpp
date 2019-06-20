@@ -179,6 +179,8 @@ inline void prv_clear_ready_usocks(CEPollDesc& d, int event_type_match)
 
     // Remove from subscribers all sockets that were found in eventsinks
     set<SRTSOCKET> without;
+
+    // WITHOUT = SUBSCRIBERS \ EVENTSINKS
     std::set_difference(subscribers.begin(), subscribers.end(),
             eventsinks.begin(), eventsinks.end(), std::inserter(without, without.begin()));
 

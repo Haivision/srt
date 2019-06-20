@@ -102,8 +102,10 @@ m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:u
 #endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
-m_iIpV6Only(-1),
-m_bBindMasked(true) // By default the socket is bound to ANY
+m_iIpV6Only(-1)
+#ifdef SRT_ENABLE_PKTINFO
+, m_bBindMasked(true) // By default the socket is bound to ANY
+#endif
 {
 
 #ifdef SRT_ENABLE_PKTINFO
