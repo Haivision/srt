@@ -13115,7 +13115,7 @@ RETRY_READING:
             // embrace everything below.
 
             // We need to first qualify the sequence, just for a case
-            if (m_RcvBaseSeqNo != -1 && seqDiscrepancy(mctrl))
+            if (m_RcvBaseSeqNo != -1 && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
             {
                 // This error should be returned if the link turns out
                 // to be the only one, or set to the group data.
@@ -13382,24 +13382,6 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
     }
 
     return out;
-}
-
-// XXX UNUSED CODE. Possibly to be used instead of the above checks with seqoff
-bool CUDTGroup::seqDiscrepancy(SRT_MSGCTRL& mctrl)
-{
-    // Here it's predicted that the incoming packet's seq may only be
-    // at most 1/8 of the whole range in advance. So we increase the
-    // base with this and treat it as the farthest possible sequence.
-    // The difference will be checked against Threshold (half of range),
-    // so the distance will be always less than this. If the distance
-    // then exceeds 1/4 of the range, it's stated as sequence discrepancy.
-
-    int32_t max_position = CSeqNo::incseq(m_RcvBaseSeqNo, CSeqNo::m_iSeqNoTH/4);
-    int dif = abs(max_position - mctrl.pktseq);
-    if (dif > CSeqNo::m_iSeqNoTH)
-        dif = abs(mctrl.pktseq - max_position);
-
-    return dif > CSeqNo::m_iSeqNoTH/2;
 }
 
 string CUDTGroup::StateStr(CUDTGroup::GroupState st)

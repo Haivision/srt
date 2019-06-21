@@ -509,8 +509,6 @@ public:
         m_RcvBaseSeqNo = -1;
     }
 
-    bool seqDiscrepancy(SRT_MSGCTRL& mctrl);
-
     bool applyGroupTime(ref_t<uint64_t> r_start_time, ref_t<uint64_t> r_peer_start_time)
     {
         using srt_logging::mglog;
