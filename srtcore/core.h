@@ -403,14 +403,7 @@ private:
     void getGroupCount(ref_t<size_t> r_size, ref_t<bool> r_still_alive);
     void getMemberStatus(ref_t< std::vector<SRT_SOCKGROUPDATA> > r_gd, SRTSOCKET wasread, int result, bool again);
 
-    // XXX UNUSED
-    void readInterceptorThread();
-    static void* readInterceptorThread_FWD(void* vself)
-    {
-        CUDTGroup* self = (CUDTGroup*)vself;
-        self->readInterceptorThread();
-        return 0;
-    }
+    void updateLatestRcv();
 
     class CUDTUnited* m_pGlobal;
     pthread_mutex_t m_GroupLock;
@@ -547,6 +540,8 @@ public:
     bool getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp);
 
     bool applyGroupSequences(SRTSOCKET, ref_t<int32_t> r_snd_isn, ref_t<int32_t> r_rcv_isn);
+
+    void updateLatestRcv(gli_t);
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
@@ -867,6 +862,8 @@ private:
 
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
+
+    void updateIdleLinkFrom(CUDT* source);
 
     void checkNeedDrop(ref_t<bool> bCongestion);
 

@@ -5020,6 +5020,13 @@ void* CUDT::tsbpd(void* param)
                 self->m_pRcvBuffer->skipData(seqlen);
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
+                if (self->m_parent->m_IncludedGroup)
+                {
+                    // A group may need to update the parallelly used idle links,
+                    // should it have any. Pass the current socket position in order
+                    // to skip it from the group loop.
+                    self->m_parent->m_IncludedGroup->updateLatestRcv(self->m_parent->m_IncludedIter);
+                }
 
 #if ENABLE_LOGGING
                 int64_t timediff = 0;
@@ -7209,6 +7216,13 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
 
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
+    if (m_parent->m_IncludedGroup)
+    {
+        // A group may need to update the parallelly used idle links,
+        // should it have any. Pass the current socket position in order
+        // to skip it from the group loop.
+        m_parent->m_IncludedGroup->updateLatestRcv(m_parent->m_IncludedIter);
+    }
 
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
@@ -9293,6 +9307,37 @@ int CUDT::processData(CUnit* unit)
    }
 
    return 0;
+}
+
+void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
+{
+    // Currently only Backup groups use connected idle links.
+    if (m_type != SRT_GTYPE_BACKUP)
+        return;
+
+    CGuard lg(m_GroupLock, "Group");
+
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        // Skip the socket that has reported packet reception
+        if (gi == current)
+            continue;
+
+        gi->ps->m_pUDT->updateIdleLinkFrom(current->ps->m_pUDT);
+    }
+}
+
+void CUDT::updateIdleLinkFrom(CUDT* source)
+{
+    if (!m_pRcvBuffer->empty())
+    {
+        HLOGC(dlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID << ": receiver buffer not empty");
+        return;
+    }
+
+    HLOGC(dlog.Debug, log << "grp: updating rcv-seq in @" << m_SocketID
+            << " from @" << source->m_SocketID << ": %" << source->m_iRcvLastSkipAck);
+    setInitialRcvSeq(source->m_iRcvLastSkipAck);
 }
 
 vector<int32_t> CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
