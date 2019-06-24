@@ -685,6 +685,15 @@ int main(int argc, char** argv)
                                     return 1;
                                 }
                             }
+
+#ifndef _WIN32
+                            if (cfg.timeout_mode == 1 && cfg.timeout > 0)
+                            {
+                                if (!cfg.quiet)
+                                    cerr << "TIMEOUT: cancel\n";
+                                alarm(0);
+                            }
+#endif
                         }
                     }
 
