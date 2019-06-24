@@ -855,11 +855,8 @@ std::string FormatTime(uint64_t time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
-#else
-    strftime(tmp_buf, 512, "%T.", &tm);
-#endif
+    strftime(tmp_buf, 512, "%X.", &tm);
+
     ostringstream out;
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
@@ -892,22 +889,9 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, 0);
-        time_t t = tv.tv_sec;
-        struct tm tm = SysLocalTime(t);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        // Nice to have %T as "standard time format" for logs,
-        // but it's Single Unix Specification and doesn't exist
-        // on Windows. Use %X on Windows (it's described as
-        // current time without date according to locale spec).
-        //
-        // XXX Consider using %X everywhere, as it should work
-        // on both systems.
-#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
-#else
-        strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 
