@@ -6365,11 +6365,15 @@ void CUDT::releaseSynch()
     pthread_mutex_lock(&m_RecvLock);
     pthread_cond_signal(&m_RcvTsbPdCond);
     pthread_mutex_unlock(&m_RecvLock);
+
+    pthread_mutex_lock(&m_RecvDataLock);
     if (!pthread_equal(m_RcvTsbPdThread, pthread_t())) 
     {
         pthread_join(m_RcvTsbPdThread, NULL);
         m_RcvTsbPdThread = pthread_t();
     }
+    pthread_mutex_unlock(&m_RecvDataLock);
+
     pthread_mutex_lock(&m_RecvLock);
     pthread_mutex_unlock(&m_RecvLock);
 }
