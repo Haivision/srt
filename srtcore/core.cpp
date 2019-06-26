@@ -5995,6 +5995,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     if (len <= 0)
     {
         LOGC(dlog.Error, log << "INVALID: Data size for sending declared with length: " << len);
+        abort();
         return 0;
     }
 
@@ -7718,7 +7719,14 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       if (offset > 0) {
 
           if (m_parent->m_IncludedGroup)
-              m_parent->m_IncludedGroup->ackMessage(m_pSndBuffer->getMsgNoAt(offset));
+          {
+              // Get offset-1 because 'offset' points actually to past-the-end
+              // of the sender buffer. We have already checked that offset is
+              // at least 1.
+              int32_t msgno = m_pSndBuffer->getMsgNoAt(offset-1);
+              HLOGC(dlog.Debug, log << "ACK: acking group sender buffer for #" << msgno);
+              m_parent->m_IncludedGroup->ackMessage(msgno);
+          }
 
           // acknowledge the sending buffer (remove data that predate 'ack')
           m_pSndBuffer->ackData(offset);
@@ -8077,8 +8085,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       break;
 
    case UMSG_KEEPALIVE: //001 - Keep-alive
-      // The only purpose of keep-alive packet is to tell that the peer is still alive
-      // nothing needs to be done.
+
+      handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
 
       break;
 
@@ -9346,6 +9354,20 @@ vector<int32_t> CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     CUDT* self = (CUDT*)vself;
     vector<int32_t> output;
 
+    // XXX When an alternative packet arrival callback is installed
+    // in case of groups, move this part to the groupwise version.
+
+    if (self->m_parent->m_IncludedGroup)
+    {
+        CUDTGroup::gli_t gi = self->m_parent->m_IncludedIter;
+        if (gi->rcvstate < CUDTGroup::GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
+        {
+            HLOGC(mglog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
+            gi->rcvstate = CUDTGroup::GST_RUNNING;
+            return output;
+        }
+    }
+
     int initial_loss_ttl = 0;
     if ( self->m_bPeerRexmitFlag )
         initial_loss_ttl = self->m_iReorderTolerance;
@@ -10337,6 +10359,19 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
     return std::abs(timespan);
 }
 
+void CUDT::handleKeepalive(const char* data, size_t size)
+{
+    // Here can be handled some protocol definition
+    // for extra data sent through keepalive.
+
+    if (m_parent->m_IncludedGroup)
+    {
+        // Whether anything is to be done with this socket
+        // about the fact that keepalive arrived, let the
+        // group handle it
+        m_parent->m_IncludedGroup->handleKeepalive(m_parent->m_IncludedIter);
+    }
+}
 
 // GROUP
 
@@ -10494,6 +10529,14 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_RCVTIMEO:
         m_iRcvTimeOut = *(int*)optval;
         break;
+
+        // XXX Currently no socket groups allow any other
+        // congestion control mode other than live.
+    case SRTO_CONGESTION:
+        {
+            LOGP(mglog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
     // Other options to be specifically interpreted by group may follow.
 
@@ -11521,6 +11564,13 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+    // Live only - sorry.
+    if (len > SRT_LIVE_MAX_PLSIZE)
+    {
+        LOGC(dlog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
     // [[using assert(this->m_pSndBuffer != nullptr)]];
 
     // NOTE: This is a "vector of list iterators". Every element here
@@ -12123,6 +12173,13 @@ RetryWaitBlocked:
             gli_t& d = *b;
             d->sndstate = GST_IDLE;
             HLOGC(dlog.Debug, log << " ... @" << d->id);
+
+            // Send first immediate keepalive. The link is to be turn to IDLE
+            // now so nothing will be sent to it over time and it will start
+            // getting KEEPALIVES since now. Send the first one now to increase
+            // probability that the link will be recognized as IDLE on the
+            // reception side ASAP.
+            d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE);
         }
     }
 
@@ -12201,10 +12258,10 @@ RetryWaitBlocked:
 
 void CUDTGroup::addMessageToBuffer(const char* buf, size_t len, ref_t<SRT_MSGCTRL> mc)
 {
-    m_SenderBuffer.push_back(BufferedMessage());
+    m_SenderBuffer.resize(m_SenderBuffer.size()+1);
     BufferedMessage& bm = m_SenderBuffer.back();
     bm.mc = *mc;
-    std::copy(buf, buf+len, std::back_inserter(bm.buffer));
+    bm.copy(buf, len);
 
     if (m_iSndOldestMsgNo == -1)
     {
@@ -12212,6 +12269,8 @@ void CUDTGroup::addMessageToBuffer(const char* buf, size_t len, ref_t<SRT_MSGCTR
         // when adding first time
         m_iSndOldestMsgNo = mc.get().msgno;
     }
+    HLOGC(dlog.Debug, log << "addMessageToBuffer: #" << mc.get().msgno << " size=" << len
+            << " !" << BufferStamp(buf, len));
 }
 
 int CUDTGroup::sendBackupRexmit(CUDT& core, ref_t<SRT_MSGCTRL> r_mc)
@@ -12238,14 +12297,14 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, ref_t<SRT_MSGCTRL> r_mc)
 
     // Send everything - including the packet freshly added to the buffer
 
-    for (std::deque<BufferedMessage>::iterator i = m_SenderBuffer.begin();
+    for (senderBuffer_t::iterator i = m_SenderBuffer.begin();
             i != m_SenderBuffer.end(); ++i)
     {
         {
             // XXX Not sure if the protection is right.
             // Analyze this and perform appropriate tests here!
             InvertedGuard ug(&m_GroupLock, "Group");
-            stat = core.sendmsg2(&i->buffer[0], i->buffer.size(), Ref(i->mc));
+            stat = core.sendmsg2(i->data, i->size, Ref(i->mc));
         }
         if (stat == -1)
         {
@@ -12290,7 +12349,20 @@ void CUDTGroup::ackMessage(int32_t msgno)
         return;
     }
 
-    m_SenderBuffer.erase(m_SenderBuffer.begin(), m_SenderBuffer.begin() + offset);
+    if (offset > int(m_SenderBuffer.size()))
+    {
+        LOGC(mglog.Error, log << "ackMessage: IPE: offset=" << offset <<
+                " (bw. #" << m_iSndOldestMsgNo << " - #" << msgno
+                << ") exceeds buffer size=" << m_SenderBuffer.size() << " - CLEARING");
+        m_SenderBuffer.clear();
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "ackMessage: erasing " << offset << "/"
+                << m_SenderBuffer.size() << " group-senderbuffer messages for #"
+                << m_iSndOldestMsgNo << " - #" << msgno);
+        m_SenderBuffer.erase(m_SenderBuffer.begin(), m_SenderBuffer.begin() + offset);
+    }
 
     // Position at offset is not included
     m_iSndOldestMsgNo = msgno;
@@ -13392,3 +13464,15 @@ string CUDTGroup::StateStr(CUDTGroup::GroupState st)
     return string("UNKNOWN");
 }
 
+void CUDTGroup::handleKeepalive(gli_t gli)
+{
+    // received keepalive for that group member
+    // In backup group it means that the link went IDLE.
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
+    {
+        gli->rcvstate = GST_IDLE;
+        HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning IDLE");
+    }
+}
+
+CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE, 1000);

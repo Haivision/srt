@@ -396,6 +396,7 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
+    void handleKeepalive(gli_t);
 
 private:
     // Check if there's at least one connected socket.
@@ -415,12 +416,97 @@ private:
     bool m_selfManaged;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
+
+public:
+    struct BufferedMessageStorage
+    {
+        size_t blocksize;
+        size_t maxstorage;
+        std::vector<char*> storage;
+
+        BufferedMessageStorage(size_t blk, size_t max):
+            blocksize(blk),
+            maxstorage(max),
+            storage()
+        {
+        }
+
+        char* get()
+        {
+            if (storage.empty())
+                return new char[blocksize];
+
+            // Get the element from the end
+            char* block = storage.back();
+            storage.pop_back();
+            return block;
+        }
+
+        void put(char* block)
+        {
+            if (storage.size() >= maxstorage)
+            {
+                // Simply delete
+                delete [] block;
+                return;
+            }
+
+            // Put the block into the spare buffer
+            storage.push_back(block);
+        }
+
+        ~BufferedMessageStorage()
+        {
+            for (size_t i = 0; i < storage.size(); ++i)
+                delete [] storage[i];
+        }
+    };
+
     struct BufferedMessage
     {
+        static BufferedMessageStorage storage;
+
         SRT_MSGCTRL mc;
-        std::vector<char> buffer;
+        char* data;
+        size_t size;
+
+        BufferedMessage(): data(), size() {}
+        ~BufferedMessage()
+        {
+            if (data)
+                storage.put(data);
+        }
+
+        // NOTE: size 's' must be checked against SRT_LIVE_MAX_PLSIZE
+        // before calling
+        void copy(const char* buf, size_t s)
+        {
+            size = s;
+            data = storage.get();
+            memcpy(data, buf, s);
+        }
+
+        BufferedMessage(const BufferedMessage& foreign SRT_ATR_UNUSED):
+            data(), size()
+        {
+            // This is only to copy empty container.
+            // Any other use should not be done.
+#if ENABLE_DEBUG
+            if (foreign.data)
+                abort();
+#endif
+        }
+
+    private:
+        friend void fwd_swap(BufferedMessage&, BufferedMessage&);
     };
-    std::deque< BufferedMessage > m_SenderBuffer;
+
+    typedef std::deque< BufferedMessage > senderBuffer_t;
+    //typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
+
+private:
+    senderBuffer_t m_SenderBuffer;
+
     int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer
 
     // THIS function must be called only in a function for a group type
@@ -557,6 +643,22 @@ public:
     SRTU_PROPERTY_RO(CUDTUnited*, uglobal, m_pGlobal);
     SRTU_PROPERTY_RO(std::set<int>&, pollset, m_sPollID);
 };
+
+inline void fwd_swap(CUDTGroup::BufferedMessage& a, CUDTGroup::BufferedMessage& b)
+{
+    CUDTGroup::BufferedMessage tmp;
+    tmp = a;
+    a = b;
+    b = tmp;
+    tmp.data = 0;
+}
+
+namespace std
+{
+    template<>
+    inline void swap(CUDTGroup::BufferedMessage& a, CUDTGroup::BufferedMessage& b)
+    { ::fwd_swap(a, b); }
+}
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -1287,7 +1389,7 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
-
+    void handleKeepalive(const char* data, size_t lenghth);
 
 private: // Trace
 

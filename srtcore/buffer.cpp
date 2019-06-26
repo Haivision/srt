@@ -442,13 +442,43 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
    CGuard bufferguard(m_BufLock, "Buf");
 
    Block* p = m_pFirstBlock;
+
+   if (p)
+   {
+       HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: FIRST MSG: size="
+               << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+               << " !" << BufferStamp(p->m_pcData, p->m_iLength));
+   }
+
+   if (offset >= m_iCount)
+   {
+       // Prevent accessing the last "marker" block
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, max offset=" << m_iCount);
+       return 0;
+   }
+
    // XXX Suboptimal procedure to keep the blocks identifiable
    // by sequence number. Consider using some circular buffer.
-   for (int i = 0; i < offset && p; ++ i)
+   int i;
+   Block* ee SRT_ATR_UNUSED = 0;
+   for (i = 0; i < offset && p; ++ i)
+   {
+      ee = p;
       p = p->m_pNext;
+   }
 
    if (!p)
+   {
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, stopped at " << i
+               << " with #" << (ee ? ee->getMsgSeq() : -1));
        return 0;
+   }
+
+   HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: offset="
+           << offset << " found, size=" << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+           << " !" << BufferStamp(p->m_pcData, p->m_iLength));
 
    return p->getMsgSeq();
 }

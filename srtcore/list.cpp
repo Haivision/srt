@@ -464,6 +464,13 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
    // otherwise searching for the position where the node should be
    int offset = CSeqNo::seqoff(m_caSeq[m_iHead].data1, seqno1);
+   if (offset < 0)
+   {
+       LOGC(mglog.Error, log << "RCV-LOSS/insert: IPE: new LOSS %(" << seqno1 << "-" << seqno2
+               << ") PREDATES HEAD %" << m_caSeq[m_iHead].data1 << " -- REJECTING");
+       return;
+   }
+
    int loc = (m_iHead + offset) % m_iSize;
 
    if ((-1 != m_caSeq[m_iTail].data2) && (CSeqNo::incseq(m_caSeq[m_iTail].data2) == seqno1))
