@@ -801,6 +801,10 @@ private: // Timers
     uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
+    void checkACKTimer (uint64_t currtime_tk);
+    void checkNACKTimer(uint64_t currtime_tk);
+    bool checkExpTimer (uint64_t currtime_tk);  // returns true if the connection is expired
+    void checkRexmitTimer(uint64_t currtime_tk);
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration
