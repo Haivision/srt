@@ -8594,6 +8594,239 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
     }
 }
 
+void CUDT::checkACKTimer(uint64_t currtime_tk)
+{
+    if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
+        // OR the number of sent packets since last ACK has reached
+        // the congctl-defined value of ACK Interval
+        // (note that none of the builtin congctls defines ACK Interval)
+        || (m_CongCtl->ACKInterval() > 0 && m_iPktCount >= m_CongCtl->ACKInterval()))
+    {
+        // ACK timer expired or ACK interval is reached
+        sendCtrl(UMSG_ACK);
+        CTimer::rdtsc(currtime_tk);
+
+        const int ack_interval_tk = m_CongCtl->ACKPeriod() > 0
+            ? m_CongCtl->ACKPeriod() * m_ullCPUFrequency
+            : m_ullACKInt_tk;
+        m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
+
+        m_iPktCount = 0;
+        m_iLightACKCount = 1;
+    }
+    // Or the transfer rate is so high that the number of packets
+    // have reached the value of SelfClockInterval * LightACKCount before
+    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
+    // is sent, which doesn't contain statistical data and nothing more
+    // than just the ACK number. The "fat ACK" packets will be still sent
+    // normally according to the timely rules.
+    else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
+    {
+        //send a "light" ACK
+        sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
+        ++m_iLightACKCount;
+    }
+}
+
+
+void CUDT::checkNACKTimer(uint64_t currtime_tk)
+{
+    if (!m_bRcvNakReport)
+        return;
+
+    /*
+    * m_bRcvNakReport enables NAK reports for SRT.
+    * Retransmission based on timeout is bandwidth consuming,
+    * not knowing what to retransmit when the only NAK sent by receiver is lost,
+    * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
+    */
+    if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
+    {
+        // NAK timer expired, and there is loss to be reported.
+        sendCtrl(UMSG_LOSSREPORT);
+
+        CTimer::rdtsc(currtime_tk);
+        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+    }
+}
+
+bool CUDT::checkExpTimer(uint64_t currtime_tk)
+{
+    // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
+    // There's nothing in the original code that alters these values.
+
+    uint64_t next_exp_time_tk;
+    if (m_CongCtl->RTO())
+    {
+        next_exp_time_tk = m_ullLastRspTime_tk + m_CongCtl->RTO() * m_ullCPUFrequency;
+    }
+    else
+    {
+        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+        if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
+            exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
+        next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
+    }
+
+    if (currtime_tk <= next_exp_time_tk)
+        return false;
+
+    // ms -> us
+    const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout * 1000;
+    // Haven't received any information from the peer, is it dead?!
+    // timeout: at least 16 expirations and must be greater than 5 seconds
+    if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
+        && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
+    {
+        //
+        // Connection is broken.
+        // UDT does not signal any information about this instead of to stop quietly.
+        // Application will detect this when it calls any UDT methods next time.
+        //
+        HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "ms");
+        m_bClosing = true;
+        m_bBroken  = true;
+        m_iBrokenCounter = 30;
+
+        // update snd U list to remove this socket
+        m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+
+        releaseSynch();
+
+        // app can call any UDT API to learn the connection_broken error
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+
+        CTimer::triggerEvent();
+
+        return true;
+    }
+
+    HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
+        << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
+
+    ++m_iEXPCount;
+
+    /*
+     * (keepalive fix)
+     * duB:
+     * It seems there is confusion of the direction of the Response here.
+     * LastRspTime is supposed to be when receiving (data/ctrl) from peer
+     * as shown in processCtrl and processData,
+     * Here we set because we sent something?
+     *
+     * Disabling this code that prevent quick reconnection when peer disappear
+     */
+    // Reset last response time since we've just sent a heart-beat.
+    // (fixed) m_ullLastRspTime_tk = currtime_tk;
+
+    return false;
+}
+
+void CUDT::checkRexmitTimer(uint64_t currtime_tk)
+{
+    const uint64_t rtt_syn = (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
+    const uint64_t exp_int = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+
+    if (currtime_tk <= (m_ullLastRspAckTime_tk + exp_int))
+        return;
+
+    /*
+     * This part is only used with FileCC. This retransmits
+     * unacknowledged packet only when nothing in the loss list.
+     * This does not work well for real-time data that is delayed too much.
+     * For LiveCC, see the case of SRM_FASTREXMIT later in function.
+     */
+    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT)
+    {
+        // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
+        // recver: Send out a keep-alive packet
+        if (m_pSndBuffer->getCurrBufSize() > 0)
+        {
+            // protect packet retransmission
+            CGuard::enterCS(m_AckLock);
+
+            // LATEREXMIT works only under the following conditions:
+            // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
+            // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
+            // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
+            if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
+            {
+                // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
+                int32_t csn = m_iSndCurrSeqNo;
+                const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
+                if (num > 0) {
+                    CGuard::enterCS(m_StatsLock);
+                    m_stats.traceSndLoss += 1; // num;
+                    m_stats.sndLossTotal += 1; // num;
+                    CGuard::leaveCS(m_StatsLock);
+
+                    HLOGC(mglog.Debug, log << CONID() << "ENFORCED LATEREXMIT by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
+                        << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
+                }
+            }
+            // protect packet retransmission
+            CGuard::leaveCS(m_AckLock);
+
+            checkSndTimers(DONT_REGEN_KM);
+            updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
+
+            // immediately restart transmission
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+        }
+        else
+        {
+            // (fix keepalive)
+            // XXX (the fix was for Live transmission; this is used in file transmission. Restore?)
+            //sendCtrl(UMSG_KEEPALIVE);
+        }
+    }
+
+    // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
+    //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
+    //         Not required if peer send Periodic NAK Reports.
+    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT
+        // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
+        // there's no "blind rexmit" done at all. The only other rexmit method
+        // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
+        // again after it didn't get a "response" for the previous one). MIND that
+        // probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
+        && !m_bPeerNakReport
+        && m_pSndBuffer->getCurrBufSize() > 0)
+    {
+        // protect packet retransmission
+        CGuard::enterCS(m_AckLock);
+        if ((CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
+        {
+            // resend all unacknowledged packets on timeout
+            const int32_t csn = m_iSndCurrSeqNo;
+            const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
+            HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
+                << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
+
+            HLOGC(mglog.Debug, log << "timeout lost: pkts=" << num << " rtt+4*var=" <<
+                m_iRTT + 4 * m_iRTTVar << " cnt=" << m_iReXmitCount << " diff="
+                << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
+
+            if (num > 0) {
+                CGuard::enterCS(m_StatsLock);
+                m_stats.traceSndLoss += 1; // num;
+                m_stats.sndLossTotal += 1; // num;
+                CGuard::leaveCS(m_StatsLock);
+            }
+        }
+        // protect packet retransmission
+        CGuard::leaveCS(m_AckLock);
+
+        ++m_iReXmitCount;
+
+        checkSndTimers(DONT_REGEN_KM);
+        updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
+
+        // immediately restart transmission
+        m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+    }
+}
+
 void CUDT::checkTimers()
 {
     // update CC parameters
@@ -8613,231 +8846,18 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
-    if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
-            // OR the number of sent packets since last ACK has reached
-            // the congctl-defined value of ACK Interval
-            // (note that none of the builtin congctls defines ACK Interval)
-            || (m_CongCtl->ACKInterval() > 0 && m_iPktCount >= m_CongCtl->ACKInterval()))
-    {
-        // ACK timer expired or ACK interval is reached
+    // Check if it is time to send ACK
+    checkACKTimer(currtime_tk);
 
-        sendCtrl(UMSG_ACK);
-        CTimer::rdtsc(currtime_tk);
+    // Check if it is time to send a loss report
+    checkNACKTimer(currtime_tk);
 
-        int ack_interval_tk = m_CongCtl->ACKPeriod() > 0 ? m_CongCtl->ACKPeriod() * m_ullCPUFrequency : m_ullACKInt_tk;
-        m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
+    // Check if the connection is expired
+    if (checkExpTimer(currtime_tk))
+        return;
 
-        m_iPktCount = 0;
-        m_iLightACKCount = 1;
-    }
-    // Or the transfer rate is so high that the number of packets
-    // have reached the value of SelfClockInterval * LightACKCount before
-    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
-    // is sent, which doesn't contain statistical data and nothing more
-    // than just the ACK number. The "fat ACK" packets will be still sent
-    // normally according to the timely rules.
-    else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
-    {
-        //send a "light" ACK
-        sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
-        ++ m_iLightACKCount;
-    }
-
-
-    if (m_bRcvNakReport)
-    {
-        /*
-         * Enable NAK reports for SRT.
-         * Retransmission based on timeout is bandwidth consuming,
-         * not knowing what to retransmit when the only NAK sent by receiver is lost,
-         * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
-         */
-        if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
-        {
-            // NAK timer expired, and there is loss to be reported.
-            sendCtrl(UMSG_LOSSREPORT);
-
-            CTimer::rdtsc(currtime_tk);
-            m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-        }
-    } // ELSE {
-    // we are not sending back repeated NAK anymore and rely on the sender's EXP for retransmission
-    //if ((m_pRcvLossList->getLossLength() > 0) && (currtime_tk > m_ullNextNAKTime_tk))
-    //{
-    //   // NAK timer expired, and there is loss to be reported.
-    //   sendCtrl(UMSG_LOSSREPORT);
-    //
-    //   CTimer::rdtsc(currtime_tk);
-    //   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-    //}
-    //}
-
-    // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
-    // There's nothing in the original code that alters these values.
-
-    uint64_t next_exp_time_tk;
-    if (m_CongCtl->RTO())
-    {
-        next_exp_time_tk = m_ullLastRspTime_tk + m_CongCtl->RTO() * m_ullCPUFrequency;
-    }
-    else
-    {
-        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
-        if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
-            exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
-        next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
-    }
-
-    if (currtime_tk > next_exp_time_tk)
-    {
-        // ms -> us
-        const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout*1000;
-        // Haven't received any information from the peer, is it dead?!
-        // timeout: at least 16 expirations and must be greater than 5 seconds
-        if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
-        {
-            //
-            // Connection is broken.
-            // UDT does not signal any information about this instead of to stop quietly.
-            // Application will detect this when it calls any UDT methods next time.
-            //
-            HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << ((currtime_tk - m_ullLastRspTime_tk)/m_ullCPUFrequency) << "ms");
-            m_bClosing = true;
-            m_bBroken = true;
-            m_iBrokenCounter = 30;
-
-            // update snd U list to remove this socket
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-
-            releaseSynch();
-
-            // app can call any UDT API to learn the connection_broken error
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
-
-            CTimer::triggerEvent();
-
-            return;
-        }
-
-        HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
-
-        /* 
-         * This part is only used with FileCC. This retransmits
-         * unacknowledged packet only when nothing in the loss list.
-         * This does not work well for real-time data that is delayed too much.
-         * For LiveCC, see the case of SRM_FASTREXMIT later in function.
-         */
-        if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT)
-        {
-            // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-            // recver: Send out a keep-alive packet
-            if (m_pSndBuffer->getCurrBufSize() > 0)
-            {
-                // protect packet retransmission
-                CGuard::enterCS(m_AckLock);
-
-                // LATEREXMIT works only under the following conditions:
-                // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
-                // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-                // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
-                if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
-                {
-                    // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-                    int32_t csn = m_iSndCurrSeqNo;
-                    int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                    if (num > 0) {
-                        CGuard::enterCS(m_StatsLock);
-                        m_stats.traceSndLoss += 1; // num;
-                        m_stats.sndLossTotal += 1; // num;
-                        CGuard::leaveCS(m_StatsLock);
-
-                        HLOGC(mglog.Debug, log << CONID() << "ENFORCED LATEREXMIT by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
-                            << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-                    }
-                }
-                // protect packet retransmission
-                CGuard::leaveCS(m_AckLock);
-
-                checkSndTimers(DONT_REGEN_KM);
-                updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
-
-                // immediately restart transmission
-                m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-            }
-            else
-            {
-                // (fix keepalive)
-                // XXX (the fix was for Live transmission; this is used in file transmission. Restore?)
-                //sendCtrl(UMSG_KEEPALIVE);
-            }
-        }
-        ++ m_iEXPCount;
-
-        /*
-         * (keepalive fix)
-         * duB:
-         * It seems there is confusion of the direction of the Response here.
-         * LastRspTime is supposed to be when receiving (data/ctrl) from peer
-         * as shown in processCtrl and processData,
-         * Here we set because we sent something?
-         *
-         * Disabling this code that prevent quick reconnection when peer disappear
-         */
-        // Reset last response time since we just sent a heart-beat.
-        // (fixed) m_ullLastRspTime_tk = currtime_tk;
-
-    }
-    // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
-    //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
-    //         Not required if peer send Periodic NAK Reports.
-    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT
-            // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
-            // there's no "blind rexmit" done at all. The only other rexmit method
-            // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
-            // again after it didn't get a "response" for the previous one). MIND that
-            // probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
-            &&  !m_bPeerNakReport
-            &&  m_pSndBuffer->getCurrBufSize() > 0)
-    {
-        uint64_t exp_int = (m_iReXmitCount * (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
-
-        if (currtime_tk > (m_ullLastRspAckTime_tk + exp_int))
-        {
-            // protect packet retransmission
-            CGuard::enterCS(m_AckLock);
-            if ((CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
-            {
-                // resend all unacknowledged packets on timeout
-                int32_t csn = m_iSndCurrSeqNo;
-                int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
-                    << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-
-                HLOGC(mglog.Debug, log << "timeout lost: pkts=" <<  num << " rtt+4*var=" <<
-                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " diff="
-                        << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
-
-                if (num > 0) {
-                    CGuard::enterCS(m_StatsLock);
-                    m_stats.traceSndLoss += 1; // num;
-                    m_stats.sndLossTotal += 1; // num;
-                    CGuard::leaveCS(m_StatsLock);
-                }
-            }
-            // protect packet retransmission
-            CGuard::leaveCS(m_AckLock);
-
-            ++m_iReXmitCount;
-
-            checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
-
-            // immediately restart transmission
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-        }
-    }
+    // Check if FAST or LATE packet retransmission is required
+    checkRexmitTimer(currtime_tk);
 
     //   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
     if (currtime_tk > m_ullLastSndTime_tk + (COMM_KEEPALIVE_PERIOD_US * m_ullCPUFrequency))
