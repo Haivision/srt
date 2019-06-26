@@ -9323,13 +9323,25 @@ void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
     if (m_type != SRT_GTYPE_BACKUP)
         return;
 
+    HLOGC(mglog.Debug, log << "updateLatestRcv: BACKUP group, updating from active link @"
+            << current->id << " with %" << current->ps->m_pUDT->m_iRcvLastSkipAck);
+
     CGuard lg(m_GroupLock, "Group");
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         // Skip the socket that has reported packet reception
         if (gi == current)
+        {
+            HLOGC(mglog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
             continue;
+        }
+
+        if (gi->rcvstate == GST_RUNNING)
+        {
+            HLOGC(mglog.Debug, log << "grp: NOT updating rcv-seq on @" << gi->id << " - link RUNNING");
+            continue;
+        }
 
         gi->ps->m_pUDT->updateIdleLinkFrom(current->ps->m_pUDT);
     }
@@ -12954,7 +12966,7 @@ RETRY_READING:
 
             if (gi->laststatus != SRTS_CONNECTED)
             {
-                HCLOG(ds << "@" << gi->id << "<idle:" << SockStatusStr(gi->laststatus) << "> ");
+                HCLOG(ds << "@" << gi->id << "<unstable:" << SockStatusStr(gi->laststatus) << "> ");
                 // Sockets in this state are ignored. We are waiting until it
                 // achieves CONNECTING state, then it's added to write.
                 // Or gets broken and closed in the next step.
