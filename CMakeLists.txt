@@ -235,11 +235,10 @@ if (ENABLE_ENCRYPTION)
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-		add_definitions(
-			-DHAICRYPT_USE_OPENSSL_EVP=1
-			-DHAICRYPT_USE_OPENSSL_AES
-		)
-	endif()
+    add_definitions(
+			-DUSE_OPENSSL
+      )
+      endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
 	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
