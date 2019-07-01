@@ -8629,7 +8629,7 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
 }
 
 
-void CUDT::checkNACKTimer(uint64_t currtime_tk)
+void CUDT::checkNAKTimer(uint64_t currtime_tk)
 {
     if (!m_bRcvNakReport)
         return;
@@ -8724,109 +8724,79 @@ bool CUDT::checkExpTimer(uint64_t currtime_tk)
 
 void CUDT::checkRexmitTimer(uint64_t currtime_tk)
 {
+    /* There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
+     *
+     * LATEREXMIT is only used with FileCC.
+     * The mode is triggered when some time has passed since the last ACK from
+     * the receiver, while there is still some unacknowledged data in the sender's buffer,
+     * and the loss list is empty.
+     *
+     * FASTREXMIT is only used with LiveCC.
+     * The mode is triggered if the receiver does not send periodic NAK reports,
+     * when some time has passed since the last ACK from the receiver,
+     * while there is still some unacknowledged data in the sender's buffer.
+     *
+     * In case the above conditions are met, the unacknowledged packets
+     * in the sender's buffer will be added to loss list and retransmitted.
+     */
+
     const uint64_t rtt_syn = (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
     const uint64_t exp_int = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
 
     if (currtime_tk <= (m_ullLastRspAckTime_tk + exp_int))
         return;
 
-    /*
-     * This part is only used with FileCC. This retransmits
-     * unacknowledged packet only when nothing in the loss list.
-     * This does not work well for real-time data that is delayed too much.
-     * For LiveCC, see the case of SRM_FASTREXMIT later in function.
-     */
-    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT)
+    // If there is no unacknowledged data in the sending buffer,
+    // then there is nothing to retransmit.
+    if (m_pSndBuffer->getCurrBufSize() <= 0)
+        return;
+
+    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT;
+    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT;
+
+    // If the receiver will send periodic NAK reports, then FASTREXMIT is inactive.
+    // MIND that probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
+    if (is_fastrexmit && m_bPeerNakReport)
+        return;
+
+    // We need to retransmit only when the data in the sender's buffer was already sent.
+    // Otherwise it might still be sent regulary.
+    bool retransmit = false;
+    // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
+    if (is_laterexmit && (CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && m_pSndLossList->getLossLength() == 0)
+        retransmit = true;
+
+    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
+        retransmit = true;
+
+    if (retransmit)
     {
-        // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-        // recver: Send out a keep-alive packet
-        if (m_pSndBuffer->getCurrBufSize() > 0)
+        // Sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
+        CGuard acklock(m_AckLock);  // Protect packet retransmission
+        // Resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
+        const int32_t csn = m_iSndCurrSeqNo;
+        const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
+        if (num > 0)
         {
-            // protect packet retransmission
-            CGuard::enterCS(m_AckLock);
+            CGuard::enterCS(m_StatsLock);
+            m_stats.traceSndLoss += num;
+            m_stats.sndLossTotal += num;
+            CGuard::leaveCS(m_StatsLock);
 
-            // LATEREXMIT works only under the following conditions:
-            // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
-            // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-            // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
-            if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
-            {
-                // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-                int32_t csn = m_iSndCurrSeqNo;
-                const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                if (num > 0) {
-                    CGuard::enterCS(m_StatsLock);
-                    m_stats.traceSndLoss += num;
-                    m_stats.sndLossTotal += num;
-                    CGuard::leaveCS(m_StatsLock);
-
-                    HLOGC(mglog.Debug, log << CONID() << "ENFORCED LATEREXMIT by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
-                        << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-                }
-            }
-            // protect packet retransmission
-            CGuard::leaveCS(m_AckLock);
-
-            ++m_iReXmitCount;
-
-            checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
-
-            // immediately restart transmission
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-        }
-        else
-        {
-            // (fix keepalive)
-            // XXX (the fix was for Live transmission; this is used in file transmission. Restore?)
-            //sendCtrl(UMSG_KEEPALIVE);
-        }
-    }
-
-    // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
-    //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
-    //         Not required if peer send Periodic NAK Reports.
-    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT
-        // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
-        // there's no "blind rexmit" done at all. The only other rexmit method
-        // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
-        // again after it didn't get a "response" for the previous one). MIND that
-        // probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
-        && !m_bPeerNakReport
-        && m_pSndBuffer->getCurrBufSize() > 0)
-    {
-        // protect packet retransmission
-        CGuard::enterCS(m_AckLock);
-        if ((CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
-        {
-            // resend all unacknowledged packets on timeout
-            const int32_t csn = m_iSndCurrSeqNo;
-            const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-            HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
+            HLOGC(mglog.Debug, log << CONID() << "ENFORCED " << (is_laterexmit ? "LATEREXMIT" : "FASTREXMIT")
+                << " by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
                 << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-
-            HLOGC(mglog.Debug, log << "timeout lost: pkts=" << num << " rtt+4*var=" <<
-                m_iRTT + 4 * m_iRTTVar << " cnt=" << m_iReXmitCount << " diff="
-                << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
-
-            if (num > 0) {
-                CGuard::enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
-                CGuard::leaveCS(m_StatsLock);
-            }
         }
-        // protect packet retransmission
-        CGuard::leaveCS(m_AckLock);
-
-        ++m_iReXmitCount;
-
-        checkSndTimers(DONT_REGEN_KM);
-        updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
-
-        // immediately restart transmission
-        m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
     }
+
+    ++m_iReXmitCount;
+
+    checkSndTimers(DONT_REGEN_KM);
+    const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
+    updateCC(TEV_CHECKTIMER, stage);
+
+    // immediately restart transmission
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 }
 
 void CUDT::checkTimers()
@@ -8852,7 +8822,7 @@ void CUDT::checkTimers()
     checkACKTimer(currtime_tk);
 
     // Check if it is time to send a loss report
-    checkNACKTimer(currtime_tk);
+    checkNAKTimer(currtime_tk);
 
     // Check if the connection is expired
     if (checkExpTimer(currtime_tk))
