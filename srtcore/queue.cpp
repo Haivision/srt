@@ -1456,6 +1456,21 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
         EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
 
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_pPeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
+
         // It might be that this is a data packet, which has turned the connection
         // into "connected" state, removed the connector (so since now every next packet
         // will land directly in the queue), but this data packet shall still be delivered.

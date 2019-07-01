@@ -261,6 +261,7 @@ CUDT::CUDT()
    m_bOPT_TLPktDrop = true;
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
+   m_iOPT_PeerIdleTimeout = COMM_RESPONSE_TIMEOUT_MS;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -324,6 +325,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bOPT_TLPktDrop = ancestor.m_bOPT_TLPktDrop;
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
+   m_iOPT_PeerIdleTimeout = ancestor.m_iOPT_PeerIdleTimeout;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -861,6 +863,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
         break;
 
+   case SRTO_PEERIDLETIMEO:
+
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        m_iOPT_PeerIdleTimeout = *(int*)optval;
+        break;
+
    case SRTO_IPV6ONLY:
       if (m_bConnected)
          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -1143,6 +1152,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
    case SRTO_IPV6ONLY:
       optlen = sizeof(int);
       *(int*)optval = m_iIpV6Only;
+      break;
+
+   case SRTO_PEERIDLETIMEO:
+      *(int*)optval = m_iOPT_PeerIdleTimeout;
+      optlen = sizeof(int);
       break;
 
    default:
@@ -2998,14 +3012,14 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             if (cst == CONN_REJECT)
                 sendCtrl(UMSG_SHUTDOWN);
 
-            if ( cst != CONN_CONTINUE )
+            if (cst != CONN_CONTINUE && cst != CONN_CONFUSED)
                 break; // --> OUTSIDE-LOOP
 
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
 
             // new request/response should be sent out immediately on receving a response
-            HLOGC(mglog.Debug, log << "startConnect: REQ-TIME: LOW, should resend request quickly.");
+            HLOGC(mglog.Debug, log << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst) << ", REQ-TIME: LOW.");
             m_llLastReqTime = 0;
 
             // Now serialize the handshake again to the existing buffer so that it's
@@ -3046,6 +3060,8 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
             // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
+
+        HLOGC(mglog.Debug, log << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
 
 #if ENABLE_HEAVY_LOGGING
         // Non-fatal assertion
@@ -3402,7 +3418,7 @@ EConnectStatus CUDT::processRendezvous(ref_t<CPacket> reqpkt, const CPacket& res
         // when HSREQ was interpreted (to store HSRSP extension).
         m_ConnReq.m_extension = true;
 
-        HLOGC(mglog.Debug, log << "processConnectResponse: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
+        HLOGC(mglog.Debug, log << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
         rpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(reqpkt, Ref(m_ConnReq), SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize))
@@ -3607,12 +3623,21 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
        return postConnect(response, hsv5, eout, synchro);
    }
 
-   if ( !response.isControl(UMSG_HANDSHAKE) )
+   if (!response.isControl(UMSG_HANDSHAKE))
    {
-       LOGC(mglog.Error, log << CONID() << "processConnectResponse: received non-addresed packet not UMSG_HANDSHAKE: "
-           << MessageTypeStr(response.getType(), response.getExtendedType()));
-       return CONN_REJECT;
+       if (!response.isControl())
+       {
+           LOGC(mglog.Error, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
+       }
+       else
+       {
+           LOGC(mglog.Error, log << CONID()
+                   << "processConnectResponse: CONFUSED: expected UMSG_HANDSHAKE as connection not yet established, got: "
+                   << MessageTypeStr(response.getType(), response.getExtendedType()));
+       }
+       return CONN_CONFUSED;
    }
+
 
    if ( m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1 )
    {
@@ -3826,6 +3851,16 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     // register this socket for receiving data packets
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
+
+    // XXX Problem around CONN_CONFUSED!
+    // If some too-eager packets were received from a listener
+    // that thinks it's connected, but his last handshake was missed,
+    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // function will want to delete them all, so it would be nice
+    // if these packets can be re-delivered. Of course the listener
+    // should be prepared to resend them (as every packet can be lost
+    // on UDP), but it's kinda overkill when we have them already and
+    // can dispatch them.
 
     // Remove from rendezvous queue (in this particular case it's
     // actually removing the socket that undergoes asynchronous HS processing).
@@ -4604,6 +4639,12 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
            << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID);
    }
 #endif
+
+   // NOTE: BLOCK THIS instruction in order to cause the final
+   // handshake to be missed and cause the problem solved in PR #417.
+   // When missed this message, the caller should not accept packets
+   // coming as connected, but continue repeated handshake until finally
+   // received the listener's handshake.
    m_pSndQueue->sendto(peer, response);
 }
 
@@ -8640,10 +8681,12 @@ void CUDT::checkTimers()
 
     if (currtime_tk > next_exp_time_tk)
     {
+        // ms -> us
+        const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout*1000;
         // Haven't received any information from the peer, is it dead?!
         // timeout: at least 16 expirations and must be greater than 5 seconds
         if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > COMM_RESPONSE_TIMEOUT_US * m_ullCPUFrequency))
+                && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
         {
             //
             // Connection is broken.
@@ -8669,7 +8712,7 @@ void CUDT::checkTimers()
         }
 
         HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
+            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
 
         /* 
          * This part is only used with FileCC. This retransmits
