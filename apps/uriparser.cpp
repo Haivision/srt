@@ -116,7 +116,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     if (idx != string::npos)
     {
         m_proto = m_host.substr(0, idx);
-        transform(m_proto.begin(), m_proto.end(), m_proto.begin(), ::tolower);
+        transform(m_proto.begin(), m_proto.end(), m_proto.begin(), [](char c){ return std::toupper(c); });
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
@@ -228,7 +228,8 @@ using namespace std;
 
 int main( int argc, char** argv )
 {
-    if (argc < 2) {
+    if ( argc < 2 ) 
+    {
         return 0;
     }
     UriParser parser (argv[1]);
