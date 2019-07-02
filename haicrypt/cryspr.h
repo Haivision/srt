@@ -32,17 +32,7 @@ written by
 #include "haisrt/hcrypt_msg.h"
 #endif
 
-#if defined(USE_OPENSSL)
-#include "cryspr-openssl.h"
-#define cryspr4SRT()  crysprOpenSSL()
-#elif defined(USE_GNUTLS)
-#include "cryspr-gnutls.h"
-#define cryspr4SRT()  crysprGnuTLS()
-#else
-#error No CRYSPR defined
-#endif
-
-#define CRYSPR_AESBLKSZ 16              /* 128-bit */
+#include "cryspr-config.h"
 
 typedef struct tag_CRYSPR_cb {
         CRYSPR_AESCTX   aes_kek;		/* Key Encrypting Key (KEK) */
