@@ -1313,13 +1313,12 @@ void CUDT::open()
 
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
-   m_ullLastRspTime_tk = currtime_tk;
-   m_ullNextACKTime_tk = currtime_tk + m_ullSYNInt_tk;
-   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+   m_ullLastRspTime_tk    = currtime_tk;
+   m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+   m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
    m_ullLastRspAckTime_tk = currtime_tk;
+   m_ullLastSndTime_tk    = currtime_tk;
    m_iReXmitCount = 1;
-   // Fix keepalive
-   m_ullLastSndTime_tk = currtime_tk;
 
    m_iPktCount = 0;
    m_iLightACKCount = 1;
@@ -4710,6 +4709,16 @@ void CUDT::setupCC()
     uint64_t min_nak_tk = m_CongCtl->minNAKInterval();
     if ( min_nak_tk )
         m_ullMinNakInt_tk = min_nak_tk;
+
+    // Update timers 
+    uint64_t currtime_tk;
+    CTimer::rdtsc(currtime_tk);
+    m_ullLastRspTime_tk    = currtime_tk;
+    m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+    m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
+    m_ullLastRspAckTime_tk = currtime_tk;
+    m_ullLastSndTime_tk    = currtime_tk;
+
 
     HLOGC(mglog.Debug, log << "setupCC: setting parameters: mss=" << m_iMSS
         << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
