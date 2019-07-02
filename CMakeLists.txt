@@ -141,12 +141,6 @@ if (NOT USE_ENCLIB)
 
 endif()
 
-# Due to cmake stupidity, the only safe way to have variables
-# to be checked later for some condition is to use boolean variables
-# which predefine the fact that some variable is equal to some string.
-string(TOUPPER ${USE_ENCLIB} USE_ENCLIB_NAME_UC)
-set (USE_ENCLIB_${USE_ENCLIB_NAME_UC} 1)
-	
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -202,7 +196,7 @@ if (DEFINED HAVE_INET_PTON)
 endif()
 
 if (ENABLE_ENCRYPTION)
-	if (USE_ENCLIB_GNUTLS)
+	if ("${USE_ENCLIB}" STREQUAL "gnutls")
 		set (SSL_REQUIRED_MODULES "gnutls nettle")
 		if (WIN32)
 			if (MINGW)
@@ -220,7 +214,7 @@ if (ENABLE_ENCRYPTION)
 			${SSL_LIBRARY_DIRS}
 		)
 	else() # Common for mbedtls and openssl
-		if (USE_ENCLIB_MBEDTLS)
+		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
 			add_definitions(-DUSE_MBEDTLS=1)
 			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
 		else()
@@ -252,7 +246,7 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			if (USE_ENCLIB_MBEDTLS)
+			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
 			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
 			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
 				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
