@@ -240,7 +240,11 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
       m_iInRateBytesCount += bytes;
       if ((time - m_InRateStartTime) > m_InRatePeriod) {
          //Payload average size
-         m_iAvgPayloadSz = m_iInRateBytesCount / m_iInRatePktsCount;
+         if (m_iInRatePktsCount == 0) {
+             m_iAvgPayloadSz = 0;
+         }else{
+             m_iAvgPayloadSz = m_iInRateBytesCount / m_iInRatePktsCount;
+         }
          //Required Byte/sec rate (payload + headers)
          m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
          m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / (time - m_InRateStartTime));
