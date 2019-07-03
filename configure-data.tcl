@@ -55,7 +55,7 @@ set cmake_options {
     pthread-include-dir=<path> "Path to a file."
     pthread-library=<filepath> "Path to a library."
     use-gnutls "DEPRECATED. Use --use-enclib=openssl|gnutls|mbedtls"
-	use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls"
+    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls"
     use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
 }
 
