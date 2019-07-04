@@ -6259,8 +6259,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
             uint64_t period;
-            int payloadsz; //CC will use its own average payload size
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
+            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate
 
             // NOTE:
             // 'period' here is set to the value that was previously set by
