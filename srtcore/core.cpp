@@ -7713,7 +7713,7 @@ int CUDT::processData(CUnit* unit)
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
 
-   /* We are receiver, start tsbpd thread if TsbPd is enabled */
+   // We are receiving data, start tsbpd thread if TsbPd is enabled
    if (m_bTsbPd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
    {
        HLOGP(mglog.Debug, "Spawning TSBPD thread");
@@ -7722,19 +7722,19 @@ int CUDT::processData(CUnit* unit)
            ThreadName tn("SRT:TsbPd");
            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
        }
-       if ( st != 0 )
+       if (st != 0)
            return -1;
    }
 
-   int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+   const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
 #if ENABLE_HEAVY_LOGGING
    static const char* const rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
-#endif
    string rexmit_reason;
+#endif
 
-
-   if ( pktrexmitflag == 1 ) // rexmitted
+   if (pktrexmitflag == 1)
    {
+       // This packet was retransmitted
        CGuard::enterCS(m_StatsLock);
        m_stats.traceRcvRetrans++;
        CGuard::leaveCS(m_StatsLock);
@@ -7743,40 +7743,23 @@ int CUDT::processData(CUnit* unit)
        // Check if packet was retransmitted on request or on ack timeout
        // Search the sequence in the loss record.
        rexmit_reason = " by ";
-       if ( !m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo) )
-       //if ( m_DebugLossRecords.find(packet.m_iSeqNo) ) // m_DebugLossRecords not turned on
+       if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
            rexmit_reason += "REQUEST";
        else
-       {
            rexmit_reason += "ACK-TMOUT";
-           /*
-           if ( !m_DebugLossRecords.exists(packet.m_iSeqNo) )
-           {
-               rexmit_reason += "(seems/";
-               char buf[100] = "empty";
-               int32_t base = m_DebugLossRecords.base();
-               if ( base != -1 )
-                   sprintf(buf, "%d", base);
-               rexmit_reason += buf;
-               rexmit_reason += ")";
-           }
-           */
-       }
 #endif
    }
 
-
    HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength() << " seq=" << packet.getSeqNo());
-   //    << "(" << rexmitstat[pktrexmitflag] << rexmit_reason << ")";
 
    updateCC(TEV_RECEIVE, &packet);
    ++ m_iPktCount;
 
-   int pktsz = packet.getLength();
-   // update time information
+   const int pktsz = packet.getLength();
+   // Update time information
    m_RcvTimeWindow.onPktArrival(pktsz);
 
-   // check if it is probing packet pair
+   // Check if it is a probing packet pair
    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
       m_RcvTimeWindow.probe1Arrival();
    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
@@ -7790,34 +7773,38 @@ int CUDT::processData(CUnit* unit)
    CGuard::leaveCS(m_StatsLock);
 
    {
-      /*
-      * Start of offset protected section
-      * Prevent TsbPd thread from modifying Ack position while adding data
-      * offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
-      */
+      // Start of offset protected section
+      // Prevent TsbPd thread from modifying Ack position while adding data
+      // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
       CGuard recvbuf_acklock(m_AckLock);
 
-      int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
+      const int offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
-      string exc_type = "EXPECTED";
-      if ((offset < 0))
+#if ENABLE_HEAVY_LOGGING
+      const char* exc_type = "EXPECTED";
+#define IF_HEAVY_LOGGING(instr) instr
+#else 
+#define IF_HEAVY_LOGGING(instr) (void)0
+#endif 
+
+      if (offset < 0)
       {
-          CGuard::enterCS(m_StatsLock);
-          exc_type = "BELATED";
+          IF_HEAVY_LOGGING(exc_type = "EXPECTED");
           excessive = true;
-          m_stats.traceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
           uint64_t bltime = CountIIR(
-                  uint64_t(m_stats.traceBelatedTime)*1000,
+                  uint64_t(m_stats.traceBelatedTime) * 1000,
                   CTimer::getTime() - tsbpdtime, 0.2);
-          m_stats.traceBelatedTime = double(bltime)/1000.0;
+
+          CGuard::enterCS(m_StatsLock);
+          m_stats.traceBelatedTime = double(bltime) / 1000.0;
+          m_stats.traceRcvBelated++;
           CGuard::leaveCS(m_StatsLock);
       }
       else
       {
-
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // This is already a sequence discrepancy. Probably there could be found
@@ -7860,7 +7847,7 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
-              exc_type = "UNACKED";
+              IF_HEAVY_LOGGING(exc_type = "UNACKED");
               excessive = true;
           }
       }
@@ -7870,7 +7857,7 @@ int CUDT::processData(CUnit* unit)
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
 
-      if ( excessive )
+      if (excessive)
       {
           return -1;
       }
@@ -7880,14 +7867,12 @@ int CUDT::processData(CUnit* unit)
           // Crypto should be already created during connection process,
           // this is rather a kinda sanity check.
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
-          if ( rc != ENCS_CLEAR )
+          if (rc != ENCS_CLEAR)
           {
-              /*
-               * Could not decrypt
-               * Keep packet in received buffer
-               * Crypto flags are still set
-               * It will be acknowledged
-               */
+              // Could not decrypt
+              // Keep packet in received buffer
+              // Crypto flags are still set
+              // It will be acknowledged
               CGuard::enterCS(m_StatsLock);
               m_stats.traceRcvUndecrypt += 1;
               m_stats.traceRcvBytesUndecrypt += pktsz;
@@ -7901,61 +7886,61 @@ int CUDT::processData(CUnit* unit)
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
       }
 
-   }  /* End of recvbuf_acklock*/
+   }  /* End of recvbuf_acklock */
 
-   if (m_bClosing) {
-      /*
-      * RcvQueue worker thread can call processData while closing (or close while processData)
-      * This race condition exists in the UDT design but the protection against TsbPd thread
-      * (with AckLock) and decryption enlarged the probability window.
-      * Application can crash deep in decrypt stack since crypto context is deleted in close.
-      * RcvQueue worker thread will not necessarily be deleted with this connection as it can be
-      * used by others (socket multiplexer).
-      */
+   if (m_bClosing)
+   {
+      // RcvQueue worker thread can call processData while closing (or close while processData)
+      // This race condition exists in the UDT design but the protection against TsbPd thread
+      // (with AckLock) and decryption enlarged the probability window.
+      // Application can crash deep in decrypt stack since crypto context is deleted in close.
+      // RcvQueue worker thread will not necessarily be deleted with this connection as it can be
+      // used by others (socket multiplexer).
       return(-1);
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request
    // always immediately.
    int initial_loss_ttl = 0;
-   if ( m_bPeerRexmitFlag )
+   if (m_bPeerRexmitFlag)
        initial_loss_ttl = m_iReorderTolerance;
 
-   if  (packet.getMsgCryptoFlags())
+   if (packet.getMsgCryptoFlags())
    {
-       /*
-       * Crypto flags not cleared means that decryption failed
-       * Do no ask loss packets retransmission
-       */
+       // Crypto flags not cleared means that decryption failed
+       // Do not ask for lost packets retransmission
        ;
        HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
    }
-   else
-   // Loss detection.
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+   else if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
    {
+       // A loss is detected
        {
-           CGuard lg(m_RcvLossLock);
-           int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-           int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
-           // If loss found, insert them to the receiver loss list
+           // TODO: Can unlock rcvloss after m_pRcvLossList->insert(...)?
+           // And probably protect m_FreshLoss as well.
+           CGuard rcvloss(m_RcvLossLock);
+           // Insert lost sequence numbers to the receiver loss list
+           const int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+           const int32_t seqhi = CSeqNo::decseq(packet.m_iSeqNo);
            m_pRcvLossList->insert(seqlo, seqhi);
 
-           if ( initial_loss_ttl )
+           if (initial_loss_ttl)
            {
                // pack loss list for (possibly belated) NAK
                // The LOSSREPORT will be sent in a while.
                m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
                HLOGF(mglog.Debug, "added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi,
-                       1+CSeqNo::seqoff(seqlo, seqhi), initial_loss_ttl);
+                       1 + CSeqNo::seqoff(seqlo, seqhi), initial_loss_ttl);
            }
            else
            {
                // old code; run immediately when tolerance = 0
                // or this feature isn't used because of the peer
                int32_t seq[2] = { seqlo, seqhi };
-               if ( seqlo == seqhi )
+               if (seqlo == seqhi)
+               {
                    sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
+               }
                else
                {
                    seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
@@ -7965,7 +7950,7 @@ int CUDT::processData(CUnit* unit)
            }
 
            CGuard::enterCS(m_StatsLock);
-           int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
+           const int loss = CSeqNo::seqlen(m_iRcvCurrSeqNo, packet.m_iSeqNo) - 2;
            m_stats.traceRcvLoss += loss;
            m_stats.rcvLossTotal += loss;
            uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
@@ -8006,7 +7991,7 @@ int CUDT::processData(CUnit* unit)
 
        // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
        // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
-       if ( initial_loss_ttl && !m_FreshLoss.empty() )
+       if (initial_loss_ttl && !m_FreshLoss.empty())
        {
            deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
 
@@ -8014,7 +7999,7 @@ int CUDT::processData(CUnit* unit)
            // There can be more than one record with the same TTL, if it has happened before
            // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
            // into two records.
-           for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
+           for ( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i)
            {
                HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
                                       i->seq[0], i->seq[1], CSeqNo::seqoff(i->seq[0], i->seq[1])+1);
@@ -8022,13 +8007,13 @@ int CUDT::processData(CUnit* unit)
            }
 
            // Remove elements that have been processed and prepared for lossreport.
-           if ( i != m_FreshLoss.begin() )
+           if (i != m_FreshLoss.begin())
            {
                m_FreshLoss.erase(m_FreshLoss.begin(), i);
                i = m_FreshLoss.begin();
            }
 
-           if ( m_FreshLoss.empty() )
+           if (m_FreshLoss.empty())
            {
                HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
            }
@@ -8040,12 +8025,11 @@ int CUDT::processData(CUnit* unit)
            }
 
            // Phase 2: rest of the records should have TTL decreased.
-           for ( ; i != m_FreshLoss.end(); ++i )
+           for ( ; i != m_FreshLoss.end(); ++i)
                --i->ttl;
        }
-
    }
-   if ( !lossdata.empty() )
+   if (!lossdata.empty())
    {
        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
    }
@@ -8060,7 +8044,7 @@ int CUDT::processData(CUnit* unit)
 
    // Update the current largest sequence number that has been received.
    // Or it is a retransmitted packet, remove it from receiver loss list.
-   bool was_orderly_sent = true;
+   bool was_sent_in_order = true;
    if (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
    {
       m_iRcvCurrSeqNo = packet.m_iSeqNo; // Latest possible received
@@ -8068,20 +8052,20 @@ int CUDT::processData(CUnit* unit)
    else
    {
       unlose(packet); // was BELATED or RETRANSMITTED packet.
-      was_orderly_sent = 0!=  pktrexmitflag;
+      was_sent_in_order = (pktrexmitflag != 0);
    }
 
-   // was_orderly_sent means either of:
+   // was_sent_in_order means either of:
    // - packet was sent in order (first if branch above)
    // - packet was sent as old, but was a retransmitted packet
 
-   if ( m_bPeerRexmitFlag && was_orderly_sent )
+   if (m_bPeerRexmitFlag && was_sent_in_order)
    {
        ++m_iConsecOrderedDelivery;
-       if ( m_iConsecOrderedDelivery >= 50 )
+       if (m_iConsecOrderedDelivery >= 50)
        {
            m_iConsecOrderedDelivery = 0;
-           if ( m_iReorderTolerance > 0 )
+           if (m_iReorderTolerance > 0)
            {
                m_iReorderTolerance--;
                CGuard::enterCS(m_StatsLock);
@@ -8121,7 +8105,7 @@ void CUDT::unlose(const CPacket& packet)
     bool has_increased_tolerance = false;
     bool was_reordered = false;
 
-    if ( m_bPeerRexmitFlag )
+    if (m_bPeerRexmitFlag)
     {
         // If the peer understands the REXMIT flag, it means that the REXMIT flag is contained
         // in the PH_MSGNO field.
@@ -8129,20 +8113,20 @@ void CUDT::unlose(const CPacket& packet)
         // The packet is considered coming originally (just possibly out of order), if REXMIT
         // flag is NOT set.
         was_reordered = !packet.getRexmitFlag();
-        if ( was_reordered )
+        if (was_reordered)
         {
             HLOGF(mglog.Debug, "received out-of-band packet seq %d", sequence);
 
-            int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo));
+            const int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo));
             CGuard::enterCS(m_StatsLock);
             m_stats.traceReorderDistance = max(seqdiff, m_stats.traceReorderDistance);
             CGuard::leaveCS(m_StatsLock);
-            if ( seqdiff > m_iReorderTolerance )
+            if (seqdiff > m_iReorderTolerance)
             {
-                int prev SRT_ATR_UNUSED = m_iReorderTolerance;
-                m_iReorderTolerance = min(seqdiff, m_iMaxReorderTolerance);
+                const int new_tolerance = min(seqdiff, m_iMaxReorderTolerance);
                 HLOGF(mglog.Debug, "Belated by %d seqs - Reorder tolerance %s %d", seqdiff,
-                        (prev == m_iReorderTolerance) ? "REMAINS with" : "increased to", m_iReorderTolerance);
+                        (new_tolerance == m_iReorderTolerance) ? "REMAINS with" : "increased to", new_tolerance);
+                m_iReorderTolerance = new_tolerance;
                 has_increased_tolerance = true; // Yes, even if reorder tolerance is already at maximum - this prevents decreasing tolerance.
             }
         }
@@ -8158,7 +8142,7 @@ void CUDT::unlose(const CPacket& packet)
 
 
     int initial_loss_ttl = 0;
-    if ( m_bPeerRexmitFlag )
+    if (m_bPeerRexmitFlag)
         initial_loss_ttl = m_iReorderTolerance;
 
     // Don't do anything if "belated loss report" feature is not used.
@@ -8170,7 +8154,7 @@ void CUDT::unlose(const CPacket& packet)
     //   (in this case it's empty anyway)
     // - decrease current reorder tolerance based on whether packets come in order
     //   (current reorder tolerance is 0 anyway)
-    if ( !initial_loss_ttl )
+    if (!initial_loss_ttl)
         return;
 
     size_t i = 0;
@@ -8223,14 +8207,14 @@ breakbreak: ;
         HLOGF(mglog.Debug, "sequence %d removed from belated lossreport record", sequence);
     }
 
-    if ( was_reordered )
+    if (was_reordered)
     {
         m_iConsecOrderedDelivery = 0;
-        if ( has_increased_tolerance )
+        if (has_increased_tolerance)
         {
             m_iConsecEarlyDelivery = 0; // reset counter
         }
-        else if ( had_ttl > 2 )
+        else if (had_ttl > 2)
         {
             ++m_iConsecEarlyDelivery; // otherwise, and if it arrived quite earlier, increase counter
             HLOGF(mglog.Debug, "... arrived at TTL %d case %d", had_ttl, m_iConsecEarlyDelivery);
