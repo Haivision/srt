@@ -138,17 +138,17 @@ row (H = horizontal position; V = vertical position):
 
 <538>
 
-<539>        ->ê end of the second-to-last row
+<539>        -> end of the second-to-last row
 
-<FEC/H:539>  ->ê row FEC packet for the second-to-last row
+<FEC/H:539>  -> row FEC packet for the second-to-last row
 
-<540>        ->ê beginning of the last row; end of the first column
+<540>        -> beginning of the last row; end of the first column
 
-<FEC/V:540>  ->ê column FEC packet for the first column
+<FEC/V:540>  -> column FEC packet for the first column
 
-<541>        ->ê end of the second column
+<541>        -> end of the second column
 
-<FEC/V:541>  ->ê column FEC packet for the second column
+<FEC/V:541>  -> column FEC packet for the second column
 
 <542>
 
@@ -178,11 +178,11 @@ row (H = horizontal position; V = vertical position):
 
 <FEC/V:548>
 
-<549>        ->ê end of the last row; end of the last column
+<549>        -> end of the last row; end of the last column
 
-<FEC/H:549>  ->ê row FEC packet for the last row
+<FEC/H:549>  -> row FEC packet for the last row
 
-<FEC/V:549>  ->ê column FEC packet for the last column
+<FEC/V:549>  -> column FEC packet for the last column
 ```
 Given a constant bitrate at the input, there's a certain bandwidth normally used 
 by the regularly transmitted data packets. But when the last row in a series is 
@@ -201,7 +201,7 @@ latency you must configure with FEC. This is based on the size of the matrix
 bytes-per-packet factor. But if you use FEC and ARQ together, delaying a packet 
 at the sender side may challenge the response time for retransmission.
 
-2. *D**elay sending the FEC packet itself.*  **->ê NOT IMPLEMENTED**
+2. *D**elay sending the FEC packet itself.*  **-> NOT IMPLEMENTED**
 
     The problem is that this would increase the time interval between the first 
 packets in a group by a factor based on twice the matrix size (100 in the above 
@@ -232,11 +232,11 @@ packet 537 (H = horizontal position; V = vertical position):
 
 <539>
 
-<FEC/H:539>  ->ê row FEC packet
+<FEC/H:539>  -> row FEC packet
 
 <540>
 
-<FEC/V:540>  ->ê column FEC packet
+<FEC/V:540>  -> column FEC packet
 
 <541>
 
@@ -248,7 +248,7 @@ packet 537 (H = horizontal position; V = vertical position):
 
 <545>
 
-<FEC/V:545>  ->ê column FEC packet
+<FEC/V:545>  -> column FEC packet
 
 <546>
 
@@ -258,13 +258,13 @@ packet 537 (H = horizontal position; V = vertical position):
 
 <549>
 
-<FEC/H:549>  ->ê row FEC packet
+<FEC/H:549>  -> row FEC packet
 
-<550>  ->ê start of next FEC group
+<550>  -> start of next FEC group
 
 <551>
 
-<FEC/V:551>  ->ê column FEC packet
+<FEC/V:551>  -> column FEC packet
 
 <552>
 
@@ -375,7 +375,7 @@ Figure 2 - FEC control packet structure
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                    Destination Socket ID                      |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |  Group Index  |    Flag XOR   |          Length XOR           | ->ê FEC header
+   |  Group Index  |    Flag XOR   |          Length XOR           | -> FEC header
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                                                               |
    |                           Data XOR                            |
