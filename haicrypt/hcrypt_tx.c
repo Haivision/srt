@@ -41,14 +41,14 @@ int HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_
 	int pad_factor = (HCRYPT_CTX_MODE_AESECB == crypto->ctx->mode ? 128/8 : 1);
 
 #ifndef _WIN32
-    ASSERT(crypto->inbuf != NULL);
+	ASSERT(crypto->inbuf != NULL);
 #endif
-    size_t in_len = crypto->msg_info->pfx_len + hcryptMsg_PaddedLen(data_len, pad_factor);
-    *in_pp = crypto->inbuf;
-    if (in_len > crypto->inbuf_siz) {
-        *in_pp = NULL;
-        return(-1);
-    }
+	size_t in_len = crypto->msg_info->pfx_len + hcryptMsg_PaddedLen(data_len, pad_factor);
+	*in_pp = crypto->inbuf;
+	if (in_len > crypto->inbuf_siz) {
+		*in_pp = NULL;
+		return(-1);
+	}
 	return(crypto->msg_info->pfx_len);
 }
 

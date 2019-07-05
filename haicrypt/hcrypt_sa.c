@@ -36,10 +36,12 @@ int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_
 		ASSERT(secret->len <= HAICRYPT_KEY_MAX_SZ);
 		ctx->cfg.pwd_len = 0;
 		/* KEK: Key Encrypting Key */
-        if (0 > (iret = crypto->cryspr->km_setkey(crypto->cryspr_cb, (HCRYPT_CTX_F_ENCRYPT & ctx->flags ? true : false), secret->str, secret->len))) {
-            HCRYPT_LOG(LOG_ERR, "km_setkey(pdkek[%zd]) failed (rc=%d)\n", secret->len, iret);
-            return(-1);
-        }
+		if (0 > (iret = crypto->cryspr->km_setkey(crypto->cryspr_cb,
+							  (HCRYPT_CTX_F_ENCRYPT & ctx->flags ? true : false),
+							  secret->str, secret->len))) {
+			HCRYPT_LOG(LOG_ERR, "km_setkey(pdkek[%zd]) failed (rc=%d)\n", secret->len, iret);
+			return(-1);
+		}
 		ctx->status = HCRYPT_CTX_S_SARDY;
 		break;
 
@@ -73,22 +75,22 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	int iret = 0;
 	(void)crypto;
 
-    iret = crypto->cryspr->km_pbkdf2(crypto->cryspr_cb, ctx->cfg.pwd, ctx->cfg.pwd_len,
+	iret = crypto->cryspr->km_pbkdf2(crypto->cryspr_cb, ctx->cfg.pwd, ctx->cfg.pwd_len,
 		&ctx->salt[ctx->salt_len - pbkdf_salt_len], pbkdf_salt_len, 
 		HAICRYPT_PBKDF2_ITER_CNT, kek_len, kek);
 
-    if(iret) {
-        HCRYPT_LOG(LOG_ERR, "km_pbkdf2() failed (rc=%d)\n", iret);
-        return(-1);
-    }
+	if(iret) {
+		HCRYPT_LOG(LOG_ERR, "km_pbkdf2() failed (rc=%d)\n", iret);
+		return(-1);
+	}
 	HCRYPT_PRINTKEY(ctx->cfg.pwd, ctx->cfg.pwd_len, "pwd");
 	HCRYPT_PRINTKEY(kek, kek_len, "kek");
 	
 	/* KEK: Key Encrypting Key */
-    if (0 > (iret = crypto->cryspr->km_setkey(crypto->cryspr_cb, (HCRYPT_CTX_F_ENCRYPT & ctx->flags ? true : false), kek, kek_len))) {
-        HCRYPT_LOG(LOG_ERR, "km_setkey(pdkek[%zd]) failed (rc=%d)\n", kek_len, iret);
-        return(-1);
-    }
+	if (0 > (iret = crypto->cryspr->km_setkey(crypto->cryspr_cb, (HCRYPT_CTX_F_ENCRYPT & ctx->flags ? true : false), kek, kek_len))) {
+		HCRYPT_LOG(LOG_ERR, "km_setkey(pdkek[%zd]) failed (rc=%d)\n", kek_len, iret);
+		return(-1);
+	}
 	return(0);
 }
 

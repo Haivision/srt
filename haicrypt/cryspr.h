@@ -35,24 +35,24 @@ written by
 #include "cryspr-config.h"
 
 typedef struct tag_CRYSPR_cb {
-        CRYSPR_AESCTX   aes_kek;		/* Key Encrypting Key (KEK) */
-        CRYSPR_AESCTX   aes_sek[2];		/* even/odd Stream Encrypting Key (SEK) */
+	CRYSPR_AESCTX   aes_kek;		/* Key Encrypting Key (KEK) */
+	CRYSPR_AESCTX   aes_sek[2];		/* even/odd Stream Encrypting Key (SEK) */
 
-        struct tag_CRYSPR_methods *cryspr;
+	struct tag_CRYSPR_methods *cryspr;
 
 #if !CRYSPR_HAS_AESCTR
                                         /* Reserve room to build the counter stream ourself */
 #define HCRYPT_CTR_BLK_SZ       CRYSPR_AESBLKSZ
 #define HCRYPT_CTR_STREAM_SZ	2048
-		unsigned char * ctr_stream;
-		size_t          ctr_stream_len; /* Content size */
-		size_t          ctr_stream_siz; /* Allocated length */
+	unsigned char * ctr_stream;
+	size_t          ctr_stream_len; /* Content size */
+	size_t          ctr_stream_siz; /* Allocated length */
 #endif /* !CRYSPR_HAS_AESCTR */
 
 #define	CRYSPR_OUTMSGMAX		6
-        uint8_t *       outbuf; 		/* output circle buffer */
-        size_t          outbuf_ofs;		/* write offset in circle buffer */
-        size_t          outbuf_siz;		/* circle buffer size */
+	uint8_t *       outbuf; 		/* output circle buffer */
+	size_t          outbuf_ofs;		/* write offset in circle buffer */
+	size_t          outbuf_siz;		/* circle buffer size */
 } CRYSPR_cb;
 
 typedef struct tag_CRYSPR_methods {
