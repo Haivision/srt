@@ -247,7 +247,7 @@ static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
 
 	memsiz = sizeof(*cryspr_cb) + (CRYSPR_OUTMSGMAX * padded_len);
 #if !CRYSPR_HAS_AESCTR
-    memsiz += HCRYPT_CTR_STREAM_SZ;
+	memsiz += HCRYPT_CTR_STREAM_SZ;
 #endif /* !CRYSPR_HAS_AESCTR */
 
 	cryspr_cb = malloc(memsiz);
@@ -270,7 +270,7 @@ static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
 	cryspr_cb->outbuf_ofs = 0;
 //	membuf += cryspr_cb->outbuf_siz;
 
-    cryspr_cb->cryspr=(CRYSPR_methods *)cryspr;
+	cryspr_cb->cryspr=(CRYSPR_methods *)cryspr;
 
 	return(cryspr_cb);
 }
@@ -289,7 +289,7 @@ static int crysprFallback_MsSetKey(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx, const 
 
 	if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT)        /* Encrypt key */
 	||  (ctx->mode == HCRYPT_CTX_MODE_AESCTR)) {   /* CTR mode decrypts using encryption methods */
-        if (cryspr_cb->cryspr->aes_set_key(true, key, key_len, aes_sek)) {
+        	if (cryspr_cb->cryspr->aes_set_key(true, key, key_len, aes_sek)) {
 			HCRYPT_LOG(LOG_ERR, "%s", "CRYSPR->set_encrypt_key(sek) failed\n");
 			return(-1);
 		}
@@ -679,24 +679,24 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 
 CRYSPR_methods *crysprInit(CRYSPR_methods *cryspr)
 {
-    /* CryptoLib Primitive API */
-    cryspr->prng            = crysprStub_Prng;
-    cryspr->aes_set_key     = crysprStub_AES_SetKey;
-    cryspr->aes_ecb_cipher  = crysprStub_AES_EcbCipher;
-    cryspr->aes_ctr_cipher  = crysprStub_AES_CtrCipher;
-    cryspr->sha1_msg_digest = crysprStub_SHA1_MsgDigest;
+	/* CryptoLib Primitive API */
+	cryspr->prng            = crysprStub_Prng;
+	cryspr->aes_set_key     = crysprStub_AES_SetKey;
+	cryspr->aes_ecb_cipher  = crysprStub_AES_EcbCipher;
+	cryspr->aes_ctr_cipher  = crysprStub_AES_CtrCipher;
+	cryspr->sha1_msg_digest = crysprStub_SHA1_MsgDigest;
 
 
-    /* Crypto Session API */
-    cryspr->open       = crysprFallback_Open;
-    cryspr->close      = crysprFallback_Close;
-    //Keying material (km) encryption
+	/* Crypto Session API */
+	cryspr->open       = crysprFallback_Open;
+	cryspr->close      = crysprFallback_Close;
+	//Keying material (km) encryption
 	cryspr->km_pbkdf2  = crysprStub_KmPbkdf2;
 	cryspr->km_setkey  = crysprFallback_KmSetKey;
-    cryspr->km_wrap    = crysprFallback_AES_WrapKey;
-    cryspr->km_unwrap  = crysprFallback_AES_UnwrapKey;
-    //Media stream (ms) encryption
-    cryspr->ms_setkey  = crysprFallback_MsSetKey;
+	cryspr->km_wrap    = crysprFallback_AES_WrapKey;
+	cryspr->km_unwrap  = crysprFallback_AES_UnwrapKey;
+	//Media stream (ms) encryption
+	cryspr->ms_setkey  = crysprFallback_MsSetKey;
 	cryspr->ms_encrypt = crysprFallback_MsEncrypt;
 	cryspr->ms_decrypt = crysprFallback_MsDecrypt;
 
@@ -707,5 +707,3 @@ HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance(void)
 {
     return((HaiCrypt_Cryspr)cryspr4SRT());
 }
-
-
