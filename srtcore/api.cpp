@@ -528,7 +528,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    return 1;
 }
 
-int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_accept_hook_fn* hook, void* opaq)
+int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_notify_callback_fn* hook, void* opaq)
 {
     try
     {

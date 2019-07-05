@@ -678,12 +678,12 @@ private: // Receiving related data
 
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_accept_hook_fn* hook, void* opaq)
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_notify_callback_fn* hook, void* opaq)
     {
         return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
     }
 private:
-    void installAcceptHook(srt_accept_hook_fn* hook, void* opaq)
+    void installAcceptHook(srt_listen_notify_callback_fn* hook, void* opaq)
     {
         m_cbAcceptHook.set(opaq, hook);
     }

@@ -531,8 +531,8 @@ SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, in
 SRT_API       int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
-typedef bool  srt_accept_hook_fn   (void* opaq, SRTSOCKET ns, const struct sockaddr* peeraddr, const char* streamid);
-SRT_API       int srt_accept_hook  (SRTSOCKET lsn, srt_accept_hook_fn* hook_fn, void* hook_opaque);
+typedef bool  srt_listen_notify_callback_fn   (void* opaq, SRTSOCKET ns, const struct sockaddr* peeraddr, const char* streamid);
+SRT_API       int srt_listen_notify_callback  (SRTSOCKET lsn, srt_listen_notify_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
