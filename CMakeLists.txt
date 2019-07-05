@@ -208,11 +208,11 @@ if (ENABLE_ENCRYPTION)
 
 		add_definitions(
 			-DUSE_GNUTLS=1
-			)
+		)
 
 		link_directories(
 			${SSL_LIBRARY_DIRS}
-			)
+		)
 	else() # Common for mbedtls and openssl
 		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
 			add_definitions(-DUSE_MBEDTLS=1)
@@ -226,7 +226,6 @@ if (ENABLE_ENCRYPTION)
 		if (USE_OPENSSL_PC)
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 		endif()
-
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
 			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
@@ -234,16 +233,16 @@ if (ENABLE_ENCRYPTION)
 			# set forcefully the -I and -L contents to prefix/include and
 			# prefix/lib.
 			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-				if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-					message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-					set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
-					set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
-				endif()
+			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+				set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+				set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+			endif()
 			endif()
 
 			link_directories(
 				${SSL_LIBRARY_DIRS}
-				)
+			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
 			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
