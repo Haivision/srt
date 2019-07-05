@@ -143,9 +143,9 @@ int crysprFallback_AES_WrapKey(CRYSPR_cb *cryspr_cb,
 		unsigned char *out,
 		const unsigned char *in,
         unsigned int inlen)
-	{
+{
 	unsigned char *A, B[16], *R;
-    const unsigned char *iv = default_iv;
+	const unsigned char *iv = default_iv;
 	unsigned int i, j, t;
 	if ((inlen & 0x7) || (inlen < 8))
 		return -1;
@@ -156,36 +156,36 @@ int crysprFallback_AES_WrapKey(CRYSPR_cb *cryspr_cb,
 	memcpy(A, iv, 8);
 
 	for (j = 0; j < 6; j++)
-		{
+	{
 		R = out + 8;
 		for (i = 0; i < inlen; i += 8, t++, R += 8)
-			{
+		{
 			memcpy(B + 8, R, 8);
-            {
-                size_t outlen = 16;
-                cryspr_cb->cryspr->aes_ecb_cipher(true, &cryspr_cb->aes_kek, B, 16, B, &outlen);
-            }
+			{
+				size_t outlen = 16;
+				cryspr_cb->cryspr->aes_ecb_cipher(true, &cryspr_cb->aes_kek, B, 16, B, &outlen);
+			}
 			A[7] ^= (unsigned char)(t & 0xff);
 			if (t > 0xff)	
-				{
+			{
 				A[6] ^= (unsigned char)((t >> 8) & 0xff);
 				A[5] ^= (unsigned char)((t >> 16) & 0xff);
 				A[4] ^= (unsigned char)((t >> 24) & 0xff);
-				}
-			memcpy(R, B + 8, 8);
 			}
+			memcpy(R, B + 8, 8);
 		}
+	}
 	memcpy(out, A, 8);
 	return inlen + 8;
-	}
+}
 
 int crysprFallback_AES_UnwrapKey(CRYSPR_cb *cryspr_cb,
 		unsigned char *out,
 		const unsigned char *in,
         unsigned int inlen)
-	{
+{
 	unsigned char *A, B[16], *R;
-    const unsigned char *iv = default_iv;
+	const unsigned char *iv = default_iv;
 	unsigned int i, j, t;
 	inlen -= 8;
 	if (inlen & 0x7)
@@ -197,30 +197,30 @@ int crysprFallback_AES_UnwrapKey(CRYSPR_cb *cryspr_cb,
 	memcpy(A, in, 8);
 	memcpy(out, in + 8, inlen);
 	for (j = 0; j < 6; j++)
-		{
+	{
 		R = out + inlen - 8;
 		for (i = 0; i < inlen; i += 8, t--, R -= 8)
-			{
+		{
 			A[7] ^= (unsigned char)(t & 0xff);
 			if (t > 0xff)	
-				{
+			{
 				A[6] ^= (unsigned char)((t >> 8) & 0xff);
 				A[5] ^= (unsigned char)((t >> 16) & 0xff);
 				A[4] ^= (unsigned char)((t >> 24) & 0xff);
-				}
-			memcpy(B + 8, R, 8);
-            {
-                size_t outlen = 16;
-                cryspr_cb->cryspr->aes_ecb_cipher(false, &cryspr_cb->aes_kek, B, 16, B, &outlen);
-            }
-			memcpy(R, B + 8, 8);
 			}
+			memcpy(B + 8, R, 8);
+			{
+				size_t outlen = 16;
+				cryspr_cb->cryspr->aes_ecb_cipher(false, &cryspr_cb->aes_kek, B, 16, B, &outlen);
+			}
+			memcpy(R, B + 8, 8);
 		}
+	}
 	if (memcmp(A, iv, 8))
-		{
+	{
 		memset(out, 0, inlen);
 		return 0;
-		}
+	}
 	return inlen;
 }
 
@@ -368,9 +368,9 @@ static int crysprFallback_MsEncrypt(
 	ASSERT((NULL != in_data) || (1 == nbin)); //Only one in_data[] supported
 
 	/* 
-	* Get message prefix length
-	* to reserve room for unencrypted message header in output buffer
-	*/
+	 * Get message prefix length
+	 * to reserve room for unencrypted message header in output buffer
+	 */
 	pfx_len = ctx->msg_info->pfx_len;
 
 	/* Get buffer room from the internal circular output buffer */
@@ -378,94 +378,94 @@ static int crysprFallback_MsEncrypt(
 
 	if (NULL != out_msg) {
 		switch(ctx->mode) {
-		case HCRYPT_CTX_MODE_AESCTR: /* Counter mode */
-		{
+			case HCRYPT_CTX_MODE_AESCTR: /* Counter mode */
+			{
 #if CRYSPR_HAS_AESCTR
-            /* Get current key (odd|even) from context */
-            CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
-            unsigned char iv[CRYSPR_AESBLKSZ];
+				/* Get current key (odd|even) from context */
+				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				unsigned char iv[CRYSPR_AESBLKSZ];
 
-            /* Get input packet index (in network order) */
-            hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
+				/* Get input packet index (in network order) */
+				hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
 
-            /*
-            * Compute the Initial Vector
-            * IV (128-bit):
-            *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            * |                   0s                  |      pki      |  ctr  |
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            *                            XOR
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            * |                         nonce                         +
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            *
-            * pki    (32-bit): packet index
-            * ctr    (16-bit): block counter
-            * nonce (112-bit): number used once (salt)
-            */
-            hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
+				/*
+				 * Compute the Initial Vector
+				 * IV (128-bit):
+				 *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                   0s                  |      pki      |  ctr  |
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *                            XOR
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                         nonce                         +
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *
+				 * pki    (32-bit): packet index
+				 * ctr    (16-bit): block counter
+				 * nonce (112-bit): number used once (salt)
+				 */
+				hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
-            cryspr_cb->cryspr->aes_ctr_cipher(true, aes_key, iv, in_data[0].payload, in_data[0].len,
-                                                  &out_msg[pfx_len]);
+				cryspr_cb->cryspr->aes_ctr_cipher(true, aes_key, iv, in_data[0].payload, in_data[0].len,
+						&out_msg[pfx_len]);
 #else /*CRYSPR_HAS_AESCTR*/
-            /* Get current key (odd|even) from context */
-            CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
-            unsigned char iv[CRYSPR_AESBLKSZ];
-            int iret = 0;
+				/* Get current key (odd|even) from context */
+				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				unsigned char iv[CRYSPR_AESBLKSZ];
+				int iret = 0;
 
-   			/* Get input packet index (in network order) */
-			hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
+				/* Get input packet index (in network order) */
+				hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
 
-			/*
-			* Compute the Initial Vector
-			* IV (128-bit):
-			*    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			* |                   0s                  |      pki      |  ctr  |
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			*                            XOR
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			* |                         nonce                         +
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			*
-			* pki    (32-bit): packet index
-			* ctr    (16-bit): block counter
-			* nonce (112-bit): number used once (salt)
-			*/
-			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
+				/*
+				 * Compute the Initial Vector
+				 * IV (128-bit):
+				 *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                   0s                  |      pki      |  ctr  |
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *                            XOR
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                         nonce                         +
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *
+				 * pki    (32-bit): packet index
+				 * ctr    (16-bit): block counter
+				 * nonce (112-bit): number used once (salt)
+				 */
+				hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
-            /* Create CtrStream. May be longer than in_len (next cryspr block size boundary) */
-    		iret = _crysprFallback_AES_SetCtrStream(cryspr_cb, ctx, in_data[0].len, iv);
-    		if (iret) {
-    			return(iret);
-    		}
-    		/* Reserve output buffer for cryspr */
-    		out_msg = _crysprFallback_GetOutbuf(cryspr_cb, pfx_len, cryspr_cb->ctr_stream_len);
+				/* Create CtrStream. May be longer than in_len (next cryspr block size boundary) */
+				iret = _crysprFallback_AES_SetCtrStream(cryspr_cb, ctx, in_data[0].len, iv);
+				if (iret) {
+					return(iret);
+				}
+				/* Reserve output buffer for cryspr */
+				out_msg = _crysprFallback_GetOutbuf(cryspr_cb, pfx_len, cryspr_cb->ctr_stream_len);
 
-    		/* Create KeyStream (encrypt CtrStream) */
-    		iret = cryspr_cb->cryspr->aes_ecb_cipher(true, aes_key,
-    			cryspr_cb->ctr_stream, cryspr_cb->ctr_stream_len,
-    			&out_msg[pfx_len], &out_len);
-    		if (iret) {
-    			HCRYPT_LOG(LOG_ERR, "%s", "hcOpenSSL_AES_ecb_cipher(encrypt, failed\n");
-    			return(iret);
-    		}
+				/* Create KeyStream (encrypt CtrStream) */
+				iret = cryspr_cb->cryspr->aes_ecb_cipher(true, aes_key,
+						cryspr_cb->ctr_stream, cryspr_cb->ctr_stream_len,
+						&out_msg[pfx_len], &out_len);
+				if (iret) {
+					HCRYPT_LOG(LOG_ERR, "%s", "hcOpenSSL_AES_ecb_cipher(encrypt, failed\n");
+					return(iret);
+				}
 #endif/*CRYSPR_HAS_AESCTR*/
-			/* Prepend packet prefix (clear text) in output buffer */
-			memcpy(out_msg, in_data[0].pfx, pfx_len);
-			/* CTR mode output length is same as input, no padding */
-			out_len = in_data[0].len;
-			break;
-		}
-		case HCRYPT_CTX_MODE_CLRTXT:    /* Clear text mode (transparent mode for tests) */
-			memcpy(&out_msg[pfx_len], in_data[0].payload, in_data[0].len);
-			memcpy(out_msg, in_data[0].pfx, pfx_len);
-			out_len = in_data[0].len;
-			break;
-		default:
-			/* Unsupported cipher mode */
-			return(-1);
+				/* Prepend packet prefix (clear text) in output buffer */
+				memcpy(out_msg, in_data[0].pfx, pfx_len);
+				/* CTR mode output length is same as input, no padding */
+				out_len = in_data[0].len;
+				break;
+			}
+			case HCRYPT_CTX_MODE_CLRTXT:    /* Clear text mode (transparent mode for tests) */
+				memcpy(&out_msg[pfx_len], in_data[0].payload, in_data[0].len);
+				memcpy(out_msg, in_data[0].pfx, pfx_len);
+				out_len = in_data[0].len;
+				break;
+			default:
+				/* Unsupported cipher mode */
+				return(-1);
 		}
 	} else {
 		/* input data too big */
@@ -473,44 +473,44 @@ static int crysprFallback_MsEncrypt(
 	}
 
 	if (out_len > 0) {
-        /* Encrypted messages have been produced */
-        if (NULL == out_p) {
-            /*
-            * Application did not provided output buffer,
-            * so copy encrypted message back in input buffer
-            */
-            memcpy(in_data[0].pfx, out_msg, pfx_len);
-            #if !CRYSPR_HAS_AESCTR
-            if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
-                /* XOR KeyStream with input text directly in input buffer */
-                hcrypt_XorStream(in_data[0].payload, &out_msg[pfx_len], out_len);
-            }else{
-                /* Copy output data back in input buffer */
-                memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
-            }
-            #else /* CRYSPR_HAS_AESCTR */
-                /* Copy output data back in input buffer */
-                memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
-            #endif /* CRYSPR_HAS_AESCTR */
-        } else {
-            /* Copy header in output buffer if needed */
-            if (pfx_len > 0) memcpy(out_msg, in_data[0].pfx, pfx_len);
-            #if !CRYSPR_HAS_AESCTR
-            if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
-                hcrypt_XorStream(&out_msg[pfx_len], in_data[0].payload, out_len);
-            }
-            #endif /* CRYSPR_HAS_AESCTR */
-            out_p[0] = out_msg;
-            out_len_p[0] = pfx_len + out_len;
-            *nbout_p = 1;
-        }
+		/* Encrypted messages have been produced */
+		if (NULL == out_p) {
+			/*
+			 * Application did not provided output buffer,
+			 * so copy encrypted message back in input buffer
+			 */
+			memcpy(in_data[0].pfx, out_msg, pfx_len);
+#if !CRYSPR_HAS_AESCTR
+			if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
+				/* XOR KeyStream with input text directly in input buffer */
+				hcrypt_XorStream(in_data[0].payload, &out_msg[pfx_len], out_len);
+			}else{
+				/* Copy output data back in input buffer */
+				memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
+			}
+#else /* CRYSPR_HAS_AESCTR */
+			/* Copy output data back in input buffer */
+			memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
+#endif /* CRYSPR_HAS_AESCTR */
+		} else {
+			/* Copy header in output buffer if needed */
+			if (pfx_len > 0) memcpy(out_msg, in_data[0].pfx, pfx_len);
+#if !CRYSPR_HAS_AESCTR
+			if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
+				hcrypt_XorStream(&out_msg[pfx_len], in_data[0].payload, out_len);
+			}
+#endif /* CRYSPR_HAS_AESCTR */
+			out_p[0] = out_msg;
+			out_len_p[0] = pfx_len + out_len;
+			*nbout_p = 1;
+		}
 	} else {
 		/*
-		* Nothing out
-		* This is not an error for implementations using deferred/async processing
-		* with co-processor, DSP, crypto hardware, etc.
-		* Submitted input data could be returned encrypted in a next call.
-		*/
+		 * Nothing out
+		 * This is not an error for implementations using deferred/async processing
+		 * with co-processor, DSP, crypto hardware, etc.
+		 * Submitted input data could be returned encrypted in a next call.
+		 */
 		if (nbout_p != NULL) *nbout_p = 0;
 		return(-1);
 	}
@@ -533,90 +533,90 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 
 	if (NULL != out_txt) {
 		switch(ctx->mode) {
-		case HCRYPT_CTX_MODE_AESCTR: 
-		{
+			case HCRYPT_CTX_MODE_AESCTR:
+			{
 #if CRYSPR_HAS_AESCTR
-            /* Get current key (odd|even) from context */
-            CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
-            unsigned char iv[CRYSPR_AESBLKSZ];
+				/* Get current key (odd|even) from context */
+				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				unsigned char iv[CRYSPR_AESBLKSZ];
 
-            /* Get input packet index (in network order) */
-            hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
+				/* Get input packet index (in network order) */
+				hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
 
-            /*
-            * Compute the Initial Vector
-            * IV (128-bit):
-            *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            * |                   0s                  |      pki      |  ctr  |
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            *                            XOR
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            * |                         nonce                         +
-            * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-            *
-            * pki    (32-bit): packet index
-            * ctr    (16-bit): block counter
-            * nonce (112-bit): number used once (salt)
-            */
-            hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
+				/*
+				 * Compute the Initial Vector
+				 * IV (128-bit):
+				 *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                   0s                  |      pki      |  ctr  |
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *                            XOR
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                         nonce                         +
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *
+				 * pki    (32-bit): packet index
+				 * ctr    (16-bit): block counter
+				 * nonce (112-bit): number used once (salt)
+				 */
+				hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
-            cryspr_cb->cryspr->aes_ctr_cipher(false, aes_key, iv, in_data[0].payload, in_data[0].len,
-                                                  out_txt);
-            out_len = in_data[0].len;
+				cryspr_cb->cryspr->aes_ctr_cipher(false, aes_key, iv, in_data[0].payload, in_data[0].len,
+						out_txt);
+				out_len = in_data[0].len;
 #else  /*CRYSPR_HAS_AESCTR*/
-            /* Get current key (odd|even) from context */
-            CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
-            unsigned char iv[CRYSPR_AESBLKSZ];
-            int iret = 0;
+				/* Get current key (odd|even) from context */
+				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				unsigned char iv[CRYSPR_AESBLKSZ];
+				int iret = 0;
 
-   			/* Get input packet index (in network order) */
-			hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
+				/* Get input packet index (in network order) */
+				hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
 
-			/*
-			* Compute the Initial Vector
-			* IV (128-bit):
-			*    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			* |                   0s                  |      pki      |  ctr  |
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			*                            XOR
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			* |                         nonce                         +
-			* +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-			*
-			* pki    (32-bit): packet index
-			* ctr    (16-bit): block counter
-			* nonce (112-bit): number used once (salt)
-			*/
-			hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
+				/*
+				 * Compute the Initial Vector
+				 * IV (128-bit):
+				 *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                   0s                  |      pki      |  ctr  |
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *                            XOR
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 * |                         nonce                         +
+				 * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+				 *
+				 * pki    (32-bit): packet index
+				 * ctr    (16-bit): block counter
+				 * nonce (112-bit): number used once (salt)
+				 */
+				hcrypt_SetCtrIV((unsigned char *)&pki, ctx->salt, iv);
 
-            /* Create CtrStream. May be longer than in_len (next cipher block size boundary) */
-    		iret = _crysprFallback_AES_SetCtrStream(cryspr_cb, ctx, in_data[0].len, iv);
-    		if (iret) {
-    			return(iret);
-    		}
-    		/* Reserve output buffer for cryspr */
-    		out_txt = _crysprFallback_GetOutbuf(cryspr_cb, 0, cryspr_cb->ctr_stream_len);
+				/* Create CtrStream. May be longer than in_len (next cipher block size boundary) */
+				iret = _crysprFallback_AES_SetCtrStream(cryspr_cb, ctx, in_data[0].len, iv);
+				if (iret) {
+					return(iret);
+				}
+				/* Reserve output buffer for cryspr */
+				out_txt = _crysprFallback_GetOutbuf(cryspr_cb, 0, cryspr_cb->ctr_stream_len);
 
-    		/* Create KeyStream (encrypt CtrStream) */
-    		iret = cryspr_cb->cryspr->aes_ecb_cipher(true, aes_key,
-    			cryspr_cb->ctr_stream, cryspr_cb->ctr_stream_len,
-    			out_txt, &out_len);
-    		if (iret) {
-    			HCRYPT_LOG(LOG_ERR, "%s", "crysprNatural_AES_ecb_cipher(encrypt failed\n");
-    			return(iret);
-    		}
+				/* Create KeyStream (encrypt CtrStream) */
+				iret = cryspr_cb->cryspr->aes_ecb_cipher(true, aes_key,
+						cryspr_cb->ctr_stream, cryspr_cb->ctr_stream_len,
+						out_txt, &out_len);
+				if (iret) {
+					HCRYPT_LOG(LOG_ERR, "%s", "crysprNatural_AES_ecb_cipher(encrypt failed\n");
+					return(iret);
+				}
 
 #endif /*CRYSPR_HAS_AESCTR*/
-			break;
-		}
-		case HCRYPT_CTX_MODE_CLRTXT:
-			memcpy(out_txt, in_data[0].payload, in_data[0].len);
-			out_len = in_data[0].len;
-			break;
-		default:
-			return(-1);
+				break;
+			}
+			case HCRYPT_CTX_MODE_CLRTXT:
+				memcpy(out_txt, in_data[0].payload, in_data[0].len);
+				out_len = in_data[0].len;
+				break;
+			default:
+				return(-1);
 		}
 	} else {
 		return(-1);
@@ -624,33 +624,33 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 
 	if (out_len > 0) {
 		if (NULL == out_p) {
-            /*
-            * Application did not provided output buffer,
-            * so copy encrypted message back in input buffer
-            */
-            #if !CRYSPR_HAS_AESCTR
-                if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
-                    /* XOR KeyStream with input text directly in input buffer */
-                    hcrypt_XorStream(in_data[0].payload, out_txt, out_len);
-                }else{
-                    /* Copy output data back in input buffer */
-                    memcpy(in_data[0].payload, out_txt, out_len);
-                }
-            #else /* CRYSPR_HAS_AESCTR */
-                /* Copy output data back in input buffer */
-                memcpy(in_data[0].payload, out_txt, out_len);
-            #endif /* CRYSPR_HAS_AESCTR */
-        } else {
-            /* Copy header in output buffer if needed */
-            #if !CRYSPR_HAS_AESCTR
-                if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
-                    hcrypt_XorStream(out_txt, in_data[0].payload, out_len);
-                }
-            #endif /* CRYSPR_HAS_AESCTR */
-            out_p[0] = out_txt;
-            out_len_p[0] = out_len;
-            *nbout_p = 1;
-        }
+			/*
+			 * Application did not provided output buffer,
+			 * so copy encrypted message back in input buffer
+			 */
+#if !CRYSPR_HAS_AESCTR
+			if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
+				/* XOR KeyStream with input text directly in input buffer */
+				hcrypt_XorStream(in_data[0].payload, out_txt, out_len);
+			}else{
+				/* Copy output data back in input buffer */
+				memcpy(in_data[0].payload, out_txt, out_len);
+			}
+#else /* CRYSPR_HAS_AESCTR */
+			/* Copy output data back in input buffer */
+			memcpy(in_data[0].payload, out_txt, out_len);
+#endif /* CRYSPR_HAS_AESCTR */
+		} else {
+			/* Copy header in output buffer if needed */
+#if !CRYSPR_HAS_AESCTR
+			if (ctx->mode == HCRYPT_CTX_MODE_AESCTR) {
+				hcrypt_XorStream(out_txt, in_data[0].payload, out_len);
+			}
+#endif /* CRYSPR_HAS_AESCTR */
+			out_p[0] = out_txt;
+			out_len_p[0] = out_len;
+			*nbout_p = 1;
+		}
 		iret = 0;
 	} else {
 		if (NULL != nbout_p) *nbout_p = 0;
@@ -660,10 +660,10 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 #if 0
 	{	/* Debug decryption errors */
 		static int nberr = 0;
-	
+
 		if (out_txt[0] != 0x47){
 			if ((++nberr == 1)
-			||  ((nberr > 500) && (0 == ((((unsigned char *)&MSmsg->pki)[2] & 0x0F)|((unsigned char *)&MSmsg->pki)[3])))) {
+					||  ((nberr > 500) && (0 == ((((unsigned char *)&MSmsg->pki)[2] & 0x0F)|((unsigned char *)&MSmsg->pki)[3])))) {
 				HCRYPT_LOG(LOG_DEBUG, "keyindex=%d\n", hcryptCtx_GetKeyIndex(ctx));
 				HCRYPT_PRINTKEY(ctx->sek, ctx->sek_len, "sek"); 
 				HCRYPT_PRINTKEY(ctx->salt, ctx->salt_len, "salt"); 
@@ -707,4 +707,5 @@ HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance(void)
 {
     return((HaiCrypt_Cryspr)cryspr4SRT());
 }
+
 
