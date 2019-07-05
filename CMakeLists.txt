@@ -236,9 +236,8 @@ if (ENABLE_ENCRYPTION)
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
 		add_definitions(
-			-DHAICRYPT_USE_OPENSSL_EVP=1
-			-DHAICRYPT_USE_OPENSSL_AES
-		)
+			-DUSE_OPENSSL
+			)
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
