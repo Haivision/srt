@@ -69,6 +69,7 @@
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
 #include "testmediabase.hpp"
+#include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -201,6 +202,23 @@ namespace srt_logging
     extern Logger glog;
 }
 
+extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, const sockaddr*, const char* streamid)
+{
+    static map<string, string> passwd {
+        {"admin", "thelocalmanager"},
+        {"user", "verylongpassword"}
+    };
+
+    // This hook sets the password to the just accepted socket
+    // depending on the user
+
+    string exp_pw = passwd.at(streamid);
+
+    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+
+    return true;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -315,6 +333,16 @@ int main( int argc, char** argv )
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
+    }
+
+    string hook = Option("", "hook");
+    if (hook != "")
+    {
+        if (hook == "user-password")
+        {
+            transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
     }
 
     std::ofstream logfile_stream; // leave unused if not set

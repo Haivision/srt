@@ -8933,3 +8933,78 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
 
     return std::abs(timespan);
 }
+
+
+bool CUDT::runAcceptHook(CUDT* acore, CHandShake* hs, const CPacket& hspkt)
+{
+    // Prepare the information for the hook.
+
+    // We need streamid.
+    char target[MAX_SID_LENGTH+1];
+    memset(target, 0, MAX_SID_LENGTH+1);
+
+    // Just for a case, check the length.
+    // This wasn't done before, and we could risk memory crash.
+    // In case of error, this will remain unset and the empty
+    // string will be passed as streamid.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs->m_iType);
+
+    // This tests if there are any extensions.
+    if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
+    {
+        uint32_t* begin = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
+        size_t size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+        uint32_t* next = 0;
+        size_t length = size / sizeof(uint32_t);
+        size_t blocklen = 0;
+
+        for (;;) // ONE SHOT, but continuable loop
+        {
+            int cmd = FindExtensionBlock(begin, length, Ref(blocklen), Ref(next));
+
+            size_t bytelen = blocklen*sizeof(uint32_t);
+
+            if ( cmd == SRT_CMD_SID )
+            {
+                // See comment at CUDT::interpretSrtHandshake().
+                memcpy(target, begin+1, bytelen);
+
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+
+                // Nothing more expected from connection block.
+                break;
+            }
+            else if ( cmd == SRT_CMD_NONE )
+            {
+                // End of blocks
+                break;
+            }
+            else
+            {
+                // Any other kind of message extracted. Search on.
+                length -= (next - begin);
+                begin = next;
+                if (begin)
+                    continue;
+            }
+
+            break;
+        }
+    }
+
+    // Ok, also extract the sockaddr from the caller; might be
+    // a useful information for the hooker.
+    sockaddr* caller_addr = acore->m_pPeerAddr;
+
+    try
+    {
+        return CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, caller_addr, target);
+    }
+    catch (...)
+    {
+        LOGP(mglog.Error, "runAcceptHook: hook interrupted by exception");
+        return false;
+    }
+}

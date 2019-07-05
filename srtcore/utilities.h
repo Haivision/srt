@@ -548,6 +548,28 @@ public:
 
 #endif
 
+template <class Signature>
+struct CallbackHolder
+{
+    void* opaque;
+    Signature* fn;
+
+    CallbackHolder(): opaque(0), fn(0)  {}
+
+    void set(void* o, Signature* f)
+    {
+        // Test if the pointer is a pointer to function. Don't let
+        // other type of pointers here.
+        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        opaque = o;
+        fn = f;
+    }
+
+    operator bool() { return fn; }
+};
+
+#define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
+
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
     if ( size == 0 )

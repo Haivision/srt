@@ -317,5 +317,12 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
+int srt_accept_hook(SRTSOCKET lsn, srt_accept_hook_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL));
+
+    return CUDT::installAcceptHook(lsn, hook, opaq);
+}
 
 }
