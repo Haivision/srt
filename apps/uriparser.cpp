@@ -116,7 +116,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     if (idx != string::npos)
     {
         m_proto = m_host.substr(0, idx);
-        transform(m_proto.begin(), m_proto.end(), m_proto.begin(), [](char c){ return std::toupper(c); });
+        transform(m_proto.begin(), m_proto.end(), m_proto.begin(), [](char c){ return tolower(c); });
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
@@ -242,7 +242,8 @@ int main( int argc, char** argv )
     cout << "PORT: " << parser.portno() << endl;
     cout << "PATH: " << parser.path() << endl;
     cout << "PARAMETERS:\n";
-    for (auto& p: parser.parameters()) {
+    for (auto& p: parser.parameters()) 
+    {
         cout << "\t" << p.first << " = " << p.second << endl;
     }
     return 0;
