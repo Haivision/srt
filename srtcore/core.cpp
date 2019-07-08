@@ -9930,6 +9930,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
        else
        {
            // a new connection has been created, enable epoll for write
+           HLOGC(mglog.Debug, log << "processConnectRequest: @" << m_SocketID
+                   << " connected, setting epoll to connect:");
            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
        }
    }
@@ -11238,7 +11240,8 @@ int CUDTGroup::sendRedundant(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             HLOGC(dlog.Debug, log << "grp/sendRedundant: RDY: "
                     << DisplayEpollResults(sready.rd(), "[R]")
                     << DisplayEpollResults(sready.wr(), "[W]")
-                    << DisplayEpollResults(sready.ex(), "[E]"));
+                    << DisplayEpollResults(sready.ex(), "[E]")
+                    << DisplayEpollResults(sready.sp(), "[S]"));
 
             // sockets in EX: should be moved to wipeme.
             for (vector<gli_t>::iterator i = pending.begin(); i != pending.end(); ++i)
@@ -12000,7 +12003,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             HLOGC(dlog.Debug, log << "grp/sendBackup: RDY: "
                     << DisplayEpollResults(sready.rd(), "[R]")
                     << DisplayEpollResults(sready.wr(), "[W]")
-                    << DisplayEpollResults(sready.ex(), "[E]"));
+                    << DisplayEpollResults(sready.ex(), "[E]")
+                    << DisplayEpollResults(sready.sp(), "[S]"));
 
             // sockets in EX: should be moved to wipeme.
             for (vector<gli_t>::iterator i = pending.begin(); i != pending.end(); ++i)
@@ -13018,6 +13022,7 @@ RETRY_READING:
     flags will survive the operation.
 
     */
+
     for (vector<SRTSOCKET>::iterator i = read_ready.begin(); i != read_ready.end(); ++i)
     {
         srt_epoll_add_usock(m_RcvEID, *i, &read_modes);
@@ -13064,7 +13069,8 @@ RETRY_READING:
     HLOGC(dlog.Debug, log << "group/recv: RDY: "
             << DisplayEpollResults(sready.rd(), "[R]")
             << DisplayEpollResults(sready.wr(), "[W]")
-            << DisplayEpollResults(sready.ex(), "[E]"));
+            << DisplayEpollResults(sready.ex(), "[E]")
+            << DisplayEpollResults(sready.sp(), "[S]"));
 
     if (nready == 0)
     {

@@ -137,6 +137,7 @@ int CEPoll::clear_usocks(int eid)
    d.m_sUDTSocksIn.clear();
    d.m_sUDTSocksOut.clear();
    d.m_sUDTSocksEx.clear();
+   d.m_sUDTSocksSpc.clear();
 
    d.clear_state();
 
@@ -209,6 +210,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
    prv_clear_ready_usocks<SRT_EPOLL_IN>(d, direction);
    prv_clear_ready_usocks<SRT_EPOLL_OUT>(d, direction);
    prv_clear_ready_usocks<SRT_EPOLL_ERR>(d, direction);
+   prv_clear_ready_usocks<SRT_EPOLL_SPECIAL>(d, direction);
 }
 
 int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
@@ -224,9 +226,9 @@ int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
        modes = "all ";
    else
    {
-       int mx[3] = {SRT_EPOLL_IN, SRT_EPOLL_OUT, SRT_EPOLL_ERR};
-       string nam[3] = { "in", "out", "err" };
-       for (int i = 0; i < 3; ++i)
+       int mx[4] = {SRT_EPOLL_IN, SRT_EPOLL_OUT, SRT_EPOLL_ERR, SRT_EPOLL_SPECIAL};
+       string nam[4] = { "in", "out", "err", "spec" };
+       for (int i = 0; i < 4; ++i)
            if (*events & mx[i])
            {
                modes += nam[i];
@@ -251,6 +253,7 @@ int CEPoll::add_usock(const int eid, const SRTSOCKET& u, const int* events)
    prv_update_usock<SRT_EPOLL_IN>(d, u, ef);
    prv_update_usock<SRT_EPOLL_OUT>(d, u, ef);
    prv_update_usock<SRT_EPOLL_ERR>(d, u, ef);
+   prv_update_usock<SRT_EPOLL_SPECIAL>(d, u, ef);
 
    return 0;
 }
@@ -336,6 +339,7 @@ int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
    p->second.m_sUDTSocksIn.erase(u);
    p->second.m_sUDTSocksOut.erase(u);
    p->second.m_sUDTSocksEx.erase(u);
+   p->second.m_sUDTSocksSpc.erase(u);
 
    /*
    * We are no longer interested in signals from this socket
@@ -345,6 +349,7 @@ int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
    p->second.m_sUDTReads.erase(u);
    p->second.m_sUDTWrites.erase(u);
    p->second.m_sUDTExcepts.erase(u);
+   p->second.m_sUDTSpecial.erase(u);
 
    return 0;
 }
@@ -388,33 +393,12 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
    if (p == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-   if (!events || (*events & SRT_EPOLL_IN))
-      p->second.m_sUDTSocksIn.insert(u);
-   else
-   {
-      p->second.m_sUDTSocksIn.erase(u);
-      /*
-      * We are no longer interested in this event from this socket
-      * If some are up, they will unblock EPoll forever.
-      * Clear them.
-      */
-      p->second.m_sUDTReads.erase(u);
-   }
+   int ef = events ? *events : SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 
-   if (!events || (*events & SRT_EPOLL_OUT))
-      p->second.m_sUDTSocksOut.insert(u);
-   else
-   {
-      p->second.m_sUDTSocksOut.erase(u);
-      p->second.m_sUDTWrites.erase(u);
-   }
-   if (!events || (*events & SRT_EPOLL_ERR))
-      p->second.m_sUDTSocksEx.insert(u);
-   else
-   {
-      p->second.m_sUDTSocksEx.erase(u);
-      p->second.m_sUDTExcepts.erase(u);
-   }
+   prv_update_usock<SRT_EPOLL_IN>(p->second, u, ef);
+   prv_update_usock<SRT_EPOLL_OUT>(p->second, u, ef);
+   prv_update_usock<SRT_EPOLL_ERR>(p->second, u, ef);
+   prv_update_usock<SRT_EPOLL_SPECIAL>(p->second, u, ef);
 
    return 0;
 }
@@ -636,7 +620,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
    return 0;
 }
 
-const CEPollDesc& CEPoll::access(int eid)
+CEPollDesc& CEPoll::access(int eid)
 {
     CGuard lg(m_EPollLock, "EPoll");
 
@@ -650,7 +634,7 @@ const CEPollDesc& CEPoll::access(int eid)
     return p->second;
 }
 
-int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception)
+int CEPoll::swait(CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
         CGuard lg(m_EPollLock, "EPoll");
@@ -680,7 +664,7 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool
             // Here we only prevent the pollset be updated simultaneously
             // with unstable reading. 
             CGuard lg(m_EPollLock, "EPoll");
-            total = d.rd().size() + d.wr().size() + d.ex().size();
+            total = d.rd().size() + d.wr().size() + d.ex().size() + d.sp().size();
             if (total > 0 || msTimeOut == 0)
             {
                 // If msTimeOut == 0, it means that we need the information
@@ -695,6 +679,11 @@ int CEPoll::swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool
                         << Printable(d.m_sUDTSocksIn) << " [W]"
                         << Printable(d.m_sUDTSocksOut) << " [E]"
                         << Printable(d.m_sUDTSocksEx));
+
+                // IMPORTANT: SPECIAL is reported only ONCE and cleared after
+                // calling 'swait'. Next 'swait' call shouldn't pick it up.
+                d.clear_special();
+
                 return total;
             }
             // Don't report any updates because this check happens
@@ -765,6 +754,9 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
     }
 
 #if ENABLE_HEAVY_LOGGING
+    HLOGC(dlog.Debug, log << "epoll/update: NOT updated EID " << eid
+            << " for @" << uid << " - " << px << ":TRACKED: "
+            << Printable(watch));
     if (false)
     {
 Updated: ;
@@ -784,6 +776,13 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
 
    map<int, CEPollDesc>::iterator p;
 
+#if ENABLE_HEAVY_LOGGING
+   if (eids.empty())
+   {
+       LOGC(dlog.Debug, log << "epoll/update: @" << uid << ": NO SUBSCRIBERS");
+   }
+#endif
+
    vector<int> lost;
    for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
    {
@@ -798,6 +797,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
           update_epoll_sets<SRT_EPOLL_IN >(*i, uid, p->second, events, enable);
           update_epoll_sets<SRT_EPOLL_OUT>(*i, uid, p->second, events, enable);
           update_epoll_sets<SRT_EPOLL_ERR>(*i, uid, p->second, events, enable);
+          update_epoll_sets<SRT_EPOLL_SPECIAL>(*i, uid, p->second, events, enable);
       }
    }
 

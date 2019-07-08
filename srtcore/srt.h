@@ -514,6 +514,9 @@ enum SRT_EPOLL_OPT
    // some new names can be added to improve clarity.
    SRT_EPOLL_CONNECT = SRT_EPOLL_OUT,
    SRT_EPOLL_ACCEPT = SRT_EPOLL_IN,
+
+   // INTERNAL USE ONLY! DO NOT USE!
+   SRT_EPOLL_SPECIAL = 0x10
 };
 
 #ifdef __cplusplus

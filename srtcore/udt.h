@@ -133,6 +133,7 @@ struct SrtPollState
     std::set<SRTSOCKET> m_sUDTWrites;         // UDT sockets ready for write
     std::set<SRTSOCKET> m_sUDTReads;          // UDT sockets ready for read
     std::set<SRTSOCKET> m_sUDTExcepts;        // UDT sockets with exceptions (connection broken, etc.)
+    std::set<SRTSOCKET> m_sUDTSpecial;        // UDT sockets with special events (internal use only)
 
     friend class CEPoll;
 
@@ -141,12 +142,19 @@ public:
     const std::set<SRTSOCKET>& rd() const { return m_sUDTReads; }
     const std::set<SRTSOCKET>& wr() const { return m_sUDTWrites; }
     const std::set<SRTSOCKET>& ex() const { return m_sUDTExcepts; }
+    const std::set<SRTSOCKET>& sp() const { return m_sUDTSpecial; }
 
     void clear_state()
     {
         m_sUDTReads.clear();
         m_sUDTWrites.clear();
         m_sUDTExcepts.clear();
+        m_sUDTSpecial.clear();
+    }
+
+    void clear_special()
+    {
+        m_sUDTSpecial.clear();
     }
 };
 

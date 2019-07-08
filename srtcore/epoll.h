@@ -64,13 +64,14 @@ struct CEPollDesc: public SrtPollState
    std::set<SRTSOCKET> m_sUDTSocksOut;       // set of UDT sockets waiting for write events
    std::set<SRTSOCKET> m_sUDTSocksIn;        // set of UDT sockets waiting for read events
    std::set<SRTSOCKET> m_sUDTSocksEx;        // set of UDT sockets waiting for exceptions
+   std::set<SRTSOCKET> m_sUDTSocksSpc;       // internal-only events on UDT sockets
 
    int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
    bool empty() const
    {
-       return m_sUDTSocksIn.empty() && m_sUDTSocksOut.empty() && m_sUDTSocksEx.empty();
+       return m_sUDTSocksIn.empty() && m_sUDTSocksOut.empty() && m_sUDTSocksEx.empty() && m_sUDTSocksSpc.empty();
    }
 };
 
@@ -91,6 +92,7 @@ public: \
 CEPOLL_BIND(SRT_EPOLL_IN, m_sUDTSocksIn, m_sUDTReads, "IN");
 CEPOLL_BIND(SRT_EPOLL_OUT, m_sUDTSocksOut, m_sUDTWrites, "OUT");
 CEPOLL_BIND(SRT_EPOLL_ERR, m_sUDTSocksEx, m_sUDTExcepts, "ERR");
+CEPOLL_BIND(SRT_EPOLL_SPECIAL, m_sUDTSocksSpc, m_sUDTSpecial, "SPECIAL");
 
 #undef CEPOLL_BIND
 
@@ -174,7 +176,7 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
-   int swait(const CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception = true);
+   int swait(CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception = true);
 
    // Could be a template directly, but it's now hidden in the imp file.
    void clear_ready_usocks(CEPollDesc& d, int direction);
@@ -196,7 +198,7 @@ public: // for CUDT to acknowledge IO status
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
-   const CEPollDesc& access(int eid);
+   CEPollDesc& access(int eid);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID

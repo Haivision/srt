@@ -650,6 +650,25 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
             g->m_bConnected = true;
         }
 
+        if (!g->m_listener)
+        {
+            // Newly created group from the listener, which hasn't yet
+            // the listener set.
+            g->m_listener = ls;
+
+            // Listen on both first connected socket and continued sockets.
+            // This might help with jump-over situations, and in regular continued
+            // sockets the IN event won't be reported anyway.
+            int listener_modes = SRT_EPOLL_IN | SRT_EPOLL_SPECIAL;
+            srt_epoll_add_usock(g->m_RcvEID, ls->m_SocketID, &listener_modes);
+
+            // This listening should be done always when a first connected socket
+            // appears as accepted off the listener. This is for the sake of swait() calls
+            // inside the group receiving and sending functions so that they get
+            // interrupted when a new socket is connected.
+        }
+
+
         // With app reader, do not set groupPacketArrival (block the
         // provider array feature completely for now).
 
@@ -700,6 +719,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                 << " NOT submitted to acceptance, another socket in the group is already connected");
         CGuard cg(ls->m_AcceptLock, "Accept");
         ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
+
+        // acknowledge INTERNAL users waiting for new connections on the listening socket
+        // that are reported when a new socket is connected within an already connected group.
+        m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_SPECIAL, true);
     }
 
 ERR_ROLLBACK:
@@ -3421,7 +3444,7 @@ int CUDT::epoll_swait(const int eid, SrtPollState& socks, int64_t msTimeOut)
 {
    try
    {
-       const CEPollDesc& d = s_UDTUnited.epollmg().access(eid);
+       CEPollDesc& d = s_UDTUnited.epollmg().access(eid);
        HLOGC(mglog.Debug, log << "epoll_swait polls on " << eid);
        return s_UDTUnited.epollmg().swait(d, socks, msTimeOut);
    }
