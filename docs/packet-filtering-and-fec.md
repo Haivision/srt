@@ -17,7 +17,7 @@ SRT Packet Filtering & FEC
   * [Construction](#Construction)
   * [Sending](#Sending)
   * [Receiving](#Receiving)
-<br>
+
 
 # Introduction
 
@@ -49,7 +49,7 @@ in an SRT URI in the applications.
 SRT contains one built-in filter named "fec". This filter implements the FEC 
 mechanism, as described in SMPTE 2022-1-2007.
 
-<img src="images/packet-filter-mechanism.png" width="400">
+![SRT packet filter mechanism](/docs/images/packet-filter-mechanism.png)
 
 On the input side, filtering occurs at the moment when a packet is extracted 
 from the send buffer. A filter may alter the packet before inserting it into the 
@@ -201,11 +201,12 @@ latency you must configure with FEC. This is based on the size of the matrix
 bytes-per-packet factor. But if you use FEC and ARQ together, delaying a packet 
 at the sender side may challenge the response time for retransmission.
 
-2. *D**elay sending the FEC packet itself.*  **-> NOT IMPLEMENTED**
+2. *Delay sending the FEC control packet itself.*  **-> A concept, NOT IMPLEMENTED**
 
-    The problem is that this would increase the time interval between the first 
-packets in a group by a factor based on twice the matrix size (100 in the above 
-example), thus increasing the latency.
+    Sending an FEC control packet can be postponed for several data packets. The
+problem is that this would increase the time interval between the first packet
+in a group and the control packet by a factor based on twice the matrix size
+(100 in the above example), thus increasing the required latency penalty.
 
 3. *Use the staircase arrangement.*
 
