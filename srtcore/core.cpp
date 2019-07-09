@@ -1313,13 +1313,12 @@ void CUDT::open()
 
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
-   m_ullLastRspTime_tk = currtime_tk;
-   m_ullNextACKTime_tk = currtime_tk + m_ullSYNInt_tk;
-   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+   m_ullLastRspTime_tk    = currtime_tk;
+   m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+   m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
    m_ullLastRspAckTime_tk = currtime_tk;
+   m_ullLastSndTime_tk    = currtime_tk;
    m_iReXmitCount = 1;
-   // Fix keepalive
-   m_ullLastSndTime_tk = currtime_tk;
 
    m_iPktCount = 0;
    m_iLightACKCount = 1;
@@ -4711,6 +4710,16 @@ void CUDT::setupCC()
     if ( min_nak_tk )
         m_ullMinNakInt_tk = min_nak_tk;
 
+    // Update timers 
+    uint64_t currtime_tk;
+    CTimer::rdtsc(currtime_tk);
+    m_ullLastRspTime_tk    = currtime_tk;
+    m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+    m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
+    m_ullLastRspAckTime_tk = currtime_tk;
+    m_ullLastSndTime_tk    = currtime_tk;
+
+
     HLOGC(mglog.Debug, log << "setupCC: setting parameters: mss=" << m_iMSS
         << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
         << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
@@ -6259,8 +6268,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
             uint64_t period;
-            int payloadsz; //CC will use its own average payload size
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
+            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate
 
             // NOTE:
             // 'period' here is set to the value that was previously set by
@@ -6365,11 +6373,15 @@ void CUDT::releaseSynch()
     pthread_mutex_lock(&m_RecvLock);
     pthread_cond_signal(&m_RcvTsbPdCond);
     pthread_mutex_unlock(&m_RecvLock);
+
+    pthread_mutex_lock(&m_RecvDataLock);
     if (!pthread_equal(m_RcvTsbPdThread, pthread_t())) 
     {
         pthread_join(m_RcvTsbPdThread, NULL);
         m_RcvTsbPdThread = pthread_t();
     }
+    pthread_mutex_unlock(&m_RecvDataLock);
+
     pthread_mutex_lock(&m_RecvLock);
     pthread_mutex_unlock(&m_RecvLock);
 }

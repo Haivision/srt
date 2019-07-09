@@ -483,6 +483,67 @@ and the platform default value is used.
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMREFRESHRATE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000000| 0..unlimited |
+
+- **[GET or SET]** - The number of packets to be transmitted after which the Stream
+Encryption Key (SEK), used to encrypt packets, will be switched to the new one.
+Note that the old and new keys live in parallel for a certain period of time
+(see `SRTO_KMPREANNOUNCE`) before and after the switchover.
+
+Having a preannounce period before switchover ensures the new SEK is installed
+at the receiver before the first packet encrypted with the new SEK is received.
+The old key remains active after switchover in order to decrypt packets that
+might still be in flight, or packets that have to be retransmitted.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMPREANNOUNCE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000 | see below |
+
+- **[GET or SET]** - The interval (defined in packets) between when a new
+  Stream Encrypting Key (SEK) is sent and when switchover occurs. This value
+also applies to the subsequent interval between when switchover occurs and when
+the old SEK is decommissioned.
+
+At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
+(repeatedly, if necessary, until it is confirmed by the receiver).
+
+At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
+  encrypting and sending packets using the new key. The old key persists in
+  case it is needed to decrypt packets that were in the flight window, or
+  retransmitted packets.
+
+The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover . 
+
+The allowed range for this value is between 1 and half of the current value
+of `SRTO_KMREFRESHRATE`. The minimum value should never be less than the
+flight window (i.e. the number of packets that have already left the sender but
+have not yet arrived at the receiver).
+
+
+- **[GET or SET]** - The interval (defined in packets) between when a new
+  Stream Encrypting Key (SEK) is sent and when switchover occurs. This value
+also applies to the subsequent interval between when switchover occurs and when
+the old SEK is decommissioned.
+
+At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
+(repeatedly, if necessary, until it is confirmed by the receiver).
+
+At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
+encrypting and sending packets using the new key. The old key persists in case
+it is needed to decrypt packets that were in the flight window, or
+retransmitted packets.
+
+The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover.
+
+The allowed range for this value is between 1 and half of the current value of
+`SRTO_KMREFRESHRATE`. The minimum value should never be less than the flight
+window (i.e. the number of packets that have already left the sender but have
+not yet arrived at the receiver).
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
 
 - **[GET]** - Keying Material state. This is a legacy option that is equivalent 
@@ -838,6 +899,20 @@ set, based on MSS value. For desired result, configure MSS first.***
 
 | OptName               | Since | Binding | Type  | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_SNDDROPDELAY`   | 1.3.2 | pre     | `int` | ms     | 0        |        |
+
+- **[SET]** - Sets an extra delay before TLPKTDROP is triggered on the data
+  sender. TLPKTDROP discards packets reported as lost if it is already too late
+to send them (the receiver would discard them even if received).  The total
+delay before TLPKTDROP is triggered consists of the LATENCY (`SRTO_PEERLATENCY`),
+plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default = 20ms).
+`SRTO_SNDDROPDELAY` extends the tolerance for retransmitting packets at
+the expense of more likely retransmitting them uselessly. To be effective, it
+must have a value greater than 1000 - `SRTO_PEERLATENCY`.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
 | `SRTO_SNDKMSTATE`     | 1.2.0 | post    | enum  | n/a    | n/a      |        |
 
 - **[GET]** - Peer KM state on receiver side for `SRTO_KMSTATE`
@@ -891,6 +966,34 @@ interpretation of the contents of this string. As this uses internally the
 (udt.h): `UDT::setstreamid` and `UDT::getstreamid`. This option doesn't make sense 
 in Rendezvous connection; the result might be that simply one side will override 
 the value from the other side and it's the matter of luck which one would win
+---
+
+| OptName           | Since | Binding | Type            | Units | Default  | Range  |
+| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
+
+- **[SET]** - This option, when set to TRUE, allows connection only if the
+encryption setup of the connection parties is a "strictly encrypted" case,
+that is:
+
+   - neither party has enabled encryption
+   - both parties have enabled encryption with the same passphrase
+
+In other cases the connection will be rejected.
+
+When this option is set to FALSE **by both parties of the connection**, the
+following combinations of encryption setup will be allowed for connection (with
+appropriate limitations):
+
+   - both parties have enabled encryption with different passphrase
+      - transmission not possible in either direction
+   - only one party has enabled encryption
+      - unencrypted transmission possible only from unencrypted party to encrypted one
+
+Setting the `SRTO_STRICTENC`option to FALSE can be useful in situations where
+it is important to know whether a connection is possible. The inability to
+decrypt an incoming transmission can be reported as a different kind of
+problem.
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
