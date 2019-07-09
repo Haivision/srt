@@ -109,7 +109,16 @@ option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
-option(ENABLE_MONOTONIC_CLOCK "Enforce use clock_gettime with monotonic clock on GC CV (temporary fix)" OFF)
+
+# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
+# time, instead of gettimeofday. This function allows to force a monotonic
+# clock, which is independent on the currently set time in the system.  The CV,
+# for which the *_timedwait() functions are used with so obtained current time,
+# must be appropriately configured. The consequence of enabling this option,
+# however, may be portability issues around the clock_gettime() function, which
+# is not available on every SDK, or extra -lrt option is sometimes required
+# - you can use -DWITH_EXTRALIBS=-lrt for that purpose, if needed.
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV (temporary fix for #729)" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
