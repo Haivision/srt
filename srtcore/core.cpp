@@ -2656,7 +2656,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
             HLOGC(mglog.Debug, log << "interpretSrtHandshake: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
 
             size_t bytelen = blocklen*sizeof(uint32_t);
-            if ( cmd == SRT_CMD_SID )
+            if (cmd == SRT_CMD_SID)
             {
                 // Copied through a cleared array. This is because the length is aligned to 4
                 // where the padding is filled by zero bytes. For the case when the string is
@@ -2676,7 +2676,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 m_sStreamName = target;
                 HLOGC(mglog.Debug, log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_CONGESTION )
+            else if (cmd == SRT_CMD_CONGESTION)
             {
                 if (have_congctl)
                 {
@@ -2705,7 +2705,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
                 HLOGC(mglog.Debug, log << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_NONE )
+            else if (cmd == SRT_CMD_NONE)
             {
                 break;
             }
@@ -8935,7 +8935,7 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
 }
 
 
-bool CUDT::runAcceptHook(CUDT* acore, CHandShake* hs, const CPacket& hspkt)
+bool CUDT::runAcceptHook(CUDT* acore, const CHandShake* hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.
 
@@ -8965,7 +8965,7 @@ bool CUDT::runAcceptHook(CUDT* acore, CHandShake* hs, const CPacket& hspkt)
 
             size_t bytelen = blocklen*sizeof(uint32_t);
 
-            if ( cmd == SRT_CMD_SID )
+            if (cmd == SRT_CMD_SID)
             {
                 // See comment at CUDT::interpretSrtHandshake().
                 memcpy(target, begin+1, bytelen);
@@ -8976,7 +8976,7 @@ bool CUDT::runAcceptHook(CUDT* acore, CHandShake* hs, const CPacket& hspkt)
                 // Nothing more expected from connection block.
                 break;
             }
-            else if ( cmd == SRT_CMD_NONE )
+            else if (cmd == SRT_CMD_NONE)
             {
                 // End of blocks
                 break;

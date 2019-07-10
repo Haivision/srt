@@ -554,7 +554,7 @@ struct CallbackHolder
     void* opaque;
     Signature* fn;
 
-    CallbackHolder(): opaque(0), fn(0)  {}
+    CallbackHolder(): opaque(NULL), fn(NULL)  {}
 
     void set(void* o, Signature* f)
     {
@@ -565,7 +565,7 @@ struct CallbackHolder
         fn = f;
     }
 
-    operator bool() { return fn; }
+    operator bool() { return fn != NULL; }
 };
 
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
