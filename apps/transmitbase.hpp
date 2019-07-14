@@ -34,8 +34,8 @@ enum PrintFormat
 class SrtStatsWriter
 {
 public:
-    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) const = 0;
-    virtual std::string WriteBandwidth(double mbpsBandwidth) const = 0;
+    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
+    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
 };
 
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat);
