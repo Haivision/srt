@@ -106,7 +106,8 @@ shared_ptr<SrtStatsWriter> stats_writer;
 class SrtStatsJson : public SrtStatsWriter
 {
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override { 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
         std::ostringstream output;
         output << "{";
         output << "\"sid\":" << sid << ",";
@@ -145,7 +146,8 @@ public:
         return output.str();
     } 
 
-    string WriteBandwidth(double mbpsBandwidth) override {
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
         std::ostringstream output;
         output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
         return output.str();
@@ -160,7 +162,8 @@ private:
 public: 
     SrtStatsCsv() : first_line_printed(false) {}
 
-    string WriteStats(int sid, const CBytePerfMon& mon) override { 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
         std::ostringstream output;
         if (!first_line_printed)
         {
@@ -206,7 +209,8 @@ public:
         return output.str();
     }
 
-    string WriteBandwidth(double mbpsBandwidth) override {
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
@@ -216,7 +220,8 @@ public:
 class SrtStatsCols : public SrtStatsWriter
 {
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override { 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
         std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;
         output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
@@ -232,7 +237,8 @@ public:
         return output.str();
     } 
 
-    string WriteBandwidth(double mbpsBandwidth) override {
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
