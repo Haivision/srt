@@ -30,7 +30,17 @@ enum PrintFormat
     PRINT_FORMAT_JSON,
     PRINT_FORMAT_CSV
 };
-extern PrintFormat printformat;
+
+class SrtStatsWriter
+{
+public:
+    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) const = 0;
+    virtual std::string WriteBandwidth(double mbpsBandwidth) const = 0;
+};
+
+std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat);
+
+extern std::shared_ptr<SrtStatsWriter> stats_writer;
 
 class Location
 {
@@ -77,7 +87,5 @@ public:
     virtual int GetSysSocket() const { return -1; }
     virtual bool AcceptNewClient() { return false; }
 };
-
-
 
 #endif

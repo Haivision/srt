@@ -41,10 +41,6 @@ unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
- PrintFormat printformat = PRINT_FORMAT_2COLS;
- bool first_line_printed = false;
-
-
 class FileSource: public Source
 {
     ifstream ifile;
@@ -105,13 +101,13 @@ template <> struct File<Target> { typedef FileTarget type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
+shared_ptr<SrtStatsWriter> stats_writer;
 
-static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
+class SrtStatsJson : public SrtStatsWriter
 {
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON)
-    {
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) const override { 
+        std::ostringstream output;
         output << "{";
         output << "\"sid\":" << sid << ",";
         output << "\"time\":" << mon.msTimeStamp << ",";
@@ -146,9 +142,25 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "\"mbitRate\":" << mon.mbpsRecvRate;
         output << "}";
         output << "}" << endl;
+        return output.str();
+    } 
+
+    string WriteBandwidth(double mbpsBandwidth) const override {
+        std::ostringstream output;
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+        return output.str();
     }
-    else if (printformat == PRINT_FORMAT_CSV)
-    {
+};
+
+class SrtStatsCsv : public SrtStatsWriter
+{
+private:
+    mutable bool first_line_printed;
+public: 
+    SrtStatsCsv() : first_line_printed(false) {}
+
+    string WriteStats(int sid, const CBytePerfMon& mon) const override { 
+        std::ostringstream output;
         if (!first_line_printed)
         {
             output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
@@ -190,9 +202,21 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << mon.mbpsRecvRate << ",";
         output << rcv_latency;
         output << endl;
+        return output.str();
     }
-    else
-    {
+
+    string WriteBandwidth(double mbpsBandwidth) const override {
+        std::ostringstream output;
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCols : public SrtStatsWriter
+{
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) const override { 
+        std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;
         output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
         output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
@@ -204,22 +228,32 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
         output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
-    }
+        return output.str();
+    } 
 
-    out << output.str() << std::flush;
-}
-
-static void PrintSrtBandwidth(double mbpsBandwidth)
-{
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON) {
-        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
-    } else {
+    string WriteBandwidth(double mbpsBandwidth) const override {
+        std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
     }
+};
 
-    cerr << output.str() << std::flush;
+shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat)
+{
+    switch (printformat)
+    {
+    case PRINT_FORMAT_JSON:
+        return make_shared<SrtStatsJson>();
+        break;
+    case PRINT_FORMAT_CSV:
+        return make_shared<SrtStatsCsv>();
+        break;
+    case PRINT_FORMAT_2COLS:
+        return make_shared<SrtStatsCols>();
+        break;
+    default:
+        return nullptr;
+    }
 }
 
 
@@ -650,11 +684,11 @@ int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
         if (need_bw_report)
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
+            cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
         }
         if (need_stats_report)
         {
-            PrintSrtStats(m_sock, perf, out_stats);
+            out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
 
@@ -700,11 +734,11 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
         if (need_bw_report)
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
+            cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
         }
         if (need_stats_report)
         {
-            PrintSrtStats(m_sock, perf, out_stats);
+            out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
 
