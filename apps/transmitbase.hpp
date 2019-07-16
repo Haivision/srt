@@ -16,6 +16,8 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+#include "srt.h"
+#include "uriparser.hpp"
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
