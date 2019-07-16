@@ -72,7 +72,7 @@ public:
     LiveCC(CUDT* parent)
         : SrtCongestionControlBase(parent)
     {
-        m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
+        m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if ( m_zMaxPayloadSize == 0 )
             m_zMaxPayloadSize = parent->maxPayloadSize();

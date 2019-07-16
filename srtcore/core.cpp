@@ -6277,7 +6277,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             /*
              * On blocked transmitter (tx full) and until connection closes,
              * auto input rate falls to 0 but there may be still lot of packet to retransmit
-             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (30Mbps)
+             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
