@@ -73,6 +73,24 @@ struct CEPollDesc: public SrtPollState
    {
        return m_sUDTSocksIn.empty() && m_sUDTSocksOut.empty() && m_sUDTSocksEx.empty() && m_sUDTSocksSpc.empty();
    }
+
+   void remove(const SRTSOCKET u)
+   {
+       m_sUDTSocksIn.erase(u);
+       m_sUDTSocksOut.erase(u);
+       m_sUDTSocksEx.erase(u);
+       m_sUDTSocksSpc.erase(u);
+
+       /*
+        * We are no longer interested in signals from this socket
+        * If some are up, they will unblock EPoll forever.
+        * Clear them.
+        */
+       m_sUDTReads.erase(u);
+       m_sUDTWrites.erase(u);
+       m_sUDTExcepts.erase(u);
+       m_sUDTSpecial.erase(u);
+   }
 };
 
 // Type-to-constant binder

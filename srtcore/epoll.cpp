@@ -336,21 +336,7 @@ int CEPoll::remove_usock(const int eid, const SRTSOCKET& u)
 
    HLOGC(mglog.Debug, log << "srt_epoll_remove_usock(" << eid << "): removed @" << u);
 
-   p->second.m_sUDTSocksIn.erase(u);
-   p->second.m_sUDTSocksOut.erase(u);
-   p->second.m_sUDTSocksEx.erase(u);
-   p->second.m_sUDTSocksSpc.erase(u);
-
-   /*
-   * We are no longer interested in signals from this socket
-   * If some are up, they will unblock EPoll forever.
-   * Clear them.
-   */
-   p->second.m_sUDTReads.erase(u);
-   p->second.m_sUDTWrites.erase(u);
-   p->second.m_sUDTExcepts.erase(u);
-   p->second.m_sUDTSpecial.erase(u);
-
+   p->second.remove(u);
    return 0;
 }
 

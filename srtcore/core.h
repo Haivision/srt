@@ -161,6 +161,15 @@ void SRT_tsbpdLoop(
         SRTSOCKET sid,
         CGuard& lock);
 
+#if ENABLE_HEAVY_LOGGING
+    const char* const srt_log_grp_state [] = {
+        "PENDING",
+        "IDLE",
+        "RUNNING",
+        "BROKEN"
+    };
+#endif
+
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -397,6 +406,7 @@ public:
 
     void ackMessage(int32_t msgno);
     void handleKeepalive(gli_t);
+    void internalKeepalive(gli_t);
 
 private:
     // Check if there's at least one connected socket.
@@ -418,13 +428,15 @@ private:
     CUDTSocket* m_listener; // A "group" can only have one listener.
 
 public:
+
+    // XXX unused now 
     struct BufferedMessageStorage
     {
         size_t blocksize;
         size_t maxstorage;
         std::vector<char*> storage;
 
-        BufferedMessageStorage(size_t blk, size_t max):
+        BufferedMessageStorage(size_t blk, size_t max = 0):
             blocksize(blk),
             maxstorage(max),
             storage()
@@ -505,13 +517,16 @@ public:
     //typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
 
 private:
-    senderBuffer_t m_SenderBuffer;
 
+    // Fields required for SRT_GTYPE_BACKUP groups.
+    senderBuffer_t m_SenderBuffer;
     int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer
+    volatile int32_t m_iSndAckedMsgNo;
+    uint32_t m_uOPT_StabilityTimeout;
 
     // THIS function must be called only in a function for a group type
     // that does use sender buffer.
-    void addMessageToBuffer(const char* buf, size_t len, ref_t<SRT_MSGCTRL> mc);
+    int32_t addMessageToBuffer(const char* buf, size_t len, ref_t<SRT_MSGCTRL> mc);
 
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
@@ -521,9 +536,9 @@ private:
     bool m_bTLPktDrop;
     int64_t m_iTsbPdDelay_us;
     int m_RcvEID;
-    class CEPollDesc* m_RcvEpolld;
+    struct CEPollDesc* m_RcvEpolld;
     int m_SndEID;
-    class CEPollDesc* m_SndEpolld;
+    struct CEPollDesc* m_SndEpolld;
 
     int m_iSndTimeOut;                           // sending timeout in milliseconds
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
@@ -1372,7 +1387,7 @@ private: // Common connection Congestion Control setup
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
-    void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
+    void sendCtrl(UDTMessageType pkttype, int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
     /// Pack a packet from a list of lost packets.
     ///

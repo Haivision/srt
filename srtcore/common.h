@@ -55,6 +55,7 @@ modified by
 
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
+#include <utility>
 #include <cstdlib>
 #include <cstdio>
 #ifndef _WIN32
@@ -716,7 +717,60 @@ public:
 
 class CSeqNo
 {
+    int32_t value;
+
 public:
+
+   explicit CSeqNo(int32_t v): value(v) {}
+
+   // Comparison
+   bool operator == (const CSeqNo& other) const { return other.value == value; }
+   bool operator < (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) < 0;
+   }
+
+   // The std::rel_ops namespace cannot be "imported"
+   // as a whole into the class - it can only be used
+   // in the application code. 
+   bool operator != (const CSeqNo& other) const { return other.value != value; }
+   bool operator > (const CSeqNo& other) const { return other < *this; }
+   bool operator >= (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) >= 0;
+   }
+   bool operator <=(const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) <= 0;
+   }
+
+   // rounded arithmetics
+   friend int operator-(const CSeqNo& c1, const CSeqNo& c2)
+   {
+       return seqoff(c2.value, c1.value);
+   }
+
+   friend CSeqNo operator-(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(decseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(int off, const CSeqNo& c1)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   CSeqNo& operator++()
+   {
+       value = incseq(value);
+       return *this;
+   }
+
    inline static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
@@ -768,6 +822,7 @@ public:
    static const int32_t m_iSeqNoTH = 0x3FFFFFFF;             // threshold for comparing seq. no.
    static const int32_t m_iMaxSeqNo = 0x7FFFFFFF;            // maximum sequence number used in UDT
 };
+
 
 ////////////////////////////////////////////////////////////////////////////////
 

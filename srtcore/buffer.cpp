@@ -657,26 +657,38 @@ int CSndBuffer::getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan)
    return m_iCount;
 }
 
-int CSndBuffer::dropLateData(int &bytes, uint64_t latetime)
+int CSndBuffer::dropLateData(ref_t<int> r_bytes, ref_t<int32_t> r_first_msgno, uint64_t latetime)
 {
    int dpkts = 0;
    int dbytes = 0;
    bool move = false;
+   int32_t msgno = 0;
 
    CGuard bufferguard(m_BufLock, "Buf");
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_ullOriginTime_us < latetime; ++ i)
    {
       dpkts++;
       dbytes += m_pFirstBlock->m_iLength;
+      msgno = m_pFirstBlock->getMsgSeq();
 
-      if (m_pFirstBlock == m_pCurrBlock) move = true;
+      if (m_pFirstBlock == m_pCurrBlock)
+          move = true;
       m_pFirstBlock = m_pFirstBlock->m_pNext;
    }
-   if (move) m_pCurrBlock = m_pFirstBlock;
+
+   if (move)
+   {
+       m_pCurrBlock = m_pFirstBlock;
+   }
    m_iCount -= dpkts;
 
    m_iBytesCount -= dbytes;
-   bytes = dbytes;
+   *r_bytes = dbytes;
+
+   // We report the increased number towards the last ever seen
+   // by the loop, as this last one is the last received. So remained
+   // (even if "should remain") is the first after the last removed one.
+   *r_first_msgno = ++MsgNo(msgno);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    updAvgBufSize(CTimer::getTime());

@@ -88,9 +88,9 @@ written by
 #else
 
 // Note: can't use CGuard here because CGuard uses LOGS in itself and will cause infinite recursion.
-#define LOGS(stream, args) if (::srt_logger_config.max_level == logging::LogLevel::debug) { \
+#define LOGS(stream, args) if (::srt_logger_config.max_level == srt_logging::LogLevel::debug) { \
     char tn[512]; g_gmtx.lock(); ThreadName::get(tn); std::ostringstream log; \
-    log << logging::FormatTime(CTimer::getTime()) << "/" << tn << "##: "; \
+    log << srt_logging::FormatTime(CTimer::getTime()) << "/" << tn << "##: "; \
     args; \
     log << std::endl; stream << log.str(); \
     g_gmtx.unlock(); \

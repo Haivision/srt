@@ -140,7 +140,7 @@ public:
 
    int getCurrBufSize() const;
 
-   int dropLateData(int &bytes, uint64_t latetime);
+   int dropLateData(ref_t<int> r_bytes, ref_t<int32_t> r_first_msgno, uint64_t latetime);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    void updAvgBufSize(uint64_t time);

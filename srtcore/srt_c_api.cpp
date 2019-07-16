@@ -24,6 +24,7 @@ written by
 */
 #include "srt.h"
 #include "common.h"
+#include "packet.h"
 #include "core.h"
 #include "utilities.h"
 
@@ -168,7 +169,17 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
     return ret;
 }
 
-extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0, 0, 0 };
+extern const SRT_MSGCTRL srt_msgctrl_default = {
+    0,     // no flags set
+    -1,    // -1 = infinity
+    false, // not in order (matters for msg mode only)
+    PB_SUBSEQUENT,
+    0,     // srctime: take "now" time
+    -1,    // -1: no seq (0 is a valid seqno!)
+    0,     // 0: no msg/control packet
+    NULL,  // grpdata not supplied
+    0      // idem
+};
 
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
