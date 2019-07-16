@@ -242,7 +242,7 @@ public:
     // So extra 4 bytes are needed, 2 for flags, 2 for length clip.
     static const size_t EXTRA_SIZE = 4;
 
-    virtual SRT_ARQLevel arqLevel() { return m_fallback_level; }
+    virtual SRT_ARQLevel arqLevel() ATR_OVERRIDE { return m_fallback_level; }
 };
 
 #endif

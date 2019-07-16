@@ -822,7 +822,6 @@ private: // Timers
     uint64_t m_ullNextACKTime_tk;             // Next ACK time, in CPU clock cycles, same below
     uint64_t m_ullNextNAKTime_tk;             // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;         // SYN interval
     volatile uint64_t m_ullACKInt_tk;         // ACK interval
     volatile uint64_t m_ullNAKInt_tk;         // NAK interval
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer

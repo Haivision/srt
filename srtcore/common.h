@@ -210,7 +210,7 @@ struct EventVariant
     union U
     {
         CPacket* packet;
-        uint32_t ack;
+        int32_t ack;
         struct
         {
             int32_t* ptr;
@@ -238,7 +238,7 @@ struct EventVariant
     }
 
     void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(uint32_t arg) { Assign<ACK>(arg); };
+    void operator=(int32_t  arg) { Assign<ACK>(arg); };
     void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
     void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
@@ -323,7 +323,7 @@ template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 
 template<> struct EventVariant::VariantFor<EventVariant::ACK>
 {
-    typedef uint32_t type;
+    typedef int32_t type;
     static type U::*field() { return &U::ack; }
 };
 

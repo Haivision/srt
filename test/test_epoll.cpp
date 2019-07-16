@@ -71,7 +71,6 @@ TEST(CEPoll, WaitEmptyCall)
     SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_NE(client_sock, SRT_ERROR);
 
-    const int yes = 1;
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -96,7 +95,6 @@ TEST(CEPoll, UWaitEmptyCall)
     SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_NE(client_sock, SRT_ERROR);
 
-    const int yes = 1;
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -186,12 +184,9 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
     SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_NE(client_sock, SRT_ERROR);
 
-    const int yes = 1;
-    const int no = 0;
+    const int no  = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
