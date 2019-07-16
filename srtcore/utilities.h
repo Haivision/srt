@@ -37,10 +37,17 @@ written by
 // _MSC_VER == 1800  means Microsoft Visual Studio 2013.
 #elif defined(_MSC_VER) && _MSC_VER >= 1800
 #define HAVE_CXX11 1
+#if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
+#define ATR_NOEXCEPT noexcept
+#define ATR_CONSTEXPR constexpr
+#define ATR_OVERRIDE override
+#define ATR_FINAL final
+#else
 #define ATR_NOEXCEPT
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
+#endif
 #else
 #define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
