@@ -689,18 +689,15 @@ int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr) 
         {
-            cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
-        }
-        if (need_stats_report)
-        {
-            out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
@@ -739,18 +736,15 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr)
         {
-            cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
-        }
-        if (need_stats_report)
-        {
-            out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
