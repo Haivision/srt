@@ -674,16 +674,16 @@ private: // Receiving related data
     pthread_cond_t m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
-    CallbackHolder<bool(void*, SRTSOCKET, const sockaddr*, const char*)> m_cbAcceptHook;
+    CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
 
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_listen_notify_callback_fn* hook, void* opaq)
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
     {
         return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
     }
 private:
-    void installAcceptHook(srt_listen_notify_callback_fn* hook, void* opaq)
+    void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
         m_cbAcceptHook.set(opaq, hook);
     }

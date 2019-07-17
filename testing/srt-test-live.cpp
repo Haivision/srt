@@ -202,17 +202,49 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, const sockaddr*, const char* streamid)
+extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
 {
+    if (hsv < 5)
+    {
+        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        return false;
+    }
+
     static map<string, string> passwd {
         {"admin", "thelocalmanager"},
         {"user", "verylongpassword"}
     };
 
+    // Try the "standard interpretation" with username at key u
+    string username;
+
+    static const char stdhdr [] = "#!::";
+    uint32_t* pattern = (uint32_t*)stdhdr;
+
+    if (strlen(streamid) > 4 && *(uint32_t*)streamid == *pattern)
+    {
+        vector<string> items;
+        Split(streamid+4, ',', back_inserter(items));
+        for (auto& i: items)
+        {
+            vector<string> kv;
+            Split(i, '=', back_inserter(kv));
+            if (kv.size() == 2 && kv[0] == "u")
+            {
+                username = kv[1];
+            }
+        }
+    }
+    else
+    {
+        // By default the whole streamid is username
+        username = streamid;
+    }
+
     // This hook sets the password to the just accepted socket
     // depending on the user
 
-    string exp_pw = passwd.at(streamid);
+    string exp_pw = passwd.at(username);
 
     srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 

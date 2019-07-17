@@ -9000,7 +9000,7 @@ bool CUDT::runAcceptHook(CUDT* acore, const CHandShake* hs, const CPacket& hspkt
 
     try
     {
-        return CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, caller_addr, target);
+        return CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs->m_iVersion, caller_addr, target);
     }
     catch (...)
     {

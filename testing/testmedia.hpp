@@ -18,7 +18,7 @@
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
 
-extern srt_listen_notify_callback_fn* transmit_accept_hook_fn;
+extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
 
 using namespace std;
@@ -86,7 +86,7 @@ protected:
         PrepareListener(host, port, 1);
         if (transmit_accept_hook_fn)
         {
-            srt_listen_notify_callback(m_bindsock, transmit_accept_hook_fn, transmit_accept_hook_op);
+            srt_listen_callback(m_bindsock, transmit_accept_hook_fn, transmit_accept_hook_op);
         }
         AcceptNewClient();
     }

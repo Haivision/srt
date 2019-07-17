@@ -15,6 +15,7 @@ SRT API Functions
 - [**Connecting**](#Connecting)
   * [srt_listen](#srt_listen)
   * [srt_accept](#srt_accept)
+  * [srt_listen_callback](#srt_listen_callback)
   * [srt_connect](#srt_connect)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
@@ -313,10 +314,10 @@ when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
 
-### srt_listen_notify_callback
+### srt_listen_callback
 
 ```
-int srt_listen_notify_callback(SRTSOCKET lsn, srt_listen_notify_callback_fn* hook_fn, void* hook_opaque);
+int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 ```
 
 This call installs a callback hook, which will be executed on a socket that is
@@ -332,16 +333,22 @@ has been accepted.
 
 The callback function has the signature as per this type definition:
 ```
-typedef bool srt_listen_notify_callback_fn(void* opaque, SRTSOCKET ns,
+typedef bool srt_listen_callback_fn(void* opaque, SRTSOCKET ns, int hs_version
              const struct sockaddr* peeraddr, const char* streamid);
 ```
 
 The callback function gets the following parameters passed:
 
-* opaque: The pointer passed as `hook_opaque` when registering
-* ns: The freshly created socket to handle the incoming connection
-* peeraddr: The address of the incoming connection
-* streamid: The value set to `SRTO_STREAMID` option set on the peer side
+* `opaque`: The pointer passed as `hook_opaque` when registering
+* `ns`: The freshly created socket to handle the incoming connection
+* `hs_version`: The handshake version (usually 5, pre-1.3 versions use 4)
+* `peeraddr`: The address of the incoming connection
+* `streamid`: The value set to `SRTO_STREAMID` option set on the peer side
+
+(Note that versions that use handshake version 4 are incapable of using
+any extensions, such as streamid, however they do support encryption.
+Note also that the SRT version isn't yet extracted, however you can
+prevent too old version connections using `SRTO_MINVERSION` option).
 
 The callback function is given an opportunity to:
 
