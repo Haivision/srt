@@ -443,7 +443,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, hs, hspkt))
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer, hs, hspkt))
            {
                error = 1;
                goto ERR_ROLLBACK;

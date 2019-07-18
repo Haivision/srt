@@ -210,7 +210,7 @@ extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const s
         return false;
     }
 
-    static map<string, string> passwd {
+    static const map<string, string> passwd {
         {"admin", "thelocalmanager"},
         {"user", "verylongpassword"}
     };

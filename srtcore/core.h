@@ -366,7 +366,7 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
     void acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
-    bool runAcceptHook(CUDT* acore, const CHandShake* hs, const CPacket& hspkt);
+    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
