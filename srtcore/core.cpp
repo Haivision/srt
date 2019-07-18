@@ -6263,7 +6263,9 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             }
             else
             {
-                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? SND_INPUTRATE_FAST_START_US: 0);
+                // No need to calculate input reate if the bandwidth is set
+                const bool disable_in_rate_calc = (bw != 0);
+                m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
             }
 
             HLOGC(mglog.Debug, log << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
@@ -6280,12 +6282,8 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // This requests internal input rate sampling.
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
-            uint64_t period;
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate
-
-            // NOTE:
-            // 'period' here is set to the value that was previously set by
-            // m_pSndBuffer->setInputRateSmpPeriod(). 
+            // Get auto-calculated input rate, Bytes per second
+            const int64_t inputbw = m_pSndBuffer->getInputRate();
 
             /*
              * On blocked transmitter (tx full) and until connection closes,
@@ -6296,11 +6294,6 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
              */
             if (inputbw != 0)
                 m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
-
-            CGuard::enterCS(m_StatsLock);
-            if ((m_stats.sentTotal > SND_INPUTRATE_MAX_PACKETS) && (period < SND_INPUTRATE_RUNNING_US))
-                m_pSndBuffer->setInputRateSmpPeriod(SND_INPUTRATE_RUNNING_US); //1 sec period after fast start
-            CGuard::leaveCS(m_StatsLock);
         }
     }
 

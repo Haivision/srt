@@ -167,7 +167,8 @@ private:
         // packet = payload + header
         const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
-        HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_zSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
+            << " (pktsize=" << pktsize << ", bw=" << m_llSndMaxBW);
     }
 
     void setMaxBW(int64_t maxbw)
