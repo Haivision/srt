@@ -202,12 +202,12 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
         Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
-        return false;
+        return -1;
     }
 
     static const map<string, string> passwd {
@@ -248,7 +248,7 @@ extern "C" bool SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const s
 
     srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
-    return true;
+    return 0;
 }
 
 int main( int argc, char** argv )

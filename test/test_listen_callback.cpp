@@ -122,27 +122,27 @@ TEST(Core, ListenCallback) {
     (void)srt_cleanup();
 }
 
-bool SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
+int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
 {
     using namespace std;
 
     if (opaq)
     {
         cerr << "ERROR: opaq expected NULL, as passed\n";
-        return false; // enforce EXPECT to fail
+        return -1; // enforce EXPECT to fail
     }
 
     if (hsversion != 5)
     {
         cerr << "ERROR: hsversion expected 5\n";
-        return false;
+        return -1;
     }
 
     if (!peeraddr)
     {
         // XXX Might be better to check the content, too.
         cerr << "ERROR: null peeraddr\n";
-        return false;
+        return -1;
     }
 
     static const map<string, string> passwd {
@@ -155,7 +155,7 @@ bool SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct
 
     static const char stdhdr [] = "#!::";
     uint32_t* pattern = (uint32_t*)stdhdr;
-    bool found = false;
+    bool found = -1;
 
     if (strlen(streamid) > 4 && *(uint32_t*)streamid == *pattern)
     {
@@ -175,7 +175,7 @@ bool SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct
         if (!found)
         {
             cerr << "TEST: USER NOT FOUND, returning false.\n";
-            return false;
+            return -1;
         }
     }
     else
@@ -193,7 +193,7 @@ bool SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct
 
     cerr << "TEST: Setting password '" << exp_pw << "' as per user '" << username << "'\n";
     srt_setsockflag(ns, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
-    return true;
+    return 0;
 }
 
 
