@@ -329,7 +329,14 @@ has been accepted.
 * `hook_fn`: The callback hook function pointer
 * `hook_opaque`: The pointer value that will be passed to the callback function
 
-- Returns: 0, no errors are predicted currently to happen
+- Returns:
+
+   * 0, if successful
+   * -1, on error
+
+- Errors:
+
+   * `SRT_EINVPARAM` reported when `hook_fn` is a null pointer
 
 The callback function has the signature as per this type definition:
 ```
