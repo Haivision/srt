@@ -1170,7 +1170,7 @@ bool CUDT::setstreamid(SRTSOCKET u, const std::string& sid)
     if (!that)
         return false;
 
-    if (sid.size() >= MAX_SID_LENGTH)
+    if (sid.size() > MAX_SID_LENGTH)
         return false;
 
     if (that->m_bConnected)
@@ -2658,10 +2658,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
             const size_t bytelen = blocklen*sizeof(uint32_t);
             if (cmd == SRT_CMD_SID)
             {
-                if (!bytelen || bytelen >= MAX_SID_LENGTH)
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
                 {
                     LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
-                           << " is 0 or >= " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Copied through a cleared array. This is because the length is aligned to 4
@@ -2690,10 +2690,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                     return false;
                 }
 
-                if (!bytelen || bytelen >= MAX_SID_LENGTH)
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
                 {
                     LOGC(mglog.Error, log << "interpretSrtHandshake: CONGESTION-control type length " << bytelen
-                           << " is 0 or >= " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Declare that congctl has been received
@@ -8963,10 +8963,10 @@ bool CUDT::runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs
 
             if (cmd == SRT_CMD_SID)
             {
-                if (!bytelen || bytelen >= MAX_SID_LENGTH)
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
                 {
                     LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
-                           << " is 0 or >= " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // See comment at CUDT::interpretSrtHandshake().
