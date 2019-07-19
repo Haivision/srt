@@ -1170,7 +1170,7 @@ bool CUDT::setstreamid(SRTSOCKET u, const std::string& sid)
     if (!that)
         return false;
 
-    if (sid.size() >= MAX_SID_LENGTH)
+    if (sid.size() > MAX_SID_LENGTH)
         return false;
 
     if (that->m_bConnected)
@@ -2655,9 +2655,15 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
             HLOGC(mglog.Debug, log << "interpretSrtHandshake: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
 
-            size_t bytelen = blocklen*sizeof(uint32_t);
-            if ( cmd == SRT_CMD_SID )
+            const size_t bytelen = blocklen*sizeof(uint32_t);
+            if (cmd == SRT_CMD_SID)
             {
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                    return false;
+                }
                 // Copied through a cleared array. This is because the length is aligned to 4
                 // where the padding is filled by zero bytes. For the case when the string is
                 // exactly of a 4-divisible length, we make a big array with maximum allowed size
@@ -2671,16 +2677,23 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memcpy(target, begin+1, bytelen);
 
                 // Un-swap on big endian machines
-                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
 
                 m_sStreamName = target;
                 HLOGC(mglog.Debug, log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_CONGESTION )
+            else if (cmd == SRT_CMD_CONGESTION)
             {
                 if (have_congctl)
                 {
                     LOGC(mglog.Error, log << "CONGCTL BLOCK REPEATED!");
+                    return false;
+                }
+
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: CONGESTION-control type length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Declare that congctl has been received
@@ -2690,7 +2703,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
                 // Un-swap on big endian machines
-                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
 
                 string sm = target;
 
@@ -2705,7 +2718,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
                 HLOGC(mglog.Debug, log << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_NONE )
+            else if (cmd == SRT_CMD_NONE)
             {
                 break;
             }
@@ -8915,4 +8928,85 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
         *bytes = bytecount;
 
     return std::abs(timespan);
+}
+
+
+bool CUDT::runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt)
+{
+    // Prepare the information for the hook.
+
+    // We need streamid.
+    char target[MAX_SID_LENGTH+1];
+    memset(target, 0, MAX_SID_LENGTH+1);
+
+    // Just for a case, check the length.
+    // This wasn't done before, and we could risk memory crash.
+    // In case of error, this will remain unset and the empty
+    // string will be passed as streamid.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs->m_iType);
+
+    // This tests if there are any extensions.
+    if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
+    {
+        uint32_t* begin = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
+        size_t size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+        uint32_t* next = 0;
+        size_t length = size / sizeof(uint32_t);
+        size_t blocklen = 0;
+
+        for (;;) // ONE SHOT, but continuable loop
+        {
+            int cmd = FindExtensionBlock(begin, length, Ref(blocklen), Ref(next));
+
+            const size_t bytelen = blocklen*sizeof(uint32_t);
+
+            if (cmd == SRT_CMD_SID)
+            {
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                    return false;
+                }
+                // See comment at CUDT::interpretSrtHandshake().
+                memcpy(target, begin+1, bytelen);
+
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
+
+                // Nothing more expected from connection block.
+                break;
+            }
+            else if (cmd == SRT_CMD_NONE)
+            {
+                // End of blocks
+                break;
+            }
+            else
+            {
+                // Any other kind of message extracted. Search on.
+                length -= (next - begin);
+                begin = next;
+                if (begin)
+                    continue;
+            }
+
+            break;
+        }
+    }
+
+    try
+    {
+        int result = CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs->m_iVersion, peer, target);
+        if (result == -1)
+            return false;
+    }
+    catch (...)
+    {
+        LOGP(mglog.Error, "runAcceptHook: hook interrupted by exception");
+        return false;
+    }
+
+    return true;
 }
