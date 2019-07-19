@@ -217,7 +217,6 @@ const SocketOption srt_options [] {
     { "oheadbw", 0, SRTO_OHEADBW, SocketOption::POST, SocketOption::INT, nullptr},
     { "latency", 0, SRTO_LATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "tsbpdmode", 0, SRTO_TSBPDMODE, SocketOption::PRE, SocketOption::BOOL, nullptr},
-    { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "snddropdelay", 0, SRTO_SNDDROPDELAY, SocketOption::POST, SocketOption::INT, nullptr},
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::PRE, SocketOption::BOOL, nullptr},
