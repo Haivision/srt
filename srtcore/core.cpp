@@ -580,7 +580,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_TsbPd = bool_int_value(optval, optlen);
         break;
 
-    case SRTO_TSBPDDELAY:
+    case SRTO_LATENCY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_iOPT_TsbPdDelay = *(int*)optval;
@@ -1037,7 +1037,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int32_t);
       break;
 
-   case SRTO_TSBPDDELAY:
+   case SRTO_LATENCY:
    case SRTO_RCVLATENCY:
       *(int32_t*)optval = m_iTsbPdDelay_ms;
       optlen = sizeof(int32_t);
