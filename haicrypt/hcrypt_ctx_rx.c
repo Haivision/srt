@@ -38,8 +38,8 @@ int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cf
 
 int hcryptCtx_Rx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *sek, size_t sek_len)
 {
-	if (crypto->cipher->setkey(crypto->cipher_data, ctx, sek, sek_len)) {
-		HCRYPT_LOG(LOG_ERR, "cipher setkey[%d](sek) failed\n", hcryptCtx_GetKeyIndex(ctx));
+	if (crypto->cryspr->ms_setkey(crypto->cryspr_cb, ctx, sek, sek_len)) {
+		HCRYPT_LOG(LOG_ERR, "cryspr setkey[%d](sek) failed\n", hcryptCtx_GetKeyIndex(ctx));
 		return(-1);
 	}
 	memcpy(ctx->sek, sek, sek_len);
@@ -157,7 +157,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 	}
 
 	/* Unwrap SEK(s) and set in context */
-	if (0 > hcrypt_UnwrapKey(&ctx->aes_kek, seks,
+	if (0 > crypto->cryspr->km_unwrap(crypto->cryspr_cb, seks,
 		&km_msg[HCRYPT_MSG_KM_OFS_SALT + salt_len], 
 		(sek_cnt * sek_len) + HAICRYPT_WRAPKEY_SIGN_SZ)) {
 		HCRYPT_LOG(LOG_WARNING, "%s", "unwrap key failed\n");
@@ -184,7 +184,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		alt->salt_len = salt_len;
 
 		if (kek_len) { /* New or changed KEK */
-			memcpy(&alt->aes_kek, &ctx->aes_kek, sizeof(alt->aes_kek));
+//			memcpy(&alt->aes_kek, &ctx->aes_kek, sizeof(alt->aes_kek));
 			alt->status = HCRYPT_CTX_S_SARDY;
 		}
 

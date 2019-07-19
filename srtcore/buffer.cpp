@@ -84,7 +84,6 @@ m_iCount(0)
 ,m_InRateStartTime(0)
 ,m_InRatePeriod(CUDT::SND_INPUTRATE_FAST_START_US)   // 0.5 sec (fast start)
 ,m_iInRateBps(CUDT::SND_INPUTRATE_INITIAL_BPS)
-,m_iAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
    // initial physical buffer of "size"
    m_pBuffer = new Buffer;
@@ -239,16 +238,12 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
       m_iInRatePktsCount += pkts;
       m_iInRateBytesCount += bytes;
       if ((time - m_InRateStartTime) > m_InRatePeriod) {
-         //Payload average size
-         m_iAvgPayloadSz = m_iInRateBytesCount / m_iInRatePktsCount;
          //Required Byte/sec rate (payload + headers)
          m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
          m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / (time - m_InRateStartTime));
-
          HLOGC(dlog.Debug, log << "updInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
-                 << " avg=" << m_iAvgPayloadSz << " rate=" << (m_iInRateBps*8)/1000
+                 << " rate=" << (m_iInRateBps*8)/1000
                  << "kbps interval=" << (time - m_InRateStartTime));
-
          m_iInRatePktsCount = 0;
          m_iInRateBytesCount = 0;
          m_InRateStartTime = time;
@@ -256,9 +251,8 @@ void CSndBuffer::updInputRate(uint64_t time, int pkts, int bytes)
    }
 }
 
-int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<uint64_t> r_period)
+int CSndBuffer::getInputRate(ref_t<uint64_t> r_period)
 {
-    int& payloadsz = *r_payloadsz;
     uint64_t& period = *r_period;
     uint64_t time = CTimer::getTime();
 
@@ -266,12 +260,6 @@ int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<uint64_t> r_period)
             &&  (m_InRateStartTime != 0) 
             &&  ((time - m_InRateStartTime) > m_InRatePeriod))
     {
-        //Packet size with headers
-        if (m_iInRatePktsCount == 0)
-            m_iAvgPayloadSz = 0;
-        else
-            m_iAvgPayloadSz = m_iInRateBytesCount / m_iInRatePktsCount;
-
         //include packet headers: SRT + UDP + IP
         int64_t llBytesCount = (int64_t)m_iInRateBytesCount + (m_iInRatePktsCount * (CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE));
         //Byte/sec rate
@@ -280,7 +268,6 @@ int CSndBuffer::getInputRate(ref_t<int> r_payloadsz, ref_t<uint64_t> r_period)
         m_iInRateBytesCount = 0;
         m_InRateStartTime = time;
     }
-    payloadsz = m_iAvgPayloadSz;
     period = m_InRatePeriod;
     return(m_iInRateBps);
 }
