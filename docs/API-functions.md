@@ -333,7 +333,7 @@ has been accepted.
 
 The callback function has the signature as per this type definition:
 ```
-typedef bool srt_listen_callback_fn(void* opaque, SRTSOCKET ns, int hs_version
+typedef int srt_listen_callback_fn(void* opaque, SRTSOCKET ns, int hs_version
              const struct sockaddr* peeraddr, const char* streamid);
 ```
 
@@ -367,11 +367,13 @@ prematurely). When you, for example, set a passphrase on the socket at this
 very moment, the Key Material processing will happen against this already set
 passphrase, after the callback function is finished.
 
-The callback function shall return true, if the connection is to be accepted.
-If you return false, **or** if the function throws an exception, this will be
+The callback function shall return 0, if the connection is to be accepted.
+If you return -1, **or** if the function throws an exception, this will be
 understood as a request to reject the incoming connection - in which case the
 about-to-be-accepted socket will be silently deleted and `srt_accept` will not
-report it.
+report it. Note that in case of non-blocking mode the epoll bits for read-ready
+on the listener socket will not be set if the connection is rejected, including
+when rejected from this user function.
 
 **IMPORTANT**: This function is called in the receiver worker thread, which
 means that it must do its checks and operations as quickly as possible and keep
