@@ -1,5 +1,6 @@
 language: cpp
-dist: trusty
+dist: xenial
+sudo: false
 
 addons:
     apt:
@@ -43,8 +44,22 @@ matrix:
             - make
             - cd ..
           env: BUILD_TYPE=Release
+        - name: Static checks (clang-format)
+          env: STATIC_CHECKS=yes
+          os: linux
+          compiler: gcc
+          addons:
+            apt:
+              sources:
+                - llvm-toolchain-xenial-8
+              packages:
+                - clang-format-8
+
 script:
-    - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
+    - if [ "$STATIC_CHECKS" == "yes" ]; then
+        find ./srtcore/ -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' -o -name '*.cpp' \) -print0 | xargs -r0 clang-format -i;
+        git diff --color --exit-code;
+      elif [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON" -DUSE_OPENSSL_PC="OFF" -DOPENSSL_ROOT_DIR="$PWD/openssl" -DCMAKE_SYSTEM_NAME="Windows";
@@ -54,5 +69,7 @@ script:
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       fi
-    - make
-    - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
+    - if [ "$STATIC_CHECKS" != "yes" ]; then make; fi
+    - if [ "$STATIC_CHECKS" != "yes" AND "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
+        ctest --extra-verbose;
+      fi
