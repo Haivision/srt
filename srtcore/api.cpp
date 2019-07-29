@@ -1742,7 +1742,7 @@ void CUDTUnited::updateMux(
    {
       m.m_pChannel->close();
       delete m.m_pChannel;
-      throw e;
+      throw;
    }
 
    // XXX Simplify this. Use sockaddr_any.
@@ -2740,7 +2740,7 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    {
       return s_UDTUnited.getStatus(u);
    }
-   catch (CUDTException e)
+   catch (CUDTException &e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return SRTS_NONEXIST;
