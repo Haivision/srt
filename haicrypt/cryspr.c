@@ -20,6 +20,7 @@ written by
 #include "hcrypt.h"
 #include "cryspr.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 int crysprStub_Prng(unsigned char *rn, int len)
