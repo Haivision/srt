@@ -20,6 +20,7 @@ written by
 #ifndef CRYSPR_GNUTLS_H
 #define CRYSPR_GNUTLS_H
 
+#include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>  //gnutls_rnd()
 
 #include <nettle/aes.h>     //has AES cipher
