@@ -480,10 +480,10 @@ std::string CPacket::MessageFlagStr()
 
     stringstream out;
 
-    static const string boundary [] = { "PB_SUBSEQUENT", "PB_LAST", "PB_FIRST", "PB_SOLO" };
-    static const string order [] = { "ORD_RELAXED", "ORD_REQUIRED" };
-    static const string crypto [] = { "EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR" };
-    static const string rexmit [] = { "SN_ORIGINAL", "SN_REXMIT" };
+    static const char* const boundary [] = { "PB_SUBSEQUENT", "PB_LAST", "PB_FIRST", "PB_SOLO" };
+    static const char* const order [] = { "ORD_RELAXED", "ORD_REQUIRED" };
+    static const char* const crypto [] = { "EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR" };
+    static const char* const rexmit [] = { "SN_ORIGINAL", "SN_REXMIT" };
 
     out << boundary[int(getMsgBoundary())] << " ";
     out << order[int(getMsgOrderFlag())] << " ";

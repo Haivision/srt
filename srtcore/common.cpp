@@ -196,7 +196,7 @@ void CTimer::sleepto(uint64_t nexttime)
 
    while (t < m_ullSchedTime)
    {
-#ifndef NO_BUSY_WAITING
+#if USE_BUSY_WAITING
 #ifdef IA32
        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
@@ -205,19 +205,15 @@ void CTimer::sleepto(uint64_t nexttime)
        __asm__ volatile ("nop; nop; nop; nop; nop;");
 #endif
 #else
+       const uint64_t wait_us = 10000;  // 10 ms
+
        timeval now;
-       timespec timeout;
        gettimeofday(&now, 0);
-       if (now.tv_usec < 990000)
-       {
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-       }
-       else
-       {
-           timeout.tv_sec = now.tv_sec + 1;
-           timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-       }
+       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+       timespec timeout;
+       timeout.tv_sec = time_us / 1000000;
+       timeout.tv_nsec = (time_us % 1000000) * 1000;
+
        THREAD_PAUSED();
        pthread_mutex_lock(&m_TickLock);
        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
@@ -303,11 +299,11 @@ void CTimer::sleep()
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
+    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
-    
+
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 
@@ -787,7 +783,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmreq",
         "EXT:kmrsp",
         "EXT:sid",
-        "EXT:smoother"
+        "EXT:congctl"
     };
 
 
@@ -807,20 +803,19 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
 std::string ConnectStatusStr(EConnectStatus cst)
 {
-    return (cst == CONN_CONTINUE
-        ? "INDUCED/CONCLUDING"
-        : cst == CONN_ACCEPT
-        ? "ACCEPTED"
-        : cst == CONN_RENDEZVOUS
-        ? "RENDEZVOUS (HSv5)"
-        : cst == CONN_AGAIN
-        ? "AGAIN"
-        : "REJECTED");
+    return
+          cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
+        : cst == CONN_RUNNING ? "RUNNING"
+        : cst == CONN_ACCEPT ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN ? "AGAIN"
+        : cst == CONN_CONFUSED ? "MISSING HANDSHAKE"
+        : "REJECTED";
 }
 
 std::string TransmissionEventStr(ETransmissionEvent ev)
 {
-    static const std::string vals [] =
+    static const char* const vals [] =
     {
         "init",
         "ack",
@@ -838,6 +833,9 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
         return "UNKNOWN";
     return vals[ev];
 }
+
+// Some logging imps
+#if ENABLE_LOGGING
 
 namespace srt_logging
 {
@@ -862,24 +860,22 @@ std::string FormatTime(uint64_t time)
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
 }
-// Some logging imps
-#if ENABLE_LOGGING
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	if (that_enabled)
-	{
+    if (that_enabled)
+    {
         i_file = "";
         i_line = 0;
         flags = that.src_config->flags;
-		// Create logger prefix
-		that.CreateLogLinePrefix(os);
-	}
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
 }
 
 LogDispatcher::Proxy LogDispatcher::operator()()
 {
-	return Proxy(*this);
+    return Proxy(*this);
 }
 
 void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)

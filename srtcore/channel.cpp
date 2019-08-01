@@ -213,6 +213,9 @@ void CChannel::setUDPSockOpt()
          {
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
                throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+            //For IPv4mapped-IPv6 accepted connection also set the IPV4 socket.
+            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
          }
       }   
       if (-1 != m_iIpToS)
@@ -227,6 +230,9 @@ void CChannel::setUDPSockOpt()
 #ifdef IPV6_TCLASS
             if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
 #endif
+               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+            //For IPv4mapped-IPv6 accepted connection also set the IPV4 socket.
+            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
                throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
          }
       }
@@ -292,7 +298,7 @@ void CChannel::setRcvBufSize(int size)
    m_iRcvBufSize = size;
 }
 
-void CChannel::setIpV6Only(int ipV6Only)
+void CChannel::setIpV6Only(int ipV6Only) 
 {
    m_iIpV6Only = ipV6Only;
 }

@@ -107,7 +107,9 @@ public:
 
 private:
 
+#ifdef SRT_ENABLE_ENCRYPTION
     void regenCryptoKm(bool sendit, bool bidirectional);
+#endif
 
 public:
 
@@ -155,7 +157,9 @@ public:
     ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
+#if ENABLE_LOGGING
         using srt_logging::mglog;
+#endif
 
         m_SndKmLastTime = CTimer::getTime();
         if (runtime)
@@ -218,6 +222,7 @@ public:
 
     int getSndCryptoFlags() const
     {
+#ifdef SRT_ENABLE_ENCRYPTION
         return(m_hSndCrypto ?
                 HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) :
                 // When encryption isn't on, check if it was required
@@ -225,6 +230,9 @@ public:
                 // encryption was requested and not possible.
                 hasPassphrase() ? -1 :
                 0);
+#else
+        return 0;
+#endif
     }
 
     bool isSndEncryptionOK() const

@@ -35,6 +35,7 @@ set internal_options {
 # Options that refer directly to variables used in CMakeLists.txt
 set cmake_options {
     cygwin-use-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
+    enable-encryption "Should encryption features be enabled (default: ON)"
     enable-unittests "Should the unit tests be enabled (default: OFF)"
     enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
     enable-c-deps "Extra library dependencies in srt.pc for C language (default: OFF)"
@@ -53,7 +54,8 @@ set cmake_options {
     pkg-config-executable=<filepath> "pkg-config executable"
     pthread-include-dir=<path> "Path to a file."
     pthread-library=<filepath> "Path to a library."
-    use-gnutls "Should use gnutls instead of openssl (default: OFF)"
+    use-gnutls "DEPRECATED. Use --use-enclib=openssl|gnutls|mbedtls"
+    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls"
     use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
 }
 
@@ -125,8 +127,15 @@ proc preprocess {} {
 	# Alias to old name --with-gnutls, which enforces using gnutls instead of openssl
 	if { [info exists ::optval(--with-gnutls)] } {
 		unset ::optval(--with-gnutls)
-		set ::optval(--use-gnutls) ON
-		puts "WARNING: --with-gnutls is a deprecated alias to --use-gnutls, please use the latter one"
+		set ::optval(--use-enclib) gnutls
+		puts "WARNING: --with-gnutls is a deprecated alias to --use-enclib=gnutls, please use the latter one"
+	}
+
+	# Alias to old name --use-gnutls, which enforces using gnutls instead of openssl
+	if { [info exists ::optval(--use-gnutls)] } {
+		unset ::optval(--use-gnutls)
+		set ::optval(--use-enclib) gnutls
+		puts "WARNING: --use-gnutls is a deprecated alias to --use-enclib=gnutls, please use the latter one"
 	}
 
 	if { [info exists ::optval(--with-target-path)] } {

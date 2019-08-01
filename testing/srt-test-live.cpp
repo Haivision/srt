@@ -11,7 +11,7 @@
 // NOTE: This application uses C++11.
 
 // This program uses quite a simple architecture, which is mainly related to
-// the way how it's invoked: stransmit <source> <target> (plus options).
+// the way how it's invoked: srt-test-live <source> <target> (plus options).
 //
 // The media for <source> and <target> are filled by abstract classes
 // named Source and Target respectively. Most important virtuals to
@@ -69,6 +69,7 @@
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
 #include "testmediabase.hpp"
+#include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -201,6 +202,55 @@ namespace srt_logging
     extern Logger glog;
 }
 
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+{
+    if (hsv < 5)
+    {
+        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        return -1;
+    }
+
+    static const map<string, string> passwd {
+        {"admin", "thelocalmanager"},
+        {"user", "verylongpassword"}
+    };
+
+    // Try the "standard interpretation" with username at key u
+    string username;
+
+    static const char stdhdr [] = "#!::";
+    uint32_t* pattern = (uint32_t*)stdhdr;
+
+    if (strlen(streamid) > 4 && *(uint32_t*)streamid == *pattern)
+    {
+        vector<string> items;
+        Split(streamid+4, ',', back_inserter(items));
+        for (auto& i: items)
+        {
+            vector<string> kv;
+            Split(i, '=', back_inserter(kv));
+            if (kv.size() == 2 && kv[0] == "u")
+            {
+                username = kv[1];
+            }
+        }
+    }
+    else
+    {
+        // By default the whole streamid is username
+        username = streamid;
+    }
+
+    // This hook sets the password to the just accepted socket
+    // depending on the user
+
+    string exp_pw = passwd.at(username);
+
+    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+
+    return 0;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -315,6 +365,16 @@ int main( int argc, char** argv )
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
+    }
+
+    string hook = Option("", "hook");
+    if (hook != "")
+    {
+        if (hook == "user-password")
+        {
+            transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
     }
 
     std::ofstream logfile_stream; // leave unused if not set

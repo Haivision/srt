@@ -64,7 +64,6 @@ written by
    #define SRT_API __attribute__ ((visibility("default")))
 #endif
 
-#define NO_BUSY_WAITING
 
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
@@ -148,8 +147,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_RCVDATA = 20,        // size of data available for recv
    SRTO_SENDER = 21,         // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
    SRTO_TSBPDMODE = 22,      // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
-   SRTO_LATENCY = 23,        // DEPRECATED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
-   SRTO_TSBPDDELAY = 23,     // ALIAS: SRTO_LATENCY
+   SRTO_LATENCY = 23,        // NOT RECOMMENDED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
+   SRTO_TSBPDDELAY = 23,     // DEPRECATED. ALIAS: SRTO_LATENCY
    SRTO_INPUTBW = 24,        // Estimated input stream rate.
    SRTO_OHEADBW,             // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
    SRTO_PASSPHRASE = 26,     // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
@@ -173,7 +172,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERLATENCY,         // Minimum value of the TsbPd receiver delay (mSec) for the opposite side (peer)
    SRTO_MINVERSION,          // Minimum SRT version needed for the peer (peers with less version will get connection reject)
    SRTO_STREAMID,            // A string set to a socket and passed to the listener's accepted socket
-   SRTO_SMOOTHER,            // Smoother selection (congestion control algorithm)
+   SRTO_CONGESTION,          // Congestion controller type selection
    SRTO_MESSAGEAPI,          // In File mode, use message API (portions of data with boundaries)
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
    SRTO_TRANSTYPE,           // Transmission type (set of options required for given transmission type)
@@ -181,6 +180,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
    SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
+   SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -199,10 +199,10 @@ static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
-// known as Smoother and settable by SRTO_SMOOTHER, or more generally by
-// SRTO_TRANSTYPE. The freed number has been reused for a read-only option
-// SRTO_ISN. This option should have never been used anywhere, just for safety
-// this is temporarily declared as deprecated.
+// settable by SRTO_CONGESTION, or more generally by SRTO_TRANSTYPE. The freed
+// number has been reused for a read-only option SRTO_ISN. This option should
+// have never been used anywhere, just for safety this is temporarily declared
+// as deprecated.
 static const SRT_SOCKOPT SRTO_CC SRT_ATR_DEPRECATED = (SRT_SOCKOPT)3;
 
 // These two flags were derived from UDT, but they were never used.
@@ -218,6 +218,9 @@ static const SRT_SOCKOPT SRTO_MSGTTL SRT_ATR_DEPRECATED = (SRT_SOCKOPT)11;
 // so SRTO_PBKEYLEN should be used for both cases.
 static const SRT_SOCKOPT SRTO_SNDPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)38;
 static const SRT_SOCKOPT SRTO_RCVPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)39;
+
+// Keeping old name for compatibility (deprecated)
+static const SRT_SOCKOPT SRTO_SMOOTHER SRT_ATR_DEPRECATED = SRTO_CONGESTION;
 
 typedef enum SRT_TRANSTYPE
 {
@@ -527,6 +530,8 @@ SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, in
 SRT_API       int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
+typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
+SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
