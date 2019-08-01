@@ -15,7 +15,7 @@
 #include "../srtcore/logging_api.h"
 
 srt_logging::LogLevel::type SrtParseLogLevel(std::string level);
-std::set<srt_logging::LogFA> SrtParseLogFA(std::string fa);
+std::set<srt_logging::LogFA> SrtParseLogFA(std::string fa, std::set<std::string>* punknown = nullptr);
 
 SRT_API extern std::map<std::string, int> srt_level_names;
 

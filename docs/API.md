@@ -471,6 +471,77 @@ regular development.*
 - *Sender: user configurable, default: 64*
 ---
 
+| OptName           | Since | Binding | Type  | Units | Default            | Range |
+| ----------------- | ----- | ------- | ----- | ----- | ------------------ | ------|
+| `SRTO_IPV6ONLY`   | 1.4.0 | pre     | `int` | n/a   | (platform default) | -1..1 |
+
+- **[GET or SET]** - Set system socket flag IPV6ONLY. When set to 0 a listening
+socket binding an IPv6 address accepts also IPv4 clients (their addresses will be 
+formatted as IPv4-mapped IPv6 addresses). By default (-1) this option is not set 
+and the platform default value is used.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMREFRESHRATE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000000| 0..unlimited |
+
+- **[GET or SET]** - The number of packets to be transmitted after which the Stream
+Encryption Key (SEK), used to encrypt packets, will be switched to the new one.
+Note that the old and new keys live in parallel for a certain period of time
+(see `SRTO_KMPREANNOUNCE`) before and after the switchover.
+
+Having a preannounce period before switchover ensures the new SEK is installed
+at the receiver before the first packet encrypted with the new SEK is received.
+The old key remains active after switchover in order to decrypt packets that
+might still be in flight, or packets that have to be retransmitted.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
+| `SRTO_KMPREANNOUNCE`  | 1.3.2 | pre     | `int32_t` | pkts   | 0x1000 | see below |
+
+- **[GET or SET]** - The interval (defined in packets) between when a new
+  Stream Encrypting Key (SEK) is sent and when switchover occurs. This value
+also applies to the subsequent interval between when switchover occurs and when
+the old SEK is decommissioned.
+
+At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
+(repeatedly, if necessary, until it is confirmed by the receiver).
+
+At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
+  encrypting and sending packets using the new key. The old key persists in
+  case it is needed to decrypt packets that were in the flight window, or
+  retransmitted packets.
+
+The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover . 
+
+The allowed range for this value is between 1 and half of the current value
+of `SRTO_KMREFRESHRATE`. The minimum value should never be less than the
+flight window (i.e. the number of packets that have already left the sender but
+have not yet arrived at the receiver).
+
+
+- **[GET or SET]** - The interval (defined in packets) between when a new
+  Stream Encrypting Key (SEK) is sent and when switchover occurs. This value
+also applies to the subsequent interval between when switchover occurs and when
+the old SEK is decommissioned.
+
+At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
+(repeatedly, if necessary, until it is confirmed by the receiver).
+
+At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
+encrypting and sending packets using the new key. The old key persists in case
+it is needed to decrypt packets that were in the flight window, or
+retransmitted packets.
+
+The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover.
+
+The allowed range for this value is between 1 and half of the current value of
+`SRTO_KMREFRESHRATE`. The minimum value should never be less than the flight
+window (i.e. the number of packets that have already left the sender but have
+not yet arrived at the receiver).
+---
+
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_KMSTATE`        | 1.0.2 | n/a     | `int32_t` |        | n/a      | n/a    |
@@ -668,6 +739,15 @@ different in 1.2.0 (HSv4) and 1.3.0 (HSv5):
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range         |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
+| `SRTO_PEERIDLETIMEO`  | 1.3.3 | pre     | `int32_t` | msec   | 5000     | positive only |
+
+- The maximum time in `[ms]` to wait until any packet is received from peer since
+the last such packet reception. If this time is passed, connection is considered
+broken on timeout.
+---
+
+| OptName               | Since | Binding | Type      | Units  | Default  | Range         |
+| --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
 | `SRTO_PEERLATENCY`    | 1.3.0 | pre     | `int32_t` | msec   | 0        | positive only |
 
 - The latency value (as described in `SRTO_RCVLATENCY`) that is set by the sender 
@@ -792,15 +872,14 @@ if at least one party may be SRT below version 1.3.0 and does not support *HSv5*
 
 | OptName               | Since | Binding | Type          | Units      | Default  | Range            |
 | --------------------- | ----- | ------- | ------------- | ---------- | -------- | ---------------- |
-| `SRTO_SMOOTHER`       | 1.3.0 | pre     | `const char*` | predefined | "live"   | "live" or "file" |
+| `SRTO_CONGESTION`       | 1.3.0 | pre     | `const char*` | predefined | "live"   | "live" or "file" |
 
-- **[SET]** - The type of Smoother used for the transmission for that socket, 
-which is responsible for the transmission and congestion control. The Smoother 
-type must be exactly the same on both connecting parties, otherwise the 
-connection is rejected. 
-- ***TODO: might be reasonable to allow an "adaptive" value of the Smoother, 
-which will accept either of the smoother types when the other party enforces it, 
-and rejected if both sides are "adaptive"***
+- **[SET]** - The type of congestion controller used for the transmission for
+that socket. Its type must be exactly the same on both connecting parties,
+otherwise the connection is rejected. 
+- ***TODO: might be reasonable to allow an "adaptive" congestion controller,
+which will make the side that sets it accept whatever controller type is set
+by the peer, including different per connection***
 ---
 
 | OptName               | Since | Binding | Type  | Units  | Default          | Range  |
@@ -816,6 +895,20 @@ set, based on MSS value. For desired result, configure MSS first.***
 | `SRTO_SNDDATA`    |       | n/a     | `int32_t` | pkts   | n/a      | n/a    |
 
 - **[GET]** - Size of the unacknowledged data in send buffer.
+---
+
+| OptName               | Since | Binding | Type  | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
+| `SRTO_SNDDROPDELAY`   | 1.3.2 | pre     | `int` | ms     | 0        |        |
+
+- **[SET]** - Sets an extra delay before TLPKTDROP is triggered on the data
+  sender. TLPKTDROP discards packets reported as lost if it is already too late
+to send them (the receiver would discard them even if received).  The total
+delay before TLPKTDROP is triggered consists of the LATENCY (`SRTO_PEERLATENCY`),
+plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default = 20ms).
+`SRTO_SNDDROPDELAY` extends the tolerance for retransmitting packets at
+the expense of more likely retransmitting them uselessly. To be effective, it
+must have a value greater than 1000 - `SRTO_PEERLATENCY`.
 ---
 
 | OptName               | Since | Binding | Type  | Units  | Default  | Range  |
@@ -867,12 +960,45 @@ set, based on MSS value. For desired result, configure MSS first.***
 - **[GET or SET]** - A string limited to 512 characters that can be set on the 
 socket prior to connecting. This stream ID will be able to be retrieved by the 
 listener side from the socket that is returned from `srt_accept` and was 
-connected by a socket with that set stream ID. SRT does not enforce any special 
-interpretation of the contents of this string. As this uses internally the 
-`std::string` type, there are additional functions for it in the legacy/C++ API 
-(udt.h): `UDT::setstreamid` and `UDT::getstreamid`. This option doesn't make sense 
-in Rendezvous connection; the result might be that simply one side will override 
-the value from the other side and it's the matter of luck which one would win
+connected by a socket with that set stream ID (so you usually use SET on the
+socket used for `srt_connect` and GET on the socket retrieved from `srt_accept`).
+This string can be used completely free-form, however it's highly recommended
+to keep the convention of the protocol as described below in **Stream ID
+protocol**.
+
+As this uses internally the `std::string` type, there are additional functions
+for it in the legacy/C++ API (udt.h): `UDT::setstreamid` and
+`UDT::getstreamid`. This option doesn't make sense in Rendezvous connection;
+the result might be that simply one side will override the value from the other
+side and it's the matter of luck which one would win
+---
+
+| OptName           | Since | Binding | Type            | Units | Default  | Range  |
+| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
+
+- **[SET]** - This option, when set to TRUE, allows connection only if the
+encryption setup of the connection parties is a "strictly encrypted" case,
+that is:
+
+   - neither party has enabled encryption
+   - both parties have enabled encryption with the same passphrase
+
+In other cases the connection will be rejected.
+
+When this option is set to FALSE **by both parties of the connection**, the
+following combinations of encryption setup will be allowed for connection (with
+appropriate limitations):
+
+   - both parties have enabled encryption with different passphrase
+      - transmission not possible in either direction
+   - only one party has enabled encryption
+      - unencrypted transmission possible only from unencrypted party to encrypted one
+
+Setting the `SRTO_STRICTENC`option to FALSE can be useful in situations where
+it is important to know whether a connection is possible. The inability to
+decrypt an incoming transmission can be reported as a different kind of
+problem.
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
@@ -940,7 +1066,90 @@ where x = ("%d", (version>>16) & 0xff), etc.
 - SET could eventually be supported for testing 
 
 
+Stream ID protocol
+------------------
 
+The stream ID value can be used as free-form, but there is a recommended
+protocol so that all SRT users speak the same language here. The intent of
+the protocol is:
+
+- maintain distinction from a "readable name" in a free form
+- interpret some typical data in the key-value style
+
+The string in the stream ID field uses UTF-8 encoding.
+
+This protocol starts with the characters known as executable specification
+in POSIX: `#!`. The next two characters are:
+
+- `:` - this marks the YAML format, the only one currently used
+- The content format, which is either:
+   - `:` - the comma-separated keys with no nesting
+   - `{` - like above, but nesting is allowed and must end with `}`
+
+The form of the key-value pair is:
+
+- `key1=value1,key2=value2`...
+
+Beside the general syntax, there are several top-level keys treated as
+standard keys. Other keys can be used by users as they see fit.
+
+The following keys are standard:
+
+- `u`: User Name
+    - Meaning: User or authorization name that is expected to control
+      which password should be used for the connection.
+    - Purpose: The application should interpret it to distinguish which
+      user should be used by the listener party to set up the password,
+      as well as whether it is privileged to access the resource
+- `r`: Resource Name.
+    - Meaning: This identifies the name of the resource
+    - Purpose: Allows the service application serve various resources
+      identifiable by this name.
+- `s`: Session ID.
+    - Meaning: A temporary resource identifier negotiated with the server,
+      valid only once and together with authorization connection
+    - Purpose: to serve for more complicated and long lasting authorization
+      process, which should be leveraged to a separate connection so that
+      the connection for the transmission gets quick access to the data
+      after connecting
+- `t`: Type.
+    - Meaning: Specifies the purpose of the connection. Several
+      standard types are defined, but users may extend the use:
+        - `stream` (default, if not specified): you want to exchange the
+           user-specified payload of application-defined purpose
+        - `file`: You want to transmit a file, and `r` is the filename
+        - `auth`: You want to exchange the data needed for further exchange
+          of sensible data. The `r` value states its purpose. No specific
+          possible values for that are known so far, maybe in future
+    - Purpose: Allows a server to distinguish the purpose of the
+      connection and to know how to interpret the resource name and
+      contents, for cases when a single server may accept connections
+      made for purposes other than just stream transmission
+- `m`: Mode expected for this connection
+   - `request` (default): the caller wants to receive the stream
+   - `publish`: the caller wants to send the stream data
+   - `bidirectional`: the bidirectional data exchange is expected
+
+Note that `m` is not required in case when you don't use streamid and
+your caller is expected to send the data. This is only for cases when
+the server at the listener party is required to get known what the
+caller is attempting to do.
+
+Examples:
+
+```
+#!::u=admin,r=bluesbrothers1_hi
+```
+
+This specifies the username and the resource name of the stream to be served
+to the caller.
+
+```
+#!::u=johnny,t=file,m=publish,r=results.csv
+```
+
+This specifies that the file is expected to be transmitted from the caller
+to the listener and its name is `results.csv`.
 
 
 Transmission types
@@ -982,7 +1191,7 @@ options respectively
 * BLIND REXMIT: A situation where packets that were sent are still not
 acknowledged, either in expected time frame, or when another ACK has
 come for the same number, but no packets have been reported as lost,
-or at least not for all still unacknowledged packets. The Smoother
+or at least not for all still unacknowledged packets. The congestion control
 class is responsible for the algorithm for taking care of this
 situation, which is either FASTREXMIT or LATEREXMIT. This will be
 expained below.
@@ -1000,7 +1209,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following parameters:
 * `SRTO_MESSAGEAPI` = true
 * `SRTO_NAKREPORT` = true
 * `SRTO_PAYLOADSIZE` = 1316
-* `SRTO_SMOOTHER` = "live"
+* `SRTO_CONGESTION` = "live"
 
 In this mode, every call to a sending function is allowed to send only
 so much data, as declared by `SRTO_PAYLOADSIZE`, whose value is still
@@ -1013,15 +1222,14 @@ sender side, and when it is received by the receiver application (that
 is, the data are kept in the buffer and declared as not received, until
 the time comes for the packet to "play").
 
-This mode uses the `LiveSmoother` Smoother class for congestion control, which
-puts only a slight limitation on the bandwidth, if needed, just to add extra
-time, if the distance between two consecutive packets would be too short for
-the defined speed limit. Note that this smoother is not predicted to work with 
-"virtually infinite" ingest speeds (such as, for example, reading
-directly from a file). Therefore the application is not allowed to stream data
-with maximum speed -- it must take care that the speed of data being sent is in
-rhythm with timestamps in the live stream. Otherwise the behavior is undefined
-and might be surprisingly disappointing.
+This mode uses the `LiveCC` congestion control class, which puts only a slight
+limitation on the bandwidth, if needed, just to add extra time, if the distance
+between two consecutive packets would be too short for the defined speed limit.
+Note that it is not predicted to work with "virtually infinite" ingest speeds
+(such as, for example, reading directly from a file). Therefore the application
+is not allowed to stream data with maximum speed -- it must take care that the
+speed of data being sent is in rhythm with timestamps in the live stream.
+Otherwise the behavior is undefined and might be surprisingly disappointing.
 
 The reading function will always return only a payload that was
 sent, and it will HANGUP until the time to play has come for this
@@ -1058,7 +1266,7 @@ mentioned in the list above, are crucial for Live mode and shall not be
 changed.
 
 The BLIND REXMIT situation is resolved using the FASTREXMIT algorithm by
-LiveSmoother: sending non-acknowledged packets blindly on the
+LiveCC: sending non-acknowledged packets blindly on the
 premise that the receiver lingers too long before acknowledging them.
 This mechanism isn't used (that is, the BLIND REXMIT situation isn't
 handled at all) when `SRTO_NAKREPORT` is set by the peer -- the NAKREPORT
@@ -1077,7 +1285,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following parameters:
 * `SRTO_MESSAGEAPI` = false
 * `SRTO_NAKREPORT` = false
 * `SRTO_PAYLOADSIZE` = 0
-* `SRTO_SMOOTHER` = "file"
+* `SRTO_CONGESTION` = "file"
 
 In this mode, calling a sending function is allowed to potentially send
 virtually any size of data. The sending function will HANGUP only if the
@@ -1096,15 +1304,15 @@ only be used in this mode: `srt_sendfile` and `srt_recvfile`. These
 functions can be used to transmit the whole file, or a fragment of it,
 based on the offset and size.
 
-This mode uses the `FileSmoother` Smoother class for congestion control,
-which is a direct copy of the UDT's `CUDTCC` congestion control class,
-adjusted to the needs of SRT's Smoother framework. This class generally
-sends the data with maximum speed in the beginning, until the flight
-window is full, and then keeps the speed at the edge of the flight
-window, only slowing down in the case where packet loss was detected. The
-bandwidth usage can be directly limited by `SRTO_MAXBW` option.
+This mode uses the `FileCC` congestion control class, which is a direct copy of
+the UDT's `CUDTCC` congestion control class, adjusted to the needs of SRT's
+congestion control framework. This class generally sends the data with maximum
+speed in the beginning, until the flight window is full, and then keeps the
+speed at the edge of the flight window, only slowing down in the case where
+packet loss was detected. The bandwidth usage can be directly limited by
+`SRTO_MAXBW` option.
 
-The BLIND REXMIT situation is resolved in FileSmoother using the LATEREXMIT
+The BLIND REXMIT situation is resolved in FileCC using the LATEREXMIT
 algorithm: when the repeated ACK was received for the same packet, or when the
 loss list is empty and the flight window is full, all packets since the last
 ACK are sent again (that's more or less the TCP behavior, but in contrast to
@@ -1123,8 +1331,8 @@ Transmission method: Message
 Setting `SRTO_TRANSTYPE` to `SRTT_FILE` and then `SRTO_MESSAGEAPI` to
 true implies usage of the Message transmission method. Parameters are set as
 described above for the Buffer method, with the exception of `SRTO_MESSAGEAPI`, and 
-FileSmoother is also used in this mode. It differs from the Buffer method,
-however, in terms of the rules concerning sending and receiving.
+the "file" congestion controller is also used in this mode. It differs from the
+Buffer method, however, in terms of the rules concerning sending and receiving.
 
 **HISTORICAL INFO**: The library that SRT was based on, UDT, somewhat misleadingly
 used the terms STREAM and DGRAM, and used the system symbols `SOCK_STREAM` and 
@@ -1174,6 +1382,3 @@ buffer size is too small for a single message to fit in it.
 Note that you can use any of the sending and receiving functions
 for sending and receiving messages, except sendfile/recvfile, which
 are dedicated exclusively for Buffer API. 
-
-
-

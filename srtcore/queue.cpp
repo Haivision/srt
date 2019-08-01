@@ -340,6 +340,21 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
    CUDT* u = m_pHeap[0]->m_pUDT;
    remove_(u);
 
+#define UST(field) ( (u->m_b##field) ? "+" : "-" ) << #field << " "
+
+   HLOGC(mglog.Debug, log << "SND:pop: requesting packet from @" << u->socketID()
+           << " STATUS: "
+           << UST(Listening)
+           << UST(Connecting)
+           << UST(Connected)
+           << UST(Closing)
+           << UST(Shutdown)
+           << UST(Broken)
+           << UST(PeerHealth)
+           << UST(Opened)
+        );
+#undef UST
+
    if (!u->m_bConnected || u->m_bBroken)
       return -1;
 
@@ -1238,7 +1253,9 @@ static string PacketInfo(const CPacket& pkt)
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
 {
-#ifdef NO_BUSY_WAITING
+#if !USE_BUSY_WAITING
+    // This might be not really necessary, and probably
+    // not good for extensive bidirectional communication.
     m_pTimer->tick();
 #endif
 
@@ -1440,6 +1457,21 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // OTOH it can't be applied to processConnectResponse because the synchronous
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
         EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_pPeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
 
         // It might be that this is a data packet, which has turned the connection
         // into "connected" state, removed the connector (so since now every next packet
