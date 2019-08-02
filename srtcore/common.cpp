@@ -214,7 +214,11 @@ void CTimer::sleepto(uint64_t nexttime)
        __nop ();
 #endif
 #else
-       const uint64_t wait_us = 10000;  // 10 ms
+       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
+       // The while loop ensures that (t < m_ullSchedTime).
+       // Division by frequency ьшпре loos prevision.
+       if (wait_us == 0)
+           break;
 
        timeval now;
        gettimeofday(&now, 0);
