@@ -111,6 +111,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
+option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -280,6 +281,14 @@ if (ENABLE_ENCRYPTION)
 else()
 	message(STATUS "ENCRYPTION: DISABLED")
 endif()
+
+if ( USE_GNUSTL )
+	pkg_check_modules (GNUSTL REQUIRED gnustl)
+	link_directories(${GNUSTL_LIBRARY_DIRS})
+	include_directories(${GNUSTL_INCLUDE_DIRS})
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -543,6 +552,9 @@ if (srt_libspec_shared)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+	endif()
 endif()
 
 if (srt_libspec_static)
@@ -570,6 +582,9 @@ if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
+	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 endif()
 
@@ -743,6 +758,9 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (USE_GNUSTL)
+		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+	endif()
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
 		target_link_libraries(${name} ${CMAKE_DL_LIBS})
 	endif()
