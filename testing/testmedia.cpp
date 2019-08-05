@@ -636,8 +636,6 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON re
     {
         message += ": ";
         message += srt_rejectreason_str(reason);
-        if (reason & SRT_REJ_PEERREP)
-            message += " (peer)";
     }
     if ( Verbose::on )
         Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;

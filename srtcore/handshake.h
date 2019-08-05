@@ -241,7 +241,7 @@ inline SRT_REJECT_REASON RejectReasonForURQ(UDTRequestType req)
 {
     if (req < URQ_FAILURE_TYPES || req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
         return SRT_REJ_UNKNOWN;
-    return SRT_REJECT_REASON( (req - URQ_FAILURE_TYPES) | SRT_REJ_PEERREP);
+    return SRT_REJECT_REASON(req - URQ_FAILURE_TYPES);
 }
 
 // DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).

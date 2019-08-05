@@ -2565,7 +2565,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         {
             if (m_bOPT_StrictEncryption)
             {
-                m_RejectReason = SRT_REJ_STRICTENC;
+                m_RejectReason = SRT_REJ_UNSECURE;
                 LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per strict requirement");
                 return false;
             }
@@ -2617,7 +2617,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                         }
                         else
                         {
-                            m_RejectReason = SRT_REJ_STRICTENC;
+                            m_RejectReason = SRT_REJ_UNSECURE;
                         }
                         LOGC(mglog.Error, log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
                         return false;
@@ -2630,7 +2630,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 int res = m_pCryptoControl->processSrtMsg_KMRSP(begin+1, bytelen, HS_VERSION_SRT1);
                 if (m_bOPT_StrictEncryption && res == -1)
                 {
-                    m_RejectReason = SRT_REJ_STRICTENC;
+                    m_RejectReason = SRT_REJ_UNSECURE;
                     LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per strict encryption.");
                     return false;
                 }
@@ -2657,7 +2657,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
         if (m_bOPT_StrictEncryption)
         {
-            m_RejectReason = SRT_REJ_STRICTENC;
+            m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error, log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting per strict requirement");
             return false;
         }
@@ -2776,7 +2776,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     {
         if (m_bOPT_StrictEncryption)
         {
-            m_RejectReason = SRT_REJ_STRICTENC;
+            m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error, log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per strict requirement.");
             return false;
         }

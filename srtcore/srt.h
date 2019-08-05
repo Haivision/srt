@@ -464,14 +464,12 @@ enum SRT_REJECT_REASON
     SRT_REJ_VERSION,     // peer is older version than agent's minimum set
     SRT_REJ_RDVCOOKIE,   // rendezvous cookie collision
     SRT_REJ_BADSECRET,   // wrong password
-    SRT_REJ_STRICTENC,   // illegal setup for strictly-encrypted
+    SRT_REJ_UNSECURE,   // illegal setup for strictly-encrypted
     SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,       // incompatible packet filter
 
     SRT_REJ__SIZE,
-
-    SRT_REJ_PEERREP = 0x100
 };
 
 // Logging API - specialization for SRT.

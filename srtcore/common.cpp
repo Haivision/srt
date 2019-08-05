@@ -846,7 +846,7 @@ const char* srt_rejectreason_msg [] = {
     "Peer version too old",
     "Rendezvous-mode cookie collision",
     "Incorrect passphrase",
-    "Strictly-encrypted condition not met",
+    "Password required or unexpected",
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
     "Packet Filter type collision"
@@ -854,7 +854,7 @@ const char* srt_rejectreason_msg [] = {
 
 const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 {
-    int id = rid & ~SRT_REJ_PEERREP; // disregard peer reported
+    int id = rid;
     static const size_t ra_size = Size(srt_rejectreason_msg);
     if (size_t(id) >= ra_size)
         return srt_rejectreason_msg[0];

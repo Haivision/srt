@@ -141,10 +141,8 @@ std::string RequestTypeStr(UDTRequestType rq)
     if (rq >= URQ_FAILURE_TYPES)
     {
         SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
-        int id = rej & ~SRT_REJ_PEERREP;
-        bool peer = rej & SRT_REJ_PEERREP;
-        return std::string("ERROR:") + srt_rejectreason_name[id]
-            + (peer ? "(peer)":"");
+        int id = rej;
+        return std::string("ERROR:") + srt_rejectreason_name[id];
     }
 
     switch ( rq )
