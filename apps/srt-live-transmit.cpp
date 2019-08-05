@@ -11,7 +11,7 @@
 // NOTE: This application uses C++11.
 
 // This program uses quite a simple architecture, which is mainly related to
-// the way how it's invoked: stransmit <source> <target> (plus options).
+// the way how it's invoked: srt-live-transmit <source> <target> (plus options).
 //
 // The media for <source> and <target> are filled by abstract classes
 // named Source and Target respectively. Most important virtuals to
@@ -70,7 +70,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "transmitbase.hpp"
+#include "transmitmedia.hpp"
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -341,7 +341,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size != SRT_LIVE_DEF_PLSIZE)
         transmit_chunk_size = cfg.chunk_size;
-    printformat = cfg.stats_pf;
+    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
@@ -685,6 +685,15 @@ int main(int argc, char** argv)
                                     return 1;
                                 }
                             }
+
+#ifndef _WIN32
+                            if (cfg.timeout_mode == 1 && cfg.timeout > 0)
+                            {
+                                if (!cfg.quiet)
+                                    cerr << "TIMEOUT: cancel\n";
+                                alarm(0);
+                            }
+#endif
                         }
                     }
 
@@ -801,4 +810,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-
