@@ -130,7 +130,7 @@ const char* srt_rejectreason_name [] = {
     "VERSION",
     "RDVCOOKIE",
     "BADSECRET",
-    "STRICTENC",
+    "UNSECURE",
     "MESSAGEAPI",
     "CONGESTION",
     "FILTER",
