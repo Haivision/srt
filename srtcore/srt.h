@@ -671,7 +671,7 @@ SRT_API void srt_setlogflags(int flags);
 SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
-SRT_API extern const char* srt_rejectreason_msg [];
+SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 
 #ifdef __cplusplus

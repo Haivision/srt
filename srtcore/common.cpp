@@ -829,7 +829,7 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-const char* srt_rejectreason_msg [] = {
+extern const char* const srt_rejectreason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
     "Peer rejected connection",

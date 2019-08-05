@@ -2165,8 +2165,8 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
     HLOGC(mglog.Debug, log << "HSREQ/rcv: PEER Version: "
             << SrtVersionString(m_lPeerSrtVersion)
-        << " Flags: " << peer_srt_options
-        << "(" << SrtFlagString(peer_srt_options) << ")");
+            << " Flags: " << peer_srt_options
+            << "(" << SrtFlagString(peer_srt_options) << ")");
 
     m_bPeerRexmitFlag = IsSet(peer_srt_options, SRT_OPT_REXMITFLG);
     HLOGF(mglog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
