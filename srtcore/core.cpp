@@ -8582,7 +8582,8 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr* addr, CPacket& pac
 
    if (!accepted_hs)
    {
-       HLOGC(mglog.Debug, log << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason);
+       HLOGC(mglog.Debug, log << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason
+               << " MSG: " << srt_rejectreason_str(m_RejectReason));
        // mismatch, reject the request
        hs.m_iReqType = URQFailure(m_RejectReason);
        size_t size = CHandShake::m_iContentSize;
@@ -8606,7 +8607,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr* addr, CPacket& pac
        if (result == -1)
        {
            hs.m_iReqType = URQFailure(error);
-           LOGF(mglog.Error, "UU:newConnection: rsp(REJECT): %d", hs.m_iReqType);
+           LOGF(mglog.Error, "UU:newConnection: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
        }
 
        // CONFUSION WARNING!
