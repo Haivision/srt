@@ -212,24 +212,11 @@ enum UDTRequestType
 
     // Errors reported by the peer, also used as useless error codes
     // in handshake processing functions.
-    URQ_FAILURE_TYPES = 1000,
+    URQ_FAILURE_TYPES = 1000
 
-    // Repeated codes from SRT_REJ_* here for convenience and
-    // compiler warning prevention, but they should not be used directly.
-    URQ_REJ_SYSTEM,      // broken due to system function error
-    URQ_REJ_PEER,        // connection was rejected by peer
-    URQ_REJ_RESOURCE,    // internal problem with resource allocation
-    URQ_REJ_ROGUE,       // incorrect data in handshake messages
-    URQ_REJ_BACKLOG,     // backlog exceeded
-    URQ_REJ_IPE,         // internal program error
-    URQ_REJ_CLOSE,       // socket is closing
-    URQ_REJ_VERSION,     // peer is older version than agent's minimum set
-    URQ_REJ_RDVCOOKIE,   // rendezvous cookie collision
-    URQ_REJ_BADSECRET,   // wrong password
-    URQ_REJ_STRICTENC,   // illegal setup for strictly-encrypted
-    URQ_REJ_MESSAGEAPI,  // streamapi/messageapi collision
-    URQ_REJ_CONGESTION,  // incompatible congestion-controller type
-    URQ_REJ_FILTER       // incompatible packet filter
+    // NOTE: codes above 1000 are reserved for failure codes for
+    // rejection reason, as per `SRT_REJECT_REASON` enum. DO NOT
+    // add any new values here.
 };
 
 inline UDTRequestType URQFailure(SRT_REJECT_REASON reason)
