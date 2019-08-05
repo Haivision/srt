@@ -512,7 +512,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
 #if ENABLE_LOGGING
        static const char* why [] = {
            "UNKNOWN ERROR",
-           "SYSTEM RESOURCE ERROR",
+           "CONNECTION REJECTED",
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
