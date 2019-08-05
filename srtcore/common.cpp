@@ -599,11 +599,6 @@ const char* CUDTException::getErrorMessage()
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   // period
-   #ifndef _WIN32
-   m_strMsg += ".";
-   #endif
-
    return m_strMsg.c_str();
 }
 
