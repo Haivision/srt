@@ -57,7 +57,7 @@ modified by
 #include <deque>
 #include <sstream>
 
-#include "srt.h"
+#include "srt/srt.h"
 #include "common.h"
 #include "list.h"
 #include "buffer.h"

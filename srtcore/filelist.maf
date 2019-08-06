@@ -19,15 +19,6 @@ srt_c_api.cpp
 window.cpp
 srt_compat.c
 
-PUBLIC HEADERS
-srt.h
-logging_api.h
-
-PROTECTED HEADERS
-platform_sys.h
-udt.h
-srt4udt.h
-
 PRIVATE HEADERS
 api.h
 buffer.h

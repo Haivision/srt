@@ -66,7 +66,7 @@ This part contains some portability problem resolutions, including:
 This contains various header files that are used on Windows platform only.
 They provide various facilities available OOTB on POSIX systems.
 
-3. `platform_sys.h`
+3. `srt/platform_sys.h`
 
 This is a file that is responsible to include whatever system include
 files must be included for whatever system API must be provided for

@@ -18,13 +18,13 @@ written by
 
 #include "version.h"
 
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 
 #include <string.h>
 #include <stdlib.h>
 
 #include "srt4udt.h"
-#include "logging_api.h"
+#include "srt/logging_api.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 

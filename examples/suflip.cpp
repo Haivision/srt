@@ -23,7 +23,7 @@
 #include <cstring>
 #include <csignal>
 
-#include <srt.h>
+#include <srt/srt.h>
 
 #include "../common/appcommon.hpp"
 #include "../common/uriparser.hpp"

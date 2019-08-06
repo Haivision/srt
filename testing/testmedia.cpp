@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <iterator>
 #include <map>
-#include <srt.h>
+#include <srt/srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
 #endif

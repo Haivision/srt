@@ -67,7 +67,7 @@ modified by
 #ifndef __UDT_H__
 #define __UDT_H__
 
-#include "srt.h"
+#include "srt/srt.h"
 
 /*
 * SRT_ENABLE_THREADCHECK (THIS IS SET IN MAKEFILE NOT HERE)

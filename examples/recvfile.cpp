@@ -9,7 +9,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
-#include <srt.h>
+#include <srt/srt.h>
 
 using namespace std;
 

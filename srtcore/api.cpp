@@ -56,12 +56,12 @@ modified by
 #include <iterator>
 
 #include <cstring>
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 #include "api.h"
 #include "core.h"
 #include "logging.h"
 #include "threadname.h"
-#include "srt.h"
+#include "srt/srt.h"
 
 #ifdef _WIN32
    #include <win/wintime.h>

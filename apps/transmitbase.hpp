@@ -16,7 +16,7 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
-#include "srt.h"
+#include "srt/srt.h"
 #include "uriparser.hpp"
 
 typedef std::vector<char> bytevector;

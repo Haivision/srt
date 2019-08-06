@@ -1,0 +1,8 @@
+PUBLIC HEADERS
+srt/srt.h
+srt/logging_api.h
+
+PROTECTED HEADERS
+srt/platform_sys.h
+srt/udt.h
+srt/srt4udt.h

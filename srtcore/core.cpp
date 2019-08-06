@@ -63,12 +63,12 @@ modified by
 #endif
 #include <cmath>
 #include <sstream>
-#include "srt.h"
+#include "srt/srt.h"
 #include "queue.h"
 #include "core.h"
 #include "logging.h"
 #include "crypto.h"
-#include "logging_api.h" // Required due to containing extern srt_logger_config
+#include "srt/logging_api.h" // Required due to containing extern srt_logger_config
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min

@@ -18,7 +18,7 @@ written by
 #if __APPLE__
    #include "TargetConditionals.h"
 #endif
-#include "srt.h"
+#include "srt/srt.h"
 #include "common.h"
 #include "core.h"
 #include "utilities.h"
