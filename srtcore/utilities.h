@@ -27,10 +27,21 @@ written by
 
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
+#define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
+
+// For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
+// however it's only the "most required C++11 support".
+#elif defined(__GNUC__) && defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC_MINOR__ >= 7 // 4.7 only!
+#define HAVE_CXX11 1
+#define ATR_NOEXCEPT
+#define ATR_CONSTEXPR
+#define ATR_OVERRIDE
+#define ATR_FINAL
+
 // Microsoft Visual Studio supports C++11, but not fully,
 // and still did not change the value of __cplusplus. Treat
 // this special way.
