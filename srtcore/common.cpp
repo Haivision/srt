@@ -65,6 +65,7 @@ modified by
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <win/wintime.h>
+   #include <intrin.h>
 #endif
 
 #include <string>
@@ -203,6 +204,12 @@ void CTimer::sleepto(uint64_t nexttime)
        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif _WIN32
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
 #endif
 #else
        const uint64_t wait_us = 10000;  // 10 ms
