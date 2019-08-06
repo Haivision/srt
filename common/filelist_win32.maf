@@ -2,7 +2,7 @@
 PUBLIC HEADERS
 win/syslog_defs.h
 #
-# These are included by platform_sys.h header contained in ../srtcore/filelist.maf
+# These are included by platform_sys.h header contained in ../srt/filelist.maf
 #
 win/unistd.h
 

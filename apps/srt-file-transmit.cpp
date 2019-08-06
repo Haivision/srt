@@ -26,7 +26,7 @@ written by
 #include <chrono>
 #include <cassert>
 #include <sys/stat.h>
-#include <srt.h>
+#include <srt/srt.h>
 #include <udt.h>
 
 #include "apputil.hpp"

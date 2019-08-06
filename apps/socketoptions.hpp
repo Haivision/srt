@@ -15,7 +15,7 @@
 #include <map>
 #include <set>
 #include <vector>
-#include "../srtcore/srt.h" // Devel path
+#include "srt/srt.h"
 
 #ifdef _WIN32
 #include "winsock2.h"

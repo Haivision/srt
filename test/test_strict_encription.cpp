@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-#include "srt.h"
+#include <srt/srt.h>
 
 
 

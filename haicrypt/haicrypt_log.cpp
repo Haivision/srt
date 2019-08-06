@@ -12,8 +12,8 @@
 
 #include "hcrypt.h"
 #include "haicrypt.h"
-#include "../srtcore/srt.h"
-#include "../srtcore/logging.h"
+#include "srt/srt.h"
+#include "srt/logging.h"
 
 extern srt_logging::LogConfig srt_logger_config;
 
