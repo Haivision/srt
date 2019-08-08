@@ -202,6 +202,7 @@ int srt_epoll_create() { return CUDT::epoll_create(); }
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
 int srt_epoll_add_usock(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
+int srt_epoll_add_usock_edge(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events, true); }
 
 int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
@@ -230,15 +231,12 @@ int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_sso
 
 int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
-    int srt_ev = 0;
+    return CUDT::epoll_update_usock(eid, u, events, false);
+}
 
-    if (events)
-        srt_ev = *events;
-    else
-        srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-
-
-    return CUDT::epoll_update_usock(eid, u, &srt_ev);
+int srt_epoll_update_usock_edge(int eid, SRTSOCKET u, const int * events)
+{
+    return CUDT::epoll_update_usock(eid, u, events, true);
 }
 
 int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
@@ -276,14 +274,13 @@ int srt_epoll_wait(
         lrfds, lrnum, lwfds, lwnum);
 }
 
-int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, int edgeMode)
+int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
     return UDT::epoll_uwait(
         eid,
         fdsSet,
         fdsSize,
-        msTimeOut,
-        edgeMode != 0);
+        msTimeOut);
 }
 
 
