@@ -42,6 +42,7 @@ SRT API Functions
   * [srt_epoll_add_usock, srt_epoll_add_ssock, srt_epoll_update_usock, srt_epoll_update_ssock](#srt_epoll_add_usock-srt_epoll_add_ssock-srt_epoll_update_usock-srt_epoll_update_ssock)
   * [srt_epoll_remove_usock, srt_epoll_remove_ssock](#srt_epoll_remove_usock-srt_epoll_remove_ssock)
   * [srt_epoll_wait](#srt_epoll_wait)
+  * [srt_epoll_uwait](#srt_epoll_uwait)
   * [srt_epoll_release](#srt_epoll_release)
 - [**Logging control**](#Logging-control)
   * [srt_setloglevel](#srt_setloglevel)
@@ -1127,8 +1128,8 @@ int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, 
 ```
 
 Blocks the call until any readiness state occurs in the epoll container.
-Mind that the readiness states reported in epoll are **permanent, not
-edge-triggered**.
+Mind that the readiness states reported in epoll are **permanent (level-
+triggered), not edge-triggered**.
 
 Readiness can be on a socket in the container for the event type as per
 subscription. The first readiness state causes this function to exit, but
@@ -1167,6 +1168,63 @@ of error has occurred on the socket.
   * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
 This is reported only if `msTimeOut` was \>=0, otherwise the function waits
 indefinitely.
+
+### srt_epoll_uwait
+```
+int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut, int edgeMode/* = false*/);
+```
+
+Blocks the call until any readiness state occurs in the epoll container.
+Mind that the readiness states reported in epoll are **level-triggered 
+or edge-triggered** following the `edgeMode` argument and this function
+only reports user socket (SRT socket) events.
+In the **edge-triggered** mode the function only returns socket states
+which have changed since last call. On the other hand **level-triggered**
+mode will keep on returning while the state stays the same.
+
+This function blocks until the timeout. If timeout is 0, it exits 
+immediately after checking. If timeout is -1, it blocks indefinitely 
+until a readiness state occurs.
+
+* `eid`: epoll container
+* `fdsSet` : A pointer to an array of `SRT_EPOLL_EVENT`
+* `fdsSize` : The size of the fdsSet array
+* `msTimeOut` : Timeout specified in milliseconds, or special values (0 or -1)
+* `edgeMode` : The triggered mode (default is 0 for **level-triggered**)
+
+- Returns:
+
+  * The total amount of user socket (SRT socket) states changed. Note that this
+can be larger than `fdsSize`, in this case and if `edgeMode` is true only `fdsSize`
+events are returned in the `fdsSet` and the remaining events can be retrieved by
+a new call to this function
+  * -1 in case of error
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
+This is reported only if `msTimeOut` was \>=0, otherwise the function waits
+indefinitely.
+  * `SRT_EINVPARAM`: Bad parameter usage as a fdsSize>0 whereas fdsSet is null,
+can be raised too when msTimeout>0 and there is no more socket monitored.
+
+The `SRT_EPOLL_EVENT` structure:
+
+```
+typedef struct SRT_EPOLL_EVENT_
+{
+	SRTSOCKET fd;
+	int       events; // UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR
+} SRT_EPOLL_EVENT;
+```
+
+* `fd` : the user socket (SRT socket)
+* `events` : any combination of `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR`
+
+Note that when the `SRT_EPOLL_ERR` is set the error cannot be retrieved
+with `srt_getlasterror` but it means that the socket is closed and the 
+socket state can be read using `srt_getsockstate`.
 
 ### srt_epoll_release
 ```

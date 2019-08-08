@@ -34,6 +34,27 @@ TEST(CEPoll, InfiniteWait)
     EXPECT_EQ(srt_cleanup(), 0);
 }
 
+TEST(CEPoll, InfiniteWait2)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    const int epoll_id = srt_epoll_create();
+    ASSERT_GE(epoll_id, 0);
+
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, nullptr, 0, -1, 0), SRT_ERROR);
+
+    try
+    {
+        EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    EXPECT_EQ(srt_cleanup(), 0);
+}
 
 TEST(CEPoll, WaitNoSocketsInEpoll)
 {
@@ -63,6 +84,28 @@ TEST(CEPoll, WaitNoSocketsInEpoll)
     EXPECT_EQ(srt_cleanup(), 0);
 }
 
+TEST(CEPoll, WaitNoSocketsInEpoll2)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    const int epoll_id = srt_epoll_create();
+    ASSERT_GE(epoll_id, 0);
+
+    SRT_EPOLL_EVENT events[2];
+
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1, 0), SRT_ERROR);
+
+    try
+    {
+        EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+    EXPECT_EQ(srt_cleanup(), 0);
+}
 
 TEST(CEPoll, WaitEmptyCall)
 {
@@ -99,6 +142,39 @@ TEST(CEPoll, WaitEmptyCall)
     EXPECT_EQ(srt_cleanup(), 0);
 }
 
+TEST(CEPoll, WaitEmptyCall2)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_NE(client_sock, SRT_ERROR);
+
+    const int yes = 1;
+    const int no = 0;
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+    const int epoll_id = srt_epoll_create();
+    ASSERT_GE(epoll_id, 0);
+
+    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1, 0), SRT_ERROR);
+
+    try
+    {
+        EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+    EXPECT_EQ(srt_cleanup(), 0);
+}
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
@@ -143,8 +219,45 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
     EXPECT_EQ(srt_cleanup(), 0);
 }
 
+TEST(CEPoll, WaitAllSocketsInEpollReleased2)
+{
+    ASSERT_EQ(srt_startup(), 0);
 
-TEST(CEPoll, WrongEepoll_idOnAddUSock)
+    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_NE(client_sock, SRT_ERROR);
+
+    const int yes = 1;
+    const int no = 0;
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+    const int epoll_id = srt_epoll_create();
+    ASSERT_GE(epoll_id, 0);
+
+    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    ASSERT_NE(srt_epoll_remove_usock(epoll_id, client_sock), SRT_ERROR);
+
+    SRT_EPOLL_EVENT events[2];
+
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1, 0), SRT_ERROR);
+
+    try
+    {
+        EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    EXPECT_EQ(srt_cleanup(), 0);
+}
+
+TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
     ASSERT_EQ(srt_startup(), 0);
 
@@ -351,3 +464,57 @@ TEST(CEPoll, NotifyConnectionBreak)
     EXPECT_EQ(srt_cleanup(), 0);
 }
 
+
+TEST(CEPoll, HandleEpollEvent2)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    EXPECT_NE(client_sock, SRT_ERROR);
+
+    const int yes = 1;
+    const int no  = 0;
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock,    SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+    CEPoll epoll;
+    const int epoll_id = epoll.create();
+    ASSERT_GE(epoll_id, 0);
+
+    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    ASSERT_NE(epoll.add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+
+    set<int> epoll_ids = { epoll_id };
+
+    epoll.update_events(client_sock, epoll_ids, SRT_EPOLL_ERR, true);
+
+    SRT_EPOLL_EVENT fds[1024];
+
+    int result = epoll.uwait(epoll_id, fds, 1024, -1, false);
+    ASSERT_EQ(result, 1); 
+    ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+
+    try
+    {
+        EXPECT_EQ(epoll.remove_usock(epoll_id, client_sock), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    try
+    {
+        EXPECT_EQ(epoll.release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    EXPECT_EQ(srt_cleanup(), 0);
+}

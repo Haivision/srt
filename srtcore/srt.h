@@ -492,6 +492,9 @@ enum SRT_EPOLL_OPT
    SRT_EPOLL_ERR      = 0x8
 };
 
+// For cases of walking over event bits
+static const int SRT_EPOLL_MIN = 1, SRT_EPOLL_MAX = 0x10;
+
 #ifdef __cplusplus
 // In C++ these enums cannot be treated as int and glued by operator |.
 // Unless this operator is defined.
@@ -624,14 +627,22 @@ SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
 SRT_API int srt_epoll_create(void);
 SRT_API int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API int srt_epoll_add_usock_edge(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
 SRT_API int srt_epoll_remove_usock(int eid, SRTSOCKET u);
 SRT_API int srt_epoll_remove_ssock(int eid, SYSSOCKET s);
 SRT_API int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API int srt_epoll_update_usock_edge(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+typedef struct SRT_EPOLL_EVENT_
+{
+    SRTSOCKET fd;
+    int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
+} SRT_EPOLL_EVENT;
+SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control

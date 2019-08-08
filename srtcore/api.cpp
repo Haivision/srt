@@ -1329,13 +1329,13 @@ int CUDTUnited::epoll_create()
 }
 
 int CUDTUnited::epoll_add_usock(
-   const int eid, const SRTSOCKET u, const int* events)
+   const int eid, const SRTSOCKET u, const int* events, bool edge)
 {
    CUDTSocket* s = locate(u);
    int ret = -1;
    if (s)
    {
-      ret = m_EPoll.add_usock(eid, u, events);
+      ret = m_EPoll.add_usock(eid, u, events, edge);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -1353,13 +1353,13 @@ int CUDTUnited::epoll_add_ssock(
 }
 
 int CUDTUnited::epoll_update_usock(
-   const int eid, const SRTSOCKET u, const int* events)
+   const int eid, const SRTSOCKET u, const int* events, bool edge)
 {
    CUDTSocket* s = locate(u);
    int ret = -1;
    if (s)
    {
-      ret = m_EPoll.update_usock(eid, u, events);
+      ret = m_EPoll.update_usock(eid, u, events, edge);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -1407,6 +1407,15 @@ int CUDTUnited::epoll_wait(
    set<SYSSOCKET>* lwfds)
 {
    return m_EPoll.wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+}
+
+int CUDTUnited::epoll_uwait(
+   const int eid,
+   SRT_EPOLL_EVENT* fdsSet,
+   int fdsSize, 
+   int64_t msTimeOut)
+{
+   return m_EPoll.uwait(eid, fdsSet, fdsSize, msTimeOut);
 }
 
 int CUDTUnited::epoll_release(const int eid)
@@ -1716,7 +1725,7 @@ void CUDTUnited::updateMux(
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
 #endif
-   m.m_iRefCount = 1;
+   m.m_iRefCount = 1; 
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
@@ -2483,11 +2492,11 @@ int CUDT::epoll_create()
    }
 }
 
-int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
+int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events, bool edge)
 {
    try
    {
-      return s_UDTUnited.epoll_add_usock(eid, u, events);
+      return s_UDTUnited.epoll_add_usock(eid, u, events, edge);
    }
    catch (CUDTException e)
    {
@@ -2524,11 +2533,11 @@ int CUDT::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events)
 }
 
 int CUDT::epoll_update_usock(
-   const int eid, const SRTSOCKET u, const int* events)
+   const int eid, const SRTSOCKET u, const int* events, bool edge)
 {
    try
    {
-      return s_UDTUnited.epoll_update_usock(eid, u, events);
+      return s_UDTUnited.epoll_update_usock(eid, u, events, edge);
    }
    catch (CUDTException e)
    {
@@ -2618,6 +2627,30 @@ int CUDT::epoll_wait(
    {
       return s_UDTUnited.epoll_wait(
          eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::epoll_uwait(
+   const int eid,
+   SRT_EPOLL_EVENT* fdsSet,
+   int fdsSize,
+   int64_t msTimeOut)
+{
+   try
+   {
+      return s_UDTUnited.epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
    }
    catch (CUDTException e)
    {
@@ -3070,6 +3103,11 @@ int epoll_wait2(
       set_result(lwval, lwnum, lwfds);
    }
    return ret;
+}
+
+int epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
+{
+   return CUDT::epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
 }
 
 int epoll_release(int eid)

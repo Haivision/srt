@@ -1063,7 +1063,7 @@ on `SRTO_MSS` value. *SRT recommended value:* `1024*1024`
 not connected, or the highest version supported by the peer if connected.
 - The version format in hex is 0xXXYYZZ for x.y.z in human readable form, 
 where x = ("%d", (version>>16) & 0xff), etc.
-- SET could eventually be supported for testing 
+- SET could eventually be supported for testing
 
 
 Stream ID protocol
