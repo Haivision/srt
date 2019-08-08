@@ -7105,7 +7105,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       {
       int32_t* losslist = (int32_t *)(ctrlpkt.m_pcData);
       size_t losslist_len = ctrlpkt.getLength() / 4;
-      updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
       bool secure = true;
 
@@ -7177,6 +7176,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          }
       }
       CGuard::leaveCS(m_AckLock);
+
+      updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
       if (!secure)
       {

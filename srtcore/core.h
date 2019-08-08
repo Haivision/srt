@@ -269,6 +269,7 @@ public: // internal API
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
+    int sndLossLength() { return m_pSndLossList->getLossLength(); }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
