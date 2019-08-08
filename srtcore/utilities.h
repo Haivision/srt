@@ -17,6 +17,11 @@ written by
 #define INC__SRT_UTILITIES_H
 
 
+#if (__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ > 17))
+#define HAVE_POSIX_CLOCK_MONOTONIC 1
+#endif
+
+
 #ifdef __GNUG__
 #define ATR_UNUSED __attribute__((unused))
 #define ATR_DEPRECATED __attribute__((deprecated))
