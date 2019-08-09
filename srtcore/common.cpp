@@ -204,7 +204,7 @@ void CTimer::sleepto(uint64_t nexttime)
        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
        __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif _WIN32
+#elif defined(_WIN32) && !defined(__MINGW__)
        __nop ();
        __nop ();
        __nop ();
