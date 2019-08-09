@@ -281,7 +281,7 @@ function (test_requires_clock_gettime _result)
 	check_testcode_compiles(${code} "rt" HAVE_CLOCK_GETTIME_LIBRT)
 	if (HAVE_CLOCK_GETTIME_LIBRT)
 		message(STATUS "Checked clock_gettime(): requires -lrt")
-		set (${_result} "rt" PARENT_SCOPE)
+		set (${_result} "-lrt" PARENT_SCOPE)
 		return()
 	endif()
 
