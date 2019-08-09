@@ -529,6 +529,13 @@ if (ENABLE_SHARED)
 	endforeach()
 endif()
 
+
+if(LINUX)
+include(GlibcDetect)
+	GLIBC_DETECT(GLIBC_VERSION)
+	message(STATUS "GLIBC_VERSION=${GLIBC_VERSION}")
+endif()
+
 # Manual handling of dependency on virtual library
 # By setting the target, all settings applied to the haicrypt target
 # will now apply to the dependent library.
@@ -552,6 +559,11 @@ if (srt_libspec_shared)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
+
+	if (${GLIBC_VERSION} AND ${GLIBC_VERSION} LESS 217)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE librt)
+	endif()
+
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
@@ -583,6 +595,11 @@ if (srt_libspec_static)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
 	endif()
+
+	if (${GLIBC_VERSION} AND ${GLIBC_VERSION} LESS 217)
+		target_link_libraries(${TARGET_srt}_static PRIVATE librt)
+	endif()
+
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()

@@ -17,7 +17,7 @@ written by
 #define INC__SRT_UTILITIES_H
 
 
-#if (__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ > 17))
+#if (__GLIBC__)
 #define HAVE_POSIX_CLOCK_MONOTONIC 1
 #endif
 
