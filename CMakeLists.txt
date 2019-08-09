@@ -323,6 +323,20 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# We need clock_gettime, but on some systems this is only provided
+# by librt. Check if librt is required.
+if (ENABLE_MONOTONIC_CLOCK AND LINUX)
+	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
+
+	if ("${NEED_CLOCK_GETTIME}" STREQUAL "-NONE")
+		message(FATAL_ERROR "clock_gettime() is not available on this system")
+	endif()
+
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
+
+endif()
+
+
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
 # because clock_gettime is needed by some functions and it is alternatively
