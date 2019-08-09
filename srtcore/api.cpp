@@ -1192,7 +1192,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         if (block_new_opened)
         {
             HLOGC(mglog.Debug, log << "groupConnect: WILL BLOCK on @" << sid << " until connected");
-            srt_epoll_add_usock(eid, sid, &modes);
+            srt_epoll_add_usock(eid, sid, &connect_modes);
         }
 
         // And connect

@@ -776,13 +776,13 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
 #if ENABLE_HEAVY_LOGGING
    if (eids.empty())
    {
-       string events =
+       string evs =
            epoll_event_name<SRT_EPOLL_IN>(events, enable)
          + epoll_event_name<SRT_EPOLL_OUT>(events, enable)
          + epoll_event_name<SRT_EPOLL_ERR>(events, enable)
          + epoll_event_name<SRT_EPOLL_SPECIAL>(events, enable);
 
-       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " [" << events << "]: NO SUBSCRIBERS");
+       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " [" << evs << "]: NO SUBSCRIBERS");
    }
 #endif
 
