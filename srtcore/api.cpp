@@ -659,7 +659,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
             // Listen on both first connected socket and continued sockets.
             // This might help with jump-over situations, and in regular continued
             // sockets the IN event won't be reported anyway.
-            int listener_modes = SRT_EPOLL_IN | SRT_EPOLL_SPECIAL;
+            int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_SPECIAL;
             srt_epoll_add_usock(g->m_RcvEID, ls->m_SocketID, &listener_modes);
 
             // This listening should be done always when a first connected socket
@@ -668,6 +668,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
             // interrupted when a new socket is connected.
         }
 
+        // Add also per-direction subscription for the about-to-be-accepted socket.
+        // Both first accepted socket that makes the group-accept and every next
+        // socket that adds a new link.
+        int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+        int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+        srt_epoll_add_usock(g->m_RcvEID, ns->m_SocketID, &read_modes);
+        srt_epoll_add_usock(g->m_SndEID, ns->m_SocketID, &write_modes);
 
         // With app reader, do not set groupPacketArrival (block the
         // provider array feature completely for now).
@@ -717,12 +724,15 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     {
         HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
                 << " NOT submitted to acceptance, another socket in the group is already connected");
-        CGuard cg(ls->m_AcceptLock, "Accept");
-        ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
+        {
+            CGuard cg(ls->m_AcceptLock, "Accept");
+            ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
+        }
 
         // acknowledge INTERNAL users waiting for new connections on the listening socket
         // that are reported when a new socket is connected within an already connected group.
         m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_SPECIAL, true);
+        CTimer::triggerEvent();
     }
 
 ERR_ROLLBACK:
@@ -1072,7 +1082,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
     SRTSOCKET retval = -1;
 
     int eid = -1;
-    int modes = SRT_EPOLL_CONNECT | SRT_EPOLL_ERR;
+    int connect_modes = SRT_EPOLL_CONNECT | SRT_EPOLL_ERR;
     if (block_new_opened)
     {
         // Create this eid only to block-wait for the first
@@ -1172,8 +1182,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, const sockaddr_any& source_addr, SRT
         // it may still be needed for the further check if the redundant
         // connection succeeded or failed and whether the new socket is
         // ready to use or needs to be closed.
-        srt_epoll_add_usock(g.m_SndEID, sid, &modes);
-        srt_epoll_add_usock(g.m_RcvEID, sid, &modes);
+        srt_epoll_add_usock(g.m_SndEID, sid, &connect_modes);
+        srt_epoll_add_usock(g.m_RcvEID, sid, &connect_modes);
 
         // Adding a socket on which we need to block to BOTH these tracking EIDs
         // and the blocker EID. We'll simply remove from them later all sockets that
@@ -2166,7 +2176,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
            if (si == m_Sockets.end())
            {
                // gone in the meantime
-               LOGC(mglog.Error, log << "removeSocket: IPE? socket %" << u << " being queued for listener socket %" << s->m_SocketID << " is GONE in the meantime ???");
+               LOGC(mglog.Error, log << "removeSocket: IPE? socket @" << u << " being queued for listener socket @" << s->m_SocketID << " is GONE in the meantime ???");
                continue;
            }
 
@@ -2200,9 +2210,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    // delete this one
    m_ClosedSockets.erase(i);
 
-   HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
+   HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
    s->makeClosed();
-   HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
+   HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
 
    if (mid == -1)
@@ -2212,7 +2222,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())
    {
-      LOGC(mglog.Fatal, log << "IPE: For socket %" << u << " MUXER id=" << mid << " NOT FOUND!");
+      LOGC(mglog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
       return;
    }
 
@@ -2223,7 +2233,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    //    u, mx.m_iRefCount);
    if (0 == mx.m_iRefCount)
    {
-       HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket %"
+       HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket @"
            << u << " - deleting muxer bound to port "
            << mx.m_pChannel->bindAddressAny().hport());
       // The channel has no access to the queues and

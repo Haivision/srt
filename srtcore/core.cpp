@@ -3373,7 +3373,7 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, ref_t<SRTSOCKET> r_mpeer, ref_t<u
         return true;
     }
 
-    HLOGC(mglog.Debug, log << "getMasterData: no link found suitable as master for $" << slave);
+    HLOGC(mglog.Debug, log << "getMasterData: no link found suitable as master for @" << slave);
     return false;
 }
 
@@ -10464,6 +10464,14 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
 {
     CGuard g(m_GroupLock, "group");
 
+    // Change the snd/rcv state of the group member to PENDING.
+    // Default for SocketData after creation is BROKEN, which just
+    // after releasing the m_GroupLock could be read and interpreted
+    // as broken connection and removed before the handshake process
+    // is done.
+    data.sndstate = GST_PENDING;
+    data.rcvstate = GST_PENDING;
+
     m_Group.push_back(data);
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)
@@ -11472,6 +11480,10 @@ int CUDTGroup::sendRedundant(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         }
 
         HLOGC(dlog.Debug, log << "grp/sendRedundant: all blocked, trying to common-block on epoll...");
+
+        // XXX TO BE REMOVED. Sockets should be subscribed in m_SndEID at connecting time
+        // (both srt_connect and srt_accept).
+
         // None was successful, but some were blocked. It means that we
         // haven't sent the payload over any link so far, so we still have
         // a chance to retry.
@@ -12875,7 +12887,7 @@ void CUDTGroup::readerThread()
             {
                 // If less data were returned, remove the excess buffer from the size.
                 pl.data.resize(pl.result);
-                HLOGC(dlog.Debug, log << "GROUP:recv:%" << s->m_SocketID << " size=" << pl.result << " #" << pl.ctrl.pktseq
+                HLOGC(dlog.Debug, log << "GROUP:recv:@" << s->m_SocketID << " size=" << pl.result << " #" << pl.ctrl.pktseq
                     << " SRC.TS=" <<  FormatTime(pl.ctrl.srctime) << " STAMP:" << BufferStamp(&pl.data[0], pl.data.size()));
 
 
@@ -13018,7 +13030,7 @@ void CUDTGroup::readerThread()
                 }
                 else
                 {
-                    HLOGC(tslog.Debug, log << "CUDTGroup::readerThread: socket %" << m_ReadyRead->m_SocketID << " READY TO READ");
+                    HLOGC(tslog.Debug, log << "CUDTGroup::readerThread: socket @" << m_ReadyRead->m_SocketID << " READY TO READ");
                     break;
                 }
             }

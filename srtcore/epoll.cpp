@@ -754,6 +754,17 @@ Updated: ;
 Updated: ;
 #endif
 }
+
+// For debug purposes
+template<int event_type> inline
+string epoll_event_name(int events, bool enable)
+{
+    if (!IsSet(events, event_type))
+        return string();
+
+    string output = enable ? "+" : "-";
+    return output + CEPollET<event_type>::name() + " ";
+}
 }  // namespace
 
 int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
@@ -765,7 +776,13 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
 #if ENABLE_HEAVY_LOGGING
    if (eids.empty())
    {
-       LOGC(dlog.Debug, log << "epoll/update: @" << uid << ": NO SUBSCRIBERS");
+       string events =
+           epoll_event_name<SRT_EPOLL_IN>(events, enable)
+         + epoll_event_name<SRT_EPOLL_OUT>(events, enable)
+         + epoll_event_name<SRT_EPOLL_ERR>(events, enable)
+         + epoll_event_name<SRT_EPOLL_SPECIAL>(events, enable);
+
+       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " [" << events << "]: NO SUBSCRIBERS");
    }
 #endif
 
