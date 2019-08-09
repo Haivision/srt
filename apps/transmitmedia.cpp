@@ -41,10 +41,6 @@ unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
 unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 
- PrintFormat printformat = PRINT_FORMAT_2COLS;
- bool first_line_printed = false;
-
-
 class FileSource: public Source
 {
     ifstream ifile;
@@ -105,13 +101,14 @@ template <> struct File<Target> { typedef FileTarget type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
+shared_ptr<SrtStatsWriter> stats_writer;
 
-static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
+class SrtStatsJson : public SrtStatsWriter
 {
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON)
-    {
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         output << "{";
         output << "\"sid\":" << sid << ",";
         output << "\"time\":" << mon.msTimeStamp << ",";
@@ -146,9 +143,28 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "\"mbitRate\":" << mon.mbpsRecvRate;
         output << "}";
         output << "}" << endl;
-    }
-    else if (printformat == PRINT_FORMAT_CSV)
+        return output.str();
+    } 
+
+    string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::ostringstream output;
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCsv : public SrtStatsWriter
+{
+private:
+    bool first_line_printed;
+
+public: 
+    SrtStatsCsv() : first_line_printed(false) {}
+
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         if (!first_line_printed)
         {
             output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
@@ -190,9 +206,23 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << mon.mbpsRecvRate << ",";
         output << rcv_latency;
         output << endl;
+        return output.str();
     }
-    else
+
+    string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::ostringstream output;
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCols : public SrtStatsWriter
+{
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;
         output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
         output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
@@ -204,22 +234,33 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
         output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
-    }
+        return output.str();
+    } 
 
-    out << output.str() << std::flush;
-}
-
-static void PrintSrtBandwidth(double mbpsBandwidth)
-{
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON) {
-        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
-    } else {
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
+        std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
     }
+};
 
-    cerr << output.str() << std::flush;
+shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat)
+{
+    switch (printformat)
+    {
+    case PRINT_FORMAT_JSON:
+        return make_shared<SrtStatsJson>();
+        break;
+    case PRINT_FORMAT_CSV:
+        return make_shared<SrtStatsCsv>();
+        break;
+    case PRINT_FORMAT_2COLS:
+        return make_shared<SrtStatsCols>();
+        break;
+    default:
+        return nullptr;
+    }
 }
 
 
@@ -648,18 +689,15 @@ int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr) 
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
-        }
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf, out_stats);
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
@@ -698,18 +736,15 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr)
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
-        }
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf, out_stats);
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
@@ -835,7 +870,7 @@ public:
 
     bool IsOpen() override { return cin.good(); }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() { return 0; };
+    int GetSysSocket() const override { return 0; };
 };
 
 class ConsoleTarget: public Target
@@ -859,7 +894,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() { return 0; };
+    int GetSysSocket() const override { return 0; };
 };
 
 template <class Iface> struct Console;
@@ -1083,7 +1118,7 @@ public:
 
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, (sockaddr*)&sa, &si);
         if (stat < 1)
         {
             if (SysError() != EWOULDBLOCK)
@@ -1102,7 +1137,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1115,7 +1150,7 @@ public:
 
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
     {
-        int stat = sendto(m_sock, data, len, 0, (sockaddr*)&sadr, sizeof sadr);
+        int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )
         {
             if ((false))
@@ -1128,7 +1163,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() { return m_sock; };
+    int GetSysSocket() const override { return m_sock; };
 };
 
 template <class Iface> struct Udp;

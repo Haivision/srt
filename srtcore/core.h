@@ -225,18 +225,11 @@ public: // internal API
     // Note: use notation with X*1000*1000* ... instead of million zeros in a row.
     // In C++17 there is a possible notation of 5'000'000 for convenience, but that's
     // something only for a far future.
-    static const int COMM_RESPONSE_TIMEOUT_US = 5*1000*1000; // 5 seconds
+    static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000; // 5 seconds
     static const int COMM_RESPONSE_MAX_EXP = 16;
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
-
-    // Input rate constants
-    static const uint64_t
-        SND_INPUTRATE_FAST_START_US = 500*1000,
-        SND_INPUTRATE_RUNNING_US = 1*1000*1000;
-    static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
-    static const int SND_INPUTRATE_INITIAL_BPS = 10000000/8;  // 10 Mbps (1.25 MBps)
 
     int handshakeVersion()
     {
@@ -366,6 +359,7 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
     void acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
@@ -566,6 +560,7 @@ private: // Identification
     int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
     std::string m_sStreamName;
+    int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
@@ -671,6 +666,21 @@ private: // Receiving related data
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
     pthread_cond_t m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
+
+    CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
+
+    // FORWARDER
+public:
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+    {
+        return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
+    }
+private:
+    void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
+    {
+        m_cbAcceptHook.set(opaq, hook);
+    }
+
 
 private: // synchronization: mutexes and conditions
     pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
@@ -800,6 +810,10 @@ private: // Timers
     uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
+    void checkACKTimer (uint64_t currtime_tk);
+    void checkNAKTimer(uint64_t currtime_tk);
+    bool checkExpTimer (uint64_t currtime_tk);  // returns true if the connection is expired
+    void checkRexmitTimer(uint64_t currtime_tk);
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration

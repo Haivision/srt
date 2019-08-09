@@ -16,6 +16,8 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+#include "srt.h"
+#include "uriparser.hpp"
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
@@ -30,7 +32,17 @@ enum PrintFormat
     PRINT_FORMAT_JSON,
     PRINT_FORMAT_CSV
 };
-extern PrintFormat printformat;
+
+class SrtStatsWriter
+{
+public:
+    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
+    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
+};
+
+std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat);
+
+extern std::shared_ptr<SrtStatsWriter> stats_writer;
 
 class Location
 {
@@ -57,8 +69,8 @@ public:
         }
     };
 
-    virtual SRTSOCKET GetSRTSocket() { return SRT_INVALID_SOCK; };
-    virtual int GetSysSocket() { return -1; };
+    virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; };
+    virtual int GetSysSocket() const { return -1; };
     virtual bool AcceptNewClient() { return false; }
 };
 
@@ -73,11 +85,9 @@ public:
     static std::unique_ptr<Target> Create(const std::string& url);
     virtual ~Target() {}
 
-    virtual SRTSOCKET GetSRTSocket() { return SRT_INVALID_SOCK; }
-    virtual int GetSysSocket() { return -1; }
+    virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; }
+    virtual int GetSysSocket() const { return -1; }
     virtual bool AcceptNewClient() { return false; }
 };
-
-
 
 #endif
