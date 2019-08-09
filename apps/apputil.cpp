@@ -37,8 +37,10 @@ using namespace std;
 // See:
 //    https://msdn.microsoft.com/en-us/library/windows/desktop/ms742214(v=vs.85).aspx
 //    http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-#ifdef __MINGW32__
-static int inet_pton(int af, const char * src, void * dst)
+#if defined(__MINGW32__) && !defined(InetPton)
+namespace // Prevent conflict in case when still defined
+{
+int inet_pton(int af, const char * src, void * dst)
 {
    struct sockaddr_storage ss;
    int ssSize = sizeof(ss);
@@ -75,6 +77,7 @@ static int inet_pton(int af, const char * src, void * dst)
    }
 
    return 0;
+}
 }
 #endif // __MINGW__
 
