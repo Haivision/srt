@@ -65,7 +65,9 @@ modified by
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <win/wintime.h>
+#ifndef __MINGW__
    #include <intrin.h>
+#endif
 #endif
 
 #include <string>
