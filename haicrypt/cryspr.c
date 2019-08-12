@@ -20,6 +20,7 @@ written by
 #include "hcrypt.h"
 #include "cryspr.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 int crysprStub_Prng(unsigned char *rn, int len)
@@ -134,7 +135,6 @@ static int crysprFallback_KmSetKey(CRYSPR_cb *cryspr_cb, bool bWrap, const unsig
 * AES_wrap_key()/AES_unwrap_key() introduced in openssl 0.9.8h
 * Here is an implementation using AES native API for cryspr not providing it.
 */
-#include <openssl/bio.h>
 
 static const unsigned char default_iv[] = {
   0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6,

@@ -182,7 +182,8 @@ string CHandShake::show()
         << " cookie=" << hex << m_iCookie << dec
         << " srcIP=";
 
-    const unsigned char* p = (const unsigned char*)m_piPeerIP, * pe = p + 4*(sizeof (uint32_t));
+    const unsigned char* p  = (const unsigned char*)m_piPeerIP;
+    const unsigned char* pe = p + 4 * (sizeof(uint32_t));
 
     copy(p, pe, ostream_iterator<unsigned>(so, "."));
 
