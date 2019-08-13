@@ -256,7 +256,7 @@ void CUnitQueue::makeUnitGood(CUnit * unit)
 
 CSndUList::CSndUList():
     m_pHeap(NULL),
-    m_iArrayLength(4096),
+    m_iArrayLength(512),
     m_iLastEntry(-1),
     m_ListLock(),
     m_pWindowLock(NULL),
@@ -293,7 +293,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
       }
 
       remove_(u);
-      insert_norealloc(1, u);
+      insert_norealloc_(1, u);
       return;
    }
 
@@ -342,7 +342,7 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 
    // insert a new entry, ts is the next processing time
    if (ts > 0)
-      insert_norealloc(ts, u);
+      insert_norealloc_(ts, u);
 
    return 1;
 }
@@ -371,11 +371,11 @@ void CSndUList::realloc_()
 
    try
    {
-       temp = new CSNode * [m_iArrayLength * 2];
+       temp = new CSNode *[2 * m_iArrayLength];
    }
    catch (...)
    {
-       return;
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
    memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
@@ -391,11 +391,11 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
     if (m_iLastEntry == m_iArrayLength - 1)
         realloc_();
 
-    insert_norealloc(ts, u);
+    insert_norealloc_(ts, u);
 }
 
 
-void CSndUList::insert_norealloc(int64_t ts, const CUDT* u)
+void CSndUList::insert_norealloc_(int64_t ts, const CUDT* u)
 {
    CSNode* n = u->m_pSNode;
 
@@ -457,10 +457,8 @@ void CSndUList::remove_(const CUDT* u)
 
          if (m_pHeap[q]->m_llTimeStamp_tk > m_pHeap[p]->m_llTimeStamp_tk)
          {
-            CSNode* t = m_pHeap[p];
-            m_pHeap[p] = m_pHeap[q];
+            swap(m_pHeap[p], m_pHeap[q]);
             m_pHeap[p]->m_iHeapLoc = p;
-            m_pHeap[q] = t;
             m_pHeap[q]->m_iHeapLoc = q;
 
             q = p;

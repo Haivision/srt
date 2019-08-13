@@ -206,7 +206,7 @@ private:
    ///
    /// @param [in] ts time stamp: next processing time
    /// @param [in] u pointer to the UDT instance
-   void insert_norealloc(int64_t ts, const CUDT* u);
+   void insert_norealloc_(int64_t ts, const CUDT* u);
 
    void remove_(const CUDT* u);
 
