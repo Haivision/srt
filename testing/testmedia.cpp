@@ -44,7 +44,8 @@ volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
-
+srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
+void* transmit_accept_hook_op = nullptr;
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
@@ -1318,7 +1319,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr)
+        ptr->uri = move(u);
     return ptr;
 }
 

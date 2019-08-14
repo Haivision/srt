@@ -126,12 +126,37 @@ public:
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   int getInputRate(ref_t<int> payloadtsz, ref_t<uint64_t> period);
-   void updInputRate(uint64_t time, int pkts, int bytes);
-   void setInputRateSmpPeriod(int period);
+   uint64_t getInRatePeriod() const { return m_InRatePeriod; }
+
+   /// Retrieve input bitrate in bytes per second
+   int getInputRate() const { return m_iInRateBps; }
+
+   /// Update input rate calculation.
+   /// @param [in] time   current time in microseconds
+   /// @param [in] pkts   number of packets newly added to the buffer
+   /// @param [in] bytes  number of payload bytes in those newly added packets
+   ///
+   /// @return Current size of the data in the sending list.
+   void updateInputRate(uint64_t time, int pkts = 0, int bytes = 0);
+
+
+   void resetInputRateSmpPeriod(bool disable = false)
+   {
+       setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US);
+   }
+
 
 private:
+
    void increase();
+   void setInputRateSmpPeriod(int period);
+
+private:    // Constants
+
+    static const uint64_t INPUTRATE_FAST_START_US   =      500000;    //  500 ms
+    static const uint64_t INPUTRATE_RUNNING_US      =     1000000;    // 1000 ms
+    static const int64_t  INPUTRATE_MAX_PACKETS     =        2000;    // ~ 21 Mbps of 1316 bytes payload
+    static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
    pthread_mutex_t m_BufLock;           // used to synchronize buffer operation

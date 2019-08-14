@@ -41,6 +41,7 @@
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 #include <api.h>
+#include <utilities.h>
 
 /*
 # MAF contents for this file. Note that not every file from the support
@@ -195,12 +196,12 @@ public:
 
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
         :
-#ifndef _MSC_VER
+#ifdef HAVE_FULL_CXX11
 		media {m1, m2},
 #endif
 		parent_tunnel(p), nameid(nid)
     {
-#ifdef _MSC_VER
+#ifndef HAVE_FULL_CXX11
 		// MSVC is not exactly C++11 compliant and complains around
 		// initialization of an array.
 		// Leaving this method of initialization for clarity and
@@ -382,10 +383,10 @@ class SrtMedium: public Medium
     friend class Medium;
 public:
 
-#ifndef _MSC_VER
+#ifdef HAVE_FULL_CXX11
     using Medium::Medium;
 
-#else // MSVC not exactly supports C++11
+#else // MSVC and gcc 4.7 not exactly support C++11
 
     SrtMedium(UriParser u, size_t ch): Medium(u, ch) {}
 
@@ -440,7 +441,7 @@ class TcpMedium: public Medium
     friend class Medium;
 public:
 
-#ifndef _MSC_VER
+#ifdef HAVE_FULL_CXX11
     using Medium::Medium;
 
 #else // MSVC not exactly supports C++11
