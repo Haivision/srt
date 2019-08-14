@@ -1292,7 +1292,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr)
+        ptr->uri = move(u);
     return ptr;
 }
 

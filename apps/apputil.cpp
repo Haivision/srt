@@ -224,11 +224,22 @@ Found:
     return params;
 }
 
+#ifdef _WIN32
+    #if SRT_ENABLE_CONSELF_CHECK_WIN32
+        #define ENABLE_CONSELF_CHECK 1
+    #endif
+#else
+
+// For non-Windows platofm, enable always.
+#define ENABLE_CONSELF_CHECK 1
+#endif
+
+#if ENABLE_CONSELF_CHECK
 
 static vector<sockaddr_any> GetLocalInterfaces()
 {
     vector<sockaddr_any> locals;
-#ifdef WIN32
+#ifdef _WIN32
     ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
 	ULONG outBufLen4 = 0, outBufLen6 = 0, outBufLen = 0;
 
@@ -321,4 +332,13 @@ bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
 
     return false;
 }
+
+#else
+bool IsTargetAddrSelf(const sockaddr* , const sockaddr* )
+{
+    // State that the given address is never "self", so
+    // prevention from connecting to self will not be in force.
+    return false;
+}
+#endif
 
