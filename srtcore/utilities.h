@@ -27,20 +27,40 @@ written by
 
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
+
+// For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
+// however it's only the "most required C++11 support".
+#if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
+#define ATR_NOEXCEPT
+#define ATR_CONSTEXPR
+#define ATR_OVERRIDE
+#define ATR_FINAL
+#else
+#define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
+#endif
+
 // Microsoft Visual Studio supports C++11, but not fully,
 // and still did not change the value of __cplusplus. Treat
 // this special way.
 // _MSC_VER == 1800  means Microsoft Visual Studio 2013.
 #elif defined(_MSC_VER) && _MSC_VER >= 1800
 #define HAVE_CXX11 1
+#if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
+#define HAVE_FULL_CXX11 1
+#define ATR_NOEXCEPT noexcept
+#define ATR_CONSTEXPR constexpr
+#define ATR_OVERRIDE override
+#define ATR_FINAL final
+#else
 #define ATR_NOEXCEPT
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
+#endif
 #else
 #define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
@@ -588,6 +608,28 @@ typename Map::mapped_type* map_getp(Map& m, const Key& key)
 
 
 #endif
+
+template <class Signature>
+struct CallbackHolder
+{
+    void* opaque;
+    Signature* fn;
+
+    CallbackHolder(): opaque(NULL), fn(NULL)  {}
+
+    void set(void* o, Signature* f)
+    {
+        // Test if the pointer is a pointer to function. Don't let
+        // other type of pointers here.
+        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        opaque = o;
+        fn = f;
+    }
+
+    operator bool() { return fn != NULL; }
+};
+
+#define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
