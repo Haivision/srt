@@ -184,6 +184,8 @@ public:
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
 
+   int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+
       /// Check the status of the UDT socket.
       /// @param [in] u the UDT socket ID.
       /// @return UDT socket status, or NONEXIST if not found.

@@ -688,7 +688,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size != SRT_LIVE_MAX_PLSIZE)
         transmit_chunk_size = cfg.chunk_size;
-    printformat = cfg.stats_pf;
+    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
@@ -781,5 +781,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-

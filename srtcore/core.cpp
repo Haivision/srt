@@ -577,7 +577,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bOPT_TsbPd = bool_int_value(optval, optlen);
         break;
 
-    case SRTO_TSBPDDELAY:
+    case SRTO_LATENCY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_iOPT_TsbPdDelay = *(int*)optval;
@@ -1034,7 +1034,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int32_t);
       break;
 
-   case SRTO_TSBPDDELAY:
+   case SRTO_LATENCY:
    case SRTO_RCVLATENCY:
       *(int32_t*)optval = m_iTsbPdDelay_ms;
       optlen = sizeof(int32_t);
@@ -1167,7 +1167,7 @@ bool CUDT::setstreamid(SRTSOCKET u, const std::string& sid)
     if (!that)
         return false;
 
-    if (sid.size() >= MAX_SID_LENGTH)
+    if (sid.size() > MAX_SID_LENGTH)
         return false;
 
     if (that->m_bConnected)
@@ -1310,13 +1310,12 @@ void CUDT::open()
 
    uint64_t currtime_tk;
    CTimer::rdtsc(currtime_tk);
-   m_ullLastRspTime_tk = currtime_tk;
-   m_ullNextACKTime_tk = currtime_tk + m_ullSYNInt_tk;
-   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+   m_ullLastRspTime_tk    = currtime_tk;
+   m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+   m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
    m_ullLastRspAckTime_tk = currtime_tk;
+   m_ullLastSndTime_tk    = currtime_tk;
    m_iReXmitCount = 1;
-   // Fix keepalive
-   m_ullLastSndTime_tk = currtime_tk;
 
    m_iPktCount = 0;
    m_iLightACKCount = 1;
@@ -2653,9 +2652,15 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
             HLOGC(mglog.Debug, log << "interpretSrtHandshake: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
 
-            size_t bytelen = blocklen*sizeof(uint32_t);
-            if ( cmd == SRT_CMD_SID )
+            const size_t bytelen = blocklen*sizeof(uint32_t);
+            if (cmd == SRT_CMD_SID)
             {
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                    return false;
+                }
                 // Copied through a cleared array. This is because the length is aligned to 4
                 // where the padding is filled by zero bytes. For the case when the string is
                 // exactly of a 4-divisible length, we make a big array with maximum allowed size
@@ -2669,16 +2674,23 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memcpy(target, begin+1, bytelen);
 
                 // Un-swap on big endian machines
-                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
 
                 m_sStreamName = target;
                 HLOGC(mglog.Debug, log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_CONGESTION )
+            else if (cmd == SRT_CMD_CONGESTION)
             {
                 if (have_congctl)
                 {
                     LOGC(mglog.Error, log << "CONGCTL BLOCK REPEATED!");
+                    return false;
+                }
+
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: CONGESTION-control type length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Declare that congctl has been received
@@ -2688,7 +2700,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memset(target, 0, MAX_SID_LENGTH+1);
                 memcpy(target, begin+1, bytelen);
                 // Un-swap on big endian machines
-                ItoHLA((uint32_t*)target, (uint32_t*)target, bytelen/sizeof(uint32_t));
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
 
                 string sm = target;
 
@@ -2703,7 +2715,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
 
                 HLOGC(mglog.Debug, log << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
-            else if ( cmd == SRT_CMD_NONE )
+            else if (cmd == SRT_CMD_NONE)
             {
                 break;
             }
@@ -4725,6 +4737,16 @@ bool CUDT::setupCC()
     if ( min_nak_tk )
         m_ullMinNakInt_tk = min_nak_tk;
 
+    // Update timers 
+    uint64_t currtime_tk;
+    CTimer::rdtsc(currtime_tk);
+    m_ullLastRspTime_tk    = currtime_tk;
+    m_ullNextACKTime_tk    = currtime_tk + m_ullSYNInt_tk;
+    m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
+    m_ullLastRspAckTime_tk = currtime_tk;
+    m_ullLastSndTime_tk    = currtime_tk;
+
+
     HLOGC(mglog.Debug, log << "setupCC: setting parameters: mss=" << m_iMSS
         << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
         << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
@@ -6300,7 +6322,9 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             }
             else
             {
-                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? SND_INPUTRATE_FAST_START_US: 0);
+                // No need to calculate input reate if the bandwidth is set
+                const bool disable_in_rate_calc = (bw != 0);
+                m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
             }
 
             HLOGC(mglog.Debug, log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
@@ -6317,28 +6341,18 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // This requests internal input rate sampling.
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
-            uint64_t period;
-            int payloadsz; //CC will use its own average payload size
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
-
-            // NOTE:
-            // 'period' here is set to the value that was previously set by
-            // m_pSndBuffer->setInputRateSmpPeriod(). 
+            // Get auto-calculated input rate, Bytes per second
+            const int64_t inputbw = m_pSndBuffer->getInputRate();
 
             /*
              * On blocked transmitter (tx full) and until connection closes,
              * auto input rate falls to 0 but there may be still lot of packet to retransmit
-             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (30Mbps)
+             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
             if (inputbw != 0)
                 m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
-
-            CGuard::enterCS(m_StatsLock);
-            if ((m_stats.sentTotal > SND_INPUTRATE_MAX_PACKETS) && (period < SND_INPUTRATE_RUNNING_US))
-                m_pSndBuffer->setInputRateSmpPeriod(SND_INPUTRATE_RUNNING_US); //1 sec period after fast start
-            CGuard::leaveCS(m_StatsLock);
         }
     }
 
@@ -6424,10 +6438,13 @@ void CUDT::releaseSynch()
     CCondDelegate tscond(m_RcvTsbPdCond, m_RecvLock, CCondDelegate::NOLOCK, "RcvTsbPd", "Recv");
     tscond.lock_signal();
 
+    CGuard::enterCS(m_RecvDataLock, "RecvDataLock");
     if (CGuard::isthread(m_RcvTsbPdThread))
     {
         CGuard::join(m_RcvTsbPdThread);
     }
+    CGuard::leaveCS(m_RecvDataLock, "RecvDataLock");
+    
     CGuard::enterCS(m_RecvLock, "recv");
     CGuard::leaveCS(m_RecvLock, "recv");
 }
@@ -7815,20 +7832,20 @@ int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<socka
    }
    else
    {
-      #ifndef NO_BUSY_WAITING
-         ts_tk = entertime_tk + m_ullInterval_tk;
-      #else
-         if (m_ullTimeDiff_tk >= m_ullInterval_tk)
-         {
-            ts_tk = entertime_tk;
-            m_ullTimeDiff_tk -= m_ullInterval_tk;
-         }
-         else
-         {
-            ts_tk = entertime_tk + m_ullInterval_tk - m_ullTimeDiff_tk;
-            m_ullTimeDiff_tk = 0;
-         }
-      #endif
+#if USE_BUSY_WAITING
+      ts_tk = entertime_tk + m_ullInterval_tk;
+#else
+      if (m_ullTimeDiff_tk >= m_ullInterval_tk)
+      {
+         ts_tk = entertime_tk;
+         m_ullTimeDiff_tk -= m_ullInterval_tk;
+      }
+      else
+      {
+         ts_tk = entertime_tk + m_ullInterval_tk - m_ullTimeDiff_tk;
+         m_ullTimeDiff_tk = 0;
+      }
+#endif
    }
 
    m_ullTargetTime_tk = ts_tk;
@@ -7979,7 +7996,7 @@ int CUDT::processData(CUnit* unit)
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
 
-   /* We are receiver, start tsbpd thread if TsbPd is enabled */
+   // We are receiving data, start tsbpd thread if TsbPd is enabled
    if (m_bTsbPd && !CGuard::isthread(m_RcvTsbPdThread))
    {
        HLOGP(mglog.Debug, "Spawning TSBPD thread");
@@ -7988,22 +8005,22 @@ int CUDT::processData(CUnit* unit)
            ThreadName tn("SRT:TsbPd");
            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
        }
-       if ( st != 0 )
+       if (st != 0)
        {
            LOGC(mglog.Error, log << "processData: PROBLEM SPAWNING TSBPD thread: " << st);
            return -1;
        }
    }
 
-   int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
+   const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
 #if ENABLE_HEAVY_LOGGING
    static const char* const rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
 #endif
 
-
-   if ( pktrexmitflag == 1 ) // rexmitted
+   if (pktrexmitflag == 1)
    {
+       // This packet was retransmitted
        CGuard::enterCS(m_StatsLock);
        m_stats.traceRcvRetrans++;
        CGuard::leaveCS(m_StatsLock);
@@ -8012,25 +8029,10 @@ int CUDT::processData(CUnit* unit)
        // Check if packet was retransmitted on request or on ack timeout
        // Search the sequence in the loss record.
        rexmit_reason = " by ";
-       if ( !m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo) )
-       //if ( m_DebugLossRecords.find(packet.m_iSeqNo) ) // m_DebugLossRecords not turned on
+       if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
            rexmit_reason += "REQUEST";
        else
-       {
            rexmit_reason += "ACK-TMOUT";
-           /*
-           if ( !m_DebugLossRecords.exists(packet.m_iSeqNo) )
-           {
-               rexmit_reason += "(seems/";
-               char buf[100] = "empty";
-               int32_t base = m_DebugLossRecords.base();
-               if ( base != -1 )
-                   sprintf(buf, "%d", base);
-               rexmit_reason += buf;
-               rexmit_reason += ")";
-           }
-           */
-       }
 #endif
    }
 
@@ -8054,11 +8056,11 @@ int CUDT::processData(CUnit* unit)
    updateCC(TEV_RECEIVE, &packet);
    ++ m_iPktCount;
 
-   int pktsz = packet.getLength();
-   // update time information
+   const int pktsz = packet.getLength();
+   // Update time information
    m_RcvTimeWindow.onPktArrival(pktsz);
 
-   // check if it is probing packet pair
+   // Check if it is a probing packet pair
    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
       m_RcvTimeWindow.probe1Arrival();
    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
@@ -8072,35 +8074,40 @@ int CUDT::processData(CUnit* unit)
    CGuard::leaveCS(m_StatsLock);
 
    {
-      /*
-      * Start of offset protected section
-      * Prevent TsbPd thread from modifying Ack position while adding data
-      * offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
-      */
+      // Start of offset protected section
+      // Prevent TsbPd thread from modifying Ack position while adding data
+      // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
       CGuard recvbuf_acklock(m_AckLock, "ack");
 
-      int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
+      const int offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       // ##  packet.m_iSeqNo = m_iRcvLastSkipAck +% offset
 
       bool excessive = false;
-      string exc_type = "EXPECTED";
-      if ((offset < 0))
+#if ENABLE_HEAVY_LOGGING
+      const char* exc_type = "EXPECTED";
+#define IF_HEAVY_LOGGING(instr) instr
+#else 
+#define IF_HEAVY_LOGGING(instr) (void)0
+#endif 
+
+      if (offset < 0)
       {
-          CGuard::enterCS(m_StatsLock);
-          exc_type = "BELATED";
+          IF_HEAVY_LOGGING(exc_type = "EXPECTED");
           excessive = true;
-          m_stats.traceRcvBelated++;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
           uint64_t bltime = CountIIR(
-                  uint64_t(m_stats.traceBelatedTime)*1000,
+                  uint64_t(m_stats.traceBelatedTime) * 1000,
                   CTimer::getTime() - tsbpdtime, 0.2);
-          m_stats.traceBelatedTime = double(bltime)/1000.0;
+
+          CGuard::enterCS(m_StatsLock);
+          m_stats.traceBelatedTime = double(bltime) / 1000.0;
+          m_stats.traceRcvBelated++;
           CGuard::leaveCS(m_StatsLock);
       }
       else
       {
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // This is already a sequence discrepancy. Probably there could be found
@@ -8148,7 +8155,7 @@ int CUDT::processData(CUnit* unit)
           {
               // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
               // So this packet is "redundant".
-              exc_type = "UNACKED";
+              IF_HEAVY_LOGGING(exc_type = "UNACKED");
               excessive = true;
           }
       }
@@ -8181,7 +8188,7 @@ int CUDT::processData(CUnit* unit)
               << " FLAGS: "
               << packet.MessageFlagStr());
 
-      if ( excessive )
+      if (excessive)
       {
           return -1;
       }
@@ -8191,14 +8198,12 @@ int CUDT::processData(CUnit* unit)
           // Crypto should be already created during connection process,
           // this is rather a kinda sanity check.
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
-          if ( rc != ENCS_CLEAR )
+          if (rc != ENCS_CLEAR)
           {
-              /*
-               * Could not decrypt
-               * Keep packet in received buffer
-               * Crypto flags are still set
-               * It will be acknowledged
-               */
+              // Could not decrypt
+              // Keep packet in received buffer
+              // Crypto flags are still set
+              // It will be acknowledged
               CGuard::enterCS(m_StatsLock);
               m_stats.traceRcvUndecrypt += 1;
               m_stats.traceRcvBytesUndecrypt += pktsz;
@@ -8212,32 +8217,29 @@ int CUDT::processData(CUnit* unit)
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
       }
 
-   }  /* End of recvbuf_acklock*/
+   }  /* End of recvbuf_acklock */
 
-   if (m_bClosing) {
-      /*
-      * RcvQueue worker thread can call processData while closing (or close while processData)
-      * This race condition exists in the UDT design but the protection against TsbPd thread
-      * (with AckLock) and decryption enlarged the probability window.
-      * Application can crash deep in decrypt stack since crypto context is deleted in close.
-      * RcvQueue worker thread will not necessarily be deleted with this connection as it can be
-      * used by others (socket multiplexer).
-      */
+   if (m_bClosing)
+   {
+      // RcvQueue worker thread can call processData while closing (or close while processData)
+      // This race condition exists in the UDT design but the protection against TsbPd thread
+      // (with AckLock) and decryption enlarged the probability window.
+      // Application can crash deep in decrypt stack since crypto context is deleted in close.
+      // RcvQueue worker thread will not necessarily be deleted with this connection as it can be
+      // used by others (socket multiplexer).
       return(-1);
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request
    // always immediately.
    int initial_loss_ttl = 0;
-   if ( m_bPeerRexmitFlag )
+   if (m_bPeerRexmitFlag)
        initial_loss_ttl = m_iReorderTolerance;
 
-   if  (packet.getMsgCryptoFlags())
+   if (packet.getMsgCryptoFlags())
    {
-       /*
-       * Crypto flags not cleared means that decryption failed
-       * Do no ask loss packets retransmission
-       */
+       // Crypto flags not cleared means that decryption failed
+       // Do not ask for lost packets retransmission
        ;
        HLOGC(mglog.Debug, log << CONID() << "processData: ERROR: packet not decrypted, dropping data.");
        // NOTE: if the packet can't be decrypted, it won't cause retransmission.
@@ -8309,7 +8311,7 @@ int CUDT::processData(CUnit* unit)
 
        // XXX There was a mysterious crash around m_FreshLoss. When the initial_loss_ttl is 0
        // (that is, "belated loss report" feature is off), don't even touch m_FreshLoss.
-       if ( initial_loss_ttl && !m_FreshLoss.empty() )
+       if (initial_loss_ttl && !m_FreshLoss.empty())
        {
            deque<CRcvFreshLoss>::iterator i = m_FreshLoss.begin();
 
@@ -8317,7 +8319,7 @@ int CUDT::processData(CUnit* unit)
            // There can be more than one record with the same TTL, if it has happened before
            // that there was an 'unlost' (@c unlose) sequence that has split one detected loss
            // into two records.
-           for( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i )
+           for ( ; i != m_FreshLoss.end() && i->ttl <= 0; ++i)
            {
                HLOGF(mglog.Debug, "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
                                       i->seq[0], i->seq[1], CSeqNo::seqoff(i->seq[0], i->seq[1])+1);
@@ -8325,13 +8327,13 @@ int CUDT::processData(CUnit* unit)
            }
 
            // Remove elements that have been processed and prepared for lossreport.
-           if ( i != m_FreshLoss.begin() )
+           if (i != m_FreshLoss.begin())
            {
                m_FreshLoss.erase(m_FreshLoss.begin(), i);
                i = m_FreshLoss.begin();
            }
 
-           if ( m_FreshLoss.empty() )
+           if (m_FreshLoss.empty())
            {
                HLOGP(mglog.Debug, "NO MORE FRESH LOSS RECORDS.");
            }
@@ -8343,12 +8345,11 @@ int CUDT::processData(CUnit* unit)
            }
 
            // Phase 2: rest of the records should have TTL decreased.
-           for ( ; i != m_FreshLoss.end(); ++i )
+           for ( ; i != m_FreshLoss.end(); ++i)
                --i->ttl;
        }
-
    }
-   if ( !lossdata.empty() )
+   if (!lossdata.empty())
    {
        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
    }
@@ -8363,7 +8364,7 @@ int CUDT::processData(CUnit* unit)
 
    // Update the current largest sequence number that has been received.
    // Or it is a retransmitted packet, remove it from receiver loss list.
-   bool was_orderly_sent = true;
+   bool was_sent_in_order = true;
    if (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
    {
       m_iRcvCurrSeqNo = packet.m_iSeqNo; // Latest possible received
@@ -8371,20 +8372,20 @@ int CUDT::processData(CUnit* unit)
    else
    {
       unlose(packet); // was BELATED or RETRANSMITTED packet.
-      was_orderly_sent = 0!=  pktrexmitflag;
+      was_sent_in_order = (pktrexmitflag != 0);
    }
 
-   // was_orderly_sent means either of:
+   // was_sent_in_order means either of:
    // - packet was sent in order (first if branch above)
    // - packet was sent as old, but was a retransmitted packet
 
-   if ( m_bPeerRexmitFlag && was_orderly_sent )
+   if (m_bPeerRexmitFlag && was_sent_in_order)
    {
        ++m_iConsecOrderedDelivery;
-       if ( m_iConsecOrderedDelivery >= 50 )
+       if (m_iConsecOrderedDelivery >= 50)
        {
            m_iConsecOrderedDelivery = 0;
-           if ( m_iReorderTolerance > 0 )
+           if (m_iReorderTolerance > 0)
            {
                m_iReorderTolerance--;
                CGuard::enterCS(m_StatsLock);
@@ -8424,7 +8425,7 @@ void CUDT::unlose(const CPacket& packet)
     bool has_increased_tolerance = false;
     bool was_reordered = false;
 
-    if ( m_bPeerRexmitFlag )
+    if (m_bPeerRexmitFlag)
     {
         // If the peer understands the REXMIT flag, it means that the REXMIT flag is contained
         // in the PH_MSGNO field.
@@ -8432,20 +8433,20 @@ void CUDT::unlose(const CPacket& packet)
         // The packet is considered coming originally (just possibly out of order), if REXMIT
         // flag is NOT set.
         was_reordered = !packet.getRexmitFlag();
-        if ( was_reordered )
+        if (was_reordered)
         {
             HLOGF(mglog.Debug, "received out-of-band packet seq %d", sequence);
 
-            int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo));
+            const int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo));
             CGuard::enterCS(m_StatsLock);
             m_stats.traceReorderDistance = max(seqdiff, m_stats.traceReorderDistance);
             CGuard::leaveCS(m_StatsLock);
-            if ( seqdiff > m_iReorderTolerance )
+            if (seqdiff > m_iReorderTolerance)
             {
-                int prev SRT_ATR_UNUSED = m_iReorderTolerance;
-                m_iReorderTolerance = min(seqdiff, m_iMaxReorderTolerance);
+                const int new_tolerance = min(seqdiff, m_iMaxReorderTolerance);
                 HLOGF(mglog.Debug, "Belated by %d seqs - Reorder tolerance %s %d", seqdiff,
-                        (prev == m_iReorderTolerance) ? "REMAINS with" : "increased to", m_iReorderTolerance);
+                        (new_tolerance == m_iReorderTolerance) ? "REMAINS with" : "increased to", new_tolerance);
+                m_iReorderTolerance = new_tolerance;
                 has_increased_tolerance = true; // Yes, even if reorder tolerance is already at maximum - this prevents decreasing tolerance.
             }
         }
@@ -8461,7 +8462,7 @@ void CUDT::unlose(const CPacket& packet)
 
 
     int initial_loss_ttl = 0;
-    if ( m_bPeerRexmitFlag )
+    if (m_bPeerRexmitFlag)
         initial_loss_ttl = m_iReorderTolerance;
 
     // Don't do anything if "belated loss report" feature is not used.
@@ -8473,7 +8474,7 @@ void CUDT::unlose(const CPacket& packet)
     //   (in this case it's empty anyway)
     // - decrease current reorder tolerance based on whether packets come in order
     //   (current reorder tolerance is 0 anyway)
-    if ( !initial_loss_ttl )
+    if (!initial_loss_ttl)
         return;
 
     size_t i = 0;
@@ -8526,14 +8527,14 @@ breakbreak: ;
         HLOGF(mglog.Debug, "sequence %d removed from belated lossreport record", sequence);
     }
 
-    if ( was_reordered )
+    if (was_reordered)
     {
         m_iConsecOrderedDelivery = 0;
-        if ( has_increased_tolerance )
+        if (has_increased_tolerance)
         {
             m_iConsecEarlyDelivery = 0; // reset counter
         }
-        else if ( had_ttl > 2 )
+        else if (had_ttl > 2)
         {
             ++m_iConsecEarlyDelivery; // otherwise, and if it arrived quite earlier, increase counter
             HLOGF(mglog.Debug, "... arrived at TTL %d case %d", had_ttl, m_iConsecEarlyDelivery);
@@ -8908,6 +8909,211 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
     }
 }
 
+void CUDT::checkACKTimer(uint64_t currtime_tk)
+{
+    if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
+        // OR the number of sent packets since last ACK has reached
+        // the congctl-defined value of ACK Interval
+        // (note that none of the builtin congctls defines ACK Interval)
+        || (m_CongCtl->ACKInterval() > 0 && m_iPktCount >= m_CongCtl->ACKInterval()))
+    {
+        // ACK timer expired or ACK interval is reached
+        sendCtrl(UMSG_ACK);
+        CTimer::rdtsc(currtime_tk);
+
+        const int ack_interval_tk = m_CongCtl->ACKPeriod() > 0
+            ? m_CongCtl->ACKPeriod() * m_ullCPUFrequency
+            : m_ullACKInt_tk;
+        m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
+
+        m_iPktCount = 0;
+        m_iLightACKCount = 1;
+    }
+    // Or the transfer rate is so high that the number of packets
+    // have reached the value of SelfClockInterval * LightACKCount before
+    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
+    // is sent, which doesn't contain statistical data and nothing more
+    // than just the ACK number. The "fat ACK" packets will be still sent
+    // normally according to the timely rules.
+    else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
+    {
+        //send a "light" ACK
+        sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
+        ++m_iLightACKCount;
+    }
+}
+
+
+void CUDT::checkNAKTimer(uint64_t currtime_tk)
+{
+    if (!m_bRcvNakReport)
+        return;
+
+    /*
+    * m_bRcvNakReport enables NAK reports for SRT.
+    * Retransmission based on timeout is bandwidth consuming,
+    * not knowing what to retransmit when the only NAK sent by receiver is lost,
+    * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
+    */
+    if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
+    {
+        // NAK timer expired, and there is loss to be reported.
+        sendCtrl(UMSG_LOSSREPORT);
+
+        CTimer::rdtsc(currtime_tk);
+        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+    }
+}
+
+bool CUDT::checkExpTimer(uint64_t currtime_tk)
+{
+    // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
+    // There's nothing in the original code that alters these values.
+
+    uint64_t next_exp_time_tk;
+    if (m_CongCtl->RTO())
+    {
+        next_exp_time_tk = m_ullLastRspTime_tk + m_CongCtl->RTO() * m_ullCPUFrequency;
+    }
+    else
+    {
+        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+        if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
+            exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
+        next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
+    }
+
+    if (currtime_tk <= next_exp_time_tk)
+        return false;
+
+    // ms -> us
+    const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout * 1000;
+    // Haven't received any information from the peer, is it dead?!
+    // timeout: at least 16 expirations and must be greater than 5 seconds
+    if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
+        && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
+    {
+        //
+        // Connection is broken.
+        // UDT does not signal any information about this instead of to stop quietly.
+        // Application will detect this when it calls any UDT methods next time.
+        //
+        HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "ms");
+        m_bClosing = true;
+        m_bBroken  = true;
+        m_iBrokenCounter = 30;
+
+        // update snd U list to remove this socket
+        m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+
+        releaseSynch();
+
+        // app can call any UDT API to learn the connection_broken error
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+
+        CTimer::triggerEvent();
+
+        return true;
+    }
+
+    HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
+        << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
+
+    ++m_iEXPCount;
+
+    /*
+     * (keepalive fix)
+     * duB:
+     * It seems there is confusion of the direction of the Response here.
+     * LastRspTime is supposed to be when receiving (data/ctrl) from peer
+     * as shown in processCtrl and processData,
+     * Here we set because we sent something?
+     *
+     * Disabling this code that prevent quick reconnection when peer disappear
+     */
+    // Reset last response time since we've just sent a heart-beat.
+    // (fixed) m_ullLastRspTime_tk = currtime_tk;
+
+    return false;
+}
+
+void CUDT::checkRexmitTimer(uint64_t currtime_tk)
+{
+    /* There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
+     *
+     * LATEREXMIT is only used with FileCC.
+     * The mode is triggered when some time has passed since the last ACK from
+     * the receiver, while there is still some unacknowledged data in the sender's buffer,
+     * and the loss list is empty.
+     *
+     * FASTREXMIT is only used with LiveCC.
+     * The mode is triggered if the receiver does not send periodic NAK reports,
+     * when some time has passed since the last ACK from the receiver,
+     * while there is still some unacknowledged data in the sender's buffer.
+     *
+     * In case the above conditions are met, the unacknowledged packets
+     * in the sender's buffer will be added to loss list and retransmitted.
+     */
+
+    const uint64_t rtt_syn = (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
+    const uint64_t exp_int = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
+
+    if (currtime_tk <= (m_ullLastRspAckTime_tk + exp_int))
+        return;
+
+    // If there is no unacknowledged data in the sending buffer,
+    // then there is nothing to retransmit.
+    if (m_pSndBuffer->getCurrBufSize() <= 0)
+        return;
+
+    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT;
+    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT;
+
+    // If the receiver will send periodic NAK reports, then FASTREXMIT is inactive.
+    // MIND that probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
+    if (is_fastrexmit && m_bPeerNakReport)
+        return;
+
+    // We need to retransmit only when the data in the sender's buffer was already sent.
+    // Otherwise it might still be sent regulary.
+    bool retransmit = false;
+    // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
+    if (is_laterexmit && (CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && m_pSndLossList->getLossLength() == 0)
+        retransmit = true;
+
+    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
+        retransmit = true;
+
+    if (retransmit)
+    {
+        // Sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
+        CGuard acklock(m_AckLock, "ack");  // Protect packet retransmission
+        // Resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
+        const int32_t csn = m_iSndCurrSeqNo;
+        const int num = m_pSndLossList->insert(m_iSndLastAck, csn);
+        if (num > 0)
+        {
+            CGuard::enterCS(m_StatsLock, "stats");
+            m_stats.traceSndLoss += num;
+            m_stats.sndLossTotal += num;
+            CGuard::leaveCS(m_StatsLock, "stats");
+
+            HLOGC(mglog.Debug, log << CONID() << "ENFORCED " << (is_laterexmit ? "LATEREXMIT" : "FASTREXMIT")
+                << " by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
+                << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
+        }
+    }
+
+    ++m_iReXmitCount;
+
+    checkSndTimers(DONT_REGEN_KM);
+    const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
+    updateCC(TEV_CHECKTIMER, stage);
+
+    // immediately restart transmission
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+}
+
 void CUDT::checkTimers()
 {
     // update CC parameters
@@ -8927,231 +9133,18 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
-    if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
-            // OR the number of sent packets since last ACK has reached
-            // the congctl-defined value of ACK Interval
-            // (note that none of the builtin congctls defines ACK Interval)
-            || (m_CongCtl->ACKInterval() > 0 && m_iPktCount >= m_CongCtl->ACKInterval()))
-    {
-        // ACK timer expired or ACK interval is reached
+    // Check if it is time to send ACK
+    checkACKTimer(currtime_tk);
 
-        sendCtrl(UMSG_ACK);
-        CTimer::rdtsc(currtime_tk);
+    // Check if it is time to send a loss report
+    checkNAKTimer(currtime_tk);
 
-        int ack_interval_tk = m_CongCtl->ACKPeriod() > 0 ? m_CongCtl->ACKPeriod() * m_ullCPUFrequency : m_ullACKInt_tk;
-        m_ullNextACKTime_tk = currtime_tk + ack_interval_tk;
+    // Check if the connection is expired
+    if (checkExpTimer(currtime_tk))
+        return;
 
-        m_iPktCount = 0;
-        m_iLightACKCount = 1;
-    }
-    // Or the transfer rate is so high that the number of packets
-    // have reached the value of SelfClockInterval * LightACKCount before
-    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
-    // is sent, which doesn't contain statistical data and nothing more
-    // than just the ACK number. The "fat ACK" packets will be still sent
-    // normally according to the timely rules.
-    else if (m_iPktCount >= SELF_CLOCK_INTERVAL * m_iLightACKCount)
-    {
-        //send a "light" ACK
-        sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
-        ++ m_iLightACKCount;
-    }
-
-
-    if (m_bRcvNakReport)
-    {
-        /*
-         * Enable NAK reports for SRT.
-         * Retransmission based on timeout is bandwidth consuming,
-         * not knowing what to retransmit when the only NAK sent by receiver is lost,
-         * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
-         */
-        if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
-        {
-            // NAK timer expired, and there is loss to be reported.
-            sendCtrl(UMSG_LOSSREPORT);
-
-            CTimer::rdtsc(currtime_tk);
-            m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-        }
-    } // ELSE {
-    // we are not sending back repeated NAK anymore and rely on the sender's EXP for retransmission
-    //if ((m_pRcvLossList->getLossLength() > 0) && (currtime_tk > m_ullNextNAKTime_tk))
-    //{
-    //   // NAK timer expired, and there is loss to be reported.
-    //   sendCtrl(UMSG_LOSSREPORT);
-    //
-    //   CTimer::rdtsc(currtime_tk);
-    //   m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-    //}
-    //}
-
-    // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
-    // There's nothing in the original code that alters these values.
-
-    uint64_t next_exp_time_tk;
-    if (m_CongCtl->RTO())
-    {
-        next_exp_time_tk = m_ullLastRspTime_tk + m_CongCtl->RTO() * m_ullCPUFrequency;
-    }
-    else
-    {
-        uint64_t exp_int_tk = (m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
-        if (exp_int_tk < m_iEXPCount * m_ullMinExpInt_tk)
-            exp_int_tk = m_iEXPCount * m_ullMinExpInt_tk;
-        next_exp_time_tk = m_ullLastRspTime_tk + exp_int_tk;
-    }
-
-    if (currtime_tk > next_exp_time_tk)
-    {
-        // ms -> us
-        const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout*1000;
-        // Haven't received any information from the peer, is it dead?!
-        // timeout: at least 16 expirations and must be greater than 5 seconds
-        if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_ullLastRspTime_tk > PEER_IDLE_TMO_US * m_ullCPUFrequency))
-        {
-            //
-            // Connection is broken.
-            // UDT does not signal any information about this instead of to stop quietly.
-            // Application will detect this when it calls any UDT methods next time.
-            //
-            HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << ((currtime_tk - m_ullLastRspTime_tk)/m_ullCPUFrequency) << "ms");
-            m_bClosing = true;
-            m_bBroken = true;
-            m_iBrokenCounter = 30;
-
-            // update snd U list to remove this socket
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-
-            releaseSynch();
-
-            // app can call any UDT API to learn the connection_broken error
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-
-            CTimer::triggerEvent();
-
-            return;
-        }
-
-        HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_ullLastRspTime_tk) / m_ullCPUFrequency) << "/" << (+PEER_IDLE_TMO_US) << "us");
-
-        /* 
-         * This part is only used with FileCC. This retransmits
-         * unacknowledged packet only when nothing in the loss list.
-         * This does not work well for real-time data that is delayed too much.
-         * For LiveCC, see the case of SRM_FASTREXMIT later in function.
-         */
-        if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT)
-        {
-            // sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-            // recver: Send out a keep-alive packet
-            if (m_pSndBuffer->getCurrBufSize() > 0)
-            {
-                // protect packet retransmission
-                CGuard::enterCS(m_AckLock, "ack");
-
-                // LATEREXMIT works only under the following conditions:
-                // - the "ACK window" is nonempty (there are some packets sent, but not ACK-ed)
-                // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-                // Otherwise the rexmit will be done EXCLUSIVELY basing on the received LOSSREPORTs.
-                if ((CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && (m_pSndLossList->getLossLength() == 0))
-                {
-                    // resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-                    int32_t csn = m_iSndCurrSeqNo;
-                    int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                    if (num > 0) {
-                        CGuard::enterCS(m_StatsLock);
-                        m_stats.traceSndLoss += 1; // num;
-                        m_stats.sndLossTotal += 1; // num;
-                        CGuard::leaveCS(m_StatsLock);
-
-                        HLOGC(mglog.Debug, log << CONID() << "ENFORCED LATEREXMIT by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn
-                            << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-                    }
-                }
-                // protect packet retransmission
-                CGuard::leaveCS(m_AckLock, "ack");
-
-                checkSndTimers(DONT_REGEN_KM);
-                updateCC(TEV_CHECKTIMER, TEV_CHT_REXMIT);
-
-                // immediately restart transmission
-                m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-            }
-            else
-            {
-                // (fix keepalive)
-                // XXX (the fix was for Live transmission; this is used in file transmission. Restore?)
-                //sendCtrl(UMSG_KEEPALIVE);
-            }
-        }
-        ++ m_iEXPCount;
-
-        /*
-         * (keepalive fix)
-         * duB:
-         * It seems there is confusion of the direction of the Response here.
-         * LastRspTime is supposed to be when receiving (data/ctrl) from peer
-         * as shown in processCtrl and processData,
-         * Here we set because we sent something?
-         *
-         * Disabling this code that prevent quick reconnection when peer disappear
-         */
-        // Reset last response time since we just sent a heart-beat.
-        // (fixed) m_ullLastRspTime_tk = currtime_tk;
-
-    }
-    // sender: Insert some packets sent after last received acknowledgement into the sender loss list.
-    //         This handles retransmission on timeout for lost NAK for peer sending only one NAK when loss detected.
-    //         Not required if peer send Periodic NAK Reports.
-    if (m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT
-            // XXX Still, if neither FASTREXMIT nor LATEREXMIT part is executed, then
-            // there's no "blind rexmit" done at all. The only other rexmit method
-            // than LOSSREPORT-based is then NAKREPORT (the receiver sends LOSSREPORT
-            // again after it didn't get a "response" for the previous one). MIND that
-            // probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
-            &&  !m_bPeerNakReport
-            &&  m_pSndBuffer->getCurrBufSize() > 0)
-    {
-        uint64_t exp_int = (m_iReXmitCount * (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US) + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
-
-        if (currtime_tk > (m_ullLastRspAckTime_tk + exp_int))
-        {
-            // protect packet retransmission
-            CGuard::enterCS(m_AckLock, "ack");
-            if ((CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
-            {
-                // resend all unacknowledged packets on timeout
-                int32_t csn = m_iSndCurrSeqNo;
-                int num = m_pSndLossList->insert(m_iSndLastAck, csn);
-                HLOGC(mglog.Debug, log << CONID() << "ENFORCED FASTREXMIT by ACK-TMOUT PREPARED: " << m_iSndLastAck << "-" << csn
-                    << " (" << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
-
-                HLOGC(mglog.Debug, log << "timeout lost: pkts=" <<  num << " rtt+4*var=" <<
-                        m_iRTT + 4 * m_iRTTVar << " cnt=" <<  m_iReXmitCount << " diff="
-                        << (currtime_tk - (m_ullLastRspAckTime_tk + exp_int)) << "");
-
-                if (num > 0) {
-                    CGuard::enterCS(m_StatsLock);
-                    m_stats.traceSndLoss += 1; // num;
-                    m_stats.sndLossTotal += 1; // num;
-                    CGuard::leaveCS(m_StatsLock);
-                }
-            }
-            // protect packet retransmission
-            CGuard::leaveCS(m_AckLock, "ack");
-
-            ++m_iReXmitCount;
-
-            checkSndTimers(DONT_REGEN_KM);
-            updateCC(TEV_CHECKTIMER, TEV_CHT_FASTREXMIT);
-
-            // immediately restart transmission
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-        }
-    }
+    // Check if FAST or LATE packet retransmission is required
+    checkRexmitTimer(currtime_tk);
 
     //   uint64_t exp_int = (m_iRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) * m_ullCPUFrequency;
     if (currtime_tk > m_ullLastSndTime_tk + (COMM_KEEPALIVE_PERIOD_US * m_ullCPUFrequency))
@@ -9242,4 +9235,85 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes)
         *bytes = bytecount;
 
     return std::abs(timespan);
+}
+
+
+bool CUDT::runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt)
+{
+    // Prepare the information for the hook.
+
+    // We need streamid.
+    char target[MAX_SID_LENGTH+1];
+    memset(target, 0, MAX_SID_LENGTH+1);
+
+    // Just for a case, check the length.
+    // This wasn't done before, and we could risk memory crash.
+    // In case of error, this will remain unset and the empty
+    // string will be passed as streamid.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs->m_iType);
+
+    // This tests if there are any extensions.
+    if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
+    {
+        uint32_t* begin = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
+        size_t size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+        uint32_t* next = 0;
+        size_t length = size / sizeof(uint32_t);
+        size_t blocklen = 0;
+
+        for (;;) // ONE SHOT, but continuable loop
+        {
+            int cmd = FindExtensionBlock(begin, length, Ref(blocklen), Ref(next));
+
+            const size_t bytelen = blocklen*sizeof(uint32_t);
+
+            if (cmd == SRT_CMD_SID)
+            {
+                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                {
+                    LOGC(mglog.Error, log << "interpretSrtHandshake: STREAMID length " << bytelen
+                           << " is 0 or > " << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                    return false;
+                }
+                // See comment at CUDT::interpretSrtHandshake().
+                memcpy(target, begin+1, bytelen);
+
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t*)target, (uint32_t*)target, blocklen);
+
+                // Nothing more expected from connection block.
+                break;
+            }
+            else if (cmd == SRT_CMD_NONE)
+            {
+                // End of blocks
+                break;
+            }
+            else
+            {
+                // Any other kind of message extracted. Search on.
+                length -= (next - begin);
+                begin = next;
+                if (begin)
+                    continue;
+            }
+
+            break;
+        }
+    }
+
+    try
+    {
+        int result = CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs->m_iVersion, peer, target);
+        if (result == -1)
+            return false;
+    }
+    catch (...)
+    {
+        LOGP(mglog.Error, "runAcceptHook: hook interrupted by exception");
+        return false;
+    }
+
+    return true;
 }

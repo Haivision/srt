@@ -15,6 +15,7 @@ SRT API Functions
 - [**Connecting**](#Connecting)
   * [srt_listen](#srt_listen)
   * [srt_accept](#srt_accept)
+  * [srt_listen_callback](#srt_listen_callback)
   * [srt_connect](#srt_connect)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
@@ -312,6 +313,84 @@ not allow it)
 when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
+
+### srt_listen_callback
+
+```
+int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
+```
+
+This call installs a callback hook, which will be executed on a socket that is
+automatically created to handle the incoming connection on the listeneing
+socket (and is about to be returned by `srt_accept`), but before the connection
+has been accepted.
+
+* `lsn`: Listening socket where you want to install the callback hook
+* `hook_fn`: The callback hook function pointer
+* `hook_opaque`: The pointer value that will be passed to the callback function
+
+- Returns:
+
+   * 0, if successful
+   * -1, on error
+
+- Errors:
+
+   * `SRT_EINVPARAM` reported when `hook_fn` is a null pointer
+
+The callback function has the signature as per this type definition:
+```
+typedef int srt_listen_callback_fn(void* opaque, SRTSOCKET ns, int hs_version
+             const struct sockaddr* peeraddr, const char* streamid);
+```
+
+The callback function gets the following parameters passed:
+
+* `opaque`: The pointer passed as `hook_opaque` when registering
+* `ns`: The freshly created socket to handle the incoming connection
+* `hs_version`: The handshake version (usually 5, pre-1.3 versions use 4)
+* `peeraddr`: The address of the incoming connection
+* `streamid`: The value set to `SRTO_STREAMID` option set on the peer side
+
+(Note that versions that use handshake version 4 are incapable of using
+any extensions, such as streamid, however they do support encryption.
+Note also that the SRT version isn't yet extracted, however you can
+prevent too old version connections using `SRTO_MINVERSION` option).
+
+The callback function is given an opportunity to:
+
+* use the passed information (streamid and peer address) to decide
+  what to do with this connection
+* alter any options on the socket, which could not be set properly
+  before on the listening socket to be derived by the accepted socket,
+  and won't be allowed to be altered after the socket is returned by
+  `srt_accept`
+
+Note that the returned socket has already set all derived options from the
+listener socket, as it happens normally, and the moment when this callback is
+called is when the conclusion handshake has been already received from the
+caller party, but not yet interpreted (the streamid field is extracted from it
+prematurely). When you, for example, set a passphrase on the socket at this
+very moment, the Key Material processing will happen against this already set
+passphrase, after the callback function is finished.
+
+The callback function shall return 0, if the connection is to be accepted.
+If you return -1, **or** if the function throws an exception, this will be
+understood as a request to reject the incoming connection - in which case the
+about-to-be-accepted socket will be silently deleted and `srt_accept` will not
+report it. Note that in case of non-blocking mode the epoll bits for read-ready
+on the listener socket will not be set if the connection is rejected, including
+when rejected from this user function.
+
+**IMPORTANT**: This function is called in the receiver worker thread, which
+means that it must do its checks and operations as quickly as possible and keep
+the minimum possible time, as every delay you do in this function will burden
+the processing of the incoming data on the associated UDP socket, which in case
+of a listener socket means the listener socket itself and every socket accepted
+off this listener socket. Avoid any extensive search operations, best cache in
+memory whatever database you have to check against the data received in
+streamid or peeraddr.
+
 
 ### srt_connect
 

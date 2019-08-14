@@ -552,6 +552,14 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        // bind to the same addr of listening socket
        ns->m_pUDT->open();
        updateListenerMux(ns, ls);
+       if (ls->m_pUDT->m_cbAcceptHook)
+       {
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), hs, hspkt))
+           {
+               error = 1;
+               goto ERR_ROLLBACK;
+           }
+       }
        ns->m_pUDT->acceptAndRespond(peer, hs, hspkt);
    }
    catch (...)
@@ -637,6 +645,22 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    pthread_mutex_unlock(&(ls->m_AcceptLock));
 
    return 1;
+}
+
+int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+{
+    try
+    {
+        CUDTSocket* s = locateSocket(lsn, ERH_THROW);
+        s->m_pUDT->installAcceptHook(hook, opaq);
+    }
+    catch (CUDTException& e)
+    {
+        setError(new CUDTException(e));
+        return SRT_ERROR;
+    }
+
+    return 0;
 }
 
 SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
@@ -1825,7 +1849,7 @@ void CUDTUnited::updateMux(
    {
       m.m_pChannel->close();
       delete m.m_pChannel;
-      throw e;
+      throw;
    }
 
    sockaddr_any sa;
@@ -2866,7 +2890,7 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    {
       return s_UDTUnited.getStatus(u);
    }
-   catch (CUDTException e)
+   catch (CUDTException &e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return SRTS_NONEXIST;
