@@ -55,6 +55,9 @@ modified by
 
 #if ENABLE_THREAD_LOGGING
 #include <iostream>
+#ifndef __MINGW__
+   #include <intrin.h>
+#endif
 #endif
 
 // #undef ENABLE_THREAD_ASSERT 1
@@ -192,28 +195,30 @@ void CTimer::sleepto(uint64_t nexttime)
 
    while (t < m_ullSchedTime)
    {
-#ifndef NO_BUSY_WAITING
+#if USE_BUSY_WAITING
 #ifdef IA32
        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
 #endif
 #else
+       const uint64_t wait_us = 10000;  // 10 ms
+
        timeval now;
-       timespec timeout;
        gettimeofday(&now, 0);
-       if (now.tv_usec < 990000)
-       {
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-       }
-       else
-       {
-           timeout.tv_sec = now.tv_sec + 1;
-           timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-       }
+       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+       timespec timeout;
+       timeout.tv_sec = time_us / 1000000;
+       timeout.tv_nsec = (time_us % 1000000) * 1000;
+
        THREAD_PAUSED();
        pthread_mutex_lock(&m_TickLock);
        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
@@ -299,11 +304,11 @@ void CTimer::sleep()
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
+    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
-    
+
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 
@@ -1145,11 +1150,8 @@ std::string FormatTime(uint64_t time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
-#else
-    strftime(tmp_buf, 512, "%T.", &tm);
-#endif
+    strftime(tmp_buf, 512, "%X.", &tm);
+
     ostringstream out;
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
@@ -1182,22 +1184,9 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, 0);
-        time_t t = tv.tv_sec;
-        struct tm tm = SysLocalTime(t);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        // Nice to have %T as "standard time format" for logs,
-        // but it's Single Unix Specification and doesn't exist
-        // on Windows. Use %X on Windows (it's described as
-        // current time without date according to locale spec).
-        //
-        // XXX Consider using %X everywhere, as it should work
-        // on both systems.
-#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
-#else
-        strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 

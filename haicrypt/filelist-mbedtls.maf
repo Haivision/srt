@@ -7,13 +7,13 @@ hcrypt_msg.h
 
 PRIVATE HEADERS
 hcrypt.h
-hcrypt-openssl.h
+cryspr.h
+cryspr-mbedtls.h
 haicrypt_log.h
 
 SOURCES
-hc_openssl_aes.c
-hc_openssl_evp_cbc.c
-hc_openssl_evp_ctr.c
+cryspr.c
+cryspr-mbedtls.c
 hcrypt.c
 hcrypt_ctx_rx.c
 hcrypt_ctx_tx.c
