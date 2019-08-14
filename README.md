@@ -67,7 +67,6 @@ scl enable devtoolset-3 bash
 make
 ```
 
-
 ## For Mac (Darwin, iOS):
 
 [Homebrew](https://brew.sh/) supports "srt" formula.
@@ -100,57 +99,43 @@ make
 
 ## For Windows:
 
-1. Please download and install OpenSSL for Windows.
+### 1. Download and install OpenSSL for Windows.
 
-The 64-bit devel package can be downloaded from here:
-
-     http://slproweb.com/download/Win64OpenSSL-1_0_2r.exe
-
+The 64-bit package can be downloaded from here: [Win64OpenSSL_Light-1_1_1c.exe](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
 	 
 (Note that the last letter or version number may be changed and older versions
 no longer available. If this isn't found, check here:
 http://slproweb.com/products/Win32OpenSSL.html
 )
 
-It's expected to be installed in `C:\OpenSSL-Win64` (see the above variables).
-
-Note that this version is compiled most likely for Visual Studio 2013. For
-other versions you better download and compile the sources by yourself,
-from: https://github.com/openssl/openssl
-
-The instruction for Windows:
-http://developer.covenanteyes.com/building-openssl-for-visual-studio/
-
-2. Compile and install Pthreads for Windows from this submodule:
-
-     submodules/pthread-win32
-	 
-Please follow the steps:
-
-a. Using Visual Studio 2013, please open this file:
-
-     pthread_lib.2013.vcxproj
-
-b. Make sure to select configuration: `Release` and `x64`.
-
-c. Make sure that the `pthread_lib` project will be built.
-
-d. After building, find the `pthread_lib.lib` file (directory is probably: `bin\x64_MSVC2013.Release`).
-Copy this file to `C:\pthread-win32\lib` (or whatever other location you configured in variables).
-
-e. Copy include files to `C:\pthread-win32\include` - the following ones:
-
-     pthread.h
-     sched.h
-     semaphore.h
-
-(They are in the toplevel directory, there are actually no meaningful subdirs here)
-(NOTE: the win32 is part of the project name. It will become 32 or 64 depending on selection)
+It's expected to be installed in `C:\Program Files\OpenSSL-Win64`.
+Add this path to the user's or system's environment variable `PATH`.
 
 
-3. Install cmake for Windows. The CMake GUI will help you configure the project.
+### 2. Install Pthreads for Windows
 
-It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them: 
+nuget install cinegy.pthreads-win64 -version 2.9.1.17 -OutputDirectory C:\pthread-win32
+
+### 3. Install cmake for Windows.
+
+[CMake dowload page](https://cmake.org/download/).
+
+The CMake GUI will help you configure the project.
+
+
+ 
+### 4. Generate Visual Studio Solution.
+
+Assuming you are currently in the cloned repo.
+
+```
+mkdir _build & cd _build
+cmake ../ -G"Visual Studio 16 2019" -A x64 -DPTHREAD_INCLUDE_DIR="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\sources" -DPTHREAD_LIBRARY="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\runtimes\win-x64\native\release\pthread_lib.lib"
+cmake --build ./ --config Release
+```
+
+CMake will try to find OpenSSL and pthreads. If any of the is not found, you can define the following variables to help CMake find them: 
+
 ```
 OPENSSL_ROOT_DIR=<path to OpenSSL installation>
 OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
@@ -159,20 +144,10 @@ OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
 PTHREAD_INCLUDE_DIR=<path to where pthread.h lies>
 PTHREAD_LIBRARY=<path to pthread.lib>
 ```
- 
 
-4. For the sake of cmake generation: When you want to have a 64-bit version,
-remember that cmake by some reason adds /machine:X86 to the linker options.
-There are about four variables ended with `_LINKER_FLAGS` in the `CMakeCache.txt`
-file (also available with Advanced checked in CMake GUI). Remove them, or change
-into /machine:X64.
+### IMPORTANT FOR DEVELOPERS AND CONTRIBUTORS.
 
-Also, just after you generated the project for MSVC (if you fail or forget to do
-that before the first compiling, you'll have to delete and regenerate all project
-files) then open Configuration Manager **exactly** after generation from cmake and
-setup x86 platform with requesting to generate this for every subproject.
-
-5. IMPORTANT FOR DEVELOPERS AND CONTRIBUTORS: If you make any changes that fix
+If you make any changes that fix
 something in the Windows version, remember to keep the project working also for
 all other platforms. To simplify the verification if you just would like to do
 it on the Windows machine, please install Cygwin and make another build for Cygwin,
