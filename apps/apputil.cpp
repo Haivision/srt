@@ -240,7 +240,7 @@ static vector<sockaddr_any> GetLocalInterfaces()
 {
     vector<sockaddr_any> locals;
 #ifdef _WIN32
-    ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST;
+	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
 	ULONG outBufLen4 = 0, outBufLen6 = 0, outBufLen = 0;
 
     // This function doesn't allocate memory by itself, you have to do it
