@@ -64,7 +64,6 @@ written by
    #define SRT_API __attribute__ ((visibility("default")))
 #endif
 
-#define NO_BUSY_WAITING
 
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
@@ -148,8 +147,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_RCVDATA = 20,        // size of data available for recv
    SRTO_SENDER = 21,         // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
    SRTO_TSBPDMODE = 22,      // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
-   SRTO_LATENCY = 23,        // DEPRECATED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
-   SRTO_TSBPDDELAY = 23,     // ALIAS: SRTO_LATENCY
+   SRTO_LATENCY = 23,        // NOT RECOMMENDED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
+   SRTO_TSBPDDELAY = 23,     // DEPRECATED. ALIAS: SRTO_LATENCY
    SRTO_INPUTBW = 24,        // Estimated input stream rate.
    SRTO_OHEADBW,             // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
    SRTO_PASSPHRASE = 26,     // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
@@ -531,6 +530,8 @@ SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, in
 SRT_API       int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET udpsock);
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
+typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
+SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,

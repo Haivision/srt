@@ -152,6 +152,8 @@ public:
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
 
+   int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.
       /// @return Pointer to the UDT entity.

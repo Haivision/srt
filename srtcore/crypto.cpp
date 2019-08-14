@@ -698,10 +698,13 @@ bool CCryptoControl::createCryptoCtx(ref_t<HaiCrypt_Handle> hCrypto, size_t keyl
 
     HaiCrypt_Cfg crypto_cfg;
     memset(&crypto_cfg, 0, sizeof(crypto_cfg));
-
+#if 0//test key refresh (fast rate)
+    m_KmRefreshRatePkt = 2000;
+    m_KmPreAnnouncePkt = 500;
+#endif
     crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0);
     crypto_cfg.xport = HAICRYPT_XPT_SRT;
-    crypto_cfg.cipher = HaiCryptCipher_Get_Instance();
+    crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
     crypto_cfg.key_len = (size_t)keylen;
     crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
     crypto_cfg.km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;
@@ -710,7 +713,7 @@ bool CCryptoControl::createCryptoCtx(ref_t<HaiCrypt_Handle> hCrypto, size_t keyl
     crypto_cfg.secret = m_KmSecret;
     //memcpy(&crypto_cfg.secret, &m_KmSecret, sizeof(crypto_cfg.secret));
 
-    HLOGC(mglog.Debug, log << "CRYPTO CFG: flags=" << CryptoFlags(crypto_cfg.flags) << " xport=" << crypto_cfg.xport << " cipher=" << crypto_cfg.cipher
+    HLOGC(mglog.Debug, log << "CRYPTO CFG: flags=" << CryptoFlags(crypto_cfg.flags) << " xport=" << crypto_cfg.xport << " cryspr=" << crypto_cfg.cryspr
         << " keylen=" << crypto_cfg.key_len << " passphrase_length=" << crypto_cfg.secret.len);
 
     if (HaiCrypt_Create(&crypto_cfg, &hCrypto.get()) != HAICRYPT_OK)
