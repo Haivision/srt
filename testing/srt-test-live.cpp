@@ -391,9 +391,8 @@ int main( int argc, char** argv )
 
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
-    }
 
-    string hook = Option("", "hook");
+    string hook = Option<OutString>(params, "", "hook");
     if (hook != "")
     {
         if (hook == "user-password")
@@ -401,6 +400,7 @@ int main( int argc, char** argv )
             transmit_accept_hook_fn = &SrtUserPasswordHook;
             transmit_accept_hook_op = nullptr;
         }
+    }
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);

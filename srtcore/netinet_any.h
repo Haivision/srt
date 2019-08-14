@@ -60,6 +60,8 @@ struct sockaddr_any
         }
         else
         {
+            // Clear as a sign or error
+            memset(&sa, 0, sizeof *this);
             // Error fallback: no other families than IP are regarded.
             sa.sa_family = AF_UNSPEC;
             len = 0;
