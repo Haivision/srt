@@ -427,6 +427,12 @@ indicates the handshake message type.
 Note that the **Rendezvous** process is different in HSv4 and HSv5, as the latter 
 is based on a state machine.
 
+In case when the connection process has failed when the party was about to
+send the `URQ_CONCLUSION` handshake, this field will contain appropriate
+error value. This value starts from 1000 (see `UDTRequestType` in `handshake.h`,
+since `URQ_FAILURE_TYPES` symbol) added with the value of the rejection
+reason (see `SRT_REJECT_REASON` in `srt.h`).
+
 [Return to top of page](#srt-handshake)
 
 

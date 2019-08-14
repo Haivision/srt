@@ -596,8 +596,9 @@ void SrtCommon::ConnectClient(string host, int port)
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
+        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "UDT::connect");
+        Error(UDT::getlasterror(), "srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -627,10 +628,15 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
+void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
+    if (udtResult == SRT_ECONNREJ)
+    {
+        message += ": ";
+        message += srt_rejectreason_str(reason);
+    }
     if ( Verbose::on )
         Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
     else

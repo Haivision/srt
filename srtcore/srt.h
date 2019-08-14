@@ -451,6 +451,27 @@ static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP,
 #undef MJ
 #undef MN
 
+enum SRT_REJECT_REASON
+{
+    SRT_REJ_UNKNOWN,     // initial set when in progress
+    SRT_REJ_SYSTEM,      // broken due to system function error
+    SRT_REJ_PEER,        // connection was rejected by peer
+    SRT_REJ_RESOURCE,    // internal problem with resource allocation
+    SRT_REJ_ROGUE,       // incorrect data in handshake messages
+    SRT_REJ_BACKLOG,     // listener's backlog exceeded
+    SRT_REJ_IPE,         // internal program error
+    SRT_REJ_CLOSE,       // socket is closing
+    SRT_REJ_VERSION,     // peer is older version than agent's minimum set
+    SRT_REJ_RDVCOOKIE,   // rendezvous cookie collision
+    SRT_REJ_BADSECRET,   // wrong password
+    SRT_REJ_UNSECURE,    // password required or unexpected
+    SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
+    SRT_REJ_CONGESTION,  // incompatible congestion-controller type
+    SRT_REJ_FILTER,       // incompatible packet filter
+
+    SRT_REJ__SIZE,
+};
+
 // Logging API - specialization for SRT.
 
 // Define logging functional areas for log selection.
@@ -648,6 +669,10 @@ SRT_API void srt_setlogflags(int flags);
 
 
 SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
+
+SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+SRT_API extern const char* const srt_rejectreason_msg [];
+const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 
 #ifdef __cplusplus
 }

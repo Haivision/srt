@@ -427,6 +427,10 @@ rendezvous socket, but rendezvous sockets must be explicitly bound to a local
 interface prior to connecting. Non-rendezvous sockets (caller sockets) can be
 left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
+  * `SRT_ECONNREJ`: Connection has been rejected
+
+In case when `SRT_ECONNREJ` error was reported, you can get the reason for
+a rejected connection from `srt_getrejectreason`.
 
 ### srt_connect_debug
 
@@ -873,6 +877,112 @@ void srt_clearlasterror(void);
 
 This function clears the last error. After this call, the `srt_getlasterror` will
 report a "successful" code.
+
+### srt_getrejectreason
+
+```
+enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+```
+
+This function shall be called after a connecting function (such as `srt_connect`)
+has returned an error, which's code was `SRT_ECONNREJ`. It allows to get a more
+detailed rejection reason. This function returns a numeric code, which can be
+translated into a message by `srt_rejectreason_str`. The following codes are
+currently reported:
+
+#### SRT_REJ_UNKNOWN
+
+A fallback value for cases when there was no connection rejected.
+
+#### SRT_REJ_SYSTEM
+
+One of system function reported a failure. Usually this means some system
+error or lack of system resources to complete the task.
+
+#### SRT_REJ_PEER
+
+The connection has been rejected by peer, but no further details are available.
+This usually means that the peer doesn't support rejection reason reporting.
+
+#### SRT_REJ_RESOURCE
+
+A problem with resource allocation (usually memory).
+
+#### SRT_REJ_ROGUE
+
+The data sent by one party to another cannot be properly interpreted. This
+should not happen during normal usage, unless it's a bug, or some weird
+events are happening on the network.
+
+#### SRT_REJ_BACKLOG
+
+The listener's backlog has exceeded (there are many other callers waiting for
+the opportunity of being connected and wait in the queue, which has reached
+its limit).
+
+#### SRT_REJ_IPE
+
+Internal Program Error. This should not happen during normal usage and it
+usually means a bug in the software (although this can be reported by both
+local and foreign host).
+
+#### SRT_REJ_CLOSE
+
+The listener socket was able to receive your request, but at this moment it
+is being closed. It's likely that your next attempt will result with timeout.
+
+#### SRT_REJ_VERSION
+
+Any party of the connection has set up minimum version that is required for
+that connection, and the other party didn't satisfy this requirement.
+
+#### SRT_REJ_RDVCOOKIE
+
+Rendezvous cookie collision. This normally should never happen, or the
+probability that this will really happen is negligible. However this can
+be also a result of a misconfiguration that you are trying to make a
+rendezvous connection where both parties try to bind to the same IP
+address, or both are local addresses of the same host - in which case
+the sent handshake packets are returning to the same host as if they
+were sent by the peer, who is this party itself. When this happens,
+this reject reason will be reported by every attempt.
+
+#### SRT_REJ_BADSECRET
+
+Both parties have defined a passprhase for connection and they differ.
+
+#### SRT_REJ_UNSECURE
+
+Only one connection party has set up a password. See also
+`SRTO_STRICTENC` flag in API.md.
+
+#### SRT_REJ_MESSAGEAPI
+
+The value for `SRTO_MESSAGEAPI` flag is different on both connection
+parties.
+
+#### SRT_REJ_CONGESTION
+
+The `SRTO_CONGESTION` option has been set up differently on both
+connection parties.
+
+#### SRT_REJ_FILTER
+
+The `SRTO_FILTER` option has been set differently on both connection
+parties (NOTE: this flag may not exist yet in this version).
+
+
+### srt_rejectreason_str
+
+```
+const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
+```
+
+Returns a constant string for the reason of the connection rejected,
+as per given code id. Alternatively you can use the `srt_rejectreason_msg`
+array. This function additionally handles the case for unknown id by
+reporting `SRT_REJ_UNKNOWN` in such case.
+
 
 Performance tracking
 --------------------
