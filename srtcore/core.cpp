@@ -1058,6 +1058,15 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int32_t);
       break;
 
+   case SRTO_PASSPHRASE:
+       if (optval && optlen) {
+          optlen= (optlen <= (int)sizeof(m_CryptoSecret.str) ? optlen : (int)sizeof(m_CryptoSecret.str));
+          memcpy(optval, m_CryptoSecret.str, optlen);
+       } else {
+           throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+       }
+       break;
+
    case SRTO_PBKEYLEN:
       if (m_pCryptoControl)
          *(int32_t*)optval = m_pCryptoControl->KeyLen(); // Running Key length.
