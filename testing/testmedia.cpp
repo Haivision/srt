@@ -1175,17 +1175,19 @@ bytevector SrtSource::Read(size_t chunk)
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
-
-    CBytePerfMon perf;
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    else
     {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+        CBytePerfMon perf;
+        if (transmit_stats_report && (need_stats_report || need_bw_report))
+        {
+            // clear only if stats report is to be read
+            srt_bstats(m_sock, &perf, need_stats_report /* clear */);
 
-        if (need_bw_report)
-            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
-        if (need_stats_report)
-            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
+            if (need_bw_report)
+                Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
+            if (need_stats_report)
+                Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
+        }
     }
 
     ++counter;
@@ -1258,20 +1260,20 @@ void SrtTarget::Write(const bytevector& data)
     }
     else
     {
-    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
-    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+        const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+        const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    CBytePerfMon perf;
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
-    {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+        CBytePerfMon perf;
+        if (transmit_stats_report && (need_stats_report || need_bw_report))
+        {
+            // clear only if stats report is to be read
+            srt_bstats(m_sock, &perf, need_stats_report /* clear */);
 
-        if (need_bw_report)
-            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
-        if (need_stats_report)
-            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
-    }
+            if (need_bw_report)
+                Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
+            if (need_stats_report)
+                Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
+        }
     }
 
     ++counter;
