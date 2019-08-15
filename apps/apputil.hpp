@@ -60,6 +60,8 @@ inline void SysCleanupNetwork() {}
 
 #endif
 
+#include "srt.h"
+
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 #else
@@ -230,5 +232,27 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
 std::string OptionHelpItem(const OptionName& o);
 
 bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr);
+
+// Statistics module
+
+enum SrtStatsPrintFormat
+{
+    SRTSTATS_PROFMAT_INVALID = -1,
+    SRTSTATS_PROFMAT_2COLS = 0,
+    SRTSTATS_PROFMAT_JSON,
+    SRTSTATS_PROFMAT_CSV
+};
+
+SrtStatsPrintFormat ParsePrintFormat(std::string pf);
+
+class SrtStatsWriter
+{
+public:
+    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
+    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
+};
+
+std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
+
 
 #endif // INC__APPCOMMON_H
