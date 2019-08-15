@@ -138,7 +138,7 @@ struct LiveTransmitConfig
     int bw_report = 0;
     int stats_report = 0;
     string stats_out;
-    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
     bool auto_reconnect = true;
     bool full_stats = false;
 
@@ -265,29 +265,18 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         return 2;
     }
 
-    cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
-    cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
-    cfg.chunk_size   = stoi(Option<OutString>(params, "1316", o_chunk));
-    cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
-    cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
+    cfg.timeout      = Option<OutNumber>(params, "0", o_timeout);
+    cfg.timeout_mode = Option<OutNumber>(params, "0", o_timeout_mode);
+    cfg.chunk_size   = Option<OutNumber>(params, "1316", o_chunk);
+    cfg.bw_report    = Option<OutNumber>(params, "0", o_bwreport);
+    cfg.stats_report = Option<OutNumber>(params, "0", o_statsrep);
     cfg.stats_out    = Option<OutString>(params, "", o_statsout);
-    const string pf  = Option<OutString>(params, "default", o_statspf);
-    if (pf == "default")
+    const string pf = Option<OutString>(params, "default", o_statspf);
+    cfg.stats_pf     = ParsePrintFormat(pf);
+    if (cfg.stats_pf == SRTSTATS_PROFMAT_INVALID)
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-    }
-    else if (pf == "json")
-    {
-        cfg.stats_pf = PRINT_FORMAT_JSON;
-    }
-    else if (pf == "csv")
-    {
-        cfg.stats_pf = PRINT_FORMAT_CSV;
-    }
-    else
-    {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
+        cerr << "ERROR: Unsupported print format: " << pf << " -- fallback to default" << endl;
         return 1;
     }
 
@@ -341,7 +330,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size != SRT_LIVE_DEF_PLSIZE)
         transmit_chunk_size = cfg.chunk_size;
-    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
+    transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
