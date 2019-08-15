@@ -89,9 +89,16 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#ifdef __cplusplus
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+#else
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#endif
+
 #endif
 
 #endif

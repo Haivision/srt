@@ -51,6 +51,8 @@ void* transmit_accept_hook_op = nullptr;
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
+std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
+
 string DirectionName(SRT_EPOLL_OPT direction)
 {
     string dir_name;
@@ -186,23 +188,6 @@ template <> struct File<Relay> { typedef FileRelay type; };
 
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
-
-
-template <class PerfMonType>
-void PrintSrtStats(int sid, const PerfMonType& mon)
-{
-    Verb() << "======= SRT STATS: sid=" << sid;
-    Verb() << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv;
-    Verb() << "LOST PKT SENT: " << mon.pktSndLoss << " RECEIVED: " << mon.pktRcvLoss;
-    Verb() << "REXMIT SENT: " << mon.pktRetrans << " RECEIVED: " << mon.pktRcvRetrans;
-    Verb() << "RATE SENDING: " << mon.mbpsSendRate << " RECEIVING: " << mon.mbpsRecvRate;
-    Verb() << "BELATED RECEIVED: " << mon.pktRcvBelated << " AVG TIME: " << mon.pktRcvAvgBelatedTime;
-    Verb() << "REORDER DISTANCE: " << mon.pktReorderDistance;
-    Verb() << "WINDOW: FLOW: " << mon.pktFlowWindow << " CONGESTION: " << mon.pktCongestionWindow << " FLIGHT: " << mon.pktFlightSize;
-    Verb() << "RTT: " << mon.msRTT << "ms  BANDWIDTH: " << mon.mbpsBandwidth << "Mb/s\n";
-    Verb() << "BUFFERLEFT: SND: " << mon.byteAvailSndBuf << " RCV: " << mon.byteAvailRcvBuf;
-}
-
 
 void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
@@ -1192,20 +1177,15 @@ bytevector SrtSource::Read(size_t chunk)
     }
 
     CBytePerfMon perf;
-    if (need_stats_report || need_bw_report)
+    if (transmit_stats_report && (need_stats_report || need_bw_report))
     {
         // clear only if stats report is to be read
         srt_bstats(m_sock, &perf, need_stats_report /* clear */);
 
         if (need_bw_report)
-        {
-            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-        }
-
+            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
         if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf);
-        }
+            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
     }
 
     ++counter;
@@ -1239,6 +1219,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
 
 void SrtTarget::Write(const bytevector& data)
 {
+    static int counter = 1;
     ::transmit_throw_on_interrupt = true;
 
     // Check first if it's ready to write.
@@ -1275,6 +1256,25 @@ void SrtTarget::Write(const bytevector& data)
         // is updated in mctrl.
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
     }
+    else
+    {
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+
+    CBytePerfMon perf;
+    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    {
+        // clear only if stats report is to be read
+        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+
+        if (need_bw_report)
+            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
+        if (need_stats_report)
+            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
+    }
+    }
+
+    ++counter;
 }
 
 SrtRelay::SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
