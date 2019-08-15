@@ -267,6 +267,7 @@ int main( int argc, char** argv )
         o_logfa     ("<FA=all> Enabled Functional Areas", "lfa", "logfa"),
         o_logfile   ("<filepath> File to send logs to", "lf",  "logfile"),
         o_stats     ("<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_statspf   ("<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
         o_logint    (" Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush (" Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ("<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
@@ -285,6 +286,7 @@ int main( int argc, char** argv )
         { o_logfa, OptionScheme::ARG_ONE },
         { o_logfile, OptionScheme::ARG_ONE },
         { o_stats, OptionScheme::ARG_ONE },
+        { o_statspf, OptionScheme::ARG_ONE },
         { o_skipflush, OptionScheme::ARG_NONE },
         { o_stoptime, OptionScheme::ARG_ONE },
     };
@@ -401,6 +403,14 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = nullptr;
         }
     }
+
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    if (statspf == SRTSTATS_PROFMAT_INVALID)
+    {
+        cerr << "Invalid stats print format\n";
+        return 1;
+    }
+    transmit_stats_writer = SrtStatsWriterFactory(statspf);
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
