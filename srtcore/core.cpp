@@ -9919,11 +9919,8 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
     }
 }
 
-void CUDT::checkACKTimer(uint64_t currtime_tk)
+void CUDT::checkACKTimer(uint64_t currtime_tk, char debug_decision[10])
 {
-#if ENABLE_HEAVY_LOGGING
-    std::string decision;
-#endif
 
     if (currtime_tk > m_ullNextACKTime_tk  // ACK time has come
         // OR the number of sent packets since last ACK has reached
@@ -9942,10 +9939,8 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
 
         m_iPktCount = 0;
         m_iLightACKCount = 1;
+        strcpy(debug_decision, "ACK ");
 
-#if ENABLE_HEAVY_LOGGING
-        decision = "ACK ";
-#endif
     }
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
@@ -9958,14 +9953,12 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
         //send a "light" ACK
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++m_iLightACKCount;
-#if ENABLE_HEAVY_LOGGING
-        decision = "LITE-ACK ";
-#endif
+        strcpy(debug_decision, "LITE-ACK ");
     }
 }
 
 
-void CUDT::checkNAKTimer(uint64_t currtime_tk)
+void CUDT::checkNAKTimer(uint64_t currtime_tk, char debug_decision[10])
 {
     if (!m_bRcvNakReport)
         return;
@@ -9983,18 +9976,15 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
 
         CTimer::rdtsc(currtime_tk);
         m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-#if ENABLE_HEAVY_LOGGING
-            decision += "NAKREPORT";
-#endif
+        strcpy(debug_decision, "NAKREPORT");
     }
 }
 
-bool CUDT::checkExpTimer(uint64_t currtime_tk)
+bool CUDT::checkExpTimer(uint64_t currtime_tk, const char* debug_decision ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
 #if ENABLE_HEAVY_LOGGING & 1
-    if (decision == "")
-        decision = "NOTHING";
+    string decision = *debug_decision ? debug_decision : "NOTHING";
     HLOGC(mglog.Debug, log << CONID() << "checkTimer: ACTIVITIES PERFORMED: " << decision);
 #endif
 
@@ -10164,14 +10154,21 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
+    char debug_decision[25];
+    char* pdd = debug_decision;
+
     // Check if it is time to send ACK
-    checkACKTimer(currtime_tk);
+    checkACKTimer(currtime_tk, pdd);
+#if ENABLE_HEAVY_LOGGING
+    if (*pdd)
+        pdd += strlen(pdd);
+#endif
 
     // Check if it is time to send a loss report
-    checkNAKTimer(currtime_tk);
+    checkNAKTimer(currtime_tk, pdd);
 
     // Check if the connection is expired
-    if (checkExpTimer(currtime_tk))
+    if (checkExpTimer(currtime_tk, debug_decision))
         return;
 
     // Check if FAST or LATE packet retransmission is required

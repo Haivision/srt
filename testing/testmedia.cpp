@@ -1768,6 +1768,20 @@ RETRY_READING:
 
 #endif
 
+static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
+{
+    CBytePerfMon perf;
+    // clear only if stats report is to be read
+    srt_bstats(sock, &perf, clr);
+
+    if (bw)
+        Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
+    if (stats)
+        Verb() << transmit_stats_writer->WriteStats(sock, perf) << VerbNoEOL;
+}
+
+
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
@@ -1851,20 +1865,20 @@ bytevector SrtSource::Read(size_t chunk)
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
-#endif
-
-    CBytePerfMon perf;
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    else
     {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
-
-        if (need_bw_report)
-            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
-        if (need_stats_report)
-            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
+    #endif
 
     ++counter;
 
@@ -1928,28 +1942,26 @@ void SrtTarget::Write(const bytevector& data)
         Error(UDT::getlasterror(), "srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+
     if (have_group)
     {
         // For listener group this is not necessary. The group information
         // is updated in mctrl.
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
     else
     {
-    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
-    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
-
-    CBytePerfMon perf;
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
-    {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
-
-        if (need_bw_report)
-            Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
-        if (need_stats_report)
-            Verb() << transmit_stats_writer->WriteStats(m_sock, perf) << VerbNoEOL;
-    }
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
 
     ++counter;

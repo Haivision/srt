@@ -1501,9 +1501,9 @@ private: // Timers
     uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
-    void checkACKTimer (uint64_t currtime_tk);
-    void checkNAKTimer(uint64_t currtime_tk);
-    bool checkExpTimer (uint64_t currtime_tk);  // returns true if the connection is expired
+    void checkACKTimer (uint64_t currtime_tk, char debug_decision[10]);
+    void checkNAKTimer(uint64_t currtime_tk, char debug_decision[10]);
+    bool checkExpTimer (uint64_t currtime_tk, const char* debug_decision);  // returns true if the connection is expired
     void checkRexmitTimer(uint64_t currtime_tk);
 
 public: // For the use of CCryptoControl
