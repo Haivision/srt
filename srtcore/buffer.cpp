@@ -192,6 +192,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
+        SRT_ASSERT(s->m_pNext);
         s = s->m_pNext;
     }
     m_pLastBlock = s;
