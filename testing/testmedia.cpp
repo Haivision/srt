@@ -1775,9 +1775,9 @@ static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
     srt_bstats(sock, &perf, clr);
 
     if (bw)
-        Verb() << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << VerbNoEOL;
+        cout << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth);
     if (stats)
-        Verb() << transmit_stats_writer->WriteStats(sock, perf) << VerbNoEOL;
+        cout << transmit_stats_writer->WriteStats(sock, perf);
 }
 
 
