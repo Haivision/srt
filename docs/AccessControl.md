@@ -2,25 +2,40 @@
 
 ## Motivation
 
-One of the information that can be interchanged when the connection is being established in SRT is "stream id", which can be used in caller-listener connection layout, and it's a string of maximum 512 characters set on the caller side and able to be retrieved at the listener side on the newly accepted socket through a socket option (see `SRTO_STREAMID` in [API.md](API.md)).
+One type of information that can be interchanged when a connection is being 
+established in SRT is "Stream ID", which can be used in a caller-listener 
+connection layout. This is a string of maximum 512 characters set on the caller 
+side. It can be retrieved at the listener side on the newly accepted socket 
+through a socket option (see `SRTO_STREAMID` in [API.md](API.md)).
 
-Since SRT version 1.3.3 a callback can be registered on the listener socket, for an application to make decisions on incoming caller connections. This callback is provided, among others, with the value of Stream ID from the incoming connection. Basing on this information, the application can accept or reject the connection, select desired data stream, or set appropriate passphrase for the connection.
+As of SRT version 1.3.3 a callback can be registered on the listener socket for 
+an application to make decisions on incoming caller connections. This callback, 
+among others, is provided with the value of Stream ID from the incoming 
+connection. Based on this information, the application can accept or reject the 
+connection, select the desired data stream, or set an appropriate passphrase for 
+the connection.
 
 ## Purpose
 
-The stream ID value can be used as free-form, but there is a recommended protocol so that all SRT users speak the same language here. The intent of the protocol is:
+The Stream ID value can be used as free-form, but there is a recommended 
+convention so that all SRT users speak the same language. The intent of the 
+convention is to:
 
-- maintain distinction from a "readable name" in a free form
+- promote readability and consistency among free-form names
 - interpret some typical data in the key-value style
 
 ## Character Encoding
 
-The stream ID uses UTF-8 encoding.
+The Stream ID uses UTF-8 encoding.
 
-## General syntax
+## General Syntax
 
-This recommended protocol starts with the characters known as executable
-specification in POSIX: `#!`. The next two characters are:
+This recommended syntax starts with the characters known as an executable
+specification in POSIX: 
+
+`#!` 
+
+The next two characters are:
 
 - `:` - this marks the YAML format, the only one currently used
 - The content format, which is either:
@@ -33,50 +48,81 @@ The form of the key-value pair is:
 
 - `key1=value1,key2=value2`...
 
-## Standard keys
+## Standard Keys
 
-Beside the general syntax, there are several top-level keys treated as standard keys. Other keys can be used by users as they see fit.
+Beside the general syntax, there are several top-level keys treated as standard 
+keys. Other keys can be used as needed.
 
 The following keys are standard:
 
-- `u`: User Name, or authorization name that is expected to control which password should be used for the connection. The application should interpret it to distinguish which user should be used by the listener party to set up the password
-- `r`: Resource Name. This identifies the name of the resource, should the listener party be able to serve multiple resources for choice
-- `h`: Host Name. This identifies the hostname of the resource. For example, to request a stream with the URI somehost.com/videos/querry.php?vid=366.  The hostname field should have “somehost.com”, and the resource name can have “videos/querry.php?vid=366” or simply "366". Note that this is still a key to be specified explicitly, although support tools that apply simplifications and URI extraction are expected to put here exactly the host part from the URI here.
-- `s`: Session ID. This is a temporary resource identifier negotiated with the server, used just for verification. This is a one-shot identifier, invalidated after the first use. The expected usage is when details for the resource and authorization are negotiated over a separate connection first, and then the session ID is used here alone.
-- `t`: Type. This specifies the purpose of the connection. Several standard types are defined, but users may extend the use:
-   - `stream` (default, if not specified): you want to exchange the user-specified payload of application-defined purpose
-   - `file`: You want to transmit a file, and `r` is the filename
-   - `auth`: You want to exchange the data needed for further exchange of sensible data. The `r` value states its purpose. No specific possible values for that are known so far, maybe in future
-- `m`: Mode expected for this connection
+- `u`: **User Name**, or authorization name, that is expected to control which 
+password should be used for the connection. The application should interpret 
+it to distinguish which user should be used by the listener party to set up the 
+password.
+- `r`: **Resource Name** identifies the name of the resource and facilitates
+selection should the listener party be able to serve multiple resources.
+- `h`: **Host Name** identifies the hostname of the resource. For example, 
+to request a stream with the URI `somehost.com/videos/querry.php?vid=366` the 
+`hostname` field should have “somehost.com”, and the resource name can have 
+“videos/querry.php?vid=366” or simply "366". Note that this is still a key to be 
+specified explicitly. Support tools that apply simplifications and URI extraction 
+are expected to insert only the host portion of the URI here.
+- `s`: **Session ID** is a temporary resource identifier negotiated with 
+the server, used just for verification. This is a one-shot identifier, invalidated 
+after the first use. The expected usage is when details for the resource and 
+authorization are negotiated over a separate connection first, and then the 
+session ID is used here alone.
+- `t`: **Type** specifies the purpose of the connection. Several standard 
+types are defined, but users may extend the use:
+   - `stream` (default, if not specified): for exchanging the user-specified 
+   payload for an application-defined purpose
+   - `file`: for transmitting a file, where `r` is the filename
+   - `auth`: for exchanging sensible data. The `r` value states its purpose. 
+   No specific possible values for that are known so far (FUTURE USE]
+- `m`: **Mode** expected for this connection:
    - `request` (default): the caller wants to receive the stream
    - `publish`: the caller wants to send the stream data
-   - `bidirectional`: the bidirectional data exchange is expected
+   - `bidirectional`:  bidirectional data exchange is expected
 
-Note that `m` is not required in case when you don't use streamid to distinguish authorization or resources and your caller is expected to send the data. This is only for cases when the server at the listener party can handle various purposes of the connection and is therefore required to get known what the caller is attempting to do.
+Note that `m` is not required in the case where you don't use `streamid` to 
+distinguish authorization or resources, and your caller is expected to send the 
+data. This is only for cases where the listener can handle various purposes of the 
+connection and is therefore required to know what the caller is attempting to do.
 
 Examples:
 
 ```#!::u=admin,r=bluesbrothers1_hi```
 
-This specifies the username and the resource name of the stream to be served to the caller.
+This specifies the username and the resource name of the stream to be served 
+to the caller.
 
 ```#!::u=johnny,t=file,m=publish,r=results.csv```
 
-This specifies that the file is expected to be transmitted from the caller to the listener and its name is `results.csv`.
+This specifies that the file is expected to be transmitted from the caller to 
+the listener and its name is `results.csv`.
 
 
 ## Example
 
-An example usage os Stream ID functionality and the listener callback can be fount under tests/test_listen_callback.cpp.
+An example of Stream ID functionality and the listener callback can be 
+found under `tests/test_listen_callback.cpp`.
 
-A listener can register a callback to be called in the middle of accepting a new socket connection.
+A listener can register a callback to be called in the middle of accepting a 
+new socket connection:
 
 ```
 srt_listen(server_sock, 5);
 srt_listen_callback(server_sock, &SrtTestListenCallback, NULL);
 ```
 
-A callback function has to be implementaed by the upstream application. Example implementation follows. In this example, the function tries to interpret the stream ID value first according to the Access Control Guidelines and extract the username under `u` key, otherwise it falls back to a free-form specified username. Depending on the user, it sets appropriate password to the expected connection so that it can be rejected when the password isn't correct, or if the user isn't found in the database (`passwd` map) the function itself rejects a connection. Note that it can be done by both returning -1 and by throwing an exception.
+A callback function has to be implemented by the upstream application. In the 
+example below, the function tries to interpret the Stream ID value first according 
+to the Access Control guidelines and to extract the username from the `u` key.
+Otherwise it falls back to a free-form specified username. Depending on the user, 
+it sets the appropriate password for the expected connection so that it can be 
+rejected if the password isn't correct. If the user isn't found in the 
+database (`passwd` map) the function itself rejects the connection. Note that 
+this can be done by both returning -1 and by throwing an exception.
 
 ```
 int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion,
