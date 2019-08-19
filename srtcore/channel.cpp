@@ -207,9 +207,9 @@ void CChannel::setUDPSockOpt()
 #ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
-          if(m_iIPversion == AF_INET)
+          if (m_iIPversion == AF_INET)
           {
-              if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
           else
@@ -237,9 +237,9 @@ void CChannel::setUDPSockOpt()
 
       if (-1 != m_iIpToS)
       {
-          if(m_iIPversion == AF_INET)
+          if (m_iIPversion == AF_INET)
           {
-              if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
           else
@@ -352,7 +352,7 @@ int CChannel::getIpTTL() const
 int CChannel::getIpToS() const
 {
    socklen_t size = sizeof(m_iIpToS);
-   if(m_iIPversion == AF_INET)
+   if (m_iIPversion == AF_INET)
    {
       ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (char *)&m_iIpToS, &size);
    }
