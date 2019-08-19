@@ -41,7 +41,7 @@ size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
 void* transmit_accept_hook_op = nullptr;
 
-string DirectionName(SRT_EPOLL_OPT direction)
+string DirectionName(SRT_EPOLL_T direction)
 {
     string dir_name;
     if (direction)

@@ -202,7 +202,6 @@ int srt_epoll_create() { return CUDT::epoll_create(); }
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
 int srt_epoll_add_usock(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
-int srt_epoll_add_usock_edge(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events, true); }
 
 int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
@@ -231,12 +230,7 @@ int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_sso
 
 int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
-    return CUDT::epoll_update_usock(eid, u, events, false);
-}
-
-int srt_epoll_update_usock_edge(int eid, SRTSOCKET u, const int * events)
-{
-    return CUDT::epoll_update_usock(eid, u, events, true);
+    return CUDT::epoll_update_usock(eid, u, events);
 }
 
 int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)

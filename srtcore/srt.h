@@ -489,11 +489,12 @@ enum SRT_EPOLL_OPT
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN       = 0x1,
    SRT_EPOLL_OUT      = 0x4,
-   SRT_EPOLL_ERR      = 0x8
+   SRT_EPOLL_ERR      = 0x8,
+   SRT_EPOLL_ET       = 1u << 31
 };
+// These are actually flags - use a bit container:
+typedef int32_t SRT_EPOLL_T;
 
-// For cases of walking over event bits
-static const int SRT_EPOLL_MIN = 1, SRT_EPOLL_MAX = 0x10;
 
 #ifdef __cplusplus
 // In C++ these enums cannot be treated as int and glued by operator |.

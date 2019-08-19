@@ -151,7 +151,7 @@ public:
    int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
-   std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, int events, bool edgeTrg)
+   std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, int32_t events, bool edgeTrg)
    {
         return m_USockWatchState.insert(std::make_pair(sock, Wait(events, edgeTrg, nullNotice())));
    }
@@ -246,29 +246,10 @@ public:
    {
        // This function should check if this event was subscribed
        // as edge-triggered, and if so, clear the event from the notice.
-       // Check edge mode at the subscriber
-       if (i->parent->edgeOnly() == 0) // have no edge-triggered
-           return;
-
-       // Currently we have IN (1), OUT (4) and ERR (8).
-       // XXX condider unwinding this loop somehow or simply
-       // enumerate all cases of events.
-       for (int b = SRT_EPOLL_MIN; b < SRT_EPOLL_MAX; b = b << 1)
-       {
-           if (b & i->parent->edgeOnly())
-           {
-               // This event type is subscribed for edge-triggered
-               // So clear the corresponding event.
-               // NOTE: all of them have been reported, so all of those
-               // that were subscribed for edge should be cleared now.
-
-               const int newstate = i->events & (~b); // CLEAR event bits
-               if (!newstate)
-                   removeExistingNotices(*i->parent);
-               else
-                   i->events = newstate;
-           }
-       }
+       // Update events and check edge mode at the subscriber
+       i->events &= ~i->parent->edgeOnly();
+       if(!i->events)
+           removeExistingNotices(*i->parent);
    }
 };
 
@@ -294,7 +275,7 @@ public: // for CUDTUnited API
       /// @param [in] events events to watch.
       /// @return 0 if success, otherwise an error number.
 
-   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL, bool edge = false) { return update_usock(eid, u, events, edge); }
+   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL) { return update_usock(eid, u, events); }
 
       /// add a system socket to an EPoll.
       /// @param [in] eid EPoll ID.
@@ -309,7 +290,7 @@ public: // for CUDTUnited API
       /// @param [in] u UDT socket ID.
       /// @return 0 if success, otherwise an error number.
 
-   int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null, false);}
+   int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null);}
 
       /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
       /// @param [in] eid EPoll ID.
@@ -323,7 +304,7 @@ public: // for CUDTUnited API
       /// @param [in] events events to watch.
       /// @return 0 if success, otherwise an error number.
 
-   int update_usock(const int eid, const SRTSOCKET& u, const int* events, bool edgetriggered);
+   int update_usock(const int eid, const SRTSOCKET& u, const int* events);
 
       /// update a system socket events from an EPoll.
       /// @param [in] eid EPoll ID.
@@ -346,7 +327,7 @@ public: // for CUDTUnited API
 
       /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
       /// @param [in] eid EPoll ID.
-      /// @param [out] fdsSet array of user socket events (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR).
+      /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
       /// @param [int] fdsSize of fds array
       /// @param [in] msTimeOut timeout threshold, in milliseconds.
       /// @param [bool] edgeMode if true the events returned in fdsSet are then erased

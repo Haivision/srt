@@ -1329,13 +1329,13 @@ int CUDTUnited::epoll_create()
 }
 
 int CUDTUnited::epoll_add_usock(
-   const int eid, const SRTSOCKET u, const int* events, bool edge)
+   const int eid, const SRTSOCKET u, const int* events)
 {
    CUDTSocket* s = locate(u);
    int ret = -1;
    if (s)
    {
-      ret = m_EPoll.add_usock(eid, u, events, edge);
+      ret = m_EPoll.add_usock(eid, u, events);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -1353,13 +1353,13 @@ int CUDTUnited::epoll_add_ssock(
 }
 
 int CUDTUnited::epoll_update_usock(
-   const int eid, const SRTSOCKET u, const int* events, bool edge)
+   const int eid, const SRTSOCKET u, const int* events)
 {
    CUDTSocket* s = locate(u);
    int ret = -1;
    if (s)
    {
-      ret = m_EPoll.update_usock(eid, u, events, edge);
+      ret = m_EPoll.update_usock(eid, u, events);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -2492,11 +2492,11 @@ int CUDT::epoll_create()
    }
 }
 
-int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events, bool edge)
+int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
 {
    try
    {
-      return s_UDTUnited.epoll_add_usock(eid, u, events, edge);
+      return s_UDTUnited.epoll_add_usock(eid, u, events);
    }
    catch (CUDTException e)
    {
@@ -2533,11 +2533,11 @@ int CUDT::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events)
 }
 
 int CUDT::epoll_update_usock(
-   const int eid, const SRTSOCKET u, const int* events, bool edge)
+   const int eid, const SRTSOCKET u, const int* events)
 {
    try
    {
-      return s_UDTUnited.epoll_update_usock(eid, u, events, edge);
+      return s_UDTUnited.epoll_update_usock(eid, u, events);
    }
    catch (CUDTException e)
    {

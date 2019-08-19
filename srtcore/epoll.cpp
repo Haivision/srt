@@ -222,7 +222,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 }
 
 // Need this to atomically modify polled events (ex: remove write/keep read)
-int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events, bool edgeTriggered)
+int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     CGuard pg(m_EPollLock);
 
@@ -230,7 +230,9 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events, b
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-    const int evts = events ? *events : (UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR);
+    int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
+    bool edgeTriggered = evts & SRT_EPOLL_ET;
+    evts &= ~SRT_EPOLL_ET;
     if (evts)
     {
         pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = p->second.addWatch(u, evts, edgeTriggered);
@@ -242,9 +244,14 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events, b
         }
         else if (!iter_new.second) // if it was freshly added, no notice object exists
         {
-            // This remove the event notice entry, but leaves the subscription
+            // This removes the event notice entry, but leaves the subscription
             p->second.removeEvents(wait);
         }
+    }
+    else if (edgeTriggered)
+    {
+        // Specified only SRT_EPOLL_ET flag, but no event flag. Error.
+        throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
     else
     {
@@ -347,20 +354,18 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            int total = 0; // This is a list, so we will count it while iteration
-
-            for (CEPollDesc::enotice_t::iterator i = ed.enotice_begin(), i_next = i;
-                    i != ed.enotice_end(); i = i_next)
+            int total = 0; // This is a list, so count it during iteration
+            CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
+            while (i != ed.enotice_end())
             {
-                ++i_next;
+                int pos = total; // previous past-the-end position
                 ++total;
                 if (total > fdsSize)
                     break;
 
-                int pos = total-1;
                 fdsSet[pos] = *i;
 
-                ed.checkEdge(i); // NOTE: potentially deletes `i`
+                ed.checkEdge(i++); // NOTE: potentially deletes `i`
             }
             if (total)
                 return total;
