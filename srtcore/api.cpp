@@ -1662,9 +1662,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       // being currently done in the queues, if any.
       mx.m_pSndQueue->setClosing();
       mx.m_pRcvQueue->setClosing();
-      mx.m_pChannel->close();
       delete mx.m_pSndQueue;
       delete mx.m_pRcvQueue;
+      mx.m_pChannel->close();
       delete mx.m_pTimer;
       delete mx.m_pChannel;
       m_mMultiplexer.erase(m);
