@@ -119,6 +119,7 @@ m_iRcvBufSize(65536),
 m_iIpV6Only(-1),
 m_BindAddr(version)
 {
+   SRT_ASSERT(version == AF_INET || version == AF_INET6);
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 }
 
@@ -201,6 +202,8 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
+      SRT_ASSERT(m_iIPversion == AF_INET || m_iIPversion == AF_INET6);
+
 #ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
@@ -209,7 +212,7 @@ void CChannel::setUDPSockOpt()
               if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
-          else if (m_BindAddr.family() == AF_INET6)
+          else
           {
               // If IPv6 address is unspecified, set BOTH IP_TTL and IPV6_UNICAST_HOPS.
 
@@ -239,7 +242,7 @@ void CChannel::setUDPSockOpt()
               if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
-          else if (m_BindAddr.family() == AF_INET6)
+          else
           {
               // If IPv6 address is unspecified, set BOTH IP_TOS and IPV6_TCLASS.
 
