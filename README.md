@@ -41,8 +41,16 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * Pthreads (for POSIX systems it's builtin, for Windows there's a library)
 
 ## For Linux:
+
 Install cmake and openssl-devel (or similar name) package. For pthreads
 there should be -lpthreads linker flag added.
+
+Default installation path prefix of `make install` is `/usr/local`.
+
+To define a different installation path prefix, use the `--prefix` option with `configure`
+or [`-DCMAKE_INSTALL_PREFIX`](https://cmake.org/cmake/help/v3.0/variable/CMAKE_INSTALL_PREFIX.html) CMake option.
+
+To uninstall, call `make -n install` to list all the dependencies, and then pass the list to `rm`.
 
 ### Ubuntu 14
 ```
