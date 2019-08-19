@@ -44,6 +44,11 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 Install cmake and openssl-devel (or similar name) package. For pthreads
 there should be -lpthreads linker flag added.
 
+Default installation directory of `make install` is `/usr/local`.
+To define a different installation path, use the `--prefix` option with `configure` or `-DCMAKE_INSTALL_PREFIX` CMake option.
+
+To uninstall, call `make -n install` to list all the dependencies, and then pass the list to `rm`.
+
 ### Ubuntu 14
 ```
 sudo apt-get update
