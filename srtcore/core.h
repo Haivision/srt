@@ -705,7 +705,7 @@ private: // synchronization: mutexes and conditions
     pthread_mutex_t m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
 
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    pthread_mutex_t m_RecvAckLock;               // Protects the state changes while processing incomming ACK
+    pthread_mutex_t m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
 
 
     pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
