@@ -628,12 +628,10 @@ SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
 SRT_API int srt_epoll_create(void);
 SRT_API int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API int srt_epoll_add_usock_edge(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
 SRT_API int srt_epoll_remove_usock(int eid, SRTSOCKET u);
 SRT_API int srt_epoll_remove_ssock(int eid, SYSSOCKET s);
 SRT_API int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API int srt_epoll_update_usock_edge(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
