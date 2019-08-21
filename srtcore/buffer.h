@@ -267,7 +267,7 @@ public:
    int readBufferToFile(std::fstream& ofs, int len);
 
       /// Update the ACK point of the buffer.
-      /// @param [in] len size of data to be acknowledged.
+      /// @param [in] len number of units to be acknowledged.
       /// @return 1 if a user buffer is fulfilled, otherwise 0.
 
    void ackData(int len);
@@ -425,8 +425,8 @@ private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer
-   int m_iSize;                         // size of the protocol buffer in units
+   CUnit** m_pUnit;                     // pointer to the protocol buffer (array of CUnit* items)
+   const int m_iSize;                   // size of the array of CUnit* items
    CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)
