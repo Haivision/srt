@@ -216,7 +216,7 @@ void CTimer::sleepto(uint64_t nexttime)
 #else
        const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
        // The while loop ensures that (t < m_ullSchedTime).
-       // Division by frequency ьшпре loos prevision.
+       // Division by frequency may lose precision, therefore can be 0.
        if (wait_us == 0)
            break;
 
