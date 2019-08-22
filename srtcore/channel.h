@@ -169,7 +169,7 @@ private:
    void setUDPSockOpt();
 
 private:
-   int m_iIPversion;                    // IP version
+   const int m_iIPversion;              // IP version
    int m_iSockAddrSize;                 // socket address structure size (pre-defined to avoid run-time test)
 
    UDPSOCKET m_iSocket;                 // socket descriptor

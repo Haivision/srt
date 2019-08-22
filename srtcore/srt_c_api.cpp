@@ -317,6 +317,11 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
+enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+{
+    return CUDT::rejectReason(sock);
+}
+
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
     if (!hook)
