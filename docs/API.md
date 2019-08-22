@@ -960,12 +960,17 @@ must have a value greater than 1000 - `SRTO_PEERLATENCY`.
 - **[GET or SET]** - A string limited to 512 characters that can be set on the 
 socket prior to connecting. This stream ID will be able to be retrieved by the 
 listener side from the socket that is returned from `srt_accept` and was 
-connected by a socket with that set stream ID. SRT does not enforce any special 
-interpretation of the contents of this string. As this uses internally the 
-`std::string` type, there are additional functions for it in the legacy/C++ API 
-(udt.h): `UDT::setstreamid` and `UDT::getstreamid`. This option doesn't make sense 
-in Rendezvous connection; the result might be that simply one side will override 
-the value from the other side and it's the matter of luck which one would win
+connected by a socket with that set stream ID (so you usually use SET on the
+socket used for `srt_connect` and GET on the socket retrieved from `srt_accept`).
+This string can be used completely free-form, however it's highly recommended
+to keep the convention of the protocol as described below in **Stream ID
+protocol**.
+
+As this uses internally the `std::string` type, there are additional functions
+for it in the legacy/C++ API (udt.h): `UDT::setstreamid` and
+`UDT::getstreamid`. This option doesn't make sense in Rendezvous connection;
+the result might be that simply one side will override the value from the other
+side and it's the matter of luck which one would win
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
@@ -1061,7 +1066,90 @@ where x = ("%d", (version>>16) & 0xff), etc.
 - SET could eventually be supported for testing 
 
 
+Stream ID protocol
+------------------
 
+The stream ID value can be used as free-form, but there is a recommended
+protocol so that all SRT users speak the same language here. The intent of
+the protocol is:
+
+- maintain distinction from a "readable name" in a free form
+- interpret some typical data in the key-value style
+
+The string in the stream ID field uses UTF-8 encoding.
+
+This protocol starts with the characters known as executable specification
+in POSIX: `#!`. The next two characters are:
+
+- `:` - this marks the YAML format, the only one currently used
+- The content format, which is either:
+   - `:` - the comma-separated keys with no nesting
+   - `{` - like above, but nesting is allowed and must end with `}`
+
+The form of the key-value pair is:
+
+- `key1=value1,key2=value2`...
+
+Beside the general syntax, there are several top-level keys treated as
+standard keys. Other keys can be used by users as they see fit.
+
+The following keys are standard:
+
+- `u`: User Name
+    - Meaning: User or authorization name that is expected to control
+      which password should be used for the connection.
+    - Purpose: The application should interpret it to distinguish which
+      user should be used by the listener party to set up the password,
+      as well as whether it is privileged to access the resource
+- `r`: Resource Name.
+    - Meaning: This identifies the name of the resource
+    - Purpose: Allows the service application serve various resources
+      identifiable by this name.
+- `s`: Session ID.
+    - Meaning: A temporary resource identifier negotiated with the server,
+      valid only once and together with authorization connection
+    - Purpose: to serve for more complicated and long lasting authorization
+      process, which should be leveraged to a separate connection so that
+      the connection for the transmission gets quick access to the data
+      after connecting
+- `t`: Type.
+    - Meaning: Specifies the purpose of the connection. Several
+      standard types are defined, but users may extend the use:
+        - `stream` (default, if not specified): you want to exchange the
+           user-specified payload of application-defined purpose
+        - `file`: You want to transmit a file, and `r` is the filename
+        - `auth`: You want to exchange the data needed for further exchange
+          of sensible data. The `r` value states its purpose. No specific
+          possible values for that are known so far, maybe in future
+    - Purpose: Allows a server to distinguish the purpose of the
+      connection and to know how to interpret the resource name and
+      contents, for cases when a single server may accept connections
+      made for purposes other than just stream transmission
+- `m`: Mode expected for this connection
+   - `request` (default): the caller wants to receive the stream
+   - `publish`: the caller wants to send the stream data
+   - `bidirectional`: the bidirectional data exchange is expected
+
+Note that `m` is not required in case when you don't use streamid and
+your caller is expected to send the data. This is only for cases when
+the server at the listener party is required to get known what the
+caller is attempting to do.
+
+Examples:
+
+```
+#!::u=admin,r=bluesbrothers1_hi
+```
+
+This specifies the username and the resource name of the stream to be served
+to the caller.
+
+```
+#!::u=johnny,t=file,m=publish,r=results.csv
+```
+
+This specifies that the file is expected to be transmitted from the caller
+to the listener and its name is `results.csv`.
 
 
 Transmission types

@@ -231,13 +231,6 @@ public: // internal API
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
 
-    // Input rate constants
-    static const uint64_t
-        SND_INPUTRATE_FAST_START_US = 500*1000,
-        SND_INPUTRATE_RUNNING_US = 1*1000*1000;
-    static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
-    static const int SND_INPUTRATE_INITIAL_BPS = 10000000/8;  // 10 Mbps (1.25 MBps)
-
     int handshakeVersion()
     {
         return m_ConnRes.m_iVersion;
@@ -366,6 +359,7 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
     void acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
@@ -673,6 +667,21 @@ private: // Receiving related data
     pthread_cond_t m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
+    CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
+
+    // FORWARDER
+public:
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+    {
+        return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
+    }
+private:
+    void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
+    {
+        m_cbAcceptHook.set(opaq, hook);
+    }
+
+
 private: // synchronization: mutexes and conditions
     pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
 
@@ -801,6 +810,10 @@ private: // Timers
     uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
+    void checkACKTimer (uint64_t currtime_tk);
+    void checkNAKTimer(uint64_t currtime_tk);
+    bool checkExpTimer (uint64_t currtime_tk);  // returns true if the connection is expired
+    void checkRexmitTimer(uint64_t currtime_tk);
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration

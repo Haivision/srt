@@ -20,13 +20,8 @@ written by
 #ifndef CRYSPR_GNUTLS_H
 #define CRYSPR_GNUTLS_H
 
-#include <gnutls/gnutls.h>
-#include <gnutls/crypto.h>  //gnutls_rnd()
-
-#include <nettle/aes.h>     //has AES cipher
-#include <nettle/ctr.h>     //has CTR cipher mode
-#include <nettle/pbkdf2.h>  //has Password-based Key Derivation Function 2
-//#include <nettle/sha1.h>  //No need for sha1 since we have pbkdf2
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/aes.h>
 
 
 /* Define CRYSPR_HAS_AESCTR to 1 if this CRYSPR has AESCTR cipher mode
@@ -47,15 +42,22 @@ written by
 */
 #define CRYSPR_HAS_PBKDF2 1
 
+// mbedtls uses in the enc/dec functions 16-byte blocks
+// for xcryption. This is not marked by any constant. See
+// e.g. <mbedtls/aes.h>, mbedtls_aes_crypt_ecb signature.
+#if CRYSPR_AESBLKSZ != 16
+#error mbedtls requires AES single block size 16 bytes, implicitly.
+#endif
+
 /*
 #define CRYSPR_AESCTX to the CRYSPR specifix AES key context object.
 This type reserves room in the CRYPSPR control block for Haicrypt KEK and SEK
 It is set from hte keystring through CRYSPR_methods.aes_set_key and passed
 to CRYSPR_methods.aes_XXX.
 */
-typedef struct aes_ctx CRYSPR_AESCTX;   /* CRYpto Service PRovider AES key context */
+typedef struct mbedtls_aes_context CRYSPR_AESCTX;   /* CRYpto Service PRovider AES key context */
 
-struct tag_CRYSPR_methods *crysprGnuTLS(void);
+struct tag_CRYSPR_methods *crysprMbedtls(void);
 
 #endif /* CRYSPR_GNUTLS_H */
 
