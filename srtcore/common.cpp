@@ -65,6 +65,9 @@ modified by
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <win/wintime.h>
+#ifndef __MINGW__
+   #include <intrin.h>
+#endif
 #endif
 
 #include <string>
@@ -203,9 +206,19 @@ void CTimer::sleepto(uint64_t nexttime)
        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
 #endif
 #else
-       const uint64_t wait_us = 10000;  // 10 ms
+       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
+       // The while loop ensures that (t < m_ullSchedTime).
+       // Division by frequency ьшпре loos prevision.
+       if (wait_us == 0)
+           break;
 
        timeval now;
        gettimeofday(&now, 0);
@@ -599,11 +612,6 @@ const char* CUDTException::getErrorMessage()
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   // period
-   #ifndef _WIN32
-   m_strMsg += ".";
-   #endif
-
    return m_strMsg.c_str();
 }
 
@@ -834,6 +842,33 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
+extern const char* const srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter type collision"
+};
+
+const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+{
+    int id = rid;
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
+}
+
 // Some logging imps
 #if ENABLE_LOGGING
 
@@ -851,11 +886,8 @@ std::string FormatTime(uint64_t time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
-#else
-    strftime(tmp_buf, 512, "%T.", &tm);
-#endif
+    strftime(tmp_buf, 512, "%X.", &tm);
+
     ostringstream out;
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
@@ -888,22 +920,9 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, 0);
-        time_t t = tv.tv_sec;
-        struct tm tm = SysLocalTime(t);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        // Nice to have %T as "standard time format" for logs,
-        // but it's Single Unix Specification and doesn't exist
-        // on Windows. Use %X on Windows (it's described as
-        // current time without date according to locale spec).
-        //
-        // XXX Consider using %X everywhere, as it should work
-        // on both systems.
-#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
-#else
-        strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 
