@@ -983,9 +983,11 @@ otherwise the connection is rejected.
 
 When this option is set to FALSE **on both connection parties**, the
 connection is allowed even if the passphrase differs on both parties,
-or it was set only on one party. It is however limited - the payload sent by
-the party that has set a passphrase cannot be received (that is, the payload is
-sent over the network, but won't be decrypted and delivered).
+or it was set only on one party. Note that the party that has set a passphrase
+is still allowed to send data over the network. However, the receiver will not
+be able to decrypt that data and will not deliver it to the application. The
+party that has set no passphrase can send (unencrypted) data that will be
+successfully received by its peer.
 
 This option can be used in some specific situations when the user knows
 both parties of the connection, so there's no possible situation of a rogue
