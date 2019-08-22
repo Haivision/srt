@@ -328,9 +328,13 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    int64_t entertime = CTimer::getTime();
-    if (!fdsSet || fdsSize <= 0)
+    // It is allowed to call this function witn fdsSize == 0
+    // and therefore also NULL fdsSet. This will then only report
+    // the number of ready sockets, just without information which.
+    if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
+
+    int64_t entertime = CTimer::getTime();
 
     while (true)
     {
@@ -348,18 +352,13 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            if (ed.watch_empty() && (msTimeOut < 0))
-            {
-                // This may happen also in runtime when all subscribed sockets get closed.
-                throw CUDTException(MJ_NOTSUP, MN_INVAL);
-            }
-
             int total = 0; // This is a list, so count it during iteration
             CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
             while (i != ed.enotice_end())
             {
                 int pos = total; // previous past-the-end position
                 ++total;
+
                 if (total > fdsSize)
                     break;
 
@@ -404,13 +403,6 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
       {
          CGuard::leaveCS(m_EPollLock);
          throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
-      }
-
-      if (p->second.watch_empty() && p->second.m_sLocals.empty() && (msTimeOut < 0))
-      {
-         // no socket is being monitored, this may be a deadlock
-         CGuard::leaveCS(m_EPollLock);
-         throw CUDTException(MJ_NOTSUP, MN_INVAL);
       }
 
       // Sockets with exceptions are returned to both read and write sets.
