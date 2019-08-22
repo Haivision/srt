@@ -17,7 +17,6 @@ SOURCES
 cryspr.c
 cryspr-gnutls.c
 hcrypt.c
-hcrypt-gnutls.c
 hcrypt_ctx_rx.c
 hcrypt_ctx_tx.c
 hcrypt_rx.c
