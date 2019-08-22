@@ -41,7 +41,7 @@ TEST(CEPoll, InfiniteWait2)
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, nullptr, 0, -1, 0), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, nullptr, 0, -1), SRT_ERROR);
 
     try
     {
@@ -93,7 +93,7 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1, 0), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     try
     {
@@ -162,7 +162,7 @@ TEST(CEPoll, WaitEmptyCall2)
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1, 0), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1), SRT_ERROR);
 
     try
     {
@@ -242,7 +242,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1, 0), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     try
     {
@@ -360,8 +360,8 @@ TEST(CEPoll, NotifyConnectionBreak)
     SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_NE(client_sock, SRT_ERROR);
 
-    const int yes = 1;
-    const int no = 0;
+    const int yes SRT_ATR_UNUSED = 1;
+    const int no SRT_ATR_UNUSED = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
@@ -483,7 +483,7 @@ TEST(CEPoll, HandleEpollEvent2)
     const int epoll_id = epoll.create();
     ASSERT_GE(epoll_id, 0);
 
-    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR | SRT_EPOLL_ET;
     ASSERT_NE(epoll.add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
     set<int> epoll_ids = { epoll_id };
@@ -492,9 +492,74 @@ TEST(CEPoll, HandleEpollEvent2)
 
     SRT_EPOLL_EVENT fds[1024];
 
-    int result = epoll.uwait(epoll_id, fds, 1024, -1, false);
+    int result = epoll.uwait(epoll_id, fds, 1024, -1);
     ASSERT_EQ(result, 1); 
     ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+
+    // Edge-triggered means that after one wait call was done, the next
+    // call to this event should no longer report it. Now use timeout 0
+    // to return immediately.
+    result = epoll.uwait(epoll_id, fds, 1024, 0);
+    ASSERT_EQ(result, 0);
+
+    try
+    {
+        EXPECT_EQ(epoll.remove_usock(epoll_id, client_sock), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    try
+    {
+        EXPECT_EQ(epoll.release(epoll_id), 0);
+    }
+    catch (CUDTException &ex)
+    {
+        cerr << ex.getErrorMessage() << endl;
+        EXPECT_EQ(0, 1);
+    }
+
+    EXPECT_EQ(srt_cleanup(), 0);
+}
+
+
+TEST(CEPoll, HandleEpollNoEvent)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    EXPECT_NE(client_sock, SRT_ERROR);
+
+    const int yes = 1;
+    const int no  = 0;
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock,    SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+    CEPoll epoll;
+    const int epoll_id = epoll.create();
+    ASSERT_GE(epoll_id, 0);
+
+    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    ASSERT_NE(epoll.add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+
+    /*
+       Subscribe to the event, but do not report them.
+       In result you should have no events reported.
+    set<int> epoll_ids = { epoll_id };
+
+    epoll.update_events(client_sock, epoll_ids, SRT_EPOLL_ERR, true);
+    */
+
+    SRT_EPOLL_EVENT fds[1024];
+
+    // Use timeout 0 because with -1 this call would hang up
+    int result = epoll.uwait(epoll_id, fds, 1024, 0);
+    ASSERT_EQ(result, 0); 
 
     try
     {
