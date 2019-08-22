@@ -258,9 +258,9 @@ function (test_requires_clock_gettime _result)
 	# - with or without librt
 
 	# Result will be:
-	# -NONE (not available)
 	# rt (if librt required)
 	# "" (if no extra libraries required)
+	# -- killed by FATAL_ERROR if clock_gettime is not available
 
 	set (code "
 		#include <time.h>
@@ -285,6 +285,5 @@ function (test_requires_clock_gettime _result)
 		return()
 	endif()
 
-	set (${_result} "-NONE" PARENT_SCOPE)
-	message(STATUS "Checked clock_gettime(): NOT AVAILABLE")
+	message(FATAL_ERROR "clock_gettime() is not available on this system")
 endfunction()

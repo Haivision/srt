@@ -349,14 +349,9 @@ endif()
 # We need clock_gettime, but on some systems this is only provided
 # by librt. Check if librt is required.
 if (ENABLE_MONOTONIC_CLOCK AND LINUX)
+	# "requires" - exits on FATAL_ERROR when clock_gettime not available
 	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
-
-	if ("${NEED_CLOCK_GETTIME}" STREQUAL "-NONE")
-		message(FATAL_ERROR "clock_gettime() is not available on this system")
-	endif()
-
 	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
-
 endif()
 
 
