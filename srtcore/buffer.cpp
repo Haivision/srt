@@ -1023,7 +1023,13 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
     int rmpkts = 0; 
     int rmbytes = 0;
 
-    string reason = "NOT RECEIVED";
+#if ENABLE_HEAVY_LOGGING
+    const char* reason = "NOT RECEIVED";
+#define IF_HEAVY_LOGGING(instr) instr
+#else 
+#define IF_HEAVY_LOGGING(instr) (void)0
+#endif 
+
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
     {
         bool freeunit = false;
@@ -1054,7 +1060,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
             if (m_pUnit[i]->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
-                reason = "DECRYPTION FAILED";
+                IF_HEAVY_LOGGING(reason = "DECRYPTION FAILED");
                 freeunit = true; /* packet not decrypted */
             }
             else
