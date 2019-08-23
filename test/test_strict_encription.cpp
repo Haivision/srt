@@ -16,12 +16,6 @@
 #include "srt.h"
 
 
-#ifdef __GNUC__
-#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
-#else
-#  define UNUSED(x) UNUSED_ ## x
-#endif
-
 
 enum PEER_TYPE
 {
@@ -104,9 +98,6 @@ static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
 
-static const int SRT_E_TIMEOUT = MJ_AGAIN * 1000 + MN_XMTIMEOUT;
-static const int SRT_E_REJECT  = MJ_SETUP * 1000 + MN_RDAVAIL;
-
 
 /*
  * TESTING SCENARIO
@@ -126,21 +117,21 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
         // STRICTENC         |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |  connect_ret   accept_ret      |ret | error          | rnum|wnum | caller              accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -324,6 +315,7 @@ public:
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
         ASSERT_EQ(SetStrictEncryption(PEER_CALLER, test.strictenc[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
+
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
@@ -437,7 +429,7 @@ private:
 
 
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking & UNUSED(expect))
+int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
 {
     return SRT_SUCCESS;
 }
@@ -524,6 +516,7 @@ const char* TestStrictEncryption::m_socket_state[] = {
  */
 TEST_F(TestStrictEncryption, PasswordLength)
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
@@ -546,6 +539,9 @@ TEST_F(TestStrictEncryption, PasswordLength)
 
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
+#else
+    EXPECT_EQ(SetPassword(PEER_CALLER, "whateverpassword"), SRT_ERROR);
+#endif
 }
 
 
@@ -581,30 +577,35 @@ TEST_F(TestStrictEncryption, SetGetDefault)
     CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_A_1, Strict_On_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_A_2, Strict_On_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_A_3, Strict_On_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_A_4, Strict_On_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_A_5, Strict_On_On_Pwd_None_None)
 
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_B_1, Strict_On_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_B_2, Strict_On_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_B_3, Strict_On_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_B_4, Strict_On_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_B_5, Strict_On_Off_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_C_1, Strict_Off_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_C_2, Strict_Off_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_C_3, Strict_Off_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_C_4, Strict_Off_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_C_5, Strict_Off_On_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_D_1, Strict_Off_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_D_2, Strict_Off_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_D_3, Strict_Off_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_D_4, Strict_Off_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_D_5, Strict_Off_Off_Pwd_None_None)
 

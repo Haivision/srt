@@ -29,6 +29,11 @@ int main(int argc, char** argv)
     int yes = 1;
     struct sockaddr_storage their_addr;
 
+    if (argc != 3) {
+      fprintf(stderr, "Usage: %s <host> <port>\n", argv[0]);
+      return 1;
+    }
+
     printf("srt startup\n");
     srt_startup();
 

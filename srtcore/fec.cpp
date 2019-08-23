@@ -982,7 +982,7 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row
 	}
 }
 #else
-static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size) {}
+static void DebugPrintCells(int32_t /*base*/, const std::deque<bool>& /*cells*/, int /*row_size*/) {}
 #endif
 
 bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
@@ -1608,7 +1608,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
     set<int32_t> loss;
 
-    int colx = colgx % numberCols();
+    int colx SRT_ATR_UNUSED = colgx % numberCols();
 
     HLOGC(mglog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
             << " at INDEX=" << colgx << " col=" << colx

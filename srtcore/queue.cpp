@@ -340,6 +340,21 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
    CUDT* u = m_pHeap[0]->m_pUDT;
    remove_(u);
 
+#define UST(field) ( (u->m_b##field) ? "+" : "-" ) << #field << " "
+
+   HLOGC(mglog.Debug, log << "SND:pop: requesting packet from @" << u->socketID()
+           << " STATUS: "
+           << UST(Listening)
+           << UST(Connecting)
+           << UST(Connected)
+           << UST(Closing)
+           << UST(Shutdown)
+           << UST(Broken)
+           << UST(PeerHealth)
+           << UST(Opened)
+        );
+#undef UST
+
    if (!u->m_bConnected || u->m_bBroken)
       return -1;
 
@@ -995,6 +1010,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 // before calling this function), and it checks for the data presence.
                 if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
                 {
+                    // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
+                    // its already set in this case.
                     LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                     i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
@@ -1134,6 +1151,7 @@ void* CRcvQueue::worker(void* param)
                // - an enqueued rendezvous socket
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+               // CAN RETURN CONN_REJECT, but m_RejectReason is already set
            }
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
            if (cst == CONN_AGAIN)
@@ -1239,7 +1257,9 @@ static string PacketInfo(const CPacket& pkt)
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
 {
-#ifdef NO_BUSY_WAITING
+#if !USE_BUSY_WAITING
+    // This might be not really necessary, and probably
+    // not good for extensive bidirectional communication.
     m_pTimer->tick();
 #endif
 
@@ -1297,7 +1317,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    int listener_ret = 0;
+    SRT_REJECT_REASON listener_ret = SRT_REJ_UNKNOWN;
     bool have_listener = false;
     {
         CGuard cg(m_LSLock);
@@ -1305,28 +1325,12 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         {
             LOGC(mglog.Note, log << "PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
-            // XXX This returns some very significant return value, which
-            // is completely ignored here.
-            // Actually this is the only place in the code where this
-            // function is being called, so it's hard to say what the
-            // returned value had to serve for.
 
-            // The tricky part is that this is something done "under the hood";
-            // if any problem occurs during this process, then this will simply
-            // drop the connection request. The only user process that is connected
-            // to it is accept() call (or connect() in case of rendezvous), but
-            // the system cannot return an error from accept() just because some
-            // user was attempting to connect, but formulated the connection
-            // request incorrectly.
-
-            // The only thing that could be done in case when the "listen" call
-            // fails, is to probably send a short information packet (once; it's
-            // not so important to make it reach the target) that the connection
-            // has been rejected due to incorrectly formulated request. However
-            // just in order to send anything in response, the actual sender must
-            // be properly known, and this isn't the case of incorrectly formulated
-            // connection request. So, we can only say sorry to ourselves and
-            // do nothing.
+            // This function does return a code, but it's hard to say as to whether
+            // anything can be done about it. In case when it's stated possible, the
+            // listener will try to send some rejection response to the caller, but
+            // that's already done inside this function. So it's only used for
+            // displaying the error in logs.
 
             have_listener = true;
         }
@@ -1340,7 +1344,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     {
         LOGC(mglog.Note, log << CONID() << "Listener managed the connection request from: " << SockaddrToString(addr)
             << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
-        return (listener_ret >= URQ_FAILURE_TYPES ? CONN_REJECT : CONN_CONTINUE);
+        return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
@@ -1371,6 +1375,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
+        u->m_RejectReason = SRT_REJ_CLOSE;
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
         // XXX send UMSG_SHUTDOWN in this case?
@@ -1441,6 +1446,21 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // OTOH it can't be applied to processConnectResponse because the synchronous
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
         EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_pPeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
 
         // It might be that this is a data packet, which has turned the connection
         // into "connected" state, removed the connector (so since now every next packet

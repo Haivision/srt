@@ -162,6 +162,25 @@ inline std::string Join(const std::vector<std::string>& in, std::string sep)
     return os.str();
 }
 
+
+inline bool CheckTrue(const std::vector<std::string>& in)
+{
+    if (in.empty())
+        return true;
+
+    const std::set<std::string> false_vals = { "0", "no", "off", "false" };
+    if (false_vals.count(in[0]))
+        return false;
+
+    return true;
+
+    //if (in[0] != "false" && in[0] != "off")
+    //    return true;
+
+    //return false;
+}
+
+
 typedef std::map<std::string, std::vector<std::string>> options_t;
 
 struct OutList
@@ -174,6 +193,13 @@ struct OutString
 {
     typedef std::string type;
     static type process(const options_t::mapped_type& i) { return Join(i, " "); }
+};
+
+
+struct OutBool
+{
+    typedef bool type;
+    static type process(const options_t::mapped_type& i) { return CheckTrue(i); }
 };
 
 
@@ -211,7 +237,8 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
 {
     using namespace std;
 
-    string current_key = "";
+    string current_key;
+    string extra_arg;
     size_t vals = 0;
     OptionScheme::Args type = OptionScheme::ARG_VAR; // This is for no-option-yet or consumed
     map<string, vector<string>> params;
@@ -221,8 +248,9 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if ( moreoptions && a[0] == '-' )
+        if (moreoptions && a[0] == '-')
         {
+            size_t seppos; // (see goto, it would jump over initialization)
             current_key = a+1;
             if ( current_key == "-" )
             {
@@ -233,8 +261,28 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 moreoptions = false;
                 goto EndOfArgs;
             }
+
+            // Maintain the backward compatibility with argument specified after :
+            // or with one string separated by space inside.
+            seppos = current_key.find(':');
+            if (seppos == string::npos)
+                seppos = current_key.find(' ');
+            if (seppos != string::npos)
+            {
+                // Old option specification.
+                extra_arg = current_key.substr(seppos + 1);
+                current_key = current_key.substr(0, 0 + seppos);
+            }
+
             params[current_key].clear();
             vals = 0;
+
+            if (extra_arg != "")
+            {
+                params[current_key].push_back(extra_arg);
+                ++vals;
+                extra_arg.clear();
+            }
 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
             for (auto s: scheme)
@@ -242,12 +290,19 @@ inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionS
                 if (s.names.count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if ( s.type == OptionScheme::ARG_NONE )
+                    if (s.type == OptionScheme::ARG_NONE)
                     {
                         // Anyway, consider it already processed.
                         break;
                     }
                     type = s.type;
+
+                    if ( vals == 1 && type == OptionScheme::ARG_ONE )
+                    {
+                        // Argument for one-arg option already consumed,
+                        // so set to free args.
+                        goto EndOfArgs;
+                    }
                     goto Found;
                 }
 
