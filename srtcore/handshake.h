@@ -213,12 +213,28 @@ enum UDTRequestType
 
     // Errors reported by the peer, also used as useless error codes
     // in handshake processing functions.
-    URQ_FAILURE_TYPES = 1000,
-    URQ_ERROR_REJECT = 1002,
-    URQ_ERROR_INVALID = 1004
+    URQ_FAILURE_TYPES = 1000
+
+    // NOTE: codes above 1000 are reserved for failure codes for
+    // rejection reason, as per `SRT_REJECT_REASON` enum. DO NOT
+    // add any new values here.
 };
 
+inline UDTRequestType URQFailure(SRT_REJECT_REASON reason)
+{
+    return UDTRequestType(URQ_FAILURE_TYPES + int(reason));
+}
 
+inline SRT_REJECT_REASON RejectReasonForURQ(UDTRequestType req)
+{
+    if (req < URQ_FAILURE_TYPES || req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
+        return SRT_REJ_UNKNOWN;
+    return SRT_REJECT_REASON(req - URQ_FAILURE_TYPES);
+}
+
+// DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).
+const UDTRequestType URQ_ERROR_REJECT SRT_ATR_DEPRECATED = (UDTRequestType)1002; // == 1000 + SRT_REJ_PEER
+const UDTRequestType URQ_ERROR_INVALID SRT_ATR_DEPRECATED = (UDTRequestType)1004; // == 1000 + SRT_REJ_ROGUE
 
 // XXX Change all uses of that field to UDTRequestType when possible
 #if ENABLE_LOGGING
