@@ -2885,6 +2885,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 int32_t groupdata[GRPD__SIZE];
                 if ( bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
                 {
+                    m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
                     return false;
                 }
@@ -2892,6 +2893,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 memcpy(groupdata, begin+1, bytelen);
                 if ( !interpretGroup(groupdata, hsreq_type_cmd) )
                 {
+                    // m_RejectReason handled inside interpretGroup().
                     return false;
                 }
 
@@ -2950,6 +2952,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
         // it probably DID NOT UNDERSTAND THE GROUP, so the connection should be rejected.
         if (!have_group)
         {
+            m_RejectReason = SRT_REJ_GROUP;
             LOGC(mglog.Error, log << "HS EXT: agent is a group member, but the listener did not respond with group ID. Rejecting.");
             return false;
         }
@@ -2968,6 +2971,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
 
     if (!m_bOPT_GroupConnect)
     {
+        m_RejectReason = SRT_REJ_GROUP;
         LOGC(mglog.Error, log << "HS/GROUP: this socket is not predicted for group connect.");
         return false;
     }
@@ -2975,12 +2979,14 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
     // This is called when the group ID has come in in the handshake.
     if (gtp >= SRT_GTYPE__END)
     {
+        m_RejectReason = SRT_REJ_GROUP;
         LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE__END << ")");
         return false;
     }
 
     if ( (grpid & SRTGROUP_MASK) == 0)
     {
+        m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "HS/GROUP: socket ID passed as a group ID is not a group ID");
         return false;
     }
@@ -3003,6 +3009,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
     // These two situations can be only distinguished by the HS side.
     if (m_SrtHsSide == HSD_DRAW)
     {
+        m_RejectReason = SRT_REJ_IPE;
         LOGC(mglog.Error, log << "IPE: interpretGroup: The HS side should have been already decided; it's still DRAW. Grouping rejected.");
         return false;
     }
@@ -3022,6 +3029,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             // This means that the responder has responded with a group membership,
             // but the initiator did not request any group membership presence.
             // Currently impossible situation.
+            m_RejectReason = SRT_REJ_IPE;
             LOGC(mglog.Error, log << "IPE: HS/RSP: group membership responded, while not requested.");
             return false;
         }
@@ -3061,11 +3069,17 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             return true; // already done
 
         if (lgid == -1)
+        {
+            // NOTE: This error currently isn't reported by makeMePeerOf,
+            // so this is left to handle a possible error introduced in future.
+            m_RejectReason = SRT_REJ_GROUP;
             return false; // error occurred
+        }
 
         if ( !m_parent->m_IncludedGroup )
         {
             // Strange, we just added it...
+            m_RejectReason = SRT_REJ_IPE;
             LOGC(mglog.Fatal, log << "IPE: socket not in group after adding to it");
             return false;
         }
