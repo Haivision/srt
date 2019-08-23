@@ -3155,6 +3155,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
     if (e.getErrorCode() != 0)
     {
+        m_bConnecting = false;
         // The process is to be abnormally terminated, remove the connector
         // now because most likely no other processing part has done anything with it.
         m_pRcvQueue->removeConnector(m_SocketID);
