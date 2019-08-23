@@ -135,7 +135,7 @@ const int UDT::ERROR = CUDT::ERROR;
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
 
-// NOTE: HAISRT_VERSION is primarily defined in the build file.
+// NOTE: SRT_VERSION is primarily defined in the build file.
 const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
 
