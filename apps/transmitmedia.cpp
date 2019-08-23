@@ -1053,9 +1053,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::SRT:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
@@ -1064,9 +1064,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
