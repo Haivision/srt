@@ -31,7 +31,7 @@ extern "C" {
 TEST(Core, ConnectionTimeout) {
     ASSERT_EQ(srt_startup(), 0);
 
-    const SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    const SRTSOCKET client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
     // First let's check the default connection timeout value.
@@ -107,3 +107,59 @@ TEST(Core, ConnectionTimeout) {
     (void)srt_epoll_release(pollid);
     (void)srt_cleanup();
 }
+
+/**
+ * The test creates a socket and tries to connect to a localhost port 5555
+ * in a blocking mode. The srt_connect function is expected to return
+ * SRT_ERROR, and the error_code should be SRT_ENOSERVER, meaning a
+ * connection timeout.
+ * This test is a regression test for an issue described in PR #833.
+ * Under certain conditions m_bConnecting variable on a socket
+ * might not be reset to false after a connection attempt has failed.
+ * In that case any further call to srt_connect will return SRT_ECONNSOCK:
+ * Operation not supported: Cannot do this operation on a CONNECTED socket
+ *
+*/
+TEST(Core, BlockingConnectionTimeoutLoop)
+{
+    using namespace std;
+    ASSERT_EQ(srt_startup(), 0);
+
+    const SRTSOCKET client_sock = srt_create_socket();
+    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    // Set connection timeout to 999 ms to reduce the test execution time.
+    // Also need to hit a time point between two threads:
+    // srt_connect will check TTL every second,
+    // CRcvQueue::worker will wait on a socket for 10 ms.
+    // Need to have a condition, when srt_connect will process the timeout.
+    const int connection_timeout_ms = 999;
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+
+    sockaddr* psa = (sockaddr*)& sa;
+    for (int i = 0; i < 30; ++i)
+    {
+        EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+        const int error_code = srt_getlasterror(nullptr);
+        EXPECT_EQ(error_code, SRT_ENOSERVER);
+        if (error_code != SRT_ENOSERVER)
+        {
+            cerr << "Connection attempt no. " << i << " resulted with: "
+                 << error_code << " " << srt_getlasterror_str() << "\n";
+            break;
+        }
+    }
+
+    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+    (void)srt_cleanup();
+}
+
+
