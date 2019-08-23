@@ -564,9 +564,9 @@ int main( int argc, char** argv )
     }
 
     int iport = atoi(up.port().c_str());
-    if ( iport <= 1024 )
+    if ( iport < 1024 )
     {
-        cerr << "Port value invalid: " << iport << " - must be >1024\n";
+        cerr << "Port value invalid: " << iport << " - must be >=1024\n";
         return 1;
     }
 

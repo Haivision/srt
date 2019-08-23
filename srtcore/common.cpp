@@ -208,7 +208,11 @@ void CTimer::sleepto(uint64_t nexttime)
        __nop ();
 #endif
 #else
-       const uint64_t wait_us = 10000;  // 10 ms
+       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
+       // The while loop ensures that (t < m_ullSchedTime).
+       // Division by frequency ����� loos prevision.
+       if (wait_us == 0)
+           break;
 
        timeval now;
        gettimeofday(&now, 0);
@@ -855,11 +859,6 @@ const string& CUDTException::getErrorString()
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   // period
-   #ifndef _WIN32
-   m_strMsg += ".";
-   #endif
-
    return m_strMsg;
 }
 
@@ -1089,6 +1088,33 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     if (size_t(ev) >= vals_size)
         return "UNKNOWN";
     return vals[ev];
+}
+
+extern const char* const srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter type collision"
+};
+
+const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+{
+    int id = rid;
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
 }
 
 // Some logging imps

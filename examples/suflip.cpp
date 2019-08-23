@@ -624,7 +624,7 @@ int main( int argc, char** argv )
 
     if ( su.portno() < 1024 || tu.portno() < 1024 )
     {
-        cerr << "Port number must be > 1024\n";
+        cerr << "Port number must be >= 1024\n";
         return 1;
     }
 
