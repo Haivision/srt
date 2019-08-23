@@ -453,9 +453,12 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
     return ns->m_SocketID;
 }
 
-int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt)
+int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt,
+        ref_t<SRT_REJECT_REASON> r_error)
 {
     CUDTSocket* ns = NULL;
+
+   *r_error = SRT_REJ_IPE;
 
     // Can't manage this error through an exception because this is
     // running in the listener loop.
@@ -508,6 +511,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     // exceeding backlog, refuse the connection request
     if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
     {
+       *r_error = SRT_REJ_BACKLOG;
         LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
         return -1;
     }
@@ -520,6 +524,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     catch (...)
     {
+      *r_error = SRT_REJ_RESOURCE;
         delete ns;
         LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
         return -1;
@@ -553,6 +558,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
     int error = 0;
     bool should_submit_to_accept = true;
+
+   // Set the error code for all prospective problems below.
+   // It won't be interpreted when result was successful.
+   *r_error = SRT_REJ_RESOURCE;
 
     // These can throw exception only when the memory allocation failed.
     // CUDT::connect() translates exception into CUDTException.
@@ -588,6 +597,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     catch (...)
     {
+       // Extract the error that was set in this new failed entity.
+       *r_error = ns->m_pUDT->m_RejectReason;
         error = 1;
         goto ERR_ROLLBACK;
     }
@@ -714,7 +725,12 @@ ERR_ROLLBACK:
     if (error > 0)
     {
 #if ENABLE_LOGGING
-        static const char* why [] = {"?", "ACCEPT ERROR", "IPE when mapping a socket", "IPE when inserting a socket" };
+       static const char* why [] = {
+           "UNKNOWN ERROR",
+           "CONNECTION REJECTED",
+           "IPE when mapping a socket",
+           "IPE when inserting a socket"
+       };
         LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
 
@@ -2238,9 +2254,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       // being currently done in the queues, if any.
       mx.m_pSndQueue->setClosing();
       mx.m_pRcvQueue->setClosing();
-      mx.m_pChannel->close();
       delete mx.m_pSndQueue;
       delete mx.m_pRcvQueue;
+      mx.m_pChannel->close();
       delete mx.m_pTimer;
       delete mx.m_pChannel;
       m_mMultiplexer.erase(m);
@@ -4027,6 +4043,11 @@ SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
 SRT_API std::string getstreamid(SRTSOCKET u)
 {
     return CUDT::getstreamid(u);
+}
+
+SRT_REJECT_REASON getrejectreason(SRTSOCKET u)
+{
+    return CUDT::rejectReason(u);
 }
 
 }  // namespace UDT

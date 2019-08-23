@@ -34,6 +34,11 @@ int main(int argc, char** argv)
     int yes = 1;
     const char message [] = "This message should be sent to the other side";
 
+    if (argc != 3) {
+      fprintf(stderr, "Usage: %s <host> <port>\n", argv[0]);
+      return 1;
+    }
+
     printf("srt startup\n");
     srt_startup();
 
