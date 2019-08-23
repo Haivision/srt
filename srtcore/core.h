@@ -207,6 +207,7 @@ public: //API
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+    static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
     static int setError(const CUDTException& e);
     static int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
@@ -646,6 +647,7 @@ private:
     volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
     volatile bool m_bBroken;                     // If the connection has been broken
     volatile bool m_bPeerHealth;                 // If the peer status is normal
+    volatile SRT_REJECT_REASON m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
     int m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
 
@@ -823,7 +825,7 @@ private: // Generation and processing of packets
     int packData(ref_t<CPacket> packet, ref_t<uint64_t> ts, ref_t<sockaddr_any> src_adr);
     int processData(CUnit* unit);
     void processClose();
-    int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
+    SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     void ackDataUpTo(int32_t seq);
