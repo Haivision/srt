@@ -23,6 +23,8 @@ SRT is applied to contribution and distribution endpoints as part of a video str
 
 As audio/video packets are streamed from a source to a destination device, SRT detects and adapts to the real-time network conditions between the two endpoints. SRT helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks, such as the Internet. Its error recovery mechanism minimizes the packet loss typical of Internet connections. And SRT supports AES encryption for end-to-end security, keeping your streams safe from prying eyes.
 
+[Join the conversation](https://slackin-srtalliance.azurewebsites.net/) in the `#development` channel on [Slack](https://srtalliance.slack.com).
+
 # Guides
 * [Why SRT Was Created](docs/why-srt-was-created.md)
 * [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
@@ -39,8 +41,16 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * Pthreads (for POSIX systems it's builtin, for Windows there's a library)
 
 ## For Linux:
+
 Install cmake and openssl-devel (or similar name) package. For pthreads
 there should be -lpthreads linker flag added.
+
+Default installation path prefix of `make install` is `/usr/local`.
+
+To define a different installation path prefix, use the `--prefix` option with `configure`
+or [`-DCMAKE_INSTALL_PREFIX`](https://cmake.org/cmake/help/v3.0/variable/CMAKE_INSTALL_PREFIX.html) CMake option.
+
+To uninstall, call `make -n install` to list all the dependencies, and then pass the list to `rm`.
 
 ### Ubuntu 14
 ```
