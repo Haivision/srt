@@ -1200,10 +1200,10 @@ these two calls.
   * NULL if you want to subscribe a socket for all events in level-triggered mode
 
 Epoll flags are bit flags that can be combined using `|` operator:
-    * `SRT_EPOLL_IN`: report readiness for reading; (accept-readiness on listener socket)
-	* `SRT_EPOLL_OUT`: report readiness for writing (also connection succeeded)
-	* `SRT_EPOLL_ERR`: report error on the socket
-	* `SRT_EPOLL_ET`: the event will be edge-triggered
+   * `SRT_EPOLL_IN`: report readiness for reading; (accept-readiness on listener socket)
+   * `SRT_EPOLL_OUT`: report readiness for writing (also connection succeeded)
+   * `SRT_EPOLL_ERR`: report error on the socket
+   * `SRT_EPOLL_ET`: the event will be edge-triggered
 
 Mind that the readiness states reported in epoll are by default
 **level-triggered**, unless `SRT_EPOLL_ET` flag is specified, in which
@@ -1354,9 +1354,9 @@ typedef struct SRT_EPOLL_EVENT_
 
 * `fd` : the user socket (SRT socket)
 * `events` : any combination of event flags:
-    * `SRT_EPOLL_IN`: ready for reading; listener socket ready to accept
-	* `SRT_EPOLL_OUT`: ready for writing; also connection succeeded
-	* `SRT_EPOLL_ERR`: error occurred on socket
+   * `SRT_EPOLL_IN`: ready for reading; listener socket ready to accept
+   * `SRT_EPOLL_OUT`: ready for writing; also connection succeeded
+   * `SRT_EPOLL_ERR`: error occurred on socket
 
 Note that when the `SRT_EPOLL_ERR` is set the error cannot be retrieved
 with `srt_getlasterror` but it means that the socket is closed and the 
