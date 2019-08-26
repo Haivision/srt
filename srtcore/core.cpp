@@ -2854,6 +2854,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
             {
                 if (have_filter)
                 {
+                    m_RejectReason = SRT_REJ_FILTER;
                     LOGC(mglog.Error, log << "FILTER BLOCK REPEATED!");
                     return false;
                 }
@@ -4116,8 +4117,10 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
-    if (!setupCC())
+    SRT_REJECT_REASON rr = setupCC();
+    if (rr != SRT_REJ_UNKNOWN)
     {
+        m_RejectReason = rr;
         return CONN_REJECT;
     }
 
@@ -7956,14 +7959,14 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
             * XXX Isn't it then better to not decrease it by m_StartTime? As long as it
             * doesn't screw up the start time on the other side.
             */
-      if (origintime >= m_stats.startTime)
-         packet.m_iTimeStamp = int(origintime - m_stats.startTime);
+           if (origintime >= m_stats.startTime)
+               packet.m_iTimeStamp = int(origintime - m_stats.startTime);
            else
-         packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
+               packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
        }
        else
        {
-       packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
+           packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
        }
    }
 
@@ -8245,7 +8248,7 @@ int CUDT::processData(CUnit* in_unit)
       {
           report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
 
-          // Stuff this data into the corrector
+          // Stuff this data into the filter
           m_PacketFilter.receive(in_unit, Ref(incoming), Ref(filter_loss_seqs));
           HLOGC(mglog.Debug, log << "(FILTER) fed data, received " << incoming.size() << " pkts, "
                   << Printable(filter_loss_seqs) << " loss to report, "
@@ -8287,7 +8290,7 @@ int CUDT::processData(CUnit* in_unit)
 
           if (offset < 0)
           {
-              IF_HEAVY_LOGGING(exc_type = "EXPECTED");
+              IF_HEAVY_LOGGING(exc_type = "BELATED");
               uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
               uint64_t bltime = CountIIR(
                       uint64_t(m_stats.traceBelatedTime) * 1000,
@@ -8300,131 +8303,128 @@ int CUDT::processData(CUnit* in_unit)
               HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
                       << " offset=" << offset << " (BELATED/" << rexmitstat[pktrexmitflag] << rexmit_reason
                       << ") FLAGS: " << packet.MessageFlagStr());
+              continue;
+          }
+
+          const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          if (offset >= avail_bufsize)
+          {
+              // This is already a sequence discrepancy. Probably there could be found
+              // some way to make it continue reception by overriding the sequence and
+              // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+              if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+              {
+                  // Only in live mode. In File mode this shall not be possible
+                  // because the sender should stop sending in this situation.
+                  // In Live mode this means that there is a gap between the
+                  // lowest sequence in the empty buffer and the incoming sequence
+                  // that exceeds the buffer size. Receiving data in this situation
+                  // is no longer possible and this is a point of no return.
+                  LOGC(mglog.Error, log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                      );
+
+                  // This is a scoped lock with AckLock, but for the moment
+                  // when processClose() is called this lock must be taken out,
+                  // otherwise this will cause a deadlock. We don't need this
+                  // lock anymore, and at 'return' it will be unlocked anyway.
+                  recvbuf_acklock.forceUnlock();
+                  processClose();
+                  return -1;
+              }
+              else
+              {
+                  LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                      );
+                  return -1;
+              }
 
           }
 
+          bool adding_successful = true;
+          if (m_pRcvBuffer->addData(*i, offset) < 0)
+          {
+              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+              // So this packet is "redundant".
+              IF_HEAVY_LOGGING(exc_type = "UNACKED");
+              adding_successful = false;
+          }
           else
           {
-              const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
-              if (offset >= avail_bufsize)
+              IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+              excessive = false;
+              if (u->m_Packet.getMsgCryptoFlags())
               {
-                  // This is already a sequence discrepancy. Probably there could be found
-                  // some way to make it continue reception by overriding the sequence and
-                  // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
-                  if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                  EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
+                  if ( rc != ENCS_CLEAR )
                   {
-                      // Only in live mode. In File mode this shall not be possible
-                      // because the sender should stop sending in this situation.
-                      // In Live mode this means that there is a gap between the
-                      // lowest sequence in the empty buffer and the incoming sequence
-                      // that exceeds the buffer size. Receiving data in this situation
-                      // is no longer possible and this is a point of no return.
-                      LOGC(mglog.Error, log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. offset="
-                              << offset << " avail=" << avail_bufsize
-                              << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
-                              << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
-                          );
-
-                      // This is a scoped lock with AckLock, but for the moment
-                      // when processClose() is called this lock must be taken out,
-                      // otherwise this will cause a deadlock. We don't need this
-                      // lock anymore, and at 'return' it will be unlocked anyway.
-                      recvbuf_acklock.forceUnlock();
-                      processClose();
-                      return -1;
-                  }
-                  else
-                  {
-                      LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
-                              << offset << " avail=" << avail_bufsize
-                              << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
-                              << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
-                          );
-                      return -1;
-                  }
-
-              }
-
-              bool adding_successful = true;
-              if (m_pRcvBuffer->addData(*i, offset) < 0)
-              {
-                  // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-                  // So this packet is "redundant".
-                  IF_HEAVY_LOGGING(exc_type = "UNACKED");
-                  adding_successful = false;
-              }
-              else
-              {
-                  IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-                  excessive = false;
-                  if (u->m_Packet.getMsgCryptoFlags())
-                  {
-                      EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(u->m_Packet)) : ENCS_NOTSUP;
-                      if ( rc != ENCS_CLEAR )
+                      // Could not decrypt
+                      // Keep packet in received buffer
+                      // Crypto flags are still set
+                      // It will be acknowledged
                       {
-                          // Could not decrypt
-                          // Keep packet in received buffer
-                          // Crypto flags are still set
-                          // It will be acknowledged
-                          {
-                              CGuard lg(m_StatsLock);
-                              m_stats.traceRcvUndecrypt += 1;
-                              m_stats.traceRcvBytesUndecrypt += pktsz;
-                              m_stats.m_rcvUndecryptTotal += 1;
-                              m_stats.m_rcvBytesUndecryptTotal += pktsz;
-                          }
-
-                          // Log message degraded to debug because it may happen very often
-                          HLOGC(dlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
-                          adding_successful = false;
-                          IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+                          CGuard lg(m_StatsLock);
+                          m_stats.traceRcvUndecrypt += 1;
+                          m_stats.traceRcvBytesUndecrypt += pktsz;
+                          m_stats.m_rcvUndecryptTotal += 1;
+                          m_stats.m_rcvBytesUndecryptTotal += pktsz;
                       }
+
+                      // Log message degraded to debug because it may happen very often
+                      HLOGC(dlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+                      adding_successful = false;
+                      IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
                   }
               }
+          }
 
-              HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
-                      << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
-                      << packet.MessageFlagStr());
+          HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
+                  << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+                  << packet.MessageFlagStr());
 
-              // Decryption should have made the crypto flags EK_NOENC.
-              // Otherwise it's an error.
-              if (adding_successful)
+          // Decryption should have made the crypto flags EK_NOENC.
+          // Otherwise it's an error.
+          if (adding_successful)
+          {
+              HLOGC(dlog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
+                      << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
+              if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
               {
-                  HLOGC(dlog.Debug, log << "CONTIGUITY CHECK: sequence distance: "
-                          << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
-                  if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)   // Loss detection.
+                  int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                  int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
+
+                  srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
+
+                  if ( initial_loss_ttl )
                   {
-                      int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-                      int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
+                      // pack loss list for (possibly belated) NAK
+                      // The LOSSREPORT will be sent in a while.
 
-                      srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                      if ( initial_loss_ttl )
+                      for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                       {
-                          // pack loss list for (possibly belated) NAK
-                          // The LOSSREPORT will be sent in a while.
-
-                          for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                          {
-                              m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                          }
-                          HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
-                          reorder_prevent_lossreport = true;
+                          m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
                       }
+                      HLOGC(mglog.Debug, log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs) << " tolerance: " << initial_loss_ttl);
+                      reorder_prevent_lossreport = true;
                   }
               }
+          }
 
-              // Update the current largest sequence number that has been received.
-              // Or it is a retransmitted packet, remove it from receiver loss list.
-              if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
-              {
-                  m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
-              }
-              else
-              {
-                  unlose(rpkt); // was BELATED or RETRANSMITTED
-                  was_sent_in_order &= 0!=  pktrexmitflag;
-              }
+          // Update the current largest sequence number that has been received.
+          // Or it is a retransmitted packet, remove it from receiver loss list.
+          if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
+          {
+              m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
+          }
+          else
+          {
+              unlose(rpkt); // was BELATED or RETRANSMITTED
+              was_sent_in_order &= 0!=  pktrexmitflag;
           }
       }
 
@@ -8434,7 +8434,7 @@ int CUDT::processData(CUnit* in_unit)
       // a truly non-excessive packet has been received, just it has been temporarily
       // stored for better times by the filter module. This way 'excessive' is also true,
       // although the old condition that a packet with a newer sequence number has arrived
-      // or arrived unorderly may still be satisfied.
+      // or arrived out of order may still be satisfied.
       if (!incoming_belated && was_sent_in_order)
       {
           // Basing on some special case in the packet, it might be required
@@ -8452,7 +8452,7 @@ int CUDT::processData(CUnit* in_unit)
       }
 
 
-   }  /* End of recvbuf_acklock */
+   }  // End of recvbuf_acklock
 
    if (m_bClosing)
    {
