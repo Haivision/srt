@@ -583,7 +583,7 @@ TEST(CEPoll, ThreadedUpdate)
     thread td = thread( [&epoll, epoll_id, client_sock]()
     {
         cerr << "Spawned thread to add sockets to eid (wait 1s to order execution)\n";
-        sleep(1); // Make sure that uwait will be called as first
+        this_thread::sleep_for(chrono::seconds(1)); // Make sure that uwait will be called as first
         cerr << "ADDING sockets to eid\n";
         const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
         ASSERT_NE(epoll.add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);

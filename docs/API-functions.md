@@ -1195,8 +1195,29 @@ these two calls.
 * `eid`: epoll container id
 * `u`: SRT socket
 * `s`: system socket
-* `events`: points to a variable set to epoll flags, or NULL if
-you want to subscribe a socket for all possible events
+* `events`: points to
+  * a variable set to epoll flags (see below) to use only selected events
+  * NULL if you want to subscribe a socket for all events in level-triggered mode
+
+Epoll flags are bit flags that can be combined using `|` operator:
+    * `SRT_EPOLL_IN`: report readiness for reading; (accept-readiness on listener socket)
+	* `SRT_EPOLL_OUT`: report readiness for writing (also connection succeeded)
+	* `SRT_EPOLL_ERR`: report error on the socket
+	* `SRT_EPOLL_ET`: the event will be edge-triggered
+
+Mind that the readiness states reported in epoll are by default
+**level-triggered**, unless `SRT_EPOLL_ET` flag is specified, in which
+case they are **edge-triggered**. Note that edge-triggered is only
+supported for SRT sockets (to be fixed).
+
+In the **edge-triggered** mode the function only returns socket states
+which have changed since last call (that is, upon exit from the waiting
+function any events reported there will be cleared in the internal flags
+and therefore not reported in the next call, until the internals will
+clear the state and set it again). On the other hand **level-triggered** mode
+will keep on returning while the state stays the same, until the internals will
+report that the readiness state is no longer in force.
+
 
 - Returns:
  
@@ -1284,7 +1305,9 @@ indefinitely.
 int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 ```
 
-Blocks the call until any readiness state occurs in the epoll container.
+This function blocks a call until any readiness state occurs in the epoll
+container. Unlike `srt_epoll_wait`, it can only be used with `eid` subscribed
+to user sockets (SRT sockets), not system sockets.
 
 This function blocks until the timeout. If timeout is 0, it exits 
 immediately after checking. If timeout is -1, it blocks indefinitely 
@@ -1293,22 +1316,29 @@ until a readiness state occurs.
 * `eid`: epoll container
 * `fdsSet` : A pointer to an array of `SRT_EPOLL_EVENT`
 * `fdsSize` : The size of the fdsSet array
-* `msTimeOut` : Timeout specified in milliseconds, or special values (0 or -1)
+* `msTimeOut` : Timeout specified in milliseconds, or special values (0 or -1):
+   * 0: Don't wait, return immediately (report any sockets currently ready)
+   * -1: Wait indefinitely.
 
 - Returns:
 
   * The total amount of user socket (SRT socket) states changed. Note that this
-can be larger than `fdsSize`, in this case and if `edgeMode` is true only `fdsSize`
-events are returned in the `fdsSet` and the remaining events can be retrieved by
-a new call to this function
-  * 0, if no sockets were ready up to the timeout
+can be larger than `fdsSize`, in this case and for events with `SRT_EPOLL_ET` flag
+only `fdsSize` events are returned in the `fdsSet` and the remaining events can
+be retrieved by a new call to this function
+
+  * 0, if no sockets were ready up to the timeout (never if waiting indefinitely)
+
   * -1 in case of error
+
 
 - Errors:
 
   * `SRT_EINVPOLLID`: `eid` designates no valid EID object
-  * `SRT_EINVPARAM`: Bad parameter usage as a fdsSize>0 whereas fdsSet is null,
-can be raised too when msTimeout>0 and there is no more socket monitored.
+  * `SRT_EINVPARAM`: One of possible usage errors:
+    * `fdsSize` is < 0
+    * `fdsSize` is > 0 and `fdsSet` is a null pointer
+    * `eid` was subscribed to any system socket
 
 (IMPORTANT: this function reports timeout by returning 0, not by `SRT_ETIMEOUT` error.)
 
@@ -1325,22 +1355,8 @@ typedef struct SRT_EPOLL_EVENT_
 * `fd` : the user socket (SRT socket)
 * `events` : any combination of event flags:
     * `SRT_EPOLL_IN`: ready for reading; listener socket ready to accept
-	* `SRT_EPOLL_OUT`: ready for reading; also connection succeeded
+	* `SRT_EPOLL_OUT`: ready for writing; also connection succeeded
 	* `SRT_EPOLL_ERR`: error occurred on socket
-	* `SRT_EPOLL_ET`: the event will be edge-triggered
-
-Mind that the readiness states reported in epoll are by default
-**level-triggered**, unless `SRT_EPOLL_ET` flag is specified, in which
-case they are **edge-triggered**. Note that edge-triggered is only
-supported for SRT sockets (to be fixed).
-
-In the **edge-triggered** mode the function only returns socket states
-which have changed since last call (that is, upon exit from the waiting
-function any events reported there will be cleared in the internal flags
-and therefore not reported in the next call, until the internals will
-clear the state and set it again). On the other hand **level-triggered** mode
-will keep on returning while the state stays the same, until the internals will
-report that the readiness state is no longer in force.
 
 Note that when the `SRT_EPOLL_ERR` is set the error cannot be retrieved
 with `srt_getlasterror` but it means that the socket is closed and the 
