@@ -13,9 +13,79 @@ extern "C" {
 #endif
 
 #define INC__WIN_WINTIME // exclude gettimeofday from srt headers
+
+#else
+typedef int SOCKET;
+#define INVALID_SOCKET ((SOCKET)-1)
+#define closesocket close
 #endif
 
+#include"platform_sys.h"
 #include "srt.h"
+
+using namespace std;
+
+
+class TestConnectionTimeout
+    : public ::testing::Test
+{
+protected:
+    TestConnectionTimeout()
+    {
+        // initialization code here
+    }
+
+    ~TestConnectionTimeout()
+    {
+        // cleanup any pending stuff, but no exceptions allowed
+    }
+
+protected:
+
+    // SetUp() is run immediately before a test starts.
+    void SetUp() override
+    {
+        ASSERT_EQ(srt_startup(), 0);
+
+        m_sa.sin_family = AF_INET;
+        m_sa.sin_addr.s_addr = INADDR_ANY;
+        m_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        ASSERT_NE(m_udp_sock, -1);
+
+        // Find unused a port not used by any other service.
+        // Otherwise srt_connect may actually connect.
+        int bind_res = -1;
+        const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+        for (int port = 5000; port <= 5555; ++port)
+        {
+            m_sa.sin_port = htons(port);
+            bind_res = ::bind(m_udp_sock, psa, sizeof m_sa);
+            if (bind_res >= 0)
+            {
+                cerr << "Running test on port " << port << "\n";
+                break;
+            }
+        }
+
+        ASSERT_GE(bind_res, 0);
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
+    }
+
+    void TearDown() override
+    {
+        // Code here will be called just after the test completes.
+        // OK to throw exceptions from here if needed.
+        ASSERT_NE(closesocket(m_udp_sock), -1);
+        srt_cleanup();
+    }
+
+protected:
+
+    SOCKET m_udp_sock = INVALID_SOCKET;
+    sockaddr_in m_sa = {};
+
+};
+
 
 
 /**
@@ -28,8 +98,7 @@ extern "C" {
  *
  * @remarks  Inspired by Max Tomilov (maxtomilov) in issue #468
 */
-TEST(Core, ConnectionTimeout) {
-    ASSERT_EQ(srt_startup(), 0);
+TEST_F(TestConnectionTimeout, Nonblocking) {
 
     const SRTSOCKET client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
@@ -57,15 +126,8 @@ TEST(Core, ConnectionTimeout) {
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(srt_epoll_add_usock(pollid, client_sock, &epoll_out), SRT_ERROR);
 
-    sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(5555);
-
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
-
-    sockaddr* psa = (sockaddr*)&sa;
-    ASSERT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+    ASSERT_NE(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
 
     // Socket readiness for connection is checked by polling on WRITE allowed sockets.
     {
@@ -105,7 +167,6 @@ TEST(Core, ConnectionTimeout) {
     EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_SUCCESS);
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
     (void)srt_epoll_release(pollid);
-    (void)srt_cleanup();
 }
 
 /**
@@ -120,20 +181,10 @@ TEST(Core, ConnectionTimeout) {
  * Operation not supported: Cannot do this operation on a CONNECTED socket
  *
 */
-TEST(Core, BlockingConnectionTimeoutLoop)
+TEST_F(TestConnectionTimeout, BlockingLoop)
 {
-    using namespace std;
-    ASSERT_EQ(srt_startup(), 0);
-
     const SRTSOCKET client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
-
-    sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(5555);
-
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     // Set connection timeout to 999 ms to reduce the test execution time.
     // Also need to hit a time point between two threads:
@@ -143,23 +194,22 @@ TEST(Core, BlockingConnectionTimeoutLoop)
     const int connection_timeout_ms = 999;
     EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
-    sockaddr* psa = (sockaddr*)& sa;
-    for (int i = 0; i < 30; ++i)
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+    for (int i = 0; i < 10; ++i)
     {
-        EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+        EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
 
         const int error_code = srt_getlasterror(nullptr);
         EXPECT_EQ(error_code, SRT_ENOSERVER);
         if (error_code != SRT_ENOSERVER)
         {
             cerr << "Connection attempt no. " << i << " resulted with: "
-                 << error_code << " " << srt_getlasterror_str() << "\n";
+                << error_code << " " << srt_getlasterror_str() << "\n";
             break;
         }
     }
 
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
-    (void)srt_cleanup();
 }
 
 
