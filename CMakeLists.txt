@@ -140,10 +140,6 @@ if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
 
-if (DEFINED SRT_TEST_FAKE_LOSS)
-	add_definitions(-DSRT_TEST_FAKE_LOSS=${SRT_TEST_FAKE_LOSS})
-endif()
-
 if (NOT USE_ENCLIB)
 	if (USE_GNUTLS)
 		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")

@@ -216,15 +216,15 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
         cout << "\t\t\"bytesDropped\":" << mon.byteRcvDrop << "," << endl;
         cout << "\t\t\"mbitRate\":" << mon.mbpsRecvRate << endl;
         cout << "\t}," << endl;
-		cout << "\tfilter:{" << endl;
-		cout << "\t\t\"sndExtra\":" << mon.pktSndFilterExtra << endl;
-		cout << "\t\t\"rcvExtra\":" << mon.pktRcvFilterExtra << endl;
-		cout << "\t\t\"rcvSupply\":" << mon.pktRcvFilterSupply << endl;
-		cout << "\t\t\"rcvLoss\":" << mon.pktRcvFilterLoss << endl;
+        cout << "\tfilter:{" << endl;
+        cout << "\t\t\"sndExtra\":" << mon.pktSndFilterExtra << endl;
+        cout << "\t\t\"rcvExtra\":" << mon.pktRcvFilterExtra << endl;
+        cout << "\t\t\"rcvSupply\":" << mon.pktRcvFilterSupply << endl;
+        cout << "\t\t\"rcvLoss\":" << mon.pktRcvFilterLoss << endl;
         cout << "\t}" << endl;
         cout << "}" << endl;
 
-		return;
+        return;
     }
 
     cout << "======= SRT STATS: sid=" << sid << endl;

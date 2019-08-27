@@ -11,83 +11,83 @@ using namespace std;
 class TestFECRebuilding: public testing::Test
 {
 protected:
-	FECFilterBuiltin* fec = nullptr;
+    FECFilterBuiltin* fec = nullptr;
     vector<SrtPacket> provided;
     vector<unique_ptr<CPacket>> source;
-	int sockid = 54321;
-	int isn = 123456;
-	size_t plsize = 1316;
+    int sockid = 54321;
+    int isn = 123456;
+    size_t plsize = 1316;
 
-	TestFECRebuilding()
-	{
-		// Required to make ParseCorrectorConfig work
-		PacketFilter::globalInit();
-	}
+    TestFECRebuilding()
+    {
+        // Required to make ParseCorrectorConfig work
+        PacketFilter::globalInit();
+    }
 
-	void SetUp() override
-	{
-		int timestamp = 10;
+    void SetUp() override
+    {
+        int timestamp = 10;
 
-		SrtFilterInitializer init = {
-			sockid,
-			isn - 1, // It's passed in this form to PacketFilter constructor, it should increase it
-			isn - 1, // XXX Probably this better be changed.
-			plsize
-		};
+        SrtFilterInitializer init = {
+            sockid,
+            isn - 1, // It's passed in this form to PacketFilter constructor, it should increase it
+            isn - 1, // XXX Probably this better be changed.
+            plsize
+        };
 
 
-		// Make configuration row-only with size 7
-		string conf = "fec,rows:1,cols:7";
+        // Make configuration row-only with size 7
+        string conf = "fec,rows:1,cols:7";
 
-		provided.clear();
+        provided.clear();
 
-		fec = new FECFilterBuiltin(init, provided, conf);
+        fec = new FECFilterBuiltin(init, provided, conf);
 
-		int32_t seq = isn;
+        int32_t seq = isn;
 
-		for (int i = 0; i < 7; ++i)
-		{
-			source.emplace_back(new CPacket);
-			CPacket& p = *source.back();
+        for (int i = 0; i < 7; ++i)
+        {
+            source.emplace_back(new CPacket);
+            CPacket& p = *source.back();
 
-			p.allocate(SRT_LIVE_MAX_PLSIZE);
+            p.allocate(SRT_LIVE_MAX_PLSIZE);
 
-			uint32_t* hdr = p.getHeader();
+            uint32_t* hdr = p.getHeader();
 
-			// Fill in the values
-			hdr[SRT_PH_SEQNO] = seq;
-			hdr[SRT_PH_MSGNO] = 1 | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
-			hdr[SRT_PH_ID] = sockid;
-			hdr[SRT_PH_TIMESTAMP] = timestamp;
+            // Fill in the values
+            hdr[SRT_PH_SEQNO] = seq;
+            hdr[SRT_PH_MSGNO] = 1 | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+            hdr[SRT_PH_ID] = sockid;
+            hdr[SRT_PH_TIMESTAMP] = timestamp;
 
-			// Fill in the contents.
-			// Randomly chose the size
+            // Fill in the contents.
+            // Randomly chose the size
 
-			int minsize = 732;
-			int divergence = plsize - minsize - 1;
-			size_t length = minsize + rand() % divergence;
+            int minsize = 732;
+            int divergence = plsize - minsize - 1;
+            size_t length = minsize + rand() % divergence;
 
-			p.setLength(length);
-			for (size_t b = 0; b < length; ++b)
-			{
-				p.data()[b] = rand() % 255;
-			}
+            p.setLength(length);
+            for (size_t b = 0; b < length; ++b)
+            {
+                p.data()[b] = rand() % 255;
+            }
 
-			timestamp += 10;
-			seq = CSeqNo::incseq(seq);
-		}
-	}
+            timestamp += 10;
+            seq = CSeqNo::incseq(seq);
+        }
+    }
 
-	void TearDown() override
-	{
-		delete fec;
-	}
+    void TearDown() override
+    {
+        delete fec;
+    }
 };
 
 
 TEST_F(TestFECRebuilding, Prepare)
 {
-	// Stuff in prepared packets into the source fec.
+    // Stuff in prepared packets into the source fec.
     int32_t seq;
     for (int i = 0; i < 7; ++i)
     {
@@ -95,7 +95,7 @@ TEST_F(TestFECRebuilding, Prepare)
 
         // Feed it simultaneously into the sender FEC
         fec->feedSource(p);
-		seq = p.getSeqNo();
+        seq = p.getSeqNo();
     }
 
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
@@ -108,7 +108,7 @@ TEST_F(TestFECRebuilding, Prepare)
 
 TEST_F(TestFECRebuilding, NoRebuild)
 {
-	// Stuff in prepared packets into the source fec.
+    // Stuff in prepared packets into the source fec.
     int32_t seq;
     for (int i = 0; i < 7; ++i)
     {
@@ -116,7 +116,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
 
         // Feed it simultaneously into the sender FEC
         fec->feedSource(p);
-		seq = p.getSeqNo();
+        seq = p.getSeqNo();
     }
 
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
@@ -172,20 +172,20 @@ TEST_F(TestFECRebuilding, NoRebuild)
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
     EXPECT_EQ(provided.size(), 0); // Confirm that nothing was rebuilt
 
-	/*
-	// XXX With such a short sequence, losses will not be reported.
-	// You need at least one packet past the row, even in 1-row config.
-	// Probably a better way for loss collection should be devised.
+    /*
+    // XXX With such a short sequence, losses will not be reported.
+    // You need at least one packet past the row, even in 1-row config.
+    // Probably a better way for loss collection should be devised.
 
     ASSERT_EQ(loss.size(), 2);
-	EXPECT_EQ(loss[0].first, isn + 4);
-	EXPECT_EQ(loss[1].first, isn + 6);
-	*/
+    EXPECT_EQ(loss[0].first, isn + 4);
+    EXPECT_EQ(loss[1].first, isn + 6);
+     */
 }
 
 TEST_F(TestFECRebuilding, Rebuild)
 {
-	// Stuff in prepared packets into the source fec->
+    // Stuff in prepared packets into the source fec->
     int32_t seq;
     for (int i = 0; i < 7; ++i)
     {
@@ -193,7 +193,7 @@ TEST_F(TestFECRebuilding, Rebuild)
 
         // Feed it simultaneously into the sender FEC
         fec->feedSource(p);
-		seq = p.getSeqNo();
+        seq = p.getSeqNo();
     }
 
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);

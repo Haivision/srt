@@ -1050,9 +1050,9 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         /* Skip any invalid skipped/dropped packets */
         if (m_pUnit[i] == NULL)
         {
-			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
-					<< " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
-					<< " SKIPPED - no unit there");
+            HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+                    << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+                    << " SKIPPED - no unit there");
             if (++ m_iStartPos == m_iSize)
                 m_iStartPos = 0;
             continue;
@@ -1062,9 +1062,9 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
         if (m_pUnit[i]->m_iFlag != CUnit::GOOD)
         {
-			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
-					<< " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
-					<< " SKIPPED - unit not good");
+            HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
+                    << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
+                    << " SKIPPED - unit not good");
             freeunit = true;
         }
         else
@@ -1097,7 +1097,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 
         if (freeunit)
         {
-			HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED");
+            HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED");
             CUnit* tmp = m_pUnit[i];
             m_pUnit[i] = NULL;
             rmpkts++;
@@ -1610,7 +1610,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
         if ((rs >= 0) && (unitsize > rs))
             unitsize = rs;
 
-		HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
+        HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
 
         if (unitsize > 0)
         {
@@ -1649,23 +1649,23 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             }
 #endif
         }
-		else
-		{
-			HLOGC(dlog.Debug, log << CONID() << "readMsg: SKIPPED POS=" << p << " - ZERO SIZE UNIT");
-		}
+        else
+        {
+            HLOGC(dlog.Debug, log << CONID() << "readMsg: SKIPPED POS=" << p << " - ZERO SIZE UNIT");
+        }
 
         if (!passack)
         {
-			HLOGC(dlog.Debug, log << CONID() << "readMsg: FREEING UNIT POS=" << p);
+            HLOGC(dlog.Debug, log << CONID() << "readMsg: FREEING UNIT POS=" << p);
             CUnit* tmp = m_pUnit[p];
             m_pUnit[p] = NULL;
             m_pUnitQueue->makeUnitFree(tmp);
         }
         else
-		{
-			HLOGC(dlog.Debug, log << CONID() << "readMsg: PASSACK UNIT POS=" << p);
+        {
+            HLOGC(dlog.Debug, log << CONID() << "readMsg: PASSACK UNIT POS=" << p);
             m_pUnit[p]->m_iFlag = CUnit::PASSACK;
-		}
+        }
 
         if (++ p == m_iSize)
             p = 0;

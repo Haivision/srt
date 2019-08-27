@@ -29,7 +29,7 @@ public:
 
     struct Group
     {
-        int32_t base; //< Sequence of the first packet in the group
+        int32_t base;     //< Sequence of the first packet in the group
         size_t step;      //< by how many packets the sequence should increase to get the next packet
         size_t drop;      //< by how much the sequence should increase to get to the next series
         size_t collected; //< how many packets were taken to collect the clip
@@ -171,8 +171,7 @@ private:
     void PackControl(const Group& g, signed char groupix, SrtPacket& pkt, int32_t seqno);
 
     // Receiving
-
-	void CheckLargeDrop(int32_t seqno);
+    void CheckLargeDrop(int32_t seqno);
     int ExtendRows(int rowx);
     int ExtendColumns(int colgx);
     void MarkCellReceived(int32_t seq);

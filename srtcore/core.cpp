@@ -80,6 +80,13 @@ modified by
 
 using namespace std;
 
+#if ENABLE_HEAVY_LOGGING
+#define IF_HEAVY_LOGGING(instr) instr
+#else 
+#define IF_HEAVY_LOGGING(instr) (void)0
+#endif 
+
+
 namespace srt_logging
 {
 
@@ -1771,8 +1778,6 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
 
     }
 
-
-
     // If this is a response, we have also information
     // on the peer. If Peer is NOT filter capable, don't
     // put filter config, even if agent is capable.
@@ -1808,7 +1813,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         logext += ",filter";
     }
 
-        string sm = m_CongCtl.selected_name();
+    string sm = m_CongCtl.selected_name();
     if (sm != "" && sm != "live")
     {
         have_congctl = true;
@@ -1909,8 +1914,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         pcmdspec = p+offset;
         ++offset;
 
-        size_t wordsize = (sm.size()+3)/4;
-        size_t aligned_bytesize = wordsize*4;
+        size_t wordsize = (sm.size() + 3) / 4;
+        size_t aligned_bytesize = wordsize * 4;
 
         memset(p+offset, 0, aligned_bytesize);
 
@@ -6822,7 +6827,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       {
          int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
-         int32_t oldack SRT_ATR_UNUSED = m_iRcvLastSkipAck;
+         IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
          m_iRcvLastAck = ack;
          m_iRcvLastSkipAck = ack;
 
@@ -7389,6 +7394,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // protect packet retransmission
       CGuard::enterCS(m_AckLock);
 
+      // This variable is used in "normal" logs, so it may cause a warning
+      // when logging is forcefully off.
       int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
 
       // decode loss list message and insert loss into the sender loss list
@@ -8281,12 +8288,7 @@ int CUDT::processData(CUnit* in_unit)
           // one of missing packets in the transmission.
           int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
 
-#if ENABLE_HEAVY_LOGGING
-          const char* exc_type = "EXPECTED";
-#define IF_HEAVY_LOGGING(instr) instr
-#else 
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif 
+          IF_HEAVY_LOGGING(const char* exc_type = "EXPECTED");
 
           if (offset < 0)
           {

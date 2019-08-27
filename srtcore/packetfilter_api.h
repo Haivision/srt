@@ -1,6 +1,6 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2018 Haivision Systems Inc.
+ * Copyright (c) 2019 Haivision Systems Inc.
  * 
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -13,10 +13,10 @@
 
 enum SrtPktHeaderFields
 {
-    SRT_PH_SEQNO = 0, //< sequence number
-    SRT_PH_MSGNO = 1, //< message number
+    SRT_PH_SEQNO = 0,     //< sequence number
+    SRT_PH_MSGNO = 1,     //< message number
     SRT_PH_TIMESTAMP = 2, //< time stamp
-    SRT_PH_ID = 3,  //< socket ID
+    SRT_PH_ID = 3,        //< socket ID
 
     // Must be the last value - this is size of all, not a field id
     SRT_PH__SIZE
@@ -25,7 +25,7 @@ enum SrtPktHeaderFields
 
 enum SRT_ARQLevel
 {
-    SRT_ARQ_NEVER,   //< Never send LOSSREPORT
+    SRT_ARQ_NEVER,  //< Never send LOSSREPORT
     SRT_ARQ_ONREQ,  //< Only record the loss, but report only those that are returned in receive()
     SRT_ARQ_ALWAYS, //< always send LOSSREPORT immediately after detecting a loss
 };
@@ -58,7 +58,8 @@ struct SrtPacket
 
     uint32_t header(SrtPktHeaderFields field) { return hdr[field]; }
     char* data() { return buffer; }
-    size_t size() { return length; }
+    const char* data() const { return buffer; }
+    size_t size() const { return length; }
 };
 
 
@@ -71,10 +72,10 @@ class SrtPacketFilterBase
 
 protected:
 
-    SRTSOCKET socketID() { return initParams.socket_id; }
-    int32_t sndISN() { return initParams.snd_isn; }
-    int32_t rcvISN() { return initParams.rcv_isn; }
-    size_t payloadSize() { return initParams.payload_size; }
+    SRTSOCKET socketID() const { return initParams.socket_id; }
+    int32_t sndISN() const { return initParams.snd_isn; }
+    int32_t rcvISN() const { return initParams.rcv_isn; }
+    size_t payloadSize() const { return initParams.payload_size; }
 
     friend class PacketFilter;
 
@@ -94,21 +95,30 @@ protected:
     {
     }
 
-    // General configuration
+    /// Return the maximum value of any extra header you need in the
+    /// packets (no matter if only for control packets or all packets).
+    /// This is to determine the real maximum of possible data in the
+    /// packet when this filter is on.
     virtual size_t extraSize() = 0;
 
     // Sender side
 
-    // This function creates and stores the filter control packet with
-    // a prediction to be immediately sent. This is called in the function
-    // that normally is prepared for extracting a data packet from the sender
-    // buffer and send it over the channel.
+    /// This function creates and stores the filter control packet with
+    /// a prediction to be immediately sent. This is called in the function
+    /// that normally is prepared for extracting a data packet from the sender
+    /// buffer and send it over the channel. The returned value informs the
+    /// caller whether the control packet was available and therefore provided.
+    /// @param [OUT] packet Target place where the packet should be stored
+    /// @param [IN] seq Sequence number of the packet last requested for sending
+    /// @return true if the control packet has been provided
     virtual bool packControlPacket(SrtPacket& packet, int32_t seq) = 0;
 
-    // This is called at the moment when the sender queue decided to pick up
-    // a new packet from the scheduled packets. This should be then used to
-    // continue filling the group, possibly followed by final calculating the
-    // control packet ready to send.
+    /// This is called at the moment when the sender queue decided to pick up
+    /// a new packet from the scheduled packets. This should be then used to
+    /// continue filling the group, possibly followed by final calculating the
+    /// control packet ready to send. The packet received by this function is
+    /// potentially allowed to be modified.
+    /// @param [INOUT] packet The packet about to send
     virtual void feedSource(CPacket& packet) = 0;
 
 

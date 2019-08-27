@@ -24,11 +24,11 @@
 using namespace std;
 using namespace srt_logging;
 
-FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr):
-    SrtPacketFilterBase(init),
-    m_fallback_level(SRT_ARQ_ONREQ),
-    m_arrangement_staircase(true),
-    rcv(provided)
+FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr)
+    : SrtPacketFilterBase(init)
+    , m_fallback_level(SRT_ARQ_ONREQ)
+    , m_arrangement_staircase(true)
+    , rcv(provided)
 {
     if (!ParseFilterConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -218,12 +218,12 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         int32_t seqno = isn;
         for (size_t i = zero; i < which.size(); ++i)
         {
-			// ARGS:
-			// - seqno: sequence number of the first packet in the group
-			// - step: distance between two consecutive packets in the group
-			// - drop: distance between base sequence numbers in groups in consecutive series
-			// (meaning: with row size 6, group with index 2 and 8 are in the
-			// same column 2, lying in 0 and 1 series respectively).
+            // ARGS:
+            // - seqno: sequence number of the first packet in the group
+            // - step: distance between two consecutive packets in the group
+            // - drop: distance between base sequence numbers in groups in consecutive series
+            // (meaning: with row size 6, group with index 2 and 8 are in the
+            // same column 2, lying in 0 and 1 series respectively).
             ConfigureGroup(which[i], seqno, sizeRow(), sizeCol() * numberCols());
             seqno = CSeqNo::incseq(seqno);
         }
@@ -308,108 +308,108 @@ void FECFilterBuiltin::ResetGroup(Group& g)
 
 void FECFilterBuiltin::feedSource(CPacket& packet)
 {
-	// Hang on the matrix. Find by packet->getSeqNo().
+    // Hang on the matrix. Find by packet->getSeqNo().
 
-	//    (The "absolute base" is the cell 0 in vertical groups)
-	int32_t base = snd.row.base;
+    //    (The "absolute base" is the cell 0 in vertical groups)
+    int32_t base = snd.row.base;
 
-	// (we are guaranteed that this packet is a data packet, so
-	// we don't have to check if this isn't a control packet)
-	int baseoff = CSeqNo::seqoff(base, packet.getSeqNo());
+    // (we are guaranteed that this packet is a data packet, so
+    // we don't have to check if this isn't a control packet)
+    int baseoff = CSeqNo::seqoff(base, packet.getSeqNo());
 
-	int horiz_pos = baseoff;
+    int horiz_pos = baseoff;
 
-	if (CheckGroupClose(snd.row, horiz_pos, sizeRow()))
-	{
-		HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
-	}
-	ClipPacket(snd.row, packet);
-	snd.row.collected++;
+    if (CheckGroupClose(snd.row, horiz_pos, sizeRow()))
+    {
+        HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
+    }
+    ClipPacket(snd.row, packet);
+    snd.row.collected++;
 
-	// Don't do any column feeding if using column size 1
-	if (sizeCol() < 2)
-	{
-		// The above logging instruction in case of no columns
-		HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
-				<< " B:%" << baseoff << " H:*[" << horiz_pos << "]"
-				<< " size=" << packet.size()
-				<< " TS=" << packet.getMsgTimeStamp()
-				<< " !" << BufferStamp(packet.data(), packet.size()));
-		HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
-		return;
-	}
+    // Don't do any column feeding if using column size 1
+    if (sizeCol() < 2)
+    {
+        // The above logging instruction in case of no columns
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+                << " B:%" << baseoff << " H:*[" << horiz_pos << "]"
+                << " size=" << packet.size()
+                << " TS=" << packet.getMsgTimeStamp()
+                << " !" << BufferStamp(packet.data(), packet.size()));
+        HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
+        return;
+    }
 
-	// 1. Get the number of group in both vertical and horizontal groups:
-	//    - Vertical: offset towards base (% row size, but with updated Base seq unnecessary)
-	// (Just for a case).
-	int vert_gx = baseoff % sizeRow();
+    // 1. Get the number of group in both vertical and horizontal groups:
+    //    - Vertical: offset towards base (% row size, but with updated Base seq unnecessary)
+    // (Just for a case).
+    int vert_gx = baseoff % sizeRow();
 
-	// 2. Define the position of this packet in the group
-	//    - Horizontal: offset towards base (of the given group, not absolute!)
-	//    - Vertical: (seq-base)/column_size
-	int32_t vert_base = snd.cols[vert_gx].base;
-	int vert_off = CSeqNo::seqoff(vert_base, packet.getSeqNo());
+    // 2. Define the position of this packet in the group
+    //    - Horizontal: offset towards base (of the given group, not absolute!)
+    //    - Vertical: (seq-base)/column_size
+    int32_t vert_base = snd.cols[vert_gx].base;
+    int vert_off = CSeqNo::seqoff(vert_base, packet.getSeqNo());
 
-	// It MAY HAPPEN that the base is newer than the sequence of the packet.
-	// This may normally happen in the beginning period, where the bases
-	// set up initially for all columns got the shift, so they are kinda from
-	// the future, and "this sequence" is in a group that is already closed.
-	// In this case simply can't clip the packet in the column group.
+    // It MAY HAPPEN that the base is newer than the sequence of the packet.
+    // This may normally happen in the beginning period, where the bases
+    // set up initially for all columns got the shift, so they are kinda from
+    // the future, and "this sequence" is in a group that is already closed.
+    // In this case simply can't clip the packet in the column group.
 
-	HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
-			<< " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
+    HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
+            << " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
-	if (vert_off >= 0 && sizeCol() > 1)
-	{
-		// BEWARE! X % Y with different signedness upgrades int to unsigned!
+    if (vert_off >= 0 && sizeCol() > 1)
+    {
+        // BEWARE! X % Y with different signedness upgrades int to unsigned!
 
-		// SANITY: check if the rule applies on the group
-		if (vert_off % sizeRow())
-		{
-			LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
-					<< " WRONG with horiz base=%" << base << "coloff(" << vert_off
-					<< ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
+        // SANITY: check if the rule applies on the group
+        if (vert_off % sizeRow())
+        {
+            LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
+                    << " WRONG with horiz base=%" << base << "coloff(" << vert_off
+                    << ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
 
-			// Do not place it, it would be wrong.
-			return;
-		}
+            // Do not place it, it would be wrong.
+            return;
+        }
 
-		int vert_pos = vert_off / sizeRow();
+        int vert_pos = vert_off / sizeRow();
 
-		HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
-				<< " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-				<< ")[" << vert_gx << "][" << vert_pos << "] "
-				<< " size=" << packet.size()
-				<< " TS=" << packet.getMsgTimeStamp()
-				<< " !" << BufferStamp(packet.data(), packet.size()));
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+                << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+                << ")[" << vert_gx << "][" << vert_pos << "] "
+                << " size=" << packet.size()
+                << " TS=" << packet.getMsgTimeStamp()
+                << " !" << BufferStamp(packet.data(), packet.size()));
 
-		// 3. The group should be check for the necessity of being closed.
-		// Note that FEC packet extraction doesn't change the state of the
-		// VERTICAL groups (it can be potentially extracted multiple times),
-		// only the horizontal in order to mark that the vertical FEC is
-		// extracted already. So, anyway, check if the group limit was reached
-		// and it wasn't closed.
-		// 4. Apply the clip
-		// 5. Increase collected.
+        // 3. The group should be check for the necessity of being closed.
+        // Note that FEC packet extraction doesn't change the state of the
+        // VERTICAL groups (it can be potentially extracted multiple times),
+        // only the horizontal in order to mark that the vertical FEC is
+        // extracted already. So, anyway, check if the group limit was reached
+        // and it wasn't closed.
+        // 4. Apply the clip
+        // 5. Increase collected.
 
-		if (CheckGroupClose(snd.cols[vert_gx], vert_pos, sizeCol()))
-		{
-			HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
-		}
-		ClipPacket(snd.cols[vert_gx], packet);
-		snd.cols[vert_gx].collected++;
-	}
-	else
-	{
+        if (CheckGroupClose(snd.cols[vert_gx], vert_pos, sizeCol()))
+        {
+            HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
+        }
+        ClipPacket(snd.cols[vert_gx], packet);
+        snd.cols[vert_gx].collected++;
+    }
+    else
+    {
 
-		HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
-				<< " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-				<< ")[" << vert_gx << "]<NO-COLUMN-CLIP>"
-				<< " size=" << packet.size()
-				<< " TS=" << packet.getMsgTimeStamp()
-				<< " !" << BufferStamp(packet.data(), packet.size()));
-	}
-	HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
+        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+                << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
+                << ")[" << vert_gx << "]<NO-COLUMN-CLIP>"
+                << " size=" << packet.size()
+                << " TS=" << packet.getMsgTimeStamp()
+                << " !" << BufferStamp(packet.data(), packet.size()));
+    }
+    HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
 }
 
 bool FECFilterBuiltin::CheckGroupClose(Group& g, size_t pos, size_t size)

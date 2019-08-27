@@ -264,10 +264,10 @@ struct CBytePerfMon
    int      pktRcvDropTotal;            // number of too-late-to play missing packets
    int      pktRcvUndecryptTotal;       // number of undecrypted packets
 
-   int pktSndFilterExtraTotal;          // number of control packets supplied by packet filter
-   int pktRcvFilterExtraTotal;          // number of control packets received and not supplied back
-   int pktRcvFilterSupplyTotal;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
-   int pktRcvFilterLossTotal;           // number of packet loss not coverable by filter
+   int      pktSndFilterExtraTotal;     // number of control packets supplied by packet filter
+   int      pktRcvFilterExtraTotal;     // number of control packets received and not supplied back
+   int      pktRcvFilterSupplyTotal;    // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLossTotal;      // number of packet loss not coverable by filter
 
    uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
    uint64_t byteRecvTotal;              // total number of received bytes
@@ -291,10 +291,10 @@ struct CBytePerfMon
    int      pktRecvACK;                 // number of received ACK packets
    int      pktSentNAK;                 // number of sent NAK packets
    int      pktRecvNAK;                 // number of received NAK packets
-   int pktSndFilterExtra;               // number of control packets supplied by packet filter
-   int pktRcvFilterExtra;               // number of control packets received and not supplied back
-   int pktRcvFilterSupply;              // number of packets that the filter supplied extra (e.g. FEC rebuilt)
-   int pktRcvFilterLoss;                // number of packet loss not coverable by filter
+   int      pktSndFilterExtra;          // number of control packets supplied by packet filter
+   int      pktRcvFilterExtra;          // number of control packets received and not supplied back
+   int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
    double   mbpsSendRate;               // sending rate in Mb/s
    double   mbpsRecvRate;               // receiving rate in Mb/s
    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
