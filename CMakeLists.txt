@@ -118,7 +118,7 @@ option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building 
 # however, may be portability issues around the clock_gettime() function, which
 # is not available on every SDK, or extra -lrt option is sometimes required
 # (this requirement will be autodetected).
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV (temporary fix for #729)" OFF)
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
