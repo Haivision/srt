@@ -239,7 +239,10 @@ public:
     std::string CONID() const { return ""; }
 
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
+      /// Construct the buffer.
+      /// @param [in] queue  CUnitQueue that actually holds the units (packets)
+      /// @param [in] bufsize_pkts in units (packets)
+   CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = 65536);
    ~CRcvBuffer();
 
       /// Write data into the buffer.
@@ -264,13 +267,17 @@ public:
    int readBufferToFile(std::fstream& ofs, int len);
 
       /// Update the ACK point of the buffer.
-      /// @param [in] len size of data to be acknowledged.
+      /// @param [in] len number of units to be acknowledged.
       /// @return 1 if a user buffer is fulfilled, otherwise 0.
 
    void ackData(int len);
 
       /// Query how many buffer space left for data receiving.
+      /// Actually only acknowledged packets, that are still in the buffer,
+      /// are considered to take buffer space.
+      ///
       /// @return size of available buffer space (including user buffer) for data receiving.
+      ///         Not counting unacknowledged packets.
 
    int getAvailBufSize() const;
 
@@ -426,8 +433,8 @@ private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer
-   int m_iSize;                         // size of the protocol buffer
+   CUnit** m_pUnit;                     // pointer to the protocol buffer (array of CUnit* items)
+   const int m_iSize;                   // size of the array of CUnit* items
    CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)

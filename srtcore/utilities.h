@@ -300,8 +300,8 @@ struct BitsetMask<L, R, false>
 template <size_t L, size_t R = L>
 struct Bits
 {
-    // DID YOU GET kind-of error: ‘mask’ is not a member of ‘Bits<3u, 5u, false>’ ?
-    // See the the above declaration of 'correct' !
+    // DID YOU GET a kind-of error: 'mask' is not a member of 'Bits<3u, 5u, false>'?
+    // See the the above declaration of 'correct'!
     static const uint32_t mask = BitsetMask<L, R>::value;
     static const uint32_t offset = R;
     static const size_t size = L - R + 1;
