@@ -516,6 +516,19 @@ enum SRT_EPOLL_OPT
 // These are actually flags - use a bit container:
 typedef int32_t SRT_EPOLL_T;
 
+enum SRT_EPOLL_FLAGS
+{
+    /// This allows the EID container to be empty when calling the waiting
+    /// function with infinite time. This means an infinite hangup, although
+    /// a socket can be added to this EID from a separate thread.
+    SRT_EPOLL_ENABLE_EMPTY = 1,
+
+    /// This makes the waiting function check if there is output container
+    /// passed to it, and report an error if it isn't. By default it is allowed
+    /// that the output container is 0 size or NULL and therefore the readiness
+    /// state is reported only as a number of ready sockets from return value.
+    SRT_EPOLL_ENABLE_OUTPUTCHECK = 2
+};
 
 #ifdef __cplusplus
 // In C++ these enums cannot be treated as int and glued by operator |.
@@ -663,6 +676,8 @@ typedef struct SRT_EPOLL_EVENT_
     int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
 } SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+
+SRT_API int32_t srt_epoll_set(int eid, int32_t flags);
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control

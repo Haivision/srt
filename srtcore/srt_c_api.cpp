@@ -277,6 +277,10 @@ int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTim
         msTimeOut);
 }
 
+// use this function to set flags. Default flags are always "everything unset".
+// Pass 0 here to clear everything, or nonzero to set a desired flag.
+// Pass -1 to not change anything (but still get the current flag value).
+int32_t srt_epoll_set(int eid, int32_t flags) { return CUDT::epoll_set(eid, flags); }
 
 int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 

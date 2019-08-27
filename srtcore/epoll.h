@@ -130,9 +130,25 @@ private:
    /// are no longer on.
    enotice_t m_USockEventNotice;
 
+   // Special behavior
+   int32_t m_Flags;
+
    enotice_t::iterator nullNotice() { return m_USockEventNotice.end(); }
 
 public:
+
+   CEPollDesc():
+       m_Flags(0)
+    {
+    }
+
+   static const int32_t EF_NOCHECK_EMPTY = 1 << 0;
+   static const int32_t EF_CHECK_REP = 1 << 1;
+
+   int32_t flags() { return m_Flags; }
+   bool flags(int32_t f) { return (m_Flags & f) != 0; }
+   void set_flags(int32_t flg) { m_Flags |= flg; }
+   void clr_flags(int32_t flg) { m_Flags &= ~flg; }
 
    // Container accessors for ewatch_t.
    bool watch_empty() { return m_USockWatchState.empty(); }
@@ -351,6 +367,8 @@ public: // for CUDT to acknowledge IO status
       /// @return 0 if success, otherwise an error number
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
+
+   int setflags(const int eid, int32_t flags);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID

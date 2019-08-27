@@ -43,6 +43,7 @@ SRT API Functions
   * [srt_epoll_remove_usock, srt_epoll_remove_ssock](#srt_epoll_remove_usock-srt_epoll_remove_ssock)
   * [srt_epoll_wait](#srt_epoll_wait)
   * [srt_epoll_uwait](#srt_epoll_uwait)
+  * [srt_epoll_set](#srt_epoll_set)
   * [srt_epoll_release](#srt_epoll_release)
 - [**Logging control**](#Logging-control)
   * [srt_setloglevel](#srt_setloglevel)
@@ -1361,6 +1362,43 @@ typedef struct SRT_EPOLL_EVENT_
 Note that when the `SRT_EPOLL_ERR` is set the error cannot be retrieved
 with `srt_getlasterror` but it means that the socket is closed and the 
 socket state can be read using `srt_getsockstate`.
+
+### srt_epoll_set
+```
+int32_t srt_epoll_set(int eid, int32_t flags);
+```
+
+Manipulate behavior flags. All default values for the flags are 0. You
+can set appropriate flag in order to change the default behavior, or only
+read the state of the current flags. The following flags are available:
+
+* `SRT_EPOLL_ENABLE_EMPTY`: allows the `srt_epoll_wait` and `srt_epoll_uwait`
+functions to be called with the EID not subscribed to any socket. By default,
+if this function is called with EID not subscribed to any socket, it will
+report an error
+
+* `SRT_EPOLL_ENABLE_OUTPUTCHECK`: Forces the `srt_epoll_wait` and `srt_epoll_uwait`
+functions to check if the output array is not empty. For `srt_epoll_wait` it
+is still allowed that either system or user array is empty, as long as EID
+isn't subscribed to this type of socket/fd. For `srt_epoll_uwait` it's only
+checked if the general output array is not empty.
+
+- Parameters:
+
+   * `eid`: the epoll container id
+   * `flags`: a nonzero set of the above flags, or special values:
+      * 0: clear all flags (set all defaults)
+      * -1: do not modify any flags
+
+- Returns:
+
+This function returns the state of the flags at the time before the call,
+or a special value -1 in case when an error occurred.
+
+- Errors:
+
+* `SRT_EINVPOLLID`: eid parameter doesn't refer to a valid epoll container
+
 
 ### srt_epoll_release
 ```
