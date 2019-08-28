@@ -263,6 +263,7 @@ CUDT::CUDT()
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
    m_iOPT_PeerIdleTimeout = COMM_RESPONSE_TIMEOUT_MS;
+   m_bOPT_ForceLatency = false;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
    m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
@@ -327,6 +328,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
    m_iOPT_PeerIdleTimeout = ancestor.m_iOPT_PeerIdleTimeout;
+   m_bOPT_ForceLatency = ancestor.m_bOPT_ForceLatency;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
@@ -865,7 +867,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
    case SRTO_PEERIDLETIMEO:
-
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_iOPT_PeerIdleTimeout = *(int*)optval;
@@ -874,9 +875,16 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
    case SRTO_IPV6ONLY:
       if (m_bConnected)
          throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-      
+
       m_iIpV6Only = *(int*)optval;
       break;
+
+   case SRTO_ENFORCEDLATENCY:
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        m_bOPT_ForceLatency = bool_int_value(optval, optlen);
+        break;
+
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -1160,6 +1168,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(int);
       break;
 
+   case SRTO_ENFORCEDLATENCY:
+      optlen = sizeof (int32_t);
+      *(int32_t*)optval = m_bOPT_ForceLatency;
+      break;
+
    default:
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
    }
@@ -1417,6 +1430,9 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
 
             if (m_bTLPktDrop)
                 srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
+
+            if (m_bOPT_ForceLatency)
+                srtdata[SRT_HS_FLAGS] |= SRT_OPT_FORCELATENCY;
         }
     }
 
@@ -2232,13 +2248,31 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
                 peer_decl_latency = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
             }
 
-
-            // Use the maximum latency out of latency from our settings and the latency
-            // "proposed" by the peer.
-            int maxdelay = std::max(m_iTsbPdDelay_ms, peer_decl_latency);
-            HLOGC(mglog.Debug, log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
-                << " Peer:" << peer_decl_latency << "  Selecting:" << maxdelay);
-            m_iTsbPdDelay_ms = maxdelay;
+            // It means that the peer/initiator, if proposed a lower
+            // latency than agent, wants to keep this setting.
+            if (IsSet(peer_srt_options, SRT_OPT_FORCELATENCY) && peer_decl_latency < m_iTsbPdDelay_ms)
+            {
+                HLOGC(mglog.Debug, log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
+                        << " Peer:" << peer_decl_latency << "  Selecting PEER-ENFORCED:" << peer_decl_latency);
+                m_iTsbPdDelay_ms = peer_decl_latency;
+            }
+            else
+            {
+                // Use the maximum latency out of latency from our settings and the latency
+                // "proposed" by the peer.
+                int maxdelay = std::max(m_iTsbPdDelay_ms, peer_decl_latency);
+                if (m_bOPT_ForceLatency && maxdelay > m_iTsbPdDelay_ms)
+                {
+                    HLOGC(mglog.Debug, log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
+                            << " Peer:" << peer_decl_latency << "  Selecting AGENT-ENFORCED:" << m_iTsbPdDelay_ms);
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
+                            << " Peer:" << peer_decl_latency << "  Selecting:" << maxdelay);
+                    m_iTsbPdDelay_ms = maxdelay;
+                }
+            }
         }
     }
     else
@@ -2261,10 +2295,28 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
         // used by it when receiving data. We take this as a peer's value,
         // and select the maximum of this one and our proposed latency for the peer.
         int peer_decl_latency = SRT_HS_LATENCY_RCV::unwrap(latencystr);
-        int maxdelay = std::max(m_iPeerTsbPdDelay_ms, peer_decl_latency);
-        HLOGC(mglog.Debug, log << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
-            << " Peer:" << peer_decl_latency << " Selecting:" << maxdelay);
-        m_iPeerTsbPdDelay_ms = maxdelay;
+
+        if (IsSet(peer_srt_options, SRT_OPT_FORCELATENCY) && peer_decl_latency < m_iPeerTsbPdDelay_ms)
+        {
+            HLOGC(mglog.Debug, log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
+                    << " Peer:" << peer_decl_latency << "  Selecting PEER-ENFORCED:" << peer_decl_latency);
+            m_iPeerTsbPdDelay_ms = peer_decl_latency;
+        }
+        else
+        {
+            int maxdelay = std::max(m_iPeerTsbPdDelay_ms, peer_decl_latency);
+            if (m_bOPT_ForceLatency && maxdelay > m_iPeerTsbPdDelay_ms)
+            {
+                HLOGC(mglog.Debug, log << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
+                        << " Peer:" << peer_decl_latency << " Selecting AGENT-ENFORCED:" << m_iPeerTsbPdDelay_ms);
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
+                        << " Peer:" << peer_decl_latency << " Selecting:" << maxdelay);
+                m_iPeerTsbPdDelay_ms = maxdelay;
+            }
+        }
     }
     else
     {

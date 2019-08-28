@@ -181,6 +181,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+   SRTO_ENFORCEDLATENCY,     // Do not accept higher latency from the peer
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:

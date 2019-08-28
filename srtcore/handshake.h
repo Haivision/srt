@@ -61,7 +61,8 @@ enum SrtOptions
     SRT_OPT_NAKREPORT = BIT(4), /* Periodic NAK report */
     SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
-    SRT_OPT_STREAM    = BIT(6)
+    SRT_OPT_STREAM    = BIT(6),
+    SRT_OPT_FORCELATENCY=BIT(7), // Responder getting that flag in HSREQ should adjust to smaller latency
 };
 
 
