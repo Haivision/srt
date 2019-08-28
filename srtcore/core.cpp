@@ -1884,8 +1884,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             return false;
         }
 
-        size_t wordsize = (m_sStreamName.size()+3)/4;
-        size_t aligned_bytesize = wordsize*4;
+        size_t wordsize = (m_sStreamName.size() + 3) / 4;
+        size_t aligned_bytesize = wordsize * 4;
 
         memset(p+offset, 0, aligned_bytesize);
         memcpy(p+offset, m_sStreamName.data(), m_sStreamName.size());
@@ -1936,8 +1936,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         pcmdspec = p+offset;
         ++offset;
 
-        size_t wordsize = (m_OPT_PktFilterConfigString.size()+3)/4;
-        size_t aligned_bytesize = wordsize*4;
+        size_t wordsize = (m_OPT_PktFilterConfigString.size() + 3) / 4;
+        size_t aligned_bytesize = wordsize * 4;
 
         memset(p+offset, 0, aligned_bytesize);
         memcpy(p+offset, m_OPT_PktFilterConfigString.data(), m_OPT_PktFilterConfigString.size());
