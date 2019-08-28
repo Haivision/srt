@@ -414,6 +414,25 @@ problem with earlier versions)
 
 ---
 
+| OptName                 | Since | Binding | Type            | Units | Default  | Range  |
+| ----------------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_ENFORCEDLATENCY`  | 1.4.0 | pre     | `int (bool)`    |       | false    | true   |
+
+- **[SET]** - This option, when set to TRUE, enforces the value of the latency
+set on this side (agent). By default the value of the latency as set per both
+sides of the connection are compared and the greater one is selected for both
+sides of the connection. This means that when particular side has set a smaller
+value for latency, it will be overridden by the value from the peer. When this
+option is set, the value on the agent will be preserved, even if the peer has
+set a higher value.
+
+Note about interactions with earlier versions:
+* Against a pre-1.3.0 version peer, this feature won't work at all
+* Against a pre-1.4.0 version peer, this feature will work only if this
+option is set on a listener side
+
+---
+
 | OptName           | Since | Binding | Type      | Units  | Default  | Range  |
 | ----------------- | ----- | ------- | --------- | ------ | -------- | ------ |
 | `SRTO_EVENT`      |       | n/a     | `int32_t` |        | n/a      | n/a    |
