@@ -109,6 +109,16 @@ option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OF
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+
+# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
+# time, instead of gettimeofday. This function allows to force a monotonic
+# clock, which is independent on the currently set time in the system.  The CV,
+# for which the *_timedwait() functions are used with so obtained current time,
+# must be appropriately configured. The consequence of enabling this option,
+# however, may be portability issues around the clock_gettime() function, which
+# is not available on every SDK, or extra -lrt option is sometimes required
+# (this requirement will be autodetected).
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
@@ -202,6 +212,10 @@ else()
 endif()
 if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
+endif()
+
+if (ENABLE_MONOTONIC_CLOCK)
+	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
 if (ENABLE_ENCRYPTION)
@@ -331,6 +345,15 @@ if (USE_STATIC_LIBSTDCXX)
 		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
 	endif()
 endif()
+
+# We need clock_gettime, but on some systems this is only provided
+# by librt. Check if librt is required.
+if (ENABLE_MONOTONIC_CLOCK AND LINUX)
+	# "requires" - exits on FATAL_ERROR when clock_gettime not available
+	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
+endif()
+
 
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
