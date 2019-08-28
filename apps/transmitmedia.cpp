@@ -139,7 +139,7 @@ public:
         output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
         output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
         output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
-        output << "\"packetsFilterSupplied\":" << mon.pktRcvFilterSupply << ",";
+        output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
         output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
         output << "\"bytes\":" << mon.byteRecv << ",";
         output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
@@ -175,7 +175,9 @@ public:
             output << "msRTT,mbpsBandwidth,mbpsMaxBW,pktSent,pktSndLoss,pktSndDrop,";
             output << "pktRetrans,byteSent,byteSndDrop,mbpsSendRate,usPktSndPeriod,";
             output << "pktRecv,pktRcvLoss,pktRcvDrop,pktRcvRetrans,pktRcvBelated,";
-            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms";
+            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms,";
+            // Filter stats
+            output << "pktSndFilterExtra,pktRcvFilterExtra,pktRcvFilterSupply,pktRcvFilterLoss";
             output << endl;
             first_line_printed = true;
         }
@@ -208,7 +210,12 @@ public:
         output << mon.byteRcvLoss << ",";
         output << mon.byteRcvDrop << ",";
         output << mon.mbpsRecvRate << ",";
-        output << rcv_latency;
+        output << rcv_latency << ",";
+        // Filter stats
+        output << mon.pktSndFilterExtra << ",";
+        output << mon.pktRcvFilterExtra << ",";
+        output << mon.pktRcvFilterSupply << ",";
+        output << mon.pktRcvFilterLoss; //<< ",";
         output << endl;
         return output.str();
     }
