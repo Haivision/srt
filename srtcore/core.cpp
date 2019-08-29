@@ -6522,10 +6522,9 @@ int CUDT::receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl, int by
 
     if ((res <= 0) && (m_iRcvTimeOut >= 0))
     {
-
-            // Forced to return -1 instead of throwing exception.
-            if (!by_exception)
-                return setError(MJ_AGAIN, MN_XMTIMEOUT, 0);
+        // Forced to return -1 instead of throwing exception.
+        if (!by_exception)
+            return setError(MJ_AGAIN, MN_XMTIMEOUT, 0);
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
     }
 

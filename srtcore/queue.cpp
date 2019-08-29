@@ -1304,7 +1304,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
     if (rst == RST_OK)
     {
         *r_id = r_unit->m_Packet.m_iID;
-        HLOGC(mglog.Debug, log << "INCOMING PACKET: BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
+        HLOGC(mglog.Debug, log << "INCOMING PACKET: FROM=" << SockaddrToString(*r_addr)
+                << " BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
                 << " DEST=" << SockaddrToString(r_unit->m_Packet.m_DestAddr)
                 << " " << r_unit->m_Packet.Info());
     }

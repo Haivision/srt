@@ -716,10 +716,10 @@ int CEPoll::release(const int eid)
 namespace
 {
 template <int event_type> inline
-void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int flags, bool enable)
+bool update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int flags, bool enable)
 {
     if (!IsSet(flags, event_type))
-        return;
+        return false;
 
     set<SRTSOCKET>& watch = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& result = d.*(CEPollET<event_type>::eventsinks());
@@ -727,6 +727,7 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
     const char* px = CEPollET<event_type>::name();
 #endif
 
+    int nerased ATR_UNUSED = 0;
     if (enable && watch.count(uid))
     {
         result.insert(uid);
@@ -735,7 +736,7 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
 
     if (!enable)
     {
-        result.erase(uid);
+        nerased = result.erase(uid);
         goto Updated;
     }
 
@@ -743,15 +744,21 @@ void update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
     HLOGC(dlog.Debug, log << "epoll/update: NOT updated EID " << eid
             << " for @" << uid << " - " << px << ":TRACKED: "
             << Printable(watch));
+    return false;
+
     if (false)
     {
 Updated: ;
         LOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid
+                << (!enable ? (nerased ? " (cleared)" : " (NOT cleared)") : "")
                 << " [" << (enable?"+":"-") << px << "] TRACKED:"
                 << Printable(watch));
+        return true;
     }
 #else
-Updated: ;
+    return false;
+Updated:
+    return true;
 #endif
 }
 
@@ -787,6 +794,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
 #endif
 
    vector<int> lost;
+   bool updated ATR_UNUSED = false;
    for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
    {
       p = m_mPolls.find(*i);
@@ -797,15 +805,22 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
       }
       else
       {
-          update_epoll_sets<SRT_EPOLL_IN >(*i, uid, p->second, events, enable);
-          update_epoll_sets<SRT_EPOLL_OUT>(*i, uid, p->second, events, enable);
-          update_epoll_sets<SRT_EPOLL_ERR>(*i, uid, p->second, events, enable);
-          update_epoll_sets<SRT_EPOLL_SPECIAL>(*i, uid, p->second, events, enable);
+          updated |= update_epoll_sets<SRT_EPOLL_IN >(*i, uid, p->second, events, enable);
+          updated |= update_epoll_sets<SRT_EPOLL_OUT>(*i, uid, p->second, events, enable);
+          updated |= update_epoll_sets<SRT_EPOLL_ERR>(*i, uid, p->second, events, enable);
+          updated |= update_epoll_sets<SRT_EPOLL_SPECIAL>(*i, uid, p->second, events, enable);
       }
    }
 
    for (vector<int>::iterator i = lost.begin(); i != lost.end(); ++ i)
       eids.erase(*i);
+
+#if ENABLE_HEAVY_LOGGING
+   if (!updated)
+   {
+       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " NO SUBSCRIBERS");
+   }
+#endif
 
    return 0;
 }

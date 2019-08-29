@@ -2124,6 +2124,7 @@ void CUDTUnited::checkBrokenSockets()
             || (0 == j->second->m_pUDT->m_pSndBuffer->getCurrBufSize())
             || (j->second->m_pUDT->m_ullLingerExpiration <= CTimer::getTime()))
          {
+            HLOGC(mglog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << j->second->m_SocketID);
             j->second->m_pUDT->m_ullLingerExpiration = 0;
             j->second->m_pUDT->m_bClosing = true;
             j->second->m_TimeStamp = CTimer::getTime();
