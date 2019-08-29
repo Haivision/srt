@@ -27,6 +27,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <logging.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -47,6 +48,8 @@ static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
+
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-file");
 
 int main( int argc, char** argv )
 {

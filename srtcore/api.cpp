@@ -2089,7 +2089,7 @@ void CUDTUnited::checkBrokenSockets()
             continue;
          }
 
-         // HLOGF(mglog.Debug, "moving socket to CLOSED: %d\n", i->first);
+         HLOGC(mglog.Debug, log << "checkBrokenSockets: moving BROKEN socket to CLOSED: @" << i->first);
 
          //close broken connections and start removal timer
          s->m_Status = SRTS_CLOSED;
@@ -2133,10 +2133,14 @@ void CUDTUnited::checkBrokenSockets()
 
       // timeout 1 second to destroy a socket AND it has been removed from
       // RcvUList
-      if ((CTimer::getTime() - j->second->m_TimeStamp > 1000000)
-         && ((!j->second->m_pUDT->m_pRNode)
+      uint64_t now = CTimer::getTime();
+      int64_t closed_ago_us = now - j->second->m_TimeStamp;
+      if (closed_ago_us > 1000000 && ((!j->second->m_pUDT->m_pRNode)
             || !j->second->m_pUDT->m_pRNode->m_bOnList))
       {
+          HLOGC(mglog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                  << closed_ago_us << "us ago and removed from RcvQ - will remove");
+
          // HLOGF(mglog.Debug, "will unref socket: %d\n", j->first);
          tbr.push_back(j->first);
       }

@@ -10643,7 +10643,10 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // There's at least one socket in the group, so only
         // post-options are allowed.
         if (!std::binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        {
+            LOGC(mglog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        }
 
         HLOGC(mglog.Debug, log << "... SPREADING to existing sockets.");
         // This means that there are sockets already, so apply
@@ -11695,6 +11698,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // may become unstable after a while
     size_t nunstable = 0;
     vector<gli_t> sendable;
+
     SRT_MSGCTRL& mc = *r_mc;
 
     int stat = 0;
@@ -11705,6 +11709,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
     uint64_t now_tk;
     CTimer::rdtsc(now_tk);
+
+    sendable.reserve(m_Group.size());
 
     // Always set the same exactly message number for the payload
     // sent over all links.Regardless whether it will be used to synchronize
@@ -11885,8 +11891,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // Could be set above
             if (u.m_ullUnstableSince_tk)
             {
-                HLOGC(dlog.Debug, log << "grp/sendBackup: socket UNSTABLE since "
-                        << ((now_tk - u.m_ullUnstableSince_tk) / CTimer::getCPUFrequency()) << " : @" << d->id << " - will send a payload");
+                HLOGC(dlog.Debug, log << "grp/sendBackup: link UNSTABLE for "
+                        << ((now_tk - u.m_ullUnstableSince_tk) / CTimer::getCPUFrequency()) << "us : @" << d->id << " - will send a payload");
                 // The link is already unstable
                 if (!oldest_unstable_tk || oldest_unstable_tk > u.m_ullUnstableSince_tk)
                     oldest_unstable_tk = u.m_ullUnstableSince_tk;
@@ -11937,6 +11943,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 #endif
 
     int32_t curseq = -1;
+    size_t nsuccessful = 0;
 
     // We believe that we need to send the payload over every sendable link anyway.
     for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
@@ -11963,6 +11970,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             stat = -1;
             erc = e.getErrorCode();
         }
+
         if (stat != -1)
         {
             if (curseq == -1)
@@ -11991,7 +11999,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             }
             else
             {
-                HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << u.m_SocketID << " still UNSTABLE, not counting as parallel");
+                HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << u.m_SocketID << " still UNSTABLE for "
+                        << ((now_tk - u.m_ullUnstableSince_tk) / CTimer::getCPUFrequency()) << "us, not counting as parallel");
             }
 
             // State it as succeeded, though. We don't know if the link
@@ -11999,6 +12008,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
             // and the instability state may wear off next time.
             none_succeeded = false;
             final_stat = stat;
+            ++nsuccessful;
 
             if (m_iLastSchedMsgNo == 0)
             {
@@ -12009,7 +12019,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
         }
         else if (erc == SRT_EASYNCSND)
         {
-            ++nunstable;
+            HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << u.m_SocketID << " DEEMED UNSTABLE (not ready to send)");
+            if (!u.m_ullUnstableSince_tk) // skip those unstable already - they are already counted
+                ++nunstable;
         }
 
         sendstates.push_back( (Sendstate) {d, stat, erc});
@@ -12147,7 +12159,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
 
         // Sort the idle sockets by priority so the highest priority idle links are checked first.
         sort(idlers.begin(), idlers.end(), FByPriotity());
-        HLOGC(dlog.Debug, log << "grp/sendBackup: no stable links, trying to activate an idle link:");
+        HLOGC(dlog.Debug, log << "grp/sendBackup: no stable links, trying to activate an idle link (" << idlers.size() << " available)");
 
         for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
         {
@@ -12371,7 +12383,11 @@ int CUDTGroup::sendBackup(const char* buf, int len, ref_t<SRT_MSGCTRL> r_mc)
     // Don't do this check if sending has succeeded over at least one
     // stable link. This procedure is to wait for at least one write-ready
     // link.
-    if (parallel.empty())
+    //
+    // If sending succeeded also over at least one unstable link (you only have
+    // unstable links and none other or others just got broken), continue sending
+    // anyway.
+    if (parallel.empty() && !nunstable)
     {
         // XXX FILL THE TABLE
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
@@ -12422,12 +12438,22 @@ RetryWaitBlocked:
             for (set<SRTSOCKET>::const_iterator ps = sready.ex().begin();
                     ps != sready.ex().end(); ++ps)
             {
-                HLOGC(dlog.Debug, log << "grp/sendBackup: swait/ex on @" << (*ps)
-                        << " while waiting for any writable socket - CLOSING");
+                CUDTSocket* s = m_pGlobal->locateSocket(*ps);
+                if (s)
+                {
+                    HLOGC(dlog.Debug, log << "grp/sendBackup: swait/ex on @" << (*ps)
+                            << " while waiting for any writable socket - CLOSING");
+                    CUDT::s_UDTUnited.close(s);
+                }
+                else
+                {
+                    HLOGC(dlog.Debug, log << "grp/sendBackup: swait/ex on @" << (*ps)
+                            << " - WAS DELETED IN THE MEANTIME");
+                }
 
                 ++ndead;
-                CUDT::s_UDTUnited.close(*ps);
             }
+            HLOGC(dlog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
         }
 
         if (brdy == -1 || ndead >= nlinks)
@@ -12466,6 +12492,13 @@ RetryWaitBlocked:
                 continue;
             }
 
+            if (d->sndstate == GST_RUNNING)
+            {
+                HLOGC(dlog.Debug, log << "grp/sendBackup: link @" << d->id
+                        << " RUNNING - SKIPPING from activate and resend");
+                continue;
+            }
+
             try
             {
                 // Note: this will set the currently required packet
@@ -12492,12 +12525,9 @@ RetryWaitBlocked:
 
             parallel.push_back(d);
             final_stat = stat;
-            if (d->sndstate != GST_RUNNING)
-            {
-                uint64_t now_tk;
-                CTimer::rdtsc(now_tk);
-                d->ps->core().m_ullTmpActiveTime_tk = now_tk;
-            }
+            uint64_t now_tk;
+            CTimer::rdtsc(now_tk);
+            d->ps->core().m_ullTmpActiveTime_tk = now_tk;
             d->sndstate = GST_RUNNING;
             none_succeeded = false;
             HLOGC(dlog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
@@ -12610,6 +12640,8 @@ RetryWaitBlocked:
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
     }
 
+    HLOGC(dlog.Debug, log << "grp/sendBackup: successfully sent " << final_stat << " bytes, "
+            << (ready_again ? "READY for next" : "NOT READY to send next"));
     return final_stat;
 }
 
@@ -12681,12 +12713,16 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, ref_t<SRT_MSGCTRL> r_mc)
     // Make sure that the link has correctly synchronized sequence numbers.
     // Note that sequence numbers should be recorded in mc.
     int32_t curseq = m_SenderBuffer[0].mc.pktseq;
+    size_t skip_initial = 0;
     if (curseq != core.schedSeqNo())
     {
-        if (CSeqNo::seqcmp(curseq, core.schedSeqNo()) < 0)
+        int distance = CSeqNo::seqoff(core.schedSeqNo(), curseq);
+        if (distance < 0)
         {
+            // This may happen in case when the link to be activated is already running.
+            skip_initial = -distance;
             HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
-                    << " from BACKWARD %" << curseq << " - DENIED.");
+                    << " from BACKWARD %" << curseq << " - DENIED; skip " << skip_initial << " packets" );
         }
         else
         {
@@ -12697,10 +12733,15 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, ref_t<SRT_MSGCTRL> r_mc)
         }
     }
 
-    // Send everything - including the packet freshly added to the buffer
+    senderBuffer_t::iterator i = m_SenderBuffer.begin();
 
-    for (senderBuffer_t::iterator i = m_SenderBuffer.begin();
-            i != m_SenderBuffer.end(); ++i)
+    if (skip_initial >= m_SenderBuffer.size())
+        return 0; // can't return any other state, nothing was sent
+    else if (skip_initial)
+        i += skip_initial;
+
+    // Send everything - including the packet freshly added to the buffer
+    for (; i != m_SenderBuffer.end(); ++i)
     {
         {
             // XXX Not sure if the protection is right.

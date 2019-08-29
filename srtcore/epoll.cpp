@@ -620,6 +620,40 @@ CEPollDesc& CEPoll::access(int eid)
     return p->second;
 }
 
+#if ENABLE_HEAVY_LOGGING
+namespace {
+
+void PrintReady(std::ostringstream& os, const char* header, const std::set<SRTSOCKET>& subscribers, const std::set<SRTSOCKET>& states)
+{
+    os << header << " ";
+    for (std::set<SRTSOCKET>::const_iterator i = subscribers.begin(); i != subscribers.end(); ++i)
+    {
+        os << "(";
+        if (states.count(*i))
+            os << "*";
+        else
+            os << " ";
+        os << ") " << *i << " ";
+    }
+}
+
+string ShowReadySockets(const CEPollDesc& d)
+{
+    std::ostringstream os;
+
+    os << "EID:" << d.m_iID
+        << " TOTAL:" << (d.rd().size() + d.wr().size() + d.ex().size() + d.sp().size())
+        << "  STATES: ";
+    PrintReady(os, "[R]", d.m_sUDTSocksIn, d.rd());
+    PrintReady(os, "[W]", d.m_sUDTSocksOut, d.wr());
+    PrintReady(os, "[E]", d.m_sUDTSocksEx, d.ex());
+    PrintReady(os, "[S]", d.m_sUDTSocksSpc, d.sp());
+
+    return os.str();
+}
+}
+#endif
+
 int CEPoll::swait(CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
@@ -658,13 +692,7 @@ int CEPoll::swait(CEPollDesc& d, SrtPollState& st, int64_t msTimeOut, bool repor
                 // report also when none is ready.
                 st = d;
 
-                HLOGC(dlog.Debug, log << "EID " << d.m_iID << " rdy=" << total << ": [R]"
-                        << Printable(st.rd()) << " [W]"
-                        << Printable(st.wr()) << " [E]"
-                        << Printable(st.ex()) << " TRACKED: [R]"
-                        << Printable(d.m_sUDTSocksIn) << " [W]"
-                        << Printable(d.m_sUDTSocksOut) << " [E]"
-                        << Printable(d.m_sUDTSocksEx));
+                HLOGC(dlog.Debug, log << ShowReadySockets(d));
 
                 // IMPORTANT: SPECIAL is reported only ONCE and cleared after
                 // calling 'swait'. Next 'swait' call shouldn't pick it up.
