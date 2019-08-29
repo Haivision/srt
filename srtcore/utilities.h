@@ -128,10 +128,10 @@ written by
 // GLIBC-2.8 and earlier does not provide these macros.
 // See http://linux.die.net/man/3/endian
 // From https://gist.github.com/panzi/6856583
-#   if !defined(__GLIBC__) \
-         || !defined(__GLIBC_MINOR__) \
+#   if defined(__GLIBC__) \
+      && ( !defined(__GLIBC_MINOR__) \
          || ((__GLIBC__ < 2) \
-         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9)))
+         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9))) )
 #       include <arpa/inet.h>
 #       if defined(__BYTE_ORDER) && (__BYTE_ORDER == __LITTLE_ENDIAN)
 #           define htobe16(x) htons(x)
