@@ -77,6 +77,21 @@ written by
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
 
+#if defined(__linux__) || defined(__CYGWIN__)
+   // These macros needed to be defined for some versions of GLIBC to ensure that
+   // the required macros are defined in system headers included later in this
+   // file.
+   #ifndef _BSD_SOURCE
+      #define _BSD_SOURCE
+   #endif
+   #ifndef __USE_BSD
+      #define __USE_BSD
+   #endif
+   #ifndef _DEFAULT_SOURCE
+      #define _DEFAULT_SOURCE
+   #endif
+#endif
+
 #include "platform_sys.h"
 
 // Happens that these are defined, undefine them in advance
@@ -109,6 +124,53 @@ written by
 #if defined(__linux__) || defined(__CYGWIN__)
 
 #	include <endian.h>
+
+// GLIBC-2.8 and earlier does not provide these macros.
+// See http://linux.die.net/man/3/endian
+// From https://gist.github.com/panzi/6856583
+#   if !defined(__GLIBC__) \
+         || !defined(__GLIBC_MINOR__) \
+         || ((__GLIBC__ < 2) \
+         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9)))
+#       include <arpa/inet.h>
+#       if defined(__BYTE_ORDER) && (__BYTE_ORDER == __LITTLE_ENDIAN)
+#           define htobe16(x) htons(x)
+#           define htole16(x) (x)
+#           define be16toh(x) ntohs(x)
+#           define le16toh(x) (x)
+
+#           define htobe32(x) htonl(x)
+#           define htole32(x) (x)
+#           define be32toh(x) ntohl(x)
+#           define le32toh(x) (x)
+
+#           define htobe64(x) (((uint64_t)htonl(((uint32_t)(((uint64_t)(x)) >> 32)))) | (((uint64_t)htonl(((uint32_t)(x)))) << 32))
+#           define htole64(x) (x)
+#           define be64toh(x) (((uint64_t)ntohl(((uint32_t)(((uint64_t)(x)) >> 32)))) | (((uint64_t)ntohl(((uint32_t)(x)))) << 32))
+#           define le64toh(x) (x)
+#       elif defined(__BYTE_ORDER) && (__BYTE_ORDER == __BIG_ENDIAN)
+#           define htobe16(x) (x)
+#           define htole16(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+#           define be16toh(x) (x)
+#           define le16toh(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+
+#           define htobe32(x) (x)
+#           define htole32(x) (((uint32_t)htole16(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)htole16(((uint16_t)(x)))) << 16))
+#           define be32toh(x) (x)
+#           define le32toh(x) (((uint32_t)le16toh(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)le16toh(((uint16_t)(x)))) << 16))
+
+#           define htobe64(x) (x)
+#           define htole64(x) (((uint64_t)htole32(((uint32_t)(((uint64_t)(x)) >> 32)))) | (((uint64_t)htole32(((uint32_t)(x)))) << 32))
+#           define be64toh(x) (x)
+#           define le64toh(x) (((uint64_t)le32toh(((uint32_t)(((uint64_t)(x)) >> 32)))) | (((uint64_t)le32toh(((uint32_t)(x)))) << 32))
+#       else
+#           error Byte Order not supported or not defined.
+#       endif
+#   endif
+
+#elif defined(__GNU__)
+
+#  include <endian.h>
 
 #elif defined(__APPLE__)
 
