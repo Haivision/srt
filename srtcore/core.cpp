@@ -7369,7 +7369,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, int32_t* lparam, void* rparam, int s
 
       if (m_iRcvLastAckAck == ack)
       {
-          HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << " == last ACKACK (" << reason << ")");
+          HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
           break;
       }
 
@@ -7442,7 +7442,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, int32_t* lparam, void* rparam, int s
       else
       {
          // Not possible (m_iRcvCurrSeqNo+1 < m_iRcvLastAck ?)
-          LOGC(mglog.Error, log << "sendCtrl(UMSG_ACK): IPE: curr %" << m_iRcvLastAck
+          LOGC(mglog.Error, log << "sendCtrl(UMSG_ACK): IPE: curr %" << ack
                   << " <% last %" << m_iRcvLastAck);
          CGuard::leaveCS(m_AckLock, "ack");
          break;
@@ -9413,6 +9413,22 @@ void CUDT::updateIdleLinkFrom(CUDT* source)
     if (!m_pRcvBuffer->empty())
     {
         HLOGC(dlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID << ": receiver buffer not empty");
+        return;
+    }
+
+    // XXX Try to optimize this. Note that here happens:
+    // - decseq just to have a value to compare directly
+    // - seqcmp with that value
+    // - if passed, in setInitialRcvSeq there's the same decseq again
+    int32_t new_last_rcv = CSeqNo::decseq(source->m_iRcvLastSkipAck);
+
+    // if (new_last_rcv <% m_iRcvCurrSeqNo)
+    if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) < 0)
+    {
+        // Reject the change because that would shift the reception pointer backwards.
+        HLOGC(dlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID
+                << ": backward setting rejected: %" << m_iRcvCurrSeqNo
+                << " -> %" << new_last_rcv);
         return;
     }
 

@@ -743,6 +743,17 @@ int CEPoll::release(const int eid)
 
 namespace
 {
+// For debug purposes
+template<int event_type> inline
+string epoll_event_name(int events, bool enable)
+{
+    if (!IsSet(events, event_type))
+        return string();
+
+    string output = enable ? "+" : "-";
+    return output + CEPollET<event_type>::name() + " ";
+}
+
 template <int event_type> inline
 bool update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int flags, bool enable)
 {
@@ -751,9 +762,12 @@ bool update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
 
     set<SRTSOCKET>& watch = d.*(CEPollET<event_type>::subscribers());
     set<SRTSOCKET>& result = d.*(CEPollET<event_type>::eventsinks());
+
+    // Required here because of goto
 #if ENABLE_HEAVY_LOGGING
-    const char* px = CEPollET<event_type>::name();
+    string evs = epoll_event_name<event_type>(flags, enable);
 #endif
+
 
     int nerased ATR_UNUSED = 0;
     if (enable && watch.count(uid))
@@ -770,19 +784,19 @@ bool update_epoll_sets(int eid SRT_ATR_UNUSED, SRTSOCKET uid, CEPollDesc& d, int
 
 #if ENABLE_HEAVY_LOGGING
     HLOGC(dlog.Debug, log << "epoll/update: NOT updated EID " << eid
-            << " for @" << uid << " - " << px << ":TRACKED: "
-            << Printable(watch));
+            << " for @" << uid << "[" << evs << "]"
+            << " TRACKED: " << Printable(watch));
     return false;
 
     if (false)
     {
 Updated: ;
         LOGC(dlog.Debug, log << "epoll/update: EID " << eid << " @" << uid
-                << (!enable ? (nerased ? " (cleared)" : " (NOT cleared)") : "")
-                << " [" << (enable?"+":"-") << px << "] TRACKED:"
+                << (!enable ? (nerased ? " (cleared)" : " (UNCHANGED)") : "")
+                << " [" << evs << "] TRACKED:"
                 << Printable(watch));
-        return true;
     }
+    return true;
 #else
     return false;
 Updated:
@@ -790,16 +804,6 @@ Updated:
 #endif
 }
 
-// For debug purposes
-template<int event_type> inline
-string epoll_event_name(int events, bool enable)
-{
-    if (!IsSet(events, event_type))
-        return string();
-
-    string output = enable ? "+" : "-";
-    return output + CEPollET<event_type>::name() + " ";
-}
 }  // namespace
 
 int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable)
@@ -809,14 +813,14 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
    map<int, CEPollDesc>::iterator p;
 
 #if ENABLE_HEAVY_LOGGING
+   string evs =
+       epoll_event_name<SRT_EPOLL_IN>(events, enable)
+       + epoll_event_name<SRT_EPOLL_OUT>(events, enable)
+       + epoll_event_name<SRT_EPOLL_ERR>(events, enable)
+       + epoll_event_name<SRT_EPOLL_SPECIAL>(events, enable);
+
    if (eids.empty())
    {
-       string evs =
-           epoll_event_name<SRT_EPOLL_IN>(events, enable)
-         + epoll_event_name<SRT_EPOLL_OUT>(events, enable)
-         + epoll_event_name<SRT_EPOLL_ERR>(events, enable)
-         + epoll_event_name<SRT_EPOLL_SPECIAL>(events, enable);
-
        LOGC(dlog.Debug, log << "epoll/update: @" << uid << " [" << evs << "]: NO SUBSCRIBERS");
    }
 #endif
@@ -846,7 +850,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, int events,
 #if ENABLE_HEAVY_LOGGING
    if (!updated)
    {
-       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " NO SUBSCRIBERS");
+       LOGC(dlog.Debug, log << "epoll/update: @" << uid << " [" << evs << "]: NOTHING UPDATED");
    }
 #endif
 

@@ -1285,7 +1285,7 @@ private: // Sending related data
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
-        m_iSndCurrSeqNo = isn - 1;
+        m_iSndCurrSeqNo = CSeqNo::decseq(isn);
         m_iSndNextSeqNo = isn;
         m_iSndLastAck2 = isn;
     }
@@ -1298,7 +1298,7 @@ private: // Sending related data
 #endif
         m_iRcvLastSkipAck = m_iRcvLastAck;
         m_iRcvLastAckAck = isn;
-        m_iRcvCurrSeqNo = isn - 1;
+        m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
     }
 
     uint64_t m_ullSndLastAck2Time;               // The time when last ACK2 was sent back
