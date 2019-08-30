@@ -33,9 +33,10 @@ can be added.
 
 ## General syntax
 
-SRT packet filtering can be configured by a socket option, which gets the 
-configuration contents passed as a string. How this string is interpreted depends 
-on the filter itself. However, there is an obligatory general syntax:
+SRT packet filtering can be configured by an `SRTO_PACKETFILTER` socket option,
+which gets the configuration contents passed as a string. How this string is
+interpreted depends on the filter itself. However, there is an obligatory
+general syntax:
 ```
 <filter-type>,<key>:<value>[,...]
 ```
@@ -43,32 +44,37 @@ The parts of this syntax are separated by commas. The first part is the name of
 the filter. This is followed by one or more key:value pairs, the interpretation 
 of which depends on the filter type.
 
-You can try this out using the `SRTO_FILTER` option, or the `filter` parameter
-in an SRT URI in the applications.
+You can try this out using the `SRTO_PACKETFILTER` option, or the
+`packetfilter` parameter in an SRT URI in the applications.
 
-SRT contains one built-in filter named "fec". This filter implements the FEC 
-mechanism, as described in SMPTE 2022-1-2007.
+The packet filter framework is open for extensions so that users may register
+their own filters. SRT provides also one builtin filter named "fec". This
+filter implements the FEC mechanism, as described in SMPTE 2022-1-2007.
 
 ![SRT packet filter mechanism](/docs/images/packet-filter-mechanism.png)
 
 On the input side, filtering occurs at the moment when a packet is extracted 
-from the send buffer. A filter may alter the packet before inserting it into the 
-SRT channel. Or, as in the case of the FEC filter, it may simply insert another 
-packet, such as an FEC control packet, into the channel ahead of the next waiting 
-packet from the send buffer.
+from the send buffer. A filter may then do two things:
+
+* alter the packet before inserting it into the SRT channel (the builtin "fec"
+  filter doesn't do it, though)
+
+* insert another packet (such as an FEC control packet) into the channel ahead
+  of the next waiting packet from the send buffer.
 
 On the receiving side a packet is first reviewed by the filter, and then 
 potentially passed to the receive buffer. In the case of FEC, the output of the 
 filter may be:
 
 * nothing (this happens when an FEC control packet is received but does not 
-trigger rebuilding)
+  trigger rebuilding)
 
-* one or more packets
+* one or more packets (when together with a newly received packet the FEC
+  filter succeeded to rebuild a lost packet)
 
 ## Configuring the FEC filter
 
-To use the FEC filter, set `<filter-type>` in your configuration to fec.
+To use the FEC filter, set `<filter-type>` in your configuration to `fec`.
 Then add the appropriate key:value pairs based on the following parameters:
 
 * **cols**: The number of columns in your FEC matrix (which is the equivalent of 
@@ -77,14 +83,15 @@ number >=2.
 
 * **rows**: The number of rows in your FEC matrix (which is the equivalent of 
 the size of each column). This parameter is optional and defaults to 1. If the 
-value is >=2, this usually corresponds to the exact number of rows. But two other 
-special cases are allowed:
+value is >=2, this corresponds to the exact number of rows. Beside this, two
+other special cases are allowed:
 
     * 1: in this case you have a row-only configuration (no columns)
 
-    * -N: the exact number of rows (where N is >=2), but in a single column 
-    configuration. For example, if you specify columns = 4, rows = -10 
-the row control FEC packet is not generated.
+	* -N (where N >= 2): column-only configuration. In this case N designates
+the exact size of a column, but the FEC control packet for rows will not be
+generated (in other words, the **cols** parameter designates in this case only
+a number of columns in one series)
 
 * **layout**: The format of the FEC matrix. The possible values are:
 
@@ -116,7 +123,7 @@ possible values are:
 
 For example, this is how it should be used in the URI:
 ```
-srt://recv.com:5000?latency=500&filter=fec,col:10,row:5
+srt://recv.com:5000?latency=500&filter=fec,cols:10,rows:5
 ```
 
 ## **The motivation for staircase arrangement**
@@ -152,7 +159,7 @@ row (H = horizontal position; V = vertical position):
 
 <542>
 
-<FEC/V:542>
+<FEC/V:542>  -> column FEC etc.
 
 <543>
 
@@ -210,10 +217,10 @@ in a group and the control packet by a factor based on twice the matrix size
 
 3. *Use the staircase arrangement.*
 
-    In a simple (block aligned) matrix, the packet sequence numbers at the start of 
-each column increment by 1. In a staircase (non-block aligned) matrix arrangement, 
-the packet sequence numbers at the start of each column increment by R+1, 
-where R is the row size. 
+	While in a simple (block aligned) matrix, the packet sequence numbers at
+the start of each column increment by 1, in a staircase (non-block aligned)
+matrix arrangement, the packet sequence numbers at the start of each column
+increment by R+1, where R is the row size. 
 
 Let's again imagine a matrix of 10 columns and 5 rows starting from sequence 500. 
 The rows begin with sequences numbers 500, 510, 520, 530 and 540. But the columns 
@@ -278,17 +285,23 @@ Note that with the staircase arrangement, the initial packets sent when a
 connection is established will not be covered by an FEC group. But it is 
 generally not a problem when packets are lost in the first 2 seconds of a 
 transmission. If needed, even this can be mitigated by adding a series of unused 
-groups to the FEC matrix before the transmission starts.
+groups to the FEC matrix before the transmission starts (a concept potentially
+to be implemented).
 
 Another advantage of the staircase arrangement is that it increases the 
-probability of recovering a long sequence of a lost packets, since consecutive 
-lost packets in a row will belong to different column groups. In the example 
-below, it is likely that the entire missing sequence from 572 to 583 can be 
-rebuilt, largely because packets 573 and 583 belong to different groups (once 
-these are rebuilt, it becomes possible to rebuild packets 572 and 582 via 
-row FEC):
+probability of recovering a long sequence of a lost packets in a case when
+consecutive lost packets in a row will belong to different column groups. In
+the example below, it is likely that the entire missing sequence from 572 to
+583 can be rebuilt, largely because packets 573 and 583 belong to different
+groups (once these are rebuilt, it becomes possible to rebuild packets 572 and
+582 via row FEC):
 
 ![Rebuild Missing Sequence](/docs/images/rebuild-missing-sequence.png)
+
+Although in a case of even arrangement you still may have a good luck of
+having a long loss exactly at the border of two column series, the staircase
+arrangement slightly increases the range of prospective long losses that can
+be successfully recovered.
 
 
 # The Built-in FEC Filter
@@ -318,28 +331,29 @@ columns, and the size of a column (C) is equal to the number of rows.
 
 ## Sending
 
-Prior to sending, feedSource gets the packets to be sent so that their contents 
-can be XORed and written into the FEC group's buffer. Data being XORed are:
+Prior to sending, `feedSource` gets the packets to be sent so that their
+contents can be XORed and written into the FEC group's buffer. Data being
+performed a protection operation on are:
 
 * timestamp
 * encryption flags
 * content length
 * contents - padded with zeros up to payloadSize()
 
-For the timestamp XOR, the header field TIMESTAMP is reused. For all others 
+For the timestamp recovery, the header field TIMESTAMP is reused. For all others 
 there are extra fields in the payload space of the SRT packet:
 
 * 8 bits: group index (for rows this is -1)
-* 8 bits: flag XOR
-* 16 bits: length XOR
+* 8 bits: flag recovery
+* 16 bits: length recovery
 
-When the number of XOR-ed packets reaches the desired size of the group, the FEC 
-control packet is considered ready for extraction, and the current FEC buffer 
-state (after processing all packets from the group) becomes the required contents 
-of the FEC control packet. This will then be returned at the next call to 
-packControlPacket. This function checks if the FEC control packet is ready for 
-extraction, first for the row group, then for the column group, and provides 
-it if it is ready.
+When the number of packets, applied in a protection operation, reaches the
+desired size of the group, the FEC control packet is considered ready for
+extraction, and the current FEC buffer state (after processing all packets from
+the group) becomes the required contents of the FEC control packet. This will
+then be returned at the next call to packControlPacket. This function checks if
+the FEC control packet is ready for extraction, first for the row group, then
+for the column group, and provides it if it is ready.
 
 An FEC control packet is distinguished from a regular data packet by having its 
 message number equal to 0. This value isn't normally used in SRT (message numbers 
@@ -372,14 +386,14 @@ Figure 2 - FEC control packet structure
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |FF |O|KK |R|               Message Number = 0                  |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |                        Time Stamp XOR                         |
+   |                     Time Stamp Recovery                       |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                    Destination Socket ID                      |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |  Group Index  |    Flag XOR   |          Length XOR           | -> FEC header
+   |  Group Index  | Flags Recovery|        Length Recovery        | -> FEC header
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                                                               |
-   |                           Data XOR                            |
+   |                     Payload recovery                          |
    |                                                               |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
@@ -395,21 +409,25 @@ row FEC (contains -1).
 
 If the `getMsgSeq()` function identifies a regular packet, then the packet is 
 inserted into the horizontal and vertical position of the FEC group to which it 
-belongs by applying XOR to the contents and increasing its count (the number of 
-currently processed packets in the FEC group buffer). Note that at the receiver 
-there is only one buffer for an FEC group. There's a counter that is incremented 
-for each packet that has been XORed into that group, including the FEC control 
-packet (this is marked by a separate flag). 
+belongs by performing the XOR operation with the current contents of the recovery
+buffer and increasing the packets' count (the number of currently processed
+packets in the FEC group buffer). Note that at the receiver there is only one
+buffer for an FEC group. There's a counter that is incremented for each packet
+that has been performed the XOR operation on into that group's recovery
+buffer. This operation is done as well on the FEC control packet, although
+this is marked by a separate flag.
 
 The FEC control packet is inserted into the group to which it is destined (its 
 sequence number is the last sequence in the group). Once you have a state where 
-the group buffer contains the XOR of the FEC control packet and N-1 data packets 
-(with N being the size of the group), the group is rebuild-ready, and the contents 
-of a missing packet can be rebuilt from the FEC group buffer contents.
+the group buffer contains the result of the XOR operation of the FEC control
+packet and N-1 data packets from this group (with N being the size of the
+group), the group is rebuild-ready, and the contents of a missing packet can be
+rebuilt from the FEC group buffer contents.
 
-The sequence number of the missing packet is determined by examining the bit 
-flags in the group data that are set to true when a packet is received. The 
-packet is then rebuilt by:
+Every incoming packet that is applied into the group also marks the reception
+bit flag for its sequence number. The sequence number of the missing packet is
+therefore determined by examining this flag for all these sequence number to
+find out which one is missing. The packet is then rebuilt by:
 
 * setting default values in the header (socket ID for the connection, message 
 number 1)
@@ -417,16 +435,16 @@ number 1)
 * setting the sequence number to the number found for the missing packet
 
 * setting the flags directly from the corresponding contents of the FEC group 
-buffer (Flag XOR from the FEC header);  the retransmission flag is always set
+buffer (Flag Recovery from the FEC header);  the retransmission flag is always
+set
 
-* setting the timestamp directly from the corresponding contents of the FEC 
-group buffer
+* setting the timestamp directly from the corresponding contents of Time Stamp
+Recovery
 
-* reading the payload size from the corresponding contents of the FEC group 
-buffer
+* reading the payload size from the corresponding contents of Length Recovery
 
-* setting the payload contents from the corresponding contents of the FEC group 
-buffer, up to the payload size as read above
+* setting the payload contents from the corresponding contents of Data Recovery,
+up to the payload size as read above
 
 If both columns and rows are used, the rebuilding happens recursively - that is, 
 after a packet is rebuilt its contents are also XORed to the row or column in 
@@ -449,13 +467,13 @@ information can be contained. This is the breakdown of the FEC control packet:
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |FF |O|KK |R|                  Message Number                   |   Regular
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+     SRT
-   |                      Time Stamp recovery                      |   header
+   |                      Time Stamp Recovery                      |   header
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                    Destination Socket ID                      |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ -------
-   |  Group index  | Flag recovery | Length recovery               | Extra FEC header
+   |  Group index  | Flags Recovery| Length Recovery               | Extra FEC header
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ -------
-   |                    Payload recovery...                        | Data
+   |                    Payload Recovery...                        | Data
 
 ```
 This is much like a regular data packet in SRT, however there's an extra 32-bit 
@@ -535,10 +553,10 @@ numbers used for FEC in SRT are just the existing sequence numbers.
 FEC header.
 
 - **PT recovery:** This field is specific to RTP, but is similar to 
-the **FEC** **Flag recovery** field.
+the **Flag recovery** field.
 
 - **TS recovery:** In SRT FEC the timestamp recovery is stored in the 
-SRT header's **Timestamp** field.
+SRT header's **Timestamp** field (being Time Stamp Recovery in this case)
 
 - **Index, Offset:** Some similarities can be found in the **Group index** field, 
 however its purpose is mainly to distinguish row and column groups. The index 
@@ -696,16 +714,17 @@ in particular:
 * a packet may be altered prior to sending; FEC only reads the data.
 
 * a receiver does allow packet passthrough; it must process each packet and put 
-all results into a provisional buffer\*. Note that the FEC filter does allow 
+all results into a provisional buffer(\*). Note that the FEC filter does allow 
 passthrough for regular data packets, but traps all FEC control packets and 
 provides rebuilt packets.
 
-    \* *This provisional buffer is the socket's receiver buffer that is passed to the 
-packet filter framework to accommodate packets coming out of the packet filter 
-(see the *provided* constructor parameter in the ***_Construction_*** section 
+    (\*)
+*This provisional buffer is the socket's receiver buffer that is passed to the
+packet filter framework to accommodate packets coming out of the packet filter
+(see the *provided* constructor parameter in the __Construction__ section 
 below).*
 
-The sending and receiving mechanism of packet filtering are defined in one class. 
+The sending and receiving mechanism of packet filtering is defined in one class. 
 SRT is generally bidirectional, so both directions must be covered in a single 
 mechanism.
 

@@ -888,7 +888,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       m_iIpV6Only = *(int*)optval;
       break;
 
-   case SRTO_FILTER:
+   case SRTO_PACKETFILTER:
       if (m_bConnected)
           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -1191,7 +1191,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       break;
 
       
-   case SRTO_FILTER:
+   case SRTO_PACKETFILTER:
       if (size_t(optlen) < m_OPT_PktFilterConfigString.size()+1)
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
