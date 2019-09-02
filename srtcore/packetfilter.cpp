@@ -145,18 +145,18 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
 
 bool PacketFilter::packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
 {
-    bool have = m_filter->packControlPacket(*m_sndctlpkt, seq);
+    bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
     if (!have)
         return false;
 
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
     uint32_t* hdr = r_packet.get().getHeader();
-    memcpy(hdr, m_sndctlpkt->hdr, SRT_PH__SIZE * sizeof(*hdr));
+    memcpy(hdr, m_sndctlpkt.hdr, SRT_PH__SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
-    r_packet.get().m_pcData = m_sndctlpkt->buffer;
-    r_packet.get().setLength(m_sndctlpkt->length);
+    r_packet.get().m_pcData = m_sndctlpkt.buffer;
+    r_packet.get().setLength(m_sndctlpkt.length);
 
     // This sets only the Packet Boundary flags, while all other things:
     // - Order
@@ -249,16 +249,14 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     init.payload_size = parent->OPT_PayloadSize();
 
 
-    // Found a corrector, so call the creation function
+    // Found a filter, so call the creation function
     m_filter = (*selector->second)(init, m_provided, confstr);
     if (!m_filter)
         return false;
 
-    m_sndctlpkt = new SrtPacket(0); // This only sets the 'length'.
-
     m_unitq = uq;
 
-    // The corrector should have pinned in all events
+    // The filter should have pinned in all events
     // that are of its interest. It's stated that
     // it's ready after creation.
     return true;
@@ -283,7 +281,6 @@ bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
 
 PacketFilter::~PacketFilter()
 {
-    delete m_sndctlpkt;
     delete m_filter;
 }
 

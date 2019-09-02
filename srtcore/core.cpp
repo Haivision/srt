@@ -8195,7 +8195,6 @@ int CUDT::processData(CUnit* in_unit)
    typedef vector< pair<int32_t, int32_t> > loss_seqs_t;
    loss_seqs_t filter_loss_seqs;
    loss_seqs_t srt_loss_seqs;
-   bool report_recorded_loss = true; // Report immediately recorded loss
    vector<CUnit*> incoming;
    bool was_sent_in_order = true;
    bool reorder_prevent_lossreport = false;
@@ -8254,13 +8253,11 @@ int CUDT::processData(CUnit* in_unit)
       //vector<CUnit*> undec_units;
       if (m_PacketFilter)
       {
-          report_recorded_loss = m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
-
           // Stuff this data into the filter
           m_PacketFilter.receive(in_unit, Ref(incoming), Ref(filter_loss_seqs));
           HLOGC(mglog.Debug, log << "(FILTER) fed data, received " << incoming.size() << " pkts, "
                   << Printable(filter_loss_seqs) << " loss to report, "
-                  << (report_recorded_loss ? "FIND & REPORT LOSSES YOURSELF"
+                  << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF"
                       : "REPORT ONLY THOSE"));
       }
       else
@@ -8494,6 +8491,7 @@ int CUDT::processData(CUnit* in_unit)
            }
        }
 
+       const bool report_recorded_loss = !m_PacketFilter || m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
        if (!reorder_prevent_lossreport && report_recorded_loss)
        {
            HLOGC(mglog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
@@ -9175,6 +9173,17 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
 
 void CUDT::checkNAKTimer(uint64_t currtime_tk)
 {
+    // XXX The problem with working NAKREPORT with SRT_ARQ_ONREQ
+    // is not that it would be inappropriate, but because it's not
+    // implemented. The reason for it is that the structure of the
+    // loss list container (m_pRcvLossList) is such that it is expected
+    // that the loss records are ordered by sequence numbers (so
+    // that two ranges sticking together are merged in place).
+    // Unfortunately in case of SRT_ARQ_ONREQ losses must be recorded
+    // as before, but they should not be reported, until confirmed
+    // by the filter. By this reason they appear often out of order
+    // and for adding them properly the loss list container wasn't
+    // prepared. This then requires some more effort to implement.
     if (!m_bRcvNakReport || m_PktFilterRexmitLevel != SRT_ARQ_ALWAYS)
         return;
 

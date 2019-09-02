@@ -32,7 +32,7 @@ public:
 
 private:
     // Temporarily changed to linear searching, until this is exposed
-    // for a user-defined corrector.
+    // for a user-defined filter.
     // Note that this is a pointer to function :)
 
     // The list of builtin names that are reserved.
@@ -40,7 +40,7 @@ private:
     typedef std::map<std::string, filter_create_t*> filters_map_t;
     static filters_map_t filters;
 
-    // This is a corrector container.
+    // This is a filter container.
     SrtPacketFilterBase* m_filter;
     void Check()
     {
@@ -81,36 +81,36 @@ public:
 
     // Corrector is optional, so this check should be done always
     // manually.
-    bool installed() { return m_filter; }
-    operator bool() { return installed(); }
+    bool installed() const { return m_filter; }
+    operator bool() const { return installed(); }
 
     SrtPacketFilterBase* operator->() { Check(); return m_filter; }
 
     // In the beginning it's initialized as first, builtin default.
     // Still, it will be created only when requested.
-    PacketFilter(): m_filter(), m_parent(), m_sndctlpkt(), m_unitq() {}
+    PacketFilter(): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
 
     // Copy constructor - important when listener-spawning
     // Things being done:
-    // 1. The corrector is individual, so don't copy it. Set NULL.
+    // 1. The filter is individual, so don't copy it. Set NULL.
     // 2. This will be configued anyway basing on possibly a new rule set.
-    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_unitq() {}
+    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_sndctlpkt(0), m_unitq() {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
-    // corrector basing on the value in selector, then
+    // filter basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
     bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
 
     static bool correctConfig(const SrtFilterConfig& c);
 
-    // Will delete the pinned in corrector object.
+    // Will delete the pinned in filter object.
     // This must be defined in *.cpp file due to virtual
     // destruction.
     ~PacketFilter();
 
     // Simple wrappers
-    size_t extraSize();
+    size_t extraSize() const;
     void feedSource(ref_t<CPacket> r_packet);
     SRT_ARQLevel arqLevel();
     bool packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg);
@@ -122,7 +122,7 @@ protected:
     CUDT* m_parent;
 
     // Sender part
-    SrtPacket* m_sndctlpkt;
+    SrtPacket m_sndctlpkt;
 
     // Receiver part
     CUnitQueue* m_unitq;
@@ -130,8 +130,8 @@ protected:
 };
 
 
-inline size_t PacketFilter::extraSize() { return m_filter->extraSize(); }
-inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { return m_filter->feedSource(*r_packet); }
-inline SRT_ARQLevel PacketFilter::arqLevel() { return m_filter->arqLevel(); }
+inline size_t PacketFilter::extraSize() const { SRT_ASSERT(m_filter); return m_filter->extraSize(); }
+inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource(*r_packet); }
+inline SRT_ARQLevel PacketFilter::arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
 
 #endif

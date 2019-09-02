@@ -217,7 +217,7 @@ public:
     virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
 
     // Configuration
-    virtual size_t extraSize() ATR_OVERRIDE
+    virtual size_t extraSize() const ATR_OVERRIDE
     {
         // This is the size that is needed extra by packets operated by this corrector.
         // It should be subtracted from a current maximum value for SRTO_PAYLOADSIZE
