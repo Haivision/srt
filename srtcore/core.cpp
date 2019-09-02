@@ -331,6 +331,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
    m_iIpV6Only = ancestor.m_iIpV6Only;
+   m_iMaxReorderTolerance = ancestor.m_iMaxReorderTolerance;
    //Runtime
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
 
