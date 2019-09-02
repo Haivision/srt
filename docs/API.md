@@ -375,14 +375,14 @@ where:
 
 Note: there's no separate place to report error. The only way to distinguish
 error and in/out event is when you subscribe to `IN` or `OUT` only, and the
-error then cn be recognized by the fact that the socket appears in both arrays.
+error then can be recognized by the fact that the socket appears in both arrays.
 
 This function also reports error of type `SRT_ETIMEOUT` when no socket is
 ready as the timeout elapses (including 0).
 
-Note that this function contains a loop with a periodic check with about 10ms
-interval to see if there are any events on system sockets. Only SRT sockets are
-reported immediately upon event trigger.
+Note that in this function there's a loop that checks for socket readiness
+every 10ms. This waiting time can be shortened only for SRT sockets when
+they become ready earlier after the previous check.
 
 2. `srt_epoll_uwait`: In this function only the SRT sockets can be subscribed
 (it reports error if you pass an epoll id that is subscribed to system sockets).

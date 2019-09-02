@@ -1746,7 +1746,7 @@ void CUDTUnited::updateMux(
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
 #endif
-   m.m_iRefCount = 1; 
+   m.m_iRefCount = 1;
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;

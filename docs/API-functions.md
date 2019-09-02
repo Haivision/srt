@@ -1215,10 +1215,10 @@ In the **edge-triggered** mode the function only returns socket states
 which have changed since last call (that is, upon exit from the waiting
 function any events reported there will be cleared in the internal flags
 and therefore not reported in the next call, until the internals will
-clear the state and set it again). On the other hand **level-triggered** mode
-will keep on returning while the state stays the same, until the internals will
-report that the readiness state is no longer in force.
+clear the state and set it again).
 
+In the **level-triggered** mode the function will always return the
+readiness state as long as it lasts, until the internals clear it.
 
 - Returns:
  
