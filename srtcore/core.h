@@ -543,11 +543,9 @@ private: // Identification
     HaiCrypt_Secret m_CryptoSecret;
     int m_iSndCryptoKeyLen;
 
-    // XXX Consider removing them. The m_bDataSender may stay here
+    // XXX Consider removing. The m_bDataSender stays here
     // in order to maintain the HS side selection in HSv4.
-    // m_bTwoWayData is unused.
     bool m_bDataSender;
-    bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
     uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time

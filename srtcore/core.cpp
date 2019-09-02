@@ -255,7 +255,6 @@ CUDT::CUDT()
    m_iSndCryptoKeyLen = 0;
    //Cfg
    m_bDataSender = false;       //Sender only if true: does not recv data
-   m_bTwoWayData = false;
    m_bOPT_TsbPd = true;        //Enable TsbPd on sender
    m_iOPT_TsbPdDelay = SRT_LIVE_DEF_LATENCY_MS;
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
@@ -271,8 +270,6 @@ CUDT::CUDT()
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
    m_llInputBW = 0;             // Application provided input bandwidth (internal input rate sampling == 0)
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
-   m_bTwoWayData = false;
-
    m_pCache = NULL;
 
    // Default congctl is "live".
@@ -319,7 +316,6 @@ CUDT::CUDT(const CUDT& ancestor)
    m_llInputBW = ancestor.m_llInputBW;
    m_iOverheadBW = ancestor.m_iOverheadBW;
    m_bDataSender = ancestor.m_bDataSender;
-   m_bTwoWayData = ancestor.m_bTwoWayData;
    m_bOPT_TsbPd = ancestor.m_bOPT_TsbPd;
    m_iOPT_TsbPdDelay = ancestor.m_iOPT_TsbPdDelay;
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
@@ -4752,9 +4748,6 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // These data should probably be filled only upon
     // reception of the conclusion handshake - otherwise
     // they have outdated values.
-    if ( bidirectional )
-        m_bTwoWayData = true;
-
     m_pCryptoControl->setCryptoSecret(m_CryptoSecret);
 
     if ( bidirectional || m_bDataSender )
