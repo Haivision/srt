@@ -77,21 +77,6 @@ written by
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
 
-#if defined(__linux__) || defined(__CYGWIN__)
-   // These macros needed to be defined for some versions of GLIBC to ensure that
-   // the required macros are defined in system headers included later in this
-   // file.
-   #ifndef _BSD_SOURCE
-      #define _BSD_SOURCE
-   #endif
-   #ifndef __USE_BSD
-      #define __USE_BSD
-   #endif
-   #ifndef _DEFAULT_SOURCE
-      #define _DEFAULT_SOURCE
-   #endif
-#endif
-
 #include "platform_sys.h"
 
 // Happens that these are defined, undefine them in advance
