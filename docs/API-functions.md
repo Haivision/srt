@@ -558,7 +558,7 @@ The `SRT_MSGCTRL` structure:
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
-   int msgttl;           // TTL for a message, default -1 (delivered always)
+   int msgttl;           // TTL for a message, default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
    uint64_t srctime;     // source timestamp (usec), 0: use internal time     
@@ -575,13 +575,12 @@ intended to specify some special options controlling the details of how the
 called function should work.
 
 * `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
-sending messages (in `[ms]`). Not used for receiving messages. A packet is 
-scheduled for sending by this call and then waits in the sender buffer to be 
-picked up at the moment when all previously scheduled data are already sent, 
-which may be blocked when the data are scheduled faster than the network can 
-afford to send. Default -1 means to wait indefinitely. If specified, then the 
-packet waits for an opportunity to be sent over the network only up to this TTL, 
-and then, if still not sent, the packet is discarded.
+sending messages (in `[ms]`). Not used for receiving messages. If this value
+is not negative, it defines the maximum time up to which this message should
+stay scheduled for sending for the sake of later retransmission. A message
+is always sent for the first time, but the UDP packet carrying it may be
+(also partially) lost. In this case, a message with a limited TTL will be
+given up retransmission and discarded, if this time passes.
 
 * `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
 be extracted by the receiver in the order of sending. This can be meaningful if 
@@ -636,7 +635,7 @@ Sends a payload to a remote party over a given socket.
 * `u`: Socket used to send. The socket must be connected for this operation.
 * `buf`: Points to the buffer containing the payload to send.
 * `len`: Size of the payload specified in `buf`.
-* `ttl`: Time (in `[ms]`) to wait for a possibility to send. See description of 
+* `ttl`: Time (in `[ms]`) to wait for a successful delivery. See description of 
 the [`SRT_MSGCTRL::msgttl`](#SRT_MSGCTRL) field.
 * `inorder`: Required to be received in the order of sending. See 
 [`SRT_MSGCTRL::inorder`](#SRT_MSGCTRL).
