@@ -135,7 +135,7 @@ const int UDT::ERROR = CUDT::ERROR;
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
 
-// NOTE: HAISRT_VERSION is primarily defined in the build file.
+// NOTE: SRT_VERSION is primarily defined in the build file.
 const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
 
@@ -3155,6 +3155,7 @@ void CUDT::startConnect(const sockaddr* serv_addr, int32_t forced_isn)
 
     if (e.getErrorCode() != 0)
     {
+        m_bConnecting = false;
         // The process is to be abnormally terminated, remove the connector
         // now because most likely no other processing part has done anything with it.
         m_pRcvQueue->removeConnector(m_SocketID);
@@ -5222,7 +5223,7 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    int res = m_pRcvBuffer->readBuffer(data, len);
+    const int res = m_pRcvBuffer->readBuffer(data, len);
 
     /* Kick TsbPd thread to schedule next wakeup (if running) */
     if (m_bTsbPd)
