@@ -153,7 +153,10 @@ public:
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
-   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt,
+           ref_t<SRT_REJECT_REASON> r_error);
+
+   int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.

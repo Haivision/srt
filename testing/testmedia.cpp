@@ -33,12 +33,13 @@
 
 using namespace std;
 
-std::ostream* transmit_cverb = nullptr;
+
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
-
+srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
+void* transmit_accept_hook_op = nullptr;
 
 string DirectionName(SRT_EPOLL_OPT direction)
 {
@@ -101,6 +102,10 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
+#ifdef PLEASE_LOG
+#include "logging.h"
+#endif
+
 class FileTarget: public virtual Target
 {
     ofstream ofile;
@@ -111,12 +116,23 @@ public:
     void Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+#endif
     }
 
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() override { ofile.close(); }
+    void Close() override
+    {
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Close";
+#endif
+        ofile.close();
+    }
 };
 
 // Can't base this class on FileSource and FileTarget classes because they use two
@@ -176,9 +192,9 @@ void PrintSrtStats(int sid, const PerfMonType& mon)
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
-    if ( Verbose::on )
+    if ( Verbose::on && !par.empty())
     {
-        Verb() << "Parameters:\n";
+        Verb() << "SRT parameters specified:\n";
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
@@ -442,23 +458,20 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
     }
 
-    SrtConfigurePost(sock, m_options);
+    // host is only checked for emptiness and depending on that the connection mode is selected.
+    // Here we are not exactly interested with that information.
+    vector<string> failures;
 
-    for (auto o: srt_options)
+    SrtConfigurePost(sock, m_options, &failures);
+
+
+    if (!failures.empty())
     {
-        if ( o.binding == SocketOption::POST && m_options.count(o.name) )
+        if (Verbose::on)
         {
-            string value = m_options.at(o.name);
-            bool ok = o.apply<SocketOption::SRT>(sock, value);
-            if (Verbose::on)
-            {
-                string dir_name = DirectionName(m_direction);
-
-                if ( !ok )
-                    Verb() << "WARNING: failed to set '" << o.name << "' (post, " << dir_name << ") to " << value;
-                else
-                    Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
-            }
+            Verb() << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
+            Verb();
         }
     }
 
@@ -498,7 +511,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         if (Verbose::on )
         {
             Verb() << "WARNING: failed to set options: ";
-            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
             Verb();
         }
 
@@ -583,8 +596,9 @@ void SrtCommon::ConnectClient(string host, int port)
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
+        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "UDT::connect");
+        Error(UDT::getlasterror(), "srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -614,10 +628,15 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
+void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
+    if (udtResult == SRT_ECONNREJ)
+    {
+        message += ": ";
+        message += srt_rejectreason_str(reason);
+    }
     if ( Verbose::on )
         Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
     else
@@ -729,16 +748,24 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
-    if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
-    {
-        Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-    }
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
+    CBytePerfMon perf;
+    if (need_stats_report || need_bw_report)
     {
-        PrintSrtStats(m_sock, perf);
+        // clear only if stats report is to be read
+        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+
+        if (need_bw_report)
+        {
+            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
+        }
+
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+        }
     }
 
     ++counter;
@@ -1219,10 +1246,10 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         if ( u.host() == "con" || u.host() == "console" )
         {
             if ( IsOutput<Base>() && (
-                        (Verbose::on && transmit_cverb == &cout)
-                        || transmit_bw_report) )
+                        (Verbose::on && Verbose::cverb == &cout)
+                        || transmit_bw_report || transmit_stats_report) )
             {
-                cerr << "ERROR: file://con with -v or -r would result in mixing the data and text info.\n";
+                cerr << "ERROR: file://con with -v or -r or -s would result in mixing the data and text info.\n";
                 cerr << "ERROR: HINT: you can stream through a FIFO (named pipe)\n";
                 throw invalid_argument("incorrect parameter combination");
             }
@@ -1234,9 +1261,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::SRT:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
@@ -1245,9 +1272,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
@@ -1255,7 +1282,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr)
+        ptr->uri = move(u);
     return ptr;
 }
 

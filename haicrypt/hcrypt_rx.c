@@ -39,19 +39,19 @@ int HaiCrypt_Rx_Data(HaiCrypt_Handle hhc,
 	ctx = &crypto->ctx_pair[hcryptMsg_GetKeyIndex(crypto->msg_info, in_pfx)];
 
 	ASSERT(NULL != ctx); /* Header check should prevent this error */
-	ASSERT(NULL != crypto->cipher); /* Header check should prevent this error */
+	ASSERT(NULL != crypto->cryspr); /* Header check should prevent this error */
 
 	crypto->ctx = ctx; /* Context of last received msg */
-	if (NULL == crypto->cipher->decrypt) {
-		HCRYPT_LOG(LOG_ERR, "%s", "cipher had no decryptor\n");
+	if (NULL == crypto->cryspr->ms_decrypt) {
+		HCRYPT_LOG(LOG_ERR, "%s", "cryspr had no decryptor\n");
 	} else if (ctx->status >= HCRYPT_CTX_S_KEYED) {
 		hcrypt_DataDesc indata;
 		indata.pfx      = in_pfx;
 		indata.payload  = data;
 		indata.len      = data_len;
 
-		if (0 > (nb = crypto->cipher->decrypt(crypto->cipher_data, ctx, &indata, 1, NULL, NULL, NULL))) {
-			HCRYPT_LOG(LOG_ERR, "%s", "cipher failed\n");
+		if (0 > (nb = crypto->cryspr->ms_decrypt(crypto->cryspr_cb, ctx, &indata, 1, NULL, NULL, NULL))) {
+			HCRYPT_LOG(LOG_ERR, "%s", "ms_decrypt failed\n");
 		} else {
 			nb = indata.len;
 		}
@@ -92,11 +92,11 @@ int HaiCrypt_Rx_Process(HaiCrypt_Handle hhc,
 			return(-1);
 		}
 		ASSERT(NULL != ctx); /* Header check should prevent this error */
-		ASSERT(NULL != crypto->cipher); /* Header check should prevent this error */
+		ASSERT(NULL != crypto->cryspr); /* Header check should prevent this error */
 
 		crypto->ctx = ctx; /* Context of last received msg */
-		if (NULL == crypto->cipher->decrypt) {
-			HCRYPT_LOG(LOG_ERR, "%s", "cipher had no decryptor\n");
+		if (NULL == crypto->cryspr->ms_decrypt) {
+			HCRYPT_LOG(LOG_ERR, "%s", "cryspr had no decryptor\n");
 			nbout = -1;
 		} else if (ctx->status >= HCRYPT_CTX_S_KEYED) {
 			hcrypt_DataDesc indata;
@@ -104,8 +104,8 @@ int HaiCrypt_Rx_Process(HaiCrypt_Handle hhc,
 			indata.payload  = &in_msg[crypto->msg_info->pfx_len];
 			indata.len      = in_len - crypto->msg_info->pfx_len;
 
-			if (crypto->cipher->decrypt(crypto->cipher_data, ctx, &indata, 1, out_p, out_len_p, &nbout)) {
-				HCRYPT_LOG(LOG_ERR, "%s", "cipher failed\n");
+			if (crypto->cryspr->ms_decrypt(crypto->cryspr_cb, ctx, &indata, 1, out_p, out_len_p, &nbout)) {
+				HCRYPT_LOG(LOG_ERR, "%s", "ms_decrypt failed\n");
 				nbout = -1;
 			}
 		} else { /* No key received yet */

@@ -54,7 +54,7 @@ int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpso
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
-int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int32_t forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
@@ -190,7 +190,6 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
 int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
 
@@ -213,7 +212,7 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -253,7 +252,7 @@ int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 	} else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
     if (events) {
         flag = *events;
 	} else {
@@ -317,5 +316,17 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
+enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+{
+    return CUDT::rejectReason(sock);
+}
+
+int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL));
+
+    return CUDT::installAcceptHook(lsn, hook, opaq);
+}
 
 }
