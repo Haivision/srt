@@ -461,9 +461,17 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
     m_direction = dir;
     InitParameters(host, path, par);
 
+    int backlog = 1;
+    if (m_mode == "listener" && par.count("groupconnect")
+            && true_names.count(par["groupconnect"]))
+    {
+        backlog = 10;
+    }
+
     Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking)"
-        << " on " << host << ":" << port;
+        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
+        << " backlog=" << backlog << ") on "
+        << host << ":" << port;
 
     try
     {
@@ -479,7 +487,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             }
         }
         else if ( m_mode == "listener" )
-            OpenServer(m_adapter, port);
+            OpenServer(m_adapter, port, backlog);
         else if ( m_mode == "rendezvous" )
             OpenRendezvous(m_adapter, host, port);
         else
