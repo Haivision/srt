@@ -1589,7 +1589,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     msgctl.msgno = pkt1.getMsgSeq();
 
     SRT_ASSERT(len > 0);
-    int rs = len;
+    int rs = len > 0 ? len : 0;
     while (p != (q + 1) % m_iSize)
     {
         const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
