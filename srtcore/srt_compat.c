@@ -21,8 +21,7 @@ written by
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#if !defined(_WIN32) \
-   && !defined(__MACH__)
+#if defined(__unix__) && !defined(BSD)
 #include <features.h>
 #endif
 

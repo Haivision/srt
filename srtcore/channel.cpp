@@ -102,7 +102,8 @@ m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
 #endif
 m_iSndBufSize(65536),
-m_iRcvBufSize(65536)
+m_iRcvBufSize(65536),
+m_iIpV6Only(-1)
 {
 }
 
@@ -115,8 +116,10 @@ m_iIpToS(-1),
 #endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
+m_iIpV6Only(-1),
 m_BindAddr(version)
 {
+   SRT_ASSERT(version == AF_INET || version == AF_INET6);
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 }
 
@@ -135,6 +138,9 @@ void CChannel::open(const sockaddr* addr)
       if (m_iSocket < 0)
    #endif
       throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+
+   if ((m_iIpV6Only != -1) && (m_iIPversion == AF_INET6)) // (not an error if it fails)
+      ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
 
    if (NULL != addr)
    {
@@ -196,32 +202,70 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
+      SRT_ASSERT(m_iIPversion == AF_INET || m_iIPversion == AF_INET6);
+
 #ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
-         if(m_iIPversion == AF_INET)
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-         else //Assuming AF_INET6
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-      }   
+          if (m_iIPversion == AF_INET)
+          {
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+          else
+          {
+              // If IPv6 address is unspecified, set BOTH IP_TTL and IPV6_UNICAST_HOPS.
+
+              // For specified IPv6 address, set IPV6_UNICAST_HOPS ONLY UNLESS it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+              // For specified IPv6 address, set IP_TTL ONLY WHEN it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+          }
+      }
+
       if (-1 != m_iIpToS)
       {
-         if(m_iIPversion == AF_INET)
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-         else //Assuming AF_INET6
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
+          if (m_iIPversion == AF_INET)
+          {
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+          else
+          {
+              // If IPv6 address is unspecified, set BOTH IP_TOS and IPV6_TCLASS.
+
+#ifdef IPV6_TCLASS
+              // For specified IPv6 address, set IPV6_TCLASS ONLY UNLESS it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+#endif
+
+              // For specified IPv6 address, set IP_TOS ONLY WHEN it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+          }
       }
 #endif
 
@@ -285,6 +329,11 @@ void CChannel::setRcvBufSize(int size)
    m_iRcvBufSize = size;
 }
 
+void CChannel::setIpV6Only(int ipV6Only) 
+{
+   m_iIpV6Only = ipV6Only;
+}
+
 #ifdef SRT_ENABLE_IPOPTS
 int CChannel::getIpTTL() const
 {
@@ -303,13 +352,15 @@ int CChannel::getIpTTL() const
 int CChannel::getIpToS() const
 {
    socklen_t size = sizeof(m_iIpToS);
-   if(m_iIPversion == AF_INET)
+   if (m_iIPversion == AF_INET)
    {
       ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (char *)&m_iIpToS, &size);
    }
    else
    {
+#ifdef IPV6_TCLASS
       ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (char *)&m_iIpToS, &size);
+#endif
    }
    return m_iIpToS;
 }

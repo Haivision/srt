@@ -67,6 +67,15 @@ modified by
 #include "udt.h"
 #include "utilities.h"
 
+
+#ifdef _DEBUG
+#include <assert.h>
+#define SRT_ASSERT(cond) assert(cond)
+#else
+#define SRT_ASSERT(cond)
+#endif
+
+
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation
@@ -147,13 +156,15 @@ enum EConnectStatus
     CONN_REJECT = -1,    //< Error during processing handshake.
     CONN_CONTINUE = 1,   //< induction->conclusion phase
     CONN_RENDEZVOUS = 2, //< pass to a separate rendezvous processing (HSv5 only)
+    CONN_CONFUSED = 3,   //< listener thinks it's connected, but caller missed conclusion
+    CONN_RUNNING = 10,   //< no connection in progress, already connected
     CONN_AGAIN = -2      //< No data was read, don't change any state.
 };
 
 std::string ConnectStatusStr(EConnectStatus est);
 
 
-const int64_t BW_INFINITE =  30000000/8;         //Infinite=> 30Mbps
+const int64_t BW_INFINITE =  1000000000/8;         //Infinite=> 1 Gbps
 
 
 enum ETransmissionEvent
@@ -685,7 +696,7 @@ public:
 
     void add(int32_t lo, int32_t hi)
     {
-        int32_t end = lo + CSeqNo::seqcmp(hi, lo);
+        int32_t end = CSeqNo::incseq(hi);
         for (int32_t i = lo; i != end; i = CSeqNo::incseq(i))
             add(i);
     }
@@ -701,7 +712,7 @@ public:
         }
 
         // Calculate the distance between this seq and the oldest one.
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff > int(SIZE) )
         {
             // Size exceeded. Drop the oldest sequences.
@@ -739,7 +750,7 @@ public:
     void remove(int32_t seq)
     {
         // Check if is in range. If not, ignore.
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff < 0 )
             return; // already out of array
         if ( seqdiff > SIZE )
@@ -750,7 +761,7 @@ public:
 
     bool find(int32_t seq) const
     {
-        int seqdiff = CSeqNo::seqcmp(seq, initseq);
+        int seqdiff = CSeqNo::seqoff(initseq, seq);
         if ( seqdiff < 0 )
             return false; // already out of array
         if ( size_t(seqdiff) > SIZE )
@@ -787,11 +798,9 @@ inline int32_t SrtParseVersion(const char* v)
     int major, minor, patch;
     int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
 
-    if ( result != 3 )
+    if (result != 3)
     {
         return 0;
-        fprintf(stderr, "Invalid version format for HAISRT_VERSION: %s - use m.n.p\n", v);
-        throw v; // Throwing exception, as this function will be run before main()
     }
 
     return major*0x10000 + minor*0x100 + patch;

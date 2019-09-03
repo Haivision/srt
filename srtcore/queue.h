@@ -75,14 +75,13 @@ struct CUnit
 
 class CUnitQueue
 {
-friend class CRcvQueue;
-friend class CRcvBuffer;
 
 public:
+
    CUnitQueue();
    ~CUnitQueue();
 
-public:
+public:     // Storage size operations
 
       /// Initialize the unit queue.
       /// @param [in] size queue size
@@ -102,10 +101,22 @@ public:
 
    int shrink();
 
+public:     // Operations on units
+
       /// find an available unit for incoming packet.
       /// @return Pointer to the available unit, NULL if not found.
 
    CUnit* getNextAvailUnit();
+
+
+   void makeUnitFree(CUnit * unit);
+
+   void makeUnitGood(CUnit * unit);
+
+public:
+
+    inline int getIPversion() const { return m_iIPversion; }
+
 
 private:
    struct CQEntry
@@ -155,12 +166,6 @@ public:
 
    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
 
-      /// Insert a new UDT instance into the list.
-      /// @param [in] ts time stamp: next processing time
-      /// @param [in] u pointer to the UDT instance
-
-   void insert(int64_t ts, const CUDT* u);
-
       /// Update the timestamp of the UDT instance on the list.
       /// @param [in] u pointer to the UDT instance
       /// @param [in] resechedule if the timestampe shoudl be rescheduled
@@ -185,7 +190,24 @@ public:
    uint64_t getNextProcTime();
 
 private:
+
+   /// Doubles the size of the list.
+   ///
+   void realloc_();
+
+   /// Insert a new UDT instance into the list with realloc if required.
+   ///
+   /// @param [in] ts time stamp: next processing time
+   /// @param [in] u pointer to the UDT instance
    void insert_(int64_t ts, const CUDT* u);
+
+   /// Insert a new UDT instance into the list without realloc.
+   /// Should be called if there is a gauranteed space for the element.
+   ///
+   /// @param [in] ts time stamp: next processing time
+   /// @param [in] u pointer to the UDT instance
+   void insert_norealloc_(int64_t ts, const CUDT* u);
+
    void remove_(const CUDT* u);
 
 private:
@@ -374,6 +396,11 @@ public:
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
 
+   void setClosing()
+   {
+       m_bClosing = true;
+   }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -442,6 +469,11 @@ public:
 
    int recvfrom(int32_t id, ref_t<CPacket> packet);
 
+   void setClosing()
+   {
+       m_bClosing = true;
+   }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -496,22 +528,23 @@ private:
 
 struct CMultiplexer
 {
-   CSndQueue* m_pSndQueue;	// The sending queue
-   CRcvQueue* m_pRcvQueue;	// The receiving queue
-   CChannel* m_pChannel;	// The UDP channel for sending and receiving
-   CTimer* m_pTimer;		// The timer
+   CSndQueue* m_pSndQueue;  // The sending queue
+   CRcvQueue* m_pRcvQueue;  // The receiving queue
+   CChannel* m_pChannel;    // The UDP channel for sending and receiving
+   CTimer* m_pTimer;        // The timer
 
-   int m_iPort;			// The UDP port number of this multiplexer
-   int m_iIPversion;		// IP version
+   int m_iPort;         // The UDP port number of this multiplexer
+   int m_iIPversion;    // IP version
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
 #endif
-   int m_iMSS;			// Maximum Segment Size
-   int m_iRefCount;		// number of UDT instances that are associated with this multiplexer
-   bool m_bReusable;		// if this one can be shared with others
+   int m_iMSS;          // Maximum Segment Size
+   int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
+   int m_iIpV6Only;     // IPV6_V6ONLY option
+   bool m_bReusable;    // if this one can be shared with others
 
-   int m_iID;			// multiplexer ID
+   int m_iID;           // multiplexer ID
 };
 
 #endif

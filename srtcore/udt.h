@@ -109,8 +109,6 @@ modified by
 //use -D_WIN32_WINNT=0x0501
 
 
-#define NO_BUSY_WAITING
-
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __cplusplus
@@ -382,7 +380,6 @@ UDT_API int epoll_release(int eid);
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();
-UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true) SRT_ATR_DEPRECATED;
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 

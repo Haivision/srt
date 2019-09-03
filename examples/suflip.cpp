@@ -8,8 +8,8 @@
  * 
  */
 
-// This is a simplified version of stransmit, which does not use C++11,
-// however its functionality is limited to SRT to UDT only.
+// This is a simplified version of srt-live-transmit, which does not use C++11,
+// however its functionality is limited to SRT to UDP only.
 
 #include <iostream>
 #include <string>
@@ -624,7 +624,7 @@ int main( int argc, char** argv )
 
     if ( su.portno() < 1024 || tu.portno() < 1024 )
     {
-        cerr << "Port number must be > 1024\n";
+        cerr << "Port number must be >= 1024\n";
         return 1;
     }
 

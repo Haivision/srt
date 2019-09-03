@@ -53,8 +53,8 @@ public:
     void StealFrom(SrtCommon& src);
     bool AcceptNewClient();
 
-    SRTSOCKET Socket() { return m_sock; }
-    SRTSOCKET Listener() { return m_bindsock; }
+    SRTSOCKET Socket() const { return m_sock; }
+    SRTSOCKET Listener() const { return m_bindsock; }
 
     virtual void Close();
 
@@ -84,7 +84,6 @@ protected:
 
 class SrtSource: public Source, public SrtCommon
 {
-    int srt_epoll = -1;
     std::string hostport_copy;
 public:
 
@@ -94,7 +93,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bool Read(size_t chunk, bytevector& data) override;
+    int Read(size_t chunk, bytevector& data, ostream& out_stats = cout) override;
 
     /*
        In this form this isn't needed.
@@ -112,14 +111,15 @@ public:
     bool End() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
 
-    SRTSOCKET GetSRTSocket()
+    SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
             socket = SrtCommon::Listener();
         return socket;
     }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
+
+    bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
 class SrtTarget: public Target, public SrtCommon
@@ -134,7 +134,7 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    bool Write(const bytevector& data) override;
+    int Write(const char* data, size_t size, ostream &out_stats = cout) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
@@ -148,14 +148,14 @@ public:
         return bytes;
     }
 
-    SRTSOCKET GetSRTSocket()
+    SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
         if (socket == SRT_INVALID_SOCK)
             socket = SrtCommon::Listener();
         return socket;
     }
-    bool AcceptNewClient() { return SrtCommon::AcceptNewClient(); }
+    bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
 

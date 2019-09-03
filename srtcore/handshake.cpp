@@ -117,17 +117,40 @@ int CHandShake::load_from(const char* buf, size_t size)
 }
 
 #ifdef ENABLE_LOGGING
+
+const char* srt_rejectreason_name [] = {
+    "UNKNOWN",
+    "SYSTEM",
+    "PEER",
+    "RESOURCE",
+    "ROGUE",
+    "BACKLOG",
+    "IPE",
+    "CLOSE",
+    "VERSION",
+    "RDVCOOKIE",
+    "BADSECRET",
+    "UNSECURE",
+    "MESSAGEAPI",
+    "CONGESTION",
+    "FILTER",
+};
+
 std::string RequestTypeStr(UDTRequestType rq)
 {
+    if (rq >= URQ_FAILURE_TYPES)
+    {
+        SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
+        int id = rej;
+        return std::string("ERROR:") + srt_rejectreason_name[id];
+    }
+
     switch ( rq )
     {
     case URQ_INDUCTION: return "induction";
     case URQ_WAVEAHAND: return "waveahand";
     case URQ_CONCLUSION: return "conclusion";
     case URQ_AGREEMENT: return "agreement";
-    case URQ_ERROR_INVALID: return "ERROR:invalid";
-    case URQ_ERROR_REJECT: return "ERROR:reject";
-    case URQ_DONE: return "done(HSv5RDV)";
 
     default: return "INVALID";
     }
@@ -159,7 +182,8 @@ string CHandShake::show()
         << " cookie=" << hex << m_iCookie << dec
         << " srcIP=";
 
-    const unsigned char* p = (const unsigned char*)m_piPeerIP, * pe = p + 4*(sizeof (uint32_t));
+    const unsigned char* p  = (const unsigned char*)m_piPeerIP;
+    const unsigned char* pe = p + 4 * (sizeof(uint32_t));
 
     copy(p, pe, ostream_iterator<unsigned>(so, "."));
 
