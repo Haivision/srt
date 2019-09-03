@@ -1437,7 +1437,7 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
 
 size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused */, int hs_version)
 {
-    // Setting m_ullRcvPeerStartTime is done ine processSrtMsg_HSREQ(), so
+    // Setting m_ullRcvPeerStartTime is done in processSrtMsg_HSREQ(), so
     // this condition will be skipped only if this function is called without
     // getting first received HSREQ. Doesn't look possible in both HSv4 and HSv5.
     if (m_ullRcvPeerStartTime != 0)
@@ -4433,7 +4433,7 @@ void* CUDT::tsbpd(void* param)
              }
              else if (passack)
              {
-                /* Packets ready to play but not yet acknowledged (should occurs withing 10ms) */
+                /* Packets ready to play but not yet acknowledged (should happen within 10ms) */
                 rxready = false;
                 tsbpdtime = 0; //Next sent ack will unblock
              } /* else packet ready to play */

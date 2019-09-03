@@ -1384,7 +1384,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
            /* Exiting wrap check period (if for packet delivery head) */
            m_bTsbPdWrapCheck = false;
            m_ullTsbPdTimeBase += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
-           tslog.Debug("tsppd wrap period ends");
+           tslog.Debug("tsbpd wrap period ends");
        }
    }
    // Check if timestamp is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1392,7 +1392,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    {
       /* Approching wrap around point, start wrap check period (if for packet delivery head) */
       m_bTsbPdWrapCheck = true;
-      tslog.Debug("tsppd wrap period begins");
+      tslog.Debug("tsbpd wrap period begins");
    }
    return(m_ullTsbPdTimeBase + carryover);
 }

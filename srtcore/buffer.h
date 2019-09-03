@@ -282,7 +282,6 @@ public:
    int getAvailBufSize() const;
 
       /// Query how many data has been continuously received (for reading) and ready to play (tsbpdtime < now).
-      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return size of valid (continous) data for reading.
 
    int getRcvDataSize() const;
