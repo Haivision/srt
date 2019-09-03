@@ -487,8 +487,8 @@ if (ENABLE_SHARED)
 		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
 	endforeach()
 		
-	#add resource files to shared library, to 
-	if (WIN32)
+	#add resource files to shared library, to set DLL metadata on Windows DLLs
+	if (WIN32 AND NOT MINGW)
 		MafReadDir(srtcore filelist_win32_shared.maf
 			SOURCES SOURCES_srt_shared_win32
 			PRIVATE_HEADERS HEADERS_srt_shared_win32
@@ -513,7 +513,6 @@ if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 		set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
-		#target_sources(${TARGET_srt}_shared OBJECT ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
