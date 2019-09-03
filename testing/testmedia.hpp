@@ -116,9 +116,9 @@ protected:
     void ConnectClient(string host, int port);
     void SetupRendezvous(string adapter, int port);
 
-    void OpenServer(string host, int port)
+    void OpenServer(string host, int port, int backlog = 1)
     {
-        PrepareListener(host, port, 1);
+        PrepareListener(host, port, backlog);
         if (transmit_accept_hook_fn)
         {
             srt_listen_callback(m_bindsock, transmit_accept_hook_fn, transmit_accept_hook_op);
