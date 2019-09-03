@@ -1,7 +1,7 @@
 init:
 # -ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
-version: {SRT_VERSION}.{build}
+version: 1.0.0.{build}
 
 configuration:
   - Release
@@ -15,6 +15,8 @@ platform:
   - x86
 
 build_script:
+  # correct appveyor build from environment variable
+  - ps: Update-AppveyorBuild -Version "$Env:SRT_VERSION-$Env:APPVEYOR_BUILD_NUMBER"
   # prep shared variables
   - ps: if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
   - ps: if ( $Env:PLATFORM -eq 'x86' ) { $FOLDER_PLATFORM = 'win32' } else { $FOLDER_PLATFORM = 'win64' }
