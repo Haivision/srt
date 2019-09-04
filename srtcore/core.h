@@ -64,7 +64,6 @@ modified by
 #include "window.h"
 #include "packet.h"
 #include "channel.h"
-//#include "api.h"
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
@@ -756,6 +755,7 @@ public: //API
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+    static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
     static int setError(const CUDTException& e);
     static int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
@@ -777,13 +777,6 @@ public: // internal API
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
-
-    // Input rate constants
-    static const uint64_t
-        SND_INPUTRATE_FAST_START_US = 500*1000,
-        SND_INPUTRATE_RUNNING_US = 1*1000*1000;
-    static const int64_t SND_INPUTRATE_MAX_PACKETS = 2000;
-    static const int SND_INPUTRATE_INITIAL_BPS = 10000000/8;  // 10 Mbps (1.25 MBps)
 
     static const int
         DEF_MSS = 1500,
@@ -987,6 +980,7 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
     void acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
+    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
@@ -1220,6 +1214,7 @@ private:
     volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
     volatile bool m_bBroken;                     // If the connection has been broken
     volatile bool m_bPeerHealth;                 // If the peer status is normal
+    volatile SRT_REJECT_REASON m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
     int m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
 
@@ -1347,6 +1342,18 @@ private: // Receiving related data
     pthread_cond_t m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
+    CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
+
+    // FORWARDER
+public:
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+private:
+    void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
+    {
+        m_cbAcceptHook.set(opaq, hook);
+    }
+
+
 private: // synchronization: mutexes and conditions
     pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
 
@@ -1400,7 +1407,7 @@ private: // Generation and processing of packets
     int packData(ref_t<CPacket> packet, ref_t<uint64_t> ts, ref_t<sockaddr_any> src_adr);
     int processData(CUnit* unit);
     void processClose();
-    int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
+    SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
@@ -1490,6 +1497,10 @@ private: // Timers
     uint64_t m_ullTargetTime_tk;              // scheduled time of next packet sending
 
     void checkTimers();
+    void checkACKTimer (uint64_t currtime_tk, char debug_decision[10]);
+    void checkNAKTimer(uint64_t currtime_tk, char debug_decision[10]);
+    bool checkExpTimer (uint64_t currtime_tk, const char* debug_decision);  // returns true if the connection is expired
+    void checkRexmitTimer(uint64_t currtime_tk);
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration

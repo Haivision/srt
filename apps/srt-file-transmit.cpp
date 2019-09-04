@@ -63,7 +63,7 @@ struct FileTransmitConfig
     int bw_report = 0;
     int stats_report = 0;
     string stats_out;
-    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
     bool full_stats = false;
 
     string source;
@@ -188,19 +188,19 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     const string pf   = Option<OutString>(params, "default", o_statspf);
     if (pf == "default")
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
     }
     else if (pf == "json")
     {
-        cfg.stats_pf = PRINT_FORMAT_JSON;
+        cfg.stats_pf = SRTSTATS_PROFMAT_JSON;
     }
     else if (pf == "csv")
     {
-        cfg.stats_pf = PRINT_FORMAT_CSV;
+        cfg.stats_pf = SRTSTATS_PROFMAT_CSV;
     }
     else
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
         cerr << "ERROR: Unsupported print format: " << pf << endl;
         return 1;
     }
@@ -688,7 +688,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size != SRT_LIVE_MAX_PLSIZE)
         transmit_chunk_size = cfg.chunk_size;
-    printformat = cfg.stats_pf;
+    transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
@@ -781,5 +781,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-

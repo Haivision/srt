@@ -8,8 +8,8 @@
  * 
  */
 
-
 // STL includes
+#include <algorithm>
 #include <map>
 #include <string>
 
@@ -23,9 +23,7 @@
 #include <iostream>
 #endif
 
-
 using namespace std;
-
 
 map<string, UriParser::Type> types;
 
@@ -34,12 +32,15 @@ struct UriParserInit
     UriParserInit()
     {
         types["file"] = UriParser::FILE;
-        types["srt"] = UriParser::SRT;
         types["udp"] = UriParser::UDP;
+        types["tcp"] = UriParser::TCP;
+        types["srt"] = UriParser::SRT;
+        types["rtmp"] = UriParser::RTMP;
+        types["http"] = UriParser::HTTP;
+        types["rtp"] = UriParser::RTP;
         types[""] = UriParser::UNKNOWN;
     }
 } g_uriparser_init;
-
 
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
 {
@@ -50,12 +51,12 @@ UriParser::~UriParser(void)
 {
 }
 
-string UriParser::proto(void)
+string UriParser::proto(void) const
 {
     return m_proto;
 }
 
-UriParser::Type UriParser::type()
+UriParser::Type UriParser::type() const
 {
     return m_uriType;
 }
@@ -86,14 +87,14 @@ unsigned short int UriParser::portno(void) const
     }
 }
 
-string UriParser::path(void)
+string UriParser::path(void) const
 {
     return m_path;
 }
 
-string UriParser::queryValue(const string& strKey)
+string UriParser::queryValue(const string& strKey) const
 {
-    return m_mapQuery[strKey];
+    return m_mapQuery.at(strKey);
 }
 
 void UriParser::Parse(const string& strUrl, DefaultExpect exp)
@@ -115,16 +116,16 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     if (idx != string::npos)
     {
         m_proto = m_host.substr(0, idx);
+        transform(m_proto.begin(), m_proto.end(), m_proto.begin(), [](char c){ return tolower(c); });
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
     idx = m_host.find("/");
     if (idx != string::npos)
     {
-        m_path  = m_host.substr(idx, m_host.size() - idx);
+        m_path = m_host.substr(idx, m_host.size() - idx);
         m_host = m_host.substr(0, idx);
     }
-
 
     // Check special things in the HOST entry.
     size_t atp = m_host.find('@');
@@ -223,11 +224,14 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
 #ifdef TEST
 
-
 using namespace std;
 
 int main( int argc, char** argv )
 {
+    if ( argc < 2 ) 
+    {
+        return 0;
+    }
     UriParser parser (argv[1]);
     (void)argc;
 
@@ -238,10 +242,11 @@ int main( int argc, char** argv )
     cout << "PORT: " << parser.portno() << endl;
     cout << "PATH: " << parser.path() << endl;
     cout << "PARAMETERS:\n";
-    for (auto p: parser.parameters())
+    for (auto& p: parser.parameters()) 
+    {
         cout << "\t" << p.first << " = " << p.second << endl;
-
-
+    }
     return 0;
 }
+
 #endif

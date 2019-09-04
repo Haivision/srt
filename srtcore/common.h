@@ -181,7 +181,7 @@ enum EConnectMethod
 std::string ConnectStatusStr(EConnectStatus est);
 
 
-const int64_t BW_INFINITE =  30000000/8;         //Infinite=> 30Mbps
+const int64_t BW_INFINITE =  1000000000/8;         //Infinite=> 1 Gbps
 
 
 enum ETransmissionEvent

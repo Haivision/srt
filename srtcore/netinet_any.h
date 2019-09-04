@@ -104,6 +104,8 @@ struct sockaddr_any
         }
         else
         {
+            // Clear as a sign or error
+            memset(&sa, 0, sizeof *this);
             // Error fallback: no other families than IP are regarded.
             sa.sa_family = AF_UNSPEC;
             len = 0;
@@ -208,7 +210,23 @@ struct sockaddr_any
             if (c1.family() != c2.family())
                 return false;
 
-            return memcmp(&c1, &c2, c1.size()) == 0;
+            // Cannot use memcmp due to having in some systems
+            // another field like sockaddr_in::sin_len. This exists
+            // in some BSD-derived systems, but is not required by POSIX.
+            // Therefore sockaddr_any class cannot operate with it,
+            // as in this situation it would be safest to state that
+            // particular implementations may have additional fields
+            // of different purpose beside those required by POSIX.
+            //
+            // The only reliable way to compare two underlying sockaddr
+            // object is then to compare the port value and the address
+            // value.
+            //
+            // Fortunately the port is 16-bit and located at the same
+            // offset in both sockaddr_in and sockaddr_in6.
+
+            return c1.sin.sin_port == c2.sin.sin_port
+                && c1.equal_address(c2);
         }
     };
 

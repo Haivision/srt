@@ -48,14 +48,8 @@ written by
 
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
-
-#if defined(USE_GNUTLS)
-#include "hcrypt-gnutls.h"
-#else
-#include "hcrypt-openssl.h"
-#endif
-
 #include "hcrypt_ctx.h"
+#include "cryspr.h"
 
 //#define HCRYPT_DEV 1  /* Development: should not be defined in committed code */
 
@@ -80,8 +74,8 @@ typedef struct hcrypt_Session_str {
         hcrypt_Ctx          ctx_pair[2];    /* Even(0)/Odd(1) crypto contexts */
         hcrypt_Ctx *        ctx;            /* Current context */
 
-        hcrypt_Cipher *     cipher;
-        hcrypt_CipherData * cipher_data;
+        CRYSPR_methods *    cryspr;
+        CRYSPR_cb *         cryspr_cb;
 
         unsigned char *     inbuf;          /* allocated if cipher has no getinbuf() func */
         size_t              inbuf_siz;

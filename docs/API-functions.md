@@ -15,6 +15,7 @@ SRT API Functions
 - [**Connecting**](#Connecting)
   * [srt_listen](#srt_listen)
   * [srt_accept](#srt_accept)
+  * [srt_listen_callback](#srt_listen_callback)
   * [srt_connect](#srt_connect)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
@@ -313,6 +314,84 @@ when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
 
+### srt_listen_callback
+
+```
+int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
+```
+
+This call installs a callback hook, which will be executed on a socket that is
+automatically created to handle the incoming connection on the listeneing
+socket (and is about to be returned by `srt_accept`), but before the connection
+has been accepted.
+
+* `lsn`: Listening socket where you want to install the callback hook
+* `hook_fn`: The callback hook function pointer
+* `hook_opaque`: The pointer value that will be passed to the callback function
+
+- Returns:
+
+   * 0, if successful
+   * -1, on error
+
+- Errors:
+
+   * `SRT_EINVPARAM` reported when `hook_fn` is a null pointer
+
+The callback function has the signature as per this type definition:
+```
+typedef int srt_listen_callback_fn(void* opaque, SRTSOCKET ns, int hs_version
+             const struct sockaddr* peeraddr, const char* streamid);
+```
+
+The callback function gets the following parameters passed:
+
+* `opaque`: The pointer passed as `hook_opaque` when registering
+* `ns`: The freshly created socket to handle the incoming connection
+* `hs_version`: The handshake version (usually 5, pre-1.3 versions use 4)
+* `peeraddr`: The address of the incoming connection
+* `streamid`: The value set to `SRTO_STREAMID` option set on the peer side
+
+(Note that versions that use handshake version 4 are incapable of using
+any extensions, such as streamid, however they do support encryption.
+Note also that the SRT version isn't yet extracted, however you can
+prevent too old version connections using `SRTO_MINVERSION` option).
+
+The callback function is given an opportunity to:
+
+* use the passed information (streamid and peer address) to decide
+  what to do with this connection
+* alter any options on the socket, which could not be set properly
+  before on the listening socket to be derived by the accepted socket,
+  and won't be allowed to be altered after the socket is returned by
+  `srt_accept`
+
+Note that the returned socket has already set all derived options from the
+listener socket, as it happens normally, and the moment when this callback is
+called is when the conclusion handshake has been already received from the
+caller party, but not yet interpreted (the streamid field is extracted from it
+prematurely). When you, for example, set a passphrase on the socket at this
+very moment, the Key Material processing will happen against this already set
+passphrase, after the callback function is finished.
+
+The callback function shall return 0, if the connection is to be accepted.
+If you return -1, **or** if the function throws an exception, this will be
+understood as a request to reject the incoming connection - in which case the
+about-to-be-accepted socket will be silently deleted and `srt_accept` will not
+report it. Note that in case of non-blocking mode the epoll bits for read-ready
+on the listener socket will not be set if the connection is rejected, including
+when rejected from this user function.
+
+**IMPORTANT**: This function is called in the receiver worker thread, which
+means that it must do its checks and operations as quickly as possible and keep
+the minimum possible time, as every delay you do in this function will burden
+the processing of the incoming data on the associated UDP socket, which in case
+of a listener socket means the listener socket itself and every socket accepted
+off this listener socket. Avoid any extensive search operations, best cache in
+memory whatever database you have to check against the data received in
+streamid or peeraddr.
+
+
 ### srt_connect
 
 ```
@@ -348,6 +427,10 @@ rendezvous socket, but rendezvous sockets must be explicitly bound to a local
 interface prior to connecting. Non-rendezvous sockets (caller sockets) can be
 left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
+  * `SRT_ECONNREJ`: Connection has been rejected
+
+In case when `SRT_ECONNREJ` error was reported, you can get the reason for
+a rejected connection from `srt_getrejectreason`.
 
 ### srt_connect_debug
 
@@ -794,6 +877,112 @@ void srt_clearlasterror(void);
 
 This function clears the last error. After this call, the `srt_getlasterror` will
 report a "successful" code.
+
+### srt_getrejectreason
+
+```
+enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+```
+
+This function shall be called after a connecting function (such as `srt_connect`)
+has returned an error, which's code was `SRT_ECONNREJ`. It allows to get a more
+detailed rejection reason. This function returns a numeric code, which can be
+translated into a message by `srt_rejectreason_str`. The following codes are
+currently reported:
+
+#### SRT_REJ_UNKNOWN
+
+A fallback value for cases when there was no connection rejected.
+
+#### SRT_REJ_SYSTEM
+
+One of system function reported a failure. Usually this means some system
+error or lack of system resources to complete the task.
+
+#### SRT_REJ_PEER
+
+The connection has been rejected by peer, but no further details are available.
+This usually means that the peer doesn't support rejection reason reporting.
+
+#### SRT_REJ_RESOURCE
+
+A problem with resource allocation (usually memory).
+
+#### SRT_REJ_ROGUE
+
+The data sent by one party to another cannot be properly interpreted. This
+should not happen during normal usage, unless it's a bug, or some weird
+events are happening on the network.
+
+#### SRT_REJ_BACKLOG
+
+The listener's backlog has exceeded (there are many other callers waiting for
+the opportunity of being connected and wait in the queue, which has reached
+its limit).
+
+#### SRT_REJ_IPE
+
+Internal Program Error. This should not happen during normal usage and it
+usually means a bug in the software (although this can be reported by both
+local and foreign host).
+
+#### SRT_REJ_CLOSE
+
+The listener socket was able to receive your request, but at this moment it
+is being closed. It's likely that your next attempt will result with timeout.
+
+#### SRT_REJ_VERSION
+
+Any party of the connection has set up minimum version that is required for
+that connection, and the other party didn't satisfy this requirement.
+
+#### SRT_REJ_RDVCOOKIE
+
+Rendezvous cookie collision. This normally should never happen, or the
+probability that this will really happen is negligible. However this can
+be also a result of a misconfiguration that you are trying to make a
+rendezvous connection where both parties try to bind to the same IP
+address, or both are local addresses of the same host - in which case
+the sent handshake packets are returning to the same host as if they
+were sent by the peer, who is this party itself. When this happens,
+this reject reason will be reported by every attempt.
+
+#### SRT_REJ_BADSECRET
+
+Both parties have defined a passprhase for connection and they differ.
+
+#### SRT_REJ_UNSECURE
+
+Only one connection party has set up a password. See also
+`SRTO_STRICTENC` flag in API.md.
+
+#### SRT_REJ_MESSAGEAPI
+
+The value for `SRTO_MESSAGEAPI` flag is different on both connection
+parties.
+
+#### SRT_REJ_CONGESTION
+
+The `SRTO_CONGESTION` option has been set up differently on both
+connection parties.
+
+#### SRT_REJ_FILTER
+
+The `SRTO_FILTER` option has been set differently on both connection
+parties (NOTE: this flag may not exist yet in this version).
+
+
+### srt_rejectreason_str
+
+```
+const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
+```
+
+Returns a constant string for the reason of the connection rejected,
+as per given code id. Alternatively you can use the `srt_rejectreason_msg`
+array. This function additionally handles the case for unknown id by
+reporting `SRT_REJ_UNKNOWN` in such case.
+
 
 Performance tracking
 --------------------

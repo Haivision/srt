@@ -69,6 +69,7 @@
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
 #include "testmedia.hpp"
+#include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -269,6 +270,55 @@ namespace srt_logging
     extern Logger glog;
 }
 
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+{
+    if (hsv < 5)
+    {
+        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        return -1;
+    }
+
+    static const map<string, string> passwd {
+        {"admin", "thelocalmanager"},
+        {"user", "verylongpassword"}
+    };
+
+    // Try the "standard interpretation" with username at key u
+    string username;
+
+    static const char stdhdr [] = "#!::";
+    uint32_t* pattern = (uint32_t*)stdhdr;
+
+    if (strlen(streamid) > 4 && *(uint32_t*)streamid == *pattern)
+    {
+        vector<string> items;
+        Split(streamid+4, ',', back_inserter(items));
+        for (auto& i: items)
+        {
+            vector<string> kv;
+            Split(i, '=', back_inserter(kv));
+            if (kv.size() == 2 && kv[0] == "u")
+            {
+                username = kv[1];
+            }
+        }
+    }
+    else
+    {
+        // By default the whole streamid is username
+        username = streamid;
+    }
+
+    // This hook sets the password to the just accepted socket
+    // depending on the user
+
+    string exp_pw = passwd.at(username);
+
+    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+
+    return 0;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -298,6 +348,7 @@ int main( int argc, char** argv )
         o_logfa     ("<FA=all> Enabled Functional Areas", "lfa", "logfa"),
         o_logfile   ("<filepath> File to send logs to", "lf",  "logfile"),
         o_stats     ("<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_statspf   ("<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
         o_logint    (" Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush (" Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ("<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
@@ -317,6 +368,7 @@ int main( int argc, char** argv )
         { o_logfa, OptionScheme::ARG_ONE },
         { o_logfile, OptionScheme::ARG_ONE },
         { o_stats, OptionScheme::ARG_ONE },
+        { o_statspf, OptionScheme::ARG_ONE },
         { o_skipflush, OptionScheme::ARG_NONE },
         { o_stoptime, OptionScheme::ARG_ONE },
         { o_group, OptionScheme::ARG_VAR }
@@ -472,6 +524,24 @@ int main( int argc, char** argv )
 
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
+
+    string hook = Option<OutString>(params, "", "hook");
+    if (hook != "")
+    {
+        if (hook == "user-password")
+        {
+            transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
+    }
+
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    if (statspf == SRTSTATS_PROFMAT_INVALID)
+    {
+        cerr << "Invalid stats print format\n";
+        return 1;
+    }
+    transmit_stats_writer = SrtStatsWriterFactory(statspf);
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);

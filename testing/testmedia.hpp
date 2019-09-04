@@ -19,6 +19,11 @@
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
 
+extern srt_listen_callback_fn* transmit_accept_hook_fn;
+extern void* transmit_accept_hook_op;
+
+extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
+
 using namespace std;
 
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
@@ -97,7 +102,7 @@ public:
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src);
+    void Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
     void Error(string msg);
     void Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
@@ -111,9 +116,13 @@ protected:
     void ConnectClient(string host, int port);
     void SetupRendezvous(string adapter, int port);
 
-    void OpenServer(string host, int port)
+    void OpenServer(string host, int port, int backlog = 1)
     {
-        PrepareListener(host, port, 1);
+        PrepareListener(host, port, backlog);
+        if (transmit_accept_hook_fn)
+        {
+            srt_listen_callback(m_bindsock, transmit_accept_hook_fn, transmit_accept_hook_op);
+        }
         AcceptNewClient();
     }
 

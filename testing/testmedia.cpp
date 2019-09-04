@@ -46,9 +46,12 @@ volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
-
+srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
+void* transmit_accept_hook_op = nullptr;
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+
+std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
 string DirectionName(SRT_EPOLL_OPT direction)
 {
@@ -185,23 +188,6 @@ template <> struct File<Relay> { typedef FileRelay type; };
 
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
-
-
-template <class PerfMonType>
-void PrintSrtStats(int sid, const PerfMonType& mon)
-{
-    Verb() << "======= SRT STATS: sid=" << sid;
-    Verb() << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv;
-    Verb() << "LOST PKT SENT: " << mon.pktSndLoss << " RECEIVED: " << mon.pktRcvLoss;
-    Verb() << "REXMIT SENT: " << mon.pktRetrans << " RECEIVED: " << mon.pktRcvRetrans;
-    Verb() << "RATE SENDING: " << mon.mbpsSendRate << " RECEIVING: " << mon.mbpsRecvRate;
-    Verb() << "BELATED RECEIVED: " << mon.pktRcvBelated << " AVG TIME: " << mon.pktRcvAvgBelatedTime;
-    Verb() << "REORDER DISTANCE: " << mon.pktReorderDistance;
-    Verb() << "WINDOW: FLOW: " << mon.pktFlowWindow << " CONGESTION: " << mon.pktCongestionWindow << " FLIGHT: " << mon.pktFlightSize;
-    Verb() << "RTT: " << mon.msRTT << "ms  BANDWIDTH: " << mon.mbpsBandwidth << "Mb/s\n";
-    Verb() << "BUFFERLEFT: SND: " << mon.byteAvailSndBuf << " RCV: " << mon.byteAvailRcvBuf;
-}
-
 
 void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
@@ -473,9 +459,17 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
     m_direction = dir;
     InitParameters(host, path, par);
 
+    int backlog = 1;
+    if (m_mode == "listener" && par.count("groupconnect")
+            && true_names.count(par["groupconnect"]))
+    {
+        backlog = 10;
+    }
+
     Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking)"
-        << " on " << host << ":" << port;
+        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
+        << " backlog=" << backlog << ") on "
+        << host << ":" << port;
 
     try
     {
@@ -491,7 +485,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             }
         }
         else if ( m_mode == "listener" )
-            OpenServer(m_adapter, port);
+            OpenServer(m_adapter, port, backlog);
         else if ( m_mode == "rendezvous" )
             OpenRendezvous(m_adapter, host, port);
         else
@@ -926,16 +920,32 @@ void SrtCommon::ConnectClient(string host, int port)
 
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
+    {
+        // Check if trying to connect to self.
+        sockaddr_any lsa;
+        int size = lsa.size();
+        srt_getsockname(m_sock, &lsa, &size);
+
+        if (lsa.hport() == port && IsTargetAddrSelf(&lsa, psa))
+        {
+            Verb() << "ERROR: Trying to connect to SELF address " << SockaddrToString(psa)
+                << " with socket bound to " << SockaddrToString(&lsa);
+            UDT::ERRORINFO inval(MJ_SETUP, MN_INVAL, 0);
+            Error(inval, "srt_connect");
+        }
+    }
+
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
+        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
 #endif
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "UDT::connect");
+        Error(UDT::getlasterror(), "srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -965,10 +975,15 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
+void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
+    if (udtResult == SRT_ECONNREJ)
+    {
+        message += ": ";
+        message += srt_rejectreason_str(reason);
+    }
     if ( Verbose::on )
         Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
     else
@@ -1782,6 +1797,20 @@ RETRY_READING:
 
 #endif
 
+static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
+{
+    CBytePerfMon perf;
+    // clear only if stats report is to be read
+    srt_bstats(sock, &perf, clr);
+
+    if (bw)
+        cout << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth);
+    if (stats)
+        cout << transmit_stats_writer->WriteStats(sock, perf);
+}
+
+
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
@@ -1865,25 +1894,20 @@ bytevector SrtSource::Read(size_t chunk)
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
-#endif
-
-    CBytePerfMon perf;
-    if (need_stats_report || need_bw_report)
+    else
     {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
-
-        if (need_bw_report)
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
-            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-        }
-
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf);
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
         }
     }
+    #endif
 
     ++counter;
 
@@ -1916,6 +1940,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
 
 void SrtTarget::Write(const bytevector& data)
 {
+    static int counter = 1;
     ::transmit_throw_on_interrupt = true;
 
     // Check first if it's ready to write.
@@ -1946,12 +1971,29 @@ void SrtTarget::Write(const bytevector& data)
         Error(UDT::getlasterror(), "srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+
     if (have_group)
     {
         // For listener group this is not necessary. The group information
         // is updated in mctrl.
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
+    else
+    {
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        }
+    }
+
+    ++counter;
 }
 
 SrtRelay::SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
@@ -2404,9 +2446,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
@@ -2414,7 +2456,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr)
+        ptr->uri = move(u);
     return ptr;
 }
 

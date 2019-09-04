@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.2")
+#project(SRT VERSION "1.3.4")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -38,7 +38,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.2)
+set (SRT_VERSION 1.3.4)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -98,6 +98,7 @@ endif()
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
+option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
@@ -111,11 +112,14 @@ option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
+option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
+option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
+option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_CONSELF_CHECK_WIN32 "Enable rendezvous-connect-to-self prevention on Windows (adds Iphlpapi.lib dep)" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -154,12 +158,30 @@ endif()
 
 message(STATUS "LOGGING: ${DISPLAY_LOGGING}")
 
+if (USE_BUSY_WAITING)
+	message(STATUS "USE_BUSY_WAITING: ON")
+	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
+else()
+	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
 	add_definitions(-DWIN32=1 -DCYGWIN=1)
 	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
+
+if (NOT USE_ENCLIB)
+	if (USE_GNUTLS)
+		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
+		set (USE_ENCLIB gnutls)
+	else()
+		set (USE_ENCLIB openssl)
+	endif()
+
+endif()
+
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -215,14 +237,14 @@ if (DEFINED HAVE_INET_PTON)
 endif()
 
 if (ENABLE_ENCRYPTION)
-	if ( USE_GNUTLS )
+	if ("${USE_ENCLIB}" STREQUAL "gnutls")
 		set (SSL_REQUIRED_MODULES "gnutls nettle")
 		if (WIN32)
 			if (MINGW)
 				set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
 			endif()
 		endif()
-	 
+
 		pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
 		add_definitions(
@@ -232,15 +254,20 @@ if (ENABLE_ENCRYPTION)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-	else()
+	else() # Common for mbedtls and openssl
+		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
+			add_definitions(-DUSE_MBEDTLS=1)
+			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
+		else()
+			add_definitions(-DUSE_OPENSSL=1)
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+		endif()
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
-			pkg_check_modules(SSL "openssl libcrypto")
+			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 		endif()
 		if (SSL_FOUND)
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
-
 			# We have some cases when pkg-config is improperly configured
 			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
 			# is set (also through `configure`), then we have this problem. If so,
@@ -259,16 +286,25 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
-			find_package(OpenSSL REQUIRED)
-			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
+				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+					if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+						message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+						set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+						set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+					endif()
+				endif()
+				if ("${SSL_LIBRARIES}" STREQUAL "")
+					set (SSL_LIBRARIES  mbedtls mbedcrypto)
+				endif()
+				message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			else()
+				find_package(OpenSSL REQUIRED)
+				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			endif()
 		endif()
-		add_definitions(
-			-DHAICRYPT_USE_OPENSSL_EVP=1
-			-DHAICRYPT_USE_OPENSSL_AES
-		)
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
@@ -277,6 +313,14 @@ if (ENABLE_ENCRYPTION)
 else()
 	message(STATUS "ENCRYPTION: DISABLED")
 endif()
+
+if ( USE_GNUSTL )
+	pkg_check_modules (GNUSTL REQUIRED gnustl)
+	link_directories(${GNUSTL_LIBRARY_DIRS})
+	include_directories(${GNUSTL_INCLUDE_DIRS})
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
 
 # Detect if the compiler is GNU compatable for flags
 set(HAVE_COMPILER_GNU_COMPAT 0)
@@ -461,11 +505,7 @@ endif()
 # Completing sources and installable headers. Flag settings will follow.
 # ---
 if (ENABLE_ENCRYPTION)
-	if ( USE_GNUTLS )
-		set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
-	else()
-		set (HAICRYPT_FILELIST_MAF "filelist.maf")
-	endif()
+	set (HAICRYPT_FILELIST_MAF "filelist-${USE_ENCLIB}.maf")
 
 	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
 		SOURCES SOURCES_haicrypt
@@ -538,6 +578,7 @@ set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual
 if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
+	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
@@ -550,6 +591,9 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
+	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 endif()
 
@@ -578,6 +622,9 @@ if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
+	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 endif()
 
@@ -724,6 +771,10 @@ macro(srt_add_program name)
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	if (MICROSOFT AND ENABLE_CONSELF_CHECK_WIN32)
+		target_link_libraries(${name} Iphlpapi)
+		add_definitions(-DSRT_ENABLE_CONSELF_CHECK_WIN32)
+	endif()
 endmacro()
 
 macro(srt_make_application name)
@@ -751,6 +802,10 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (USE_GNUSTL)
+		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+	endif()
+
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
 		target_link_libraries(${name} ${CMAKE_DL_LIBS})
 	endif()

@@ -16,6 +16,9 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+#include "srt.h"
+#include "uriparser.hpp"
+#include "apputil.hpp"
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
@@ -24,13 +27,8 @@ extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
-enum PrintFormat
-{
-    PRINT_FORMAT_2COLS,
-    PRINT_FORMAT_JSON,
-    PRINT_FORMAT_CSV
-};
-extern PrintFormat printformat;
+
+extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
 class Location
 {
@@ -77,7 +75,5 @@ public:
     virtual int GetSysSocket() const { return -1; }
     virtual bool AcceptNewClient() { return false; }
 };
-
-
 
 #endif
