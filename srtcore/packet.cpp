@@ -473,8 +473,8 @@ CPacket* CPacket::clone() const
    return pkt;
 }
 
-#if ENABLE_LOGGING
-std::string CPacket::MessageFlagStr()
+// Useful for debugging
+std::string PacketMessageFlagStr(uint32_t msgno_field)
 {
     using namespace std;
 
@@ -485,11 +485,10 @@ std::string CPacket::MessageFlagStr()
     static const char* const crypto [] = { "EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR" };
     static const char* const rexmit [] = { "SN_ORIGINAL", "SN_REXMIT" };
 
-    out << boundary[int(getMsgBoundary())] << " ";
-    out << order[int(getMsgOrderFlag())] << " ";
-    out << crypto[int(getMsgCryptoFlags())] << " ";
-    out << rexmit[int(getRexmitFlag())];
+    out << boundary[MSGNO_PACKET_BOUNDARY::unwrap(msgno_field)] << " ";
+    out << order[MSGNO_PACKET_INORDER::unwrap(msgno_field)] << " ";
+    out << crypto[MSGNO_ENCKEYSPEC::unwrap(msgno_field)] << " ";
+    out << rexmit[MSGNO_REXMIT::unwrap(msgno_field)];
 
     return out.str();
 }
-#endif
