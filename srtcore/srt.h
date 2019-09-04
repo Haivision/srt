@@ -650,8 +650,6 @@ SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
 // performance track
-// srt_perfmon is deprecated - use srt_bistats, which provides the same stats plus more.
-SRT_API int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
 // perfmon with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 // permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.

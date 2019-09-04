@@ -109,6 +109,16 @@ option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OF
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+
+# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
+# time, instead of gettimeofday. This function allows to force a monotonic
+# clock, which is independent on the currently set time in the system.  The CV,
+# for which the *_timedwait() functions are used with so obtained current time,
+# must be appropriately configured. The consequence of enabling this option,
+# however, may be portability issues around the clock_gettime() function, which
+# is not available on every SDK, or extra -lrt option is sometimes required
+# (this requirement will be autodetected).
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
@@ -160,7 +170,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if (DEFINED WITH_COMPILER_PREFIX)
 	message(STATUS "Handling compiler with WITH_COMPILER_PREFIX=${WITH_COMPILER_PREFIX}")
 	# Check also type. Default is gcc.
-	if (NOT DEFINED WIHT_COMPILER_TYPE)
+	if (NOT DEFINED WITH_COMPILER_TYPE)
 		set (WITH_COMPILER_TYPE gcc)
 	endif()
 
@@ -202,6 +212,10 @@ else()
 endif()
 if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
+endif()
+
+if (ENABLE_MONOTONIC_CLOCK)
+	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
 if (ENABLE_ENCRYPTION)
@@ -332,6 +346,15 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
+# We need clock_gettime, but on some systems this is only provided
+# by librt. Check if librt is required.
+if (ENABLE_MONOTONIC_CLOCK AND LINUX)
+	# "requires" - exits on FATAL_ERROR when clock_gettime not available
+	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
+endif()
+
+
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
 # because clock_gettime is needed by some functions and it is alternatively
@@ -430,19 +453,23 @@ if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (WIN32 AND NOT MINGW)
-	# find pthread
-	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-	if (PTHREAD_INCLUDE_DIR)
-		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-	endif()
+	find_package(pthreads QUIET)
 
-	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
-	if (PTHREAD_LIBRARY)
-		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
+		# find pthread
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+		if (PTHREAD_INCLUDE_DIR)
+			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+		endif()
+	
+		find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
+		if (PTHREAD_LIBRARY)
+			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		endif()
 	endif()
 else ()
 	find_package(Threads REQUIRED)
