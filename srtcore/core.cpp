@@ -3921,7 +3921,12 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
-    setupCC();
+    SRT_REJECT_REASON rr = setupCC();
+    if (rr != SRT_REJ_UNKNOWN)
+    {
+        m_RejectReason = rr;
+        return CONN_REJECT;
+    }
 
     // And, I am connected too.
     m_bConnecting = false;
