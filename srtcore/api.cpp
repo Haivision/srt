@@ -214,8 +214,14 @@ int CUDTUnited::startup()
 
    m_bClosing = false;
    pthread_mutex_init(&m_GCStopLock, NULL);
+#if ENABLE_MONOTONIC_CLOCK
+   pthread_condattr_t  CondAttribs;
+   pthread_condattr_init(&CondAttribs);
+   pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+   pthread_cond_init(&m_GCStopCond, &CondAttribs);
+#else
    pthread_cond_init(&m_GCStopCond, NULL);
-
+#endif
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);
@@ -1883,13 +1889,19 @@ void* CUDTUnited::garbageCollect(void* p)
        //      self->checkTLSValue();
        //#endif
 
-       timeval now;
        timespec timeout;
+#if ENABLE_MONOTONIC_CLOCK
+       clock_gettime(CLOCK_MONOTONIC, &timeout);
+       timeout.tv_sec++;
+       HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(uint64_t(timeout.tv_nsec)/1000 + 1000000*(timeout.tv_sec)));
+#else
+       timeval now;
        gettimeofday(&now, 0);
        timeout.tv_sec = now.tv_sec + 1;
        timeout.tv_nsec = now.tv_usec * 1000;
 
        HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(uint64_t(now.tv_usec) + 1000000*(timeout.tv_sec)));
+#endif
        pthread_cond_timedwait(
                &self->m_GCStopCond, &self->m_GCStopLock, &timeout);
    }

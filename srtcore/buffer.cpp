@@ -1046,8 +1046,6 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
 bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
 {
     *tsbpdtime = 0;
-    int rmpkts = 0; 
-    int rmbytes = 0;
 
 #if ENABLE_HEAVY_LOGGING
     const char* reason = "NOT RECEIVED";
@@ -1111,10 +1109,12 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
         if (freeunit)
         {
             HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED");
+            /* removed skipped, dropped, undecryptable bytes from rcv buffer */
+            const int rmbytes = (int)m_pUnit[i]->m_Packet.getLength();
+            countBytes(-1, -rmbytes, true);
+
             CUnit* tmp = m_pUnit[i];
             m_pUnit[i] = NULL;
-            rmpkts++;
-            rmbytes += (int) tmp->m_Packet.getLength();
             m_pUnitQueue->makeUnitFree(tmp);
 
             if (++m_iStartPos == m_iSize)
@@ -1123,8 +1123,6 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
     }
 
     HLOGC(mglog.Debug, log << "getRcvReadyMsg: nothing to deliver: " << reason);
-    /* removed skipped, dropped, undecryptable bytes from rcv buffer */
-    countBytes(-rmpkts, -rmbytes, true);
     return false;
 }
 
@@ -1412,7 +1410,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
            /* Exiting wrap check period (if for packet delivery head) */
            m_bTsbPdWrapCheck = false;
            m_ullTsbPdTimeBase += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
-           tslog.Debug("tsppd wrap period ends");
+           tslog.Debug("tsbpd wrap period ends");
        }
    }
    // Check if timestamp is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1420,7 +1418,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    {
       /* Approching wrap around point, start wrap check period (if for packet delivery head) */
       m_bTsbPdWrapCheck = true;
-      tslog.Debug("tsppd wrap period begins");
+      tslog.Debug("tsbpd wrap period begins");
    }
    return(m_ullTsbPdTimeBase + carryover);
 }
@@ -1616,12 +1614,15 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     msgctl.pktseq = pkt1.getSeqNo();
     msgctl.msgno = pkt1.getMsgSeq();
 
-    int rs = len;
+    SRT_ASSERT(len > 0);
+    int rs = len > 0 ? len : 0;
     while (p != (q + 1) % m_iSize)
     {
-        int unitsize = (int) m_pUnit[p]->m_Packet.getLength();
-        if ((rs >= 0) && (unitsize > rs))
-            unitsize = rs;
+        const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
+        if (pktlen > 0)
+            countBytes(-1, -pktlen, true);
+
+        const int unitsize = ((rs >= 0) && (unitsize > rs)) ? rs : pktlen;
 
         HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
 

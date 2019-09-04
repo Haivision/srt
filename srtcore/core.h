@@ -271,6 +271,7 @@ public: // internal API
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
+    int sndLossLength() { return m_pSndLossList->getLossLength(); }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -546,11 +547,9 @@ private: // Identification
     HaiCrypt_Secret m_CryptoSecret;
     int m_iSndCryptoKeyLen;
 
-    // XXX Consider removing them. The m_bDataSender may stay here
+    // XXX Consider removing. The m_bDataSender stays here
     // in order to maintain the HS side selection in HSv4.
-    // m_bTwoWayData is unused.
     bool m_bDataSender;
-    bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
     uint64_t m_ullSndHsLastTime_us;  //Last SRT handshake request time

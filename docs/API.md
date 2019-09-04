@@ -549,6 +549,7 @@ The allowed range for this value is between 1 and half of the current value of
 `SRTO_KMREFRESHRATE`. The minimum value should never be less than the flight
 window (i.e. the number of packets that have already left the sender but have
 not yet arrived at the receiver).
+
 ---
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range  |
@@ -838,8 +839,10 @@ value. For desired result, configure MSS first.***
 
 | OptName               | Since | Binding | Type      | Units  | Default  | Range         |
 | --------------------- | ----- | ------- | --------- | ------ | -------- | ------------- |
-| `SRTO_RCVLATENCY`     | 1.3.0 | pre     | `int32_t` | msec   | 0        | positive only |
+| `SRTO_RCVLATENCY`     | 1.3.0 | pre     | `int32_t` | msec   | 120      | positive only |
 
+- **NB:** The default [live mode](#transmission-method-live) settings set `SRTO_RCVLATENCY` to 120 ms!
+The [buffer mode](#transmission-method-buffer) settings set `SRTO_RCVLATENCY` to 0.
 - The time that should elapse since the moment when the packet was sent and the 
 moment when it's delivered to the receiver application in the receiving function. 
 This time should be a buffer time large enough to cover the time spent for sending, 
