@@ -422,7 +422,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     {
         spec << " CONTROL size=" << packet.getLength()
              << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
+             << " arg=" << packet.header(SRT_PH_MSGNO);
     }
     else
     {
@@ -738,7 +738,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
     {
         uint32_t* p = packet.m_nHeader;
-        for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)
+        for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
         {
             *p = ntohl(*p);
             ++ p;
