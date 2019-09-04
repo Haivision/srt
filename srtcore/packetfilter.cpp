@@ -223,6 +223,9 @@ void PacketFilter::globalInit()
     // Add here builtin packet filters and mark them
     // as builtin. This will disallow users to register
     // external filters with the same name.
+
+    filters["fec"] = &Creator<FECFilterBuiltin>::Create;
+    builtin_filters.insert("fec");
 }
 
 bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
