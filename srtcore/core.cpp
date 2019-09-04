@@ -233,8 +233,11 @@ CUDT::CUDT()
    m_iFlightFlagSize = 25600;
    m_iSndBufSize = 8192;
    m_iRcvBufSize = 8192; //Rcv buffer MUST NOT be bigger than Flight Flag size
-   m_Linger.l_onoff = 1;
-   m_Linger.l_linger = 180;
+
+   // Linger: LIVE mode defaults, please refer to `SRTO_TRANSTYPE` option
+   // for other modes.
+   m_Linger.l_onoff = 0;
+   m_Linger.l_linger = 0;
    m_iUDPSndBufSize = 65536;
    m_iUDPRcvBufSize = m_iRcvBufSize * m_iMSS;
    m_iSockType = UDT_DGRAM;
@@ -786,6 +789,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           // Default live options:
           // - tsbpd: on
           // - latency: 120ms
+          // - linger: off
           // - congctl: live
           // - extraction method: message (reading call extracts one message)
           m_bOPT_TsbPd = true;
@@ -796,6 +800,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bMessageAPI = true;
           m_bRcvNakReport = true;
           m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
+          m_Linger.l_onoff = 0;
+          m_Linger.l_linger = 0;
           m_CongCtl.select("live");
           break;
 
@@ -803,6 +809,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           // File transfer mode:
           // - tsbpd: off
           // - latency: 0
+          // - linger: 2 minutes (180s)
           // - congctl: file (original UDT congestion control)
           // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
           m_bOPT_TsbPd = false;
@@ -813,6 +820,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
           m_bMessageAPI = false;
           m_bRcvNakReport = false;
           m_zOPT_ExpPayloadSize = 0; // use maximum
+          m_Linger.l_onoff = 1;
+          m_Linger.l_linger = 180; // 2 minutes
           m_CongCtl.select("file");
           break;
 
