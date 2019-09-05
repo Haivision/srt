@@ -166,12 +166,6 @@ public:
 
    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
 
-      /// Insert a new UDT instance into the list.
-      /// @param [in] ts time stamp: next processing time
-      /// @param [in] u pointer to the UDT instance
-
-   void insert(int64_t ts, const CUDT* u);
-
       /// Update the timestamp of the UDT instance on the list.
       /// @param [in] u pointer to the UDT instance
       /// @param [in] resechedule if the timestampe shoudl be rescheduled
@@ -196,7 +190,24 @@ public:
    uint64_t getNextProcTime();
 
 private:
+
+   /// Doubles the size of the list.
+   ///
+   void realloc_();
+
+   /// Insert a new UDT instance into the list with realloc if required.
+   ///
+   /// @param [in] ts time stamp: next processing time
+   /// @param [in] u pointer to the UDT instance
    void insert_(int64_t ts, const CUDT* u);
+
+   /// Insert a new UDT instance into the list without realloc.
+   /// Should be called if there is a gauranteed space for the element.
+   ///
+   /// @param [in] ts time stamp: next processing time
+   /// @param [in] u pointer to the UDT instance
+   void insert_norealloc_(int64_t ts, const CUDT* u);
+
    void remove_(const CUDT* u);
 
 private:
