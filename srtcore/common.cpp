@@ -209,7 +209,7 @@ void CTimer::sleepto(uint64_t nexttime)
 #else
        const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
        // The while loop ensures that (t < m_ullSchedTime).
-       // Division by frequency ьшпре loos prevision.
+       // Division by frequency may lose precision, therefore can be 0.
        if (wait_us == 0)
            break;
 
@@ -463,9 +463,9 @@ void CGuard::releaseMutex(pthread_mutex_t& lock)
     pthread_mutex_destroy(&lock);
 }
 
-void CGuard::createCond(pthread_cond_t& cond)
+void CGuard::createCond(pthread_cond_t& cond, pthread_condattr_t* attr)
 {
-    pthread_cond_init(&cond, NULL);
+    pthread_cond_init(&cond, attr);
 }
 
 void CGuard::releaseCond(pthread_cond_t& cond)
