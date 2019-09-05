@@ -22,6 +22,7 @@ extern volatile bool transmit_throw_on_interrupt;
 extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern size_t transmit_chunk_size;
+extern bool transmit_printformat_json;
 
 
 class Location
