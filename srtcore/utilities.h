@@ -834,7 +834,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
     union
     {
         char spread[16];
-        uint32_t testin[4];
+        //uint32_t testin[4];
     };
     int n = 16-size;
     if (n > 0)
