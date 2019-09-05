@@ -7,6 +7,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
+include(CheckCXXSourceCompiles)
 
 # Useful for combinging paths
 
@@ -240,4 +241,49 @@ function (getVarsWith _prefix _varResult)
     get_cmake_property(_vars VARIABLES)
     string (REGEX MATCHALL "(^|;)${_prefix}[A-Za-z0-9_]*" _matchedVars "${_vars}")
     set (${_varResult} ${_matchedVars} PARENT_SCOPE)
+endfunction()
+
+function (check_testcode_compiles testcode libraries _successful)
+	set (save_required_libraries ${CMAKE_REQUIRED_LIBRARIES})
+	set (CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES} ${libraries}")
+
+	check_cxx_source_compiles("${testcode}" ${_successful})
+	set (${_successful} ${${_successful}} PARENT_SCOPE)
+	set (CMAKE_REQUIRED_LIBRARIES ${save_required_libraries})
+endfunction()
+
+function (test_requires_clock_gettime _result)
+	# This function tests if clock_gettime can be used
+	# - at all
+	# - with or without librt
+
+	# Result will be:
+	# rt (if librt required)
+	# "" (if no extra libraries required)
+	# -- killed by FATAL_ERROR if clock_gettime is not available
+
+	set (code "
+		#include <time.h>
+		int main() {
+		  timespec res\;
+		  int result = clock_gettime(CLOCK_MONOTONIC, &res)\;
+		  return result == 0\;
+		}
+	")
+
+	check_testcode_compiles(${code} "" HAVE_CLOCK_GETTIME_IN)
+	if (HAVE_CLOCK_GETTIME_IN)
+		message(STATUS "Checked clock_gettime(): no extra libs needed")
+		set (${_result} "" PARENT_SCOPE)
+		return()
+	endif()
+
+	check_testcode_compiles(${code} "rt" HAVE_CLOCK_GETTIME_LIBRT)
+	if (HAVE_CLOCK_GETTIME_LIBRT)
+		message(STATUS "Checked clock_gettime(): requires -lrt")
+		set (${_result} "-lrt" PARENT_SCOPE)
+		return()
+	endif()
+
+	message(FATAL_ERROR "clock_gettime() is not available on this system")
 endfunction()
