@@ -134,7 +134,7 @@ const int UDT::ERROR = CUDT::ERROR;
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
 
-// NOTE: HAISRT_VERSION is primarily defined in the build file.
+// NOTE: SRT_VERSION is primarily defined in the build file.
 const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
 
@@ -255,7 +255,6 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
    m_iSndCryptoKeyLen = 0;
    //Cfg
    m_bDataSender = false;       //Sender only if true: does not recv data
-   m_bTwoWayData = false;
    m_bOPT_TsbPd = true;        //Enable TsbPd on sender
    m_iOPT_TsbPdDelay = SRT_LIVE_DEF_LATENCY_MS;
    m_iOPT_PeerTsbPdDelay = 0;       //Peer's TsbPd delay as receiver (here is its minimum value, if used)
@@ -272,8 +271,6 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
    m_llInputBW = 0;             // Application provided input bandwidth (internal input rate sampling == 0)
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
-   m_bTwoWayData = false;
-
    m_pCache = NULL;
 
    // Default congctl is "live".
@@ -319,7 +316,6 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
    m_llInputBW = ancestor.m_llInputBW;
    m_iOverheadBW = ancestor.m_iOverheadBW;
    m_bDataSender = ancestor.m_bDataSender;
-   m_bTwoWayData = ancestor.m_bTwoWayData;
    m_bOPT_TsbPd = ancestor.m_bOPT_TsbPd;
    m_iOPT_TsbPdDelay = ancestor.m_iOPT_TsbPdDelay;
    m_iOPT_PeerTsbPdDelay = ancestor.m_iOPT_PeerTsbPdDelay;
@@ -332,6 +328,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
    m_bMessageAPI = ancestor.m_bMessageAPI;
    m_iIpV6Only = ancestor.m_iIpV6Only;
+   m_iMaxReorderTolerance = ancestor.m_iMaxReorderTolerance;
    //Runtime
    m_bRcvNakReport = ancestor.m_bRcvNakReport;
 
@@ -1471,7 +1468,7 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t /* srtlen - unused
 
 size_t CUDT::fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t /* srtlen - unused */, int hs_version)
 {
-    // Setting m_ullRcvPeerStartTime is done ine processSrtMsg_HSREQ(), so
+    // Setting m_ullRcvPeerStartTime is done in processSrtMsg_HSREQ(), so
     // this condition will be skipped only if this function is called without
     // getting first received HSREQ. Doesn't look possible in both HSv4 and HSv5.
     if (m_ullRcvPeerStartTime != 0)
@@ -3791,6 +3788,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     if (e.getErrorCode() != 0)
     {
+        m_bConnecting = false;
         // The process is to be abnormally terminated, remove the connector
         // now because most likely no other processing part has done anything with it.
         m_pRcvQueue->removeConnector(m_SocketID);
@@ -5123,7 +5121,7 @@ void* CUDT::tsbpd(void* param)
              }
              else if (passack)
              {
-                /* Packets ready to play but not yet acknowledged (should occurs withing 10ms) */
+                /* Packets ready to play but not yet acknowledged (should happen within 10ms) */
                 rxready = false;
                 tsbpdtime = 0; //Next sent ack will unblock
              } /* else packet ready to play */
@@ -5473,9 +5471,6 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // These data should probably be filled only upon
     // reception of the conclusion handshake - otherwise
     // they have outdated values.
-    if ( bidirectional )
-        m_bTwoWayData = true;
-
     m_pCryptoControl->setCryptoSecret(m_CryptoSecret);
 
     if ( bidirectional || m_bDataSender )
@@ -5959,7 +5954,7 @@ int CUDT::receiveBuffer(char* data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    int res = m_pRcvBuffer->readBuffer(data, len);
+    const int res = m_pRcvBuffer->readBuffer(data, len);
 
     /* Kick TsbPd thread to schedule next wakeup (if running) */
     if (m_bTsbPd)
@@ -8046,7 +8041,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       {
       int32_t* losslist = (int32_t *)(ctrlpkt.m_pcData);
       size_t losslist_len = ctrlpkt.getLength() / 4;
-      updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
       bool secure = true;
 
@@ -8157,6 +8151,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
               }
           }
       }
+
+      updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
       if (!secure)
       {
