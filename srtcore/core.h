@@ -277,6 +277,7 @@ public: // internal API
 
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
+    int sndLossLength() { return m_pSndLossList->getLossLength(); }
     uint64_t minNAKInterval() const { return m_ullMinNakInt_tk; }
     int32_t ISN() const { return m_iISN; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
@@ -594,11 +595,9 @@ private: // Identification
     HaiCrypt_Secret m_CryptoSecret;
     int m_iSndCryptoKeyLen;
 
-    // XXX Consider removing them. The m_bDataSender may stay here
+    // XXX Consider removing. The m_bDataSender stays here
     // in order to maintain the HS side selection in HSv4.
-    // m_bTwoWayData is unused.
     bool m_bDataSender;
-    bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
     uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time

@@ -678,9 +678,9 @@ void CSndBuffer::increase()
 //const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
 #endif
 
-CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize):
+CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts):
 m_pUnit(NULL),
-m_iSize(bufsize),
+m_iSize(bufsize_pkts),
 m_pUnitQueue(queue),
 m_iStartPos(0),
 m_iLastAckPos(0),
@@ -762,7 +762,11 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
 
 int CRcvBuffer::addData(CUnit* unit, int offset)
 {
-   int pos = (m_iLastAckPos + offset) % m_iSize;
+   SRT_ASSERT(unit != NULL);
+   if (offset >= getAvailBufSize())
+       return -1;
+
+   const int pos = (m_iLastAckPos + offset) % m_iSize;
    if (offset >= m_iMaxPos)
       m_iMaxPos = offset + 1;
 
@@ -786,11 +790,17 @@ int CRcvBuffer::readBuffer(char* data, int len)
    char* begin = data;
 #endif
 
-   uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : uint64_t());
+   const uint64_t now = (m_bTsbPdMode ? CTimer::getTime() : uint64_t());
 
    HLOGC(dlog.Debug, log << CONID() << "readBuffer: start=" << p << " lastack=" << lastack);
    while ((p != lastack) && (rs > 0))
    {
+       if (m_pUnit[p] == NULL)
+       {
+           LOGC(dlog.Error, log << CONID() << " IPE readBuffer on null packet pointer");
+           return -1;
+       }
+
       if (m_bTsbPdMode)
       {
           HLOGC(dlog.Debug, log << CONID() << "readBuffer: chk if time2play: NOW=" << now << " PKT TS=" << getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()));
@@ -866,6 +876,9 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 
 void CRcvBuffer::ackData(int len)
 {
+   SRT_ASSERT(len < m_iSize);
+   SRT_ASSERT(len > 0);
+
    {
       int pkts = 0;
       int bytes = 0;
@@ -1030,8 +1043,6 @@ uint64_t CRcvBuffer::debugGetDeliveryTime(int offset)
 bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curpktseq)
 {
     *r_tsbpdtime = 0;
-    int rmpkts = 0;
-    int rmbytes = 0;
 
 #if ENABLE_HEAVY_LOGGING
     const char* reason = "NOT RECEIVED";
@@ -1081,15 +1092,16 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
 
         if (freeunit)
         {
-            rmpkts++;
-            rmbytes += freeUnitAt(i);
+            /* removed skipped, dropped, undecryptable bytes from rcv buffer */
+            const int rmbytes = (int)m_pUnit[i]->m_Packet.getLength();
+            countBytes(-1, -rmbytes, true);
+
+            freeUnitAt(i);
             m_iStartPos = shift_forward(m_iStartPos);
         }
     }
 
     HLOGC(mglog.Debug, log << "getRcvReadyMsg: nothing to deliver: " << reason);
-    /* removed skipped, dropped, undecryptable bytes from rcv buffer */
-    countBytes(-rmpkts, -rmbytes, true);
     return false;
 }
 
@@ -1369,7 +1381,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
            /* Exiting wrap check period (if for packet delivery head) */
            m_bTsbPdWrapCheck = false;
            m_ullTsbPdTimeBase += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
-           tslog.Debug("tsppd wrap period ends");
+           tslog.Debug("tsbpd wrap period ends");
        }
    }
    // Check if timestamp is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1377,7 +1389,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    {
       /* Approching wrap around point, start wrap check period (if for packet delivery head) */
       m_bTsbPdWrapCheck = true;
-      tslog.Debug("tsppd wrap period begins");
+      tslog.Debug("tsbpd wrap period begins");
    }
    return(m_ullTsbPdTimeBase + carryover);
 }
@@ -1573,13 +1585,16 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     msgctl.pktseq = pkt1.getSeqNo();
     msgctl.msgno = pkt1.getMsgSeq();
 
-    int rs = len;
+    SRT_ASSERT(len > 0);
+    int rs = len > 0 ? len : 0;
     int past_q = shift_forward(q);
     while (p != past_q)
     {
-        int unitsize = (int) m_pUnit[p]->m_Packet.getLength();
-        if ((rs >= 0) && (unitsize > rs))
-            unitsize = rs;
+        const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
+        if (pktlen > 0)
+            countBytes(-1, -pktlen, true);
+
+        const int unitsize = ((rs >= 0) && (unitsize > rs)) ? rs : pktlen;
 
         if (unitsize > 0)
         {

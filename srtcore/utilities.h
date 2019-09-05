@@ -300,8 +300,8 @@ struct BitsetMask<L, R, false>
 template <size_t L, size_t R = L>
 struct Bits
 {
-    // DID YOU GET kind-of error: ‘mask’ is not a member of ‘Bits<3u, 5u, false>’ ?
-    // See the the above declaration of 'correct' !
+    // DID YOU GET a kind-of error: 'mask' is not a member of 'Bits<3u, 5u, false>'?
+    // See the the above declaration of 'correct'!
     static const uint32_t mask = BitsetMask<L, R>::value;
     static const uint32_t offset = R;
     static const size_t size = L - R + 1;
@@ -678,24 +678,24 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 }
 
 
-// This function is useful in multiple uses where
-// the time drift should be traced. It's currently in use in every
-// solution that implements any kind of TSBPD (AKA Stower).
+/// This class is useful in every place where
+/// the time drift should be traced. It's currently in use in every
+/// solution that implements any kind of TSBPD.
 template<unsigned MAX_SPAN, int MAX_DRIFT, bool CLEAR_ON_UPDATE = true>
 class DriftTracer
 {
-    int64_t m_qDrift;
-    int64_t m_qOverdrift;
+    int64_t  m_qDrift;
+    int64_t  m_qOverdrift;
 
-    int64_t m_qDriftSum;
+    int64_t  m_qDriftSum;
     unsigned m_uDriftSpan;
 
 public:
     DriftTracer()
-        : m_qDrift(),
-        m_qOverdrift(),
-        m_qDriftSum(),
-        m_uDriftSpan()
+        : m_qDrift(0)
+        , m_qOverdrift(0)
+        , m_qDriftSum(0)
+        , m_uDriftSpan(0)
     {}
 
     bool update(int64_t driftval)
@@ -703,37 +703,36 @@ public:
         m_qDriftSum += driftval;
         ++m_uDriftSpan;
 
-        if ( m_uDriftSpan >= MAX_SPAN )
+        if (m_uDriftSpan < MAX_SPAN)
+            return false;
+
+        if (CLEAR_ON_UPDATE)
+            m_qOverdrift = 0;
+
+        // Calculate the median of all drift values.
+        // In most cases, the divisor should be == MAX_SPAN.
+        m_qDrift = m_qDriftSum / m_uDriftSpan;
+
+        // And clear the collection
+        m_qDriftSum = 0;
+        m_uDriftSpan = 0;
+
+        // In case of "overdrift", save the overdriven value in 'm_qOverdrift'.
+        // In clear mode, you should add this value to the time base when update()
+        // returns true. The drift value will be since now measured with the
+        // overdrift assumed to be added to the base.
+        if (std::abs(m_qDrift) > MAX_DRIFT)
         {
-            if ( CLEAR_ON_UPDATE )
-                m_qOverdrift = 0;
-
-            // Calculate the median of all drift values.
-            // In most cases, the divisor should be == MAX_SPAN.
-            m_qDrift = m_qDriftSum / m_uDriftSpan;
-
-            // And clear the collection
-            m_qDriftSum = 0;
-            m_uDriftSpan = 0;
-
-            // In case of "overdrift", save the overdriven value in 'm_qOverdrift'.
-            // In clear mode, you should add this value to the time base when update()
-            // returns true. The drift value will be since now measured with the
-            // overdrift assumed to be added to the base.
-            if (std::abs(m_qDrift) > MAX_DRIFT)
-            {
-                m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
-                m_qDrift -= m_qOverdrift;
-            }
-
-            // printDriftOffset(m_qOverdrift, m_qDrift);
-
-            // Timebase is separate
-            // m_qTimeBase += m_qOverdrift;
-
-            return true;
+            m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
+            m_qDrift -= m_qOverdrift;
         }
-        return false;
+
+        // printDriftOffset(m_qOverdrift, m_qDrift);
+
+        // Timebase is separate
+        // m_qTimeBase += m_qOverdrift;
+
+        return true;
     }
 
     // These values can be read at any time, however if you want
@@ -757,8 +756,8 @@ public:
     // any changes in overdrift. By manipulating the MAX_DRIFT parameter
     // you can decide how high the drift can go relatively to stay below
     // overdrift.
-    int64_t drift() { return m_qDrift; }
-    int64_t overdrift() { return m_qOverdrift; }
+    int64_t drift() const { return m_qDrift; }
+    int64_t overdrift() const { return m_qOverdrift; }
 };
 
 template <class KeyType, class ValueType>
