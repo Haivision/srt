@@ -262,6 +262,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
    m_iOPT_SndDropDelay = 0;
    m_bOPT_StrictEncryption = true;
    m_iOPT_PeerIdleTimeout = COMM_RESPONSE_TIMEOUT_MS;
+   m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
    m_bOPT_GroupConnect = false;
    m_bTLPktDrop = true;         //Too-late Packet Drop
    m_bMessageAPI = true;
@@ -323,6 +324,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
    m_iOPT_SndDropDelay = ancestor.m_iOPT_SndDropDelay;
    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
    m_iOPT_PeerIdleTimeout = ancestor.m_iOPT_PeerIdleTimeout;
+   m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
    m_bOPT_GroupConnect = ancestor.m_bOPT_GroupConnect;
    m_zOPT_ExpPayloadSize = ancestor.m_zOPT_ExpPayloadSize;
    m_bTLPktDrop = ancestor.m_bTLPktDrop;
@@ -900,6 +902,34 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       
       m_iIpV6Only = *(int*)optval;
       break;
+
+      // This option is meaningless for the socket itself.
+      // It's set here just for the sake of setting it on a listener
+      // socket so that it is then applied on the group when a
+      // group connection is configuired.
+    case SRTO_GROUPSTABTIMEO:
+        {
+            int tmo = *(int*)optval;
+
+            // Search if you already have SRTO_PEERIDLETIMEO set
+
+            int idletmo = m_iOPT_PeerIdleTimeout;
+
+            // Both are in milliseconds.
+            // This option is RECORDED in microseconds, while
+            // idletmp is recorded in milliseconds, only translated to
+            // microseconds directly before use.
+            if (tmo >= idletmo)
+            {
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                        << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_uOPT_StabilityTimeout = tmo * 1000;
+        }
+
+        break;
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -10827,8 +10857,10 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            m_uOPT_StabilityTimeout = tmo;
+            m_uOPT_StabilityTimeout = tmo * 1000;
         }
+
+        break;
 
         // XXX Currently no socket groups allow any other
         // congestion control mode other than live.
@@ -10964,6 +10996,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_TLPKTDROP, m_bTLPktDrop);
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);
+    IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
