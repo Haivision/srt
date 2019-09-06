@@ -691,7 +691,7 @@ dropped
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------- |
 | `SRTO_PACKETFILTER`   | 1.4.0 | pre     | string |        |          | [...512]| 
 
-- **[SET]** - Setup the packet filter. The string must match appropriate syntax
+- **[SET]** - Set up the packet filter. The string must match appropriate syntax
 for packet filter setup.
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
