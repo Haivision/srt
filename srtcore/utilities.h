@@ -830,12 +830,8 @@ struct MapProxy
 inline std::string BufferStamp(const char* mem, size_t size)
 {
     using namespace std;
+    char spread[16];
 
-    union
-    {
-        char spread[16];
-        uint32_t testin[4];
-    };
     int n = 16-size;
     if (n > 0)
         memset(spread+16-n, 0, n);
@@ -859,8 +855,6 @@ inline std::string BufferStamp(const char* mem, size_t size)
 
     ostringstream os;
 
-    //os << hex << uppercase << setfill('0') << setw(8) << testin[3] << testin[2] << testin[1] << testin[0];
-    //os << "|";
     os << hex << uppercase << setfill('0') << setw(8) << sum;
 
     return os.str();
