@@ -332,8 +332,8 @@ columns, and the size of a column (C) is equal to the number of rows.
 ## Sending
 
 Prior to sending, `feedSource` gets the packets to be sent so that their
-contents can be XORed and written into the FEC group's buffer. Data being
-performed a protection operation on are:
+contents can be XORed and written into the FEC group's buffer. Data on which
+a protection operation is performed are:
 
 * timestamp
 * encryption flags
@@ -351,7 +351,7 @@ When the number of packets, applied in a protection operation, reaches the
 desired size of the group, the FEC control packet is considered ready for
 extraction, and the current FEC buffer state (after processing all packets from
 the group) becomes the required contents of the FEC control packet. This will
-then be returned at the next call to packControlPacket. This function checks if
+then be returned at the next call to `packControlPacket`. This function checks if
 the FEC control packet is ready for extraction, first for the row group, then
 for the column group, and provides it if it is ready.
 
@@ -413,9 +413,9 @@ belongs by performing the XOR operation with the current contents of the recover
 buffer and increasing the packets' count (the number of currently processed
 packets in the FEC group buffer). Note that at the receiver there is only one
 buffer for an FEC group. There's a counter that is incremented for each packet
-that has been performed the XOR operation on into that group's recovery
-buffer. This operation is done as well on the FEC control packet, although
-this is marked by a separate flag.
+on which the XOR protection operation has been performed and added to that
+group's recovery buffer. This operation is done as well on the FEC control
+packet, although this is marked by a separate flag.
 
 The FEC control packet is inserted into the group to which it is destined (its 
 sequence number is the last sequence in the group). Once you have a state where 
@@ -426,7 +426,7 @@ rebuilt from the FEC group buffer contents.
 
 Every incoming packet that is applied into the group also marks the reception
 bit flag for its sequence number. The sequence number of the missing packet is
-therefore determined by examining this flag for all these sequence number to
+therefore determined by examining this flag for all these sequence numbers to
 find out which one is missing. The packet is then rebuilt by:
 
 * setting default values in the header (socket ID for the connection, message 
@@ -446,7 +446,7 @@ Recovery
 * setting the payload contents from the corresponding contents of Data Recovery,
 up to the payload size as read above
 
-If both columns and rows are used, the rebuilding happens recursively - that is, 
+If both columns and rows are used, the rebuilding happens recursively - that is, 
 after a packet is rebuilt its contents are also XORed to the row or column in 
 the FEC group to which it simultaneously belongs, and then that row or column is 
 checked again.That may trigger the rebuilding of another packet, which in turn 
@@ -476,8 +476,8 @@ information can be contained. This is the breakdown of the FEC control packet:
    |                    Payload Recovery...                        | Data
 
 ```
-This is much like a regular data packet in SRT, however there's an extra 32-bit 
-special FEC header with additional information, and also many of the fields in 
+This is much like a regular data packet in SRT, except that there's an extra 32-bit 
+special FEC header with additional information, and also many of the fields in the 
 SRT header are used for a different purpose:
 
 - **Packet Sequence Number:** Contains the sequence number of the last packet in 
@@ -558,8 +558,8 @@ the **Flag recovery** field.
 - **TS recovery:** In SRT FEC the timestamp recovery is stored in the 
 SRT header's **Timestamp** field (being Time Stamp Recovery in this case)
 
-- **Index, Offset:** Some similarities can be found in the **Group index** field, 
-however its purpose is mainly to distinguish row and column groups. The index 
+- **Index, Offset:** Some similarities can be found in the **Group index** field. 
+However its purpose is mainly to distinguish row and column groups. The index 
 itself is only for prospective sanity checks.
 
 ## Cooperation with retransmission
@@ -657,7 +657,7 @@ active. Red then represents series 0, blue series 1, and white series 2:
 In a staircase arrangement, the minimum distance between base0 and the first 
 incoming packet that might trigger deletion is two times the size of the matrix 
 (an arbitrary value chosen for the sake of simplicity and to provide a small 
-margin of safety;   it doesn't impact the functionality because deletion is 
+margin of safety; it doesn't impact the functionality because deletion is 
 independent of dismissal, except for the fact that the latter must happen first).
 For example, deletion of the column and row groups in series 0 (the red region) 
 will be triggered by reception of packet #600 (or greater, because packets can 
@@ -828,7 +828,7 @@ The following virtual methods (to be overridden) are not direction related:
     puts an extra limitation on the value for this option beside the overall 
     maximum of 1456 bytes).
 
-* `SRT_ARQLevel arqLevel()` [OPTIONAL, default implementation returns the value extracted earlier from the configuration string under the `arq` key]
+* `SRT_ARQLevel arqLevel()` [OPTIONAL; default implementation returns the value extracted earlier from the configuration string under the `arq` key]
     * Should return the ARQ level in the case where you want it to be specified 
     differently than the default (for example, if you don't want it to be 
     configurable in your implementation).
@@ -924,4 +924,3 @@ it correctly as you have created it.
 3. When creating (reconstructing) a packet, you have to correctly set the 
 sequence number, the ID field (get the value from `socketID()`), timestamp, and 
 the encryption flags (other flags are not important, they are set as default).
-
