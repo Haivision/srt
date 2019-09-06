@@ -1881,7 +1881,7 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
         if (pktlen > 0)
             countBytes(-1, -pktlen, true);
 
-        const int unitsize = ((rs >= 0) && (unitsize > rs)) ? rs : pktlen;
+        const int unitsize = ((rs >= 0) && (pktlen > rs)) ? rs : pktlen;
 
         if (unitsize > 0)
         {

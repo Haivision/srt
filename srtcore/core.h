@@ -788,7 +788,7 @@ public: // internal API
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
         DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
-        DEF_LINGER = 180,
+        DEF_LINGER = 180,  // 2 minutes
         DEF_UDP_BUFFER_SIZE = 65536,
         DEF_CONNTIMEO = 3000;
 
