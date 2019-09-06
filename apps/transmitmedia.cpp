@@ -39,7 +39,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
 
 class FileSource: public Source
 {
@@ -333,14 +333,10 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     // Default mode is live, so check if the file mode was enforced
     if (par.count("transtype") == 0 || par["transtype"] != "file")
     {
-        // If the Live chunk size was nondefault, enforce the size.
-        if (transmit_chunk_size != SRT_LIVE_DEF_PLSIZE)
-        {
-            if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-                throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
+            throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
-        }
+        par["payloadsize"] = Sprint(transmit_chunk_size);
     }
 
     // Assign the others here.

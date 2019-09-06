@@ -493,8 +493,8 @@ private:
         m_bLoss = true;
 
         const int pktsInFlight = m_parent->RTT() / m_dPktSndPeriod;
-        const int ackSeqno = m_iLastAck;// m_parent->sndLastDataAck();
-        const int sentSeqno = m_parent->sndSeqNo();
+        const int ackSeqno SRT_ATR_UNUSED = m_iLastAck;// m_parent->sndLastDataAck();
+        const int sentSeqno SRT_ATR_UNUSED = m_parent->sndSeqNo();
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = (numPktsLost * 1000) / pktsInFlight;
 

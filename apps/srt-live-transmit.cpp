@@ -129,7 +129,6 @@ struct LiveTransmitConfig
 {
     int timeout = 0;
     int timeout_mode = 0;
-    int chunk_size = SRT_LIVE_DEF_PLSIZE;
     bool quiet = false;
     srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
     set<srt_logging::LogFA> logfas;
@@ -169,7 +168,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_timeout       = { "t", "to", "timeout" },
         o_timeout_mode  = { "tm", "timeout-mode" },
         o_autorecon     = { "a", "auto", "autoreconnect" },
-        o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
         o_statsrep      = { "s", "stats", "stats-report-frequency" },
         o_statsout      = { "statsout" },
@@ -188,7 +186,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_timeout,      OptionScheme::ARG_ONE },
         { o_timeout_mode, OptionScheme::ARG_ONE },
         { o_autorecon,    OptionScheme::ARG_ONE },
-        { o_chunk,        OptionScheme::ARG_ONE },
         { o_bwreport,     OptionScheme::ARG_ONE },
         { o_statsrep,     OptionScheme::ARG_ONE },
         { o_statsout,     OptionScheme::ARG_ONE },
@@ -232,7 +229,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_timeout_mode, "<mode=0>", "timeout mode (0 - since app start; 1 - like 0, but cancel on connect");
 #endif
         PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode [yes|no]");
-        PrintOptionHelp(o_chunk,     "<chunk=1316>", "max size of data read in one step");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
@@ -267,7 +263,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
     cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
-    cfg.chunk_size   = stoi(Option<OutString>(params, "1316", o_chunk));
     cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
     cfg.stats_out    = Option<OutString>(params, "", o_statsout);
@@ -339,8 +334,6 @@ int main(int argc, char** argv)
     //
     // Set global config variables
     //
-    if (cfg.chunk_size != SRT_LIVE_DEF_PLSIZE)
-        transmit_chunk_size = cfg.chunk_size;
     stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
@@ -720,9 +713,9 @@ int main(int argc, char** argv)
                     while (dataqueue.size() < 10)
                     {
                         std::shared_ptr<bytevector> pdata(
-                            new bytevector(cfg.chunk_size));
+                            new bytevector(transmit_chunk_size));
 
-                        const int res = src->Read(cfg.chunk_size, *pdata, out_stats);
+                        const int res = src->Read(transmit_chunk_size, *pdata, out_stats);
 
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
