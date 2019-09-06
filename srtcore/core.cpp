@@ -1406,7 +1406,7 @@ size_t CUDT::fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int
     memset(srtdata, 0, sizeof(uint32_t)*srtlen);
     /* Current version (1.x.x) SRT handshake */
     srtdata[SRT_HS_VERSION] = m_lSrtVersion;  /* Required version */
-    srtdata[SRT_HS_FLAGS] |= SRT_OPT_HAICRYPT;
+    srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
 
     switch (msgtype)
     {
@@ -1785,7 +1785,7 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         {
             peer_filter_capable = true;
         }
-        else if (m_lPeerSrtVersion >= SrtVersion(1, 3, 3))
+        else if (IsSet(m_lPeerSrtFlags, SRT_OPT_FILTERCAP))
         {
             peer_filter_capable = true;
         }
@@ -2227,7 +2227,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
             SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
     m_lPeerSrtVersion = srtdata[SRT_HS_VERSION];
-    uint32_t peer_srt_options = srtdata[SRT_HS_FLAGS];
+    m_lPeerSrtFlags = srtdata[SRT_HS_FLAGS];
 
     if ( hsv == CUDT::HS_VERSION_UDT4 )
     {
@@ -2261,14 +2261,14 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
     HLOGC(mglog.Debug, log << "HSREQ/rcv: PEER Version: "
             << SrtVersionString(m_lPeerSrtVersion)
-            << " Flags: " << peer_srt_options
-            << "(" << SrtFlagString(peer_srt_options) << ")");
+            << " Flags: " << m_lPeerSrtFlags
+            << "(" << SrtFlagString(m_lPeerSrtFlags) << ")");
 
-    m_bPeerRexmitFlag = IsSet(peer_srt_options, SRT_OPT_REXMITFLG);
+    m_bPeerRexmitFlag = IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG);
     HLOGF(mglog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND" );
 
     // Check if both use the same API type. Reject if not.
-    bool peer_message_api = !IsSet(peer_srt_options, SRT_OPT_STREAM);
+    bool peer_message_api = !IsSet(m_lPeerSrtFlags, SRT_OPT_STREAM);
     if ( peer_message_api != m_bMessageAPI )
     {
         m_RejectReason = SRT_REJ_MESSAGEAPI;
@@ -2283,7 +2283,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
         // 3 is the size when containing VERSION, FLAGS and LATENCY. Less size
         // makes it contain only the first two. Let's make it acceptable, as long
         // as the latency flags aren't set.
-        if ( IsSet(peer_srt_options, SRT_OPT_TSBPDSND) || IsSet(peer_srt_options, SRT_OPT_TSBPDRCV) )
+        if ( IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND) || IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV) )
         {
             m_RejectReason = SRT_REJ_ROGUE;
             LOGC(mglog.Error, log << "HSREQ/rcv: Peer sent only VERSION + FLAGS HSREQ, but TSBPD flags are set. Rejecting.");
@@ -2299,7 +2299,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
     uint32_t latencystr = srtdata[SRT_HS_LATENCY];
 
-    if ( IsSet(peer_srt_options, SRT_OPT_TSBPDSND) )
+    if ( IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND) )
     {
         //TimeStamp-based Packet Delivery feature enabled
         if ( !m_bTsbPd )
@@ -2347,7 +2347,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     // that the peer INITIATOR will receive the data and informs about its predefined
     // latency. We need to maximize this with our setting of the peer's latency and
     // record as peer's latency, which will be then sent back with HSRSP.
-    if ( hsv > CUDT::HS_VERSION_UDT4 && IsSet(peer_srt_options, SRT_OPT_TSBPDRCV) )
+    if ( hsv > CUDT::HS_VERSION_UDT4 && IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV) )
     {
         // So, PEER uses TSBPD, set the flag.
         // NOTE: it doesn't matter, if AGENT uses TSBPD.
@@ -2372,12 +2372,12 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, 
     {
         // This is HSv5, do the same things as required for the sending party in HSv4,
         // as in HSv5 this can also be a sender.
-        if (IsSet(peer_srt_options, SRT_OPT_TLPKTDROP))
+        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TLPKTDROP))
         {
             //Too late packets dropping feature supported
             m_bPeerTLPktDrop = true;
         }
-        if (IsSet(peer_srt_options, SRT_OPT_NAKREPORT))
+        if (IsSet(m_lPeerSrtFlags, SRT_OPT_NAKREPORT))
         {
             //Peer will send Periodic NAK Reports
             m_bPeerNakReport = true;
@@ -2429,18 +2429,18 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
 #endif
 
     m_lPeerSrtVersion = srtdata[SRT_HS_VERSION];
-    uint32_t peer_srt_options = srtdata[SRT_HS_FLAGS];
+    m_lPeerSrtFlags = srtdata[SRT_HS_FLAGS];
 
     HLOGF(mglog.Debug, "HSRSP/rcv: Version: %s Flags: SND:%08X (%s)",
             SrtVersionString(m_lPeerSrtVersion).c_str(),
-            peer_srt_options,
-            SrtFlagString(peer_srt_options).c_str());
+            m_lPeerSrtFlags,
+            SrtFlagString(m_lPeerSrtFlags).c_str());
 
 
     if ( hsv == CUDT::HS_VERSION_UDT4 )
     {
         // The old HSv4 way: extract just one value and put it under peer.
-        if (IsSet(peer_srt_options, SRT_OPT_TSBPDRCV))
+        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             //TsbPd feature enabled
             m_bPeerTsbPd = true;
@@ -2454,7 +2454,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
     {
         // HSv5 way: extract the receiver latency and sender latency, if used.
 
-        if (IsSet(peer_srt_options, SRT_OPT_TSBPDRCV))
+        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             //TsbPd feature enabled
             m_bPeerTsbPd = true;
@@ -2466,7 +2466,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
             HLOGC(mglog.Debug, log << "HSRSP/rcv: Peer (responder) DOES NOT USE latency");
         }
 
-        if (IsSet(peer_srt_options, SRT_OPT_TSBPDSND))
+        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
         {
             if (!m_bTsbPd)
             {
@@ -2482,13 +2482,13 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
         }
     }
 
-    if ((m_lSrtVersion >= SrtVersion(1, 0, 5)) && IsSet(peer_srt_options, SRT_OPT_TLPKTDROP))
+    if ((m_lSrtVersion >= SrtVersion(1, 0, 5)) && IsSet(m_lPeerSrtFlags, SRT_OPT_TLPKTDROP))
     {
         //Too late packets dropping feature supported
         m_bPeerTLPktDrop = true;
     }
 
-    if ((m_lSrtVersion >= SrtVersion(1, 1, 0)) && IsSet(peer_srt_options, SRT_OPT_NAKREPORT))
+    if ((m_lSrtVersion >= SrtVersion(1, 1, 0)) && IsSet(m_lPeerSrtFlags, SRT_OPT_NAKREPORT))
     {
         //Peer will send Periodic NAK Reports
         m_bPeerNakReport = true;
@@ -2496,7 +2496,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, 
 
     if ( m_lSrtVersion >= SrtVersion(1, 2, 0) )
     {
-        if ( IsSet(peer_srt_options, SRT_OPT_REXMITFLG) )
+        if ( IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG) )
         {
             //Peer will use REXMIT flag in packet retransmission.
             m_bPeerRexmitFlag = true;
