@@ -8,6 +8,7 @@
 [![Build Status Windows][appveyor-badge]][appveyor]
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
+[![Debian Badge](https://badges.debian.net/badges/debian/testing/libsrt1/version.svg)](https://packages.debian.org/testing/libsrt1)
 
 # Introduction
 
