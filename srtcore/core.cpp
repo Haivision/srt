@@ -10807,6 +10807,29 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = *(int*)optval;
         break;
 
+    case SRTO_GROUPSTABTIMEO:
+        {
+            int tmo = *(int*)optval;
+
+            // Search if you already have SRTO_PEERIDLETIMEO set
+            int idletmo = CUDT::COMM_RESPONSE_TIMEOUT_MS;
+            vector<ConfigItem>::iterator f = find_if(m_config.begin(), m_config.end(),
+                    ConfigItem::OfType(SRTO_PEERIDLETIMEO));
+            if (f != m_config.end())
+            {
+                f->get(idletmo); // worst case, it will leave it unchanged.
+            }
+
+            if (tmo >= idletmo)
+            {
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                        << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_uOPT_StabilityTimeout = tmo;
+        }
+
         // XXX Currently no socket groups allow any other
         // congestion control mode other than live.
     case SRTO_CONGESTION:

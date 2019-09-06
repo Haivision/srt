@@ -230,6 +230,7 @@ public:
             if (sizeof(T) > value.size())
                 return false;
             refr = *(T*)&value[0];
+            return true;
         }
 
         ConfigItem(SRT_SOCKOPT o, const void* val, int size): so(o)
@@ -238,6 +239,16 @@ public:
             unsigned char* begin = (unsigned char*)val;
             std::copy(begin, begin+size, value.begin());
         }
+
+        struct OfType
+        {
+            SRT_SOCKOPT so;
+            OfType(SRT_SOCKOPT soso): so(soso) {}
+            bool operator()(ConfigItem& ci)
+            {
+                return ci.so == so;
+            }
+        };
     };
 
     typedef std::list<SocketData> group_t;
