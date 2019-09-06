@@ -969,7 +969,7 @@ connection parties.
 #### SRT_REJ_FILTER
 
 The `SRTO_PACKETFILTER` option has been set differently on both connection
-parties (NOTE: this flag may not exist yet in this version).
+parties.
 
 
 ### srt_rejectreason_str

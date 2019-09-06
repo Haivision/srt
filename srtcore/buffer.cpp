@@ -1622,7 +1622,9 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
         if (pktlen > 0)
             countBytes(-1, -pktlen, true);
 
-        const int unitsize = ((rs >= 0) && (unitsize > rs)) ? rs : pktlen;
+        const int unitsize = ((rs >= 0) && (pktlen > rs)) ? rs : pktlen;
+
+        HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
 
         HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
 
