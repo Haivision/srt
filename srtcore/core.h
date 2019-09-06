@@ -672,6 +672,7 @@ private: // Receiving related data
     uint32_t m_lSrtVersion;
     uint32_t m_lMinimumPeerSrtVersion;
     uint32_t m_lPeerSrtVersion;
+    uint32_t m_lPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
