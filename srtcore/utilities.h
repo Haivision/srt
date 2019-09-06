@@ -90,6 +90,7 @@ written by
 #include <functional>
 #include <memory>
 #include <sstream>
+#include <iomanip>
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
@@ -445,6 +446,17 @@ public:
     { return *m_data; }
 };
 
+// This is required for Printable function if you have a container of pairs,
+// but this function has a different definition for C++11 and C++03.
+namespace srt_pair_op
+{
+    template <class Value1, class Value2>
+    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    {
+        s << "{" << v.first << " " << v.second << "}";
+        return s;
+    }
+}
 
 #if HAVE_CXX11
 
@@ -491,6 +503,7 @@ using UniquePtr = std::unique_ptr<T>;
 template <class Container, class Value = typename Container::value_type, typename... Args> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
 {
+    using namespace srt_pair_op;
     std::ostringstream os;
     Print(os, args...);
     os << "[ ";
@@ -503,6 +516,7 @@ std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... a
 template <class Container> inline
 std::string Printable(const Container& in)
 {
+    using namespace srt_pair_op;
     using Value = typename Container::value_type;
     return Printable(in, Value());
 }
@@ -516,6 +530,13 @@ auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Ma
 
 template<typename Map, typename Key>
 auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
+{
+    auto it = m.find(key);
+    return it == m.end() ? nullptr : std::addressof(it->second);
+}
+
+template<typename Map, typename Key>
+auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 {
     auto it = m.find(key);
     return it == m.end() ? nullptr : std::addressof(it->second);
@@ -577,6 +598,48 @@ public:
     operator bool () { return 0!= get(); }
 };
 
+// A primitive one-argument version of Printable
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+
+    return os.str();
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(const Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type* map_getp(Map& m, const Key& key)
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
+}
 
 #endif
 
@@ -764,6 +827,38 @@ struct MapProxy
     }
 };
 
+inline std::string BufferStamp(const char* mem, size_t size)
+{
+    using namespace std;
+    char spread[16];
+
+    int n = 16-size;
+    if (n > 0)
+        memset(spread+16-n, 0, n);
+    memcpy(spread, mem, min(size_t(16), size));
+
+    // Now prepare 4 cells for uint32_t.
+    union
+    {
+        uint32_t sum;
+        char cells[4];
+    };
+    memset(cells, 0, 4);
+
+    for (size_t x = 0; x < 4; ++x)
+        for (size_t y = 0; y < 4; ++y)
+        {
+            cells[x] += spread[x+4*y];
+        }
+
+    // Convert to hex string
+
+    ostringstream os;
+
+    os << hex << uppercase << setfill('0') << setw(8) << sum;
+
+    return os.str();
+}
 
 template <class OutputIterator>
 inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
@@ -783,6 +878,28 @@ inline void Split(const std::string & str, char delimiter, OutputIterator tokens
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
     } while (end != std::string::npos);
+}
+
+inline std::string SelectNot(const std::string& unwanted, const std::string& s1, const std::string& s2)
+{
+    if (s1 == unwanted)
+        return s2; // might be unwanted, too, but then, there's nothing you can do anyway
+    if (s2 == unwanted)
+        return s1;
+
+    // Both have wanted values, so now compare if they are same
+    if (s1 == s2)
+        return s1; // occasionally there's a winner
+
+    // Irresolvable situation.
+    return std::string();
+}
+
+inline std::string SelectDefault(const std::string& checked, const std::string& def)
+{
+    if (checked == "")
+        return def;
+    return checked;
 }
 
 template <class It>

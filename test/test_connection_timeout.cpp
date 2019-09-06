@@ -82,7 +82,7 @@ protected:
 protected:
 
     SOCKET m_udp_sock = INVALID_SOCKET;
-    sockaddr_in m_sa = {};
+    sockaddr_in m_sa = sockaddr_in();
 
 };
 

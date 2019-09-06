@@ -80,6 +80,13 @@ modified by
 
 using namespace std;
 
+#if ENABLE_HEAVY_LOGGING
+#define IF_HEAVY_LOGGING(instr) instr
+#else 
+#define IF_HEAVY_LOGGING(instr) (void)0
+#endif 
+
+
 namespace srt_logging
 {
 
@@ -1810,8 +1817,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
             return false;
         }
 
-        size_t wordsize = (m_sStreamName.size()+3)/4;
-        size_t aligned_bytesize = wordsize*4;
+        size_t wordsize = (m_sStreamName.size() + 3) / 4;
+        size_t aligned_bytesize = wordsize * 4;
 
         memset(p+offset, 0, aligned_bytesize);
         memcpy(p+offset, m_sStreamName.data(), m_sStreamName.size());
@@ -1840,8 +1847,8 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         pcmdspec = p+offset;
         ++offset;
 
-        size_t wordsize = (sm.size()+3)/4;
-        size_t aligned_bytesize = wordsize*4;
+        size_t wordsize = (sm.size() + 3) / 4;
+        size_t aligned_bytesize = wordsize * 4;
 
         memset(p+offset, 0, aligned_bytesize);
 
@@ -3923,7 +3930,12 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
-    setupCC();
+    SRT_REJECT_REASON rr = setupCC();
+    if (rr != SRT_REJ_UNKNOWN)
+    {
+        m_RejectReason = rr;
+        return CONN_REJECT;
+    }
 
     // And, I am connected too.
     m_bConnecting = false;
@@ -4389,6 +4401,13 @@ void* CUDT::tsbpd(void* param)
           bool passack = true; //Get next packet to wait for even if not acked
 
           rxready = self->m_pRcvBuffer->getRcvFirstMsg(Ref(tsbpdtime), Ref(passack), Ref(skiptoseqno), Ref(current_pkt_seq));
+
+          HLOGC(tslog.Debug, log << boolalpha
+                  << "NEXT PKT CHECK: rdy=" << rxready
+                  << " passack=" << passack
+                  << " skipto=%" << skiptoseqno
+                  << " current=%" << current_pkt_seq
+                  << " buf-base=%" << self->m_iRcvLastSkipAck);
           /*
            * VALUES RETURNED:
            *
@@ -4678,7 +4697,14 @@ void CUDT::acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket&
        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
    }
 
-   setupCC();
+   SRT_REJECT_REASON rr = setupCC();
+   // UNKNOWN used as a "no error" value
+   if (rr != SRT_REJ_UNKNOWN)
+   {
+       hs->m_iReqType = URQFailure(rr);
+       m_RejectReason = rr;
+       throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+   }
 
    m_pPeerAddr = (AF_INET == m_iIPversion) ? (sockaddr*)new sockaddr_in : (sockaddr*)new sockaddr_in6;
    memcpy(m_pPeerAddr, peer, (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
@@ -4768,7 +4794,7 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     return m_pCryptoControl->init(side, bidirectional);
 }
 
-void CUDT::setupCC()
+SRT_REJECT_REASON CUDT::setupCC()
 {
     // Prepare configuration object,
     // Create the CCC object and configure it.
@@ -4784,7 +4810,11 @@ void CUDT::setupCC()
 
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
-    m_CongCtl.configure(this);
+    if ( !m_CongCtl.configure(this))
+    {
+        return SRT_REJ_CONGESTION;
+    }
+
 
     // Override the value of minimum NAK interval, per SrtCongestion's wish.
     // When default 0 value is returned, the current value set by CUDT
@@ -4810,6 +4840,7 @@ void CUDT::setupCC()
         << " bw=" << m_iBandwidth);
 
     updateCC(TEV_INIT, TEV_INIT_RESET);
+    return SRT_REJ_UNKNOWN;
 }
 
 void CUDT::considerLegacySrtHandshake(uint64_t timebase)
@@ -6557,6 +6588,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
       {
          int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
+         IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
          m_iRcvLastAck = ack;
          m_iRcvLastSkipAck = ack;
 
@@ -6574,6 +6606,8 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
          // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
          // will signal m_RecvDataCond when there's time to play for particular
          // data packet.
+         HLOGC(dlog.Debug, log << "ACK: clip %" << oldack << "-%" << ack
+                 << ", REVOKED " << acksize << " from RCV buffer");
 
          if (m_bTsbPd)
          {
@@ -7120,6 +7154,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // protect packet retransmission
       CGuard::enterCS(m_AckLock);
 
+      // This variable is used in "normal" logs, so it may cause a warning
+      // when logging is forcefully off.
+      int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
+
       // decode loss list message and insert loss into the sender loss list
       for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++ i)
       {
@@ -7138,6 +7176,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             {
                // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                secure = false;
+               wrong_loss = losslist_hi;
                // XXX leaveCS: really necessary? 'break' will break the 'for' loop, not the 'switch' statement.
                // and the leaveCS is done again next to the 'for' loop end.
                CGuard::leaveCS(m_AckLock);
@@ -7172,6 +7211,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
             {
                //seq_a must not be greater than the most recent sent seq
                secure = false;
+               wrong_loss = losslist[i];
                CGuard::leaveCS(m_AckLock);
                break;
             }
@@ -7190,7 +7230,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       if (!secure)
       {
-         HLOGF(mglog.Debug, "WARNING: out-of-band LOSSREPORT received; considered bug or attack");
+         LOGC(mglog.Warn, log << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo << " vs loss %" << wrong_loss);
          //this should not happen: attack or bug
          m_bBroken = true;
          m_iBrokenCounter = 0;
@@ -7856,16 +7896,11 @@ int CUDT::processData(CUnit* unit)
       const int offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
-#if ENABLE_HEAVY_LOGGING
-      const char* exc_type = "EXPECTED";
-#define IF_HEAVY_LOGGING(instr) instr
-#else 
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif 
+      IF_HEAVY_LOGGING(const char* exc_type = "EXPECTED");
 
       if (offset < 0)
       {
-          IF_HEAVY_LOGGING(exc_type = "EXPECTED");
+          IF_HEAVY_LOGGING(exc_type = "BELATED");
           excessive = true;
           uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
           uint64_t bltime = CountIIR(
@@ -7893,10 +7928,11 @@ int CUDT::processData(CUnit* unit)
                   // lowest sequence in the empty buffer and the incoming sequence
                   // that exceeds the buffer size. Receiving data in this situation
                   // is no longer possible and this is a point of no return.
-
-                  LOGC(mglog.Error,
-                          log << CONID() <<
-                          "SEQUENCE DISCREPANCY, reception no longer possible. REQUESTING TO CLOSE.");
+                  LOGC(mglog.Error, log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. offset="
+                          << offset << " avail=" << avail_bufsize
+                          << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << packet.m_iSeqNo
+                          << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
+                      );
 
                   // This is a scoped lock with AckLock, but for the moment
                   // when processClose() is called this lock must be taken out,
