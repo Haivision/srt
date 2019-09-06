@@ -8,6 +8,7 @@
 [![Build Status Windows][appveyor-badge]][appveyor]
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
+[![Debian Badge][debian-badge]][debian-package]
 
 # Introduction
 
@@ -206,3 +207,6 @@ very useful to check if the project wouldn't be build-broken on Linux.
 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
+
+[debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1/version.svg
+[debian-package]: https://packages.debian.org/testing/libsrt1
