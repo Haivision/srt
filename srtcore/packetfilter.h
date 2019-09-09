@@ -62,6 +62,7 @@ private:
 
         // Accept whatever
         ManagedPtr(Factory* ff): f(ff) {}
+        ManagedPtr(): f(NULL) {}
         ~ManagedPtr()
         {
             delete f;

@@ -228,7 +228,7 @@ void PacketFilter::globalInit()
     // as builtin. This will disallow users to register
     // external filters with the same name.
 
-    filters["fec"] = &Creator<FECFilterBuiltin>::Create;
+    filters["fec"] = new Creator<FECFilterBuiltin>;
     builtin_filters.insert("fec");
 }
 

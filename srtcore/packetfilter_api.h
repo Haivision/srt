@@ -96,12 +96,6 @@ protected:
     {
     }
 
-    /// Return the maximum value of any extra header you need in the
-    /// packets (no matter if only for control packets or all packets).
-    /// This is to determine the real maximum of possible data in the
-    /// packet when this filter is on.
-    virtual size_t extraSize() const = 0;
-
     // Sender side
 
     /// This function creates and stores the filter control packet with
