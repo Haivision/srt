@@ -222,13 +222,18 @@ bool PacketFilter::IsBuiltin(const string& s)
 std::set<std::string> PacketFilter::builtin_filters;
 PacketFilter::filters_map_t PacketFilter::filters;
 
+PacketFilter::Factory::~Factory()
+{
+}
+
 void PacketFilter::globalInit()
 {
     // Add here builtin packet filters and mark them
     // as builtin. This will disallow users to register
     // external filters with the same name.
 
-    filters["fec"] = new Creator<FECFilterBuiltin>;
+    ManagedPtr c = new Creator<FECFilterBuiltin>;
+    filters["fec"] = c;
     builtin_filters.insert("fec");
 }
 
