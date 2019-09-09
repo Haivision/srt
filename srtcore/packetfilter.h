@@ -40,17 +40,23 @@ private:
         // Characteristic data
         virtual size_t ExtraSize() = 0;
 
-        virtual ~Factory() {}
+        virtual ~Factory();
     };
 
     template <class Target>
     class Creator: public Factory
     {
-        SrtPacketFilterBase* Create(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr)
+        virtual SrtPacketFilterBase* Create(const SrtFilterInitializer& init,
+                std::vector<SrtPacket>& provided,
+                const std::string& confstr) ATR_OVERRIDE
         { return new Target(init, provided, confstr); }
 
         // Import the extra size data
-        size_t ExtraSize() { return Target::EXTRA_SIZE; }
+        virtual size_t ExtraSize() ATR_OVERRIDE { return Target::EXTRA_SIZE; }
+
+    public:
+        Creator() {}
+        virtual ~Creator() {}
     };
 
 
@@ -59,13 +65,32 @@ private:
     struct ManagedPtr
     {
         Factory* f;
+        mutable bool owns;
 
         // Accept whatever
-        ManagedPtr(Factory* ff): f(ff) {}
-        ManagedPtr(): f(NULL) {}
+        ManagedPtr(Factory* ff): f(ff), owns(true) {}
+        ManagedPtr(): f(NULL), owns(false) {}
         ~ManagedPtr()
         {
-            delete f;
+            if (owns)
+                delete f;
+        }
+
+        void copy_internal(const ManagedPtr& other)
+        {
+            other.owns = false;
+            f = other.f;
+            owns = true;
+        }
+
+        ManagedPtr(const ManagedPtr& other)
+        {
+            copy_internal(other);
+        }
+
+        void operator=(const ManagedPtr& other)
+        {
+            copy_internal(other);
         }
 
         Factory* operator->() { return f; }
