@@ -458,13 +458,13 @@ elseif (WIN32 AND NOT MINGW)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
 		#search package folders with GLOB to add as extra hint for headers
-		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-*/sources)
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
 		if (PTHREAD_PACKAGE_INCLUDE_HINT)
 			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
 		endif()
 
 		# find pthread header
-		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_INCLUDE_HINT})
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_PACKAGE_INCLUDE_HINT})
 
 		if (PTHREAD_INCLUDE_DIR)
 			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
@@ -473,7 +473,7 @@ elseif (WIN32 AND NOT MINGW)
 		endif()
 
 		#search package folders with GLOB to add as extra hint for libs
-		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-*/runtimes/win-*/native/release)
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
 		if (PTHREAD_PACKAGE_LIB_HINT)
 			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
 		endif()
