@@ -35,6 +35,7 @@ struct SrtFilterConfig
 {
     std::string type;
     std::map<std::string, std::string> parameters;
+    size_t extra_size; // needed for filter option check against payload size
 };
 
 struct SrtFilterInitializer

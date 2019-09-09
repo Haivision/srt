@@ -30,7 +30,8 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
     Split(s, ',', back_inserter(parts));
 
     out.type = parts[0];
-    if (!PacketFilter::exists(out.type))
+    PacketFilter::Factory* fac = PacketFilter::find(out.type);
+    if (!fac)
         return false;
 
     for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
@@ -41,6 +42,9 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
             return false;
         out.parameters[keyval[0]] = keyval[1];
     }
+
+    // Extract characteristic data
+    out.extra_size = fac->ExtraSize();
 
     return true;
 }
@@ -250,7 +254,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
 
 
     // Found a filter, so call the creation function
-    m_filter = (*selector->second)(init, m_provided, confstr);
+    m_filter = selector->second->Create(init, m_provided, confstr);
     if (!m_filter)
         return false;
 
