@@ -1951,8 +1951,12 @@ bool CUDT::createSrtHandshake(ref_t<CPacket> r_pkt, ref_t<CHandShake> r_hs,
         ra_size = wordsize;
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FILTER) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after filter [" << m_OPT_PktFilterConfigString << "] length=" << m_OPT_PktFilterConfigString.size() << " alignedln=" << aligned_bytesize
-            << ": offset=" << offset << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
+        HLOGC(mglog.Debug, log << "createSrtHandshake: after filter ["
+                << m_OPT_PktFilterConfigString
+                << "] length=" << m_OPT_PktFilterConfigString.size()
+                << " alignedln=" << aligned_bytesize
+                << ": offset=" << offset << " filter size=" << ra_size
+                << " space left: " << (total_ra_size - offset));
     }
 
     // When encryption turned on
@@ -2952,10 +2956,9 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
     if (m_OPT_PktFilterConfigString != "")
     {
         // - for rendezvous, both must be exactly the same, or only one side specified.
-        if (m_bRendezvous)
+        if (m_bRendezvous && m_OPT_PktFilterConfigString != confstr)
         {
-            if (m_OPT_PktFilterConfigString != confstr)
-                return false;
+            return false;
         }
 
         SrtFilterConfig mycfg;
