@@ -731,7 +731,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if ( HAVE_COMPILER_GNU_COMPAT )
+if ( HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
 	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
 	set (CFLAGS_CXX_STANDARD "-std=c++11")
 else()
@@ -908,7 +908,7 @@ if (ENABLE_EXAMPLES)
 endif()
 
 
-if (ENABLE_UNITTESTS AND ENABLE_CXX11)
+if (ENABLE_UNITTESTS)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	find_package(GTest 1.8)
@@ -930,6 +930,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
+	target_include_directories(test_srt PRIVATE  ${SSL_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test_srt

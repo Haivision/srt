@@ -287,11 +287,9 @@ void test_kmwrap(struct UTVcryspr_km_wrap *tv)
         tv->seklen);
 
     EXPECT_EQ(rc1, 0);
-#if 0
     EXPECT_EQ(rc2, 0);
     EXPECT_EQ(memcmp(tv->wrap, wrap, wraplen), 0);
     EXPECT_EQ(g_cryspr_m->close(cryspr_cb), 0);
-#endif
 }
 
 void test_kmunwrap(struct UTVcryspr_km_wrap *tv)
