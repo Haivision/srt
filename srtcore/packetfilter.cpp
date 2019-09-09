@@ -1,6 +1,6 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2018 Haivision Systems Inc.
+ * Copyright (c) 2019 Haivision Systems Inc.
  * 
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -30,7 +30,8 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
     Split(s, ',', back_inserter(parts));
 
     out.type = parts[0];
-    if (!PacketFilter::exists(out.type))
+    PacketFilter::Factory* fac = PacketFilter::find(out.type);
+    if (!fac)
         return false;
 
     for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
@@ -41,6 +42,9 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
             return false;
         out.parameters[keyval[0]] = keyval[1];
     }
+
+    // Extract characteristic data
+    out.extra_size = fac->ExtraSize();
 
     return true;
 }
@@ -218,13 +222,18 @@ bool PacketFilter::IsBuiltin(const string& s)
 std::set<std::string> PacketFilter::builtin_filters;
 PacketFilter::filters_map_t PacketFilter::filters;
 
+PacketFilter::Factory::~Factory()
+{
+}
+
 void PacketFilter::globalInit()
 {
     // Add here builtin packet filters and mark them
     // as builtin. This will disallow users to register
     // external filters with the same name.
 
-    filters["fec"] = &Creator<FECFilterBuiltin>::Create;
+    ManagedPtr c = new Creator<FECFilterBuiltin>;
+    filters["fec"] = c;
     builtin_filters.insert("fec");
 }
 
@@ -250,7 +259,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
 
 
     // Found a filter, so call the creation function
-    m_filter = (*selector->second)(init, m_provided, confstr);
+    m_filter = selector->second->Create(init, m_provided, confstr);
     if (!m_filter)
         return false;
 

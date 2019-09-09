@@ -1626,8 +1626,6 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
         HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
 
-        HLOGC(mglog.Debug, log << "readMsg: checking unit POS=" << p);
-
         if (unitsize > 0)
         {
             memcpy(data, m_pUnit[p]->m_Packet.m_pcData, unitsize);
