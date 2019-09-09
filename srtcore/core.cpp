@@ -783,6 +783,29 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
+        if (m_OPT_PktFilterConfigString != "")
+        {
+            // This means that the filter might have been installed before,
+            // and the fix to the maximum payload size was already applied.
+            // This needs to be checked now.
+            SrtFilterConfig fc;
+            if (!ParseFilterConfig(m_OPT_PktFilterConfigString, fc))
+            {
+                // Break silently. This should not happen
+                LOGC(mglog.Error,
+                        log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+            if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+            {
+                LOGC(mglog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by "
+                        << fc.extra_size << " required for packet filter header");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+        }
+
         m_zOPT_ExpPayloadSize = *(int*)optval;
         break;
 
@@ -908,6 +931,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
                       log << "SRTO_FILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "
                       "FILTERTYPE (" << fc.type << ") must be installed (or builtin)");
               throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+          if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+          {
+              LOGC(mglog.Warn, log << "Due to filter-required extra " << fc.extra_size
+                      << " bytes, SRTO_PAYLOADSIZE fixed to " << efc_max_payload_size << " bytes");
+              m_zOPT_ExpPayloadSize = efc_max_payload_size;
           }
 
           m_OPT_PktFilterConfigString = arg;
@@ -3012,6 +3043,14 @@ bool CUDT::checkApplyFilterConfig(const std::string& confstr)
         // Take the foreign configuration as a good deal.
         HLOGC(mglog.Debug, log << "checkApplyFilterConfig: Good deal config: " << m_OPT_PktFilterConfigString);
         m_OPT_PktFilterConfigString = confstr;
+    }
+
+    size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
+    if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+    {
+        LOGC(mglog.Warn, log << "Due to filter-required extra " << cfg.extra_size
+                << " bytes, SRTO_PAYLOADSIZE fixed to " << efc_max_payload_size << " bytes");
+        m_zOPT_ExpPayloadSize = efc_max_payload_size;
     }
 
     return true;
