@@ -228,22 +228,19 @@ public:
     virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
 
     // Configuration
-    virtual size_t extraSize() const ATR_OVERRIDE
-    {
-        // This is the size that is needed extra by packets operated by this corrector.
-        // It should be subtracted from a current maximum value for SRTO_PAYLOADSIZE
 
-        // The default FEC uses extra space only for FEC/CTL packet.
-        // The timestamp clip is placed in the timestamp field in the header.
-        // The payload contains:
-        // - the length clip
-        // - the flag spec
-        // - the payload clip
-        // The payload clip takes simply the current length of SRTO_PAYLOADSIZE.
-        // So extra 4 bytes are needed, 2 for flags, 2 for length clip.
+    // This is the size that is needed extra by packets operated by this corrector.
+    // It should be subtracted from a current maximum value for SRTO_PAYLOADSIZE
 
-        return 4;
-    }
+    // The default FEC uses extra space only for FEC/CTL packet.
+    // The timestamp clip is placed in the timestamp field in the header.
+    // The payload contains:
+    // - the length clip
+    // - the flag spec
+    // - the payload clip
+    // The payload clip takes simply the current length of SRTO_PAYLOADSIZE.
+    // So extra 4 bytes are needed, 2 for flags, 2 for length clip.
+    static const size_t EXTRA_SIZE = 4;
 
     virtual SRT_ARQLevel arqLevel() { return m_fallback_level; }
 };

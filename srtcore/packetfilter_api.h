@@ -35,6 +35,7 @@ struct SrtFilterConfig
 {
     std::string type;
     std::map<std::string, std::string> parameters;
+    size_t extra_size; // needed for filter option check against payload size
 };
 
 struct SrtFilterInitializer
@@ -94,12 +95,6 @@ protected:
     SrtPacketFilterBase(const SrtFilterInitializer& i): initParams(i)
     {
     }
-
-    /// Return the maximum value of any extra header you need in the
-    /// packets (no matter if only for control packets or all packets).
-    /// This is to determine the real maximum of possible data in the
-    /// packet when this filter is on.
-    virtual size_t extraSize() const = 0;
 
     // Sender side
 
