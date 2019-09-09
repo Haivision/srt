@@ -1656,7 +1656,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                         << FormatTime(srctime) << " in " << (timediff/1000.0)
                         << "ms - TIME-PREVIOUS: PKT: " << (srctimediff/1000.0)
                         << " LOCAL: " << (nowdiff/1000.0)
-                        << " !" << BufferStamp(pkt.m_pcData, pkt.getLength()));
+                        << " !" << BufferStamp(pkt.data(), pkt.size()));
 
                 prev_now = nowtime;
                 prev_srctime = srctime;

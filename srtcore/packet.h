@@ -53,11 +53,10 @@ modified by
 #ifndef __UDT_PACKET_H__
 #define __UDT_PACKET_H__
 
-
 #include "udt.h"
 #include "common.h"
 #include "utilities.h"
-
+#include "packetfilter_api.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // The purpose of the IOVector class is to proide a platform-independet interface
@@ -276,12 +275,12 @@ public:
    bool isControl() const
    {
        // read bit 0
-       return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[PH_SEQNO]);
+       return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]);
    }
 
    void setControl(UDTMessageType type)
    {
-       m_nHeader[PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type);
+       m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type);
    }
 
       /// Read the extended packet type.
@@ -299,7 +298,7 @@ public:
    // contains the control message
    int32_t getSeqNo() const
    {
-       return m_nHeader[PH_SEQNO];
+       return m_nHeader[SRT_PH_SEQNO];
    }
 
       /// Read the message boundary flag bit.
@@ -349,18 +348,6 @@ public:
 
    CPacket* clone() const;
 
-   enum PacketHeaderFields
-   {
-       PH_FIRST = 0, // Must be first, this is for loops
-       PH_SEQNO = 0, //< sequence number
-       PH_MSGNO = 1, //< message number
-       PH_TIMESTAMP = 2, //< time stamp
-       PH_ID = 3, //< socket ID
-       // Must be the last value - this is size of all, not a field id
-       PH_SIZE = 4
-   };
-
-   //static const size_t PH_SIZE = 4;
    enum PacketVectorFields
    {
        PV_HEADER = 0,
@@ -375,7 +362,7 @@ protected:
    // DynamicStruct is the same as array of given type and size, just it
    // enforces that you index it using a symbol from symbolic enum type, not by a bare integer.
 
-   typedef DynamicStruct<uint32_t, PH_SIZE, PacketHeaderFields> HEADER_TYPE;
+   typedef DynamicStruct<uint32_t, SRT_PH__SIZE, SrtPktHeaderFields> HEADER_TYPE;
    HEADER_TYPE m_nHeader;  //< The 128-bit header field
 
    // XXX NOTE: iovec here is not portable. On Windows there's a different
@@ -391,6 +378,7 @@ protected:
 
 protected:
    CPacket& operator=(const CPacket&);
+   CPacket (const CPacket&);
 
 public:
 
@@ -401,7 +389,7 @@ public:
    char*& m_pcData;                     // alias: data/control information
 
    //static const int m_iPktHdrSize;	// packet header size
-   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = PH_SIZE * sizeof(uint32_t)
+   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH__SIZE * sizeof(uint32_t)
 
    // Used in many computations
    // Actually this can be also calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
@@ -415,9 +403,15 @@ public:
    // And derived
    static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
 
+   // Packet interface
+   char* data() { return m_pcData; }
+   const char* data() const { return m_pcData; }
+   size_t size() const { return getLength(); }
+   uint32_t header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
+
    std::string MessageFlagStr()
 #if ENABLE_LOGGING
-   { return PacketMessageFlagStr(m_nHeader[PH_MSGNO]); }
+   { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
 #else
    { return ""; }
 #endif
