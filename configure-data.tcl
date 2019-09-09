@@ -52,6 +52,7 @@ set cmake_options {
     enable-static "Should libsrt be built as a static library (default: ON)"
     enable-suflip "Should suflip tool be built (default: OFF)"
     enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
+    enable-unittests "Enable unit tests (default: OFF)"
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
     openssl-crypto-library=<filepath> "Path to a library."
     openssl-include-dir=<path> "Path to a file."

@@ -175,12 +175,14 @@ typedef enum SRT_SOCKOPT {
    SRTO_CONGESTION,          // Congestion controller type selection
    SRTO_MESSAGEAPI,          // In File mode, use message API (portions of data with boundaries)
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
-   SRTO_TRANSTYPE,           // Transmission type (set of options required for given transmission type)
+   SRTO_TRANSTYPE = 50,      // Transmission type (set of options required for given transmission type)
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
    SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
    SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+   // (some space left)
+   SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -261,6 +263,12 @@ struct CBytePerfMon
    int      pktSndDropTotal;            // number of too-late-to-send dropped packets
    int      pktRcvDropTotal;            // number of too-late-to play missing packets
    int      pktRcvUndecryptTotal;       // number of undecrypted packets
+
+   int      pktSndFilterExtraTotal;     // number of control packets supplied by packet filter
+   int      pktRcvFilterExtraTotal;     // number of control packets received and not supplied back
+   int      pktRcvFilterSupplyTotal;    // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLossTotal;      // number of packet loss not coverable by filter
+
    uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
    uint64_t byteRecvTotal;              // total number of received bytes
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
@@ -283,6 +291,10 @@ struct CBytePerfMon
    int      pktRecvACK;                 // number of received ACK packets
    int      pktSentNAK;                 // number of sent NAK packets
    int      pktRecvNAK;                 // number of received NAK packets
+   int      pktSndFilterExtra;          // number of control packets supplied by packet filter
+   int      pktRcvFilterExtra;          // number of control packets received and not supplied back
+   int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
    double   mbpsSendRate;               // sending rate in Mb/s
    double   mbpsRecvRate;               // receiving rate in Mb/s
    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)

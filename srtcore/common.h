@@ -589,12 +589,42 @@ public:
 class CSeqNo
 {
 public:
+
+   /// This behaves like seq1 - seq2, in comparison to numbers,
+   /// and with the statement that only the sign of the result matters.
+   /// That is, it returns a negative value if seq1 < seq2,
+   /// positive if seq1 > seq2, and zero if they are equal.
+   /// The only tolerable use of this function is only when you
+   /// compare two values and it works faster than seqoff, however
+   /// the result's meaning is only in its sign. DO NOT USE THE
+   /// VALUE for any other purpose and its not meant to be the
+   /// distance between two sequence numbers.
+   ///
+   /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
    inline static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
+   /// This function measures a length of the range from seq1 to seq2,
+   /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
+   /// This can also include an enormously large distance between them,
+   /// that is, exceeding the m_iSeqNoTH value (can be also used to test
+   /// if this distance is larger). Prior to calling this function the
+   /// caller must be certain that @a seq2 is a sequence coming from a
+   /// later time than @a seq1, and still, of course, this distance didn't
+   /// exceed m_iMaxSeqNo.
    inline static int seqlen(int32_t seq1, int32_t seq2)
    {return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);}
 
+   /// This behaves like seq2 - seq1, with the precondition that the true
+   /// distance between two sequence numbers never exceeds m_iSeqNoTH.
+   /// That is, if the difference in numeric values of these two arguments
+   /// exceeds m_iSeqNoTH, it is treated as if the later of these two
+   /// sequence numbers has overflown and actually a segment of the
+   /// MAX+1 value should be added to it to get the proper result.
+   ///
+   /// Note: this function does more calculations than seqcmp, so it should
+   /// be used if you need the exact distance between two sequences. If 
+   /// you are only interested with their relationship, use seqcmp.
    inline static int seqoff(int32_t seq1, int32_t seq2)
    {
       if (abs(seq1 - seq2) < m_iSeqNoTH)

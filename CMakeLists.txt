@@ -170,7 +170,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if (DEFINED WITH_COMPILER_PREFIX)
 	message(STATUS "Handling compiler with WITH_COMPILER_PREFIX=${WITH_COMPILER_PREFIX}")
 	# Check also type. Default is gcc.
-	if (NOT DEFINED WIHT_COMPILER_TYPE)
+	if (NOT DEFINED WITH_COMPILER_TYPE)
 		set (WITH_COMPILER_TYPE gcc)
 	endif()
 
@@ -454,33 +454,37 @@ if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (WIN32 AND NOT MINGW)
-	# find pthread
-	file(GLOB PTHREAD_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
-	if (PTHREAD_INCLUDE_HINT)
-		message(STATUS "PTHREAD_INCLUDE_HINT value: ${PTHREAD_INCLUDE_HINT}")
-	else()
-		message(STATUS "Did not find PTHREAD_INCLUDE_HINT with GLOB against nuget package - will check with PTHREAD_INCLUDE_DIR variable.")
-	endif()
+	find_package(pthreads QUIET)
 
-	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS ${PTHREAD_INCLUDE_HINT})
-	if (PTHREAD_INCLUDE_DIR)
-		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-	endif()
+	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
+		#search package folders with GLOB to add as extra hint for headers
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
+		if (PTHREAD_PACKAGE_INCLUDE_HINT)
+			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
+		endif()
 
-	file(GLOB PTHREAD_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
-	if (PTHREAD_LIB_HINT)
-		message(STATUS "PTHREAD_LIB_HINT value: ${PTHREAD_LIB_HINT}")
-	else()
-		message(STATUS "Did not find PTHREAD_LIB_HINT with GLOB against nuget package - will check with PTHREAD_LIBRARY variable.")
-	endif()
+		# find pthread header
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_INCLUDE_HINT})
 
-	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS ${PTHREAD_LIB_HINT})
-	if (PTHREAD_LIBRARY)
-		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		if (PTHREAD_INCLUDE_DIR)
+			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+		endif()
+
+		#search package folders with GLOB to add as extra hint for libs
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
+		if (PTHREAD_PACKAGE_LIB_HINT)
+			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
+		endif()
+
+		#find pthread library
+		find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib ${PTHREAD_PACKAGE_LIB_HINT})
+		if (PTHREAD_LIBRARY)
+			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		endif()
 	endif()
 else ()
 	find_package(Threads REQUIRED)
@@ -760,7 +764,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if ( HAVE_COMPILER_GNU_COMPAT )
+if (HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
 	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
 	set (CFLAGS_CXX_STANDARD "-std=c++11")
 else()
