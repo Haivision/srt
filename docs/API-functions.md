@@ -968,7 +968,7 @@ connection parties.
 
 #### SRT_REJ_FILTER
 
-The `SRTO_FILTER` option has been set differently on both connection
+The `SRTO_PACKETFILTER` option has been set differently on both connection
 parties (NOTE: this flag may not exist yet in this version).
 
 

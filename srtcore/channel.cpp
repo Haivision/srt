@@ -422,7 +422,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     {
         spec << " CONTROL size=" << packet.getLength()
              << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
+             << " arg=" << packet.header(SRT_PH_MSGNO);
     }
     else
     {
@@ -435,6 +435,66 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=%" << packet.m_iID
         << spec.str());
+#endif
+
+#ifdef SRT_TEST_FAKE_LOSS
+
+#define FAKELOSS_STRING_0(x) #x
+#define FAKELOSS_STRING(x) FAKELOSS_STRING_0(x)
+    const char* fakeloss_text = FAKELOSS_STRING(SRT_TEST_FAKE_LOSS);
+#undef FAKELOSS_STRING
+#undef FAKELOSS_WRAP
+
+    static int dcounter = 0;
+    static int flwcounter = 0;
+
+    struct FakelossConfig
+    {
+        pair<int,int> config;
+        FakelossConfig(const char* f)
+        {
+            vector<string> out;
+            Split(f, '+', back_inserter(out));
+
+            config.first = atoi(out[0].c_str());
+            config.second = out.size() > 1 ? atoi(out[1].c_str()) : 8;
+        }
+    };
+    static FakelossConfig fakeloss = fakeloss_text;
+
+    if (!packet.isControl())
+    {
+        if (dcounter == 0)
+        {
+            timeval tv;
+            gettimeofday(&tv, 0);
+            srand(tv.tv_usec & 0xFFFF);
+        }
+        ++dcounter;
+
+        if (flwcounter)
+        {
+            // This is a counter of how many packets in a row shall be lost
+            --flwcounter;
+            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
+            return packet.getLength(); // fake successful sendinf
+        }
+
+        if (dcounter > 8)
+        {
+            // Make a random number in the range between 8 and 24
+            int rnd = rand() % 16 + SRT_TEST_FAKE_LOSS;
+
+            if (dcounter > rnd)
+            {
+                dcounter = 1;
+                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
+                flwcounter = fakeloss.config.first;
+                return packet.getLength(); // fake successful sendinf
+            }
+        }
+    }
+
 #endif
 
    // convert control information into network order
@@ -678,7 +738,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
     {
         uint32_t* p = packet.m_nHeader;
-        for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)
+        for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
         {
             *p = ntohl(*p);
             ++ p;
