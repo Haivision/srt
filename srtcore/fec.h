@@ -32,11 +32,11 @@ class FECFilterBuiltin: public SrtPacketFilterBase
 
 public:
 
-    size_t numberCols() { return m_number_cols; }
-    size_t numberRows() { return m_number_rows; }
+    size_t numberCols() const { return m_number_cols; }
+    size_t numberRows() const { return m_number_rows; }
 
-    size_t sizeCol() { return m_number_rows; }
-    size_t sizeRow() { return m_number_cols; }
+    size_t sizeCol() const { return m_number_rows; }
+    size_t sizeRow() const { return m_number_cols; }
 
     struct Group
     {
@@ -198,8 +198,8 @@ private:
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
     int RcvGetRowGroupIndex(int32_t seq);
     int RcvGetColumnGroupIndex(int32_t seq);
-    void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover);
-    bool IsLost(int32_t seq);
+    void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) const;
+    bool IsLost(int32_t seq) const;
 
 public:
 
