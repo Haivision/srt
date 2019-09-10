@@ -886,7 +886,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
     }
 }
 
-void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover)
+void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) const
 {
     if (g.dismissed)
         return; // already collected
@@ -1508,7 +1508,7 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq)
     DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
 }
 
-bool FECFilterBuiltin::IsLost(int32_t seq)
+bool FECFilterBuiltin::IsLost(int32_t seq) const
 {
     int offset = CSeqNo::seqoff(rcv.cell_base, seq);
     if (offset < 0)
