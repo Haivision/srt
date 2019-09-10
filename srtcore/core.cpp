@@ -6144,7 +6144,7 @@ int CUDT::sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
     if (len <= 0)
     {
         LOGC(dlog.Error, log << "INVALID: Data size for sending declared with length: " << len);
-        abort();
+        // (DEVEL) abort();
         return 0;
     }
 
