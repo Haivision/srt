@@ -594,10 +594,10 @@ public:
    /// and with the statement that only the sign of the result matters.
    /// That is, it returns a negative value if seq1 < seq2,
    /// positive if seq1 > seq2, and zero if they are equal.
-   /// The only tolerable use of this function is only when you
-   /// compare two values and it works faster than seqoff, however
+   /// The only correct application of this function is when you
+   /// compare two values and it works faster than seqoff. However
    /// the result's meaning is only in its sign. DO NOT USE THE
-   /// VALUE for any other purpose and its not meant to be the
+   /// VALUE for any other purpose. It is not meant to be the
    /// distance between two sequence numbers.
    ///
    /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
