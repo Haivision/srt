@@ -109,6 +109,7 @@ option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OF
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 
 # ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
 # time, instead of gettimeofday. This function allows to force a monotonic
@@ -443,6 +444,23 @@ if (ENABLE_THREAD_CHECK)
 	)
 endif()
 
+# Code Coverage Configuration
+add_library(coverage_config INTERFACE)
+
+if(ENABLE_CODE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	# Add required flags (GCC & LLVM/Clang)
+	target_compile_options(coverage_config INTERFACE
+		-O0        # no optimization
+		-g         # generate debug info
+		--coverage # sets all required flags
+	)
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
+		target_link_options(coverage_config INTERFACE --coverage)
+	else()
+		target_link_libraries(coverage_config INTERFACE --coverage)
+	endif()
+endif()
+
 if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
 	# They are actually cflags, not definitions, but CMake is stupid enough.
 	add_definitions(-g -pg)
@@ -613,6 +631,9 @@ if (srt_libspec_static)
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
+
+	# Apply code-coverage settings:
+	target_link_libraries(${TARGET_srt}_static PRIVATE coverage_config)
 endif()
 
 
@@ -784,12 +805,12 @@ macro(srt_make_application name)
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
-	target_link_libraries(${name} ${srt_link_library})
+	target_link_libraries(${name} PUBLIC ${srt_link_library})
 	if (USE_GNUSTL)
 		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
-		target_link_libraries(${name} ${CMAKE_DL_LIBS})
+		target_link_libraries(${name} PUBLIC ${CMAKE_DL_LIBS})
 	endif()
 endmacro()
 
@@ -932,10 +953,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	srt_make_application(test_srt)
 
 	target_link_libraries(
-		test_srt
+		test_srt PUBLIC
 		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
+		coverage_config
 		)
 
 	add_test(
