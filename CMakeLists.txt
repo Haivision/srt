@@ -454,7 +454,7 @@ if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (WIN32 AND NOT MINGW)
-find_package(pthreads QUIET)
+	find_package(pthreads QUIET)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
 		#search package folders with GLOB to add as extra hint for headers
