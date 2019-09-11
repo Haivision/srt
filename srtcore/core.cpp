@@ -2921,15 +2921,16 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD__SIZE] = {};
-                if ( bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
+                if ( bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
                     return false;
                 }
+                size_t groupdata_size = bytelen / GRPD_FIELD_SIZE;
 
                 memcpy(groupdata, begin+1, bytelen);
-                if ( !interpretGroup(groupdata, hsreq_type_cmd) )
+                if ( !interpretGroup(groupdata, groupdata_size, hsreq_type_cmd) )
                 {
                     // m_RejectReason handled inside interpretGroup().
                     return false;
@@ -3000,12 +3001,16 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uin
     return true;
 }
 
-bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_UNUSED)
+bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
+    // We are granted thse two fields do exist
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
-    //SRTSOCKET master_peerid = groupdata[GRPD_MASTERID];
-    //int32_t tdiff = groupdata[GRPD_MASTERTDIFF];
+
+    // Optional in this version
+    int link_priority = 0;
+    if (data_size > GRPD_PRIORITY)
+        link_priority = groupdata[GRPD_PRIORITY];
 
     if (!m_bOPT_GroupConnect)
     {
@@ -3122,7 +3127,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             return false;
         }
 
-        m_parent->m_IncludedIter->priority = groupdata[GRPD_PRIORITY];
+        m_parent->m_IncludedIter->priority = link_priority;
     }
 
     /*

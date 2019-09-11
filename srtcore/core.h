@@ -139,6 +139,8 @@ enum GroupDataItem
     GRPD__SIZE
 };
 
+const size_t GRPD_MIN_SIZE = 2; // ID and GROUPTYPE as backward compat
+
 const size_t GRPD_FIELD_SIZE = sizeof(int32_t);
 
 // For HSv4 legacy handshake
@@ -974,7 +976,7 @@ private:
     static CUDTGroup& newGroup(int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
-    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], int hsreq_type_cmd);
+    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
     SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
     void synchronizeWithGroup(CUDTGroup* grp);
 
