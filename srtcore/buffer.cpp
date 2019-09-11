@@ -1595,7 +1595,8 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
            /* Exiting wrap check period (if for packet delivery head) */
            m_bTsbPdWrapCheck = false;
            m_ullTsbPdTimeBase += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
-           tslog.Debug("tsbpd wrap period ends");
+           HLOGC(tslog.Debug, log << "tsbpd wrap period ends - NEW TIME BASE: "
+                   << FormatTime(m_ullTsbPdTimeBase));
        }
    }
    // Check if timestamp is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1603,7 +1604,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    {
       /* Approching wrap around point, start wrap check period (if for packet delivery head) */
       m_bTsbPdWrapCheck = true;
-      tslog.Debug("tsbpd wrap period begins");
+      HLOGP(tslog.Debug, "tsbpd wrap period begins");
    }
    return(m_ullTsbPdTimeBase + carryover);
 }
@@ -1634,7 +1635,15 @@ bool CRcvBuffer::getInternalTimeBase(ref_t<uint64_t> r_timebase)
 
 uint64_t CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-   return(getTsbPdTimeBase(timestamp) + m_uTsbPdDelay + timestamp + m_DriftTracer.drift());
+    uint64_t time_base = getTsbPdTimeBase(timestamp);
+
+    // Display only ingredients, not the result, as the result will
+    // be displayed anyway in the next logs.
+    HLOGC(mglog.Debug, log << "getPktTsbPdTime: TIMEBASE="
+            << FormatTime(time_base) << " + dTS="
+            << timestamp << "us + LATENCY=" << m_uTsbPdDelay
+            << " + uDRIFT=" << m_DriftTracer.drift());
+    return time_base + m_uTsbPdDelay + timestamp + m_DriftTracer.drift();
 }
 
 int CRcvBuffer::setRcvTsbPdMode(uint64_t timebase, uint32_t delay)
@@ -1755,7 +1764,12 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
         printDriftOffset(m_DriftTracer.overdrift(), m_DriftTracer.drift());
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-        m_ullTsbPdTimeBase += m_DriftTracer.overdrift();
+
+        int64_t overdrift = m_DriftTracer.overdrift();
+        m_ullTsbPdTimeBase += overdrift;
+
+        HLOGC(mglog.Debug, log << "DRIFT: EXCESS: " << overdrift << " - TIME BASE UPDATED to: "
+                << FormatTime(m_ullTsbPdTimeBase));
     }
 
     CGuard::leaveCS(mutex_to_lock, "ack");
