@@ -304,15 +304,14 @@ if ( USE_GNUSTL )
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 endif()
 
-
 # Detect if the compiler is GNU compatable for flags
-set(HAVE_COMPILER_GNU_COMPAT 0)
-foreach (gnid GNU Intel Clang AppleClang)
-	if (${CMAKE_CXX_COMPILER_ID} STREQUAL ${gnid})
-		set(HAVE_COMPILER_GNU_COMPAT 1)
-		break()
-	endif()
-endforeach()
+if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Intel|Clang|AppleClang")
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 1)
+else()
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
 
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
@@ -323,12 +322,6 @@ endif()
 
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-endif()
-
-if (HAVE_COMPILER_GNU_COMPAT)
-	message(STATUS "COMPILER: GNU compat: ${CMAKE_CXX_COMPILER}")
-else()
-	message(STATUS "COMPILER: NOT GNU compat: ${CMAKE_CXX_COMPILER}")
 endif()
 
 # add extra warning flags for gccish compilers
@@ -444,27 +437,23 @@ if (ENABLE_THREAD_CHECK)
 	)
 endif()
 
-# Code Coverage Configuration
-add_library(coverage_config INTERFACE)
-
-if(ENABLE_CODE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-	# Add required flags (GCC & LLVM/Clang)
-	target_compile_options(coverage_config INTERFACE
-		-O0        # no optimization
-		-g         # generate debug info
-		--coverage # sets all required flags
-	)
-	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
-		target_link_options(coverage_config INTERFACE --coverage)
+if (ENABLE_PROFILE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		# They are actually cflags, not definitions, but CMake is stupid enough.
+		add_definitions(-g -pg)
+		link_libraries(-g -pg)
 	else()
-		target_link_libraries(coverage_config INTERFACE --coverage)
+		message(FATAL_ERROR "Profiling option is not supported on this platform")
 	endif()
 endif()
 
-if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
-	# They are actually cflags, not definitions, but CMake is stupid enough.
-	add_definitions(-g -pg)
-	link_libraries(-g -pg)
+if (ENABLE_CODE_COVERAGE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		add_definitions(-g -O0 --coverage)
+		link_libraries(--coverage)
+	else()
+		message(FATAL_ERROR "Code coverage option is not supported on this platform")
+	endif()
 endif()
 
 if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
@@ -631,9 +620,6 @@ if (srt_libspec_static)
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
-
-	# Apply code-coverage settings:
-	target_link_libraries(${TARGET_srt}_static PRIVATE coverage_config)
 endif()
 
 
@@ -805,12 +791,12 @@ macro(srt_make_application name)
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
-	target_link_libraries(${name} PUBLIC ${srt_link_library})
+	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
 		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
-		target_link_libraries(${name} PUBLIC ${CMAKE_DL_LIBS})
+		target_link_libraries(${name} ${CMAKE_DL_LIBS})
 	endif()
 endmacro()
 
@@ -953,11 +939,10 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	srt_make_application(test_srt)
 
 	target_link_libraries(
-		test_srt PUBLIC
+		test_srt
 		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
-		coverage_config
 		)
 
 	add_test(
