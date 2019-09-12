@@ -522,7 +522,24 @@ enum SRT_EPOLL_OPT
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN       = 0x1,
    SRT_EPOLL_OUT      = 0x4,
-   SRT_EPOLL_ERR      = 0x8
+   SRT_EPOLL_ERR      = 0x8,
+   SRT_EPOLL_ET       = 1u << 31
+};
+// These are actually flags - use a bit container:
+typedef int32_t SRT_EPOLL_T;
+
+enum SRT_EPOLL_FLAGS
+{
+    /// This allows the EID container to be empty when calling the waiting
+    /// function with infinite time. This means an infinite hangup, although
+    /// a socket can be added to this EID from a separate thread.
+    SRT_EPOLL_ENABLE_EMPTY = 1,
+
+    /// This makes the waiting function check if there is output container
+    /// passed to it, and report an error if it isn't. By default it is allowed
+    /// that the output container is 0 size or NULL and therefore the readiness
+    /// state is reported only as a number of ready sockets from return value.
+    SRT_EPOLL_ENABLE_OUTPUTCHECK = 2
 };
 
 #ifdef __cplusplus
@@ -663,6 +680,11 @@ SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+typedef struct SRT_EPOLL_EVENT_
+{
+    SRTSOCKET fd;
+    int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
+} SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control
