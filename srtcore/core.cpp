@@ -12691,6 +12691,8 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, int64_t udrift, uint64_t newtimebase)
 
     bool wrap_period = false;
 
+    bool anycheck = false;
+
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         // Skip non-connected; these will be synchronized when ready
@@ -12712,7 +12714,18 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, int64_t udrift, uint64_t newtimebase)
             wrap_period = wrp;
         }
         newtimebase = new_newtimebase;
+        anycheck = true;
     }
+
+    if (!anycheck)
+    {
+        HLOGC(dlog.Debug, log << "GROUP: synch uDRIFT NOT DONE, no other links");
+        return;
+    }
+
+    HLOGC(dlog.Debug, log << "GROUP: synch uDRIFT=" << udrift
+            << " TB=" << FormatTime(newtimebase) << "("
+            << (wrap_period ? "" : "NO ") << "wrap period)");
 
     // Now that we have the minimum timebase and drift calculated, apply this to every link,
     // INCLUDING THE REPORTER.

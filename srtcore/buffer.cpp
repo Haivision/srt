@@ -1631,8 +1631,14 @@ void CRcvBuffer::applyGroupTime(uint64_t timebase, bool wrp, uint32_t delay, int
 void CRcvBuffer::applyGroupDrift(uint64_t timebase, bool wrp, int64_t udrift)
 {
     // This is only when a drift was updated on one of the group members.
+    HLOGC(dlog.Debug, log << "rcv-buffer: group synch uDRIFT: "
+            << m_DriftTracer.drift() << " -> " << udrift
+            << " TB: " << FormatTime(m_ullTsbPdTimeBase) << " -> "
+            << FormatTime(timebase));
+
     m_ullTsbPdTimeBase = timebase;
     m_bTsbPdWrapCheck = wrp;
+
     m_DriftTracer.forceDrift(udrift);
 }
 
