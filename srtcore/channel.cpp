@@ -167,8 +167,11 @@ void CChannel::open(const sockaddr* addr)
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
       // On Windows ai_addrlen has type size_t (unsigned), while bind takes int.
-      if (0 != ::bind(m_iSocket, res->ai_addr, (socklen_t) res->ai_addrlen))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      if (0 != ::bind(m_iSocket, res->ai_addr, (socklen_t)res->ai_addrlen))
+      {
+          ::freeaddrinfo(res);
+          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      }
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = (socklen_t) res->ai_addrlen;
 
