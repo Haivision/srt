@@ -10216,7 +10216,7 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
-    char debug_decision[25];
+    char debug_decision[25] = "";
     char* pdd = debug_decision;
 
     // Check if it is time to send ACK
