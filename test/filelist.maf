@@ -7,3 +7,4 @@ test_seqno.cpp
 test_strict_encription.cpp
 test_timer.cpp
 test_listen_callback.cpp
+test_fec_rebuilding.cpp

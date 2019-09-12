@@ -9,10 +9,12 @@ common.cpp
 core.cpp
 crypto.cpp
 epoll.cpp
+fec.cpp
 handshake.cpp
 list.cpp
 md5.cpp
 packet.cpp
+packetfilter.cpp
 queue.cpp
 congctl.cpp
 srt_c_api.cpp
