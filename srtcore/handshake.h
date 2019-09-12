@@ -52,17 +52,35 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 typedef Bits<31, 16> HS_CMDSPEC_CMD;
 typedef Bits<15, 0> HS_CMDSPEC_SIZE;
 
+// NOTE: Some of these flags represent CAPABILITIES, that is,
+// as long as these flags are defined, they must be always set
+// (unless they are deprecated).
 enum SrtOptions
 {
     SRT_OPT_TSBPDSND  = BIT(0), /* Timestamp-based Packet delivery real-time data sender */
     SRT_OPT_TSBPDRCV  = BIT(1), /* Timestamp-based Packet delivery real-time data receiver */
-    SRT_OPT_HAICRYPT  = BIT(2), /* HaiCrypt AES-128/192/256-CTR */
+    SRT_OPT_HAICRYPT  = BIT(2), /* CAPABILITY: HaiCrypt AES-128/192/256-CTR */
     SRT_OPT_TLPKTDROP = BIT(3), /* Drop real-time data packets too late to be processed in time */
     SRT_OPT_NAKREPORT = BIT(4), /* Periodic NAK report */
-    SRT_OPT_REXMITFLG = BIT(5), // One bit in payload packet msgno is "retransmitted" flag
+    SRT_OPT_REXMITFLG = BIT(5), // CAPABILITY: One bit in payload packet msgno is "retransmitted" flag
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
-    SRT_OPT_STREAM    = BIT(6)
+    SRT_OPT_STREAM    = BIT(6), // STREAM MODE (not MESSAGE mode)
+    SRT_OPT_FILTERCAP = BIT(7), // CAPABILITY: Packet filter supported
 };
+
+inline int SrtVersionCapabilities()
+{
+    // NOTE: SRT_OPT_REXMITFLG is not included here because
+    // SRT is prepared to handle also peers that don't have this
+    // capability, so a listener responding to a peer that doesn't
+    // support it should NOT set this flag.
+    //
+    // This state will remain until this backward compatibility is
+    // decided to be broken, in which case this flag will be always
+    // set, and clients that do not support this capability will be
+    // rejected.
+    return SRT_OPT_HAICRYPT | SRT_OPT_FILTERCAP;
+}
 
 
 std::string SrtFlagString(int32_t flags);
@@ -74,6 +92,7 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_KMRSP = 4,
       SRT_CMD_SID = 5,
       SRT_CMD_CONGESTION = 6,
+      SRT_CMD_FILTER = 7,
       SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
 
 enum SrtDataStruct

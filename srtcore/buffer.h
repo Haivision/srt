@@ -282,7 +282,6 @@ public:
    int getAvailBufSize() const;
 
       /// Query how many data has been continuously received (for reading) and ready to play (tsbpdtime < now).
-      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return size of valid (continous) data for reading.
 
    int getRcvDataSize() const;
@@ -412,6 +411,14 @@ public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
    bool empty() const;
+
+   // Required by PacketFilter facility to use as a storage
+   // for provided packets
+   CUnitQueue* getUnitQueue()
+   {
+       return m_pUnitQueue;
+   }
+
 private:
 
    /// thread safe bytes counter of the Recv & Ack buffer
