@@ -328,7 +328,11 @@ Synopsis
 
     int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
     int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-
+    int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
+                        int64_t msTimeOut,
+                        SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+    int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+    
 
 SRT Usage
 ---------
@@ -340,14 +344,65 @@ user-level epoll that supports both SRT and system sockets.
 The `srt_epoll_update_{u|s}sock()` API functions described here are SRT additions
 to the UDT-derived `srt_epoll_add_{u|s}sock()` and `epoll_remove_{u|s}sock()`
 functions to atomically change the events of interest. For example, to remove
-EPOLLOUT but keep EPOLLIN for a given socket with the existing API, the socket
-must be removed from epoll and re-added. This cannot be done atomically, the
-thread protection (against the epoll thread) being applied within each function
-but unprotected between the two calls. It is then possible to lose a POLLIN
-event if it fires while the socket is not in the epoll list.
+`SRT_EPOLL_OUT` but keep `SRT_EPOLL_IN` for a given socket with the existing
+API, the socket must be removed from epoll and re-added. This cannot be done
+atomically, the thread protection (against the epoll thread) being applied
+within each function but unprotected between the two calls. It is then possible
+to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
+epoll list.
+
+Once subscriptions are made, a waiting function can be called in order to
+block the call commonly for all subscribed sockets together and exit from
+waiting when the first one is ready. This can be waited up to the given timeout
+in `[ms]`, with two special values:
+
+ - 0: check and report immediately (don't wait)
+ - -1: wait indefinitely (also hangup until any event happens, not interruptable)
+
+There are some differences in the synopsis between these two:
+
+1. `srt_epoll_wait`: Both system and SRT sockets can be subscribed. This
+function reports events on both socket types according to subscriptions, in
+these arrays:
+
+    - `readfds` and `lrfds`: subscribed for `IN` and `ERR`
+    - `writefds` and `lwfds`: subscribed for `OUT` and `ERR`
+
+where:
+
+    - `readfds` and `writefds` report SRT sockets ("user" socket)
+    - `lrfds` and `lwfds` report system sockets
+
+Note: there's no separate place to report error. The only way to distinguish
+error and in/out event is when you subscribe to `IN` or `OUT` only, and the
+error then can be recognized by the fact that the socket appears in both arrays.
+
+This function also reports error of type `SRT_ETIMEOUT` when no socket is
+ready as the timeout elapses (including 0).
+
+Note that in this function there's a loop that checks for socket readiness
+every 10ms. This waiting time can be shortened only for SRT sockets when
+they become ready earlier after the previous check.
+
+2. `srt_epoll_uwait`: In this function only the SRT sockets can be subscribed
+(it reports error if you pass an epoll id that is subscribed to system sockets).
+This function waits for the first event on subscribed SRT socket and reports all
+events collected at this moment in an array of this structure:
+
+```
+typedef struct SRT_EPOLL_EVENT_
+{
+    SRTSOCKET fd;
+    int       events;
+} SRT_EPOLL_EVENT;
+
+```
+
+Every item reports a single socket with all events as flags.
+
 
 The SRT EPoll system does not supports all features of Linux epoll. For
-example, it only supports level-triggered events.
+example, it only supports level-triggered events for system sockets.
 
 Options
 =======
