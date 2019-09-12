@@ -326,6 +326,95 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
+int CEPoll::setflags(const int eid, int32_t flags)
+{
+    CGuard pg(m_EPollLock);
+    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+    if (p == m_mPolls.end())
+        throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+    CEPollDesc& ed = p->second;
+
+    int32_t oflags = ed.flags();
+
+    if (flags == -1)
+        return oflags;
+
+    if (flags == 0)
+    {
+        ed.clr_flags(~int32_t());
+    }
+    else
+    {
+        ed.set_flags(flags);
+    }
+
+    return oflags;
+}
+
+int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
+{
+    // It is allowed to call this function witn fdsSize == 0
+    // and therefore also NULL fdsSet. This will then only report
+    // the number of ready sockets, just without information which.
+    if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))
+        throw CUDTException(MJ_NOTSUP, MN_INVAL);
+
+    int64_t entertime = CTimer::getTime();
+
+    while (true)
+    {
+        {
+            CGuard pg(m_EPollLock);
+            map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
+            if (p == m_mPolls.end())
+                throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+            CEPollDesc& ed = p->second;
+
+            if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
+            {
+                // Empty EID is not allowed, report error.
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            }
+
+            if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
+            {
+                // Empty EID is not allowed, report error.
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            }
+
+            if (!ed.m_sLocals.empty())
+            {
+                // XXX Add error log
+                // uwait should not be used with EIDs subscribed to system sockets
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            }
+
+            int total = 0; // This is a list, so count it during iteration
+            CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
+            while (i != ed.enotice_end())
+            {
+                int pos = total; // previous past-the-end position
+                ++total;
+
+                if (total > fdsSize)
+                    break;
+
+                fdsSet[pos] = *i;
+
+                ed.checkEdge(i++); // NOTE: potentially deletes `i`
+            }
+            if (total)
+                return total;
+        }
+
+        if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+            break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+
+        CTimer::waitForEvent();
+    }
+
+    return 0;
+}
 
 int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {

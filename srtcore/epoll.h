@@ -341,6 +341,15 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
+      /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
+      /// @param [in] eid EPoll ID.
+      /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
+      /// @param [int] fdsSize of fds array
+      /// @param [in] msTimeOut timeout threshold, in milliseconds.
+      /// @return total of available events in the epoll system (can be greater than fdsSize)
+
+   int uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+ 
       /// close and release an EPoll.
       /// @param [in] eid EPoll ID.
       /// @return 0 if success, otherwise an error number.
@@ -357,6 +366,8 @@ public: // for CUDT to acknowledge IO status
       /// @return 0 if success, otherwise an error number
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
+
+   int setflags(const int eid, int32_t flags);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID
