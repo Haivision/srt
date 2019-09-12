@@ -757,6 +757,12 @@ public:
         return true;
     }
 
+    // For group overrides
+    void forceDrift(int64_t driftval)
+    {
+        m_qDrift = driftval;
+    }
+
     // These values can be read at any time, however if you want
     // to depend on the fact that they have been changed lately,
     // you have to check the return value from update().

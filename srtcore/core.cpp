@@ -3250,7 +3250,8 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     uint64_t rcv_buffer_time_base = 0;
     bool rcv_buffer_wrap_period = false;
-    if (m_bTsbPd && gp->getBufferTimeBase(this, Ref(rcv_buffer_time_base), Ref(rcv_buffer_wrap_period)))
+    int64_t rcv_buffer_udrift = 0;
+    if (m_bTsbPd && gp->getBufferTimeBase(this, Ref(rcv_buffer_time_base), Ref(rcv_buffer_wrap_period), Ref(rcv_buffer_udrift)))
     {
         // We have at least one socket in the group, each socket should have
         // the value of the timebase set exactly THE SAME.
@@ -3267,7 +3268,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
         // but between them there's a 30s distance, considered large enough
         // time to not fill a network window.
         CGuard::enterCS(m_RecvLock, "recv");
-        m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000);
+        m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000, rcv_buffer_udrift);
         CGuard::leaveCS(m_RecvLock, "recv");
 
         HLOGF(mglog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03us GROUP TIME BASE: %s%s",
@@ -3307,7 +3308,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 }
 
 // [[using locked(this->m_GroupLock)]];
-bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp)
+bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp, ref_t<int64_t> dr)
 {
     CUDT* master = 0;
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
@@ -3329,8 +3330,8 @@ bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<
     if (!master)
         return false;
 
-    *wp = master->m_pRcvBuffer->getInternalTimeBase(tb);
-    
+    *wp = master->m_pRcvBuffer->getInternalTimeBase(tb, dr);
+
     // Sanity check
     if (*tb == 0)
     {
@@ -3428,7 +3429,7 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, ref_t<SRTSOCKET> r_mpeer, ref_t<u
         *r_mpeer = gi->ps->core().m_PeerID;
         *r_st = gi->ps->core().socketStartTime();
         HLOGC(mglog.Debug, log << "getMasterData: found IDLE/PENDING master @" << gi->id
-            << " - reporting master's peer @" << *r_mpeer << " starting at "
+            << " - reporting master's peer $" << *r_mpeer << " starting at "
             << FormatTime(*r_st));
         return true;
     }
@@ -7992,7 +7993,14 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // inaccurate. Additionally it won't lock if TSBPD mode is off, and
       // won't update anything. Note that if you set TSBPD mode and use
       // srt_recvfile (which doesn't make any sense), you'll have e deadlock.
-      m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
+      int64_t udrift;
+      uint64_t newtimebase;
+      bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+              Ref(udrift), Ref(newtimebase));
+      if (drift_updated && m_parent->m_IncludedGroup)
+      {
+          m_parent->m_IncludedGroup->synchronizeDrift(this, udrift, newtimebase);
+      }
 
       // update last ACK that has been received by the sender
       if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
@@ -12677,3 +12685,44 @@ string CUDTGroup::StateStr(CUDTGroup::GroupState st)
     return string("UNKNOWN");
 }
 
+void CUDTGroup::synchronizeDrift(CUDT* cu, int64_t udrift, uint64_t newtimebase)
+{
+    CGuard glock(m_GroupLock, "Group");
+
+    bool wrap_period = false;
+
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        // Skip non-connected; these will be synchronized when ready
+        if (gi->laststatus != SRTS_CONNECTED)
+            continue;
+
+        // Skip the entity that has reported this
+        if (cu == gi->ps->m_pUDT)
+            continue;
+
+        uint64_t this_timebase;
+        int64_t this_udrift;
+        bool wrp = gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase(Ref(this_timebase), Ref(this_udrift));
+
+        udrift = std::min(udrift, this_udrift);
+        uint64_t new_newtimebase = std::min(newtimebase, this_timebase);
+        if (new_newtimebase != newtimebase)
+        {
+            wrap_period = wrp;
+        }
+        newtimebase = new_newtimebase;
+    }
+
+    // Now that we have the minimum timebase and drift calculated, apply this to every link,
+    // INCLUDING THE REPORTER.
+
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        // Skip non-connected; these will be synchronized when ready
+        if (gi->laststatus != SRTS_CONNECTED)
+            continue;
+
+        gi->ps->m_pUDT->m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
+    }
+}

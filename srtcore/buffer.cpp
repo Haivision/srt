@@ -1609,7 +1609,7 @@ uint64_t CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp)
    return(m_ullTsbPdTimeBase + carryover);
 }
 
-void CRcvBuffer::applyGroupTime(uint64_t timebase, bool wrp, uint32_t delay)
+void CRcvBuffer::applyGroupTime(uint64_t timebase, bool wrp, uint32_t delay, int64_t udrift)
 {
     // Same as setRcvTsbPdMode, but predicted to be used for group members.
     // This synchronizes the time from the INTERNAL TIMEBASE of an existing
@@ -1625,11 +1625,21 @@ void CRcvBuffer::applyGroupTime(uint64_t timebase, bool wrp, uint32_t delay)
     m_ullTsbPdTimeBase = timebase;
     m_bTsbPdWrapCheck = wrp;
     m_uTsbPdDelay = delay;
+    m_DriftTracer.forceDrift(udrift);
 }
 
-bool CRcvBuffer::getInternalTimeBase(ref_t<uint64_t> r_timebase)
+void CRcvBuffer::applyGroupDrift(uint64_t timebase, bool wrp, int64_t udrift)
+{
+    // This is only when a drift was updated on one of the group members.
+    m_ullTsbPdTimeBase = timebase;
+    m_bTsbPdWrapCheck = wrp;
+    m_DriftTracer.forceDrift(udrift);
+}
+
+bool CRcvBuffer::getInternalTimeBase(ref_t<uint64_t> r_timebase, ref_t<int64_t> r_udrift)
 {
     *r_timebase = m_ullTsbPdTimeBase;
+    *r_udrift = m_DriftTracer.drift();
     return m_bTsbPdWrapCheck;
 }
 
@@ -1726,10 +1736,11 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock,
+        ref_t<int64_t> r_udrift, ref_t<uint64_t> r_newtimebase)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
-        return;
+        return false;
     /*
      * TsbPD time drift correction
      * TsbPD time slowly drift over long period depleting decoder buffer or raising latency
@@ -1773,6 +1784,9 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
     }
 
     CGuard::leaveCS(mutex_to_lock, "ack");
+    *r_udrift = iDrift;
+    *r_newtimebase = m_ullTsbPdTimeBase;
+    return updated;
 }
 
 int CRcvBuffer::readMsg(char* data, int len)

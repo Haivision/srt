@@ -497,9 +497,10 @@ public:
         return false;
     }
 
-    bool getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp);
-
+    // Live state synchronization
+    bool getBufferTimeBase(CUDT* forthesakeof, ref_t<uint64_t> tb, ref_t<bool> wp, ref_t<int64_t> dr);
     bool applyGroupSequences(SRTSOCKET, ref_t<int32_t> r_snd_isn, ref_t<int32_t> r_rcv_isn);
+    void synchronizeDrift(CUDT* cu, int64_t udrift, uint64_t newtimebase);
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
