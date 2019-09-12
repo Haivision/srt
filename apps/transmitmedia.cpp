@@ -39,7 +39,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
 
 class FileSource: public Source
 {
@@ -290,10 +290,10 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     }
 
     m_mode = "default";
-    if ( par.count("mode") )
+    if (par.count("mode"))
         m_mode = par.at("mode");
 
-    if ( m_mode == "default" )
+    if (m_mode == "default")
     {
         // Use the following convention:
         // 1. Server for source, Client for target
@@ -313,13 +313,13 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     par.erase("mode");
 
-    if ( par.count("timeout") )
+    if (par.count("timeout"))
     {
         m_timeout = stoi(par.at("timeout"), 0, 0);
         par.erase("timeout");
     }
 
-    if ( par.count("adapter") )
+    if (par.count("adapter"))
     {
         m_adapter = par.at("adapter");
         par.erase("adapter");
@@ -331,7 +331,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
-    if ( par.count("tsbpd") && false_names.count(par.at("tsbpd")) )
+    if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
     }
@@ -346,8 +346,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     // Default mode is live, so check if the file mode was enforced
     if (par.count("transtype") == 0 || par["transtype"] != "file")
     {
-        // If the Live chunk size was nondefault, enforce the size.
-        if (transmit_chunk_size != SRT_LIVE_DEF_PLSIZE)
+        if (transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
         {
             if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
                 throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
@@ -897,6 +896,11 @@ public:
         // We have to set it to the binary mode
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
+    }
+
+    virtual ~ConsoleTarget()
+    {
+        cout.flush();
     }
 
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override

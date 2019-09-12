@@ -346,7 +346,6 @@ public: // for CUDTUnited API
       /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
       /// @param [int] fdsSize of fds array
       /// @param [in] msTimeOut timeout threshold, in milliseconds.
-      /// @param [bool] edgeMode if true the events returned in fdsSet are then erased
       /// @return total of available events in the epoll system (can be greater than fdsSize)
 
    int uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
