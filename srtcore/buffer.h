@@ -390,7 +390,8 @@ public:
       /// @param [in] timestamp packet time stamp
       /// @param [ref] lock Mutex that should be locked for the operation
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
+   bool addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock,
+           ref_t<int64_t> r_udrift, ref_t<uint64_t> r_newtimebase);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -464,9 +465,10 @@ private:
 public:
 
    // @return Wrap check value
-   bool getInternalTimeBase(ref_t<uint64_t> tb);
+   bool getInternalTimeBase(ref_t<uint64_t> tb, ref_t<int64_t> r_udrift);
 
-   void applyGroupTime(uint64_t timebase, bool wrapcheck, uint32_t delay);
+   void applyGroupTime(uint64_t timebase, bool wrapcheck, uint32_t delay, int64_t udrift);
+   void applyGroupDrift(uint64_t timebase, bool wrapcheck, int64_t udrift);
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
 
