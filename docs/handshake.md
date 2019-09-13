@@ -1488,14 +1488,16 @@ direction only.
 #### Congestion controller
 
 This is a feature supported by HSv5 only. This adds functionality that has
-existed in UDT as "Congestion control class", just implemented slightly
-different way. In SRT this mechanism must be set the same way on both sides,
-however it's identified by a character string. The symbol for this extension
-is `SRT_CMD_CONGESTION`.
+existed in UDT as "Congestion control class", but implemented with SRT
+workflows and requirements in mind. In SRT, the congestion control
+mechanism must be set the same on both sides and is identified by
+a character string. The extension type is set to `SRT_CMD_CONGESTION`.
 
-The extension block for this extension contains the length in 4-byte words of
-the contents, whereas the content is comprised of the string extended to full
-4-byte numbers that are endian-inverted.
+The extension block contains the length of the content in 4-byte words.
+The content is encoded as a string extended to full 4-byte chunks with
+padding NUL characters if needed, and then inverted on each 4-byte mark.
+For example, a "STREAM" string would be extended to `STREAM@@` and then
+inverted into `ERTS@@MA` (where `@` marks the NUL character).
 
 The value is a string with the name of the SRT Congestion Controller type. The
 default one is called "live". The SRT 1.3.0 version contains an additional
@@ -1528,9 +1530,8 @@ This feature is supported by HSv5 only. Its value is a string of
 the user's choice that can be passed from the Caller to the Listener. The
 symbol for this extension is `SRT_CMD_SID`.
 
-The extension block for this extension contains the length in 4-byte words of
-the contents, whereas the content is comprised of the string extended to full
-4-byte numbers that are endian-inverted.
+The extension block for this extension is encoded the same way as described
+for Congestion Controler above.
 
 The Stream ID is a string of up to 512 characters that a Caller can pass to a
 Listener (it's actually passed from an Initiator to a Responder in general, but
