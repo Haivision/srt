@@ -464,14 +464,6 @@ TEST(CEPoll, HandleEpollNoEvent)
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(epoll.add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
-    /*
-       Subscribe to the event, but do not report them.
-       In result you should have no events reported.
-    set<int> epoll_ids = { epoll_id };
-
-    epoll.update_events(client_sock, epoll_ids, SRT_EPOLL_ERR, true);
-    */
-
     SRT_EPOLL_EVENT fds[1024];
 
     // Use timeout 0 because with -1 this call would hang up
