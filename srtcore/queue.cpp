@@ -932,9 +932,6 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
         // just arrived in this iteration), do the update immetiately (in SRT this also
         // involves additional incoming data interpretation, which wasn't the case in UDT).
-        uint64_t then = i->m_pUDT->m_llLastReqTime;
-        uint64_t now = CTimer::getTime();
-        bool nowstime = true;
 
         // Use "slow" cyclic responding in case when
         // - RST_AGAIN (no packet was received for whichever socket)
@@ -943,107 +940,108 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         {
             // If no packet has been received from the peer,
             // avoid sending too many requests, at most 1 request per 250ms
-            nowstime = (now - then) > 250000;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+            const uint64_t then = i->m_pUDT->m_llLastReqTime;
+            const uint64_t now = CTimer::getTime();
+            const bool nowstime = (now - then) > 250000;
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now - then)
+                << "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+
+            if (!nowstime)
+                continue;
         }
-        else
-        {
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
-        }
+
+        HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
 
 #if ENABLE_HEAVY_LOGGING
         ++debug_nrun;
 #endif
-        if (nowstime)
+
+        // XXX This looks like a loop that rolls in infinity without any sleeps
+        // inside and makes it once per about 50 calls send a hs conclusion
+        // for a randomly sampled rendezvous ID of a socket out of the list.
+        // Ok, probably the rendezvous ID should be just one so not much to
+        // sample from, but if so, why the container?
+        //
+        // This must be somehow fixed!
+        //
+        // Maybe the time should be simply checked once and the whole loop not
+        // done when "it's not the time"?
+        if (CTimer::getTime() >= i->m_ullTTL)
         {
-            // XXX This looks like a loop that rolls in infinity without any sleeps
-            // inside and makes it once per about 50 calls send a hs conclusion
-            // for a randomly sampled rendezvous ID of a socket out of the list.
-            // Ok, probably the rendezvous ID should be just one so not much to
-            // sample from, but if so, why the container?
-            //
-            // This must be somehow fixed!
-            //
-            // Maybe the time should be simply checked once and the whole loop not
-            // done when "it's not the time"?
-            if (CTimer::getTime() >= i->m_ullTTL)
-            {
-                HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
-                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
-                        << ". removing from queue");
-                // connection timer expired, acknowledge app via epoll
-                i->m_pUDT->m_bConnecting = false;
-                CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
-                /*
-                 * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
-                 * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
-                 * and may crash here on next pass.
-                 */
-                if (AF_INET == i->m_iIPversion)
-                    delete (sockaddr_in*)i->m_pPeerAddr;
-                else
-                    delete (sockaddr_in6*)i->m_pPeerAddr;
+            HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
+                << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
+                << ". removing from queue");
+            // connection timer expired, acknowledge app via epoll
+            i->m_pUDT->m_bConnecting = false;
+            CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
+            /*
+                * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
+                * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
+                * and may crash here on next pass.
+                */
+            if (AF_INET == i->m_iIPversion)
+                delete (sockaddr_in*)i->m_pPeerAddr;
+            else
+                delete (sockaddr_in6*)i->m_pPeerAddr;
 
-                // i_next was preincremented, but this is guaranteed to point to
-                // the element next to erased one.
-                i_next = m_lRendezvousID.erase(i);
-                continue;
+            // i_next was preincremented, but this is guaranteed to point to
+            // the element next to erased one.
+            i_next = m_lRendezvousID.erase(i);
+            continue;
+        }
+
+        // This queue is used only in case of Async mode (rendezvous or caller-listener).
+        // Synchronous connection requests are handled in startConnect() completely.
+        if (!i->m_pUDT->m_bSynRecving)
+        {
+#if ENABLE_HEAVY_LOGGING
+            ++debug_nupd;
+#endif
+            // IMPORTANT INFORMATION concerning changes towards UDT legacy.
+            // In the UDT code there was no attempt to interpret any incoming data.
+            // All data from the incoming packet were considered to be already deployed into
+            // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
+            // Therefore this procedure did only one thing: craft a new handshake packet and send it.
+            // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
+            // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
+            // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
+            // due to have received the packet (RST_OK).
+            //
+            // In the below call, only the underlying `processRendezvous` function will be attempting
+            // to interpret these data (for caller-listener this was already done by `processConnectRequest`
+            // before calling this function), and it checks for the data presence.
+
+            EReadStatus    read_st = rst;
+            EConnectStatus conn_st = cst;
+
+            if (i->m_iID != response.m_iID)
+            {
+                read_st = RST_AGAIN;
+                conn_st = CONN_AGAIN;
             }
 
-            // This queue is used only in case of Async mode (rendezvous or caller-listener).
-            // Synchronous connection requests are handled in startConnect() completely.
-            if (!i->m_pUDT->m_bSynRecving)
+            if (!i->m_pUDT->processAsyncConnectRequest(read_st, conn_st, response, i->m_pPeerAddr))
             {
+                // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
+                // its already set in this case.
+                LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
+                i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
+                i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
 #if ENABLE_HEAVY_LOGGING
-                ++debug_nupd;
+                ++debug_nfail;
 #endif
-                // IMPORTANT INFORMATION concerning changes towards UDT legacy.
-                // In the UDT code there was no attempt to interpret any incoming data.
-                // All data from the incoming packet were considered to be already deployed into
-                // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
-                // Therefore this procedure did only one thing: craft a new handshake packet and send it.
-                // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
-                // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
-                // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
-                // due to have received the packet (RST_OK).
-                //
-                // In the below call, only the underlying `processRendezvous` function will be attempting
-                // to interpret these data (for caller-listener this was already done by `processConnectRequest`
-                // before calling this function), and it checks for the data presence.
-                bool success;
-                if (i->m_iID != response.m_iID)
-                { 
-                    success = i->m_pUDT->processAsyncConnectRequest(RST_AGAIN, CONN_AGAIN, response, i->m_pPeerAddr);
-                }
-                else
-                {
-                    success = i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr);
-                }
-
-                if (!success)
-                {
-                    // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
-                    // its already set in this case.
-                    LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
-                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
-                    i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
-#if ENABLE_HEAVY_LOGGING
-                    ++debug_nfail;
-#endif
-                }
-
-                // NOTE: safe loop, the incrementation was done before the loop body,
-                // so the `i' node can be safely deleted. Just the body must end here.
-                continue;
             }
+
+            // NOTE: safe loop, the incrementation was done before the loop body,
+            // so the `i' node can be safely deleted. Just the body must end here.
+            continue;
         }
     }
 
     HLOGC(mglog.Debug,
-            log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
-            << (debug_nrun-debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets."
-         );
+        log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
+        << (debug_nrun - debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets."
+    );
 }
 
 //
