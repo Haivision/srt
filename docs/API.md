@@ -193,7 +193,7 @@ following interpretation (except `flags` and `boundary` that are reserved for
 future use and should be 0):
 
 * `srt_sendmsg2`:
-    * msgttl: [IN] maximum time (in ms) to wait in sending buffer before being sent (-1 if unused)
+    * msgttl: [IN] maximum time (in ms) to wait for successful delivery (-1: indefinitely)
     * inorder: [IN] if false, the later sent message is allowed to be delivered earlier
     * srctime: [IN] timestamp to be used for sending (0 if current time)
     * pktseq: unused
