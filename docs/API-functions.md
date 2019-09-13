@@ -1233,7 +1233,7 @@ level-triggered, you can do two separate subscriptions for the same socket.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 **BUG?**: for `add_ssock` the system error results in an empty `CUDTException()`
 call which actually results in `SRT_SUCCESS`. For cases like that the
@@ -1258,7 +1258,7 @@ The `_ssock` suffix refers to a system socket.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 ### srt_epoll_wait
 ```
@@ -1305,7 +1305,7 @@ of error has occurred on the socket.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
   * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
 This is reported only if `msTimeOut` was \>=0, otherwise the function waits
 indefinitely.
@@ -1348,7 +1348,7 @@ is returned (this is not possible when waiting indefinitely)
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
   * `SRT_EINVPARAM`: One of possible usage errors:
     * `fdsSize` is < 0
     * `fdsSize` is > 0 and `fdsSet` is a null pointer
@@ -1408,7 +1408,7 @@ or a special value -1 in case when an error occurred.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 
 ### srt_epoll_release
@@ -1426,7 +1426,7 @@ Deletes the epoll container.
 - Errors:
 
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 Logging control
 ---------------
