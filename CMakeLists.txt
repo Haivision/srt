@@ -937,6 +937,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
+	target_include_directories(test_srt PRIVATE  ${SSL_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test_srt

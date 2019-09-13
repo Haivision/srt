@@ -58,16 +58,19 @@ int crysprOpenSSL_AES_SetKey(
 int crysprOpenSSL_AES_EcbCipher(
     bool bEncrypt,              /* true:encrypt, false:decrypt */
     CRYSPR_AESCTX *aes_key,     /* CRYpto Service PRovider AES Key context */
-    const unsigned char *indata,/* src (clear text)*/
-    size_t inlen,               /* length */
-    unsigned char *out_txt,     /* dst (cipher text) */
-    size_t *outlen)             /* dst len */
+    const unsigned char *indata,/* src (clear text if encrypt, cipher text otherwise)*/
+    size_t inlen,               /* indata length */
+    unsigned char *out_txt,     /* dst (cipher text if encrypt, clear text otherwise) */
+    size_t *outlen)             /* in/out dst len */
 {
     int nblk = inlen/CRYSPR_AESBLKSZ;
     int nmore = inlen%CRYSPR_AESBLKSZ;
+    size_t outsiz = (outlen ? *outlen : 0);
     int i;
 
+    if (outsiz % CRYSPR_AESBLKSZ) return(-1); /* output buf size must be a multiple of AES block size (16) */
     if (bEncrypt) {
+        if (outsiz > 16 && outsiz < (nblk+nmore)*CRYSPR_AESBLKSZ) return(-1); /* output buf size must have room for PKCS7 padding */
         /* Encrypt packet payload, block by block, in output buffer */
         for (i=0; i<nblk; i++){
             AES_ecb_encrypt(&indata[(i*CRYSPR_AESBLKSZ)],
@@ -76,9 +79,9 @@ int crysprOpenSSL_AES_EcbCipher(
         /* Encrypt last incomplete block */
         if (0 < nmore) {
             unsigned char intxt[CRYSPR_AESBLKSZ];
-
+            /* PKCS7 padding: padding value is number of bytes padded */
             memcpy(intxt, &indata[(nblk*CRYSPR_AESBLKSZ)], nmore);
-            memset(intxt+nmore, 0, CRYSPR_AESBLKSZ-nmore);
+            memset(intxt+nmore, CRYSPR_AESBLKSZ-nmore, CRYSPR_AESBLKSZ-nmore);
             AES_ecb_encrypt(intxt, &out_txt[(nblk*CRYSPR_AESBLKSZ)], aes_key, AES_ENCRYPT);
             nblk++;
         }
