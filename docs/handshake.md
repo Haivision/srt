@@ -28,7 +28,7 @@ Last updated: 2018-06-28
   - [SRT Extension Commands](#srt-extension-commands)
     - [HSREQ and HSRSP](#hsreq-and-hsrsp)
     - [KMREQ and KMRSP](#kmreq-and-kmrsp)
-    - [Smoother](#smoother)
+    - [Congestion controller](#congestion-controller)
     - [Stream ID (SID)](#stream-id-sid)
 
 
@@ -1485,31 +1485,41 @@ direction only.
 [Return to top of page](#srt-handshake)
 
 
-#### Smoother
+#### Congestion controller
 
-This is a feature supported by HSv5 only. This adds functionality, similar to
-the "congestion control" class from UDT, which is called **Smoother**. 
+This is a feature supported by HSv5 only. This adds functionality that has
+existed in UDT as "Congestion control class", but implemented with SRT
+workflows and requirements in mind. In SRT, the congestion control
+mechanism must be set the same on both sides and is identified by
+a character string. The extension type is set to `SRT_CMD_CONGESTION`.
 
-Its value is a string with the name of the SRT Smoother type. The default 
-Smoother is called "live". The SRT 1.3.0 version contains an additional optional 
-Smoother type called "file". Within the  "file" Smoother it is possible to 
-designate a stream mode and a message mode (the "live" Smoother may only use the 
-message mode, with one message per packet).
+The extension block contains the length of the content in 4-byte words.
+The content is encoded as a string extended to full 4-byte chunks with
+padding NUL characters if needed, and then inverted on each 4-byte mark.
+For example, a "STREAM" string would be extended to `STREAM@@` and then
+inverted into `ERTS@@MA` (where `@` marks the NUL character).
 
-The Smoother feature is not obligatory when not present. The "live" Smoother
-is used by default. For an HSv4 party, which doesn't support this feature, the
-Smoother type is assumed to be "live".
+The value is a string with the name of the SRT Congestion Controller type. The
+default one is called "live". The SRT 1.3.0 version contains an additional
+optional Congestion Controller type called "file". Within the "file" Congestion
+Controller it is possible to designate a stream mode and a message mode (the
+"live" one may only use the message mode, with one message per packet).
 
-The "file" Smoother type reintroduces the old UDT features for stream transmission 
+This extension is optional and when not present the "live" Congestion Controller
+is assumed. For an HSv4 party, which doesn't support this feature, it is always
+the case.
+
+The "file" type reintroduces the old UDT features for stream transmission 
 (together with the `SRT_OPT_STREAM` flag) and messages that can span multiple UDP 
-packets. The Smoothers differ in the way the transmission is handled, how various 
-transmission settings are applied, and how to handle any special phenomena that 
-happen during transmission.
+packets. The Congestion Controller controls the way the transmission is
+handled, how various transmission settings are applied, and how to handle any
+special phenomena that happen during transmission.
 
-The "file" Smoother is based completely on the original `CUDTCC` class from UDT,
-and the rules for congestion control are completely copied from there. However, 
-it contains many changes and allows the selection of the original UDT code
-in places that have been modified in SRT to support live transmission.
+The "file" Congestion Controller is based completely on the original `CUDTCC`
+class from UDT, and the rules for congestion control are completely copied from
+there. However, it contains many changes and allows the selection of the
+original UDT code in places that have been modified in SRT to support live
+transmission.
 
 [Return to top of page](#srt-handshake)
 
@@ -1517,17 +1527,21 @@ in places that have been modified in SRT to support live transmission.
 #### Stream ID (SID)
 
 This feature is supported by HSv5 only. Its value is a string of
-the user's choice that can be passed from the Caller to the Listener.
+the user's choice that can be passed from the Caller to the Listener. The
+symbol for this extension is `SRT_CMD_SID`.
+
+The extension block for this extension is encoded the same way as described
+for Congestion Controler above.
 
 The Stream ID is a string of up to 512 characters that a Caller can pass to a
 Listener (it's actually passed from an Initiator to a Responder in general, but
 in Rendezvous mode this feature doesn't make sense). To use this feature, an
 application should set it on a Caller socket using the `SRTO_STREAMID` option.
 Upon connection, the accepted socket on the Listener side will have exactly the
-same value set, and it can be retrieved using the same option. This gives the
-Listener a chance to decide what to do with this connection - such as to decide
-which stream to send in the case where the Listener is the stream Sender. This
-feature is not intended to be used for Rendezvous connections.
+same value set, and it can be retrieved using the same option. For more details
+about the prospective use of this option, please refer to the
+[API description document](API.md) and [SRT Access Control guidelines](AccessControl.md).
+
 
 [Return to top of page](#srt-handshake)
 
