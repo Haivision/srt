@@ -579,8 +579,9 @@ sending messages (in `[ms]`). Not used for receiving messages. If this value
 is not negative, it defines the maximum time up to which this message should
 stay scheduled for sending for the sake of later retransmission. A message
 is always sent for the first time, but the UDP packet carrying it may be
-(also partially) lost. In this case, a message with a limited TTL will be
-given up retransmission and discarded, if this time passes.
+(also partially) lost, and if so, lacking packets will be retransmitted. If
+the message is not successfully resent before TTL expires, further retransmission
+is given up and the message is discarded.
 
 * `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
 be extracted by the receiver in the order of sending. This can be meaningful if 
