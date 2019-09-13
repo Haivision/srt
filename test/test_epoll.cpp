@@ -495,7 +495,6 @@ TEST(CEPoll, ThreadedUpdate)
     SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     EXPECT_NE(client_sock, SRT_ERROR);
 
-    const int yes = 1;
     const int no  = 0;
     EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
     EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
