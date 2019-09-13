@@ -10,7 +10,7 @@ SRT API Functions
   * [srt_create_socket](#srt_create_socket)
   * [srt_bind_peerof](#srt_bind-peerof)
   * [srt_getsockstate](#srt_getsockstate)
-  * [rt_getsndbuffer](#rt_getsndbuffer)
+  * [srt_getsndbuffer](#srt_getsndbuffer)
   * [srt_close](#srt_close)
 - [**Connecting**](#Connecting)
   * [srt_listen](#srt_listen)
