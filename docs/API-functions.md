@@ -1200,7 +1200,8 @@ these two calls.
   * a variable set to epoll flags (see below) to use only selected events
   * NULL if you want to subscribe a socket for all events in level-triggered mode
 
-Epoll flags are bit flags that can be combined using `|` operator:
+Possible epoll flags are the following:
+
    * `SRT_EPOLL_IN`: report readiness for reading or incoming connection on a listener socket
    * `SRT_EPOLL_OUT`: report readiness for writing or a successful connection
    * `SRT_EPOLL_ERR`: report errors on the socket
@@ -1219,6 +1220,12 @@ again.
 
 In the **level-triggered** mode the function will always return the readiness
 state as long as it lasts, until the internal signaling logic clear it.
+
+Note that when you use `SRT_EPOLL_ET` flag in one subscription call, it defines
+edge-triggered mode for all events passed together with it. However, if you
+want to have some events reported as edge-triggered and others as
+level-triggered, you can do two separate subscriptions for the same socket.
+
 
 - Returns:
  
