@@ -896,7 +896,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
       }
       break;
 
-   case SRTO_STRICTENC:
+   case SRTO_ENFORCEDENCRYPTION:
       if (m_bConnected)
           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -1212,7 +1212,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       *(int*)optval = m_zOPT_ExpPayloadSize;
       break;
 
-   case SRTO_STRICTENC:
+   case SRTO_ENFORCEDENCRYPTION:
       optlen = sizeof (int32_t); // also with TSBPDMODE and SENDER
       *(int32_t*)optval = m_bOPT_StrictEncryption;
       break;

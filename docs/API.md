@@ -1098,33 +1098,27 @@ side and it's the matter of luck which one would win
 
 ---
 
-| OptName           | Since | Binding | Type            | Units | Default  | Range  |
-| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
-| `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
+| OptName                    | Since | Binding | Type            | Units | Default  | Range  |
+| -------------------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_ENFORCEDENCRYPTION`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
 
-- **[SET]** - This option, when set to TRUE, allows connection only if the
-encryption setup of the connection parties is a "strictly encrypted" case,
-that is:
+- **[SET]** - This option enforces that both connection parties have the
+same passphrase set (including empty, that is, with no encryption), or
+otherwise the connection is rejected.
 
-   - neither party has enabled encryption
-   - both parties have enabled encryption with the same passphrase
+When this option is set to FALSE **on both connection parties**, the
+connection is allowed even if the passphrase differs on both parties,
+or it was set only on one party. Note that the party that has set a passphrase
+is still allowed to send data over the network. However, the receiver will not
+be able to decrypt that data and will not deliver it to the application. The
+party that has set no passphrase can send (unencrypted) data that will be
+successfully received by its peer.
 
-In other cases the connection will be rejected.
-
-When this option is set to FALSE **by both parties of the connection**, the
-following combinations of encryption setup will be allowed for connection (with
-appropriate limitations):
-
-   - both parties have enabled encryption with different passphrase
-      - transmission not possible in either direction
-   - only one party has enabled encryption
-      - unencrypted transmission possible only from unencrypted party to encrypted one
-
-Setting the `SRTO_STRICTENC`option to FALSE can be useful in situations where
-it is important to know whether a connection is possible. The inability to
-decrypt an incoming transmission can be reported as a different kind of
-problem.
-
+This option can be used in some specific situations when the user knows
+both parties of the connection, so there's no possible situation of a rogue
+sender and can be useful in situations where it is important to know whether a
+connection is possible. The inability to decrypt an incoming transmission can
+be then reported as a different kind of problem.
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |

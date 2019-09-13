@@ -956,7 +956,7 @@ Both parties have defined a passprhase for connection and they differ.
 #### SRT_REJ_UNSECURE
 
 Only one connection party has set up a password. See also
-`SRTO_STRICTENC` flag in API.md.
+`SRTO_ENFORCEDENCRYPTION` flag in API.md.
 
 #### SRT_REJ_MESSAGEAPI
 
