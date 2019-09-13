@@ -339,7 +339,7 @@ int main(int argc, char** argv)
     //
     // Set global config variables
     //
-    if (cfg.chunk_size != -1)
+    if (cfg.chunk_size > 0)
         transmit_chunk_size = cfg.chunk_size;
     stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
