@@ -109,6 +109,7 @@ option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OF
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 
 # ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
 # time, instead of gettimeofday. This function allows to force a monotonic
@@ -303,15 +304,14 @@ if ( USE_GNUSTL )
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 endif()
 
-
 # Detect if the compiler is GNU compatable for flags
-set(HAVE_COMPILER_GNU_COMPAT 0)
-foreach (gnid GNU Intel Clang AppleClang)
-	if (${CMAKE_CXX_COMPILER_ID} STREQUAL ${gnid})
-		set(HAVE_COMPILER_GNU_COMPAT 1)
-		break()
-	endif()
-endforeach()
+if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Intel|Clang|AppleClang")
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 1)
+else()
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
 
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
@@ -322,12 +322,6 @@ endif()
 
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-endif()
-
-if (HAVE_COMPILER_GNU_COMPAT)
-	message(STATUS "COMPILER: GNU compat: ${CMAKE_CXX_COMPILER}")
-else()
-	message(STATUS "COMPILER: NOT GNU compat: ${CMAKE_CXX_COMPILER}")
 endif()
 
 # add extra warning flags for gccish compilers
@@ -443,10 +437,23 @@ if (ENABLE_THREAD_CHECK)
 	)
 endif()
 
-if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
-	# They are actually cflags, not definitions, but CMake is stupid enough.
-	add_definitions(-g -pg)
-	link_libraries(-g -pg)
+if (ENABLE_PROFILE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		# They are actually cflags, not definitions, but CMake is stupid enough.
+		add_definitions(-g -pg)
+		link_libraries(-g -pg)
+	else()
+		message(FATAL_ERROR "Profiling option is not supported on this platform")
+	endif()
+endif()
+
+if (ENABLE_CODE_COVERAGE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		add_definitions(-g -O0 --coverage)
+		link_libraries(--coverage)
+	else()
+		message(FATAL_ERROR "Code coverage option is not supported on this platform")
+	endif()
 endif()
 
 if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
