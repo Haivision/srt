@@ -351,13 +351,14 @@ within each function but unprotected between the two calls. It is then possible
 to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
 epoll list.
 
-Once subscriptions are made, a waiting function can be called in order to
-block the call commonly for all subscribed sockets together and exit from
-waiting when the first one is ready. This can be waited up to the given timeout
-in `[ms]`, with two special values:
+Once the subscriptions are made, you can call an SRT polling function
+(`srt_epoll_wait` or `srt_epoll_uwait`) that will block until an event
+is raised on any of the subscribed sockets. This function will exit as
+soon as st least one event is deteted or a timeout occurs. The timeout is
+specified in `[ms]`, with two special values:
 
  - 0: check and report immediately (don't wait)
- - -1: wait indefinitely (also hangup until any event happens, not interruptable)
+ - -1: wait indefinitely (not interruptable, even by a system signal)
 
 There are some differences in the synopsis between these two:
 
@@ -373,16 +374,29 @@ where:
     - `readfds` and `writefds` report SRT sockets ("user" socket)
     - `lrfds` and `lwfds` report system sockets
 
-Note: there's no separate place to report error. The only way to distinguish
-error and in/out event is when you subscribe to `IN` or `OUT` only, and the
-error then can be recognized by the fact that the socket appears in both arrays.
+Note: this function provides no straightforward possibility to report
+sockets with an error. If you want to distinguish a report of readiness
+for operation from an error report, the only way is to subscribe the
+socket in only one direction (either `SRT_EPOLL_IN` or `SRT_EPOLL_OUT`,
+but not both) and `SRT_EPOLL_ERR`, and then check the socket's presence
+in the array for which's direction the socket wasn't subscribed (for
+example, when an SRT socket is subscribed for `SRT_EPOLL_OUT | SRT_EPOLL_ERR`,
+its presence in `readfds` means that an error is reported for it).
+This need not be a big problem because when an error is reported on
+a socket, an appearance as if it were ready for an operation, followed
+by doing this operation, will simply result in an error from that
+operation, so you can use it also as an alternative error check method.
 
 This function also reports error of type `SRT_ETIMEOUT` when no socket is
-ready as the timeout elapses (including 0).
+ready as the timeout elapses (including 0). This behavior is different in
+`srt_epoll_uwait`.
 
 Note that in this function there's a loop that checks for socket readiness
-every 10ms. This waiting time can be shortened only for SRT sockets when
-they become ready earlier after the previous check.
+every 10ms. Thus, the minimum poll timeout the function can reliably support,
+when system sockets are involved, is also 10ms. The return time from a poll
+function can only be quicker when there is an event raised on one of the active
+SRT sockets.
+
 
 2. `srt_epoll_uwait`: In this function only the SRT sockets can be subscribed
 (it reports error if you pass an epoll id that is subscribed to system sockets).
@@ -400,6 +414,8 @@ typedef struct SRT_EPOLL_EVENT_
 
 Every item reports a single socket with all events as flags.
 
+When the timeout is not -1, and no sockets are ready until the timeout time
+passes, this function returns 0. This behavior is different in `srt_epoll_wait`.
 
 The SRT EPoll system does not supports all features of Linux epoll. For
 example, it only supports level-triggered events for system sockets.
