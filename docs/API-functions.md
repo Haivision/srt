@@ -1401,7 +1401,7 @@ or a special value -1 in case when an error occurred.
 
 - Errors:
 
-* `SRT_EINVPOLLID`: eid parameter doesn't refer to a valid epoll container
+  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
 
 
 ### srt_epoll_release
