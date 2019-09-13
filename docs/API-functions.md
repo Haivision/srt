@@ -42,6 +42,8 @@ SRT API Functions
   * [srt_epoll_add_usock, srt_epoll_add_ssock, srt_epoll_update_usock, srt_epoll_update_ssock](#srt_epoll_add_usock-srt_epoll_add_ssock-srt_epoll_update_usock-srt_epoll_update_ssock)
   * [srt_epoll_remove_usock, srt_epoll_remove_ssock](#srt_epoll_remove_usock-srt_epoll_remove_ssock)
   * [srt_epoll_wait](#srt_epoll_wait)
+  * [srt_epoll_uwait](#srt_epoll_uwait)
+  * [srt_epoll_set](#srt_epoll_set)
   * [srt_epoll_release](#srt_epoll_release)
 - [**Logging control**](#Logging-control)
   * [srt_setloglevel](#srt_setloglevel)
@@ -1194,8 +1196,36 @@ these two calls.
 * `eid`: epoll container id
 * `u`: SRT socket
 * `s`: system socket
-* `events`: points to a variable set to epoll flags, or NULL if
-you want to subscribe a socket for all possible events
+* `events`: points to
+  * a variable set to epoll flags (see below) to use only selected events
+  * NULL if you want to subscribe a socket for all events in level-triggered mode
+
+Possible epoll flags are the following:
+
+   * `SRT_EPOLL_IN`: report readiness for reading or incoming connection on a listener socket
+   * `SRT_EPOLL_OUT`: report readiness for writing or a successful connection
+   * `SRT_EPOLL_ERR`: report errors on the socket
+   * `SRT_EPOLL_ET`: the event will be edge-triggered
+
+The readiness states reported in by default are **level-triggered**.
+If `SRT_EPOLL_ET` flag is specified, the reported states are
+**edge-triggered**. Note that at this time the edge-triggered mode
+is supported only for SRT sockets, not for system sockets.
+
+In the **edge-triggered** mode the function will only return socket states that
+have changed since the last call. All events reported in particular call of
+the waiting function will be cleared in the internal flags and will not be
+reported until the internal signaling logic clears this state and raises it
+again.
+
+In the **level-triggered** mode the function will always return the readiness
+state as long as it lasts, until the internal signaling logic clear it.
+
+Note that when you use `SRT_EPOLL_ET` flag in one subscription call, it defines
+edge-triggered mode for all events passed together with it. However, if you
+want to have some events reported as edge-triggered and others as
+level-triggered, you can do two separate subscriptions for the same socket.
+
 
 - Returns:
  
@@ -1203,7 +1233,7 @@ you want to subscribe a socket for all possible events
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 **BUG?**: for `add_ssock` the system error results in an empty `CUDTException()`
 call which actually results in `SRT_SUCCESS`. For cases like that the
@@ -1228,7 +1258,7 @@ The `_ssock` suffix refers to a system socket.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 ### srt_epoll_wait
 ```
@@ -1237,14 +1267,16 @@ int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, 
 ```
 
 Blocks the call until any readiness state occurs in the epoll container.
-Mind that the readiness states reported in epoll are **permanent, not
-edge-triggered**.
 
 Readiness can be on a socket in the container for the event type as per
-subscription. The first readiness state causes this function to exit, but
-all ready sockets are reported. This function blocks until the timeout.
-If timeout is 0, it exits immediately after checking. If timeout is -1,
-it blocks indefinitely until a readiness state occurs.
+subscription. Note that in case when particular event was subscribed with
+`SRT_EPOLL_ET` flag, this event, when once reported in this function, will
+be cleared internally.
+
+The first readiness state causes this function to exit, but all ready sockets
+are reported. This function blocks until the timeout specified in `msTimeOut`
+parameter.  If timeout is 0, it exits immediately after checking. If timeout is
+-1, it blocks indefinitely until a readiness state occurs.
 
 * `eid`: epoll container
 * `readfds` and `rnum`: A pointer and length of an array to write SRT sockets that are read-ready
@@ -1273,10 +1305,111 @@ of error has occurred on the socket.
 
 - Errors:
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
   * `SRT_ETIMEOUT`: Up to `msTimeOut` no sockets subscribed in `eid` were ready.
 This is reported only if `msTimeOut` was \>=0, otherwise the function waits
 indefinitely.
+
+### srt_epoll_uwait
+```
+int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+```
+
+This function blocks a call until any readiness state occurs in the epoll
+container. Unlike `srt_epoll_wait`, it can only be used with `eid` subscribed
+to user sockets (SRT sockets), not system sockets.
+
+This function blocks until the timeout specified in `msTimeOut` parameter. If
+timeout is 0, it exits immediately after checking. If timeout is -1, it blocks
+indefinitely until a readiness state occurs.
+
+* `eid`: epoll container
+* `fdsSet` : A pointer to an array of `SRT_EPOLL_EVENT`
+* `fdsSize` : The size of the fdsSet array
+* `msTimeOut` : Timeout specified in milliseconds, or special values (0 or -1):
+   * 0: Don't wait, return immediately (report any sockets currently ready)
+   * -1: Wait indefinitely.
+
+- Returns:
+
+  * The number of user socket (SRT socket) state changes that have been reported
+in `fdsSet`, if this number isn't greater than `fdsSize`
+
+  * Otherwise the return value is `fdsSize` + 1. This means that there was not
+enough space in the output array to report all events. For events subscribed with
+`SRT_EPOLL_ET` flag only those will be cleared that were reported. Others will
+wait for the next call.
+
+  * If no readiness state was found on any socket and the timeout has passed, 0
+is returned (this is not possible when waiting indefinitely)
+
+  * -1 in case of error
+
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
+  * `SRT_EINVPARAM`: One of possible usage errors:
+    * `fdsSize` is < 0
+    * `fdsSize` is > 0 and `fdsSet` is a null pointer
+    * `eid` was subscribed to any system socket
+
+(IMPORTANT: this function reports timeout by returning 0, not by `SRT_ETIMEOUT` error.)
+
+The `SRT_EPOLL_EVENT` structure:
+
+```
+typedef struct SRT_EPOLL_EVENT_
+{
+	SRTSOCKET fd;
+	int       events;
+} SRT_EPOLL_EVENT;
+```
+
+* `fd` : the user socket (SRT socket)
+* `events` : event flags that report readiness of this socket - a combination
+of `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` - see [srt_epoll_add_usock](#srt_epoll_add_usock)
+for details
+
+Note that when the `SRT_EPOLL_ERR` is set, the underlying socket error
+can't be retrieved with `srt_getlasterror()`. The socket will be automatically
+closed and its state can be verified with a call to `srt_getsockstate`.
+
+### srt_epoll_set
+```
+int32_t srt_epoll_set(int eid, int32_t flags);
+```
+
+This function allows to set or retrieve flags that change the default
+behavior of the epoll functions. All default values for these flags are 0.
+The following flags are available:
+
+* `SRT_EPOLL_ENABLE_EMPTY`: allows the `srt_epoll_wait` and `srt_epoll_uwait`
+functions to be called with the EID not subscribed to any socket. The default
+behavior of these function is to report error in this case.
+
+* `SRT_EPOLL_ENABLE_OUTPUTCHECK`: Forces the `srt_epoll_wait` and `srt_epoll_uwait`
+functions to check if the output array is not empty. For `srt_epoll_wait` it
+is still allowed that either system or user array is empty, as long as EID
+isn't subscribed to this type of socket/fd. `srt_epoll_uwait` only checks if
+the general output array is not empty.
+
+- Parameters:
+
+   * `eid`: the epoll container id
+   * `flags`: a nonzero set of the above flags, or special values:
+      * 0: clear all flags (set all defaults)
+      * -1: do not modify any flags
+
+- Returns:
+
+This function returns the state of the flags at the time before the call,
+or a special value -1 in case when an error occurred.
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
+
 
 ### srt_epoll_release
 ```
@@ -1293,7 +1426,7 @@ Deletes the epoll container.
 - Errors:
 
 
-  * `SRT_EINVPOLLID`: `eid` designates no valid EID object
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 Logging control
 ---------------
