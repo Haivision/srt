@@ -168,7 +168,7 @@ shell (using quotes or backslash).
     - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
     - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
-- **-chunk, -c** - use given size of the buffer. When 0, it uses default 1316, which is the maximum size for a single SRT sending call
+- **-chunk, -c** - use given size of the buffer. The default size is 1456 bytes, which is the maximum payload size for a single SRT packet.
 - **-verbose, -v** - display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**
 - **-stats", -stats-report-frequency, -s** - Output periodic SRT statistics reports to the standard output or file (see **-statsout**).
 - **-statsout"** - SRT statistics output: filename. Without this option specified the statistics will be printed to standard output.
