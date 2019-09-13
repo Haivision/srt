@@ -380,7 +380,7 @@ void CChannel::setIpToS(int tos)
 
 #endif
 
-int CChannel::ioctlQuery(int type) const
+int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
 {
 #ifdef unix
     int value = 0;
@@ -391,7 +391,7 @@ int CChannel::ioctlQuery(int type) const
     return -1;
 }
 
-int CChannel::sockoptQuery(int level, int option) const
+int CChannel::sockoptQuery(int SRT_ATR_UNUSED level, int SRT_ATR_UNUSED option) const
 {
 #ifdef unix
     int value = 0;
