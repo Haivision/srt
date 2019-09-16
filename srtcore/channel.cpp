@@ -131,6 +131,7 @@ m_BindAddr(version)
 , m_bBindMasked(true)
 #endif
 {
+   SRT_ASSERT(version == AF_INET || version == AF_INET6);
    m_iSockAddrSize = (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 
 #ifdef SRT_ENABLE_PKTINFO
@@ -197,8 +198,11 @@ void CChannel::open(const sockaddr* addr)
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
       // On Windows ai_addrlen has type size_t (unsigned), while bind takes int.
-      if (0 != ::bind(m_iSocket, res->ai_addr, (socklen_t) res->ai_addrlen))
-         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      if (0 != ::bind(m_iSocket, res->ai_addr, (socklen_t)res->ai_addrlen))
+      {
+          ::freeaddrinfo(res);
+          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+      }
       memcpy(&m_BindAddr, res->ai_addr, res->ai_addrlen);
       m_BindAddr.len = (socklen_t) res->ai_addrlen;
 
@@ -238,40 +242,70 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
+      SRT_ASSERT(m_iIPversion == AF_INET || m_iIPversion == AF_INET6);
+
 #ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
-         if(m_iIPversion == AF_INET)
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-         else //Assuming AF_INET6
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-            //For IPv4mapped-IPv6 accepted connection also set the IPV4 socket.
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-      }   
+          if (m_iIPversion == AF_INET)
+          {
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+          else
+          {
+              // If IPv6 address is unspecified, set BOTH IP_TTL and IPV6_UNICAST_HOPS.
+
+              // For specified IPv6 address, set IPV6_UNICAST_HOPS ONLY UNLESS it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+              // For specified IPv6 address, set IP_TTL ONLY WHEN it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_iIpTTL, sizeof(m_iIpTTL)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+          }
+      }
+
       if (-1 != m_iIpToS)
       {
-         if(m_iIPversion == AF_INET)
-         {
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
-         else //Assuming AF_INET6
-         {
+          if (m_iIPversion == AF_INET)
+          {
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+          else
+          {
+              // If IPv6 address is unspecified, set BOTH IP_TOS and IPV6_TCLASS.
+
 #ifdef IPV6_TCLASS
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+              // For specified IPv6 address, set IPV6_TCLASS ONLY UNLESS it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
 #endif
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-            //For IPv4mapped-IPv6 accepted connection also set the IPV4 socket.
-            if(0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
-               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-         }
+
+              // For specified IPv6 address, set IP_TOS ONLY WHEN it's an IPv4-mapped-IPv6
+              if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+              {
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_iIpToS, sizeof(m_iIpToS)))
+                  {
+                      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+                  }
+              }
+          }
       }
 #endif
 
@@ -369,7 +403,7 @@ int CChannel::getIpTTL() const
 int CChannel::getIpToS() const
 {
    socklen_t size = sizeof(m_iIpToS);
-   if(m_iIPversion == AF_INET)
+   if (m_iIPversion == AF_INET)
    {
       ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (char *)&m_iIpToS, &size);
    }
@@ -394,7 +428,7 @@ void CChannel::setIpToS(int tos)
 
 #endif
 
-int CChannel::ioctlQuery(int type) const
+int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
 {
 #if defined(unix) || defined(__APPLE__)
     int value = 0;
@@ -405,7 +439,7 @@ int CChannel::ioctlQuery(int type) const
     return -1;
 }
 
-int CChannel::sockoptQuery(int level, int option) const
+int CChannel::sockoptQuery(int SRT_ATR_UNUSED level, int SRT_ATR_UNUSED option) const
 {
 #if defined(unix) || defined(__APPLE__)
     int value = 0;
@@ -439,7 +473,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
     {
         spec << " CONTROL size=" << packet.getLength()
              << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.getHeader()[CPacket::PH_MSGNO];
+             << " arg=" << packet.header(SRT_PH_MSGNO);
     }
     else
     {
@@ -456,6 +490,66 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
         << (m_bBindMasked && !source_addr.isany() ? SockaddrToString(&source_addr) : "default")
 #endif
         << spec.str());
+#endif
+
+#ifdef SRT_TEST_FAKE_LOSS
+
+#define FAKELOSS_STRING_0(x) #x
+#define FAKELOSS_STRING(x) FAKELOSS_STRING_0(x)
+    const char* fakeloss_text = FAKELOSS_STRING(SRT_TEST_FAKE_LOSS);
+#undef FAKELOSS_STRING
+#undef FAKELOSS_WRAP
+
+    static int dcounter = 0;
+    static int flwcounter = 0;
+
+    struct FakelossConfig
+    {
+        pair<int,int> config;
+        FakelossConfig(const char* f)
+        {
+            vector<string> out;
+            Split(f, '+', back_inserter(out));
+
+            config.first = atoi(out[0].c_str());
+            config.second = out.size() > 1 ? atoi(out[1].c_str()) : 8;
+        }
+    };
+    static FakelossConfig fakeloss = fakeloss_text;
+
+    if (!packet.isControl())
+    {
+        if (dcounter == 0)
+        {
+            timeval tv;
+            gettimeofday(&tv, 0);
+            srand(tv.tv_usec & 0xFFFF);
+        }
+        ++dcounter;
+
+        if (flwcounter)
+        {
+            // This is a counter of how many packets in a row shall be lost
+            --flwcounter;
+            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
+            return packet.getLength(); // fake successful sendinf
+        }
+
+        if (dcounter > 8)
+        {
+            // Make a random number in the range between 8 and 24
+            int rnd = rand() % 16 + SRT_TEST_FAKE_LOSS;
+
+            if (dcounter > rnd)
+            {
+                dcounter = 1;
+                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
+                flwcounter = fakeloss.config.first;
+                return packet.getLength(); // fake successful sendinf
+            }
+        }
+    }
+
 #endif
 
    // convert control information into network order
@@ -752,7 +846,7 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
     //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
     {
         uint32_t* p = packet.m_nHeader;
-        for (size_t i = 0; i < CPacket::PH_SIZE; ++ i)
+        for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
         {
             *p = ntohl(*p);
             ++ p;

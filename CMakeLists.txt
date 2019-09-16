@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.2")
+#project(SRT VERSION "1.3.4")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -38,7 +38,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.3.2)
+set (SRT_VERSION 1.4.0)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -110,11 +110,24 @@ option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-option(USE_GNUTLS "Should use gnutls instead of openssl" OFF)
+option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
+
+# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
+# time, instead of gettimeofday. This function allows to force a monotonic
+# clock, which is independent on the currently set time in the system.  The CV,
+# for which the *_timedwait() functions are used with so obtained current time,
+# must be appropriately configured. The consequence of enabling this option,
+# however, may be portability issues around the clock_gettime() function, which
+# is not available on every SDK, or extra -lrt option is sometimes required
+# (this requirement will be autodetected).
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
+option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
+option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -136,12 +149,30 @@ else()
 	endif()
 endif()
 
+if (USE_BUSY_WAITING)
+	message(STATUS "USE_BUSY_WAITING: ON")
+	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
+else()
+	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
 	add_definitions(-DWIN32=1 -DCYGWIN=1)
 	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
+
+if (NOT USE_ENCLIB)
+	if (USE_GNUTLS)
+		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
+		set (USE_ENCLIB gnutls)
+	else()
+		set (USE_ENCLIB openssl)
+	endif()
+
+endif()
+
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -152,7 +183,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if (DEFINED WITH_COMPILER_PREFIX)
 	message(STATUS "Handling compiler with WITH_COMPILER_PREFIX=${WITH_COMPILER_PREFIX}")
 	# Check also type. Default is gcc.
-	if (NOT DEFINED WIHT_COMPILER_TYPE)
+	if (NOT DEFINED WITH_COMPILER_TYPE)
 		set (WITH_COMPILER_TYPE gcc)
 	endif()
 
@@ -196,15 +227,19 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
+if (ENABLE_MONOTONIC_CLOCK)
+	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
+endif()
+
 if (ENABLE_ENCRYPTION)
-	if ( USE_GNUTLS )
+	if ("${USE_ENCLIB}" STREQUAL "gnutls")
 		set (SSL_REQUIRED_MODULES "gnutls nettle")
 		if (WIN32)
 			if (MINGW)
 				set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
 			endif()
 		endif()
-	 
+
 		pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
 
 		add_definitions(
@@ -214,15 +249,20 @@ if (ENABLE_ENCRYPTION)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-	else()
+	else() # Common for mbedtls and openssl
+		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
+			add_definitions(-DUSE_MBEDTLS=1)
+			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
+		else()
+			add_definitions(-DUSE_OPENSSL=1)
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+		endif()
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
-			pkg_check_modules(SSL "openssl libcrypto")
+			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 		endif()
 		if (SSL_FOUND)
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
-
 			# We have some cases when pkg-config is improperly configured
 			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
 			# is set (also through `configure`), then we have this problem. If so,
@@ -241,16 +281,25 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
-			find_package(OpenSSL REQUIRED)
-			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
+				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+					if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+						message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+						set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+						set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+					endif()
+				endif()
+				if ("${SSL_LIBRARIES}" STREQUAL "")
+					set (SSL_LIBRARIES  mbedtls mbedcrypto)
+				endif()
+				message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			else()
+				find_package(OpenSSL REQUIRED)
+				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			endif()
 		endif()
-		add_definitions(
-			-DHAICRYPT_USE_OPENSSL_EVP=1
-			-DHAICRYPT_USE_OPENSSL_AES
-		)
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
@@ -260,14 +309,21 @@ else()
 	message(STATUS "ENCRYPTION: DISABLED")
 endif()
 
+if ( USE_GNUSTL )
+	pkg_check_modules (GNUSTL REQUIRED gnustl)
+	link_directories(${GNUSTL_LIBRARY_DIRS})
+	include_directories(${GNUSTL_INCLUDE_DIRS})
+	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
 # Detect if the compiler is GNU compatable for flags
-set(HAVE_COMPILER_GNU_COMPAT 0)
-foreach (gnid GNU Intel Clang AppleClang)
-	if (${CMAKE_CXX_COMPILER_ID} STREQUAL ${gnid})
-		set(HAVE_COMPILER_GNU_COMPAT 1)
-		break()
-	endif()
-endforeach()
+if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Intel|Clang|AppleClang")
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 1)
+else()
+	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
+	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
 
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
@@ -278,12 +334,6 @@ endif()
 
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-endif()
-
-if (HAVE_COMPILER_GNU_COMPAT)
-	message(STATUS "COMPILER: GNU compat: ${CMAKE_CXX_COMPILER}")
-else()
-	message(STATUS "COMPILER: NOT GNU compat: ${CMAKE_CXX_COMPILER}")
 endif()
 
 # add extra warning flags for gccish compilers
@@ -301,6 +351,15 @@ if (USE_STATIC_LIBSTDCXX)
 		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
 	endif()
 endif()
+
+# We need clock_gettime, but on some systems this is only provided
+# by librt. Check if librt is required.
+if (ENABLE_MONOTONIC_CLOCK AND LINUX)
+	# "requires" - exits on FATAL_ERROR when clock_gettime not available
+	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
+endif()
+
 
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
@@ -395,29 +454,46 @@ if (ENABLE_THREAD_CHECK)
 	)
 endif()
 
-if (${ENABLE_PROFILE} AND HAVE_COMPILER_GNU_COMPAT)
-	# They are actually cflags, not definitions, but CMake is stupid enough.
-	add_definitions(-g -pg)
-	link_libraries(-g -pg)
+if (ENABLE_PROFILE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		# They are actually cflags, not definitions, but CMake is stupid enough.
+		add_definitions(-g -pg)
+		link_libraries(-g -pg)
+	else()
+		message(FATAL_ERROR "Profiling option is not supported on this platform")
+	endif()
+endif()
+
+if (ENABLE_CODE_COVERAGE)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		add_definitions(-g -O0 --coverage)
+		link_libraries(--coverage)
+	else()
+		message(FATAL_ERROR "Code coverage option is not supported on this platform")
+	endif()
 endif()
 
 if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (WIN32 AND NOT MINGW)
-	# find pthread
-	find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
-	if (PTHREAD_INCLUDE_DIR)
-		message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-	endif()
+	find_package(pthreads QUIET)
 
-	find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
-	if (PTHREAD_LIBRARY)
-		message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	else()
-		message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
+		# find pthread
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+		if (PTHREAD_INCLUDE_DIR)
+			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+		endif()
+	
+		find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
+		if (PTHREAD_LIBRARY)
+			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		endif()
 	endif()
 else ()
 	find_package(Threads REQUIRED)
@@ -440,11 +516,7 @@ endif()
 # Completing sources and installable headers. Flag settings will follow.
 # ---
 if (ENABLE_ENCRYPTION)
-	if ( USE_GNUTLS )
-		set (HAICRYPT_FILELIST_MAF "filelist-gnutls.maf")
-	else()
-		set (HAICRYPT_FILELIST_MAF "filelist.maf")
-	endif()
+	set (HAICRYPT_FILELIST_MAF "filelist-${USE_ENCLIB}.maf")
 
 	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
 		SOURCES SOURCES_haicrypt
@@ -517,6 +589,7 @@ set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual
 if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
+	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
@@ -529,6 +602,9 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
+	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 endif()
 
@@ -557,6 +633,9 @@ if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
+	endif()
+	if (USE_GNUSTL)
+		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
 endif()
 
@@ -676,7 +755,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if ( HAVE_COMPILER_GNU_COMPAT )
+if (HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
 	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
 	set (CFLAGS_CXX_STANDARD "-std=c++11")
 else()
@@ -730,6 +809,9 @@ macro(srt_make_application name)
 	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
+	if (USE_GNUSTL)
+		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+	endif()
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
 		target_link_libraries(${name} ${CMAKE_DL_LIBS})
 	endif()
@@ -872,6 +954,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test_srt ${SOURCES_unittests})
 	srt_make_application(test_srt)
+	target_include_directories(test_srt PRIVATE  ${SSL_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test_srt

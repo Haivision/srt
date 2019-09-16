@@ -216,7 +216,7 @@ const SocketOption srt_options [] {
     { "inputbw", 0, SRTO_INPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
     { "oheadbw", 0, SRTO_OHEADBW, SocketOption::POST, SocketOption::INT, nullptr},
     { "latency", 0, SRTO_LATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "tsbpddelay", 0, SRTO_TSBPDDELAY, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "tsbpdmode", 0, SRTO_TSBPDMODE, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "tlpktdrop", 0, SRTO_TLPKTDROP, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "snddropdelay", 0, SRTO_SNDDROPDELAY, SocketOption::POST, SocketOption::INT, nullptr},
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::PRE, SocketOption::BOOL, nullptr},
@@ -231,8 +231,9 @@ const SocketOption srt_options [] {
     { "payloadsize", 0, SRTO_PAYLOADSIZE, SocketOption::PRE, SocketOption::INT, nullptr},
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr },
-    { "strictenc", 0, SRTO_STRICTENC, SocketOption::PRE, SocketOption::BOOL, nullptr },
-    { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr }
+    { "enforcedencryption", 0, SRTO_ENFORCEDENCRYPTION, SocketOption::PRE, SocketOption::BOOL, nullptr },
+    { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr }
 };
 }
 

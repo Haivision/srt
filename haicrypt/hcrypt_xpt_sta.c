@@ -20,6 +20,7 @@ written by
 *****************************************************************************/
 
 #include <string.h>			/* memset, memcpy */
+#include <time.h>           /* time() */
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>

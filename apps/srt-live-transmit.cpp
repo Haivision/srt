@@ -70,7 +70,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "transmitbase.hpp"
+#include "transmitmedia.hpp"
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -129,7 +129,7 @@ struct LiveTransmitConfig
 {
     int timeout = 0;
     int timeout_mode = 0;
-    int chunk_size = SRT_LIVE_DEF_PLSIZE;
+    int chunk_size = -1;
     bool quiet = false;
     srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
     set<srt_logging::LogFA> logfas;
@@ -232,7 +232,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_timeout_mode, "<mode=0>", "timeout mode (0 - since app start; 1 - like 0, but cancel on connect");
 #endif
         PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode [yes|no]");
-        PrintOptionHelp(o_chunk,     "<chunk=1316>", "max size of data read in one step");
+        PrintOptionHelp(o_chunk,     "<chunk=1456>", "max size of data read in one step, that can fit one SRT packet");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
@@ -267,7 +267,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
     cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
-    cfg.chunk_size   = stoi(Option<OutString>(params, "1316", o_chunk));
+    cfg.chunk_size   = stoi(Option<OutString>(params, "-1", o_chunk));
     cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
     cfg.stats_out    = Option<OutString>(params, "", o_statsout);
@@ -339,9 +339,9 @@ int main(int argc, char** argv)
     //
     // Set global config variables
     //
-    if (cfg.chunk_size != SRT_LIVE_DEF_PLSIZE)
+    if (cfg.chunk_size > 0)
         transmit_chunk_size = cfg.chunk_size;
-    printformat = cfg.stats_pf;
+    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
@@ -685,6 +685,15 @@ int main(int argc, char** argv)
                                     return 1;
                                 }
                             }
+
+#ifndef _WIN32
+                            if (cfg.timeout_mode == 1 && cfg.timeout > 0)
+                            {
+                                if (!cfg.quiet)
+                                    cerr << "TIMEOUT: cancel\n";
+                                alarm(0);
+                            }
+#endif
                         }
                     }
 
@@ -711,9 +720,9 @@ int main(int argc, char** argv)
                     while (dataqueue.size() < 10)
                     {
                         std::shared_ptr<bytevector> pdata(
-                            new bytevector(cfg.chunk_size));
+                            new bytevector(transmit_chunk_size));
 
-                        const int res = src->Read(cfg.chunk_size, *pdata, out_stats);
+                        const int res = src->Read(transmit_chunk_size, *pdata, out_stats);
 
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
@@ -801,4 +810,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-

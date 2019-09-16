@@ -30,6 +30,10 @@
    #include <ws2ipdef.h>
    #include <windows.h>
 
+#ifndef __MINGW__
+   #include <intrin.h>
+#endif
+
    #ifdef SRT_IMPORT_TIME
    #include <win/wintime.h>
    #endif

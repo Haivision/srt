@@ -72,7 +72,7 @@ public:
     LiveCC(CUDT* parent)
         : SrtCongestionControlBase(parent)
     {
-        m_llSndMaxBW = BW_INFINITE;    // 30Mbps in Bytes/sec BW_INFINITE
+        m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if ( m_zMaxPayloadSize == 0 )
             m_zMaxPayloadSize = parent->maxPayloadSize();
@@ -167,7 +167,8 @@ private:
         // packet = payload + header
         const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
-        HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_zSndAvgPayloadSize);
+        HLOGC(mglog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
+            << " (pktsize=" << pktsize << ", bw=" << m_llSndMaxBW);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -243,12 +244,9 @@ private:
 };
 
 
-class FileCC: public SrtCongestionControlBase
+class FileCC : public SrtCongestionControlBase
 {
     typedef FileCC Me; // Required by SSLOT macro
-
-    // Fields from CCC not used by LiveCC
-    int m_iACKPeriod;
 
     // Fields from CUDTCC
     int m_iRCInterval;          // UDT Rate control interval
@@ -269,7 +267,6 @@ public:
 
     FileCC(CUDT* parent)
         : SrtCongestionControlBase(parent)
-        , m_iACKPeriod(CUDT::COMM_SYN_INTERVAL_US)
         , m_iRCInterval(CUDT::COMM_SYN_INTERVAL_US)
         , m_LastRCTime(CTimer::getTime())
         , m_bSlowStart(true)
@@ -300,7 +297,7 @@ public:
         HLOGC(mglog.Debug, log << "Creating FileCC");
     }
 
-    bool checkTransArgs(SrtCongestion::TransAPI, SrtCongestion::TransDir, const char* , size_t , int , bool ) ATR_OVERRIDE
+    bool checkTransArgs(SrtCongestion::TransAPI, SrtCongestion::TransDir, const char*, size_t, int, bool) ATR_OVERRIDE
     {
         // XXX
         // The FileCC has currently no restrictions, although it should be
@@ -314,7 +311,11 @@ public:
         // For FileCC, treat non-full-buffer situation as an end-of-message situation;
         // request ACK to be sent immediately.
         if (pkt.getLength() < m_parent->maxPayloadSize())
+        {
+            // This is not a regular fixed size packet...
+            // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
             return true;
+        }
 
         return false;
     }
@@ -354,8 +355,8 @@ private:
                     m_dPktSndPeriod = 1000000.0 / m_parent->deliveryRate();
                     HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
-                        << " sndperiod=" << m_dPktSndPeriod << "us = mega/("
-                        << m_parent->deliveryRate() << "pkts/s)");
+                        << " sndperiod=" << m_dPktSndPeriod << "us = 1M/("
+                        << m_parent->deliveryRate() << " pkts/s)");
                 }
                 else
                 {
@@ -376,33 +377,43 @@ private:
         else
         {
             m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->RTT() + m_iRCInterval) + 16;
+            HLOGC(mglog.Debug, log << "FileCC: UPD (speed mode) wndsize="
+                << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->RTT()
+                << " sndperiod=" << m_dPktSndPeriod << "us. deliverRate = "
+                << m_parent->deliveryRate() << " pkts/s)");
         }
 
-        // No rate increase during Slow Start
         if (!m_bSlowStart)
         {
             if (m_bLoss)
             {
                 m_bLoss = false;
             }
+            // During Slow Start, no rate increase
             else
             {
                 double inc = 0;
-                int64_t B = (int64_t)(m_parent->bandwidth() - 1000000.0 / m_dPktSndPeriod);
-                if ((m_dPktSndPeriod > m_dLastDecPeriod) && ((m_parent->bandwidth() / 9) < B))
-                    B = m_parent->bandwidth() / 9;
+                const int loss_bw = 2 * (1000000 / m_dLastDecPeriod); // 2 times last loss point
+                const int bw_pktps = min(loss_bw, m_parent->bandwidth());
+
+                int64_t B = (int64_t)(bw_pktps - 1000000.0 / m_dPktSndPeriod);
+                if ((m_dPktSndPeriod > m_dLastDecPeriod) && ((bw_pktps / 9) < B))
+                    B = bw_pktps / 9;
                 if (B <= 0)
-                    inc = 1.0 / m_parent->MSS();    // was inc = 0.01; in UDT
+                    inc = 1.0 / m_parent->MSS();
                 else
                 {
                     // inc = max(10 ^ ceil(log10( B * MSS * 8 ) * Beta / MSS, 1/MSS)
                     // Beta = 1.5 * 10^(-6)
 
                     inc = pow(10.0, ceil(log10(B * m_parent->MSS() * 8.0))) * 0.0000015 / m_parent->MSS();
-
-                    if (inc < 1.0 / m_parent->MSS())
-                        inc = 1.0 / m_parent->MSS();
+                    inc = max(inc, 1.0 / m_parent->MSS());
                 }
+
+                HLOGC(mglog.Debug, log << "FileCC: UPD (slowstart:OFF) loss_bw=" << loss_bw
+                    << " bandwidth=" << m_parent->bandwidth() << " inc=" << inc
+                    << " m_dPktSndPeriod=" << m_dPktSndPeriod
+                    << "->" << (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval));
 
                 m_dPktSndPeriod = (m_dPktSndPeriod * m_iRCInterval) / (m_dPktSndPeriod * inc + m_iRCInterval);
             }
@@ -454,7 +465,7 @@ private:
 
         // Sanity check. Should be impossible that TEV_LOSSREPORT event
         // is called with a nonempty loss list.
-        if ( losslist_size == 0 )
+        if (losslist_size == 0)
         {
             LOGC(mglog.Error, log << "IPE: FileCC: empty loss list!");
             return;
@@ -481,6 +492,21 @@ private:
 
         m_bLoss = true;
 
+        const int pktsInFlight = m_parent->RTT() / m_dPktSndPeriod;
+        const int numPktsLost = m_parent->sndLossLength();
+        const int lost_pcent_x10 = (numPktsLost * 1000) / pktsInFlight;
+
+        HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: "
+            << "sent=" << CSeqNo::seqlen(m_iLastAck, m_parent->sndSeqNo()) << ", inFlight=" << pktsInFlight
+            << ", lost=" << numPktsLost << " ("
+            << lost_pcent_x10 / 10 << "." << lost_pcent_x10 % 10 << "\%)");
+        if (lost_pcent_x10 < 20)    // 2.0%
+        {
+            HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
+            m_dLastDecPeriod = m_dPktSndPeriod;
+            return;
+        }
+
         // In contradiction to UDT, TEV_LOSSREPORT will be reported also when
         // the lossreport is being sent again, periodically, as a result of
         // NAKREPORT feature. You should make sure that NAKREPORT is off when
@@ -491,9 +517,10 @@ private:
         if (CSeqNo::seqcmp(lossbegin, m_iLastDecSeq) > 0)
         {
             m_dLastDecPeriod = m_dPktSndPeriod;
-            m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
+            m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.03);
 
-            m_iAvgNAKNum = (int)ceil(m_iAvgNAKNum * 0.875 + m_iNAKCount * 0.125);
+            const double loss_share_factor = 0.03;
+            m_iAvgNAKNum = (int)ceil(m_iAvgNAKNum * (1 - loss_share_factor) + m_iNAKCount * loss_share_factor);
             m_iNAKCount = 1;
             m_iDecCount = 1;
 
@@ -504,18 +531,20 @@ private:
             m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
             if (m_iDecRandom < 1)
                 m_iDecRandom = 1;
-            HLOGC(mglog.Debug, log << "FileCC: LOSS:NEW lastseq=" << m_iLastDecSeq
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
+                << ", lastsentseqno=" << m_iLastDecSeq
+                << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", rand=" << m_iDecRandom
                 << " avg NAK:" << m_iAvgNAKNum
                 << ", sndperiod=" << m_dPktSndPeriod << "us");
         }
-        else if ((m_iDecCount ++ < 5) && (0 == (++ m_iNAKCount % m_iDecRandom)))
+        else if ((m_iDecCount++ < 5) && (0 == (++m_iNAKCount % m_iDecRandom)))
         {
             // 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
-            m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.125);
+            m_dPktSndPeriod = ceil(m_dPktSndPeriod * 1.03);
             m_iLastDecSeq = m_parent->sndSeqNo();
-            HLOGC(mglog.Debug, log << "FileCC: LOSS:PERIOD lseq=" << lossbegin
-                << ", dseq=" << m_iLastDecSeq
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:PERIOD lseqno=" << lossbegin
+                << ", lastsentseqno=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
@@ -523,14 +552,13 @@ private:
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FileCC: LOSS:STILL lseq=" << lossbegin
-                << ", dseq=" << m_iLastDecSeq
+            HLOGC(mglog.Debug, log << "FileCC: LOSS:STILL lseqno=" << lossbegin
+                << ", lastsentseqno=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
                 << ", deccnt=" << m_iDecCount
                 << ", decrnd=" << m_iDecRandom
                 << ", sndperiod=" << m_dPktSndPeriod << "us");
         }
-
     }
 
     void speedupToWindowSize(ETransmissionEvent, EventVariant arg)

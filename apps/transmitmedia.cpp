@@ -39,11 +39,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
-
- PrintFormat printformat = PRINT_FORMAT_2COLS;
- bool first_line_printed = false;
-
+unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
 
 class FileSource: public Source
 {
@@ -105,13 +101,14 @@ template <> struct File<Target> { typedef FileTarget type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
+shared_ptr<SrtStatsWriter> stats_writer;
 
-static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
+class SrtStatsJson : public SrtStatsWriter
 {
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON)
-    {
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         output << "{";
         output << "\"sid\":" << sid << ",";
         output << "\"time\":" << mon.msTimeStamp << ",";
@@ -129,7 +126,8 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "\"packets\":" << mon.pktSent << ",";
         output << "\"packetsLost\":" << mon.pktSndLoss << ",";
         output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";        
+        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
         output << "\"bytes\":" << mon.byteSent << ",";
         output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsSendRate;
@@ -140,22 +138,46 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
         output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
         output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
+        output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
+        output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
         output << "\"bytes\":" << mon.byteRecv << ",";
         output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
         output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsRecvRate;
         output << "}";
         output << "}" << endl;
-    }
-    else if (printformat == PRINT_FORMAT_CSV)
+        return output.str();
+    } 
+
+    string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::ostringstream output;
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCsv : public SrtStatsWriter
+{
+private:
+    bool first_line_printed;
+
+public: 
+    SrtStatsCsv() : first_line_printed(false) {}
+
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         if (!first_line_printed)
         {
             output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
             output << "msRTT,mbpsBandwidth,mbpsMaxBW,pktSent,pktSndLoss,pktSndDrop,";
             output << "pktRetrans,byteSent,byteSndDrop,mbpsSendRate,usPktSndPeriod,";
             output << "pktRecv,pktRcvLoss,pktRcvDrop,pktRcvRetrans,pktRcvBelated,";
-            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms";
+            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms,";
+            // Filter stats
+            output << "pktSndFilterExtra,pktRcvFilterExtra,pktRcvFilterSupply,pktRcvFilterLoss";
             output << endl;
             first_line_printed = true;
         }
@@ -188,38 +210,70 @@ static void PrintSrtStats(int sid, const CBytePerfMon& mon, ostream &out)
         output << mon.byteRcvLoss << ",";
         output << mon.byteRcvDrop << ",";
         output << mon.mbpsRecvRate << ",";
-        output << rcv_latency;
+        output << rcv_latency << ",";
+        // Filter stats
+        output << mon.pktSndFilterExtra << ",";
+        output << mon.pktRcvFilterExtra << ",";
+        output << mon.pktRcvFilterSupply << ",";
+        output << mon.pktRcvFilterLoss; //<< ",";
         output << endl;
+        return output.str();
     }
-    else
+
+    string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::ostringstream output;
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCols : public SrtStatsWriter
+{
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;
         output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
         output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
         output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
         output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        output << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra    << endl;
+        output << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss     << endl;
         output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
         output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
         output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
         output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
         output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
-    }
+        return output.str();
+    } 
 
-    out << output.str() << std::flush;
-}
-
-static void PrintSrtBandwidth(double mbpsBandwidth)
-{
-    std::ostringstream output;
-
-    if (printformat == PRINT_FORMAT_JSON) {
-        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
-    } else {
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
+        std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
     }
+};
 
-    cerr << output.str() << std::flush;
+shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat)
+{
+    switch (printformat)
+    {
+    case PRINT_FORMAT_JSON:
+        return make_shared<SrtStatsJson>();
+        break;
+    case PRINT_FORMAT_CSV:
+        return make_shared<SrtStatsCsv>();
+        break;
+    case PRINT_FORMAT_2COLS:
+        return make_shared<SrtStatsCols>();
+        break;
+    default:
+        return nullptr;
+    }
 }
 
 
@@ -236,10 +290,10 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     }
 
     m_mode = "default";
-    if ( par.count("mode") )
+    if (par.count("mode"))
         m_mode = par.at("mode");
 
-    if ( m_mode == "default" )
+    if (m_mode == "default")
     {
         // Use the following convention:
         // 1. Server for source, Client for target
@@ -259,13 +313,13 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     par.erase("mode");
 
-    if ( par.count("timeout") )
+    if (par.count("timeout"))
     {
         m_timeout = stoi(par.at("timeout"), 0, 0);
         par.erase("timeout");
     }
 
-    if ( par.count("adapter") )
+    if (par.count("adapter"))
     {
         m_adapter = par.at("adapter");
         par.erase("adapter");
@@ -277,7 +331,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
-    if ( par.count("tsbpd") && false_names.count(par.at("tsbpd")) )
+    if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
     }
@@ -292,8 +346,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     // Default mode is live, so check if the file mode was enforced
     if (par.count("transtype") == 0 || par["transtype"] != "file")
     {
-        // If the Live chunk size was nondefault, enforce the size.
-        if (transmit_chunk_size != SRT_LIVE_DEF_PLSIZE)
+        if (transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
         {
             if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
                 throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
@@ -648,18 +701,15 @@ int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr) 
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
-        }
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf, out_stats);
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
@@ -698,18 +748,15 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
     {
         CBytePerfMon perf;
         srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (need_bw_report)
+        if (stats_writer != nullptr)
         {
-            PrintSrtBandwidth(perf.mbpsBandwidth);
-        }
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf, out_stats);
+            if (need_bw_report)
+                cerr << stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
+            if (need_stats_report)
+                out_stats << stats_writer->WriteStats(m_sock, perf) << std::flush;
         }
     }
-
     ++counter;
-
     return stat;
 }
 
@@ -849,6 +896,11 @@ public:
         // We have to set it to the binary mode
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
+    }
+
+    virtual ~ConsoleTarget()
+    {
+        cout.flush();
     }
 
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
@@ -1178,9 +1230,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::SRT:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
@@ -1189,9 +1241,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );

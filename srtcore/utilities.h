@@ -27,20 +27,40 @@ written by
 
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
+
+// For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
+// however it's only the "most required C++11 support".
+#if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
+#define ATR_NOEXCEPT
+#define ATR_CONSTEXPR
+#define ATR_OVERRIDE
+#define ATR_FINAL
+#else
+#define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
+#endif
+
 // Microsoft Visual Studio supports C++11, but not fully,
 // and still did not change the value of __cplusplus. Treat
 // this special way.
 // _MSC_VER == 1800  means Microsoft Visual Studio 2013.
 #elif defined(_MSC_VER) && _MSC_VER >= 1800
 #define HAVE_CXX11 1
+#if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
+#define HAVE_FULL_CXX11 1
+#define ATR_NOEXCEPT noexcept
+#define ATR_CONSTEXPR constexpr
+#define ATR_OVERRIDE override
+#define ATR_FINAL final
+#else
 #define ATR_NOEXCEPT
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
+#endif
 #else
 #define HAVE_CXX11 0
 #define ATR_NOEXCEPT // throw() - bad idea
@@ -70,6 +90,7 @@ written by
 #include <functional>
 #include <memory>
 #include <sstream>
+#include <iomanip>
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
@@ -86,9 +107,35 @@ written by
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__)
 
 #	include <endian.h>
+
+// GLIBC-2.8 and earlier does not provide these macros.
+// See http://linux.die.net/man/3/endian
+// From https://gist.github.com/panzi/6856583
+#   if defined(__GLIBC__) \
+      && ( !defined(__GLIBC_MINOR__) \
+         || ((__GLIBC__ < 2) \
+         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9))) )
+#       include <arpa/inet.h>
+#       if defined(__BYTE_ORDER) && (__BYTE_ORDER == __LITTLE_ENDIAN)
+
+#           define htole32(x) (x)
+#           define le32toh(x) (x)
+
+#       elif defined(__BYTE_ORDER) && (__BYTE_ORDER == __BIG_ENDIAN)
+
+#           define htole16(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+#           define le16toh(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+
+#           define htole32(x) (((uint32_t)htole16(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)htole16(((uint16_t)(x)))) << 16))
+#           define le32toh(x) (((uint32_t)le16toh(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)le16toh(((uint16_t)(x)))) << 16))
+
+#       else
+#           error Byte Order not supported or not defined.
+#       endif
+#   endif
 
 #elif defined(__APPLE__)
 
@@ -122,14 +169,26 @@ written by
 
 #	include <sys/endian.h>
 
+#ifndef be16toh
 #	define be16toh(x) betoh16(x)
+#endif
+#ifndef le16toh
 #	define le16toh(x) letoh16(x)
+#endif
 
+#ifndef be32toh
 #	define be32toh(x) betoh32(x)
+#endif
+#ifndef le32toh
 #	define le32toh(x) letoh32(x)
+#endif
 
+#ifndef be64toh
 #	define be64toh(x) betoh64(x)
+#endif
+#ifndef le64toh
 #	define le64toh(x) letoh64(x)
+#endif
 
 #elif defined(__WINDOWS__)
 
@@ -267,8 +326,8 @@ struct BitsetMask<L, R, false>
 template <size_t L, size_t R = L>
 struct Bits
 {
-    // DID YOU GET kind-of error: ‘mask’ is not a member of ‘Bits<3u, 5u, false>’ ?
-    // See the the above declaration of 'correct' !
+    // DID YOU GET a kind-of error: 'mask' is not a member of 'Bits<3u, 5u, false>'?
+    // See the the above declaration of 'correct'!
     static const uint32_t mask = BitsetMask<L, R>::value;
     static const uint32_t offset = R;
     static const size_t size = L - R + 1;
@@ -413,6 +472,17 @@ public:
     { return *m_data; }
 };
 
+// This is required for Printable function if you have a container of pairs,
+// but this function has a different definition for C++11 and C++03.
+namespace srt_pair_op
+{
+    template <class Value1, class Value2>
+    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    {
+        s << "{" << v.first << " " << v.second << "}";
+        return s;
+    }
+}
 
 #if HAVE_CXX11
 
@@ -459,6 +529,7 @@ using UniquePtr = std::unique_ptr<T>;
 template <class Container, class Value = typename Container::value_type, typename... Args> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
 {
+    using namespace srt_pair_op;
     std::ostringstream os;
     Print(os, args...);
     os << "[ ";
@@ -471,6 +542,7 @@ std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... a
 template <class Container> inline
 std::string Printable(const Container& in)
 {
+    using namespace srt_pair_op;
     using Value = typename Container::value_type;
     return Printable(in, Value());
 }
@@ -484,6 +556,13 @@ auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Ma
 
 template<typename Map, typename Key>
 auto map_getp(Map& m, const Key& key) -> typename Map::mapped_type*
+{
+    auto it = m.find(key);
+    return it == m.end() ? nullptr : std::addressof(it->second);
+}
+
+template<typename Map, typename Key>
+auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 {
     auto it = m.find(key);
     return it == m.end() ? nullptr : std::addressof(it->second);
@@ -545,8 +624,72 @@ public:
     operator bool () { return 0!= get(); }
 };
 
+// A primitive one-argument version of Printable
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+
+    return os.str();
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type map_get(const Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? def : it->second;
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type* map_getp(Map& m, const Key& key)
+{
+    typename Map::iterator it = m.find(key);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
+}
+
+template<typename Map, typename Key>
+typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
+{
+    typename Map::const_iterator it = m.find(key);
+    return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
+}
 
 #endif
+
+template <class Signature>
+struct CallbackHolder
+{
+    void* opaque;
+    Signature* fn;
+
+    CallbackHolder(): opaque(NULL), fn(NULL)  {}
+
+    void set(void* o, Signature* f)
+    {
+        // Test if the pointer is a pointer to function. Don't let
+        // other type of pointers here.
+        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        opaque = o;
+        fn = f;
+    }
+
+    operator bool() { return fn != NULL; }
+};
+
+#define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
@@ -583,24 +726,24 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 }
 
 
-// This function is useful in multiple uses where
-// the time drift should be traced. It's currently in use in every
-// solution that implements any kind of TSBPD (AKA Stower).
+/// This class is useful in every place where
+/// the time drift should be traced. It's currently in use in every
+/// solution that implements any kind of TSBPD.
 template<unsigned MAX_SPAN, int MAX_DRIFT, bool CLEAR_ON_UPDATE = true>
 class DriftTracer
 {
-    int64_t m_qDrift;
-    int64_t m_qOverdrift;
+    int64_t  m_qDrift;
+    int64_t  m_qOverdrift;
 
-    int64_t m_qDriftSum;
+    int64_t  m_qDriftSum;
     unsigned m_uDriftSpan;
 
 public:
     DriftTracer()
-        : m_qDrift(),
-        m_qOverdrift(),
-        m_qDriftSum(),
-        m_uDriftSpan()
+        : m_qDrift(0)
+        , m_qOverdrift(0)
+        , m_qDriftSum(0)
+        , m_uDriftSpan(0)
     {}
 
     bool update(int64_t driftval)
@@ -608,37 +751,36 @@ public:
         m_qDriftSum += driftval;
         ++m_uDriftSpan;
 
-        if ( m_uDriftSpan >= MAX_SPAN )
+        if (m_uDriftSpan < MAX_SPAN)
+            return false;
+
+        if (CLEAR_ON_UPDATE)
+            m_qOverdrift = 0;
+
+        // Calculate the median of all drift values.
+        // In most cases, the divisor should be == MAX_SPAN.
+        m_qDrift = m_qDriftSum / m_uDriftSpan;
+
+        // And clear the collection
+        m_qDriftSum = 0;
+        m_uDriftSpan = 0;
+
+        // In case of "overdrift", save the overdriven value in 'm_qOverdrift'.
+        // In clear mode, you should add this value to the time base when update()
+        // returns true. The drift value will be since now measured with the
+        // overdrift assumed to be added to the base.
+        if (std::abs(m_qDrift) > MAX_DRIFT)
         {
-            if ( CLEAR_ON_UPDATE )
-                m_qOverdrift = 0;
-
-            // Calculate the median of all drift values.
-            // In most cases, the divisor should be == MAX_SPAN.
-            m_qDrift = m_qDriftSum / m_uDriftSpan;
-
-            // And clear the collection
-            m_qDriftSum = 0;
-            m_uDriftSpan = 0;
-
-            // In case of "overdrift", save the overdriven value in 'm_qOverdrift'.
-            // In clear mode, you should add this value to the time base when update()
-            // returns true. The drift value will be since now measured with the
-            // overdrift assumed to be added to the base.
-            if (std::abs(m_qDrift) > MAX_DRIFT)
-            {
-                m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
-                m_qDrift -= m_qOverdrift;
-            }
-
-            // printDriftOffset(m_qOverdrift, m_qDrift);
-
-            // Timebase is separate
-            // m_qTimeBase += m_qOverdrift;
-
-            return true;
+            m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
+            m_qDrift -= m_qOverdrift;
         }
-        return false;
+
+        // printDriftOffset(m_qOverdrift, m_qDrift);
+
+        // Timebase is separate
+        // m_qTimeBase += m_qOverdrift;
+
+        return true;
     }
 
     // These values can be read at any time, however if you want
@@ -662,8 +804,8 @@ public:
     // any changes in overdrift. By manipulating the MAX_DRIFT parameter
     // you can decide how high the drift can go relatively to stay below
     // overdrift.
-    int64_t drift() { return m_qDrift; }
-    int64_t overdrift() { return m_qOverdrift; }
+    int64_t drift() const { return m_qDrift; }
+    int64_t overdrift() const { return m_qOverdrift; }
 };
 
 template <class KeyType, class ValueType>
@@ -711,6 +853,38 @@ struct MapProxy
     }
 };
 
+inline std::string BufferStamp(const char* mem, size_t size)
+{
+    using namespace std;
+    char spread[16];
+
+    int n = 16-size;
+    if (n > 0)
+        memset(spread+16-n, 0, n);
+    memcpy(spread, mem, min(size_t(16), size));
+
+    // Now prepare 4 cells for uint32_t.
+    union
+    {
+        uint32_t sum;
+        char cells[4];
+    };
+    memset(cells, 0, 4);
+
+    for (size_t x = 0; x < 4; ++x)
+        for (size_t y = 0; y < 4; ++y)
+        {
+            cells[x] += spread[x+4*y];
+        }
+
+    // Convert to hex string
+
+    ostringstream os;
+
+    os << hex << uppercase << setfill('0') << setw(8) << sum;
+
+    return os.str();
+}
 
 template <class OutputIterator>
 inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
@@ -730,6 +904,28 @@ inline void Split(const std::string & str, char delimiter, OutputIterator tokens
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
     } while (end != std::string::npos);
+}
+
+inline std::string SelectNot(const std::string& unwanted, const std::string& s1, const std::string& s2)
+{
+    if (s1 == unwanted)
+        return s2; // might be unwanted, too, but then, there's nothing you can do anyway
+    if (s2 == unwanted)
+        return s1;
+
+    // Both have wanted values, so now compare if they are same
+    if (s1 == s2)
+        return s1; // occasionally there's a winner
+
+    // Irresolvable situation.
+    return std::string();
+}
+
+inline std::string SelectDefault(const std::string& checked, const std::string& def)
+{
+    if (checked == "")
+        return def;
+    return checked;
 }
 
 template <class It>

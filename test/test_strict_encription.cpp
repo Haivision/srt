@@ -243,7 +243,7 @@ public:
     int SetStrictEncryption(PEER_TYPE peer, bool value)
     {
         const SRTSOCKET &socket = peer == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_STRICTENC, value ? &s_yes : &s_no, sizeof s_yes);
+        return srt_setsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
     }
 
 
@@ -252,7 +252,7 @@ public:
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
         int value = -1;
         int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_STRICTENC, (void*)&value, &value_len), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
         return value ? true : false;
     }
 
@@ -368,13 +368,12 @@ public:
                 EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 if (m_is_tracing)
                 {
-                    std::cout << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
-                    std::cout << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cout << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cout << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
+                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
-            std::cout << "srt_accept() thread finished\n";
         });
 
         if (is_blocking == false)
@@ -382,12 +381,12 @@ public:
 
         if (m_is_tracing)
         {
-            std::cout << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
-            std::cout << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-            std::cout << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cout << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cout << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cout << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
+            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
+            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
+            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
+            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
+            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
@@ -403,7 +402,6 @@ public:
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            std::cout << "Closing the listener socket\n";
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             accepting_thread.join();
         }
@@ -421,7 +419,7 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = true;
+    const bool          m_is_tracing = false;
     static const char*  m_km_state[];
     static const char*  m_socket_state[];
 };

@@ -254,7 +254,7 @@ void CUnitQueue::makeUnitGood(CUnit * unit)
 
 CSndUList::CSndUList():
     m_pHeap(NULL),
-    m_iArrayLength(4096),
+    m_iArrayLength(512),
     m_iLastEntry(-1),
     m_ListLock(),
     m_pWindowLock(NULL),
@@ -271,32 +271,6 @@ CSndUList::~CSndUList()
     pthread_mutex_destroy(&m_ListLock);
 }
 
-void CSndUList::insert(int64_t ts, const CUDT* u)
-{
-   CGuard listguard(m_ListLock);
-
-   // increase the heap array size if necessary
-   if (m_iLastEntry == m_iArrayLength - 1)
-   {
-      CSNode** temp = NULL;
-
-      try
-      {
-         temp = new CSNode*[m_iArrayLength * 2];
-      }
-      catch(...)
-      {
-         return;
-      }
-
-      memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
-      m_iArrayLength *= 2;
-      delete [] m_pHeap;
-      m_pHeap = temp;
-   }
-
-   insert_(ts, u);
-}
 
 void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
@@ -317,6 +291,8 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
       }
 
       remove_(u);
+      insert_norealloc_(1, u);
+      return;
    }
 
    insert_(1, u);
@@ -364,7 +340,7 @@ int CSndUList::pop(ref_t<sockaddr*> r_addr, ref_t<CPacket> r_pkt, ref_t<sockaddr
 
    // insert a new entry, ts is the next processing time
    if (ts > 0)
-      insert_(ts, u);
+      insert_norealloc_(ts, u);
 
    return 1;
 }
@@ -386,13 +362,46 @@ uint64_t CSndUList::getNextProcTime()
    return m_pHeap[0]->m_llTimeStamp_tk;
 }
 
+
+void CSndUList::realloc_()
+{
+   CSNode** temp = NULL;
+
+   try
+   {
+       temp = new CSNode *[2 * m_iArrayLength];
+   }
+   catch (...)
+   {
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+   }
+
+   memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
+   m_iArrayLength *= 2;
+   delete[] m_pHeap;
+   m_pHeap = temp;
+}
+
+
 void CSndUList::insert_(int64_t ts, const CUDT* u)
+{
+    // increase the heap array size if necessary
+    if (m_iLastEntry == m_iArrayLength - 1)
+        realloc_();
+
+    insert_norealloc_(ts, u);
+}
+
+
+void CSndUList::insert_norealloc_(int64_t ts, const CUDT* u)
 {
    CSNode* n = u->m_pSNode;
 
    // do not insert repeated node
    if (n->m_iHeapLoc >= 0)
       return;
+
+   SRT_ASSERT(m_iLastEntry < m_iArrayLength);
 
    m_iLastEntry ++;
    m_pHeap[m_iLastEntry] = n;
@@ -403,16 +412,12 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
    while (p != 0)
    {
       p = (q - 1) >> 1;
-      if (m_pHeap[p]->m_llTimeStamp_tk > m_pHeap[q]->m_llTimeStamp_tk)
-      {
-         CSNode* t = m_pHeap[p];
-         m_pHeap[p] = m_pHeap[q];
-         m_pHeap[q] = t;
-         t->m_iHeapLoc = q;
-         q = p;
-      }
-      else
-         break;
+      if (m_pHeap[p]->m_llTimeStamp_tk <= m_pHeap[q]->m_llTimeStamp_tk)
+          break;
+
+      swap(m_pHeap[p], m_pHeap[q]);
+      m_pHeap[q]->m_iHeapLoc = q;
+      q = p;
    }
 
    n->m_iHeapLoc = q;
@@ -450,10 +455,8 @@ void CSndUList::remove_(const CUDT* u)
 
          if (m_pHeap[q]->m_llTimeStamp_tk > m_pHeap[p]->m_llTimeStamp_tk)
          {
-            CSNode* t = m_pHeap[p];
-            m_pHeap[p] = m_pHeap[q];
+            swap(m_pHeap[p], m_pHeap[q]);
             m_pHeap[p]->m_iHeapLoc = p;
-            m_pHeap[q] = t;
             m_pHeap[q]->m_iHeapLoc = q;
 
             q = p;
@@ -1007,8 +1010,20 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 // In the below call, only the underlying `processRendezvous` function will be attempting
                 // to interpret these data (for caller-listener this was already done by `processConnectRequest`
                 // before calling this function), and it checks for the data presence.
-                if (!i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr))
+                bool success;
+                if (i->m_iID != response.m_iID)
+                { 
+                    success = i->m_pUDT->processAsyncConnectRequest(RST_AGAIN, CONN_AGAIN, response, i->m_pPeerAddr);
+                }
+                else
                 {
+                    success = i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr);
+                }
+
+                if (!success)
+                {
+                    // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
+                    // its already set in this case.
                     LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                     i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
@@ -1148,6 +1163,7 @@ void* CRcvQueue::worker(void* param)
                // - an enqueued rendezvous socket
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+               // CAN RETURN CONN_REJECT, but m_RejectReason is already set
            }
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
            if (cst == CONN_AGAIN)
@@ -1243,7 +1259,8 @@ static string PacketInfo(const CPacket& pkt)
         // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
         // Declaring that the peer supports rexmit flag cuts off the highest bit from
         // the displayed number.
-        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength();
+        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength()
+           << " flags: " << PacketMessageFlagStr(pkt.m_iMsgNo);
     }
 
     return os.str();
@@ -1252,7 +1269,9 @@ static string PacketInfo(const CPacket& pkt)
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
 {
-#ifdef NO_BUSY_WAITING
+#if !USE_BUSY_WAITING
+    // This might be not really necessary, and probably
+    // not good for extensive bidirectional communication.
     m_pTimer->tick();
 #endif
 
@@ -1310,7 +1329,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    int listener_ret = 0;
+    SRT_REJECT_REASON listener_ret = SRT_REJ_UNKNOWN;
     bool have_listener = false;
     {
         CGuard cg(m_LSLock);
@@ -1318,28 +1337,12 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         {
             LOGC(mglog.Note, log << "PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
-            // XXX This returns some very significant return value, which
-            // is completely ignored here.
-            // Actually this is the only place in the code where this
-            // function is being called, so it's hard to say what the
-            // returned value had to serve for.
 
-            // The tricky part is that this is something done "under the hood";
-            // if any problem occurs during this process, then this will simply
-            // drop the connection request. The only user process that is connected
-            // to it is accept() call (or connect() in case of rendezvous), but
-            // the system cannot return an error from accept() just because some
-            // user was attempting to connect, but formulated the connection
-            // request incorrectly.
-
-            // The only thing that could be done in case when the "listen" call
-            // fails, is to probably send a short information packet (once; it's
-            // not so important to make it reach the target) that the connection
-            // has been rejected due to incorrectly formulated request. However
-            // just in order to send anything in response, the actual sender must
-            // be properly known, and this isn't the case of incorrectly formulated
-            // connection request. So, we can only say sorry to ourselves and
-            // do nothing.
+            // This function does return a code, but it's hard to say as to whether
+            // anything can be done about it. In case when it's stated possible, the
+            // listener will try to send some rejection response to the caller, but
+            // that's already done inside this function. So it's only used for
+            // displaying the error in logs.
 
             have_listener = true;
         }
@@ -1353,7 +1356,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     {
         LOGC(mglog.Note, log << CONID() << "Listener managed the connection request from: " << SockaddrToString(addr)
             << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
-        return (listener_ret >= URQ_FAILURE_TYPES ? CONN_REJECT : CONN_CONTINUE);
+        return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
@@ -1384,6 +1387,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
+        u->m_RejectReason = SRT_REJ_CLOSE;
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
         // XXX send UMSG_SHUTDOWN in this case?
