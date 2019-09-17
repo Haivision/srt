@@ -293,7 +293,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
       }
 
       remove_(u);
-      insert_norealloc_(1, u);
+      insert_norealloc_(ClockCpu::null() + DurationCpu(1), u);
       return;
    }
 

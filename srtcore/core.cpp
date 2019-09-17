@@ -1287,10 +1287,9 @@ void CUDT::clearData()
 
    // trace information
    CGuard::enterCS(m_StatsLock);
-   m_tsStartTime_us = ClockSys::now();
-   //m_stats.startTime = CTimer::getTime();
+   m_tsStartTime_us.setnow();
    m_stats.sentTotal = m_stats.recvTotal = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal = m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
-   m_stats.lastSampleTime = CTimer::getTime();
+   m_stats.lastSampleTime.setnow();
    m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
    m_stats.traceRcvRetrans = 0;
    m_stats.traceReorderDistance = 0;
@@ -1326,7 +1325,8 @@ void CUDT::clearData()
    m_stats.m_rcvBytesUndecryptTotal = 0;
    m_stats.traceRcvBytesUndecrypt   = 0;
 
-   m_stats.sndDuration = m_stats.m_sndDurationTotal = DurationSys();
+   m_stats.sndDuration = DurationSys();
+   m_stats.m_sndDurationTotal = DurationSys();
    CGuard::leaveCS(m_StatsLock);
 
 
@@ -1342,8 +1342,6 @@ void CUDT::clearData()
    m_bPeerNakReport = false;
 
    m_bPeerRexmitFlag = false;
-
-   m_llSndDurationTotal = DurationSys();
 
    m_RdvState = CHandShake::RDV_INVALID;
    m_tsRcvPeerStartTime = ClockSys(); // clear clock
@@ -1388,16 +1386,17 @@ void CUDT::open()
 #endif
 */
    // Set up timers
+   // XXX CONSTANTS!!!
    m_rMinNakInt_tk = DurationCpu(300000 * m_ullCPUFrequency);
    m_rMinExpInt_tk = DurationCpu(300000 * m_ullCPUFrequency);
 
-   m_ullACKInt_tk = TimeConvert<TMU_TK>(DurationSys(COMM_SYN_INTERVAL_US), m_ullCPUFrequency);
+   m_rACKInt_tk = TimeConvert<TMU_TK>(DurationSys(COMM_SYN_INTERVAL_US), m_ullCPUFrequency);
    m_rNAKInt_tk = m_rMinNakInt_tk;
 
    ClockCpu currtime_tk = ClockCpu::now();
 
    m_tcLastRspTime_tk = currtime_tk;
-   m_tcNextACKTime_tk = currtime_tk + m_rSYNInt_tk;
+   m_tcNextACKTime_tk = currtime_tk + m_rACKInt_tk;
    m_tcNextNAKTime_tk = currtime_tk + m_rNAKInt_tk;
    m_tcLastRspAckTime_tk = currtime_tk;
    m_tcLastSndTime_tk = currtime_tk;
@@ -4023,7 +4022,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                m_RejectReason = SRT_REJ_RESOURCE;
                m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
                // the request time must be updated so that the next handshake can be sent out immediately.
-               m_llLastReqTime = 0;
+               m_tsLastReqTime_us = ClockSys();
                return CONN_REJECT;
            }
 
@@ -5088,13 +5087,13 @@ SRT_REJECT_REASON CUDT::setupCC()
         m_rMinNakInt_tk = min_nak_tk;
 
     // Update timers 
-    uint64_t currtime_tk;
-    CTimer::rdtsc(currtime_tk);
-    m_ullLastRspTime_tk    = currtime_tk;
-    m_ullNextACKTime_tk    = currtime_tk + m_ullACKInt_tk;
-    m_ullNextNAKTime_tk    = currtime_tk + m_ullNAKInt_tk;
-    m_ullLastRspAckTime_tk = currtime_tk;
-    m_ullLastSndTime_tk    = currtime_tk;
+    ClockCpu currtime_tk;
+    currtime_tk.setnow();
+    m_tcLastRspTime_tk    = currtime_tk;
+    m_tcNextACKTime_tk    = currtime_tk + m_rACKInt_tk;
+    m_tcNextNAKTime_tk    = currtime_tk + m_rNAKInt_tk;
+    m_tcLastRspAckTime_tk = currtime_tk;
+    m_tcLastSndTime_tk    = currtime_tk;
 
 
     HLOGC(mglog.Debug, log << "setupCC: setting parameters: mss=" << m_iMSS
@@ -6079,8 +6078,6 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         // delay the EXP timer to avoid mis-fired timeout
-        uint64_t currtime_tk;
-        CTimer::rdtsc(currtime_tk);
         // (fix keepalive) m_tcLastRspTime_tk = currtime_tk;
         m_tcLastRspAckTime_tk = ClockCpu::now();
         m_iReXmitCount = 1;
@@ -6406,7 +6403,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktRecvACK = m_stats.recvACK;
    perf->pktSentNAK = m_stats.sentNAK;
    perf->pktRecvNAK = m_stats.recvNAK;
-   perf->usSndDuration = m_stats.sndDuration;
+   perf->usSndDuration = m_stats.sndDuration.value;
    perf->pktReorderDistance = m_stats.traceReorderDistance;
    perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
    perf->pktRcvBelated = m_stats.traceRcvBelated;
@@ -6441,7 +6438,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
    perf->pktRecvACKTotal = m_stats.recvACKTotal;
    perf->pktSentNAKTotal = m_stats.sentNAKTotal;
    perf->pktRecvNAKTotal = m_stats.recvNAKTotal;
-   perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+   perf->usSndDurationTotal = m_stats.m_sndDurationTotal.value;
 
    perf->byteSentTotal = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
    perf->byteRecvTotal = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
@@ -6840,6 +6837,8 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
    {
    case UMSG_ACK: //010 - Acknowledgement
       {
+      ClockCpu currtime_tk;
+      currtime_tk.setnow();
       int32_t ack;
 
       // If there is no loss, the ACK is the current largest sequence number plus 1;
@@ -6958,7 +6957,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, void* lparam, void* rparam, int size
 
          // NOTE: m_CongCtl->ACKTimeout_us() should be taken into account.
          // (cast to DurationCpu needed because of 'volatile' modifier)
-         if (currtime_tk - m_tcLastAckTime_tk > DurationCpu(m_rSYNInt_tk))
+         if (currtime_tk - m_tcLastAckTime_tk > DurationCpu(m_rACKInt_tk))
          {
              int rcvRate;
              int ctrlsz = ACKD_TOTAL_SIZE_UDTBASE * ACKD_FIELD_SIZE; // Minimum required size
@@ -7809,7 +7808,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
 }
 
 
-int CUDT::packLostData(CPacket& packet, ClockCpu& ts_tk)
+int CUDT::packLostData(CPacket& packet, ClockSys& origintime)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     CGuard ackguard(m_AckLock);
@@ -7882,6 +7881,7 @@ int CUDT::packLostData(CPacket& packet, ClockCpu& ts_tk)
 }
 
 
+int CUDT::packData(CPacket& packet, ClockCpu& ts_tk)
 {
    int payload = 0;
    bool probe = false;
@@ -8334,10 +8334,10 @@ int CUDT::processData(CUnit* in_unit)
           if (offset < 0)
           {
               IF_HEAVY_LOGGING(exc_type = "BELATED");
-              uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
+              ClockSys tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
               uint64_t bltime = CountIIR(
-                      uint64_t(m_stats.traceBelatedTime) * 1000,
-                      CTimer::getTime() - tsbpdtime, 0.2);
+                      int64_t(m_stats.traceBelatedTime) * 1000,
+                      (ClockSys::now() - tsbpdtime).value, 0.2);
 
               CGuard::enterCS(m_StatsLock);
               m_stats.traceBelatedTime = double(bltime) / 1000.0;
@@ -8485,7 +8485,7 @@ int CUDT::processData(CUnit* in_unit)
           // a given period).
           if (m_CongCtl->needsQuickACK(packet))
           {
-              CTimer::rdtsc(m_ullNextACKTime_tk);
+              m_tcNextACKTime_tk.setnow();
           }
       }
 
@@ -9188,7 +9188,7 @@ void CUDT::addLossRecord(std::vector<int32_t>& lr, int32_t lo, int32_t hi)
     }
 }
 
-void CUDT::checkACKTimer(uint64_t currtime_tk)
+void CUDT::checkACKTimer(ClockCpu currtime_tk)
 {
     if (currtime_tk > m_tcNextACKTime_tk  // ACK time has come
             // OR the number of sent packets since last ACK has reached
@@ -9200,8 +9200,8 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
         sendCtrl(UMSG_ACK);
         currtime_tk.setnow();
 
-        const DurationTk ack_interval_tk = m_Smoother->ACKPeriod() > 0
-            ? DurationTk(m_Smoother->ACKPeriod() * m_ullCPUFrequency)
+        const DurationTk ack_interval_tk = m_CongCtl->ACKTimeout_us() > 0
+            ? DurationTk(m_CongCtl->ACKTimeout_us() * m_ullCPUFrequency)
             : DurationTk(m_rACKInt_tk);
         m_tcNextACKTime_tk = currtime_tk + ack_interval_tk;
 
@@ -9223,7 +9223,7 @@ void CUDT::checkACKTimer(uint64_t currtime_tk)
 }
 
 
-void CUDT::checkNAKTimer(uint64_t currtime_tk)
+void CUDT::checkNAKTimer(ClockCpu currtime_tk)
 {
     // XXX The problem with working NAKREPORT with SRT_ARQ_ONREQ
     // is not that it would be inappropriate, but because it's not
@@ -9255,7 +9255,7 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
     }
 }
 
-bool CUDT::checkExpTimer(uint64_t currtime_tk)
+bool CUDT::checkExpTimer(ClockCpu currtime_tk)
 {
     // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
     // There's nothing in the original code that alters these values.
@@ -9281,7 +9281,7 @@ bool CUDT::checkExpTimer(uint64_t currtime_tk)
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
     if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP)
-                && (currtime_tk - m_tcLastRspTime_tk > DurationTk(PEER_IDLE_TMO_US *, m_ullCPUFrequency)))
+                && (currtime_tk - m_tcLastRspTime_tk > DurationTk(PEER_IDLE_TMO_US * m_ullCPUFrequency)))
     {
         //
         // Connection is broken.

@@ -734,7 +734,7 @@ private: // Generation and processing of packets
     /// @param origintime [in, out] origin timestamp of the packet
     ///
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket& packet, uint64_t& origintime);
+    int packLostData(CPacket& packet, ClockSys& origintime);
 
     int packData(CPacket& packet, ClockCpu& ts);
     int processData(CUnit* unit);
@@ -836,10 +836,10 @@ private: // Timers
     ClockCpu m_tcTargetTime_tk;               // scheduled time of next packet sending
 
     void checkTimers();
-    void checkACKTimer (uint64_t currtime_tk);
-    void checkNAKTimer(uint64_t currtime_tk);
-    bool checkExpTimer (uint64_t currtime_tk);  // returns true if the connection is expired
-    void checkRexmitTimer(uint64_t currtime_tk);
+    void checkACKTimer (ClockCpu currtime_tk);
+    void checkNAKTimer(ClockCpu currtime_tk);
+    bool checkExpTimer (ClockCpu currtime_tk);  // returns true if the connection is expired
+    void checkRexmitTimer(ClockCpu currtime_tk);
 
 public: // For the use of CCryptoControl
     // HaiCrypt configuration

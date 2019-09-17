@@ -460,7 +460,7 @@ enum ClockType { CK_CPU, CK_SYSTEM };
     TU_DEFINE_ASSIGNMENT_CVA(type)
 
 #define TU_DEFINE_OP(thistype, op) \
-    bool operator op (const thistype& r) { return value op r.value; }
+    bool operator op (const thistype& r) const { return value op r.value; }
 
 #define TU_DEFINE_RELOPS(thistype) \
     TU_DEFINE_OP(thistype, ==) \

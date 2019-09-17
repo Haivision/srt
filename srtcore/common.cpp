@@ -263,15 +263,15 @@ void CTimer::sleepto(ClockCpu nexttime)
        __nop ();
 #endif
 #else
-       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
+       const DurationUs wait_us = TimeConvert<TMU_US>(m_ullSchedTime - t, CTimer::getCPUFrequency());
        // The while loop ensures that (t < m_ullSchedTime).
        // Division by frequency may lose precision, therefore can be 0.
-       if (wait_us == 0)
+       if (wait_us.value == 0)
            break;
 
        timeval now;
        gettimeofday(&now, 0);
-       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us.value;
        timespec timeout;
        timeout.tv_sec = time_us / 1000000;
        timeout.tv_nsec = (time_us % 1000000) * 1000;
@@ -942,7 +942,7 @@ std::string FormatTime(ClockSys time)
     return out.str();
 }
 
-std::string logging::FormatDuration(DurationUs dur, TimeUnit u)
+std::string FormatDuration(DurationUs dur, TimeUnit u)
 {
     // Regard only MS and "others, default".
     ostringstream out;

@@ -126,7 +126,7 @@ public:
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(ref_t<int> bytes, ref_t<int> timespan);
 
-   uint64_t getInRatePeriod() const { return m_InRatePeriod; }
+   DurationUs getInRatePeriod() const { return m_InRatePeriod; }
 
    /// Retrieve input bitrate in bytes per second
    int getInputRate() const { return m_iInRateBps; }
@@ -137,23 +137,22 @@ public:
    /// @param [in] bytes  number of payload bytes in those newly added packets
    ///
    /// @return Current size of the data in the sending list.
-   void updateInputRate(uint64_t time, int pkts = 0, int bytes = 0);
+   void updateInputRate(ClockSys time, int pkts = 0, int bytes = 0);
 
 
    void resetInputRateSmpPeriod(bool disable = false)
    {
-       setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US);
+       setInputRateSmpPeriod(disable ? DurationUs() : DurationUs(INPUTRATE_FAST_START_US));
    }
 /* XXX OLD FUNCTIONS:
    int getInputRate(ref_t<int> payloadtsz, ref_t<DurationUs> period);
    void updInputRate(ClockSys time, int pkts, int bytes);
-   void setInputRateSmpPeriod(DurationUs period);
    */
 
 private:
 
    void increase();
-   void setInputRateSmpPeriod(int period);
+   void setInputRateSmpPeriod(DurationUs period);
 
 private:    // Constants
 

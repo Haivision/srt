@@ -226,7 +226,7 @@ void CSndBuffer::setInputRateSmpPeriod(DurationUs period)
    m_InRatePeriod = period; //(usec) 0=no input rate calculation
 }
 
-void CSndBuffer::updInputRate(ClockSys time, int pkts, int bytes)
+void CSndBuffer::updateInputRate(ClockSys time, int pkts, int bytes)
 {
     //no input rate calculation
    if (m_InRatePeriod.value == 0)
@@ -242,15 +242,16 @@ void CSndBuffer::updInputRate(ClockSys time, int pkts, int bytes)
     m_iInRateBytesCount += bytes;
 
     // Trigger early update in fast start mode
-    const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US)
+    const bool early_update = (m_InRatePeriod < DurationUs(INPUTRATE_RUNNING_US))
         && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
 
-    const uint64_t period_us = (time - m_InRateStartTime);
+    const DurationUs period_us = time - m_InRateStartTime;
     if (early_update || period_us > m_InRatePeriod)
     {
         //Required Byte/sec rate (payload + headers)
+        const int64_t million = 1*1000*1000;
         m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
-        m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
+        m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * million) / period_us.value);
         HLOGC(dlog.Debug, log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
                 << " rate=" << (m_iInRateBps*8)/1000
                 << "kbps interval=" << period_us);
@@ -258,7 +259,7 @@ void CSndBuffer::updInputRate(ClockSys time, int pkts, int bytes)
         m_iInRateBytesCount = 0;
         m_InRateStartTime = time;
 
-        setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
+        setInputRateSmpPeriod(DurationUs(INPUTRATE_RUNNING_US));
     }
 }
 
@@ -500,7 +501,7 @@ int CSndBuffer::getAvgBufSize(ref_t<int> r_bytes, ref_t<int> r_tsp)
 
 void CSndBuffer::updAvgBufSize(ClockSys now)
 {
-   const uint64_t elapsed = (now - m_LastSamplingTime).value / 1000; //ms since last sampling
+   const uint64_t elapsed_ms = (now - m_LastSamplingTime).value / 1000; //ms since last sampling
 
    if ((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 > elapsed_ms)
       return;
@@ -1564,14 +1565,14 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     int p, q;
     bool passack;
     bool empty = true;
-    ClockSys rplaytime;
+    ClockSys playtime;
 
     if (m_bTsbPdMode)
     {
         passack = false;
         int seq = 0;
 
-        if (getRcvReadyMsg(Ref(rplaytime), Ref(seq)))
+        if (getRcvReadyMsg(Ref(playtime), Ref(seq)))
         {
             empty = false;
 
@@ -1582,18 +1583,18 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
             ClockSys now = ClockSys::now();
-            if ((now - rplaytime).value/10 < 10)
-                m_ulPdHisto[0][(now - rplaytime).value/10]++;
-            else if ((now - rplaytime).value/100 < 10)
-                m_ulPdHisto[1][(now - rplaytime).value/100]++;
-            else if ((now - rplaytime).value/1000 < 10)
-                m_ulPdHisto[2][(now - rplaytime).value/1000]++;
+            if ((now - playtime).value/10 < 10)
+                m_ulPdHisto[0][(now - playtime).value/10]++;
+            else if ((now - playtime).value/100 < 10)
+                m_ulPdHisto[1][(now - playtime).value/100]++;
+            else if ((now - playtime).value/1000 < 10)
+                m_ulPdHisto[2][(now - playtime).value/1000]++;
             else
                 m_ulPdHisto[3][1]++;
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
         }
 
-        msgctl.srctime = rplaytime.value;
+        msgctl.srctime = playtime.value;
     }
     else
     {
