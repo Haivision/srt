@@ -8183,6 +8183,15 @@ int CUDT::processConnectRequest(const sockaddr* addr, CPacket& packet)
    // required as a source of the peer's information used in processing in other
    // structures.
 
+   // XXX MOST LIKELY this hs should be now copied into m_ConnRes field, which holds
+   // the handshake structure sent from the peer (no matter the role or mode).
+   // This should simplify the createSrtHandshake() function which can this time
+   // simply write the crafted handshake structure into m_ConnReq, which needs no
+   // participation of the local handshake and passing it as a parameter through
+   // newConnection() -> acceptAndRespond() -> createSrtHandshake(). This is also
+   // required as a source of the peer's information used in processing in other
+   // structures.
+
    int32_t cookie_val = bake(addr);
 
    HLOGC(mglog.Debug, log << "processConnectRequest: new cookie: " << hex << cookie_val);
