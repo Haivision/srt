@@ -5220,7 +5220,7 @@ bool CUDT::close()
                m_tsLingerExpiration_us = entertime + DurationUs(m_Linger.l_linger * uint64_t(1000000));
 
             HLOGC(mglog.Debug, log << "CUDT::close: linger-nonblocking, setting expire time T="
-                    << FormatTime(m_ullLingerExpiration));
+                    << FormatTime(m_tsLingerExpiration_us));
 
             return false;
          }
@@ -6696,7 +6696,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         m_dCongestionWindow = m_CongCtl->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
         HLOGC(mglog.Debug, log << "updateCC: updated values from congctl: interval="
-            << DurationCpu(m_ullInterval_tk)
+            << DurationCpu(m_rInterval_tk)
             << " (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
             << std::setprecision(3) << m_dCongestionWindow);
 #endif
@@ -9288,7 +9288,7 @@ bool CUDT::checkExpTimer(ClockCpu currtime_tk)
         // UDT does not signal any information about this instead of to stop quietly.
         // Application will detect this when it calls any UDT methods next time.
         //
-            HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << FormatDuration((currtime_tk - m_tcLastRspTime_tk)/m_ullCPUFrequency));
+        HLOGC(mglog.Debug, log << "CONNECTION EXPIRED after " << FormatDuration(TimeConvert<TMU_US>(currtime_tk - m_tcLastRspTime_tk, m_ullCPUFrequency)));
         m_bClosing = true;
         m_bBroken  = true;
         m_iBrokenCounter = 30;
@@ -9307,7 +9307,7 @@ bool CUDT::checkExpTimer(ClockCpu currtime_tk)
     }
 
     HLOGC(mglog.Debug, log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
-            << " elapsed=" << ((currtime_tk - m_tcLastRspTime_tk)*m_ullCPUFrequency) << "/" << (+COMM_RESPONSE_TIMEOUT_US) << "us");
+            << " elapsed=" << ((currtime_tk - m_tcLastRspTime_tk)*m_ullCPUFrequency) << "/" << (COMM_RESPONSE_TIMEOUT_MS*1000) << "us");
 
     ++m_iEXPCount;
 

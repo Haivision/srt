@@ -1087,7 +1087,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<ClockSys> tsbpdtime, ref_t<int32_t> curpkt
                 HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
                         << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
                         << " pkt %" << curpktseq.get()
-                        << " NOT ready to play (only in " << logging::FormatDuration(towait, TMU_MS) << ")");
+                        << " NOT ready to play (only in " << FormatDuration(towait, TMU_MS) << ")");
                 return false;
             }
 
@@ -1101,7 +1101,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<ClockSys> tsbpdtime, ref_t<int32_t> curpkt
                 HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
                         << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
                         << " pkt %" << curpktseq.get()
-                        << " ready to play (delayed " << logging::FormatDuration(-towait) << ")");
+                        << " ready to play (delayed " << FormatDuration(-towait) << ")");
                 return true;
             }
         }

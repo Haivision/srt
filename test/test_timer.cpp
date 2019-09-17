@@ -29,7 +29,7 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
             uint64_t currtime;
             CTimer::rdtsc(currtime);
 
-            timer.sleepto(currtime + interval_us * freq);
+            timer.sleepto(ClockCpu(currtime + interval_us * freq));
 
             uint64_t new_time;
             CTimer::rdtsc(new_time);

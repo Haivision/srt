@@ -1907,14 +1907,14 @@ void* CUDTUnited::garbageCollect(void* p)
 #if ENABLE_MONOTONIC_CLOCK
        clock_gettime(CLOCK_MONOTONIC, &timeout);
        timeout.tv_sec++;
-       HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(uint64_t(timeout.tv_nsec)/1000 + 1000000*(timeout.tv_sec)));
+       HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(timeout));
 #else
        timeval now;
        gettimeofday(&now, 0);
        timeout.tv_sec = now.tv_sec + 1;
        timeout.tv_nsec = now.tv_usec * 1000;
 
-       HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(uint64_t(now.tv_usec) + 1000000*(timeout.tv_sec)));
+       HLOGC(mglog.Debug, log << "GC: sleep until " << FormatTime(timeout));
 #endif
        pthread_cond_timedwait(
                &self->m_GCStopCond, &self->m_GCStopLock, &timeout);

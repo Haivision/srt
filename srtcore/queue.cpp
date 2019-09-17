@@ -944,7 +944,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // If no packet has been received from the peer,
             // avoid sending too many requests, at most 1 request per 250ms
             nowstime = (now - then).value > 250000;
-            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << logging::FormatTime(then) << " passed=" << (now-then)
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << FormatTime(then) << " passed=" << (now-then)
                     <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
         }
         else
@@ -1614,7 +1614,7 @@ void CRcvQueue::removeListener(const CUDT* u)
 
 void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, ClockSys ttl)
 {
-   HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << logging::FormatTime(ttl));
+   HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << FormatTime(ttl));
    m_pRendezvousQueue->insert(id, u, ipv, addr, ttl);
 }
 

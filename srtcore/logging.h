@@ -405,6 +405,11 @@ inline bool LogDispatcher::CheckEnabled()
 SRT_API std::string FormatTime(ClockSys time);
 SRT_API std::string FormatDuration(DurationUs time, TimeUnit u = TMU_US);
 
+static inline std::string FormatTime(const timespec& tsv)
+{
+    return FormatTime(ClockSys(tsv.tv_nsec/1000 + 1*1000*1000*uint64_t(tsv.tv_sec)));
+}
+
 #if HAVE_CXX11
 
 //extern std::mutex Debug_mutex;
