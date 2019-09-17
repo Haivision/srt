@@ -65,6 +65,9 @@ modified by
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <win/wintime.h>
+#ifndef __MINGW__
+   #include <intrin.h>
+#endif
 #endif
 
 #include <string>
@@ -245,28 +248,34 @@ void CTimer::sleepto(ClockCpu nexttime)
 
    while (t < m_ullSchedTime)
    {
-#ifndef NO_BUSY_WAITING
+#if USE_BUSY_WAITING
 #ifdef IA32
        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
+       __nop ();
 #endif
 #else
+       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
+       // The while loop ensures that (t < m_ullSchedTime).
+       // Division by frequency may lose precision, therefore can be 0.
+       if (wait_us == 0)
+           break;
+
        timeval now;
-       timespec timeout;
        gettimeofday(&now, 0);
-       if (now.tv_usec < 990000)
-       {
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-       }
-       else
-       {
-           timeout.tv_sec = now.tv_sec + 1;
-           timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-       }
+       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+       timespec timeout;
+       timeout.tv_sec = time_us / 1000000;
+       timeout.tv_nsec = (time_us % 1000000) * 1000;
+
        THREAD_PAUSED();
        pthread_mutex_lock(&m_TickLock);
        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
@@ -352,11 +361,11 @@ void CTimer::sleep()
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, DurationUs delay) {
     timeval now;
     gettimeofday(&now, 0);
-    uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay.value;
+    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay.value;
     timespec timeout;
     timeout.tv_sec = time_us / 1000000;
     timeout.tv_nsec = (time_us % 1000000) * 1000;
-    
+
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 
@@ -652,11 +661,6 @@ const char* CUDTException::getErrorMessage()
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   // period
-   #ifndef _WIN32
-   m_strMsg += ".";
-   #endif
-
    return m_strMsg.c_str();
 }
 
@@ -836,7 +840,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmreq",
         "EXT:kmrsp",
         "EXT:sid",
-        "EXT:smoother"
+        "EXT:congctl"
     };
 
 
@@ -856,20 +860,19 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 
 std::string ConnectStatusStr(EConnectStatus cst)
 {
-    return (cst == CONN_CONTINUE
-        ? "INDUCED/CONCLUDING"
-        : cst == CONN_ACCEPT
-        ? "ACCEPTED"
-        : cst == CONN_RENDEZVOUS
-        ? "RENDEZVOUS (HSv5)"
-        : cst == CONN_AGAIN
-        ? "AGAIN"
-        : "REJECTED");
+    return
+          cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
+        : cst == CONN_RUNNING ? "RUNNING"
+        : cst == CONN_ACCEPT ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN ? "AGAIN"
+        : cst == CONN_CONFUSED ? "MISSING HANDSHAKE"
+        : "REJECTED";
 }
 
 std::string TransmissionEventStr(ETransmissionEvent ev)
 {
-    static const std::string vals [] =
+    static const char* const vals [] =
     {
         "init",
         "ack",
@@ -888,7 +891,40 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-std::string logging::FormatTime(ClockSys time)
+extern const char* const srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter type collision"
+};
+
+const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+{
+    int id = rid;
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
+}
+
+// Some logging imps
+#if ENABLE_LOGGING
+
+namespace srt_logging
+{
+
+std::string FormatTime(ClockSys time)
 {
     using namespace std;
 
@@ -899,11 +935,8 @@ std::string logging::FormatTime(ClockSys time)
     struct tm tm = SysLocalTime(tt);
 
     char tmp_buf[512];
-#ifdef _WIN32
-    strftime(tmp_buf, 512, "%Y-%m-%d.", &tm);
-#else
-    strftime(tmp_buf, 512, "%T.", &tm);
-#endif
+    strftime(tmp_buf, 512, "%X.", &tm);
+
     ostringstream out;
     out << tmp_buf << setfill('0') << setw(6) << usec;
     return out.str();
@@ -938,27 +971,25 @@ std::string logging::FormatDuration(DurationUs dur, TimeUnit u)
     return out.str();
 }
 
-// Some logging imps
-#if ENABLE_LOGGING
 
-logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	if (that_enabled)
-	{
+    if (that_enabled)
+    {
         i_file = "";
         i_line = 0;
         flags = that.src_config->flags;
-		// Create logger prefix
-		that.CreateLogLinePrefix(os);
-	}
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
 }
 
-logging::LogDispatcher::Proxy logging::LogDispatcher::operator()()
+LogDispatcher::Proxy LogDispatcher::operator()()
 {
-	return Proxy(*this);
+    return Proxy(*this);
 }
 
-void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
 
@@ -968,22 +999,9 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, 0);
-        time_t t = tv.tv_sec;
-        struct tm tm = SysLocalTime(t);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        // Nice to have %T as "standard time format" for logs,
-        // but it's Single Unix Specification and doesn't exist
-        // on Windows. Use %X on Windows (it's described as
-        // current time without date according to locale spec).
-        //
-        // XXX Consider using %X everywhere, as it should work
-        // on both systems.
-#ifdef _WIN32
         strftime(tmp_buf, 512, "%X.", &tm);
-#else
-        strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-
         serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
     }
 
@@ -1004,7 +1022,7 @@ void logging::LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     }
 }
 
-std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 {
     if ( pretty_function == "" )
         return "";
@@ -1066,4 +1084,7 @@ std::string logging::LogDispatcher::Proxy::ExtractName(std::string pretty_functi
 
     return pretty_function.substr(pos+2);
 }
+
+} // (end namespace srt_logging)
+
 #endif

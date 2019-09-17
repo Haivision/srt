@@ -33,14 +33,16 @@
 
 using namespace std;
 
-std::ostream* transmit_cverb = nullptr;
+
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+bool transmit_printformat_json = false;
+srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
+void* transmit_accept_hook_op = nullptr;
 
-
-string DirectionName(SRT_EPOLL_OPT direction)
+string DirectionName(SRT_EPOLL_T direction)
 {
     string dir_name;
     if (direction)
@@ -101,6 +103,10 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
+#ifdef PLEASE_LOG
+#include "logging.h"
+#endif
+
 class FileTarget: public virtual Target
 {
     ofstream ofile;
@@ -111,12 +117,23 @@ public:
     void Write(const bytevector& data) override
     {
         ofile.write(data.data(), data.size());
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+#endif
     }
 
     bool IsOpen() override { return !!ofile; }
     bool Broken() override { return !ofile.good(); }
     //~FileTarget() { ofile.close(); }
-    void Close() override { ofile.close(); }
+    void Close() override
+    {
+#ifdef PLEASE_LOG
+        extern logging::Logger applog;
+        applog.Debug() << "FileTarget::Close";
+#endif
+        ofile.close();
+    }
 };
 
 // Can't base this class on FileSource and FileTarget classes because they use two
@@ -160,25 +177,79 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 template <class PerfMonType>
 void PrintSrtStats(int sid, const PerfMonType& mon)
 {
-    Verb() << "======= SRT STATS: sid=" << sid;
-    Verb() << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv;
-    Verb() << "LOST PKT SENT: " << mon.pktSndLoss << " RECEIVED: " << mon.pktRcvLoss;
-    Verb() << "REXMIT SENT: " << mon.pktRetrans << " RECEIVED: " << mon.pktRcvRetrans;
-    Verb() << "RATE SENDING: " << mon.mbpsSendRate << " RECEIVING: " << mon.mbpsRecvRate;
-    Verb() << "BELATED RECEIVED: " << mon.pktRcvBelated << " AVG TIME: " << mon.pktRcvAvgBelatedTime;
-    Verb() << "REORDER DISTANCE: " << mon.pktReorderDistance;
-    Verb() << "WINDOW: FLOW: " << mon.pktFlowWindow << " CONGESTION: " << mon.pktCongestionWindow << " FLIGHT: " << mon.pktFlightSize;
-    Verb() << "RTT: " << mon.msRTT << "ms  BANDWIDTH: " << mon.mbpsBandwidth << "Mb/s\n";
-    Verb() << "BUFFERLEFT: SND: " << mon.byteAvailSndBuf << " RCV: " << mon.byteAvailRcvBuf;
+    if (transmit_printformat_json)
+    {
+        cout << "{" << endl;
+        cout << "\t\"sid\":" << sid << "," << endl;
+        cout << "\t\"time\":" << mon.msTimeStamp << "," << endl;
+        cout << "\t\"window\":{" << endl;
+        cout << "\t\t\"flow\":" << mon.pktFlowWindow << "," << endl;
+        cout << "\t\t\"congestion\":" << mon.pktCongestionWindow << "," << endl;
+        cout << "\t\t\"flight\":" << mon.pktFlightSize << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"link\":{" << endl;
+        cout << "\t\t\"rtt\":" << mon.msRTT << "," << endl;
+        cout << "\t\t\"bandwidth\":" << mon.mbpsBandwidth << "," << endl;
+        cout << "\t\t\"maxBandwidth\":" << mon.mbpsMaxBW << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"send\":{" << endl;
+        cout << "\t\t\"packets\":" << mon.pktSent << "," << endl;
+        cout << "\t\t\"packetsLost\":" << mon.pktSndLoss << "," << endl;
+        cout << "\t\t\"packetsDropped\":" << mon.pktSndDrop << "," << endl;
+        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRetrans << "," << endl;
+        cout << "\t\t\"packetsFilterExtra\":" << mon.pktSndFilterExtra << "," << endl;
+        cout << "\t\t\"bytes\":" << mon.byteSent << "," << endl;
+        cout << "\t\t\"bytesDropped\":" << mon.byteSndDrop << "," << endl;
+        cout << "\t\t\"mbitRate\":" << mon.mbpsSendRate << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"recv\":{" << endl;
+        cout << "\t\t\"packets\":" << mon.pktRecv << "," << endl;
+        cout << "\t\t\"packetsLost\":" << mon.pktRcvLoss << "," << endl;
+        cout << "\t\t\"packetsDropped\":" << mon.pktRcvDrop << "," << endl;
+        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRcvRetrans << "," << endl;
+        cout << "\t\t\"packetsBelated\":" << mon.pktRcvBelated << "," << endl;
+        cout << "\t\t\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << "," << endl;
+        cout << "\t\t\"packetsFilterSupplied\":" << mon.pktRcvFilterSupply << "," << endl;
+        cout << "\t\t\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << "," << endl;
+        cout << "\t\t\"bytes\":" << mon.byteRecv << "," << endl;
+        cout << "\t\t\"bytesLost\":" << mon.byteRcvLoss << "," << endl;
+        cout << "\t\t\"bytesDropped\":" << mon.byteRcvDrop << "," << endl;
+        cout << "\t\t\"mbitRate\":" << mon.mbpsRecvRate << endl;
+        cout << "\t}," << endl;
+        cout << "\tfilter:{" << endl;
+        cout << "\t\t\"sndExtra\":" << mon.pktSndFilterExtra << endl;
+        cout << "\t\t\"rcvExtra\":" << mon.pktRcvFilterExtra << endl;
+        cout << "\t\t\"rcvSupply\":" << mon.pktRcvFilterSupply << endl;
+        cout << "\t\t\"rcvLoss\":" << mon.pktRcvFilterLoss << endl;
+        cout << "\t}" << endl;
+        cout << "}" << endl;
+
+        return;
+    }
+
+    cout << "======= SRT STATS: sid=" << sid << endl;
+    cout << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv << endl;
+    cout << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss << endl;
+    cout << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans << endl;
+    cout << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop << endl;
+    cout << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra << endl;
+    cout << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss << endl;
+    cout << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate << endl;
+    cout << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+    cout << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+    cout << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow
+           << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+    cout << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+    cout << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf << endl;
 }
 
 
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
-    if ( Verbose::on )
+    if ( Verbose::on && !par.empty())
     {
-        Verb() << "Parameters:\n";
+        Verb() << "SRT parameters specified:\n";
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
@@ -442,23 +513,20 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
     }
 
-    SrtConfigurePost(sock, m_options);
+    // host is only checked for emptiness and depending on that the connection mode is selected.
+    // Here we are not exactly interested with that information.
+    vector<string> failures;
 
-    for (auto o: srt_options)
+    SrtConfigurePost(sock, m_options, &failures);
+
+
+    if (!failures.empty())
     {
-        if ( o.binding == SocketOption::POST && m_options.count(o.name) )
+        if (Verbose::on)
         {
-            string value = m_options.at(o.name);
-            bool ok = o.apply<SocketOption::SRT>(sock, value);
-            if (Verbose::on)
-            {
-                string dir_name = DirectionName(m_direction);
-
-                if ( !ok )
-                    Verb() << "WARNING: failed to set '" << o.name << "' (post, " << dir_name << ") to " << value;
-                else
-                    Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
-            }
+            Verb() << "WARNING: failed to set options: ";
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
+            Verb();
         }
     }
 
@@ -498,7 +566,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         if (Verbose::on )
         {
             Verb() << "WARNING: failed to set options: ";
-            copy(failures.begin(), failures.end(), ostream_iterator<string>(cout, ", "));
+            copy(failures.begin(), failures.end(), ostream_iterator<string>(*Verbose::cverb, ", "));
             Verb();
         }
 
@@ -583,8 +651,9 @@ void SrtCommon::ConnectClient(string host, int port)
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
+        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "UDT::connect");
+        Error(UDT::getlasterror(), "srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -614,10 +683,15 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(UDT::getlasterror(), "ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src)
+void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
+    if (udtResult == SRT_ECONNREJ)
+    {
+        message += ": ";
+        message += srt_rejectreason_str(reason);
+    }
     if ( Verbose::on )
         Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
     else
@@ -729,16 +803,24 @@ bytevector SrtSource::Read(size_t chunk)
     if ( chunk < data.size() )
         data.resize(chunk);
 
-    CBytePerfMon perf;
-    srt_bstats(m_sock, &perf, true);
-    if ( transmit_bw_report && int(counter % transmit_bw_report) == transmit_bw_report - 1 )
-    {
-        Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-    }
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if ( transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1)
+    CBytePerfMon perf;
+    if (need_stats_report || need_bw_report)
     {
-        PrintSrtStats(m_sock, perf);
+        // clear only if stats report is to be read
+        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
+
+        if (need_bw_report)
+        {
+            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
+        }
+
+        if (need_stats_report)
+        {
+            PrintSrtStats(m_sock, perf);
+        }
     }
 
     ++counter;
@@ -1219,10 +1301,10 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         if ( u.host() == "con" || u.host() == "console" )
         {
             if ( IsOutput<Base>() && (
-                        (Verbose::on && transmit_cverb == &cout)
-                        || transmit_bw_report) )
+                        (Verbose::on && Verbose::cverb == &cout)
+                        || transmit_bw_report || transmit_stats_report) )
             {
-                cerr << "ERROR: file://con with -v or -r would result in mixing the data and text info.\n";
+                cerr << "ERROR: file://con with -v or -r or -s would result in mixing the data and text info.\n";
                 cerr << "ERROR: HINT: you can stream through a FIFO (named pipe)\n";
                 throw invalid_argument("incorrect parameter combination");
             }
@@ -1234,9 +1316,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::SRT:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
@@ -1245,9 +1327,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport <= 1024 )
+        if ( iport < 1024 )
         {
-            cerr << "Port value invalid: " << iport << " - must be >1024\n";
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
@@ -1255,7 +1337,8 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     }
 
-    ptr->uri = move(u);
+    if (ptr)
+        ptr->uri = move(u);
     return ptr;
 }
 

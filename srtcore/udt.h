@@ -109,8 +109,6 @@ modified by
 //use -D_WIN32_WINNT=0x0501
 
 
-#define NO_BUSY_WAITING
-
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __cplusplus
@@ -378,19 +376,19 @@ UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET
                        std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
 UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                         SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
+UDT_API int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 UDT_API int epoll_release(int eid);
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();
-UDT_API int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear = true) SRT_ATR_DEPRECATED;
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
 // This is a C++ SRT API extension. This is not a part of legacy UDT API.
-UDT_API void setloglevel(logging::LogLevel::type ll);
-UDT_API void addlogfa(logging::LogFA fa);
-UDT_API void dellogfa(logging::LogFA fa);
-UDT_API void resetlogfa(std::set<logging::LogFA> fas);
+UDT_API void setloglevel(srt_logging::LogLevel::type ll);
+UDT_API void addlogfa(srt_logging::LogFA fa);
+UDT_API void dellogfa(srt_logging::LogFA fa);
+UDT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
 UDT_API void resetlogfa(const int* fara, size_t fara_size);
 UDT_API void setlogstream(std::ostream& stream);
 UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
@@ -406,8 +404,8 @@ UDT_API std::string getstreamid(UDTSOCKET u);
 // are free to create their own logger configuration objects for their
 // own logger FA objects, or create their own. The object of this type
 // is required to initialize the logger FA object.
-namespace logging { struct LogConfig; }
-UDT_API extern logging::LogConfig srt_logger_config;
+namespace srt_logging { struct LogConfig; }
+UDT_API extern srt_logging::LogConfig srt_logger_config;
 
 
 #endif /* __cplusplus */
