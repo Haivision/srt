@@ -8,45 +8,45 @@
  * 
  */
 
-#ifndef INC__SMOOTHER_H
-#define INC__SMOOTHER_H
+#ifndef INC__CONGCTL_H
+#define INC__CONGCTL_H
 
 #include <map>
 #include <string>
 #include <utility>
 
 class CUDT;
-class SmootherBase;
+class SrtCongestionControlBase;
 
-typedef SmootherBase* smoother_create_t(CUDT* parent);
+typedef SrtCongestionControlBase* srtcc_create_t(CUDT* parent);
 
-class Smoother
+class SrtCongestion
 {
     // Temporarily changed to linear searching, until this is exposed
-    // for a user-defined smoother.
+    // for a user-defined controller.
     // Note that this is a pointer to function :)
 
-    static const size_t N_SMOOTHERS = 2;
+    static const size_t N_CONTROLLERS = 2;
     // The first/second is to mimic the map.
-    typedef struct { const char* first; smoother_create_t* second; } NamePtr;
-    static NamePtr smoothers[N_SMOOTHERS];
+    typedef struct { const char* first; srtcc_create_t* second; } NamePtr;
+    static NamePtr congctls[N_CONTROLLERS];
 
-    // This is a smoother container.
-    SmootherBase* smoother;
+    // This is a congctl container.
+    SrtCongestionControlBase* congctl;
     size_t selector;
 
     void Check();
 
 public:
 
-    // If you predict to allow something to be done on smoother also
+    // If you predict to allow something to be done on controller also
     // before it is configured, call this first. If you need it configured,
     // you can rely on Check().
-    bool ready() { return smoother; }
-    SmootherBase* operator->() { Check(); return smoother; }
+    bool ready() { return congctl; }
+    SrtCongestionControlBase* operator->() { Check(); return congctl; }
 
     // In the beginning it's uninitialized
-    Smoother(): smoother(), selector(N_SMOOTHERS) {}
+    SrtCongestion(): congctl(), selector(N_CONTROLLERS) {}
 
     struct IsName
     {
@@ -59,37 +59,37 @@ public:
     // the 'configure' method is called.
     bool select(const std::string& name)
     {
-        NamePtr* end = smoothers+N_SMOOTHERS;
-        NamePtr* try_selector = std::find_if(smoothers, end, IsName(name));
+        NamePtr* end = congctls+N_CONTROLLERS;
+        NamePtr* try_selector = std::find_if(congctls, end, IsName(name));
         if (try_selector == end)
             return false;
-        selector = try_selector - smoothers;
+        selector = try_selector - congctls;
         return true;
     }
 
     std::string selected_name()
     {
-        if (selector == N_SMOOTHERS)
+        if (selector == N_CONTROLLERS)
             return "";
-        return smoothers[selector].first;
+        return congctls[selector].first;
     }
 
     // Copy constructor - important when listener-spawning
     // Things being done:
-    // 1. The smoother is individual, so don't copy it. Set NULL.
+    // 1. The congctl is individual, so don't copy it. Set NULL.
     // 2. The selected name is copied so that it's configured correctly.
-    Smoother(const Smoother& source): smoother(), selector(source.selector) {}
+    SrtCongestion(const SrtCongestion& source): congctl(), selector(source.selector) {}
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
-    // smoother basing on the value in selector, then
+    // congctl basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
     bool configure(CUDT* parent);
 
-    // Will delete the pinned in smoother object.
+    // Will delete the pinned in congctl object.
     // This must be defined in *.cpp file due to virtual
     // destruction.
-    ~Smoother();
+    ~SrtCongestion();
 
     enum RexmitMethod
     {
@@ -112,7 +112,7 @@ public:
 };
 
 
-class SmootherBase
+class SrtCongestionControlBase
 {
 protected:
     // Here can be some common fields
@@ -131,7 +131,7 @@ protected:
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
     // Constructor in protected section so that this class is semi-abstract.
-    SmootherBase(CUDT* parent);
+    SrtCongestionControlBase(CUDT* parent);
 public:
 
     // This could be also made abstract, but this causes a linkage
@@ -139,9 +139,9 @@ public:
     // and C++ compiler uses the location of the first virtual method as the
     // file to which it also emits the virtual call table. When this is
     // abstract, there would have to be simultaneously either defined
-    // an empty method in smoother.cpp file (obviously never called),
+    // an empty method in congctl.cpp file (obviously never called),
     // or simply left empty body here.
-    virtual ~SmootherBase() { }
+    virtual ~SrtCongestionControlBase() { }
 
     // All these functions that return values interesting for processing
     // by CUDT can be overridden. Normally they should refer to the fields
@@ -156,19 +156,17 @@ public:
     // If not, it will be internally calculated.
     virtual int RTO() { return 0; }
 
-    // How many packets to send one ACK, in packets.
-    // If user-defined, will return nonzero value.  It can enforce extra ACKs
-    // beside those calculated by ACK, sent only when the number of packets
-    // received since the last EXP that fired "fat" ACK does not exceed this
-    // value.
-    virtual int ACKInterval() { return 0; }
+    // Maximum number of packets to trigger ACK sending.
+    // Specifies the number of packets to receive before sending the ACK.
+    // Used by CUDT together with ACKTimeout_us() to trigger ACK packet sending.
+    virtual int ACKMaxPackets() const { return 0; }
 
-    // Periodical timer to send an ACK, in microseconds.
-    // If user-defined, this value in microseconds will be used to calculate
+    // Periodical interval to send an ACK, in microseconds.
+    // If user-defined, this value will be used to calculate
     // the next ACK time every time ACK is considered to be sent (see CUDT::checkTimers).
     // Otherwise this will be calculated internally in CUDT, normally taken
-    // from CPacket::SYN_INTERVAL.
-    virtual int ACKPeriod() { return 0; }
+    // from CUDT::COMM_SYN_INTERVAL_US.
+    virtual int ACKTimeout_us() const { return 0; }
 
     // Called when the settings concerning m_llMaxBW were changed.
     // Arg 1: value of CUDT::m_llMaxBW
@@ -180,13 +178,13 @@ public:
         return false;
     }
 
-    // A smoother is allowed to agree or disagree on the use of particular API.
-    virtual bool checkTransArgs(Smoother::TransAPI , Smoother::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
+    // Particular controller is allowed to agree or disagree on the use of particular API.
+    virtual bool checkTransArgs(SrtCongestion::TransAPI , SrtCongestion::TransDir , const char* /*buffer*/, size_t /*size*/, int /*ttl*/, bool /*inorder*/)
     {
         return true;
     }
 
-    virtual Smoother::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
+    virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
     virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
     {

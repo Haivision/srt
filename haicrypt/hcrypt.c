@@ -41,8 +41,6 @@ void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg);
 static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt_CryptoDir tx)
 {
     hcrypt_Session *crypto;
-    hcrypt_Cipher *cipher;
-    cipher = (hcrypt_Cipher *)cfg->cipher;
     unsigned char *mem_buf;
     size_t mem_siz, inbuf_siz;
 
@@ -50,14 +48,8 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
 
     HCRYPT_PRINTKEY(cfg->secret.str, cfg->secret.len, "cfgkey");
 
-    /* 
-     * If cipher has no special input buffer alignment requirement,
-     * handle it in the crypto session.
-     */
     inbuf_siz = 0;
-    if (NULL == cipher->getinbuf) {
-        inbuf_siz = hcryptMsg_PaddedLen(cfg->data_max_len, 128/8);
-    }
+    inbuf_siz = hcryptMsg_PaddedLen(cfg->data_max_len, 128/8);
 
     /* Allocate crypto session control struct */
     mem_siz = sizeof(hcrypt_Session)	// structure
@@ -77,7 +69,7 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
         crypto->inbuf_siz = inbuf_siz;
     }
 
-    crypto->cipher = cfg->cipher;
+    crypto->cryspr = cfg->cryspr;
     crypto->cfg.data_max_len = cfg->data_max_len;
 
     /* Setup transport packet info */
@@ -110,8 +102,8 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
     crypto->ctx_pair[0].alt = &crypto->ctx_pair[1];
     crypto->ctx_pair[1].alt = &crypto->ctx_pair[0];
 
-    crypto->cipher_data = crypto->cipher->open(cfg->data_max_len);
-    if (NULL == crypto->cipher_data) {
+    crypto->cryspr_cb = crypto->cryspr->open(crypto->cryspr, cfg->data_max_len);
+    if (NULL == crypto->cryspr_cb) {
         free(crypto);
         return NULL;
     }
@@ -150,8 +142,8 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
         HCRYPT_LOG(LOG_ERR, "preshared secret length (%d) smaller than key length (%d)\n", 
                 (int)cfg->secret.len, (int)cfg->key_len);
         return(-1);
-    } else if (NULL == cfg->cipher) {
-        HCRYPT_LOG(LOG_ERR, "%s\n", "no cipher specified");
+    } else if (NULL == cfg->cryspr) {
+        HCRYPT_LOG(LOG_ERR, "%s\n", "no cryspr specified");
         return(-1);
     } else if (0 == cfg->data_max_len) {
         HCRYPT_LOG(LOG_ERR, "%s\n", "no data_max_len specified");
@@ -211,7 +203,7 @@ int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
 
     /* Set this explicitly - this use of this library is SRT only. */
     pcfg->xport = HAICRYPT_XPT_SRT;
-    pcfg->cipher = crypto->cipher;
+    pcfg->cryspr = crypto->cryspr;
     pcfg->key_len = ctx->cfg.key_len;
     if (pcfg->key_len == 0) // not initialized - usual in RX
     {
@@ -278,7 +270,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
     } else { /* Receiver */
 
         /* 
-         * If cipher has no special input buffer alignment requirement,
+         * If cryspr has no special input buffer alignment requirement,
          * handle it in the crypto session.
          */
         inbuf_siz = cryptoSrc->inbuf_siz ;
@@ -303,13 +295,13 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         timerclear(&cryptoClone->km.tx_last);
 
         /* Adjust pointers  pointing into cryproSrc after copy
-           msg_info adn ciphers are extern statics so this is ok*/
+           msg_info and crysprs are extern statics so this is ok*/
         cryptoClone->ctx_pair[0].alt = &cryptoClone->ctx_pair[1];
         cryptoClone->ctx_pair[1].alt = &cryptoClone->ctx_pair[0];
 
-        /* create a new cipher (OpenSSL) context */
-        cryptoClone->cipher_data = cryptoClone->cipher->open(cryptoClone->cfg.data_max_len);
-        if (NULL == cryptoClone->cipher_data) {
+        /* create a new cryspr (OpenSSL) context */
+        cryptoClone->cryspr_cb = cryptoClone->cryspr->open(cryptoClone->cryspr, cryptoClone->cfg.data_max_len);
+        if (NULL == cryptoClone->cryspr_cb) {
             //shred
             free(cryptoClone);
             return(-1);
@@ -341,7 +333,7 @@ int HaiCrypt_Close(HaiCrypt_Handle hhc)
     int rc = -1;
 
     if (crypto) {
-        if (crypto->cipher && crypto->cipher->close) crypto->cipher->close(crypto->cipher_data);
+        if (crypto->cryspr && crypto->cryspr->close) crypto->cryspr->close(crypto->cryspr_cb);
         free(crypto);
         rc = 0;
     }

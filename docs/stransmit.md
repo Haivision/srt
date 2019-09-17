@@ -7,8 +7,8 @@ At the same time it is just a sample application to show some of
 the powerful features of SRT. We encourage you to use SRT library
 itself integrated into your products.
 
-It can be both used as a universal SRT-to-something-else flipper, as
-well as a testing tool for SRT.
+The *srt-live-transmit* can be both used as a universal SRT-to-something-else
+flipper, as well as a testing tool for SRT.
 
 The general usage is the following:
 
@@ -123,14 +123,14 @@ specified in the URI:
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
 
 - **mode**: enforce caller, listener or rendezvous mode
-- **port**: encorce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). This can be used only in **caller mode**.
+- **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). This can be used only in **caller mode**.
 - **blocking**: sets the `SRTO_RCVSYN` for input medium or `SRTO_SNDSYN` for output medium
 - **timeout**: sets `SRTO_RCVTIMEO` for input medium or `SRTO_SNDTIMEO` for output medium
 - **adapter**: sets the adapter for listening in *listener* or *rendezvous* mode
 
 All other parameters are SRT socket options. Here are some most characteristic options:
 
-- **latency**: Sets the maximum accepted transmission latency and should by >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
+- **latency**: Sets the maximum accepted transmission latency and should be >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
 - **passphrase**: Sets the password for the encrypted transmission.
 - **pbkeylen**:  Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
 - **tlpktdrop**: Whether to drop packets that are not delivered on time. Default is on.
@@ -164,15 +164,17 @@ example, **-t:60**. Alternatively you can also separate them by a space,
 but this space must be part of the parameter and not extracted by a
 shell (using quotes or backslash).
 
-- **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 30. Use -1 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
+- **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
     - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
     - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
-- **-chunk, -c** - use given size of the buffer. When 0, it uses default 1316, which is the maximum size for a single SRT sending call
-- **-bandwidth, -bitrate, -b** - slow down sending to not send more data than given bandwidth (in bits per second). Note that it has nothing to do with SRT-controlled bandwidth; rather a possibility to have a "live-alike" reading speed from an infinite-speed input source (such as file). Better to think of it as for "testing purposes" because the real live transmission requires its speed synchronized with TS timestamps and *srt-live-transmit* has no ability to interpret them.
+- **-timeout-mode, -tm** - timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
+- **-chunk, -c** - use given size of the buffer. The default size is 1456 bytes, which is the maximum payload size for a single SRT packet.
 - **-verbose, -v** - display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**
-- **-bandwidth-report, -bitrate-report, -report, -r** - Throw periodic bandwidth reports on the standard output. The value is the number of sending events between reports.
-- **-crash, -k** - Force the program to "crash" (terminate abnormally with core dump) when a problem occurred (even such as connection got broken). This is useful only for developers.
+- **-stats", -stats-report-frequency, -s** - Output periodic SRT statistics reports to the standard output or file (see **-statsout**).
+- **-statsout"** - SRT statistics output: filename. Without this option specified the statistics will be printed to standard output.
+- **-pf, -statspf** - SRT statistics print format. Values: **json**, **csv**, **default**.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
 - **-logfa** - selected FAs in SRT to be logged (default: all is enabled, that is, you can filter out log messages comong from only wanted FAs using this option)
-- **-ttl, -max-loss-delay** - use `SRTO_LOSSMAXTTL` option for all SRT medium (applies delayed sending of loss report, if UDP packet reordering is detected, in the number of packets to be received after the lost one before reporting a loss; the real "reorder tolerance" value is controlled internally, starts from 0, and grows only upon detected packet reordering; this option only defines its maximum value; the sensible value is 10)
 - **-stats-report-frequency, -stats, -s** - how often the statistics for SRT should be displayed (frequency specified like with -r option)
+- **-help, -h** - show help
+- **-version** - show version info

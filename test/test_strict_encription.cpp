@@ -16,12 +16,6 @@
 #include "srt.h"
 
 
-#ifdef __GNUC__
-#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
-#else
-#  define UNUSED(x) UNUSED_ ## x
-#endif
-
 
 enum PEER_TYPE
 {
@@ -104,9 +98,6 @@ static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
 
-static const int SRT_E_TIMEOUT = MJ_AGAIN * 1000 + MN_XMTIMEOUT;
-static const int SRT_E_REJECT  = MJ_SETUP * 1000 + MN_RDAVAIL;
-
 
 /*
  * TESTING SCENARIO
@@ -126,21 +117,21 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
         // STRICTENC         |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |  connect_ret   accept_ret      |ret | error          | rnum|wnum | caller              accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_E_TIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -252,7 +243,7 @@ public:
     int SetStrictEncryption(PEER_TYPE peer, bool value)
     {
         const SRTSOCKET &socket = peer == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_STRICTENC, value ? &s_yes : &s_no, sizeof s_yes);
+        return srt_setsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
     }
 
 
@@ -261,7 +252,7 @@ public:
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
         int value = -1;
         int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_STRICTENC, (void*)&value, &value_len), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
         return value ? true : false;
     }
 
@@ -324,6 +315,7 @@ public:
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
         ASSERT_EQ(SetStrictEncryption(PEER_CALLER, test.strictenc[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
+
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
@@ -351,7 +343,7 @@ public:
         const int epoll_res = WaitOnEpoll(expect);
 
         auto accepting_thread = std::thread([&] {
-            if (epoll_res != SRT_SUCCESS)
+            if (epoll_res == SRT_ERROR)
                 return;
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -376,13 +368,12 @@ public:
                 EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 if (m_is_tracing)
                 {
-                    std::cout << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
-                    std::cout << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cout << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cout << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
+                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
-            std::cout << "srt_accept() thread finished\n";
         });
 
         if (is_blocking == false)
@@ -390,12 +381,12 @@ public:
 
         if (m_is_tracing)
         {
-            std::cout << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
-            std::cout << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-            std::cout << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cout << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cout << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cout << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
+            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
+            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
+            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
+            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
+            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
@@ -411,7 +402,6 @@ public:
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            std::cout << "Closing the listener socket\n";
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             accepting_thread.join();
         }
@@ -429,7 +419,7 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = true;
+    const bool          m_is_tracing = false;
     static const char*  m_km_state[];
     static const char*  m_socket_state[];
 };
@@ -437,7 +427,7 @@ private:
 
 
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking & UNUSED(expect))
+int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
 {
     return SRT_SUCCESS;
 }
@@ -524,6 +514,7 @@ const char* TestStrictEncryption::m_socket_state[] = {
  */
 TEST_F(TestStrictEncryption, PasswordLength)
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
@@ -546,6 +537,9 @@ TEST_F(TestStrictEncryption, PasswordLength)
 
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
+#else
+    EXPECT_EQ(SetPassword(PEER_CALLER, "whateverpassword"), SRT_ERROR);
+#endif
 }
 
 
@@ -581,30 +575,35 @@ TEST_F(TestStrictEncryption, SetGetDefault)
     CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_A_1, Strict_On_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_A_2, Strict_On_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_A_3, Strict_On_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_A_4, Strict_On_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_A_5, Strict_On_On_Pwd_None_None)
 
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_B_1, Strict_On_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_B_2, Strict_On_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_B_3, Strict_On_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_B_4, Strict_On_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_B_5, Strict_On_Off_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_C_1, Strict_Off_On_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_C_2, Strict_Off_On_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_C_3, Strict_Off_On_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_C_4, Strict_Off_On_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_C_5, Strict_Off_On_Pwd_None_None)
 
-
+#ifdef SRT_ENABLE_ENCRYPTION
 CREATE_TEST_CASES(CASE_D_1, Strict_Off_Off_Pwd_Set_Set_Match)
 CREATE_TEST_CASES(CASE_D_2, Strict_Off_Off_Pwd_Set_Set_Mismatch)
 CREATE_TEST_CASES(CASE_D_3, Strict_Off_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_D_4, Strict_Off_Off_Pwd_None_Set)
+#endif
 CREATE_TEST_CASES(CASE_D_5, Strict_Off_Off_Pwd_None_None)
 

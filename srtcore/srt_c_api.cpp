@@ -190,7 +190,6 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) { return CUDT::perfmon(u, perf, 0!=  clear); }
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
 int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
 
@@ -207,21 +206,11 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
     int flag = 0;
 
-#ifdef LINUX
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    if (events) {
-        flag = *events;
-	} else {
-        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
-#else
-    flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-#endif
 
     // call UDT native function
     return CUDT::epoll_add_ssock(eid, s, &flag);
@@ -232,53 +221,49 @@ int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_sso
 
 int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
-	int srt_ev = 0;
-
-	if (events) {
-        srt_ev = *events;
-	} else {
-		srt_ev = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-	}
-
-	return CUDT::epoll_update_usock(eid, u, &srt_ev);
+    return CUDT::epoll_update_usock(eid, u, events);
 }
 
 int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 {
     int flag = 0;
 
-#ifdef LINUX
     if (events) {
         flag = *events;
-	} else {
+    } else {
         flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     }
-#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-    if (events) {
-        flag = *events;
-	} else {
-        flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    }
-#else
-    flag = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-#endif
 
     // call UDT native function
     return CUDT::epoll_update_ssock(eid, s, &flag);
 }
 
 int srt_epoll_wait(
-		int eid,
-		SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
-		int64_t msTimeOut,
-        SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
-{
+      int eid,
+      SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
+      int64_t msTimeOut,
+      SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
+  {
     return UDT::epoll_wait2(
-    		eid,
-    		readfds, rnum, writefds, wnum,
-    		msTimeOut,
-    		lrfds, lrnum, lwfds, lwnum);
+        eid,
+        readfds, rnum, writefds, wnum,
+        msTimeOut,
+        lrfds, lrnum, lwfds, lwnum);
 }
+
+int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
+{
+    return UDT::epoll_uwait(
+        eid,
+        fdsSet,
+        fdsSize,
+        msTimeOut);
+}
+
+// use this function to set flags. Default flags are always "everything unset".
+// Pass 0 here to clear everything, or nonzero to set a desired flag.
+// Pass -1 to not change anything (but still get the current flag value).
+int32_t srt_epoll_set(int eid, int32_t flags) { return CUDT::epoll_set(eid, flags); }
 
 int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
@@ -317,5 +302,17 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
+enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+{
+    return CUDT::rejectReason(sock);
+}
+
+int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL));
+
+    return CUDT::installAcceptHook(lsn, hook, opaq);
+}
 
 }
