@@ -2,13 +2,139 @@
 Abstract
 ========
 
-Redundancy is a technique of sending the data simultaneously over more than
-one network link. This is mainly predicted to maintain the possible problem of
-uncertainty of the link stability, which may also help, in extreme cases, with
-the "spike" problems resulting in short-living network congestion. In particular,
-when it happens that one of the links unexpectedly delays or gets broken, the
-data should be still continuously received over the other link, with no observable
-disturbances for the client, as long as at least one link is up and running.
+The general concept of the socket groups means having a group that contains
+multiple sockets and therefore one operation for sending one data signal is
+applied to the group, whereas single sockets inside the group will take this
+operation over and do what is necessary to deliver this signal to the receiver.
+
+Most group types predict that a group is mirrored on the peer network node,
+so all particular links connect the exactly same network nodes. Just possibly
+every link uses a different network path, but finally they resolve to the
+same node.
+
+The Redundancy and Backup group types are predicted to solve the problem of
+unexpected network problems - both breaking and the "spike" problems resulting
+in short-living network congestion. In particular, when it happens that one of
+the links unexpectedly delays or gets broken, the data should be still
+received over the other link, with no observable disturbances for the client,
+as long as at least one link is up and running.
+
+Out of all currently known types of groups (note that not all of them are
+currently implemented in SRT) we have the following:
+
+
+1. Redundancy
+-------------
+
+This is the simplest group type. The payload sent for a group will be then
+sent over every single link in the group simultaneously. On the reception
+side the payloads will be sorted out and redundant packets that have
+arrived over another link are simply discarded.
+
+
+2. Backup
+---------
+
+This solution is more complicated and more challenging for the settings.
+It means that there are multiple connections established, as needed for
+every link being a member of the group, but only one connection at a time
+is used for sending the signal. At the moment when a link is only suspected
+of being already broken by seeing the peer delaying too long with the response,
+another link is activated and all packets that haven't been ACK-ed yet on
+this link are first completely sent over the newly activated link, then
+parallel sending continues until the situation over the suspected broken
+link finally resolves - either it really gets broken or returns to stability.
+After it turns out that more than one link is currently stable, the most
+preferred link is selected to remain with the transmission, while others
+are silenced.
+
+This mode allows also to set link priorities - the lower, the more preferred.
+
+If you don't specify priorities, the second connected link need not
+take over sending, although as this is resolved through sorting, then
+whichever link out of those with the same priority would take over when
+all links are stable is undefined.
+
+
+3. Bonding (NOT IMPLEMENTED - a concept)
+----------------------------------------
+
+The idea of bonding means that there are multiple network links used for
+carrying out the same transmission, however a single input signal should
+distribute the incoming packets between the links so that one link can
+leverage the bandwith burden of the other. Note that this group is not
+directly used as protection - it is normally predicted to work with a
+condition that a single link out of all links in the group would not be
+able to withstand the bitrate of the signal, and the best case protection
+could be when you use, for example, three links currently, while two
+would be able to withstand the bitrate of the signal, or when you have
+two links to carry the signal normally and one backup that would take
+over when one of these two gets broken.
+
+This mode should allow to set the expected percentage of the traffic
+to be sent over particular link, while all should sum up to at least
+100% (overhead space can be used in case when one link gets broken,
+that is, when after a link is broken you still have at least 100%
+capacity covered, the transmission continues, otherwise the whole
+group link will be broken).
+
+
+4. Multicast (NOT IMPLEMENTED - a concept)
+------------------------------------------
+
+This group - unlike all others - is not predicted to send one signal
+between two network nodes over multiple links, but rather a method of
+receiving a data stream sent from a stream server by multiple receivers.
+
+Multicast sending is using the feature of UDP multicast, however the
+connection concept is still in force. The concept of multicast groups
+is predicted to facilitate the multicast abilities provided by the router
+in the LAN, while still maintain the advantages of SRT.
+
+When you look at the difference that UDP multicast provides you towards
+a dedicated peer-to-peer sending, there are two:
+
+* you can join a running transmission at any time, without having
+the sender do something especially for you (the router IGMP subscription
+does the whole job)
+
+* the data stream is sent exactly ONCE from the stream sender to the
+router, while the router sends also one data stream to the switch; how
+much of a burden to the rest it is, depends then on the switch: older
+ones get one signal to be picked up by those interested, newer ones
+pass through this signal to only those nodes that have IGMP subscription;
+nevertheless, the advantage here is that the same data stream is sent
+once instead of being sent multiple times over the same link, at least
+between the stream sender and the router
+
+The multicast groups in SRT are predicted to use this very advantage.
+
+While the connection still must be maintained as before, the dedicted
+UDP link that results from it is predicted to carry out only the control
+traffic. For the data traffic there would be a UDP multicast group IP
+address established and all nodes that connect to the stream sender using
+a multicast group will then receive the data stream from the multicast
+group.
+
+This method has limitations on the connection setup. You should then
+make a listener on the side where you want to have a stream sender, and
+set it up for multicast group. Then, a connection is established over
+an individual link, as usual. But beside the data that would be sent
+over a dedicated link, the data being sent to the group on the sender
+side will be actually sent to the multicast address (unlike in Backup
+and Redundancy groups, where these are normally sent over the channel
+that particular socket is using). The connecting receiver party is then
+automatically subscribed to this group and it receives the data packets
+over there, just as if this would be a second channel over which the
+group is able to receive data.
+
+Note that sending the data over a single link is still possible and
+likely used for retransmission. The retransmission feature is still
+handled on a single link, although most likely it can be allowed that
+if more than 2 links report loss of the exactly same packet, the
+retransmission may use the multicast link instead of the individual
+link - whichever would spare more bandwidth would be used.
+
 
 
 Socket groups in SRT
@@ -281,5 +407,96 @@ the state of "idle", and will be deleted before it could be used.
 And finally, a group can be closed. In this case, it internally closes first
 all sockets that are members of this group, then the group itself is deleted.
 
+
+Application support
+===================
+
+Currently only the `srt-test-live` application is supporting a syntax for
+socket groups.
+
+The syntax is as usual with "source" and "target", however you can specify
+multiple sources or multiple targets when you want you want to utilize
+socket groups. For this case, the `-g` option is predicted, which should
+be best understood as a split-point between specification of source and
+target.
+
+The general syntax (there will be also a simplified syntax, so read on) when
+you want to have a source signal as a group:
+
+```
+./srt-test-live <SRT-link1> <SRT-link2> -g <target-URI>
+```
+
+and for sending over a groupwise link:
+
+```
+./srt-test-live <source-URI> -g <SRT-link1> <SRT-link2> ...
+```
+
+The most direct (but hardest in use) method to specify a groupwise link is:
+
+```
+srt:////group?type=<grouptype>&nodes=host1:port1,host2:port2 (&other=options...)
+```
+
+But, as this can be handled with SRT type URI only, and as usually single
+socket options apply the same for every link anyway, there's a simplified
+syntax - HIGHLY RECOMMENDED - for specifying the group - let's take an
+example with additionally setting the `latency` option (REMEMBER: when
+specifying the argument with `&` inside in the POSIX shell, you need to enclose
+it with apostrophes or put backslash before it):
+
+```
+srt://*?type=redundancy&latency=500 host1:5000 host2:5000 host3:5000
+```
+
+By specifying the SRT URI with placing `*` as a host, you define this as
+a "header URI" for the whole group. The nodes themselves are then specified
+in the arguments following this one. The list of nodes is terminated either
+by the end of arguments or other options, including the `-g` option that
+can be followed by the target URI specification, in case when the group
+was specified as a source.
+
+So, a complete command line to read from a group connected over links
+to hosts "alpha" and "beta", both with port 5000, and then resending it
+to local UDP multicast `239.255.133.10:5999` would be:
+
+```
+./srt-test-live srt://*?type=redundancy alpha:5000 beta:5000 -g udp://239.255.133.10:5999
+```
+
+Note that this specifies the caller. On the side where you want to
+set up a listener where you'd receive a caller's connection you must
+set the `groupconnect` option (here let's say you get the source signal
+from a device that streams to this machine to port 5555):
+
+```
+./srt-test-live udp://:5555 srt://:5000?groupconnect=true
+```
+
+Currently implemented group types are Redundancy and Backup. For backup
+groups you have a priority parameter available under a `pri` key, so
+you use the following syntax:
+
+```
+./srt-test-live srt://*?type=backup alpha:5000?pri=1 beta:5000?pri=0 -g udp://239.255.133.10:5999
+```
+
+Here the `beta` host has higher priority than `alpha`, so when both
+links are established, it should use the host `beta` to send the data,
+switch to `alpha` when this one is broken, and then switch back to `beta`,
+when this link is back online.
+
+Note that in case of backup groups, you may need to preserve some "latency
+tax" - if the latency is too low, the recognition of the link unstability may
+happen too late and you'll see your signal temporarily broken when switching
+because the data could not be recovered fast enough by resending again all
+unacknowledged data. According to the tests on the local network it turns out
+that the most sensible unstability timeout is about 50ms, while normally ACK
+timeout is 30ms, so extra 100ms latency tax seems to be an absolute minimum.
+
+The stability timeout can be configured through `groupstabtimeo` option.
+Note that with increased stability timeout, the necessary "latency tax"
+grows as well.
 
 
