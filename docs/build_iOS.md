@@ -21,7 +21,7 @@ Results (both libraries and headers) will be placed in bin/&lt;SDK_VERSION&gt;-&
 Now you can build SRT providing path to OpenSSL library and toolchain file for iOS
 
 ```
-./configure --cmake-prefix-path=$IOS_OPENSSL --cmake-toolchain-file=scripts/iOS.cmake
+./configure --cmake-prefix-path=$IOS_OPENSSL --use-openssl-pc=OFF --cmake-toolchain-file=scripts/iOS.cmake
 make
 ```
 
@@ -42,5 +42,3 @@ Click plus sign in **Embedded binaries** section and choose Frameworks/libsrt.1.
 
 In **Build settings** tab find **Header Search Paths** setting  
 and add paths to SRT library sources (you should add srt, srt/common and srt/common directories). 
- 
-

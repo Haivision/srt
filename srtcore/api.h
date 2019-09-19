@@ -73,7 +73,7 @@ public:
    CUDTSocket();
    ~CUDTSocket();
 
-   SRT_SOCKSTATUS m_Status;                       //< current socket state
+   SRT_SOCKSTATUS m_Status;                  //< current socket state
 
    uint64_t m_TimeStamp;                     //< time when the socket is closed
 
@@ -128,7 +128,7 @@ public:
 
 public:
 
-   std::string CONID(SRTSOCKET sock) const;
+   static std::string CONID(SRTSOCKET sock);
 
       /// initialize the UDT library.
       /// @return 0 if success, otherwise -1 is returned.
@@ -153,7 +153,10 @@ public:
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
-   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+   int newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt,
+           ref_t<SRT_REJECT_REASON> r_error);
+
+   int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 
       /// look up the UDT entity according to its ID.
       /// @param [in] u the UDT socket ID.
@@ -187,6 +190,8 @@ public:
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
+   int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+   int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
 
       /// record the UDT exception.
@@ -270,19 +275,16 @@ inline std::string SockaddrToString(const sockaddr* sadr)
 
     std::ostringstream output;
     char hostbuf[1024];
+    int flags;
 
 #if ENABLE_GETNAMEINFO
-    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, NI_NAMEREQD))
-    {
-        output << hostbuf;
-    }
-    else
+    flags = NI_NAMEREQD;
+#else
+    flags = NI_NUMERICHOST | NI_NUMERICSERV;
 #endif
+
+    if (!getnameinfo(sadr, sizeof(*sadr), hostbuf, 1024, NULL, 0, flags))
     {
-        if (inet_ntop(sadr->sa_family, addr, hostbuf, 1024) == NULL)
-        {
-            strcpy(hostbuf, "unknown");
-        }
         output << hostbuf;
     }
 

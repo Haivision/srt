@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 // setup exports
-#if defined WIN32 && !defined __MINGW__
+#if defined _WIN32 && !defined __MINGW__
 #ifdef HAICRYPT_DYNAMIC
 #ifdef HAICRYPT_EXPORTS
 #define HAICRYPT_API __declspec(dllexport)
@@ -42,21 +42,10 @@ extern "C" {
 #else
 #define HAICRYPT_API
 #endif
-/* 
- * Define (in Makefile) the HaiCrypt ciphers compiled in
- */
-//#define HAICRYPT_USE_OPENSSL_EVP 1    /* Preferred for most cases */
-//#define HAICRYPT_USE_OPENSSL_AES 1    /* Mandatory for key wrapping and prng */
 
-typedef void *HaiCrypt_Cipher;
+typedef void *HaiCrypt_Cryspr;
 
-HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_Get_Instance (void);     /* Return a efault cipher instance */
-
-HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP(void);       /* OpenSSL EVP interface (default to EVP_CTR) */
-HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);   /* OpenSSL EVP interface for AES-CBC */
-HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CTR(void);   /* OpenSSL EVP interface for AES-CTR */
-HAICRYPT_API HaiCrypt_Cipher HaiCryptCipher_OpenSSL_AES(void);   /* OpenSSL AES direct interface */
-
+HAICRYPT_API HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance (void);     /* Return a default cryspr instance */
 
 #define HAICRYPT_CIPHER_BLK_SZ      16  /* AES Block Size */
 
@@ -91,7 +80,7 @@ typedef struct {
 
         HaiCrypt_Secret secret;             /* Security Association */
 
-        HaiCrypt_Cipher cipher;             /* Media Stream cipher implementation */
+        HaiCrypt_Cryspr cryspr;             /* CRYSPR implementation */
 #define HAICRYPT_DEF_KEY_LENGTH 16          /* default key length (bytes) */
         size_t  key_len;                    /* SEK length (bytes) */
 #define HAICRYPT_DEF_DATA_MAX_LENGTH 1500   /* default packet data length (bytes) */

@@ -50,7 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
 #endif
@@ -64,6 +64,7 @@ modified by
 #include "queue.h"
 
 using namespace std;
+using namespace srt_logging;
 
 CUnitQueue::CUnitQueue():
 m_pQEntry(NULL),
@@ -235,9 +236,27 @@ CUnit* CUnitQueue::getNextAvailUnit()
 }
 
 
+void CUnitQueue::makeUnitFree(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
+    unit->m_iFlag = CUnit::FREE;
+    --m_iCount;
+}
+
+
+void CUnitQueue::makeUnitGood(CUnit * unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
+    unit->m_iFlag = CUnit::GOOD;
+    ++m_iCount;
+}
+
+
 CSndUList::CSndUList():
     m_pHeap(NULL),
-    m_iArrayLength(4096),
+    m_iArrayLength(512),
     m_iLastEntry(-1),
     m_ListLock(),
     m_pWindowLock(NULL),
@@ -254,32 +273,6 @@ CSndUList::~CSndUList()
     pthread_mutex_destroy(&m_ListLock);
 }
 
-void CSndUList::insert(int64_t ts, const CUDT* u)
-{
-   CGuard listguard(m_ListLock);
-
-   // increase the heap array size if necessary
-   if (m_iLastEntry == m_iArrayLength - 1)
-   {
-      CSNode** temp = NULL;
-
-      try
-      {
-         temp = new CSNode*[m_iArrayLength * 2];
-      }
-      catch(...)
-      {
-         return;
-      }
-
-      memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
-      m_iArrayLength *= 2;
-      delete [] m_pHeap;
-      m_pHeap = temp;
-   }
-
-   insert_(ts, u);
-}
 
 void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
@@ -300,6 +293,8 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
       }
 
       remove_(u);
+      insert_norealloc_(1, u);
+      return;
    }
 
    insert_(1, u);
@@ -321,6 +316,21 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
    CUDT* u = m_pHeap[0]->m_pUDT;
    remove_(u);
 
+#define UST(field) ( (u->m_b##field) ? "+" : "-" ) << #field << " "
+
+   HLOGC(mglog.Debug, log << "SND:pop: requesting packet from @" << u->socketID()
+           << " STATUS: "
+           << UST(Listening)
+           << UST(Connecting)
+           << UST(Connected)
+           << UST(Closing)
+           << UST(Shutdown)
+           << UST(Broken)
+           << UST(PeerHealth)
+           << UST(Opened)
+        );
+#undef UST
+
    if (!u->m_bConnected || u->m_bBroken)
       return -1;
 
@@ -332,7 +342,7 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 
    // insert a new entry, ts is the next processing time
    if (ts > 0)
-      insert_(ts, u);
+      insert_norealloc_(ts, u);
 
    return 1;
 }
@@ -354,13 +364,46 @@ uint64_t CSndUList::getNextProcTime()
    return m_pHeap[0]->m_llTimeStamp_tk;
 }
 
+
+void CSndUList::realloc_()
+{
+   CSNode** temp = NULL;
+
+   try
+   {
+       temp = new CSNode *[2 * m_iArrayLength];
+   }
+   catch (...)
+   {
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+   }
+
+   memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
+   m_iArrayLength *= 2;
+   delete[] m_pHeap;
+   m_pHeap = temp;
+}
+
+
 void CSndUList::insert_(int64_t ts, const CUDT* u)
+{
+    // increase the heap array size if necessary
+    if (m_iLastEntry == m_iArrayLength - 1)
+        realloc_();
+
+    insert_norealloc_(ts, u);
+}
+
+
+void CSndUList::insert_norealloc_(int64_t ts, const CUDT* u)
 {
    CSNode* n = u->m_pSNode;
 
    // do not insert repeated node
    if (n->m_iHeapLoc >= 0)
       return;
+
+   SRT_ASSERT(m_iLastEntry < m_iArrayLength);
 
    m_iLastEntry ++;
    m_pHeap[m_iLastEntry] = n;
@@ -371,16 +414,12 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
    while (p != 0)
    {
       p = (q - 1) >> 1;
-      if (m_pHeap[p]->m_llTimeStamp_tk > m_pHeap[q]->m_llTimeStamp_tk)
-      {
-         CSNode* t = m_pHeap[p];
-         m_pHeap[p] = m_pHeap[q];
-         m_pHeap[q] = t;
-         t->m_iHeapLoc = q;
-         q = p;
-      }
-      else
-         break;
+      if (m_pHeap[p]->m_llTimeStamp_tk <= m_pHeap[q]->m_llTimeStamp_tk)
+          break;
+
+      swap(m_pHeap[p], m_pHeap[q]);
+      m_pHeap[q]->m_iHeapLoc = q;
+      q = p;
    }
 
    n->m_iHeapLoc = q;
@@ -418,10 +457,8 @@ void CSndUList::remove_(const CUDT* u)
 
          if (m_pHeap[q]->m_llTimeStamp_tk > m_pHeap[p]->m_llTimeStamp_tk)
          {
-            CSNode* t = m_pHeap[p];
-            m_pHeap[p] = m_pHeap[q];
+            swap(m_pHeap[p], m_pHeap[q]);
             m_pHeap[p]->m_iHeapLoc = p;
-            m_pHeap[q] = t;
             m_pHeap[q]->m_iHeapLoc = q;
 
             q = p;
@@ -486,7 +523,7 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    ThreadName tn("SRT:SndQ:worker");
    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
    {
-	   m_WorkerThread = pthread_t();
+       m_WorkerThread = pthread_t();
        throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
    }
 }
@@ -511,7 +548,7 @@ void* CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = 5000000LL * CTimer::getCPUFrequency();
+    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
     self->m_ullDbgTime += self->m_ullDbgPeriod;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
@@ -608,7 +645,7 @@ int CSndQueue::sendto(const sockaddr* addr, CPacket& packet)
 {
    // send out the packet immediately (high priority), this is a control packet
    m_pChannel->sendto(addr, packet);
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 
@@ -866,95 +903,147 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, ref_t<SRTSOCKET> r_id)
    return NULL;
 }
 
-void CRendezvousQueue::updateConnStatus(EConnectStatus cst, const CPacket& response)
+void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& response)
 {
-   if (m_lRendezvousID.empty())
-      return;
+    CGuard vg(m_RIDVectorLock);
 
-   CGuard vg(m_RIDVectorLock);
+    if (m_lRendezvousID.empty())
+        return;
 
-   int debug_nupd = 0;
-   int debug_nrun = 0;
+    HLOGC(mglog.Debug, log << "updateConnStatus: updating after getting pkt id=" << response.m_iID << " status: " << ConnectStatusStr(cst));
 
-   HLOGC(mglog.Debug, log << "updateConnStatus: updating after getting pkt id=" << response.m_iID << " status: " << ConnectStatusStr(cst));
+#if ENABLE_HEAVY_LOGGING
+    int debug_nupd = 0;
+    int debug_nrun = 0;
+    int debug_nfail = 0;
+#endif
 
-   list<CRL>::iterator i = m_lRendezvousID.begin();
-   while (i != m_lRendezvousID.end())
-   {
-       // NOTE: This is a SAFE LOOP.
-       // Incrementation will be done at the end, after the processing did not
-       // REMOVE the currently processed element. When the element was removed,
-       // the iterator value for the next iteration will be taken from erase()'s result.
+    for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
+    {
+        ++i_next;
+        // NOTE: This is a SAFE LOOP.
+        // Incrementation will be done at the end, after the processing did not
+        // REMOVE the currently processed element. When the element was removed,
+        // the iterator value for the next iteration will be taken from erase()'s result.
 
-       ++debug_nrun;
-      // avoid sending too many requests, at most 1 request per 250ms
-      uint64_t now = CTimer::getTime();
-      uint64_t then = i->m_pUDT->m_llLastReqTime;
-      bool nowstime = (now - then) > 250000;
+        // RST_AGAIN happens in case when the last attempt to read a packet from the UDP
+        // socket has read nothing. In this case it would be a repeated update, while
+        // still waiting for a response from the peer. When we have any other state here
+        // (most expectably CONN_CONTINUE or CONN_RENDEZVOUS, which means that a packet has
+        // just arrived in this iteration), do the update immetiately (in SRT this also
+        // involves additional incoming data interpretation, which wasn't the case in UDT).
+        uint64_t then = i->m_pUDT->m_llLastReqTime;
+        uint64_t now = CTimer::getTime();
+        bool nowstime = true;
 
-      HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
-          << " -- now's " << (nowstime ? "" : "NOT ") << "the time");
+        // Use "slow" cyclic responding in case when
+        // - RST_AGAIN (no packet was received for whichever socket)
+        // - a packet was received, but not for THIS socket
+        if (rst == RST_AGAIN || i->m_iID != response.m_iID)
+        {
+            // If no packet has been received from the peer,
+            // avoid sending too many requests, at most 1 request per 250ms
+            nowstime = (now - then) > 250000;
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now-then)
+                    <<  "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+        }
 
-      if (nowstime)
-      {
-          // XXX This guy... has created a loop that rolls in infinity without any
-          // sleeps inside and makes it once per about 50 calls send a hs conclusion
-          // for a randomly sampled rendezvous ID of a socket out of the list.
-          // Ok, probably the rendezvous ID should be just one so not much to
-          // sample from, but if so, why the container?
-          //
-          // This must be somehow fixed!
-         if (CTimer::getTime() >= i->m_ullTTL)
-         {
-            HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED. removing from queue");
-            // connection timer expired, acknowledge app via epoll
-            i->m_pUDT->m_bConnecting = false;
-            CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
-            /*
-            * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
-            * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
-            * and may crash here on next pass.
-            */
-            if (AF_INET == i->m_iIPversion)
-               delete (sockaddr_in*)i->m_pPeerAddr;
-            else
-               delete (sockaddr_in6*)i->m_pPeerAddr;
+#if ENABLE_HEAVY_LOGGING
+        ++debug_nrun;
+#endif
+        if (nowstime)
+        {
+            // XXX This looks like a loop that rolls in infinity without any sleeps
+            // inside and makes it once per about 50 calls send a hs conclusion
+            // for a randomly sampled rendezvous ID of a socket out of the list.
+            // Ok, probably the rendezvous ID should be just one so not much to
+            // sample from, but if so, why the container?
+            //
+            // This must be somehow fixed!
+            //
+            // Maybe the time should be simply checked once and the whole loop not
+            // done when "it's not the time"?
+            if (CTimer::getTime() >= i->m_ullTTL)
+            {
+                HLOGC(mglog.Debug, log << "RendezvousQueue: EXPIRED ("
+                        << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
+                        << ". removing from queue");
+                // connection timer expired, acknowledge app via epoll
+                i->m_pUDT->m_bConnecting = false;
+                CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
+                /*
+                 * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
+                 * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
+                 * and may crash here on next pass.
+                 */
+                if (AF_INET == i->m_iIPversion)
+                    delete (sockaddr_in*)i->m_pPeerAddr;
+                else
+                    delete (sockaddr_in6*)i->m_pPeerAddr;
 
-            i = m_lRendezvousID.erase(i);
-            continue;
-         }
+                // i_next was preincremented, but this is guaranteed to point to
+                // the element next to erased one.
+                i_next = m_lRendezvousID.erase(i);
+                continue;
+            }
 
-         // This queue is used only in case of Rendezvous or Async mode caller-listener.
-         // Synchronous connection requests are handled in startConnect() completely.
-         // XXX Most likely this is just an ASYNC ONLY procedure, not even needed for
-         // rendezvous (blocking rendezvous is also managed in startConnect).
-         // Don't run this when CONN_AGAIN because this means that no unit has been read
-         // from the peer ever.
-         if (cst != CONN_AGAIN && (i->m_pUDT->m_bRendezvous || !i->m_pUDT->m_bSynRecving))
-         {
-             ++debug_nupd;
-             list<CRL>::iterator i_next = i;
-             ++i_next;
-             if (i->m_pUDT->processAsyncConnectRequest(cst, response, i->m_pPeerAddr))
-             {
-                 // This has been processed and most likely removed.
-                 i = i_next;
-                 continue;
-             }
-         }
-         /*
-            This debug log is blocked because it is sent multiple times in a millisecond without a good reason.
-         else
-         {
-             HLOGC(mglog.Debug, log << "updateConnStatus: RendezvousQueue not to send CONCLUSION for the non-rdv sokket.");
-         }
-         // */
-      }
+            // This queue is used only in case of Async mode (rendezvous or caller-listener).
+            // Synchronous connection requests are handled in startConnect() completely.
+            if (!i->m_pUDT->m_bSynRecving)
+            {
+#if ENABLE_HEAVY_LOGGING
+                ++debug_nupd;
+#endif
+                // IMPORTANT INFORMATION concerning changes towards UDT legacy.
+                // In the UDT code there was no attempt to interpret any incoming data.
+                // All data from the incoming packet were considered to be already deployed into
+                // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
+                // Therefore this procedure did only one thing: craft a new handshake packet and send it.
+                // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
+                // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
+                // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
+                // due to have received the packet (RST_OK).
+                //
+                // In the below call, only the underlying `processRendezvous` function will be attempting
+                // to interpret these data (for caller-listener this was already done by `processConnectRequest`
+                // before calling this function), and it checks for the data presence.
+                bool success;
+                if (i->m_iID != response.m_iID)
+                { 
+                    success = i->m_pUDT->processAsyncConnectRequest(RST_AGAIN, CONN_AGAIN, response, i->m_pPeerAddr);
+                }
+                else
+                {
+                    success = i->m_pUDT->processAsyncConnectRequest(rst, cst, response, i->m_pPeerAddr);
+                }
 
-      i++;
-   }
+                if (!success)
+                {
+                    // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
+                    // its already set in this case.
+                    LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
+                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
+                    i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
+#if ENABLE_HEAVY_LOGGING
+                    ++debug_nfail;
+#endif
+                }
 
-   HLOGC(mglog.Debug, log << "updateConnStatus: total of " << debug_nupd << " sockets updated, the loop ran " << (debug_nrun-debug_nupd) << " uselessly.");
+                // NOTE: safe loop, the incrementation was done before the loop body,
+                // so the `i' node can be safely deleted. Just the body must end here.
+                continue;
+            }
+        }
+    }
+
+    HLOGC(mglog.Debug,
+            log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
+            << (debug_nrun-debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets."
+         );
 }
 
 //
@@ -986,7 +1075,7 @@ CRcvQueue::CRcvQueue():
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-	if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
@@ -1028,7 +1117,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     ThreadName tn("SRT:RcvQ:worker");
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
-		m_WorkerThread = pthread_t();
+        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1036,8 +1125,8 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 void* CRcvQueue::worker(void* param)
 {
    CRcvQueue* self = (CRcvQueue*)param;
-   sockaddr_any sa ( self->m_UnitQueue.m_iIPversion );
-   int32_t id;
+   sockaddr_any sa (self->m_UnitQueue.getIPversion());
+   int32_t id = 0;
 
    THREAD_STATE_INIT("SRT:RcvQ:worker");
 
@@ -1049,7 +1138,7 @@ void* CRcvQueue::worker(void* param)
        EReadStatus rst = self->worker_RetrieveUnit(Ref(id), Ref(unit), &sa);
        if (rst == RST_OK)
        {
-           if ( id < 0 )
+           if (id < 0)
            {
                // User error on peer. May log something, but generally can only ignore it.
                // XXX Think maybe about sending some "connection rejection response".
@@ -1075,8 +1164,14 @@ void* CRcvQueue::worker(void* param)
                // - an enqueued rendezvous socket
                // - a socket connected to a peer
                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+               // CAN RETURN CONN_REJECT, but m_RejectReason is already set
            }
            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
+           if (cst == CONN_AGAIN)
+           {
+               HLOGC(mglog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
+               continue;
+           }
            have_received = true;
        }
        else if (rst == RST_ERROR)
@@ -1117,6 +1212,7 @@ void* CRcvQueue::worker(void* param)
            }
            else
            {
+               HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
                // the socket must be removed from Hash table first, then RcvUList
                self->m_pHash->remove(u->m_SocketID);
                self->m_pRcvUList->remove(u);
@@ -1128,7 +1224,8 @@ void* CRcvQueue::worker(void* param)
 
        if ( have_received )
        {
-           HLOGC(mglog.Debug, log << "worker: updateConnStatus (after received packet from the party)");
+           HLOGC(mglog.Debug, log << "worker: RECEIVED PACKET --> updateConnStatus. cst=" << ConnectStatusStr(cst)
+                   << " id=" << id << " pkt-payload-size=" << unit->m_Packet.getLength());
        }
 
        // Check connection requests status for all sockets in the RendezvousQueue.
@@ -1137,7 +1234,10 @@ void* CRcvQueue::worker(void* param)
        // worker_TryAsyncRend_OrStore --->
        // CUDT::processAsyncConnectResponse --->
        // CUDT::processConnectResponse 
-       self->m_pRendezvousQueue->updateConnStatus(cst, unit->m_Packet);
+       self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit->m_Packet);
+
+       // XXX updateConnStatus may have removed the connector from the list,
+       // however there's still m_mBuffer in CRcvQueue for that socket to care about.
    }
 
    THREAD_EXIT();
@@ -1160,7 +1260,8 @@ static string PacketInfo(const CPacket& pkt)
         // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
         // Declaring that the peer supports rexmit flag cuts off the highest bit from
         // the displayed number.
-        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength();
+        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength()
+           << " flags: " << PacketMessageFlagStr(pkt.m_iMsgNo);
     }
 
     return os.str();
@@ -1169,7 +1270,9 @@ static string PacketInfo(const CPacket& pkt)
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, sockaddr* addr)
 {
-#ifdef NO_BUSY_WAITING
+#if !USE_BUSY_WAITING
+    // This might be not really necessary, and probably
+    // not good for extensive bidirectional communication.
     m_pTimer->tick();
 #endif
 
@@ -1179,6 +1282,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         CUDT* ne = getNewEntry();
         if (ne)
         {
+            HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
             m_pRcvUList->insert(ne);
             m_pHash->insert(ne->m_SocketID, ne);
         }
@@ -1226,7 +1330,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    int listener_ret = 0;
+    SRT_REJECT_REASON listener_ret = SRT_REJ_UNKNOWN;
     bool have_listener = false;
     {
         CGuard cg(m_LSLock);
@@ -1234,28 +1338,12 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         {
             LOGC(mglog.Note, log << "PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
-            // XXX This returns some very significant return value, which
-            // is completely ignored here.
-            // Actually this is the only place in the code where this
-            // function is being called, so it's hard to say what the
-            // returned value had to serve for.
 
-            // The tricky part is that this is something done "under the hood";
-            // if any problem occurs during this process, then this will simply
-            // drop the connection request. The only user process that is connected
-            // to it is accept() call (or connect() in case of rendezvous), but
-            // the system cannot return an error from accept() just because some
-            // user was attempting to connect, but formulated the connection
-            // request incorrectly.
-
-            // The only thing that could be done in case when the "listen" call
-            // fails, is to probably send a short information packet (once; it's
-            // not so important to make it reach the target) that the connection
-            // has been rejected due to incorrectly formulated request. However
-            // just in order to send anything in response, the actual sender must
-            // be properly known, and this isn't the case of incorrectly formulated
-            // connection request. So, we can only say sorry to ourselves and
-            // do nothing.
+            // This function does return a code, but it's hard to say as to whether
+            // anything can be done about it. In case when it's stated possible, the
+            // listener will try to send some rejection response to the caller, but
+            // that's already done inside this function. So it's only used for
+            // displaying the error in logs.
 
             have_listener = true;
         }
@@ -1269,7 +1357,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     {
         LOGC(mglog.Note, log << CONID() << "Listener managed the connection request from: " << SockaddrToString(addr)
             << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
-        return (listener_ret >= URQ_FAILURE_TYPES ? CONN_REJECT : CONN_CONTINUE);
+        return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
@@ -1294,12 +1382,13 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
         HLOGC(mglog.Debug, log << CONID() << "Packet for SID=" << id << " asoc with " << SockaddrToString(u->m_pPeerAddr)
             << " received from " << SockaddrToString(addr) << " (CONSIDERED ATTACK ATTEMPT)");
         // This came not from the address that is the peer associated
-        // with the socket. Reject.
-        return CONN_REJECT;
+        // with the socket. Ignore it.
+        return CONN_AGAIN;
     }
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
+        u->m_RejectReason = SRT_REJ_CLOSE;
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
         // XXX send UMSG_SHUTDOWN in this case?
@@ -1335,19 +1424,29 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     CUDT* u = m_pRendezvousQueue->retrieve(addr, Ref(id));
     if ( !u )
     {
-        // XXX this socket is then completely unknown to the system.
-        // May be nice to send some rejection info to the peer.
+        // this socket is then completely unknown to the system.
+        // Note that this situation may also happen at a very unfortunate
+        // coincidence that the socket is already bound, but the registerConnector()
+        // has not yet started. In case of rendezvous this may mean that the other
+        // side just started sending its handshake packets, the local side has already
+        // run the CRcvQueue::worker thread, and this worker thread is trying to dispatch
+        // the handshake packet too early, before the dispatcher has a chance to see
+        // this socket registerred in the RendezvousQueue, which causes the packet unable
+        // to be dispatched. Therefore simply treat every "out of band" packet (with socket
+        // not belonging to the connection and not registered as rendezvous) as "possible
+        // attach" and ignore it. This also should better protect the rendezvous socket
+        // against a rogue connector.
         if ( id == 0 )
         {
             HLOGC(mglog.Debug, log << CONID() << "AsyncOrRND: no sockets expect connection from "
-                << SockaddrToString(addr) << " - POSSIBLE ATTACK");
+                << SockaddrToString(addr) << " - POSSIBLE ATTACK, ignore packet");
         }
         else
         {
             HLOGC(mglog.Debug, log << CONID() << "AsyncOrRND: no sockets expect socket " << id << " from "
-                << SockaddrToString(addr) << " - POSSIBLE ATTACK");
+                << SockaddrToString(addr) << " - POSSIBLE ATTACK, ignore packet");
         }
-        return CONN_REJECT;
+        return CONN_AGAIN; // This means that the packet should be ignored.
     }
 
     // asynchronous connect: call connect here
@@ -1359,7 +1458,76 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // appropriate mutex lock - which can't be done here because it's intentionally private.
         // OTOH it can't be applied to processConnectResponse because the synchronous
         // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
-        return u->processAsyncConnectResponse(unit->m_Packet);
+        EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+
+        if (cst == CONN_CONFUSED)
+        {
+            LOGC(mglog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePkt(id, unit->m_Packet.clone());
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_pPeerAddr))
+            {
+                // Reuse previous behavior to reject a packet
+                cst = CONN_REJECT;
+            }
+            else
+            {
+                cst = CONN_CONTINUE;
+            }
+        }
+
+        // It might be that this is a data packet, which has turned the connection
+        // into "connected" state, removed the connector (so since now every next packet
+        // will land directly in the queue), but this data packet shall still be delivered.
+        if (cst == CONN_ACCEPT && !unit->m_Packet.isControl())
+        {
+            // The process as called through processAsyncConnectResponse() should have put the
+            // socket into the pending queue for pending connection (don't ask me, this is so).
+            // This pending queue is being purged every time in the beginning of this loop, so
+            // currently the socket is in the pending queue, but not yet in the connection queue.
+            // It will be done at the next iteration of the reading loop, but it will be too late,
+            // we have a pending data packet now and we must either dispatch it to an already connected
+            // socket or disregard it, and rather prefer the former. So do this transformation now
+            // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
+            // into the pending anteroom.
+
+            CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
+            // This **should** now always return a non-null value, but check it first
+            // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
+            // result in redirecting it to here and so on until the call stack overflow. In case of
+            // this "accident" simply disregard the packet from any further processing, it will be later
+            // loss-recovered.
+            // XXX (Probably the old contents of UDT's CRcvQueue::worker should be shaped a little bit
+            // differently throughout the functions).
+            if (ne)
+            {
+                HLOGC(mglog.Debug, log << CUDTUnited::CONID(ne->m_SocketID) << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
+                m_pRcvUList->insert(ne);
+                m_pHash->insert(ne->m_SocketID, ne);
+
+                // The current situation is that this has passed processAsyncConnectResponse, but actually
+                // this packet *SHOULD HAVE BEEN* handled by worker_ProcessAddressedPacket, however the
+                // connection state wasn't completed at the moment when dispatching this packet. This has
+                // been now completed inside the call to processAsyncConnectResponse, but this is still a
+                // data packet that should have expected the connection to be already established. Therefore
+                // redirect it once again into worker_ProcessAddressedPacket here.
+
+                HLOGC(mglog.Debug, log << "AsyncOrRND: packet SWITCHED TO CONNECTED with ID=" << id
+                        << " -- passing to worker_ProcessAddressedPacket");
+
+                // Theoretically we should check if m_pHash->lookup(ne->m_SocketID) returns 'ne', but this
+                // has been just added to m_pHash, so the check would be extremely paranoid here.
+                cst = worker_ProcessAddressedPacket(id, unit, addr);
+                if (cst == CONN_REJECT)
+                    return cst;
+                return CONN_ACCEPT; // this function usually will return CONN_CONTINUE, which doesn't represent current situation.
+            }
+            else
+            {
+                LOGC(mglog.Error, log << "IPE: AsyncOrRND: packet SWITCHED TO CONNECTED, but ID=" << id
+                        << " is still not present in the socket ID dispatch hash - DISREGARDING");
+            }
+        }
+        return cst;
     }
     HLOGC(mglog.Debug, log << "AsyncOrRND: packet RESOLVED TO ID=" << id << " -- continuing through CENTRAL PACKET QUEUE");
     // This is where also the packets for rendezvous connection will be landing,
@@ -1379,7 +1547,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
    if (i == m_mBuffer.end())
    {
-      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000ULL);
+      CTimer::condTimedWaitUS(&m_PassCond, &m_PassLock, 1000000);
 
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
@@ -1419,7 +1587,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
    if (i->second.empty())
       m_mBuffer.erase(i);
 
-   return packet.getLength();
+   return (int) packet.getLength();
 }
 
 int CRcvQueue::setListener(CUDT* u)
@@ -1443,6 +1611,7 @@ void CRcvQueue::removeListener(const CUDT* u)
 
 void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
+   HLOGC(mglog.Debug, log << "registerConnector: adding %" << id << " addr=" << SockaddrToString(addr) << " TTL=" << ttl);
    m_pRendezvousQueue->insert(id, u, ipv, addr, ttl);
 }
 
@@ -1469,6 +1638,7 @@ void CRcvQueue::removeConnector(const SRTSOCKET& id, bool should_lock)
 
 void CRcvQueue::setNewEntry(CUDT* u)
 {
+   HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
    CGuard listguard(m_IDLock);
    m_vNewEntry.push_back(u);
 }

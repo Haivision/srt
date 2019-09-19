@@ -11,7 +11,7 @@
 // NOTE: This application uses C++11.
 
 // This program uses quite a simple architecture, which is mainly related to
-// the way how it's invoked: stransmit <source> <target> (plus options).
+// the way how it's invoked: srt-test-live <source> <target> (plus options).
 //
 // The media for <source> and <target> are filled by abstract classes
 // named Source and Target respectively. Most important virtuals to
@@ -69,6 +69,7 @@
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
 #include "testmediabase.hpp"
+#include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
 // NOTE: This is without "haisrt/" because it uses an internal path
@@ -196,6 +197,60 @@ struct BandwidthGuard
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
+namespace srt_logging
+{
+    extern Logger glog;
+}
+
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+{
+    if (hsv < 5)
+    {
+        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        return -1;
+    }
+
+    static const map<string, string> passwd {
+        {"admin", "thelocalmanager"},
+        {"user", "verylongpassword"}
+    };
+
+    // Try the "standard interpretation" with username at key u
+    string username;
+
+    static const char stdhdr [] = "#!::";
+    uint32_t* pattern = (uint32_t*)stdhdr;
+
+    if (strlen(streamid) > 4 && *(uint32_t*)streamid == *pattern)
+    {
+        vector<string> items;
+        Split(streamid+4, ',', back_inserter(items));
+        for (auto& i: items)
+        {
+            vector<string> kv;
+            Split(i, '=', back_inserter(kv));
+            if (kv.size() == 2 && kv[0] == "u")
+            {
+                username = kv[1];
+            }
+        }
+    }
+    else
+    {
+        // By default the whole streamid is username
+        username = streamid;
+    }
+
+    // This hook sets the password to the just accepted socket
+    // depending on the user
+
+    string exp_pw = passwd.at(username);
+
+    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+
+    return 0;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -295,6 +350,19 @@ int main( int argc, char** argv )
     bool internal_log = Option("no", "loginternal") != "no";
     bool skip_flushing = Option("no", "S", "skipflush") != "no";
 
+    // Print format
+    string pf = Option("default", "pf", "printformat");
+    if (pf == "json")
+    {
+        transmit_printformat_json = true;
+    }
+    else if (pf != "default")
+    {
+        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        return 1;
+    }
+
+
     // Options that require integer conversion
     size_t bandwidth;
     size_t stoptime;
@@ -306,17 +374,27 @@ int main( int argc, char** argv )
         transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
         stoptime = stoul(Option("0", "d", "stoptime"));
     }
-    catch (std::invalid_argument)
+    catch (std::invalid_argument &)
     {
         cerr << "ERROR: Incorrect integer number specified for an option.\n";
         return 1;
     }
 
+    string hook = Option("", "hook");
+    if (hook != "")
+    {
+        if (hook == "user-password")
+        {
+            transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
+    }
+
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
+    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
+    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
 
     char NAME[] = "SRTLIB";
@@ -344,7 +422,7 @@ int main( int argc, char** argv )
     }
 
 
-#ifdef WIN32
+#ifdef _WIN32
 #define alarm(argument) (void)0
 
     if (stoptime != 0)
@@ -444,7 +522,6 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
-    extern logging::Logger glog;
     try
     {
         for (;;)

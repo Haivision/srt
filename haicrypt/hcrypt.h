@@ -29,7 +29,7 @@ written by
 
 #include <sys/types.h>
 
-#ifdef WIN32
+#ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #if defined(_MSC_VER)
@@ -48,14 +48,8 @@ written by
 
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
-
-#if defined(USE_GNUTLS)
-#include "hcrypt-gnutls.h"
-#else
-#include "hcrypt-openssl.h"
-#endif
-
 #include "hcrypt_ctx.h"
+#include "cryspr.h"
 
 //#define HCRYPT_DEV 1  /* Development: should not be defined in committed code */
 
@@ -80,8 +74,8 @@ typedef struct hcrypt_Session_str {
         hcrypt_Ctx          ctx_pair[2];    /* Even(0)/Odd(1) crypto contexts */
         hcrypt_Ctx *        ctx;            /* Current context */
 
-        hcrypt_Cipher *     cipher;
-        hcrypt_CipherData * cipher_data;
+        CRYSPR_methods *    cryspr;
+        CRYSPR_cb *         cryspr_cb;
 
         unsigned char *     inbuf;          /* allocated if cipher has no getinbuf() func */
         size_t              inbuf_siz;
@@ -160,6 +154,7 @@ int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
 
 int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg);
 int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx);
+int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_Session* cryptoSrc);
 int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto);
 int hcryptCtx_Tx_PreSwitch(hcrypt_Session *crypto);
 int hcryptCtx_Tx_Switch(hcrypt_Session *crypto);
