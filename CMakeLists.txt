@@ -952,12 +952,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	
 	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
-	srt_add_program(test_srt ${SOURCES_unittests})
-	srt_make_application(test_srt)
-	target_include_directories(test_srt PRIVATE  ${SSL_INCLUDE_DIRS})
+	srt_add_program(test-srt ${SOURCES_unittests})
+	srt_make_application(test-srt)
+	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS})
 
 	target_link_libraries(
-		test_srt
+		test-srt
 		${GTEST_BOTH_LIBRARIES}
 		${srt_link_library}
 		${PTHREAD_LIBRARY}
@@ -965,9 +965,9 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	add_test(
 		NAME
-			test_srt
+			test-srt
 		COMMAND
-			${CMAKE_BINARY_DIR}/test_srt
+			${CMAKE_BINARY_DIR}/test-srt
 	)
 
 	enable_testing()
