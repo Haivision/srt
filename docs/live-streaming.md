@@ -24,7 +24,10 @@ transport unit size for SRT, and it is also often used when sending MPEG-TS over
 Note that SRT isn't limited to MPEG-TS -- it can be applied to any "live streaming" data 
 transmission (as long as you use Live mode, which is the SRT default mode). You can use 
 any other suitable data format, and any intermediate protocol on top of MPEG-TS with 
-an extra header (you still have an extra 140 bytes per unit for that purpose). 
+an extra header (this is an option that people often try with RTP) - note that
+1316 is the default maximum payload size, which can be changed using the
+`SRTO_PAYLOADSIZE` option to no more than 1456).
+
 However, the transmission must still satisfy the Live Streaming Requirements.
 
 
@@ -69,7 +72,7 @@ time based on the timestamps in the stream.
 
 2. Not all frames are I-Frames. Most of the frames sent in the video stream are
 "difference frames" (P or B frames), which can only be decoded if all preceding (or even
-succeding) frames are already received. As you can guess, difference frames are much 
+succeeding) frames are already received. As you can guess, difference frames are much 
 shorter than I-Frames, so there is much less data in a whole "frame package" to 
 transport, even though these frames still cover the same time period ("duration"). 
 
@@ -122,7 +125,7 @@ into single network units with appropriate time intervals between them. This can
 be done by an application with explicit knowledge of the type of stream and how to 
 transform it into time-divided single network transport units.
 
-The `stransmit` application, or any other application that uses SRT for
+The `srt-live-transmit` application, or any other application that uses SRT for
 reading, should always read data in 1316-byte segments (network transport units) and
 feed each such unit into the call to an appropriate `srt_send*` function. The
 important part of this process is that these 1316-byte units appear at precise times 
@@ -141,7 +144,3 @@ appropriate delay is applied before delivering to the output. This ensures that 
 time intervals between two consecutive packets at the delivery application are identical 
 to the intervals between these same packets at the moment they were passed to SRT 
 for streaming.
-
-
-
-

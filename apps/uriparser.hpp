@@ -29,7 +29,7 @@ public:
     enum DefaultExpect { EXPECT_FILE, EXPECT_HOST };
     enum Type
     {
-        UNKNOWN, FILE, UDP, TCP, SRT, RTMP, HTTP
+        UNKNOWN, FILE, UDP, TCP, SRT, RTMP, HTTP, RTP
     };
 
     UriParser(const std::string& strUrl, DefaultExpect exp = EXPECT_FILE);
@@ -37,23 +37,23 @@ public:
     virtual ~UriParser(void);
 
     // Some predefined types
-    Type type();
+    Type type() const;
 
     typedef MapProxy<std::string, std::string> ParamProxy;
 
 // Operations
 public:
-    std::string uri() { return m_origUri; }
-    std::string proto();
-    std::string scheme() { return proto(); }
-    std::string host();
-    std::string port();
-    unsigned short int portno();
-    std::string hostport() { return host() + ":" + port(); }
-    std::string path();
-    std::string queryValue(const std::string& strKey);
+    std::string uri() const { return m_origUri; }
+    std::string proto() const;
+    std::string scheme() const { return proto(); }
+    std::string host() const;
+    std::string port() const;
+    unsigned short int portno() const;
+    std::string hostport() const { return host() + ":" + port(); }
+    std::string path() const;
+    std::string queryValue(const std::string& strKey) const;
     ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
-    const std::map<std::string, std::string>& parameters() { return m_mapQuery; }
+    const std::map<std::string, std::string>& parameters() const { return m_mapQuery; }
 
 private:
     void Parse(const std::string& strUrl, DefaultExpect);

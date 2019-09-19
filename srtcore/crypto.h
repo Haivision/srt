@@ -32,7 +32,10 @@ written by
 
 std::string KmStateStr(SRT_KM_STATE state);
 
-extern logging::Logger mglog;
+namespace srt_logging
+{
+extern Logger mglog;
+}
 
 #endif
 
@@ -76,6 +79,8 @@ private:
     // Receiver
     HaiCrypt_Handle m_hRcvCrypto;
 
+    bool m_bErrorReported;
+
 public:
 
     bool sendingAllowed()
@@ -102,7 +107,9 @@ public:
 
 private:
 
+#ifdef SRT_ENABLE_ENCRYPTION
     void regenCryptoKm(bool sendit, bool bidirectional);
+#endif
 
 public:
 
@@ -113,23 +120,66 @@ public:
 
     // Detailed processing
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
+
+    // This returns:
+    // 1 - the given payload is the same as the currently used key
+    // 0 - there's no key in agent or the payload is error message with agent NOSECRET.
+    // -1 - the payload is error message with other state or it doesn't match the key
     int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int hsv);
     void createFakeSndContext();
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }
-    bool getKmMsg_needSend(size_t ki) const
+
+    /// Check if the key stored at @c ki shall be sent. When during the handshake,
+    /// it only matters if the KM message for that index is recorded at all.
+    /// Otherwise returns true only if also the retry counter didn't expire.
+    ///
+    /// @param ki Key index (0 or 1)
+    /// @param runtime True, if this happens as a key update
+    ///                during transmission (otherwise it's during the handshake)
+    /// @return Whether the KM message at given index needs to be sent.
+    bool getKmMsg_needSend(size_t ki, bool runtime) const
     {
-        return (m_SndKmMsg[ki].iPeerRetry > 0 && m_SndKmMsg[ki].MsgLen > 0);
+        if (runtime)
+            return (m_SndKmMsg[ki].iPeerRetry > 0 && m_SndKmMsg[ki].MsgLen > 0);
+        else
+            return m_SndKmMsg[ki].MsgLen > 0;
     }
 
-    void getKmMsg_markSent(size_t ki)
+    /// Mark the key as already sent. When no 'runtime' (during the handshake)
+    /// it actually does nothing so that this will be retried as long as the handshake
+    /// itself is being retried. Otherwise this is during transmission and will expire
+    /// after several retries.
+    ///
+    /// @param ki Key index (0 or 1)
+    /// @param runtime True, if this happens as a key update
+    ///                during transmission (otherwise it's during the handshake)
+    void getKmMsg_markSent(size_t ki, bool runtime)
     {
-        m_SndKmMsg[ki].iPeerRetry--;
+#if ENABLE_LOGGING
+        using srt_logging::mglog;
+#endif
+
         m_SndKmLastTime = CTimer::getTime();
-        HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+        if (runtime)
+        {
+            m_SndKmMsg[ki].iPeerRetry--;
+            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
+        }
     }
 
+    /// Check if the response returned by KMRSP matches the recorded KM message.
+    /// When it is, set also the retry counter to 0 to prevent further retries.
+    ///
+    /// @param ki KM message index (0 or 1)
+    /// @param srtmsg Message received through KMRSP
+    /// @param bytesize Size of the message
+    /// @return True if the message is identical to the recorded KM message at given index.
     bool getKmMsg_acceptResponse(size_t ki, const uint32_t* srtmsg, size_t bytesize)
     {
         if ( m_SndKmMsg[ki].MsgLen == bytesize
@@ -172,6 +222,7 @@ public:
 
     int getSndCryptoFlags() const
     {
+#ifdef SRT_ENABLE_ENCRYPTION
         return(m_hSndCrypto ?
                 HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) :
                 // When encryption isn't on, check if it was required
@@ -179,6 +230,9 @@ public:
                 // encryption was requested and not possible.
                 hasPassphrase() ? -1 :
                 0);
+#else
+        return 0;
+#endif
     }
 
     bool isSndEncryptionOK() const

@@ -26,17 +26,6 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     vector<string> dummy;
     vector<string>& fails = failures ? *failures : dummy;
 
-    if ( options.count("passphrase") )
-    {
-        /*
-        // Insert default
-        if ( options.count("pbkeylen") == 0 )
-        {
-            options["pbkeylen"] = "16"; // m_output_direction ? "16" : "0";
-        }
-        */
-    }
-
     SocketOption::Mode mode;
     string modestr = "default";
 
@@ -76,6 +65,15 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
         mode = SocketOption::FAILURE;
         fails.push_back("mode");
     }
+
+    if (options.count("linger"))
+    {
+        linger lin;
+        lin.l_linger = stoi(options["linger"]);
+        lin.l_onoff  = lin.l_linger > 0 ? 1 : 0;
+        srt_setsockopt(socket, SocketOption::PRE, SRTO_LINGER, &lin, sizeof(linger));
+    }
+
 
     bool all_clear = true;
     for (auto o: srt_options)

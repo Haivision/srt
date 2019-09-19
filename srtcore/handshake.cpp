@@ -50,6 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 
 #include "udt.h"
+#include "core.h"
 #include "handshake.h"
 #include "utilities.h"
 
@@ -57,8 +58,8 @@ using namespace std;
 
 
 CHandShake::CHandShake():
-m_iVersion(AF_UNSPEC),
-m_iType(UDT_UNDEFINED),
+m_iVersion(0),
+m_iType(0), // Universal: UDT_UNDEFINED or no flags
 m_iISN(0),
 m_iMSS(0),
 m_iFlightFlagSize(0),
@@ -116,17 +117,40 @@ int CHandShake::load_from(const char* buf, size_t size)
 }
 
 #ifdef ENABLE_LOGGING
+
+const char* srt_rejectreason_name [] = {
+    "UNKNOWN",
+    "SYSTEM",
+    "PEER",
+    "RESOURCE",
+    "ROGUE",
+    "BACKLOG",
+    "IPE",
+    "CLOSE",
+    "VERSION",
+    "RDVCOOKIE",
+    "BADSECRET",
+    "UNSECURE",
+    "MESSAGEAPI",
+    "CONGESTION",
+    "FILTER",
+};
+
 std::string RequestTypeStr(UDTRequestType rq)
 {
+    if (rq >= URQ_FAILURE_TYPES)
+    {
+        SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
+        int id = rej;
+        return std::string("ERROR:") + srt_rejectreason_name[id];
+    }
+
     switch ( rq )
     {
     case URQ_INDUCTION: return "induction";
     case URQ_WAVEAHAND: return "waveahand";
     case URQ_CONCLUSION: return "conclusion";
     case URQ_AGREEMENT: return "agreement";
-    case URQ_ERROR_INVALID: return "ERROR:invalid";
-    case URQ_ERROR_REJECT: return "ERROR:reject";
-    case URQ_DONE: return "done(HSv5RDV)";
 
     default: return "INVALID";
     }
@@ -158,29 +182,46 @@ string CHandShake::show()
         << " cookie=" << hex << m_iCookie << dec
         << " srcIP=";
 
-    const unsigned char* p = (const unsigned char*)m_piPeerIP, * pe = p + 4*(sizeof (uint32_t));
+    const unsigned char* p  = (const unsigned char*)m_piPeerIP;
+    const unsigned char* pe = p + 4 * (sizeof(uint32_t));
 
     copy(p, pe, ostream_iterator<unsigned>(so, "."));
 
     // XXX HS version symbols should be probably declared inside
     // CHandShake, not CUDT.
-    if ( m_iVersion > 4 )
+    if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        string ext;
-
-        if ( m_iType & HS_EXT_HSREQ )
-            ext += "HSREQ ";
-
-        if ( m_iType & HS_EXT_KMREQ )
-            ext += "KMREQ ";
-
-        if ( ext == "" )
-            ext = "(no extensions)";
-
-        so << ext;
+        so << "EXT: ";
+        if (m_iType == 0) // no flags at all
+            so << "none";
+        else
+            so << ExtensionFlagStr(m_iType);
     }
 
     return so.str();
+}
+
+string CHandShake::ExtensionFlagStr(int32_t fl)
+{
+    std::ostringstream out;
+    if ( fl & HS_EXT_HSREQ )
+        out << " hsx";
+    if ( fl & HS_EXT_KMREQ )
+        out << " kmx";
+    if ( fl & HS_EXT_CONFIG )
+        out << " config";
+
+    int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+    if (kl != 0)
+    {
+        out << " AES-" << kl;
+    }
+    else
+    {
+        out << " no-pbklen";
+    }
+
+    return out.str();
 }
 
 

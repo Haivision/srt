@@ -9,13 +9,14 @@ hcrypt_msg.h
 
 PRIVATE HEADERS
 hcrypt.h
-hcrypt-gnutls.h
+cryspr.h
+cryspr-gnutls.h
 haicrypt_log.h
 
 SOURCES
-hc_nettle_aes.c
+cryspr.c
+cryspr-gnutls.c
 hcrypt.c
-hcrypt-gnutls.c
 hcrypt_ctx_rx.c
 hcrypt_ctx_tx.c
 hcrypt_rx.c
