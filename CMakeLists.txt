@@ -89,10 +89,7 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
-set (ENABLE_PKTINFO_DEFAULT 1)
-if (WIN32)
-	set (ENABLE_PKTINFO_DEFAULT 0)
-endif()
+set (ENABLE_PKTINFO_DEFAULT 0)
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
@@ -104,7 +101,7 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
-option(ENABLE_PKTINFO "Should pktinfo usage be enabled" ${ENABLE_PKTINFO_DEFAULT})
+option(ENABLE_PKTINFO "Enable target IP address extraction on listner" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
