@@ -41,6 +41,8 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * OpenSSL
 * Pthreads (for POSIX systems it's builtin, for Windows there's a library)
 
+For detailed description of the build system and options, please [read here](BuildOptions.md).
+
 ## For Linux:
 
 Install cmake and openssl-devel (or similar name) package. For pthreads
