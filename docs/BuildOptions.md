@@ -88,13 +88,25 @@ won't link against libstdc++ by default.
 `--enable-c++11` (default: ON)
 -------------------------------
 
-Enable compiling in C++11 mode for those parts that require it.
+Enable compiling in C++11 mode for those parts that may require it.
+Parts that don't require it will be compiled still in C++03 mode,
+although which parts are affected, may change in future.
 
-NOTE: Currently this embraces all user applications (such as
-`srt-live-transmit`), testing applications and unit tests, but this may be
-changed in future. Anyway, the SRT library itself is still guaranteed to be
-compiled and not functionally impaired, even if C++11 is turned off, although
-this need not be supported on all platforms.
+If this option is turned off, it affects building this project twofold:
+
+* an alternative C++03 implementation can be used, if available
+* otherwise the component that requires it will be disabled
+
+Parts that currently require C++11 and have no alternative implementation
+are:
+
+* unit tests
+* user and testing applications (such as `srt-live-transmit`)
+* some of the example applications
+
+The SRT library alone should be able to be compiled without C++11
+support, however this alternative C++03 implementation may be unsupported
+on some platforms.
 
 
 `--enable-debug=<0,1,2>`
@@ -104,7 +116,7 @@ This option allows a control through the `CMAKE_BUILD_TYPE` variable:
 
 * 0 (default): `Release` (highly optimized, no debug info)
 * 1: `Debug` (not optimized, full debug info)
-* 2: `DebWithRelInfo` (highly optimized, but with debug info)
+* 2: `RelWithDebInfo` (highly optimized, but with debug info)
 
 Please note that when the value is other than 0, it makes the
 `--enable-heavy-logging` option also ON by default.
@@ -133,7 +145,7 @@ development when testing in the local network.
 `--enable-haicrypt-logging`
 -------------------------------
 
-Enables loggin in the *haicrypt* module, which serves as a connector to
+Enables logging in the *haicrypt* module, which serves as a connector to
 an encryption library. Logging here might be seen as unsafe sometimes,
 therefore it's turned off by default.
 
@@ -175,7 +187,7 @@ about errors happening during runtime.
 -----------------------------------------
 
 Enforced `clock_gettime` with monotonic clock on Garbage Collector CV.
-This is a temporary fix for #729: The library could got stuck when you
+**This is a temporary fix for #729**: The library could got stuck when you
 modify the system clock while a transmission is done over SRT.
 
 This option enforces the use of `clock_gettime` to get the current
@@ -194,20 +206,24 @@ This option will be removed when the problem is fixed globally.
 `--enable-pktinfo` (default: OFF)
 ---------------------------------
 
-This option allows for extraction the target IP address from the incoming
+This option allows extracting the target IP address from the incoming
 UDP packets and forceful setting of the source IP address in the outgoing
-UDP packets. This ensures that if a packet comes in to raise a new connection
-to be established, the UDP packet sent in response will have the source IP
-address set the same as the target IP address was in the incoming UDP packet.
+UDP packets. This ensures that if a packet comes in from a peer that requests a
+new connection, the agent will respond with a UDP packet, which has the
+source IP address exactly the same as the one, which the peer is trying to
+connect to.
 
 When this is OFF, the source IP address in such outgoing UDP packet will
-be set automatically, and it will be the local IP address assigned to the
-network broadcast address that matches the target IP address. This may
-cause a problem in case when you have more than one local IP address
-assigned to the same broadcast and other than first in order will be
-contacted by the caller peer. Example:
+be set automatically the following way:
 
-You have the following local IP addreses:
+* For given destination IP address in the UDP packet to be sent, find
+the routing table that matches this address, get its network device
+and configured network broadcast address
+
+* set the **first** local IP address that matches the broadcast
+address as found above as the source IP address for this UDP packet
+
+Exmaple: You have the following local IP addreses:
 
 * 192.168.10.11: broadcast 192.168.10.0
 * 10.0.1.15: broadcast 10.0.1.0
@@ -225,25 +241,37 @@ packet will be sent back to this address over the network assigned
 to the 10.0.1.0 broadcast, but the source address will be then 10.0.1.15
 because this is the first local address assigned to this route path.
 
-When this happens, the caller can see that it has sent the handshake
-packets to 10.0.1.20, but the returning packet has 10.0.1.15 as source,
-and this will be treated as an attack attempt, so the handshake response
-will be rejected.
+When this happens, the caller peer will see a mismatch between the
+source 10.0.1.15 address and the address it tried to contact, that
+is, 10.0.1.20. It will be then treated as an attack attempt and
+rejected.
 
-This fixes this problem by forcefully setting the source IP address
-in such a response packet to 10.0.1.20 as in the above example and
-this will be interpreted by the caller correctly.
+This problem can be slightly mitigated by binding the listening socket
+to the exact address. So, if you bind it to 10.0.1.20 in the above
+example, then wherever you try to send the packet over such a socket,
+it will always have the source address 10.0.1.20 (and the fix provided
+by this option will also not apply in this case). However, this problem
+still exists if the listener socket is bound to the "whole machine",
+that is, it's set to "any" address.
 
-This feature is turned off because the impact on performance here is
-not well enough determined. The problem here is that this causes
+This option fixes this problem by forcefully setting the source IP address in
+such a response packet to 10.0.1.20 as in the above example and this will be
+interpreted by the caller peer correctly.
+
+This feature is turned off by default because the impact on performance
+here is currently unknown. The problem here is that this causes
 that the CMSG information be read from and set on every packet in case
-when the socket was bound to the "any" address.
+when the socket was bound to the "any" address, so effectively it will
+be extracted from every incoming packet, as long as it is not bound
+to a specific address, including data packets coming in within the
+frames of an existing connection.
 
 
 `--enable-profile` (default: OFF)
 -------------------------------
 
 Enables code instrumentation for profiling.
+
 This is available only for GNU-compatible compilers.
 
 
@@ -266,7 +294,8 @@ Enables building SRT as a shared and static library.
 
 As both are ON by default, this option allows you for turning
 off building a library in a style that is not of your interest,
-for example, leave only static one by `--disable-shared`.
+for example, leave only static one by `--disable-shared`. You
+can't disable both at once.
 
 
 `--enable-testing` (default: OFF)
@@ -275,10 +304,14 @@ for example, leave only static one by `--disable-shared`.
 Enables compiling developer testing appliactions.
 
 
-`--enable-thread-check`
--------------------------------
+`--enable-thread-check` (default: OFF)
+--------------------------------------
 
-Enable `#include <threadcheck.h>` that implements `THREAD_*` macros"
+Enable `#include <threadcheck.h>` that implements `THREAD_*` macros".
+
+This is a solution used by one of the users to support better thread
+debugging.
+
 
 `--enable-unittests` (default: OFF)
 -----------------------------------
@@ -365,12 +398,6 @@ Encryption library to be used. Possible choice for `<name>`:
 * openssl(default)
 * gnutls (with nettle)
 * mbedtls
-
-
-`--use-gnutls`
--------------------------------
-
-DEPRECATED. Use `--use-enclib=gnutls` instead.
 
 
 `--use-openssl-pc` (default: ON)
