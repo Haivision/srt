@@ -12,8 +12,8 @@ Portability
 
 The cmake build system was tested on the following platforms:
 
- - Linux
- - MaxOS (you may want to see [separate document](build_iOS.md)
+ - Linux (various flavors)
+ - Mac OS (you may want to see [separate document](build_iOS.md))
  - Windows with MinGW
  - Windows with Microsoft Visual Studio
  - Android (see [separate document](Android/Compiling.md))
@@ -310,6 +310,16 @@ Configure the path to an OpenSSL SSL library.
 -------------------------------
 
 Configure the path to `pkg-config` tool.
+
+
+`--prefix=<path>`
+-----------------
+
+This is an alias to `--cmake-install-prefix`. This is the root
+directory for installation, inside which next GNU/POSIX compatible
+directory layout will be used for particular parts. As on all
+known build systems, this defaults to `/usr/local` on POSIX
+compatible systems.
 
 
 `--pthread-include-dir=<path>`
