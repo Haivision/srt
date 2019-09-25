@@ -213,8 +213,8 @@ new connection, the agent will respond with a UDP packet, which has the
 source IP address exactly the same as the one, which the peer is trying to
 connect to.
 
-When this is OFF, the source IP address in such outgoing UDP packet will
-be set automatically the following way:
+When this is OFF (default), the source IP address in such outgoing UDP
+packet will be set automatically the following way:
 
 * For given destination IP address in the UDP packet to be sent, find
 the routing table that matches this address, get its network device
@@ -254,9 +254,11 @@ by this option will also not apply in this case). However, this problem
 still exists if the listener socket is bound to the "whole machine",
 that is, it's set to "any" address.
 
-This option fixes this problem by forcefully setting the source IP address in
-such a response packet to 10.0.1.20 as in the above example and this will be
-interpreted by the caller peer correctly.
+When this option is ON, a mechanism is added to forcefully set the source
+IP address in such a response packet to 10.0.1.20 in the above example,
+as well as this address is first extracted from the incoming packet as the
+target address. This fixes the problem, as this will be interpreted by
+the caller peer correctly.
 
 This feature is turned off by default because the impact on performance
 here is currently unknown. The problem here is that this causes
