@@ -225,10 +225,11 @@ source address 10.0.1.20 (and the fix provided by this option will also not
 apply in this case). However, this problem still exists if the listener socket 
 is bound to the "whole machine" (i.e. set to "any" address).
 
-When the `--enable-pktinfo` option is ON, a mechanism is added to forcefully set 
-the source IP address in a response packet (to 10.0.1.20 in the above example).
-This address is first extracted from the incoming packet as the target address. 
-This fixes the problem, as it will be interpreted by the caller peer correctly.
+When this option is ON, a mechanism is added to forcefully set the source
+IP address in such a response packet to 10.0.1.20 in the above example,
+as well as this address is first extracted from the incoming packet as the
+target address. This fixes the problem, as this will be interpreted by
+the caller peer correctly.
 
 This feature is turned off by default because the impact on performance is 
 currently unknown. The problem is that it causes the CMSG information to be read 
