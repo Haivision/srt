@@ -166,13 +166,21 @@ impairing performance.
 This option enforces the use of `clock_gettime` to get the current
 time, instead of `gettimeofday`. This function forces the use of a monotonic
 clock that is independent of the currently set time in the system.
-The condition variables, for which the `*_timedwait()` functions are used
-with time specification basing on the time obtained from `clock_gettime`
+The condition variables (CV), for which the `*_timedwait()` functions are used
+with time specification based on the time obtained from `clock_gettime`
 must be appropriately configured. For now, this is only done for the
 GarbageCollector controlling CV, not every CV used in SRT. The consequence
 of enabling this option, however, may be portability issues resulting from
-the fact that `clock_gettime` function may be unavailable in some SDKs or an extra
-`-lrt` option is sometimes required (this requirement will be autodetected).
+the fact that `clock_gettime` function may be unavailable in some SDKs or that an
+extra `-lrt` option is sometimes required (this requirement will be autodetected).
+
+The problem is based on the fact that POSIX functions that use timeout
+specification (all of `*_timedwait`) expect the absolute time value.
+A relative timeout value can be then only specified by adding it to
+the current time, which can be specified as either system or monotonic
+clock (which one, is configured in the resources used in the operation).
+However the current time of the monotonic clock can only be obtained by
+the `clock_gettime` function.
 
 **NOTE:** *This is a temporary fix for Issue #729* where the library could get 
 stuck if the system clock is modified during an SRT transmission. This option 
@@ -254,15 +262,27 @@ linked against a shared SRT library by reaching out to a sibling `../lib`
 directory, provided that the library and applications are installed in POSIX/GNU
 style directories. This might be useful when installing SRT and applications
 in a directory, in which the library subdirectory is not explicitly defined
-among the global library paths (such as `/opt/srt-1.4/lib`, for example).
-This option is OFF by default because of reports
-that it may cause problems in case of default installation.
+among the global library paths. Consider, for example, this application and its 
+required library:
+
+* `/opt/srt/bin/srt-live-transmit`
+* `/opt/srt/lib64/libsrt.so`
+
+By using the `--enable-relative-libpath` option, the `srt-live-transmit` 
+application has a relative library path defined inside as `../lib64`. A dynamic 
+linker will find the required `libsrt.so` file by this path: `../lib64/libsrt.so`. 
+This way the dynamic linkage will work even if `/opt/srt/lib64` path isn't added 
+to the system paths in `/etc/ld.so.conf` or in the `LD_LIBRARY_PATH` environment 
+variable.
+
+This option is OFF by default because of reports that it may cause problems in
+case of default installation.
 
 
 **`--enable-shared`** and **`--enable-static`** (default for both: ON)
 
 Enables building SRT as a shared and/or static library, as required for your 
-application. The only practical use is by disabling one of them
+application. In practice, you would only disable one or the other
 (e.g. by `--disable-shared`). Note that you can't disable both at once.
 
 
