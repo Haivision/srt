@@ -294,14 +294,14 @@ Enables compiling of developer testing applications.
 **`--enable-thread-check`** (default: OFF)
 
 Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to 
-support better thread debugging. This is used by one of dependent projects.
+support better thread debugging. Included to support an existing project.
 
 
 **`--enable-unittests`** (default: OFF)
 
 When ON, this option enables unit tests, possibly with the download 
 and installation of the Google test library in the build directory. The tests 
-will be run as part of the build process. This is predicted for developers only.
+will be run as part of the build process. This is intended for developers only.
 
 
 **`--openssl-crypto-library=<filepath>`**
@@ -326,10 +326,11 @@ Configure the path to the `pkg-config` tool.
 
 **`--prefix=<path>`**
 
-This is an alias to `--cmake-install-prefix`. This is the root directory for
-installation, inside which next the GNU/POSIX compatible directory layout will 
-be used. As on all known build systems, this defaults to
-`/usr/local` on POSIX compatible systems.
+This is an alias to the `--cmake-install-prefix` variable that establishes the
+root directory for installation, inside of which a GNU/POSIX compatible
+directory layout will be used. As on all known build systems, this defaults to
+`/usr/local` on GNU/POSIX compatible systems, with lower level GNU/POSIX
+directories created inside: `/usr/local/bin`,`/usr/local/lib`, etc.
 
 
 **`--pthread-include-dir=<path>`**
@@ -349,10 +350,11 @@ Configure the path to a pthread library.
 Enable more accurate sending times at the cost of potentially higher CPU load.
 
 This option will cause more empty loop running, which may cause more CPU usage. 
-Although when processing high bitrate streams the share of empty loop runs will decrease 
-as the bitrate increases. This way higher CPU usage would still be productive,
-while without system-supported waiting this option may increase the likelihood of
-switching to the right thread at the time when it is expected to be revived.
+Keep in mind, however, that when processing high bitrate streams the share of
+empty loop runs will decrease as the bitrate increases. This way higher CPU
+usage would still be productive, while without system-supported waiting this
+option may increase the likelihood of switching to the right thread at the time
+when it is expected to be revived.
 
 
 **`--use-gnustl`**
@@ -394,8 +396,8 @@ It is handled inside `cmake`. It sets the variables `CMAKE_C_COMPILER` and
 `CMAKE_CXX_COMPILER`. The values for the above `<c-compiler>` and
 `<c++-compiler>` are controlled by the `--with-compiler-type` option.
 
-Instead of `--with-compiler-prefix` you can use as well `--cmake-c-compiler`
-and `--cmake-c++-compiler` options. This can be then thought of as a
+Instead of `--with-compiler-prefix` you can use `--cmake-c-compiler`
+and `--cmake-c++-compiler` options. This can be thought of as a
 shortcut, useful when you have a long path to the compiler command.
 
 **`--with-compiler-type=<name>`**
