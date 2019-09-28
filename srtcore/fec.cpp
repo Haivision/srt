@@ -1517,7 +1517,7 @@ bool FECFilterBuiltin::IsLost(int32_t seq) const
                 << " is earlier than the cell base %" << rcv.cell_base);
         return true; // fake we have the packet - this is to collect losses only
     }
-    if (offset > int(rcv.cells.size()))
+    if (offset >= int(rcv.cells.size()))
     {
         // XXX IPE!
         LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq << " is past the cells %"
@@ -1708,6 +1708,12 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size());
+    }
+    else if (rcv.rowq.size() < numberRows())
+    {
+        HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
+                << " with required %" << CSeqNo::incseq(base0, mindist)
+                << " but row container size still " << rcv.rowq.size());
     }
     else
     {
