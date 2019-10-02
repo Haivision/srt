@@ -696,7 +696,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // be simultaneously also retransmitted. This may confuse the tables.
         int celloff = CSeqNo::seqoff(rcv.cell_base, rpkt.getSeqNo());
         bool past = celloff < 0;
-        bool exists = celloff < int(rcv.cells.size()) && rcv.cells[celloff];
+        bool exists = celloff < int(rcv.cells.size()) && !past && rcv.cells[celloff];
 
         if (past || exists)
         {
