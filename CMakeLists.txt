@@ -585,10 +585,11 @@ if (ENABLE_SHARED)
 		
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
 	if (WIN32 AND NOT MINGW)
-		MafReadDir(srtcore filelist_win32_shared.maf
-			SOURCES SOURCES_srt_shared_win32
-			PRIVATE_HEADERS HEADERS_srt_shared_win32
+		MafReadDir(srtcore filelist.maf 
+			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32 
+			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32 
 		)
+		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
 	endif()
 endif()
