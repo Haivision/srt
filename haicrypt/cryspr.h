@@ -32,6 +32,10 @@ written by
 #include "haisrt/hcrypt_msg.h"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "cryspr-config.h"
 
 typedef struct tag_CRYSPR_cb {
@@ -191,5 +195,9 @@ typedef struct tag_CRYSPR_methods {
 } CRYSPR_methods;
 
 CRYSPR_methods *crysprInit(CRYSPR_methods *cryspr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CRYSPR_H */

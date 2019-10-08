@@ -90,6 +90,8 @@ private:
 
         void operator=(const ManagedPtr& other)
         {
+            if (owns)
+                delete f;
             copy_internal(other);
         }
 

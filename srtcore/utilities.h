@@ -107,9 +107,35 @@ written by
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__)
 
 #	include <endian.h>
+
+// GLIBC-2.8 and earlier does not provide these macros.
+// See http://linux.die.net/man/3/endian
+// From https://gist.github.com/panzi/6856583
+#   if defined(__GLIBC__) \
+      && ( !defined(__GLIBC_MINOR__) \
+         || ((__GLIBC__ < 2) \
+         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9))) )
+#       include <arpa/inet.h>
+#       if defined(__BYTE_ORDER) && (__BYTE_ORDER == __LITTLE_ENDIAN)
+
+#           define htole32(x) (x)
+#           define le32toh(x) (x)
+
+#       elif defined(__BYTE_ORDER) && (__BYTE_ORDER == __BIG_ENDIAN)
+
+#           define htole16(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+#           define le16toh(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
+
+#           define htole32(x) (((uint32_t)htole16(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)htole16(((uint16_t)(x)))) << 16))
+#           define le32toh(x) (((uint32_t)le16toh(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)le16toh(((uint16_t)(x)))) << 16))
+
+#       else
+#           error Byte Order not supported or not defined.
+#       endif
+#   endif
 
 #elif defined(__APPLE__)
 

@@ -156,19 +156,17 @@ public:
     // If not, it will be internally calculated.
     virtual int RTO() { return 0; }
 
-    // How many packets to send one ACK, in packets.
-    // If user-defined, will return nonzero value.  It can enforce extra ACKs
-    // beside those calculated by ACK, sent only when the number of packets
-    // received since the last EXP that fired "fat" ACK does not exceed this
-    // value.
-    virtual int ACKInterval() { return 0; }
+    // Maximum number of packets to trigger ACK sending.
+    // Specifies the number of packets to receive before sending the ACK.
+    // Used by CUDT together with ACKTimeout_us() to trigger ACK packet sending.
+    virtual int ACKMaxPackets() const { return 0; }
 
-    // Periodical timer to send an ACK, in microseconds.
-    // If user-defined, this value in microseconds will be used to calculate
+    // Periodical interval to send an ACK, in microseconds.
+    // If user-defined, this value will be used to calculate
     // the next ACK time every time ACK is considered to be sent (see CUDT::checkTimers).
     // Otherwise this will be calculated internally in CUDT, normally taken
-    // from CPacket::SYN_INTERVAL.
-    virtual int ACKPeriod() { return 0; }
+    // from CUDT::COMM_SYN_INTERVAL_US.
+    virtual int ACKTimeout_us() const { return 0; }
 
     // Called when the settings concerning m_llMaxBW were changed.
     // Arg 1: value of CUDT::m_llMaxBW

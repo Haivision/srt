@@ -385,7 +385,7 @@ public:
    int32_t& m_iSeqNo;                   // alias: sequence number
    int32_t& m_iMsgNo;                   // alias: message number
    int32_t& m_iTimeStamp;               // alias: timestamp
-   int32_t& m_iID;			// alias: socket ID
+   int32_t& m_iID;                      // alias: socket ID
    char*& m_pcData;                     // alias: data/control information
 
    //static const int m_iPktHdrSize;	// packet header size
