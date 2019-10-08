@@ -569,8 +569,6 @@ if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
 	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
-else()
-	message(STATUS "AppVeyor build environment NOT detected: NOT adding build number to version header")
 endif()
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 
