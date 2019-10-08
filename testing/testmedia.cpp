@@ -38,10 +38,11 @@ volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
+bool transmit_printformat_json = false;
 srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
 void* transmit_accept_hook_op = nullptr;
 
-string DirectionName(SRT_EPOLL_OPT direction)
+string DirectionName(SRT_EPOLL_T direction)
 {
     string dir_name;
     if (direction)
@@ -176,16 +177,70 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 template <class PerfMonType>
 void PrintSrtStats(int sid, const PerfMonType& mon)
 {
-    Verb() << "======= SRT STATS: sid=" << sid;
-    Verb() << "PACKETS SENT: " << mon.pktSent << " RECEIVED: " << mon.pktRecv;
-    Verb() << "LOST PKT SENT: " << mon.pktSndLoss << " RECEIVED: " << mon.pktRcvLoss;
-    Verb() << "REXMIT SENT: " << mon.pktRetrans << " RECEIVED: " << mon.pktRcvRetrans;
-    Verb() << "RATE SENDING: " << mon.mbpsSendRate << " RECEIVING: " << mon.mbpsRecvRate;
-    Verb() << "BELATED RECEIVED: " << mon.pktRcvBelated << " AVG TIME: " << mon.pktRcvAvgBelatedTime;
-    Verb() << "REORDER DISTANCE: " << mon.pktReorderDistance;
-    Verb() << "WINDOW: FLOW: " << mon.pktFlowWindow << " CONGESTION: " << mon.pktCongestionWindow << " FLIGHT: " << mon.pktFlightSize;
-    Verb() << "RTT: " << mon.msRTT << "ms  BANDWIDTH: " << mon.mbpsBandwidth << "Mb/s\n";
-    Verb() << "BUFFERLEFT: SND: " << mon.byteAvailSndBuf << " RCV: " << mon.byteAvailRcvBuf;
+    if (transmit_printformat_json)
+    {
+        cout << "{" << endl;
+        cout << "\t\"sid\":" << sid << "," << endl;
+        cout << "\t\"time\":" << mon.msTimeStamp << "," << endl;
+        cout << "\t\"window\":{" << endl;
+        cout << "\t\t\"flow\":" << mon.pktFlowWindow << "," << endl;
+        cout << "\t\t\"congestion\":" << mon.pktCongestionWindow << "," << endl;
+        cout << "\t\t\"flight\":" << mon.pktFlightSize << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"link\":{" << endl;
+        cout << "\t\t\"rtt\":" << mon.msRTT << "," << endl;
+        cout << "\t\t\"bandwidth\":" << mon.mbpsBandwidth << "," << endl;
+        cout << "\t\t\"maxBandwidth\":" << mon.mbpsMaxBW << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"send\":{" << endl;
+        cout << "\t\t\"packets\":" << mon.pktSent << "," << endl;
+        cout << "\t\t\"packetsLost\":" << mon.pktSndLoss << "," << endl;
+        cout << "\t\t\"packetsDropped\":" << mon.pktSndDrop << "," << endl;
+        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRetrans << "," << endl;
+        cout << "\t\t\"packetsFilterExtra\":" << mon.pktSndFilterExtra << "," << endl;
+        cout << "\t\t\"bytes\":" << mon.byteSent << "," << endl;
+        cout << "\t\t\"bytesDropped\":" << mon.byteSndDrop << "," << endl;
+        cout << "\t\t\"mbitRate\":" << mon.mbpsSendRate << endl;
+        cout << "\t}," << endl;
+        cout << "\t\"recv\":{" << endl;
+        cout << "\t\t\"packets\":" << mon.pktRecv << "," << endl;
+        cout << "\t\t\"packetsLost\":" << mon.pktRcvLoss << "," << endl;
+        cout << "\t\t\"packetsDropped\":" << mon.pktRcvDrop << "," << endl;
+        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRcvRetrans << "," << endl;
+        cout << "\t\t\"packetsBelated\":" << mon.pktRcvBelated << "," << endl;
+        cout << "\t\t\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << "," << endl;
+        cout << "\t\t\"packetsFilterSupplied\":" << mon.pktRcvFilterSupply << "," << endl;
+        cout << "\t\t\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << "," << endl;
+        cout << "\t\t\"bytes\":" << mon.byteRecv << "," << endl;
+        cout << "\t\t\"bytesLost\":" << mon.byteRcvLoss << "," << endl;
+        cout << "\t\t\"bytesDropped\":" << mon.byteRcvDrop << "," << endl;
+        cout << "\t\t\"mbitRate\":" << mon.mbpsRecvRate << endl;
+        cout << "\t}," << endl;
+        cout << "\tfilter:{" << endl;
+        cout << "\t\t\"sndExtra\":" << mon.pktSndFilterExtra << endl;
+        cout << "\t\t\"rcvExtra\":" << mon.pktRcvFilterExtra << endl;
+        cout << "\t\t\"rcvSupply\":" << mon.pktRcvFilterSupply << endl;
+        cout << "\t\t\"rcvLoss\":" << mon.pktRcvFilterLoss << endl;
+        cout << "\t}" << endl;
+        cout << "}" << endl;
+
+        return;
+    }
+
+    cout << "======= SRT STATS: sid=" << sid << endl;
+    cout << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv << endl;
+    cout << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss << endl;
+    cout << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans << endl;
+    cout << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop << endl;
+    cout << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra << endl;
+    cout << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss << endl;
+    cout << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate << endl;
+    cout << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+    cout << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+    cout << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow
+           << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+    cout << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+    cout << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf << endl;
 }
 
 

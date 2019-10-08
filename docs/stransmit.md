@@ -40,6 +40,28 @@ options common for multiple media types.
 Note also that the *host* part is always tried to be resolved as a name,
 if its form is not directly the IPv4 address.
 
+Example for smoke testing
+-------------------------
+
+First we need to start up the SRT live transmit app, listening for unicast UDP TS input on port 1234 and making SRT available on port 4201. Note, these are randomly chosen ports. We also open the app in verbose mode for debugging
+
+    srt-live-transmit udp://:1234 srt://:4201 -v
+
+Now we need to generate a UDP stream. ffmpeg can be used to generate bars and tone as follows, doing a simple unicast push to our listening srt-live-tansmit app:
+
+    ffmpeg -f lavfi -re -i smptebars=duration=300:size=1280x720:rate=30 -f lavfi -re -i sine=frequency=1000:duration=60:sample_rate=44100 -pix_fmt yuv420p -c:v libx264 -b:v 1000k -g 30 -keyint_min 120 -profile:v baseline -preset veryfast -f mpegts "udp://127.0.0.1:1234?pkt_size=1316"
+
+You should see the stream connect in srt-live-transmit.
+
+Now you can test in VLC (make sure you're using the latest version!) - just go to file -> open network stream and enter
+
+    srt://127.0.0.1:4201
+
+and you should see bars and tone right away.
+
+If you're having trouble, make sure this works, then add complexity one step at a time (multicast, push vs listen, etc)
+
+
 Medium: FILE (including standard process pipes)
 -----------------------------------------------
 
@@ -168,7 +190,7 @@ shell (using quotes or backslash).
     - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
     - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
-- **-chunk, -c** - use given size of the buffer. When 0, it uses default 1316, which is the maximum size for a single SRT sending call
+- **-chunk, -c** - use given size of the buffer. The default size is 1456 bytes, which is the maximum payload size for a single SRT packet.
 - **-verbose, -v** - display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**
 - **-stats", -stats-report-frequency, -s** - Output periodic SRT statistics reports to the standard output or file (see **-statsout**).
 - **-statsout"** - SRT statistics output: filename. Without this option specified the statistics will be printed to standard output.

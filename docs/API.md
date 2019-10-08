@@ -193,7 +193,7 @@ following interpretation (except `flags` and `boundary` that are reserved for
 future use and should be 0):
 
 * `srt_sendmsg2`:
-    * msgttl: [IN] maximum time (in ms) to wait in sending buffer before being sent (-1 if unused)
+    * msgttl: [IN] maximum time (in ms) to wait for successful delivery (-1: indefinitely)
     * inorder: [IN] if false, the later sent message is allowed to be delivered earlier
     * srctime: [IN] timestamp to be used for sending (0 if current time)
     * pktseq: unused
@@ -328,7 +328,11 @@ Synopsis
 
     int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
     int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-
+    int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
+                        int64_t msTimeOut,
+                        SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+    int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+    
 
 SRT Usage
 ---------
@@ -340,14 +344,81 @@ user-level epoll that supports both SRT and system sockets.
 The `srt_epoll_update_{u|s}sock()` API functions described here are SRT additions
 to the UDT-derived `srt_epoll_add_{u|s}sock()` and `epoll_remove_{u|s}sock()`
 functions to atomically change the events of interest. For example, to remove
-EPOLLOUT but keep EPOLLIN for a given socket with the existing API, the socket
-must be removed from epoll and re-added. This cannot be done atomically, the
-thread protection (against the epoll thread) being applied within each function
-but unprotected between the two calls. It is then possible to lose a POLLIN
-event if it fires while the socket is not in the epoll list.
+`SRT_EPOLL_OUT` but keep `SRT_EPOLL_IN` for a given socket with the existing
+API, the socket must be removed from epoll and re-added. This cannot be done
+atomically, the thread protection (against the epoll thread) being applied
+within each function but unprotected between the two calls. It is then possible
+to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
+epoll list.
+
+Once the subscriptions are made, you can call an SRT polling function
+(`srt_epoll_wait` or `srt_epoll_uwait`) that will block until an event
+is raised on any of the subscribed sockets. This function will exit as
+soon as st least one event is deteted or a timeout occurs. The timeout is
+specified in `[ms]`, with two special values:
+
+ - 0: check and report immediately (don't wait)
+ - -1: wait indefinitely (not interruptable, even by a system signal)
+
+There are some differences in the synopsis between these two:
+
+1. `srt_epoll_wait`: Both system and SRT sockets can be subscribed. This
+function reports events on both socket types according to subscriptions, in
+these arrays:
+
+    - `readfds` and `lrfds`: subscribed for `IN` and `ERR`
+    - `writefds` and `lwfds`: subscribed for `OUT` and `ERR`
+
+where:
+
+    - `readfds` and `writefds` report SRT sockets ("user" socket)
+    - `lrfds` and `lwfds` report system sockets
+
+Note: this function provides no straightforward possibility to report
+sockets with an error. If you want to distinguish a report of readiness
+for operation from an error report, the only way is to subscribe the
+socket in only one direction (either `SRT_EPOLL_IN` or `SRT_EPOLL_OUT`,
+but not both) and `SRT_EPOLL_ERR`, and then check the socket's presence
+in the array for which's direction the socket wasn't subscribed (for
+example, when an SRT socket is subscribed for `SRT_EPOLL_OUT | SRT_EPOLL_ERR`,
+its presence in `readfds` means that an error is reported for it).
+This need not be a big problem because when an error is reported on
+a socket, an appearance as if it were ready for an operation, followed
+by doing this operation, will simply result in an error from that
+operation, so you can use it also as an alternative error check method.
+
+This function also reports error of type `SRT_ETIMEOUT` when no socket is
+ready as the timeout elapses (including 0). This behavior is different in
+`srt_epoll_uwait`.
+
+Note that in this function there's a loop that checks for socket readiness
+every 10ms. Thus, the minimum poll timeout the function can reliably support,
+when system sockets are involved, is also 10ms. The return time from a poll
+function can only be quicker when there is an event raised on one of the active
+SRT sockets.
+
+
+2. `srt_epoll_uwait`: In this function only the SRT sockets can be subscribed
+(it reports error if you pass an epoll id that is subscribed to system sockets).
+This function waits for the first event on subscribed SRT socket and reports all
+events collected at this moment in an array of this structure:
+
+```
+typedef struct SRT_EPOLL_EVENT_
+{
+    SRTSOCKET fd;
+    int       events;
+} SRT_EPOLL_EVENT;
+
+```
+
+Every item reports a single socket with all events as flags.
+
+When the timeout is not -1, and no sockets are ready until the timeout time
+passes, this function returns 0. This behavior is different in `srt_epoll_wait`.
 
 The SRT EPoll system does not supports all features of Linux epoll. For
-example, it only supports level-triggered events.
+example, it only supports level-triggered events for system sockets.
 
 Options
 =======
@@ -687,6 +758,17 @@ dropped
 
 ---
 
+| OptName               | Since | Binding | Type   | Units  | Default  | Range   |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------- |
+| `SRTO_PACKETFILTER`   | 1.4.0 | pre     | string |        |          | [...512]| 
+
+- **[SET]** - Set up the packet filter. The string must match appropriate syntax
+for packet filter setup.
+
+For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
+
+---
+
 | OptName             | Since | Binding | Type   | Units | Default  | Range    |
 | ------------------- | ----- | ------- | ------ | ----- | -------- | -------- |
 | `SRTO_PASSPHRASE`   | 0.0.0 | pre     | string |       | [0]      | [10..79] |
@@ -1016,33 +1098,27 @@ side and it's the matter of luck which one would win
 
 ---
 
-| OptName           | Since | Binding | Type            | Units | Default  | Range  |
-| ----------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
-| `SRTO_STRICTENC`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
+| OptName                    | Since | Binding | Type            | Units | Default  | Range  |
+| -------------------------- | ----- | ------- | --------------- | ----- | -------- | ------ |
+| `SRTO_ENFORCEDENCRYPTION`  | 1.3.2 | pre     | `int (bool)`    |       | true     | false  |
 
-- **[SET]** - This option, when set to TRUE, allows connection only if the
-encryption setup of the connection parties is a "strictly encrypted" case,
-that is:
+- **[SET]** - This option enforces that both connection parties have the
+same passphrase set (including empty, that is, with no encryption), or
+otherwise the connection is rejected.
 
-   - neither party has enabled encryption
-   - both parties have enabled encryption with the same passphrase
+When this option is set to FALSE **on both connection parties**, the
+connection is allowed even if the passphrase differs on both parties,
+or it was set only on one party. Note that the party that has set a passphrase
+is still allowed to send data over the network. However, the receiver will not
+be able to decrypt that data and will not deliver it to the application. The
+party that has set no passphrase can send (unencrypted) data that will be
+successfully received by its peer.
 
-In other cases the connection will be rejected.
-
-When this option is set to FALSE **by both parties of the connection**, the
-following combinations of encryption setup will be allowed for connection (with
-appropriate limitations):
-
-   - both parties have enabled encryption with different passphrase
-      - transmission not possible in either direction
-   - only one party has enabled encryption
-      - unencrypted transmission possible only from unencrypted party to encrypted one
-
-Setting the `SRTO_STRICTENC`option to FALSE can be useful in situations where
-it is important to know whether a connection is possible. The inability to
-decrypt an incoming transmission can be reported as a different kind of
-problem.
-
+This option can be used in some specific situations when the user knows
+both parties of the connection, so there's no possible situation of a rogue
+sender and can be useful in situations where it is important to know whether a
+connection is possible. The inability to decrypt an incoming transmission can
+be then reported as a different kind of problem.
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
