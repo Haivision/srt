@@ -132,28 +132,36 @@ from: https://github.com/openssl/openssl
 The instruction for Windows:
 http://developer.covenanteyes.com/building-openssl-for-visual-studio/
 
-2. Download the pre-compiled Pthreads library for Windows via NuGet:
+2. Compile and install Pthreads for Windows from this submodule:
 
-While pthreads can be compiled from source, or other tools can be used for fulfilling the dependency (e.g. vcpkg), the CMake system for Windows SRT is set up to use a pre-compiled package to speed up CI builds on Appveyor.
+     submodules/pthread-win32
+	 
+Please follow the steps:
 
-Therefore the easiest way to get started is to use Nuget to download the appropriate package to the checked out repository.
+a. Using Visual Studio 2013, please open this file:
 
-This can be unpacked with this command for the following configurations:
+     pthread_lib.2013.vcxproj
 
-Visual Studio 2013 on 32-bit:
-    nuget install cinegy.pthreads-win32-2013
-Visual Studio 2013 on 64-bit:
-    nuget install cinegy.pthreads-win64-2013
-Visual Studio 2015 on 32-bit:
-    nuget install cinegy.pthreads-win32-2015
-Visual Studio 2015 on 64-bit:
-    nuget install cinegy.pthreads-win64-2015
+b. Make sure to select configuration: `Release` and `x64`.
 
-This will download the latest version and unpack it into the ./packages folder, ready for CMake to detect and include and link.
+c. Make sure that the `pthread_lib` project will be built.
+
+d. After building, find the `pthread_lib.lib` file (directory is probably: `bin\x64_MSVC2013.Release`).
+Copy this file to `C:\pthread-win32\lib` (or whatever other location you configured in variables).
+
+e. Copy include files to `C:\pthread-win32\include` - the following ones:
+
+     pthread.h
+     sched.h
+     semaphore.h
+
+(They are in the toplevel directory, there are actually no meaningful subdirs here)
+(NOTE: the win32 is part of the project name. It will become 32 or 64 depending on selection)
+
 
 3. Install cmake for Windows. The CMake GUI will help you configure the project.
 
-It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them:
+It will try to find OpenSSL and pthreads. If you installed them in the default location, they will be found automatically. If not, you can define the following variables to help CMake find them: 
 ```
 OPENSSL_ROOT_DIR=<path to OpenSSL installation>
 OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
@@ -162,6 +170,7 @@ OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
 PTHREAD_INCLUDE_DIR=<path to where pthread.h lies>
 PTHREAD_LIBRARY=<path to pthread.lib>
 ```
+ 
 
 4. For the sake of cmake generation: When you want to have a 64-bit version,
 remember that cmake by some reason adds /machine:X86 to the linker options.
