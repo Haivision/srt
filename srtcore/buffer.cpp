@@ -1283,17 +1283,16 @@ int CRcvBuffer::getRcvDataSize(int &bytes, int &timespan)
    timespan = 0;
    if (m_bTsbPdMode)
    {
-      /* skip invalid entries */
-      int i,n;
-      for (i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
+      // Get a valid startpos.
+      // Skip invalid entries in the beginning, if any.
+      int startpos = m_iStartPos;
+      for (; startpos != m_iLastAckPos; startpos = (startpos + 1) % m_iSize)
       {
-         if ((NULL != m_pUnit[i]) && (CUnit::GOOD == m_pUnit[i]->m_iFlag))
+         if ((NULL != m_pUnit[startpos]) && (CUnit::GOOD == m_pUnit[startpos]->m_iFlag))
              break;
       }
 
-      /* Get a valid startpos */
-      int startpos = i;
-      int endpos = n;
+      int endpos = m_iLastAckPos;
 
       if (m_iLastAckPos != startpos) 
       {
@@ -1319,8 +1318,8 @@ int CRcvBuffer::getRcvDataSize(int &bytes, int &timespan)
 
          if ((NULL != m_pUnit[endpos]) && (NULL != m_pUnit[startpos]))
          {
-            uint64_t startstamp = getPktTsbPdTime(m_pUnit[startpos]->m_Packet.getMsgTimeStamp());
-            uint64_t endstamp = getPktTsbPdTime(m_pUnit[endpos]->m_Packet.getMsgTimeStamp());
+            const uint64_t startstamp = getPktTsbPdTime(m_pUnit[startpos]->m_Packet.getMsgTimeStamp());
+            const uint64_t endstamp = getPktTsbPdTime(m_pUnit[endpos]->m_Packet.getMsgTimeStamp());
             /* 
             * There are sampling conditions where spantime is < 0 (big unsigned value).
             * It has been observed after changing the SRT latency from 450 to 200 on the sender.
