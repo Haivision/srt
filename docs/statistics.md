@@ -347,11 +347,34 @@ The measurements effective at the time retrieved.
 Current minimum time interval between which consecutive packets are sent, in 
 microseconds. Sender only.
 
+Note that several sockets sharing one outgoing port use the same sending queue.
+They may have different pacing of the outgoing packets, but all the packets will
+be placed in the same sending queue, that may affect actual sending timing.
+
+`usPktSndPeriod` is the minimum time (sending period) that must be kept
+between two sent consecutively sent packets over the link used by SRT socket.
+It is not the EXACT time interval between
+two consecutive packets are sent. In the case where the time spent by the 
+application between two consecutive sendings exceeds `usPktSndPeriod`, the next 
+packet will be sent faster or even immediately to preserve the average sending rate.
+
 **Note**. Except for probing packets.
 
 ## pktFlowWindow
 
 The maximum number of packets that can be in flight. Sender only.
+
+The "flow window" in packets. It is the amount of free space
+on the peer receiver, stating that this socket represents the sender. When this
+value drops to zero, the next packet sent will be dropped by the receiver
+without processing. In **file mode** this may cause a slowdown of sending in
+order to wait until the receiver makes more space available, after it
+eventually extracts the packets waiting in its receiver buffer; in **live
+mode** the receiver buffer contents should normally occupy not more than half
+of the buffer size (default 8192). If `pktFlowWindow` value is less than that
+and becomes even less in the next reports, it means that the receiver
+application on the peer side cannot process the incoming stream fast enough and
+this may lead do a dropped connection.
 
 ## pktCongestionWindow
 
@@ -408,7 +431,9 @@ Refer to `SRTO_MSS` in [API.md](API.md).
 
 ## pktSndBuf
 
-The number of unacknowledged packets in sender's buffer. Sender only.
+The number of packets in the sender's buffer that are already 
+scheduled for sending or even possibly sent, but not yet acknowledged.
+Sender only.
 
 Once the receiver acknowledges the receival of a packet, of the TL packet drop
 is triggered, the packet is removed from the sender's buffer.
@@ -437,7 +462,10 @@ The current state is returned if `srt_bistats(...)` is called with `instantaneou
 
 ## msSndTsbPdDelay
 
-Timestamp-based Packet Delivery Delay value of the peer. The sender reports TSBPD delay value of the receiver.
+Timestamp-based Packet Delivery Delay value of the peer.
+If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
+returns the value of `SRTO_PEERLATENCY`, otherwise 0.
+The sender reports TSBPD delay value of the receiver.
 The receiver reports the TSBPD delay of the sender.
 
 ## pktRcvBuf
@@ -459,7 +487,12 @@ Instantaneous (current) value of `pktRcvBuf`, expressed in bytes, including payl
 
 ## msRcvBuf
 
-The timespan (msec) of acknowledged (ready to play) packets in the receiver's buffer. Receiver side.
+The timespan (msec) of acknowledged packets in the receiver's buffer. Receiver side.
+
+If TSBPD mode is enabled (defualt for **live mode**),
+a packet can be acknowledged, but not yet ready to play.
+This range includes all packets regardless of whether 
+they are ready to play or not.
 
 A moving average value is reported when the value is retrieved by calling
 `srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
@@ -473,4 +506,6 @@ Instantaneous value is only reported if TSBPD mode is enabled, otherwise 0 is re
 
 Timestamp-based Packet Delivery Delay value set on the socket via `SRTO_RCVLATENCY` or `SRTO_LATENCY`.
 The value is used to apply TSBPD delay for reading the received data on the socket. Receiver side.
+
+If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
 

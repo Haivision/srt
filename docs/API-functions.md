@@ -990,8 +990,8 @@ Performance tracking
 --------------------
 
 General note concerning sequence numbers used in SRT: they are 32-bit "circular
-numbers" with the most significant bit not included, so for example 0x7FFFFFFF
-shifted by 3 forward becomes 2. As far as any comparison is concerned, it can
+numbers" with the most significant bit not included. For example 0x7FFFFFFF
+shifted forward by 3 becomes 2. As far as any comparison is concerned, it can
 be only spoken about a "distance" rather than difference, which is an integer
 value expressing an offset to be added to one sequence in order to get the
 second one. This distance is only valid as long as the threshold value isn't
@@ -1018,9 +1018,10 @@ Reports the current statistics
 * `clear`: 1 if the statistics should be cleared after retrieval
 * `instantaneous`: 1 if the statistics should use instant data, not moving averages
 
-`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. Most of the fields are 
-reasonably well described in the header file comments. Here are descriptions of 
-some less obvious fields in this structure (instant measurements):
+`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For complete description
+of the fields please refer to the document [statistics.md](statistics.md).
+
+Here are descriptions of some less obvious fields in this structure (instant measurements):
 
 * `usPktSndPeriod`: This is the minimum time (sending period) that must be kept
 between two packets sent consecutively over the link used by this socket. Note
@@ -1103,31 +1104,6 @@ currently uses it.
 It's the size of the MTU unit (size of the UDP packet used for transport,
 including all possible headers, that is Ethernet, IP and UDP), default 1500.
 
-* `pktSndBuf`: The number of packets in the send buffer that are already 
-scheduled for sending or even possibly sent, but not yet acknowledged.
-
-* `byteSndBuf`: Same as `pktSndBuf`, in bytes.
-
-* `msSndBuf`: Same as `pktSndBuf`, but expressed as a time interval between the
-oldest and the latest packet scheduled for sending.
-
-* `msSndTsbPdDelay`: If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
-returns the value of `SRTO_PEERLATENCY`, otherwise 0.
-
-* `pktRcvBuf`: Number of packets in the receiver buffer. Note that in **live mode** 
-(with `SRTO_TSBPDMODE` turned on, default) some packets must stay in the buffer 
-and will not be signed off to the application until the "time to play" comes. 
-In **file mode** (both stream and message) it means that all that is above 0 can
-(and shall) be read right now.
-
-* `byteRcvBuf`: Like `pktRcvBuf`, in bytes.
-
-* `msRcvBuf`: Time interval between the first and last available packets in the
-receiver buffer. Note that this range includes all packets regardless of whether 
-they are ready to play or not (regarding the **live mode**)..
-
-* `msRcvTsbPdDelay`: If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
-returns the value of `SRTO_RCVLATENCY`; otherwise 0.
 
 Asynchronous operations (epoll)
 -------------------------------
