@@ -523,17 +523,6 @@ if (ENABLE_ENCRYPTION)
 	)
 endif()
 
-#add resource files to shared library, to set DLL metadata on Windows DLLs
-if (WIN32 AND NOT MINGW)
-	MafReadDir(common filelist_win32.maf
-		SOURCES SOURCES_common
-		PUBLIC_HEADERS HEADERS_srt_win32
-		PROTECTED_HEADERS HEADERS_srt_win32
-	)
-	message(STATUS "WINDOWS detected: adding compat sources: ${SOURCES_common}")
-endif()
-
-
 # Make the OBJECT library for haicrypt and srt. Then they'll be bound into
 # real libraries later, either one common, or separate.
 
