@@ -523,7 +523,8 @@ if (ENABLE_ENCRYPTION)
 	)
 endif()
 
-if (WIN32)
+#add resource files to shared library, to set DLL metadata on Windows DLLs
+if (WIN32 AND NOT MINGW)
 	MafReadDir(common filelist_win32.maf
 		SOURCES SOURCES_common
 		PUBLIC_HEADERS HEADERS_srt_win32
