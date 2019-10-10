@@ -569,9 +569,8 @@ if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
 	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
-else()
-	message(STATUS "AppVeyor build environment NOT detected: NOT adding build number to version header")
 endif()
+
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
@@ -587,10 +586,11 @@ if (ENABLE_SHARED)
 		
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
 	if (WIN32 AND NOT MINGW)
-		MafReadDir(srtcore filelist_win32_shared.maf
-			SOURCES SOURCES_srt_shared_win32
-			PRIVATE_HEADERS HEADERS_srt_shared_win32
+		MafReadDir(srtcore filelist.maf 
+			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32 
+			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32 
 		)
+		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
 	endif()
 endif()
