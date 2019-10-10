@@ -362,19 +362,21 @@ packet will be sent faster or even immediately to preserve the average sending r
 
 ## pktFlowWindow
 
-The maximum number of packets that can be in flight. Sender only.
+The maximum number of packets that can be "in flight". Sender only.
+See also [pktFlightSize](#pktFlightSize).
 
-The "flow window" in packets. It is the amount of free space
+The value represents the amount of free space
 on the peer receiver, stating that this socket represents the sender. When this
 value drops to zero, the next packet sent will be dropped by the receiver
 without processing. In **file mode** this may cause a slowdown of sending in
-order to wait until the receiver makes more space available, after it
+order to wait until the receiver has more space available, after it
 eventually extracts the packets waiting in its receiver buffer; in **live
 mode** the receiver buffer contents should normally occupy not more than half
 of the buffer size (default 8192). If `pktFlowWindow` value is less than that
 and becomes even less in the next reports, it means that the receiver
 application on the peer side cannot process the incoming stream fast enough and
 this may lead do a dropped connection.
+
 
 ## pktCongestionWindow
 
@@ -383,11 +385,33 @@ Congestion window size, in number of packets. Sender only.
 Dynamically limits the maximum number of packets that can be in flight.
 Congestion control module dynamically changes the value.
 
+In **file mode**  this value starts at 16 and is increased to the number of reported
+acknowledged packets. Then is also updated based on the delivery rate, reported by the receiver.
+It represents the maximum number of packets that can be safely
+sent without causing network congestion. The higher this value is, the faster the
+packets can be sent. In **live mode** this field is not used.
+
 ## pktFlightSize
 
 The number of packets in flight. Sender only.
 
 `pktFlightSize <= pktFlowWindow` and `pktFlightSize <= pktCongestionWindow`
+
+This is the distance 
+between the packet sequence number that was last reported by an ACK message and 
+the latest sequence number of the packet, that was sent (at the moment when the statistics
+are being read).
+
+**NOTE:** ACKs are received periodically (at least every 10 ms). This value is most accurate just
+after receiving an ACK and becomes a little exaggerated over time until the
+next ACK arrives. This is because with a new packet sent and the sent sequence
+increased the ACK number stays the same for a moment, which increases this value,
+but the exact number of packets arrived since the last ACK report is unknown.
+Possibly a new statistical data can be added which holds only the distance
+between the ACK sequence and the sent sequence at the moment when ACK arrives
+and isn't updated until the next ACK arrives. The difference between this value
+and `pktFlightSize` would show then the number of packets with an unknown state
+at the moment.
 
 ## msRTT
 
@@ -396,36 +420,63 @@ The value is calculated by the receiver based on the incoming ACKACK control pac
 (sender acknowledges that an ACK acknowledgement packet has been received)
 of the ACK control packet sent by the receiver.
 
-The receiver includes the latest RTT value in the ACK control packet, thus letting the
-sender know the latest value.
+The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
+values, one from agent to peer, and one from peer to agent. Note that **the 
+measurement method is different than in TCP**. SRT measures only the "reverse
+RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
+message until receiving the sender-responded `UMSG_ACKACK` message (with the
+same journal). This happens to be a little different to the "forward RTT",  
+measured in TCP, which is the time between sending a data packet of a particular 
+sequence number and receiving `UMSG_ACK` with a sequence number that is later 
+by 1. Forward RTT isn't being measured or reported in SRT, although some
+research works have shown that these values, even though should be the same,
+happen to differ, that is, "reverse RTT" seems to be more optimistic.
 
 ## mbpsBandwidth
 
 Estimated bandwidth of the network link, in Mbps. Sender only.
 
-The estimated bandwidth is based on the time between two probing DATA packets.
+The bandwidth is estimated at the receiver.
+The estimation is based on the time between two probing DATA packets.
 Every 16-th data packet is sent immediately after the previous data packet.
 Thus it is possible to estimate the maximum available transmission rate, that is considered
 as the bandwidth of the link.
+The receiver then sends back a running average calculation to the sender with the ACK message.
 
 ## byteAvailSndBuf
 
 The available space in the sender's buffer, in bytes. Sender only.
 
+This value decreases with data scheduled for sending by the application, and increases 
+with every ACK received from the receiver, after the packets are sent over 
+the UDP link.
+
 ## byteAvailRcvBuf
 
 The available space in the receiver's buffer, in bytes. Receiver only.
 
+This value increases after the application extracts the data from the socket
+(uses one of `srt_recv*` functions) and decreases with every packet received
+from the sender over the UDP link.
+
 ## mbpsMaxBW
 
 Transmission bandwidth limit, in Mbps. Sender only.
+Usually this is the setting from 
+the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain 
+conditions a nonzero value might be be provided by the appropriate congestion 
+control module, although none of the built-in congestion control modules 
+currently use it.
 
 Refer to `SRTO_MAXBW` and `SRTO_INPUTBW` in [API.md](API.md).
 
 ## byteMSS
 
-Maximum Segment Size (MSS), in bytes. Should not exceed the size of
-the maximum transmission unit (MTU), in bytes. Sender and Receiver.
+Maximum Segment Size (MSS), in bytes.
+Same as the value from the `SRTO_MSS` socket option.
+Should not exceed the size of the maximum transmission unit (MTU), in bytes. Sender and Receiver.
+The default size of the UDP packet used for transport,
+including all possible headers, that is Ethernet, IP and UDP, - is 1500 bytes.
 
 Refer to `SRTO_MSS` in [API.md](API.md).
 

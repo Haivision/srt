@@ -1124,6 +1124,7 @@ both parties of the connection, so there's no possible situation of a rogue
 sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
+
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
