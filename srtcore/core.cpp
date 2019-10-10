@@ -4679,7 +4679,7 @@ void* CUDT::tsbpd(void* param)
                 self->m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
                 CGuard::leaveCS(self->m_StatsLock);
 
-                self->unlose(self->m_iRcvLastSkipAck, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
+                self->dropFromLossLists(self->m_iRcvLastSkipAck, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
                 self->m_pRcvBuffer->skipData(seqlen);
 
                 self->m_iRcvLastSkipAck = skiptoseqno;
@@ -7676,7 +7676,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
       CGuard::leaveCS(m_RecvLock);
 
-      unlose(*(int32_t*)ctrlpkt.m_pcData, *(int32_t*)(ctrlpkt.m_pcData + 4));
+      dropFromLossLists(*(int32_t*)ctrlpkt.m_pcData, *(int32_t*)(ctrlpkt.m_pcData + 4));
 
       // move forward with current recv seq no.
       if ((CSeqNo::seqcmp(*(int32_t*)ctrlpkt.m_pcData, CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
@@ -8723,21 +8723,15 @@ void CUDT::unlose(const CPacket& packet)
         HLOGF(mglog.Debug, "received reXmitted or belated packet seq %d (distinction not supported by peer)", sequence);
     }
 
-
-    int initial_loss_ttl = 0;
-    if (m_bPeerRexmitFlag)
-        initial_loss_ttl = m_iReorderTolerance;
-
     // Don't do anything if "belated loss report" feature is not used.
     // In that case the FreshLoss list isn't being filled in at all, the
     // loss report is sent directly.
-
     // Note that this condition blocks two things being done in this function:
     // - remove given sequence from the fresh loss record
     //   (in this case it's empty anyway)
     // - decrease current reorder tolerance based on whether packets come in order
     //   (current reorder tolerance is 0 anyway)
-    if (!initial_loss_ttl)
+    if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
 
     size_t i = 0;
@@ -8745,40 +8739,40 @@ void CUDT::unlose(const CPacket& packet)
     for (i = 0; i < m_FreshLoss.size(); ++i)
     {
         had_ttl = m_FreshLoss[i].ttl;
-        switch ( m_FreshLoss[i].revoke(sequence) )
+        switch (m_FreshLoss[i].revoke(sequence))
         {
-       case CRcvFreshLoss::NONE:
-           continue; // Not found. Search again.
+        case CRcvFreshLoss::NONE:
+            continue; // Not found. Search again.
 
-       case CRcvFreshLoss::STRIPPED:
-           goto breakbreak; // Found and the modification is applied. We're done here.
+        case CRcvFreshLoss::STRIPPED:
+            goto breakbreak; // Found and the modification is applied. We're done here.
 
-       case CRcvFreshLoss::DELETE:
-           // No more elements. Kill it.
-           m_FreshLoss.erase(m_FreshLoss.begin() + i);
-           // Every loss is unique. We're done here.
-           goto breakbreak;
+        case CRcvFreshLoss::DELETE:
+            // No more elements. Kill it.
+            m_FreshLoss.erase(m_FreshLoss.begin() + i);
+            // Every loss is unique. We're done here.
+            goto breakbreak;
 
-       case CRcvFreshLoss::SPLIT:
-           // Oh, this will be more complicated. This means that it was in between.
-           {
-               // So create a new element that will hold the upper part of the range,
-               // and this one modify to be the lower part of the range.
+        case CRcvFreshLoss::SPLIT:
+            // Oh, this will be more complicated. This means that it was in between.
+        {
+            // So create a new element that will hold the upper part of the range,
+            // and this one modify to be the lower part of the range.
 
-               // Keep the current end-of-sequence value for the second element
-               int32_t next_end = m_FreshLoss[i].seq[1];
+            // Keep the current end-of-sequence value for the second element
+            int32_t next_end = m_FreshLoss[i].seq[1];
 
-               // seq-1 set to the end of this element
-               m_FreshLoss[i].seq[1] = CSeqNo::decseq(sequence);
-               // seq+1 set to the begin of the next element
-               int32_t next_begin = CSeqNo::incseq(sequence);
+            // seq-1 set to the end of this element
+            m_FreshLoss[i].seq[1] = CSeqNo::decseq(sequence);
+            // seq+1 set to the begin of the next element
+            int32_t next_begin = CSeqNo::incseq(sequence);
 
-               // Use position of the NEXT element because insertion happens BEFORE pointed element.
-               // Use the same TTL (will stay the same in the other one).
-               m_FreshLoss.insert(m_FreshLoss.begin() + i + 1, CRcvFreshLoss(next_begin, next_end, m_FreshLoss[i].ttl));
-           }
-           goto breakbreak;
-       }
+            // Use position of the NEXT element because insertion happens BEFORE pointed element.
+            // Use the same TTL (will stay the same in the other one).
+            m_FreshLoss.insert(m_FreshLoss.begin() + i + 1, CRcvFreshLoss(next_begin, next_end, m_FreshLoss[i].ttl));
+        }
+        goto breakbreak;
+        }
     }
 
     // Could have made the "return" instruction instead of goto, but maybe there will be something
@@ -8822,22 +8816,18 @@ breakbreak: ;
 
 }
 
-void CUDT::unlose(int32_t from, int32_t to)
+void CUDT::dropFromLossLists(int32_t from, int32_t to)
 {
     CGuard lg(m_RcvLossLock);
     m_pRcvLossList->remove(from, to);
 
     HLOGF(mglog.Debug, "TLPKTDROP seq %d-%d (%d packets)", from, to, CSeqNo::seqoff(from, to));
 
-    // All code below concerns only "belated lossreport" feature.
-
-    int initial_loss_ttl = 0;
-    if ( m_bPeerRexmitFlag )
-        initial_loss_ttl = m_iReorderTolerance;
-
-    if ( !initial_loss_ttl )
+    if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
 
+    // All code below concerns only "belated lossreport" feature.
+    
     // It's highly unlikely that this is waiting to send a belated UMSG_LOSSREPORT,
     // so treat it rather as a sanity check.
 
