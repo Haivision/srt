@@ -104,7 +104,6 @@ least one packet ready to play.
 
 Also includes packets that failed to be decrypted (pktRcvUndecryptTotal). These 
 packets are present in the receiver's buffer, and not dropped directly. 
-Potentially a bug.
 
 ## pktRcvUndecryptTotal
 
