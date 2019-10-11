@@ -1,6 +1,6 @@
 SRT provides a powerful set of statistical data on a socket.
-This data can be used to keep an eye on socket's health,
-and track some faulty situations as well.
+This data can be used to keep an eye on a socket's health,
+and track faulty behavior.
 
 Statistics are calculated independently on each side (receiver and sender),
 and are not exchanged between peers, unless explicitly stated.
@@ -264,7 +264,7 @@ SRT starts from 0 tolerance. Once it receives the first
 reordered packet, it increases the tolerance to the distance in the sequence
 discontinuity of the two packets. \
 After 10 consecutive original (not retransmitted) packets come in order, the reorder distance
-is decreased by 1 with every such a packet.
+is decreased by 1 for every such packet.
 
 For example, assume packets with the following sequence
 numbers are being received: \
@@ -273,9 +273,10 @@ SRT starts from 0 tolerance. Receiving packet with sequence number 4 has a disco
 equal to one packet. The loss is reported to the sender.
 With the next packet (sequence number 3) a reordering is detected. Reorder tolerance is increased to 1. \
 The next sequence discontinuity is detected when the packet with sequence number 7 is received.
-The current tolerance value is 1, which equals to the gap. No loss is reported. \
+The current tolerance value is 1, which is equal to the gap (between 5 and 7). No loss is reported. \
 Next packet with sequence number 10 has a higher sequence discontinuity equal to 2.
-Missing packets with sequence numbers 8 and 9 will be reported lost with the next received packet (reorder distance 1).
+Missing packets with sequence numbers 8 and 9 will be reported lost with the next received packet
+(reorder distance is still at 1).
 The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
 The packet with sequence number 9 is reported lost.
 
@@ -348,25 +349,25 @@ microseconds. Sender only.
 
 Note that several sockets sharing one outgoing port use the same sending queue.
 They may have different pacing of the outgoing packets, but all the packets will
-be placed in the same sending queue, that may affect actual sending timing.
+be placed in the same sending queue, which may affect the send timing.
 
 `usPktSndPeriod` is the minimum time (sending period) that must be kept
-between two sent consecutively sent packets over the link used by SRT socket.
-It is not the EXACT time interval between
-two consecutive packets are sent. In the case where the time spent by the 
-application between two consecutive sendings exceeds `usPktSndPeriod`, the next 
-packet will be sent faster or even immediately to preserve the average sending rate.
+between two packets sent consecutively over the link used by an SRT socket.
+It is not the EXACT time interval between two consecutive packets. In the case where the time spent by an 
+application between sending two consecutive packets exceeds `usPktSndPeriod`, the next 
+packet will be sent faster, or even immediately, to preserve the average sending rate.
 
-**Note**. Except for probing packets.
+**Note**: Does not apply to probing packets.
 
 ## pktFlowWindow
 
 The maximum number of packets that can be "in flight". Sender only.
 See also [pktFlightSize](#pktFlightSize).
 
-The value represents the amount of free space
-on the peer receiver, stating that this socket represents the sender. When this
-value drops to zero, the next packet sent will be dropped by the receiver
+The value retrieved on the sender side represents an estimation of the amount
+of free space in the buffer of the peer receiver.
+The actual amount of available space is periodically reported back by the receiver in ACK packets.
+When this value drops to zero, the next packet sent will be dropped by the receiver
 without processing. In **file mode** this may cause a slowdown of sending in
 order to wait until the receiver has more space available, after it
 eventually extracts the packets waiting in its receiver buffer; in **live
@@ -374,7 +375,7 @@ mode** the receiver buffer contents should normally occupy not more than half
 of the buffer size (default 8192). If `pktFlowWindow` value is less than that
 and becomes even less in the next reports, it means that the receiver
 application on the peer side cannot process the incoming stream fast enough and
-this may lead do a dropped connection.
+this may lead to a dropped connection.
 
 
 ## pktCongestionWindow
@@ -385,7 +386,7 @@ Dynamically limits the maximum number of packets that can be in flight.
 Congestion control module dynamically changes the value.
 
 In **file mode**  this value starts at 16 and is increased to the number of reported
-acknowledged packets. Then is also updated based on the delivery rate, reported by the receiver.
+acknowledged packets. This value is also updated based on the delivery rate, reported by the receiver.
 It represents the maximum number of packets that can be safely
 sent without causing network congestion. The higher this value is, the faster the
 packets can be sent. In **live mode** this field is not used.
@@ -398,38 +399,38 @@ The number of packets in flight. Sender only.
 
 This is the distance 
 between the packet sequence number that was last reported by an ACK message and 
-the latest sequence number of the packet, that was sent (at the moment when the statistics
+the sequence number of the latest packet sent (at the moment when the statistics
 are being read).
 
 **NOTE:** ACKs are received periodically (at least every 10 ms). This value is most accurate just
 after receiving an ACK and becomes a little exaggerated over time until the
-next ACK arrives. This is because with a new packet sent and the sent sequence
-increased the ACK number stays the same for a moment, which increases this value,
-but the exact number of packets arrived since the last ACK report is unknown.
-Possibly a new statistical data can be added which holds only the distance
-between the ACK sequence and the sent sequence at the moment when ACK arrives
+next ACK arrives. This is because with a new packet sent,
+while the ACK number stays the same for a moment,
+the value of `pktFlightSize` increases.
+But the exact number of packets arrived since the last ACK report is unknown.
+A new statistic might be added which only reports the distance
+between the ACK sequence and the sent sequence at the moment when an ACK arrives,
 and isn't updated until the next ACK arrives. The difference between this value
-and `pktFlightSize` would show then the number of packets with an unknown state
-at the moment.
+and `pktFlightSize` would then reveal the number of packets with an unknown state
+at that moment.
 
 ## msRTT
 
 Calculated Round trip time (RTT), in milliseconds. Sender and Receiver. \
 The value is calculated by the receiver based on the incoming ACKACK control packets
-(sender acknowledges that an ACK acknowledgement packet has been received)
-of the ACK control packet sent by the receiver.
+(used by sender to acknowledge ACKs from receiver).
 
 The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
 values, one from agent to peer, and one from peer to agent. Note that **the 
 measurement method is different than in TCP**. SRT measures only the "reverse
 RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
-message until receiving the sender-responded `UMSG_ACKACK` message (with the
-same journal). This happens to be a little different to the "forward RTT",  
+message until receiving the sender's `UMSG_ACKACK` response message (with the
+same journal). This happens to be a little different from the "forward RTT"
 measured in TCP, which is the time between sending a data packet of a particular 
 sequence number and receiving `UMSG_ACK` with a sequence number that is later 
 by 1. Forward RTT isn't being measured or reported in SRT, although some
-research works have shown that these values, even though should be the same,
-happen to differ, that is, "reverse RTT" seems to be more optimistic.
+research works have shown that these values, even though they should be the same,
+happen to differ; "reverse RTT" seems to be more optimistic.
 
 ## mbpsBandwidth
 
@@ -437,10 +438,11 @@ Estimated bandwidth of the network link, in Mbps. Sender only.
 
 The bandwidth is estimated at the receiver.
 The estimation is based on the time between two probing DATA packets.
-Every 16-th data packet is sent immediately after the previous data packet.
-Thus it is possible to estimate the maximum available transmission rate, that is considered
-as the bandwidth of the link.
-The receiver then sends back a running average calculation to the sender with the ACK message.
+Every 16th data packet is sent immediately after the previous data packet.
+By measuring the delay between probe packets on arrival,
+it is possible to estimate the maximum available transmission rate,
+which is interpreted as the bandwidth of the link.
+The receiver then sends back a running average calculation to the sender with an ACK message.
 
 ## byteAvailSndBuf
 
@@ -475,7 +477,7 @@ Maximum Segment Size (MSS), in bytes.
 Same as the value from the `SRTO_MSS` socket option.
 Should not exceed the size of the maximum transmission unit (MTU), in bytes. Sender and Receiver.
 The default size of the UDP packet used for transport,
-including all possible headers, that is Ethernet, IP and UDP, - is 1500 bytes.
+including all possible headers (Ethernet, IP and UDP), is 1500 bytes.
 
 Refer to `SRTO_MSS` in [API.md](API.md).
 
@@ -485,7 +487,7 @@ The number of packets in the sender's buffer that are already
 scheduled for sending or even possibly sent, but not yet acknowledged.
 Sender only.
 
-Once the receiver acknowledges the receival of a packet, of the TL packet drop
+Once the receiver acknowledges the receipt of a packet, or the TL packet drop
 is triggered, the packet is removed from the sender's buffer.
 Until this happens, the packet is considered as unacknowledged.
 

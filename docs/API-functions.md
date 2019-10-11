@@ -992,7 +992,7 @@ Performance tracking
 General note concerning sequence numbers used in SRT: they are 32-bit "circular
 numbers" with the most significant bit not included. For example 0x7FFFFFFF
 shifted forward by 3 becomes 2. As far as any comparison is concerned, it can
-be only spoken about a "distance" rather than difference, which is an integer
+be thought of as a "distance" which is an integer
 value expressing an offset to be added to one sequence in order to get the
 second one. This distance is only valid as long as the threshold value isn't
 exceeded, so it's stated that all sequence numbers that are anywhere taken into
@@ -1018,7 +1018,7 @@ Reports the current statistics
 * `clear`: 1 if the statistics should be cleared after retrieval
 * `instantaneous`: 1 if the statistics should use instant data, not moving averages
 
-`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For complete description
+`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
 of the fields please refer to the document [statistics.md](statistics.md).
 
 Asynchronous operations (epoll)
