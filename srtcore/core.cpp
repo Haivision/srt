@@ -7418,7 +7418,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // and if waiting for the lock has caused a delay, the time will be
       // inaccurate. Additionally it won't lock if TSBPD mode is off, and
       // won't update anything. Note that if you set TSBPD mode and use
-      // srt_recvfile (which doesn't make any sense), you'll have e deadlock.
+      // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
       m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock);
 
       // update last ACK that has been received by the sender
