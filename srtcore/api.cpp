@@ -67,6 +67,10 @@ modified by
    #include <win/wintime.h>
 #endif
 
+#ifdef _MSC_VER
+   #pragma warning(error: 4530)
+#endif
+
 using namespace std;
 using namespace srt_logging;
 extern LogConfig srt_logger_config;
