@@ -665,6 +665,20 @@ bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
 
    return false;
 }
+bool CIPAddress::ipcmp(const uint32_t ip1[4], const uint32_t ip2[4], int ver) {
+    if(ip1 == NULL || ip2 == NULL)
+    {
+        return false;
+    }
+    if (AF_INET == ver)
+    {
+        return ip1[0] == ip2[0];
+    }
+    return ip1[0] == ip2[0]
+           && ip1[1] == ip2[1]
+           && ip1[2] == ip2[2]
+           && ip1[3] == ip2[3];
+}
 
 void CIPAddress::ntop(const sockaddr* addr, uint32_t ip[4], int ver)
 {
@@ -672,6 +686,9 @@ void CIPAddress::ntop(const sockaddr* addr, uint32_t ip[4], int ver)
    {
       sockaddr_in* a = (sockaddr_in*)addr;
       ip[0] = a->sin_addr.s_addr;
+      ip[1] = 0;
+      ip[2] = 0;
+      ip[3] = 0;
    }
    else
    {

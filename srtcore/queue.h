@@ -533,6 +533,7 @@ struct CMultiplexer
    CChannel* m_pChannel;    // The UDP channel for sending and receiving
    CTimer* m_pTimer;        // The timer
 
+   uint32_t m_piIP[4];
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // IP version
 #ifdef SRT_ENABLE_IPOPTS

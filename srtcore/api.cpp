@@ -1717,6 +1717,9 @@ void CUDTUnited::updateMux(
       int port = (AF_INET == s->m_pUDT->m_iIPversion)
          ? ntohs(((sockaddr_in*)addr)->sin_port)
          : ntohs(((sockaddr_in6*)addr)->sin6_port);
+      // ip addr
+      uint32_t ip[4];
+      CIPAddress::ntop(addr,ip,s->m_pUDT->m_iIPversion);
 
       // find a reusable address
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
@@ -1731,7 +1734,7 @@ void CUDTUnited::updateMux(
             && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
             &&  i->second.m_bReusable)
          {
-            if (i->second.m_iPort == port)
+            if (i->second.m_iPort == port && CIPAddress::ipcmp(ip,i->second.m_piIP,i->second.m_iIPversion))
             {
                // HLOGF(mglog.Debug, "reusing multiplexer for port
                // %hd\n", port);
@@ -1792,6 +1795,7 @@ void CUDTUnited::updateMux(
       ? ntohs(((sockaddr_in*)sa)->sin_port)
       : ntohs(((sockaddr_in6*)sa)->sin6_port);
 
+   CIPAddress::ntop(sa,m.m_piIP,m.m_iIPversion);
    if (AF_INET == s->m_pUDT->m_iIPversion)
       delete (sockaddr_in*)sa;
    else
@@ -1813,7 +1817,7 @@ void CUDTUnited::updateMux(
    s->m_iMuxID = m.m_iID;
 
    HLOGF(mglog.Debug, 
-      "creating new multiplexer for port %i\n", m.m_iPort);
+      "creating new multiplexer for port '%i' and ip '%i'\n", m.m_iPort,m.m_piIP[0]);
 }
 
 // XXX This functionality needs strong refactoring.
@@ -1868,14 +1872,19 @@ void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
       ? ntohs(((sockaddr_in*)ls->m_pSelfAddr)->sin_port)
       : ntohs(((sockaddr_in6*)ls->m_pSelfAddr)->sin6_port);
 
+
+    // ip addr
+    uint32_t ip[4] ;
+    CIPAddress::ntop(ls->m_pSelfAddr,ip,ls->m_iIPversion);
    // find the listener's address
    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
       i != m_mMultiplexer.end(); ++ i)
    {
-      if (i->second.m_iPort == port)
+       //  check ip and port
+      if (i->second.m_iPort == port && CIPAddress::ipcmp(ip,i->second.m_piIP,ls->m_iIPversion))
       {
-         HLOGF(mglog.Debug, 
-            "updateMux: reusing multiplexer for port %i\n", port);
+         HLOGF(mglog.Debug,
+            "updateMux: reusing multiplexer for port '%i' and ip '%i'\n", port,ip[0]);
          // reuse the existing multiplexer
          ++ i->second.m_iRefCount;
          s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
