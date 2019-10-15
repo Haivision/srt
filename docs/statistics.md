@@ -184,61 +184,61 @@ Same as `pktSentTotal`, but for a specified interval.
 
 ## pktRecv
 
-Same as `pktRecvTotal`, but on the interval.
+Same as `pktRecvTotal`, but for a specified interval.
 
 ## pktSndLoss
 
-Same as `pktSndLossTotal`, but on the interval.
+Same as `pktSndLossTotal`, but for a specified interval.
 
 ## pktRcvLoss
 
-Same as `pktRcvLossTotal`, but on the interval.
+Same as `pktRcvLossTotal`, but for a specified interval.
 
 ## pktRetrans
 
-Same as `pktRetransTotal`, but on the interval.
+Same as `pktRetransTotal`, but for a specified interval.
 
 ## pktRcvRetrans
 
-Same as `pktRcvRetransTotal`, but on the interval.
+Same as `pktRcvRetransTotal`, but for a specified interval.
 
 ## pktSentACK
 
-Same as `pktSentACKTotal`, but on the interval.
+Same as `pktSentACKTotal`, but for a specified interval.
 
 ## pktRecvACK
 
-Same as `pktRecvACKTotal`, but on the interval.
+Same as `pktRecvACKTotal`, but for a specified interval.
 
 ## pktSentNAK
 
-Same as `pktSentNAKTotal`, but on the interval.
+Same as `pktSentNAKTotal`, but for a specified interval.
 
 ## pktRecvNAK
 
-Same as `pktRecvNAKTotal`, but on the interval.
+Same as `pktRecvNAKTotal`, but for a specified interval.
 
 ## pktSndFilterExtra
 
-Same as `pktSndFilterExtraTotal`, but on the interval.
+Same as `pktSndFilterExtraTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterExtra
 
-Same as `pktRcvFilterExtraTotal`, but on the interval.
+Same as `pktRcvFilterExtraTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterSupply
 
-Same as `pktRcvFilterSupplyTotal`, but on the interval.
+Same as `pktRcvFilterSupplyTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterLoss
 
-Same as `pktRcvFilterLossTotal`, but on the interval.
+Same as `pktRcvFilterLossTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
@@ -252,7 +252,7 @@ Receiving rate in Mbps. Receiver side.
 
 ## usSndDuration
 
-Same as `usSndDurationTotal`, but measured on the interval.
+Same as `usSndDurationTotal`, but measured on a specified interval.
 
 ## pktReorderDistance
 
@@ -300,43 +300,43 @@ Retransmitted packets can also be considered late.
 
 ## pktSndDrop
 
-Same as `pktSndDropTotal`, but on the interval.
+Same as `pktSndDropTotal`, but for a specified interval.
 
 ## pktRcvDrop
 
-Same as `pktRcvDropTotal`, but on the interval.
+Same as `pktRcvDropTotal`, but for a specified interval.
 
 ## pktRcvUndecrypt
 
-Same as `pktRcvUndecryptTotal`, but on the interval.
+Same as `pktRcvUndecryptTotal`, but for a specified interval.
 
 ## byteSent
 
-Same as `byteSentTotal`, but on the interval.
+Same as `byteSentTotal`, but for a specified interval.
 
 ## byteRecv
 
-Same as `byteRecvTotal`, but on the interval.
+Same as `byteRecvTotal`, but for a specified interval.
 
 ## byteRcvLoss
 
-Same as `byteRcvLossTotal`, but on the interval.
+Same as `byteRcvLossTotal`, but for a specified interval.
 
 ## byteRetrans
 
-Same as `byteRetransTotal`, but on the interval.
+Same as `byteRetransTotal`, but for a specified interval.
 
 ## byteSndDrop
 
-Same as `byteSndDropTotal`, but on the interval.
+Same as `byteSndDropTotal`, but for a specified interval.
 
 ## byteRcvDrop
 
-Same as `byteRcvDropTotal`, but on the interval.
+Same as `byteRcvDropTotal`, but for a specified interval.
 
 ## byteRcvUndecrypt
 
-Same as `byteRcvUndecryptTotal`, but on the interval.
+Same as `byteRcvUndecryptTotal`, but for a specified interval.
 
 # Instant measurements
 
@@ -465,7 +465,7 @@ from the sender over the UDP link.
 Transmission bandwidth limit, in Mbps. Sender only.
 Usually this is the setting from 
 the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain 
-conditions a nonzero value might be be provided by the appropriate congestion 
+conditions a nonzero value might be be provided by a congestion 
 control module, although none of the built-in congestion control modules 
 currently use it.
 
@@ -517,7 +517,7 @@ The current state is returned if `srt_bistats(...)` is called with `instantaneou
 Timestamp-based Packet Delivery Delay value of the peer.
 If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
 returns the value of `SRTO_PEERLATENCY`, otherwise 0.
-The sender reports TSBPD delay value of the receiver.
+The sender reports the TSBPD delay value of the receiver.
 The receiver reports the TSBPD delay of the sender.
 
 ## pktRcvBuf
