@@ -165,7 +165,7 @@ Same as `pktSndDropTotal`, but expressed in bytes, including payload and all hea
 ## byteRcvDropTotal
 
 Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-Bytes of payload of dropped packets is estimated based on average packet size. \
+Bytes for dropped packet payloads are estimated based on average packet size. \
 20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side only. 
 
 ## byteRcvUndecryptTotal
