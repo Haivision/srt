@@ -990,9 +990,9 @@ Performance tracking
 --------------------
 
 General note concerning sequence numbers used in SRT: they are 32-bit "circular
-numbers" with the most significant bit not included, so for example 0x7FFFFFFF
-shifted by 3 forward becomes 2. As far as any comparison is concerned, it can
-be only spoken about a "distance" rather than difference, which is an integer
+numbers" with the most significant bit not included. For example 0x7FFFFFFF
+shifted forward by 3 becomes 2. As far as any comparison is concerned, it can
+be thought of as a "distance" which is an integer
 value expressing an offset to be added to one sequence in order to get the
 second one. This distance is only valid as long as the threshold value isn't
 exceeded, so it's stated that all sequence numbers that are anywhere taken into
@@ -1018,116 +1018,8 @@ Reports the current statistics
 * `clear`: 1 if the statistics should be cleared after retrieval
 * `instantaneous`: 1 if the statistics should use instant data, not moving averages
 
-`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. Most of the fields are 
-reasonably well described in the header file comments. Here are descriptions of 
-some less obvious fields in this structure (instant measurements):
-
-* `usPktSndPeriod`: This is the minimum time (sending period) that must be kept
-between two packets sent consecutively over the link used by this socket. Note
-that sockets sharing one outgoing port use the same underlying UDP socket and
-therefore the same link and the same sender queue. `usPktSndPeriod` is the
-inversion of the maximum sending speed. It isn't the EXACT time interval between
-two consecutive sendings because in the case where the time spent by the 
-application between two consecutive sendings exceeds `usPktSndPeriod`, the next 
-packet will be sent immediately. The extra "wasted" time will be accounted for 
-at the next sending.
-
-* `pktFlowWindow`: The "flow window" in packets. It is the amount of free space
-on the peer receiver, stating that this socket represents the sender. When this
-value drops to zero, the next packet sent will be dropped by the receiver
-without processing. In **file mode** this may cause a slowdown of sending in
-order to wait until the receiver makes more space available, after it
-eventually extracts the packets waiting in its receiver buffer; in **live
-mode** the receiver buffer contents should normally occupy not more than half
-of the buffer size (default 8192). If `pktFlowWindow` value is less than that
-and becomes even less in the next reports, it means that the receiver
-application on the peer side cannot process the incoming stream fast enough and
-this may lead do a dropped connection.
-
-* `pktCongestionWindow`: The "congestion window" in packets. In **file mode** 
-this value starts at 16 and is increased with every number of reported
-acknowledged packets, and then is also updated based on the receiver-reported
-delivery rate. It represents the maximum number of packets that can be safely
-sent now without causing congestion. The higher this value, the faster the
-packets can be sent. In **live mode** this field is not used.
-
-* `pktFlightSize`: The number of packets in flight. This is the distance 
-between the packet sequence number that was last reported by an ACK message and 
-the sequence number of the packet just sent (at the moment when the statistics
-are being read).
-
-**NOTE:** ACKs are received periodically, so this value is most accurate just
-after receiving an ACK and becomes a little exaggerated over time until the
-next ACK arrives. This is because with a new packet sent and the sent sequence
-increased the ACK number stays the same for a moment, which increases this value,
-but the exact number of packets arrived since the last ACK report is unknown.
-Possibly a new statistical data can be added which holds only the distance
-between the ACK sequence and the sent sequence at the moment when ACK arrives
-and isn't updated until the next ACK arrives. The difference between this value
-and `pktFlightSize` would show then the number of packets whose fate is unknown
-at the moment.
-
-* `msRTT`: The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
-values, one from agent to peer, and one from peer to agent. Note that **the 
-measurement method is different than on TCP**; SRT measures only the "reverse
-RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
-message until receiving the sender-responded `UMSG_ACKACK` message (with the
-same journal). This happens to be a little different to the "forward RTT" as 
-measured in TCP, which is the time between sending a data packet of a particular 
-sequence number and receiving `UMSG_ACK` with a sequence number that is later 
-by 1. Forward RTT isn't being measured or reported in SRT, although some
-research works have shown that these values, even though shuold be the same,
-happen to differ, that is, "reverse RTT" seems to be more optimistic.
-
-* `mbpsBandwidth`: The bandwidth in Mb/s. The bandwidth is measured at the 
-receiver, which sends back a running average calculation to the sender with
-the ACK message.
-
-* `byteAvailSndBuf`: The number of bytes available in the sender buffer. This 
-value decreases with data scheduled for sending by the application, and increases 
-with every ACK received from the receiver, after the packets are sent over 
-the UDP link.
-
-* ` byteAvailRcvBuf`: The number of bytes available in the receiver buffer.
-This value increases after the application extracts the data from the socket
-(uses one of `srt_recv*` functions) and decreases with every packet received
-from the sender over the UDP link.
-
-* `mbpsMaxBW`: The maximum bandwidth in Mb/s. Usually this is the setting from 
-the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain 
-conditions a nonzero value might be be provided by the appropriate congestion 
-control module, although none of the built-in congestion control modules 
-currently uses it.
-
-* `byteMSS`: Same as a value from `SRTO_MSS` option, "Message Segment Size".
-It's the size of the MTU unit (size of the UDP packet used for transport,
-including all possible headers, that is Ethernet, IP and UDP), default 1500.
-
-* `pktSndBuf`: The number of packets in the send buffer that are already 
-scheduled for sending or even possibly sent, but not yet acknowledged.
-
-* `byteSndBuf`: Same as `pktSndBuf`, in bytes.
-
-* `msSndBuf`: Same as `pktSndBuf`, but expressed as a time interval between the
-oldest and the latest packet scheduled for sending.
-
-* `msSndTsbPdDelay`: If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
-returns the value of `SRTO_PEERLATENCY`, otherwise 0.
-
-* `pktRcvBuf`: Number of packets in the receiver buffer. Note that in **live mode** 
-(with `SRTO_TSBPDMODE` turned on, default) some packets must stay in the buffer 
-and will not be signed off to the application until the "time to play" comes. 
-In **file mode** (both stream and message) it means that all that is above 0 can
-(and shall) be read right now.
-
-* `byteRcvBuf`: Like `pktRcvBuf`, in bytes.
-
-* `msRcvBuf`: Time interval between the first and last available packets in the
-receiver buffer. Note that this range includes all packets regardless of whether 
-they are ready to play or not (regarding the **live mode**)..
-
-* `msRcvTsbPdDelay`: If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
-returns the value of `SRTO_RCVLATENCY`; otherwise 0.
+`SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
+of the fields please refer to the document [statistics.md](statistics.md).
 
 Asynchronous operations (epoll)
 -------------------------------
