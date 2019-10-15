@@ -180,7 +180,7 @@ This is helpful to get statistical measurements within a certain period, e.g. 1 
 
 ## pktSent
 
-Same as `pktSentTotal`, but on the interval.
+Same as `pktSentTotal`, but for a specified interval.
 
 ## pktRecv
 
