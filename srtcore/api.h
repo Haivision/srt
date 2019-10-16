@@ -75,7 +75,12 @@ public:
 
    SRT_SOCKSTATUS m_Status;                  //< current socket state
 
-   uint64_t m_TimeStamp;                     //< time when the socket is closed
+   /// Time when the socket is closed.
+   /// When the socket is closed, it is not removed immediately from the list
+   /// of sockets in order to prevent other methods from accessing invalid address.
+   /// A timer is started and the socket will be removed after approximately
+   /// 1 second (see CUDTUnited::checkBrokenSockets()).
+   uint64_t m_ClosureTimeStamp;
 
    int m_iIPversion;                         //< IP version
    sockaddr* m_pSelfAddr;                    //< pointer to the local address of the socket
