@@ -120,14 +120,23 @@ SRT can be connected using one of three connection modes:
 - **listener**: the "agent" waits for being contacted by any peer **caller** (note that a listener can accept multiple callers, but *srt-live-transmit* does not use this possibility - after the first connected one, it no longer accepts new connections).
 - **rendezvous**: A one-to-one only connection where both parties are equivalent and both connect to one another simultaneously. Whoever happened to start first (or succeeded to punch through the firewall) is meant to have initiated the connection.
 
-This mode can be specified explicitly using the **mode** parameter. For example, to listen on interface 10.10.10.100, port 5001:
-
-    srt://10.10.10.100:5001?mode=listener
-
-When the mode is not specified, then it is "deduced" the following way:
+This mode can be specified explicitly using the **mode** parameter. When it's not specified, then it is "deduced" the following way:
 
 - `srt://:1234` - the *port* is specified (1234), but *host* is empty. This assumes **listener** mode.
 - `srt://remote.host.com:1234` - both *host* ***and*** *port* are specified. This assumes **caller** mode.
+
+When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
+
+* For caller, it's always the destination host address. If this is empty, it is resolved to `0.0.0.0`, which usually should mean connecting to the local host
+* For listener, it defines the IP address of the local device on which the socket should listen, e.g.:
+
+```
+srt://10.10.10.100:5001?mode=listener
+```
+An alternative method to specify this IP address is the `adapter` parameter:
+```
+srt://:5001?adapter=10.10.10.100
+```
 
 The **rendezvous** mode is not deduced and it has to be specified
 explicitly. Note also special cases of the **host** and **port** parts
