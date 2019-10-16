@@ -168,7 +168,7 @@ public:
 
       /// Update the timestamp of the UDT instance on the list.
       /// @param [in] u pointer to the UDT instance
-      /// @param [in] resechedule if the timestampe shoudl be rescheduled
+      /// @param [in] reschedule if the timestamp should be rescheduled
 
    void update(const CUDT* u, EReschedule reschedule);
 
@@ -415,7 +415,6 @@ private:
    pthread_cond_t m_WindowCond;
 
    volatile bool m_bClosing;		// closing the worker
-   pthread_cond_t m_ExitCond;
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)//>>debug high freq worker
    uint64_t m_ullDbgPeriod;
@@ -494,7 +493,6 @@ private:
    int m_iPayloadSize;                  // packet payload size
 
    volatile bool m_bClosing;            // closing the worker
-   pthread_cond_t m_ExitCond;
 
 private:
    int setListener(CUDT* u);
