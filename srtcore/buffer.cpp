@@ -1139,27 +1139,26 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 */
 bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq)
 {
-   *tsbpdtime = 0;
+    *tsbpdtime = 0;
 
-   if (m_bTsbPdMode)
-   {
-       CPacket* pkt = getRcvReadyPacket();
-       if ( pkt )
-       {
-            /* 
-            * Acknowledged data is available,
-            * Only say ready if time to deliver.
-            * Report the timestamp, ready or not.
-            */
-            *curpktseq = pkt->getSeqNo();
-            *tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
-            if (*tsbpdtime <= CTimer::getTime())
-               return true;
-       }
-       return false;
-   }
+    if (m_bTsbPdMode)
+    {
+        CPacket* pkt = getRcvReadyPacket();
+        if (!pkt)
+            return false;
 
-   return isRcvDataAvailable();
+        /*
+        * Acknowledged data is available,
+        * Only say ready if time to deliver.
+        * Report the timestamp, ready or not.
+        */
+        *curpktseq = pkt->getSeqNo();
+        *tsbpdtime = getPktTsbPdTime(pkt->getMsgTimeStamp());
+
+        return (*tsbpdtime <= CTimer::getTime());
+    }
+
+    return isRcvDataAvailable();
 }
 
 // XXX This function may be called only after checking
