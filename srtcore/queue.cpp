@@ -1183,8 +1183,8 @@ void *CRcvQueue::worker(void *param)
         uint64_t currtime_tk;
         CTimer::rdtsc(currtime_tk);
 
-        CRNode * ul       = self->m_pRcvUList->m_pUList;
-        uint64_t ctime_tk = currtime_tk - 100000 * CTimer::getCPUFrequency();
+        CRNode * ul             = self->m_pRcvUList->m_pUList;
+        const uint64_t ctime_tk = currtime_tk - CUDT::COMM_SYN_INTERVAL_US * CTimer::getCPUFrequency();
         while ((NULL != ul) && (ul->m_llTimeStamp_tk < ctime_tk))
         {
             CUDT *u = ul->m_pUDT;
