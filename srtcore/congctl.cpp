@@ -494,7 +494,7 @@ private:
 
         const int pktsInFlight = m_parent->RTT() / m_dPktSndPeriod;
         const int numPktsLost = m_parent->sndLossLength();
-        const int lost_pcent_x10 = (numPktsLost * 1000) / pktsInFlight;
+        const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
         HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: "
             << "sent=" << CSeqNo::seqlen(m_iLastAck, m_parent->sndSeqNo()) << ", inFlight=" << pktsInFlight
