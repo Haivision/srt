@@ -6,12 +6,11 @@ $minorVer=99
 $patchVer=0
 $buildNum=0
 
-#define various regular expressions to be used when hunting in files
+#define regular expressions to be used when checking for #define statements
 $versionSniffingRegex = "(\s*#define\s+(\S+)\s+)(\d+)"
 
-Get-Location | Write-Host
-
-Get-Content ".\srtcore\version.h" |  Where-Object { $_ -match $versionSniffingRegex } | ForEach-Object {
+#read generated file, load values from this with regular expression
+Get-Content ".\version.h" |  Where-Object { $_ -match $versionSniffingRegex } | ForEach-Object {
 	switch ($Matches[2])
 	{
 		"SRT_VERSION_MAJOR" { $majorVer = $Matches[3] }
@@ -22,5 +21,5 @@ Get-Content ".\srtcore\version.h" |  Where-Object { $_ -match $versionSniffingRe
 }
 
 #make AppVeyor update with this new version number
-Update-AppveyorBuild -Version "$SRT_VERSION_MAJOR.$SRT_VERSION_MINOR.$SRT_VERSION_PATCH.$SRT_VERSION_BUILD"
+Update-AppveyorBuild -Version "$majorVer.$minorVer.$patchVer.$buildNum"
 
