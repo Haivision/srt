@@ -2005,7 +2005,7 @@ SRTSOCKET CUDT::socket(int af, int, int)
       s_UDTUnited.setError(new CUDTException(e));
       return INVALID_SOCK;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return INVALID_SOCK;
@@ -2031,7 +2031,7 @@ int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2057,7 +2057,7 @@ int CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2082,7 +2082,7 @@ int CUDT::listen(SRTSOCKET u, int backlog)
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2128,7 +2128,7 @@ int CUDT::connect(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2259,7 +2259,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2308,7 +2308,7 @@ int CUDT::sendmsg(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2335,7 +2335,7 @@ int CUDT::sendmsg2(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2403,7 +2403,7 @@ int64_t CUDT::sendfile(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2461,7 +2461,7 @@ int CUDT::select(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
@@ -2497,7 +2497,7 @@ int CUDT::selectEx(
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
    }
-   catch (bad_alloc)
+   catch (bad_alloc&)
    {
       s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return ERROR;
