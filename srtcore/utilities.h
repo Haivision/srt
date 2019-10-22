@@ -68,11 +68,12 @@ written by
 #define ATR_OVERRIDE
 #define ATR_FINAL
 
-#if defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
+#endif
+
+#if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
 #error "The currently compiled application required C++11, but your compiler doesn't support it."
 #endif
 
-#endif
 
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -91,6 +92,11 @@ written by
 #include <memory>
 #include <sstream>
 #include <iomanip>
+
+#if HAVE_CXX11
+#include <type_traits>
+#endif
+
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
@@ -681,7 +687,17 @@ struct CallbackHolder
     {
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
+#if HAVE_CXX11
+        static_assert(std::is_function<Signature>::value, "CallbackHolder is for functions only!");
+#else
+        // This is a poor-man's replacement, which should in most compilers
+        // generate a warning, if `Signature` resolves to a value type.
+        // This would make an illegal pointer cast from a value to a function type.
+        // Casting function-to-function, however, should not. Unfortunately
+        // newer compilers disallow that, too (when a signature differs), but
+        // then they should better use the C++11 way, much more reliable and safer.
         void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+#endif
         opaque = o;
         fn = f;
     }
