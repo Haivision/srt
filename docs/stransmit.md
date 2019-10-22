@@ -125,6 +125,19 @@ This mode can be specified explicitly using the **mode** parameter. When it's n
 - `srt://:1234` - the *port* is specified (1234), but *host* is empty. This assumes **listener** mode.
 - `srt://remote.host.com:1234` - both *host* ***and*** *port* are specified. This assumes **caller** mode.
 
+When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
+
+* For caller, it's always the destination host address. If this is empty, it is resolved to `0.0.0.0`, which usually should mean connecting to the local host
+* For listener, it defines the IP address of the local device on which the socket should listen, e.g.:
+
+```
+srt://10.10.10.100:5001?mode=listener
+```
+An alternative method to specify this IP address is the `adapter` parameter:
+```
+srt://:5001?adapter=10.10.10.100
+```
+
 The **rendezvous** mode is not deduced and it has to be specified
 explicitly. Note also special cases of the **host** and **port** parts
 specified in the URI:
