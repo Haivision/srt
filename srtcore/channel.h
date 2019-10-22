@@ -200,13 +200,13 @@ private:
 
    struct CMSGNodeAlike
    {
-       cmsghdr hdr;
        union
        {
            in_pktinfo in4;
            in6_pktinfo in6;
        };
        size_t extrafill;
+       cmsghdr hdr;
    };
 
    mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
