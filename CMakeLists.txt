@@ -583,15 +583,16 @@ if (ENABLE_SHARED)
 	foreach (tar srt_virtual haicrypt_virtual)
 		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
 	endforeach()
-		
+
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
 	if (WIN32 AND NOT MINGW)
-		MafReadDir(srtcore filelist.maf 
-			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32 
-			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32 
+		MafReadDir(srtcore filelist.maf
+			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
+			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32
 		)
 		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
+		message(STATUS "WINDOWS detected: Adding private headers to SRT shared project: ${HEADERS_srt_shared_win32}")
 	endif()
 endif()
 
