@@ -29,7 +29,7 @@ BEGIN
         BLOCK "080904b0"
         BEGIN
             VALUE "CompanyName", "SRT Alliance"
-            VALUE "FileDescription", "Secure Reliable Transport"
+            VALUE "FileDescription", "SRT Local Build"
             VALUE "InternalName", "srt.dll"
             VALUE "LegalCopyright", ""
             VALUE "OriginalFilename", "srt.dll"
