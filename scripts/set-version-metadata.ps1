@@ -44,3 +44,4 @@ Get-ChildItem -Path "./srtcore/srt_shared.rc" | ForEach-Object {
     
     [System.IO.File]::WriteAllLines($fileName.FullName, $FileLines)
 }
+
