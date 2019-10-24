@@ -258,6 +258,30 @@ public:
        removeExistingNotices(wait);
    }
 
+   // This function removes notices referring to
+   // events that are NOT present in @a nevts, but
+   // may be among subscriptions and therefore potentially
+   // have an associated notice.
+   void removeExcessEvents(Wait& wait, int nevts)
+   {
+       // Update the event notice, should it exist
+       // If the watch points to a null notice, there's simply
+       // no notice there, so nothing to update or prospectively
+       // remove - but may be something to add.
+       if (wait.notit == nullNotice())
+           return;
+
+       const int newstate = wait.notit->events & nevts;
+       if (newstate)
+       {
+           wait.notit->events = newstate;
+       }
+       else
+       {
+           removeExistingNotices(wait);
+       }
+   }
+
    void checkEdge(enotice_t::iterator i)
    {
        // This function should check if this event was subscribed
