@@ -244,7 +244,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
             // The object exists. We only are certain about the `u`
             // parameter, but others are probably unchanged. Change them
             // forcefully and take out notices that are no longer valid.
-            int removable = wait.watch & ~evts;
+            const int removable = wait.watch & ~evts;
 
             // Check if there are any events that would be removed.
             // If there are no removed events watched (for example, when
@@ -264,7 +264,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
             // and the state is also updated
         }
 
-        int newstate = wait.watch & wait.state;
+        const int newstate = wait.watch & wait.state;
         if (newstate)
         {
             d.addEventNotice(wait, u, newstate);
