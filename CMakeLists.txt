@@ -460,7 +460,7 @@ endif()
 if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-elseif (WIN32 AND NOT MINGW)
+elseif (MICROSOFT)
 	find_package(pthreads QUIET)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
@@ -585,7 +585,7 @@ if (ENABLE_SHARED)
 	endforeach()
 
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
-	if (WIN32 AND NOT MINGW)
+	if (MICROSOFT)
 		MafReadDir(srtcore filelist.maf
 			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
 			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32
