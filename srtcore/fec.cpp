@@ -1914,7 +1914,7 @@ TranslateLossRecords(loss, irrecover);
 HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
 }
 
-void FECFilterBuiltin::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
+void FECFilterBuiltin::TranslateLossRecords(const set<int32_t>& loss, loss_seqs_t& irrecover)
 {
     if (loss.empty())
         return;
