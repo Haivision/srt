@@ -529,17 +529,17 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 //"select" has a limitation on the number of sockets
                 int max_fd = 0;
 
-                fd_set readfds;
-                fd_set writefds;
-                FD_ZERO(&readfds);
-                FD_ZERO(&writefds);
+                fd_set rqreadfds;
+                fd_set rqwritefds;
+                FD_ZERO(&rqreadfds);
+                FD_ZERO(&rqwritefds);
 
                 for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                 {
                     if (lrfds)
-                        FD_SET(*i, &readfds);
+                        FD_SET(*i, &rqreadfds);
                     if (lwfds)
-                        FD_SET(*i, &writefds);
+                        FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
                         max_fd = *i;
                 }
@@ -547,16 +547,16 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 timeval tv;
                 tv.tv_sec = 0;
                 tv.tv_usec = 0;
-                if (::select(max_fd + 1, &readfds, &writefds, NULL, &tv) > 0)
+                if (::select(max_fd + 1, &rqreadfds, &rqwritefds, NULL, &tv) > 0)
                 {
                     for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                     {
-                        if (lrfds && FD_ISSET(*i, &readfds))
+                        if (lrfds && FD_ISSET(*i, &rqreadfds))
                         {
                             lrfds->insert(*i);
                             ++ total;
                         }
-                        if (lwfds && FD_ISSET(*i, &writefds))
+                        if (lwfds && FD_ISSET(*i, &rqwritefds))
                         {
                             lwfds->insert(*i);
                             ++ total;
