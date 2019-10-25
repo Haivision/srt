@@ -92,6 +92,13 @@ int CEPoll::create()
 {
    CGuard pg(m_EPollLock);
 
+   if (++ m_iIDSeed >= 0x7FFFFFFF)
+      m_iIDSeed = 0;
+
+   // Check if an item already exists. Should not ever happen.
+   if (m_mPolls.find(m_iIDSeed) != m_mPolls.end())
+       throw CUDTException(MJ_SETUP, MN_NONE);
+
    int localid = 0;
 
    #ifdef LINUX
@@ -112,15 +119,11 @@ ENOMEM: There was insufficient memory to create the kernel object.
    // on Windows, select
    #endif
 
-   if (++ m_iIDSeed >= 0x7FFFFFFF)
-      m_iIDSeed = 0;
+   pair<map<int, CEPollDesc>::iterator, bool> res = m_mPolls.insert(make_pair(m_iIDSeed, CEPollDesc(m_iIDSeed, localid)));
+   if (!res.second)  // Insertion failed (no memory?)
+       throw CUDTException(MJ_SETUP, MN_NONE);
 
-   CEPollDesc desc;
-   desc.m_iID = m_iIDSeed;
-   desc.m_iLocalID = localid;
-   m_mPolls[desc.m_iID] = desc;
-
-   return desc.m_iID;
+   return m_iIDSeed;
 }
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
