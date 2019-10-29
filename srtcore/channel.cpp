@@ -422,7 +422,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
-        << " pkt.ts=" << FormatTime(packet.m_iTimeStamp)
+        << " pkt.ts=" << packet.m_iTimeStamp
         << spec.str());
 #endif
 
