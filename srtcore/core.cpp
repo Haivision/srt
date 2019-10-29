@@ -1157,6 +1157,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
+    case SRTO_LOSSMAXTTL:
+        *(int32_t*)optval = m_iMaxReorderTolerance;
+        optlen = sizeof(int32_t);
+        break;
+
     case SRTO_NAKREPORT:
         *(bool *)optval = m_bRcvNakReport;
         optlen          = sizeof(bool);
