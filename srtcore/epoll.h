@@ -203,30 +203,7 @@ public:
        }
        else
        {
-           // `events` contains bits to be cleared.
-           // 1. If there is no notice event, do nothing - clear already.
-           // 2. If there is a notice event, update by clearing the bits
-           // 2.1. If this made resulting state to be 0, also remove the notice.
-
-           // If wait.notit is empty, there's no event to clear
-           if (wait.notit == nullNotice())
-               return;
-
-           // Update the state
-           const int newstate = wait.notit->events & (~events);
-
-           if (newstate == 0)
-           {
-               // If the new state is full 0 (no events),
-               // then remove the corresponding notice object
-               m_USockEventNotice.erase(wait.notit);
-
-               // and set the "corresponding notice object" to nothing
-               wait.notit = nullNotice();
-               return;
-           }
-
-           wait.notit->events = newstate;
+           removeExcessEvents(wait, ~events);
        }
    }
 
@@ -271,6 +248,11 @@ public:
        if (wait.notit == nullNotice())
            return;
 
+       // `events` contains bits to be cleared.
+       // 1. If there is no notice event, do nothing - clear already.
+       // 2. If there is a notice event, update by clearing the bits
+       // 2.1. If this made resulting state to be 0, also remove the notice.
+
        const int newstate = wait.notit->events & nevts;
        if (newstate)
        {
@@ -278,6 +260,8 @@ public:
        }
        else
        {
+           // If the new state is full 0 (no events),
+           // then remove the corresponding notice object
            removeExistingNotices(wait);
        }
    }
