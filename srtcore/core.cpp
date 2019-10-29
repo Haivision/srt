@@ -1080,6 +1080,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pSndQueue->getIpTTL();
         else
             *(int32_t *)optval = m_iIpTTL;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_IPTOS:
@@ -1087,6 +1088,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pSndQueue->getIpToS();
         else
             *(int32_t *)optval = m_iIpToS;
+        optlen = sizeof(int32_t);
         break;
 #endif
 
@@ -1136,6 +1138,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pCryptoControl->m_SndKmState;
         else
             *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_SNDKMSTATE: // State imposed by Agent depending on PW and KMX
