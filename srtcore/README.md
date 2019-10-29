@@ -6,6 +6,7 @@ and internally by the library, this directory also contains:
 
  - common files: usually header files, which can be used also by other projects,
 even if they don't link against SRT
+
  - public and protected header files - header files for the library, which will
 be picked up from here
 
