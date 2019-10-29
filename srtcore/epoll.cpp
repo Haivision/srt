@@ -233,22 +233,44 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
+    CEPollDesc& d = p->second;
+
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
     evts &= ~SRT_EPOLL_ET;
     if (evts)
     {
-        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = p->second.addWatch(u, evts, edgeTriggered);
+        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = d.addWatch(u, evts, edgeTriggered);
         CEPollDesc::Wait& wait = iter_new.first->second;
-        int newstate = wait.watch & wait.state;
+        if (!iter_new.second)
+        {
+            // The object exists. We only are certain about the `u`
+            // parameter, but others are probably unchanged. Change them
+            // forcefully and take out notices that are no longer valid.
+            const int removable = wait.watch & ~evts;
+
+            // Check if there are any events that would be removed.
+            // If there are no removed events watched (for example, when
+            // only new events are being added to existing socket),
+            // there's nothing to remove, but might be something to update.
+            if (removable)
+            {
+                d.removeExcessEvents(wait, evts);
+            }
+
+            // Update the watch configuration, including edge
+            wait.watch = evts;
+            if (edgeTriggered)
+                wait.edge = evts;
+
+            // Now it should look exactly like newly added
+            // and the state is also updated
+        }
+
+        const int newstate = wait.watch & wait.state;
         if (newstate)
         {
-            p->second.addEventNotice(wait, u, newstate);
-        }
-        else if (!iter_new.second) // if it was freshly added, no notice object exists
-        {
-            // This removes the event notice entry, but leaves the subscription
-            p->second.removeEvents(wait);
+            d.addEventNotice(wait, u, newstate);
         }
     }
     else if (edgeTriggered)
@@ -259,7 +281,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     else
     {
         // Update with no events means to remove subscription
-        p->second.removeSubscription(u);
+        d.removeSubscription(u);
     }
     return 0;
 }
