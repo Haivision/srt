@@ -67,7 +67,7 @@ namespace ACKWindowTools
    {
        int32_t iACKSeqNo;       // Seq. No. for the ACK packet
        int32_t iACK;            // Data Seq. No. carried by the ACK packet
-       uint64_t TimeStamp;      // The timestamp when the ACK was sent
+       srt::sync::steady_clock::time_point tsTimeStamp;      // The timestamp when the ACK was sent
    };
 
    void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t ack);
@@ -143,14 +143,13 @@ public:
         m_iProbeWindowPtr(0),
         m_iLastSentTime(0),
         m_iMinPktSndInt(1000000),
-        m_LastArrTime(),
-        m_CurrArrTime(),
-        m_ProbeTime(),
+        m_tsLastArrTime(srt::sync::steady_clock::now()),
+        m_tsCurrArrTime(),
+        m_tsProbeTime(),
         m_Probe1Sequence(-1)
     {
         pthread_mutex_init(&m_lockPktWindow, NULL);
         pthread_mutex_init(&m_lockProbeWindow, NULL);
-        m_LastArrTime = CTimer::getTime();
         CPktTimeWindowTools::initializeWindowArrays(m_aPktWindow, m_aProbeWindow, m_aBytesWindow, ASIZE, PSIZE);
     }
 
@@ -159,7 +158,6 @@ public:
        pthread_mutex_destroy(&m_lockPktWindow);
        pthread_mutex_destroy(&m_lockProbeWindow);
    }
-
 
    /// read the minimum packet sending interval.
    /// @return minimum packet sending interval (microseconds).
@@ -215,10 +213,10 @@ public:
    {
        CGuard cg(m_lockPktWindow);
 
-       m_CurrArrTime = CTimer::getTime();
+       m_tsCurrArrTime = srt::sync::steady_clock::now();
 
        // record the packet interval between the current and the last one
-       m_aPktWindow[m_iPktWindowPtr] = int(m_CurrArrTime - m_LastArrTime);
+       m_aPktWindow[m_iPktWindowPtr] = count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
        m_aBytesWindow[m_iPktWindowPtr] = pktsz;
 
        // the window is logically circular
@@ -227,7 +225,7 @@ public:
            m_iPktWindowPtr = 0;
 
        // remember last packet arrival time
-       m_LastArrTime = m_CurrArrTime;
+       m_tsLastArrTime = m_tsCurrArrTime;
    }
 
    /// Shortcut to test a packet for possible probe 1 or 2
@@ -263,7 +261,7 @@ public:
            return;
        }
 
-       m_ProbeTime = CTimer::getTime();
+       m_tsProbeTime = srt::sync::steady_clock::now();
        m_Probe1Sequence = pkt.m_iSeqNo; // Record the sequence where 16th packet probe was taken
    }
 
@@ -285,12 +283,12 @@ public:
        // Grab the current time before trying to acquire
        // a mutex. This might add extra delay and therefore
        // screw up the measurement.
-       const uint64_t now = CTimer::getTime();
+       const srt::sync::steady_clock::time_point now = srt::sync::steady_clock::now();
 
        // Lock access to the packet Window
        CGuard cg(m_lockProbeWindow);
 
-       m_CurrArrTime = now;
+       m_tsCurrArrTime = now;
 
        // Reset the starting probe to prevent checking if the
        // measurement was already taken.
@@ -298,8 +296,8 @@ public:
 
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
-       const int64_t timediff = m_CurrArrTime - m_ProbeTime;
-       const int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
+       int64_t timediff = count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
+       int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
 
        // Let's take it simpler than it is coded here:
        // (stating that a packet has never zero size)
@@ -316,14 +314,13 @@ public:
 
        // OLD CODE BEFORE BSTATS:
        // record the probing packets interval
-       // m_aProbeWindow[m_iProbeWindowPtr] = int(m_CurrArrTime - m_ProbeTime);
+       // m_aProbeWindow[m_iProbeWindowPtr] = int(m_tsCurrArrTime - m_tsProbeTime);
 
        // the window is logically circular
        ++ m_iProbeWindowPtr;
        if (m_iProbeWindowPtr == PSIZE)
            m_iProbeWindowPtr = 0;
    }
-
 
 private:
    int m_aPktWindow[ASIZE];          // packet information window (inter-packet time)
@@ -338,9 +335,9 @@ private:
    int m_iLastSentTime;         // last packet sending time
    int m_iMinPktSndInt;         // Minimum packet sending interval
 
-   uint64_t m_LastArrTime;      // last packet arrival time
-   uint64_t m_CurrArrTime;      // current packet arrival time
-   uint64_t m_ProbeTime;        // arrival time of the first probing packet
+   srt::sync::steady_clock::time_point m_tsLastArrTime;      // last packet arrival time
+   srt::sync::steady_clock::time_point m_tsCurrArrTime;      // current packet arrival time
+   srt::sync::steady_clock::time_point m_tsProbeTime;        // arrival time of the first probing packet
    int32_t m_Probe1Sequence;    // sequence number for which the arrival time was notified
 
 private:

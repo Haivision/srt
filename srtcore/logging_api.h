@@ -24,7 +24,6 @@ written by
 #include <iostream>
 #endif
 
-#include <pthread.h>
 #ifdef _WIN32
 #include "win/syslog_defs.h"
 #else
