@@ -111,105 +111,93 @@ make
 
 ## For Windows:
 
-1. Prepare crypto library.
+**1. Prepare one of the following Windows crypto libraries:**
 
-OpenSSL, LibreSSL or MbedTLS can be used. Select one you like.
+   (a) OpenSSL  
+   (b) LibreSSL  
+   (c) MbedTLS
 
-a. Use OpenSSL binaries
+   *(a) Using the **OpenSSL** binaries:*
 
-Please download and install OpenSSL for Windows.
+   Download and install OpenSSL for Windows. The 64-bit developer package can be 
+   downloaded from here:
 
-The 64-bit devel package can be downloaded from here:
-
-     http://slproweb.com/download/Win64OpenSSL-1_0_2r.exe
-
+    http://slproweb.com/download/Win64OpenSSL-1_0_2r.exe
 	 
-(Note that the last letter or version number may be changed and older versions
-no longer available. If this isn't found, check here:
-http://slproweb.com/products/Win32OpenSSL.html
-)
+   Note that the last letter or version number may be changed, and older versions 
+   may no longer be available. If you can't find this version, check here:
 
-It's expected to be installed in `C:\OpenSSL-Win64` (see the above variables).
+    http://slproweb.com/products/Win32OpenSSL.html
 
-Note that this version is compiled most likely for Visual Studio 2013. For
-other versions you better download and compile the sources by yourself,
-from: https://github.com/openssl/openssl
+   It's expected to be installed in `C:\OpenSSL-Win64` (see the above variables). 
+   Note that this version is most likely compiled for Visual Studio 2013. For 
+   other versions, download and compile the sources from: 
+   
+    https://github.com/openssl/openssl
 
-The instruction for Windows:
-https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows
+   The instructions for compiling on Windows can be found here:
 
-It requires ActivePerl and nasm.
+    https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows
 
-b. Use LibreSSL
+   Note that ActivePerl and nasm are required.
 
-Because LibreSSL has its header files compatible with OpenSSL, CMake can use 
+*(b) Using the **LibreSSL** binaries:*
+
+Since LibreSSL has header files that are compatible with OpenSSL, `cmake` can use 
 it like OpenSSL with little configuration.
 
 The source code and binaries can be downloaded from here:
 
-     https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/
+    https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/
 
-But it seems to have got no windows builds since 2.6.0, you better build a new
-version by yourself. It comes with cmake build system support. Use the 
-```CMAKE_INSTALL_PREFIX``` variable to specify the directory that will contain the
+Since there have been no new Windows builds since 2.6.0, you must build a new
+version yourself. LibreSSL comes with `cmake` build system support. Use the 
+`CMAKE_INSTALL_PREFIX` variable to specify the directory that will contain the
 LibreSSL headers and libraries.
 
-c. Use MbedTLS
+*(c) Using the **MbedTLS** libraries:*
 
 MbedTLS source code can be downloaded from here:
 
-     https://tls.mbed.org/download
+    https://tls.mbed.org/download
 
-MbedTLS comes with cmake build system support. Use the ```CMAKE_INSTALL_PREFIX```
+MbedTLS comes with `cmake` build system support. Use the `CMAKE_INSTALL_PREFIX`
 variable to specify the directory that will contain the MbedTLS headers and libraries.
-
-Note that build MbedTLS as DLL is currently (2.16.3) broken. You have to link it
+Note that building MbedTLS as a DLL is broken in version 2.16.3. You have to link it
 statically.
 
-2. Compile and install Pthreads for Windows from this submodule:
+**2. Compile and install Pthreads for Windows:**
 
-     submodules/pthread-win32
-	 
-Please follow the steps:
+Compile and install Pthreads for Windows from this submodule:
 
-a. Using Visual Studio 2013, please open this file:
+  1. Using Visual Studio 2013, please open this file:  
 
-     pthread_lib.2013.vcxproj
-
-b. Make sure to select configuration: `Release` and `x64`.
-
-c. Make sure that the `pthread_lib` project will be built.
-
-d. After building, find the `pthread_lib.lib` file (directory is probably: `bin\x64_MSVC2013.Release`).
+    pthread_lib.2013.vcxproj
+  2. Select configuration: `Release` and `x64`.
+  3. Make sure that the `pthread_lib` project will be built.
+  4. After building, find the `pthread_lib.lib` file (directory is usually `bin\x64_MSVC2013.Release`).
 Copy this file to `C:\pthread-win32\lib` (or whatever other location you configured in variables).
+  5. Copy include files to `C:\pthread-win32\include` (`pthread.h`, `sched.h`, and `semaphore.h` 
+  are in the toplevel directory. There are no meaningful subdirs here). Note that `win##` is part of 
+  the project name. It will become `win32` or `win64` depending on the selection.
 
-e. Copy include files to `C:\pthread-win32\include` - the following ones:
+**3. Install `cmake` for Windows.**
 
-     pthread.h
-     sched.h
-     semaphore.h
+The `cmake` GUI will help you configure the project.
+ 
+If you use MbedTLS, change the `USE_ENCLIB` to `mbedtls`.
 
-(They are in the toplevel directory, there are actually no meaningful subdirs here)
-(NOTE: the win32 is part of the project name. It will become 32 or 64 depending on selection)
+It will try to find crypto library and pthreads. If you installed them in the 
+default location, they will be found automatically. If not, you can define the 
+following variables to help `cmake` find them: 
 
-
-3. Install cmake for Windows. The CMake GUI will help you configure the project.
-
-If you use MbedTLS, change the ```USE_ENCLIB``` to ```mbedtls```.
-
-It will try to find crypto library and pthreads. If you installed them in the default
- location, they will be found automatically. If not, you can define the following variables
- to help CMake find them: 
-
-For All:
+   For All:
 ```
 CMAKE_PREFIX_PATH=<path to depended libraries root>
 ```
-
-Note that ```CMAKE_PREFIX_PATH``` may be not shown in cmake-gui. You can use 
-```Add Entry``` button to add the variable manually. Type is ```PATH```.
-
-The directory structure is likely as following:
+Note that ```CMAKE_PREFIX_PATH``` may be not shown in the `cmake` GUI. You can use 
+`Add Entry` button to add the variable manually. Type is `PATH`.
+The directory structure should be similar to the following:
 ```
 ${CMAKE_PREFIX_PATH}/include/pthread.h
 ${CMAKE_PREFIX_PATH}/include/mbedtls/... (if mbedtls is used)
@@ -218,11 +206,8 @@ ${CMAKE_PREFIX_PATH}/lib/pthreadVC2.lib
 ${CMAKE_PREFIX_PATH}/lib/crypto.lib (if openssl or libressl is not in default location)
 ${CMAKE_PREFIX_PATH}/lib/mbedcrypto.lib (if mbedtls is used)
 ```
-
-It's better to add the entry before click ```Configure```, or the installation in
-system will be used instead of the one in ${CMAKE_PREFIX_PATH}.
-
-If still not:
+It's better to add the entry before clicking `Configure`, or the installation in
+system will be used instead of the one in `${CMAKE_PREFIX_PATH}`.
 
 For OpenSSL or LibreSSL:
 ```
@@ -230,20 +215,17 @@ OPENSSL_ROOT_DIR=<path to OpenSSL installation>
 OPENSSL_LIBRARIES=<path to all the openssl libraries to link>
 OPENSSL_INCLUDE_DIR=<path to the OpenSSL include dir>
 ```
-
 For MbedTLS:
 ```
 MBEDTLS_PREFIX=<path to mbedtls installation, default is the same to CMAKE_PREFIX_PATH>
 ```
-
 For pthread:
 ```
 PTHREAD_INCLUDE_DIR=<path to where pthread.h lies>
 PTHREAD_LIBRARY=<path to pthread.lib>
 ```
-
-Note that if you use the cmake commandline to have it configured, please use ```/```
- instead of ```\``` in path, or there may be confusing error message coming out.
+Note that if you use the `cmake` command line to have it configured, please 
+use `/` instead of `\` in the path, or error messages may result.
  
 
 4. For the sake of cmake generation: When you want to have a 64-bit version,
