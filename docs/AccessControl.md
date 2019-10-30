@@ -24,6 +24,17 @@ convention is to:
 - promote readability and consistency among free-form names
 - interpret some typical data in the key-value style
 
+In short,
+1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and state what it wants.
+2. `srt_listen_callback(...)` function is used by a listener (server) to check what a caller (client) has provided in `SRTO_STREAMID` **before** the connection is established.
+For example, the listener (server) can check if it knows the user and set the corresponding passphrase for a connection to be accepted.
+3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
+If a correct passphrase is not provided by the client (caller), the request from caller will be rejected by SRT library (not application or programmer).
+
+**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons. 
+The only way to make the app check the passphrase is to set the passphrase on the socket by using the `SRTO_PASSPHRASE` option. This lets SRT to reject connection on mismatch.
+
+
 ## Character Encoding
 
 The Stream ID uses UTF-8 encoding.
