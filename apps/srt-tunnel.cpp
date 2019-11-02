@@ -450,6 +450,32 @@ public:
 
 #endif
 
+#ifdef _WIN32
+    static int tcp_close(int socket)
+    {
+        return ::closesocket(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#elif defined(LINUX)
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = MSG_NOSIGNAL };
+
+#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#endif
+
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
@@ -460,7 +486,7 @@ public:
         lock_guard<mutex> lk(access);
         if (m_socket == -1)
             return;
-        ::close(m_socket);
+        tcp_close(m_socket);
         m_socket = -1;
     }
 
@@ -475,12 +501,15 @@ public:
 
 protected:
 
-    // Just models. No options are predicted for now.
-    void ConfigurePre(int )
+    void ConfigurePre(int so)
     {
+#if defined(__APPLE__)
+        int optval = 1;
+        setsockopt(so, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
+#endif
     }
 
-    void ConfigurePost(int)
+    void ConfigurePost(int /*so*/)
     {
     }
 
@@ -578,14 +607,14 @@ void TcpMedium::CreateListener()
 
     if (stat == -1)
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "bind");
     }
 
     stat = listen(m_socket, backlog);
     if ( stat == -1 )
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "listen");
     }
 
@@ -671,7 +700,7 @@ int SrtMedium::ReadInternal(char* buffer, int size)
 
 int TcpMedium::ReadInternal(char* buffer, int size)
 {
-    return read(m_socket, buffer, size);
+    return ::recv(m_socket, buffer, size, 0);
 }
 
 bool SrtMedium::IsErrorAgain()
@@ -779,7 +808,7 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
 {
     bytevector& buffer = *r_buffer;
 
-    int st = ::write(m_socket, buffer.data(), buffer.size());
+    int st = ::send(m_socket, buffer.data(), buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -948,6 +977,12 @@ int OnINT_StopService(int)
 
 int main( int argc, char** argv )
 {
+    if (!SysInitializeNetwork())
+    {
+        cerr << "Fail to initialize network module.";
+        return 1;
+    }
+
     size_t chunk = default_chunk;
 
     set<string>
