@@ -442,10 +442,11 @@ being acknowledged)
 controls the maximum bandwidth together with `SRTO_OHEADBW` option according
 to the formula: `MAXBW = INPUTBW * (100 + OHEADBW) / 100`. When this option
 is set to 0 (automatic) then the real INPUTBW value will be estimated from
-the sending rate during tranmission.
+the rate of the input (cases when the application calls the `srt_send*`
+function) during transmission. 
 
 - *Recommended: set this option to the predicted bitrate of your live stream
-and `SRTO_OHEADBW` leave with default 25%*
+and keep default 25% value for `SRTO_OHEADBW`.
 
 ---
 
@@ -611,9 +612,9 @@ immediately upon experiencing a "gap" in sequences.
 - `0`: relative to input rate (see `SRTO_INPUTBW`) 
 - `>0`: absolute limit in B/s
 
-- *NOTE: This option has a default value -1, but for cases when the stream rate
-is mostly constant, it is recommended to use value 0 here and shape the bandwidth
-limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
+- *NOTE: This option has a default value of -1. For cases when the stream rate
+is mostly constant however, it is recommended to use value 0 here and shape the
+bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
 
 
 ---
