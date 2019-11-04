@@ -1230,9 +1230,8 @@ void CRcvBuffer::reportBufferStats()
         seqspan = CSeqNo::seqoff(low_seq, high_seq);
     }
 
-    LOGC(dlog.Debug, log << "RCV BUF STATS: missing=" << nmissing << " seq:" << low_seq << "-" << high_seq << "(" << seqspan << ") timespan="
-            << timespan << "(lo=" << FormatTime(lower_time)
-            << " hi=" << FormatTime(upper_time) << ")");
+    LOGC(dlog.Debug, log << "RCV BUF STATS: seqspan=%(" << low_seq << "-" << high_seq << ":" << seqspan << ") missing=" << nmissing << "pkts");
+    LOGC(dlog.Debug, log << "RCV BUF STATS: timespan=" << timespan << "us (lo=" << FormatTime(lower_time) << " hi=" << FormatTime(upper_time) << ")");
 }
 
 #endif // ENABLE_HEAVY_LOGGING
