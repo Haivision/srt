@@ -191,51 +191,70 @@ void CTimer::sleep(uint64_t interval)
 
 void CTimer::sleepto(uint64_t nexttime)
 {
-   // Use class member such that the method can be interrupted by others
-   m_ullSchedTime = nexttime;
+    // Use class member such that the method can be interrupted by others
+    m_ullSchedTime = nexttime;
 
-   uint64_t t;
-   rdtsc(t);
+    uint64_t t;
+    rdtsc(t);
 
-   while (t < m_ullSchedTime)
-   {
 #if USE_BUSY_WAITING
-#ifdef IA32
-       __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-#elif IA64
-       __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
-#elif AMD64
-       __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif defined(_WIN32) && !defined(__MINGW__)
-       __nop ();
-       __nop ();
-       __nop ();
-       __nop ();
-       __nop ();
-#endif
+#if defined(_WIN32)
+    const uint64_t threshold = 10000;   // 10 ms on Windows: bad accuracy of timers
 #else
-       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
-       // The while loop ensures that (t < m_ullSchedTime).
-       // Division by frequency may lose precision, therefore can be 0.
-       if (wait_us == 0)
-           break;
-
-       timeval now;
-       gettimeofday(&now, 0);
-       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
-       timespec timeout;
-       timeout.tv_sec = time_us / 1000000;
-       timeout.tv_nsec = (time_us % 1000000) * 1000;
-
-       THREAD_PAUSED();
-       pthread_mutex_lock(&m_TickLock);
-       pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-       pthread_mutex_unlock(&m_TickLock);
-       THREAD_RESUMED();
+    const uint64_t threshold = 1000;    // 1 ms on non-Windows platforms
+#endif
 #endif
 
-       rdtsc(t);
-   }
+    while (t < m_ullSchedTime)
+    {
+#if USE_BUSY_WAITING
+        uint64_t wait_us = (m_ullSchedTime - t) / s_ullCPUFrequency;
+        if (wait_us > threshold)
+            wait_us -= threshold;
+        if (wait_us < threshold)
+            break;
+#else
+        const uint64_t wait_us = (m_ullSchedTime - t) / getCPUFrequency();
+        if (wait_us == 0)
+            break;
+#endif
+
+        timeval now;
+        gettimeofday(&now, 0);
+        const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+        timespec timeout;
+        timeout.tv_sec = time_us / 1000000;
+        timeout.tv_nsec = (time_us % 1000000) * 1000;
+
+        THREAD_PAUSED();
+        pthread_mutex_lock(&m_TickLock);
+        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
+        pthread_mutex_unlock(&m_TickLock);
+        THREAD_RESUMED();
+
+        rdtsc(t);
+    }
+
+#if USE_BUSY_WAITING
+    while (t < m_ullSchedTime)
+    {
+#ifdef IA32
+        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+#elif IA64
+        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+#elif AMD64
+        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+#endif
+
+        rdtsc(t);
+    }
+#endif
 }
 
 void CTimer::interrupt()
