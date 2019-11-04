@@ -268,14 +268,18 @@ public:
        }
    }
 
-   void checkEdge(enotice_t::iterator i)
+   bool checkEdge(enotice_t::iterator i)
    {
        // This function should check if this event was subscribed
        // as edge-triggered, and if so, clear the event from the notice.
        // Update events and check edge mode at the subscriber
        i->events &= ~i->parent->edgeOnly();
        if(!i->events)
+       {
            removeExistingNotices(*i->parent);
+           return true;
+       }
+       return false;
    }
 };
 

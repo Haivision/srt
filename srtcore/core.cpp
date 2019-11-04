@@ -80,12 +80,6 @@ modified by
 
 using namespace std;
 
-#if ENABLE_HEAVY_LOGGING
-#define IF_HEAVY_LOGGING(instr) instr
-#else
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif
-
 namespace srt_logging
 {
 
@@ -8560,8 +8554,10 @@ int CUDT::processData(CUnit *in_unit)
             }
 
             HLOGC(mglog.Debug,
-                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (" << exc_type << "/"
-                      << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: " << packet.MessageFlagStr());
+                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
+                  << " BUFr=" << avail_bufsize
+                  << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+                  << packet.MessageFlagStr());
 
             // Decryption should have made the crypto flags EK_NOENC.
             // Otherwise it's an error.
