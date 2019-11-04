@@ -92,6 +92,13 @@ int CEPoll::create()
 {
    CGuard pg(m_EPollLock);
 
+   if (++ m_iIDSeed >= 0x7FFFFFFF)
+      m_iIDSeed = 0;
+
+   // Check if an item already exists. Should not ever happen.
+   if (m_mPolls.find(m_iIDSeed) != m_mPolls.end())
+       throw CUDTException(MJ_SETUP, MN_NONE);
+
    int localid = 0;
 
    #ifdef LINUX
@@ -112,15 +119,11 @@ ENOMEM: There was insufficient memory to create the kernel object.
    // on Windows, select
    #endif
 
-   if (++ m_iIDSeed >= 0x7FFFFFFF)
-      m_iIDSeed = 0;
+   pair<map<int, CEPollDesc>::iterator, bool> res = m_mPolls.insert(make_pair(m_iIDSeed, CEPollDesc(m_iIDSeed, localid)));
+   if (!res.second)  // Insertion failed (no memory?)
+       throw CUDTException(MJ_SETUP, MN_NONE);
 
-   CEPollDesc desc;
-   desc.m_iID = m_iIDSeed;
-   desc.m_iLocalID = localid;
-   m_mPolls[desc.m_iID] = desc;
-
-   return desc.m_iID;
+   return m_iIDSeed;
 }
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
@@ -548,17 +551,17 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 //"select" has a limitation on the number of sockets
                 int max_fd = 0;
 
-                fd_set readfds;
-                fd_set writefds;
-                FD_ZERO(&readfds);
-                FD_ZERO(&writefds);
+                fd_set rqreadfds;
+                fd_set rqwritefds;
+                FD_ZERO(&rqreadfds);
+                FD_ZERO(&rqwritefds);
 
                 for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                 {
                     if (lrfds)
-                        FD_SET(*i, &readfds);
+                        FD_SET(*i, &rqreadfds);
                     if (lwfds)
-                        FD_SET(*i, &writefds);
+                        FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
                         max_fd = *i;
                 }
@@ -566,16 +569,16 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 timeval tv;
                 tv.tv_sec = 0;
                 tv.tv_usec = 0;
-                if (::select(max_fd + 1, &readfds, &writefds, NULL, &tv) > 0)
+                if (::select(max_fd + 1, &rqreadfds, &rqwritefds, NULL, &tv) > 0)
                 {
                     for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                     {
-                        if (lrfds && FD_ISSET(*i, &readfds))
+                        if (lrfds && FD_ISSET(*i, &rqreadfds))
                         {
                             lrfds->insert(*i);
                             ++ total;
                         }
-                        if (lwfds && FD_ISSET(*i, &writefds))
+                        if (lwfds && FD_ISSET(*i, &rqwritefds))
                         {
                             lwfds->insert(*i);
                             ++ total;

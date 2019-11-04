@@ -62,7 +62,7 @@ modified by
 
 struct CEPollDesc
 {
-   int m_iID;                                // epoll ID
+   const int m_iID;                                // epoll ID
 
    struct Wait;
 
@@ -137,8 +137,10 @@ private:
 
 public:
 
-   CEPollDesc():
-       m_Flags(0)
+   CEPollDesc(int id, int localID)
+       : m_iID(id)
+       , m_Flags(0)
+       , m_iLocalID(localID)
     {
     }
 
@@ -164,7 +166,7 @@ public:
    enotice_t::iterator enotice_begin() { return m_USockEventNotice.begin(); }
    enotice_t::iterator enotice_end() { return m_USockEventNotice.end(); }
 
-   int m_iLocalID;                           // local system epoll ID
+   const int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
    std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, int32_t events, bool edgeTrg)
