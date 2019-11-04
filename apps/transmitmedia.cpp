@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
@@ -105,9 +106,11 @@ shared_ptr<SrtStatsWriter> stats_writer;
 
 class SrtStatsJson : public SrtStatsWriter
 {
+    std::mutex lock;
 public: 
     string WriteStats(int sid, const CBytePerfMon& mon) override 
-    { 
+    {
+        std::lock_guard<std::mutex> guard(lock);
         std::ostringstream output;
         output << "{";
         output << "\"sid\":" << sid << ",";
@@ -162,12 +165,15 @@ class SrtStatsCsv : public SrtStatsWriter
 {
 private:
     bool first_line_printed;
+    std::mutex lock;
 
 public: 
     SrtStatsCsv() : first_line_printed(false) {}
 
     string WriteStats(int sid, const CBytePerfMon& mon) override 
     { 
+        std::lock_guard<std::mutex> guard(lock);
+
         std::ostringstream output;
         if (!first_line_printed)
         {
@@ -222,6 +228,7 @@ public:
 
     string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::lock_guard<std::mutex> guard(lock);
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
@@ -230,9 +237,11 @@ public:
 
 class SrtStatsCols : public SrtStatsWriter
 {
+    std::mutex lock;
 public: 
     string WriteStats(int sid, const CBytePerfMon& mon) override 
-    { 
+    {
+        std::lock_guard<std::mutex> guard(lock);
         std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;
         output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
@@ -252,6 +261,7 @@ public:
 
     string WriteBandwidth(double mbpsBandwidth) override 
     {
+        std::lock_guard<std::mutex> guard(lock);
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
