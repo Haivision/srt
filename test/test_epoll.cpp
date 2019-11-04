@@ -715,8 +715,8 @@ protected:
         char buffer[1316];
         ASSERT_EQ(srt_recvmsg(sock, buffer, sizeof buffer), 1316);
 
-        // char pattern[4] = {1, 2, 3, 4};
-        // EXPECT_TRUE(ArraysEqual(pattern, buffer, sizeof pattern));
+        char pattern[4] = {1, 2, 3, 4};
+        EXPECT_TRUE(std::mismatch(pattern, pattern+4, buffer).first == pattern+4);
 
         std::cout << "serverSocket waiting..." << std::endl;
         {
@@ -748,7 +748,7 @@ protected:
 
 TEST_F(TestEPoll, SimpleAsync)
 {
-	ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(srt_startup(), 0);
 
     m_client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, m_client_pollid);
@@ -756,12 +756,10 @@ TEST_F(TestEPoll, SimpleAsync)
     m_server_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, m_server_pollid);
 
-    std::thread server( [this] {serverSocket(); });
-
-    server.join();
+    serverSocket();
 
     (void)srt_epoll_release(m_client_pollid);
     (void)srt_epoll_release(m_server_pollid);
-	srt_cleanup();
+    srt_cleanup();
 }
 
