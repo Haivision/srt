@@ -90,7 +90,7 @@ pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
 
 CTimer::CTimer():
-m_ullSchedTime(),
+m_ullSchedTime_tk(),
 m_TickCond(),
 m_TickLock()
 {
@@ -180,19 +180,19 @@ uint64_t CTimer::getCPUFrequency()
    return s_ullCPUFrequency;
 }
 
-void CTimer::sleep(uint64_t interval)
+void CTimer::sleep(uint64_t interval_tk)
 {
    uint64_t t;
    rdtsc(t);
 
    // sleep next "interval" time
-   sleepto(t + interval);
+   sleepto(t + interval_tk);
 }
 
-void CTimer::sleepto(uint64_t nexttime)
+void CTimer::sleepto(uint64_t nexttime_tk)
 {
     // Use class member such that the method can be interrupted by others
-    m_ullSchedTime = nexttime;
+    m_ullSchedTime_tk = nexttime_tk;
 
     uint64_t t;
     rdtsc(t);
@@ -205,16 +205,16 @@ void CTimer::sleepto(uint64_t nexttime)
 #endif
 #endif
 
-    while (t < m_ullSchedTime)
+    while (t < m_ullSchedTime_tk)
     {
 #if USE_BUSY_WAITING
-        uint64_t wait_us = (m_ullSchedTime - t) / s_ullCPUFrequency;
+        uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
         if (wait_us > threshold)
             wait_us -= threshold;
         if (wait_us < threshold)
             break;
 #else
-        const uint64_t wait_us = (m_ullSchedTime - t) / getCPUFrequency();
+        const uint64_t wait_us = (m_ullSchedTime_tk - t) / getCPUFrequency();
         if (wait_us == 0)
             break;
 #endif
@@ -236,7 +236,7 @@ void CTimer::sleepto(uint64_t nexttime)
     }
 
 #if USE_BUSY_WAITING
-    while (t < m_ullSchedTime)
+    while (t < m_ullSchedTime_tk)
     {
 #ifdef IA32
         __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
@@ -260,7 +260,7 @@ void CTimer::sleepto(uint64_t nexttime)
 void CTimer::interrupt()
 {
    // schedule the sleepto time to the current CCs, so that it will stop
-   rdtsc(m_ullSchedTime);
+   rdtsc(m_ullSchedTime_tk);
    tick();
 }
 
