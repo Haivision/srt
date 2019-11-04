@@ -86,10 +86,7 @@ extern Logger mglog;
 using namespace srt_logging;
 
 #if ENABLE_HEAVY_LOGGING
-#define IF_HEAVY_LOGGING(instr) instr
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
-#else
-#define IF_HEAVY_LOGGING(instr) (void)0
 #endif
 
 CEPoll::CEPoll():
@@ -543,7 +540,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 epoll_event ev[max_events];
                 int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
 
-                int otal ATR_UNUSED = total;
+                IF_HEAVY_LOGGING(const int prev_total = total);
                 for (int i = 0; i < nfds; ++ i)
                 {
                     if ((NULL != lrfds) && (ev[i].events & EPOLLIN))
@@ -557,7 +554,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                         ++ total;
                     }
                 }
-                HLOGC(mglog.Debug, log << "CEPoll::wait: LINUX: picking up " << (total - otal)  << " ready fds.");
+                HLOGC(mglog.Debug, log << "CEPoll::wait: LINUX: picking up " << (total - prev_total)  << " ready fds.");
 
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
                 struct timespec tmout = {0, 0};
@@ -565,7 +562,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 struct kevent ke[max_events];
 
                 int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
-                int otal ATR_UNUSED = total;
+                IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
                 {
@@ -581,7 +578,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                     }
                 }
 
-                HLOGC(mglog.Debug, log << "CEPoll::wait: Darwin/BSD: picking up " << (total - otal)  << " ready fds.");
+                HLOGC(mglog.Debug, log << "CEPoll::wait: Darwin/BSD: picking up " << (total - prev_total)  << " ready fds.");
 
 #else
                 //currently "select" is used for all non-Linux platforms.
@@ -605,7 +602,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                         max_fd = *i;
                 }
 
-                int otal ATR_UNUSED = total;
+                IF_HEAVY_LOGGING(const int prev_total = total);
                 timeval tv;
                 tv.tv_sec = 0;
                 tv.tv_usec = 0;
@@ -626,7 +623,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                     }
                 }
 
-                HLOGC(mglog.Debug, log << "CEPoll::wait: select(otherSYS): picking up " << (total - otal)  << " ready fds.");
+                HLOGC(mglog.Debug, log << "CEPoll::wait: select(otherSYS): picking up " << (total - prev_total)  << " ready fds.");
 #endif
             }
 

@@ -80,12 +80,6 @@ modified by
 
 using namespace std;
 
-#if ENABLE_HEAVY_LOGGING
-#define IF_HEAVY_LOGGING(instr) instr
-#else
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif
-
 namespace srt_logging
 {
 
@@ -8439,7 +8433,6 @@ int CUDT::processData(CUnit *in_unit)
         }
 
         bool excessive = true; // stays true unless it was successfully added
-      int avail_bufsize = -1;
 
         // Needed for possibly check for needsQuickACK.
         bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
@@ -8478,7 +8471,7 @@ int CUDT::processData(CUnit *in_unit)
                 continue;
             }
 
-            avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+            const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
             if (offset >= avail_bufsize)
             {
                 // This is already a sequence discrepancy. Probably there could be found
