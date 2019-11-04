@@ -105,7 +105,6 @@ option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-option(USE_GNUTLS "DEPRECATED. Use USE_ENCLIB=openssl|gnutls|mbedtls instead" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
@@ -161,6 +160,8 @@ if (NOT USE_ENCLIB)
 
 endif()
 
+set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -271,11 +272,10 @@ if (ENABLE_ENCRYPTION)
 		else()
 			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
 				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-					if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-						message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-						set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
-						set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
-					endif()
+					set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
+					find_package(MbedTLS REQUIRED)
+					set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
+					set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 				endif()
 				if ("${SSL_LIBRARIES}" STREQUAL "")
 					set (SSL_LIBRARIES  mbedtls mbedcrypto)
@@ -369,6 +369,7 @@ set (haicrypt_libspec VIRTUAL)
 set (srtpack_libspec_common)
 if (srt_libspec_shared)
 	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
+
 endif()
 if (srt_libspec_static)
 	list(APPEND srtpack_libspec_common ${TARGET_srt}_static)
@@ -463,15 +464,47 @@ elseif (WIN32 AND NOT MINGW)
 	find_package(pthreads QUIET)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
-		# find pthread
-		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include)
+		#search package folders with GLOB to add as extra hint for headers
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
+		if (PTHREAD_PACKAGE_INCLUDE_HINT)
+			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
+		endif()
+
+		# find pthread header
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_PACKAGE_INCLUDE_HINT})
+
 		if (PTHREAD_INCLUDE_DIR)
 			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 		else()
 			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
 		endif()
-	
-		find_library(PTHREAD_LIBRARY NAMES pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib)
+
+		#search package folders with GLOB to add as extra hint for libs
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
+		if (PTHREAD_PACKAGE_LIB_HINT)
+			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
+		endif()
+
+		#find pthread library
+		set(PTHREAD_LIB_SUFFIX "")
+		if (ENABLE_DEBUG)
+			set(PTHREAD_LIB_SUFFIX "d")
+		endif ()
+
+		set(PTHREAD_COMPILER_FLAG "")
+		if (MICROSOFT)
+			set(PTHREAD_COMPILER_FLAG "V")
+		elseif (MINGW)
+			set(PTHREAD_COMPILER_FLAG "G")
+		endif ()
+
+		foreach(EXHAND C CE SE)
+			foreach(COMPAT 1 2)
+				list(APPEND PTHREAD_W32_LIBRARY "pthread${PTHREAD_COMPILER_FLAG}${EXHAND}${PTHREAD_LIB_SUFFIX}${COMPAT}")
+			endforeach()
+		endforeach()
+
+		find_library(PTHREAD_LIBRARY NAMES ${PTHREAD_W32_LIBRARY} pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib ${PTHREAD_PACKAGE_LIB_HINT})
 		if (PTHREAD_LIBRARY)
 			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 		else()
@@ -551,6 +584,7 @@ MafReadDir(srtcore filelist.maf
 
 # Auto generated version file and add it to the HEADERS_srt list.
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
+
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
@@ -902,6 +936,9 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(recvfile.cpp apps/logsupport.cpp)
 	srt_make_application(recvfile)
+
+	srt_add_example(recvlive.cpp apps/logsupport.cpp)
+	srt_make_application(recvlive)
 
 	srt_add_example(test-c-client.c)
 	srt_make_application(test-c-client)

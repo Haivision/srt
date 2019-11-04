@@ -696,7 +696,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // be simultaneously also retransmitted. This may confuse the tables.
         int celloff = CSeqNo::seqoff(rcv.cell_base, rpkt.getSeqNo());
         bool past = celloff < 0;
-        bool exists = celloff < int(rcv.cells.size()) && rcv.cells[celloff];
+        bool exists = celloff < int(rcv.cells.size()) && !past && rcv.cells[celloff];
 
         if (past || exists)
         {
@@ -1517,7 +1517,7 @@ bool FECFilterBuiltin::IsLost(int32_t seq) const
                 << " is earlier than the cell base %" << rcv.cell_base);
         return true; // fake we have the packet - this is to collect losses only
     }
-    if (offset > int(rcv.cells.size()))
+    if (offset >= int(rcv.cells.size()))
     {
         // XXX IPE!
         LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq << " is past the cells %"
@@ -1708,6 +1708,12 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size());
+    }
+    else if (rcv.rowq.size() < numberRows())
+    {
+        HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
+                << " with required %" << CSeqNo::incseq(base0, mindist)
+                << " but row container size still " << rcv.rowq.size());
     }
     else
     {
@@ -1908,7 +1914,7 @@ TranslateLossRecords(loss, irrecover);
 HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
 }
 
-void FECFilterBuiltin::TranslateLossRecords(const set<int32_t> loss, loss_seqs_t& irrecover)
+void FECFilterBuiltin::TranslateLossRecords(const set<int32_t>& loss, loss_seqs_t& irrecover)
 {
     if (loss.empty())
         return;

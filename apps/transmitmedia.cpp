@@ -344,15 +344,13 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     // That's kinda clumsy, but it must rely on the defaults.
     // Default mode is live, so check if the file mode was enforced
-    if (par.count("transtype") == 0 || par["transtype"] != "file")
+    if ((par.count("transtype") == 0 || par["transtype"] != "file")
+        && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        if (transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
-        {
-            if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-                throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
+            throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
-        }
+        par["payloadsize"] = Sprint(transmit_chunk_size);
     }
 
     // Assign the others here.

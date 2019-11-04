@@ -430,11 +430,10 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     else
     {
         spec << " type=DATA"
-             << " seq=" << packet.getSeqNo()
+             << " %" << packet.getSeqNo()
              << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
-             << " datastamp=" << BufferStamp(packet.m_pcData, packet.getLength());
-        if (packet.getRexmitFlag())
-            spec << " [REXMIT]";
+             << packet.MessageFlagStr()
+             << " !" << BufferStamp(packet.m_pcData, packet.getLength());
     }
 
     LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)

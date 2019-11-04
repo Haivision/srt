@@ -1020,13 +1020,18 @@ set, based on MSS value. For desired result, configure MSS first.***
 
 | OptName               | Since | Binding | Type  | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
-| `SRTO_SNDDROPDELAY`   | 1.3.2 | pre     | `int` | ms     | 0        |        |
+| `SRTO_SNDDROPDELAY`   | 1.3.2 | pre     | `int` | ms     | 0        | -1..   |
+
+- **NB:** The default [live mode](#transmission-method-live) settings set `SRTO_SNDDROPDELAY` to 0.
+The [buffer mode](#transmission-method-buffer) settings set `SRTO_SNDDROPDELAY` to -1.
 
 - **[SET]** - Sets an extra delay before TLPKTDROP is triggered on the data
   sender. TLPKTDROP discards packets reported as lost if it is already too late
 to send them (the receiver would discard them even if received).  The total
 delay before TLPKTDROP is triggered consists of the LATENCY (`SRTO_PEERLATENCY`),
-plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default = 20ms).
+plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10ms).
+The minimum total delay is 1 second.
+A value of -1 discards packet drop.
 `SRTO_SNDDROPDELAY` extends the tolerance for retransmitting packets at
 the expense of more likely retransmitting them uselessly. To be effective, it
 must have a value greater than 1000 - `SRTO_PEERLATENCY`.
@@ -1119,6 +1124,7 @@ both parties of the connection, so there's no possible situation of a rogue
 sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
+
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
