@@ -562,7 +562,6 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
 
 
 
-typedef struct CPerfMon SRT_TRACEINFO;
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
