@@ -260,14 +260,19 @@ The distance in sequence numbers between the two original (not retransmitted) pa
 that were received out of order. Receiver only.
 
 The traceable distance values are limited by the maximum reorder tolerance set by  `SRTO_LOSSMAXTTL`.
-`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value, or the time-to-live for the original packet,
-that was received after with a gap in the sequence of incoming packets. Those missing packets
-are expected to come out of order, therefore no loss is reported.
-The TTL value specifies the number of packet to receive further, before considering the preceding packets lost,
-and sending the loss report.
+
+## pktReorderTolerance
+
+Instant value of the packet reorder tolerance. Receiver side. Refer to [pktReorderDistance](#pktReorderDistance).
+
+`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value. The value defines the maximum
+time-to-live for the original packet, that was received after with a gap in the sequence of incoming packets.
+Those missing packets are expected to come out of order, therefore no loss is reported.
+The actual TTL value (**pktReorderTolerance**) specifies the number of packets to receive further, before considering
+the preceding packets lost, and sending the loss report.
 
 The internal algorithm checks the order of incoming packets and adjusts the tolerance based on the reorder
-distance, but not to a value higher than the maximum.
+distance (**pktReorderTolerance**), but not to a value higher than the maximum (`SRTO_LOSSMAXTTL`).
 
 SRT starts from tolerance value set in `SRTO_LOSSMAXTTL` (initial tolerance is set to 0 in SRT v1.4.0 and prior versions).
 Once the receiver receives the first reordered packet, it increases the tolerance to the distance in the sequence
@@ -288,6 +293,8 @@ Missing packets with sequence numbers 8 and 9 will be reported lost with the nex
 (reorder distance is still at 1).
 The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
 The packet with sequence number 9 is reported lost.
+
+
 
 ## pktRcvAvgBelatedTime
 
