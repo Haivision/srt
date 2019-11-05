@@ -60,9 +60,21 @@ modified by
 
 #include "common.h"
 #include "epoll.h"
+#include "logging.h"
 #include "udt.h"
 
 using namespace std;
+
+namespace srt_logging
+{
+extern Logger mglog;
+}
+
+using namespace srt_logging;
+
+#if ENABLE_HEAVY_LOGGING
+#define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
+#endif
 
 CEPoll::CEPoll():
 m_iIDSeed(0)
@@ -78,6 +90,13 @@ CEPoll::~CEPoll()
 int CEPoll::create()
 {
    CGuard pg(m_EPollLock);
+
+   if (++ m_iIDSeed >= 0x7FFFFFFF)
+      m_iIDSeed = 0;
+
+   // Check if an item already exists. Should not ever happen.
+   if (m_mPolls.find(m_iIDSeed) != m_mPolls.end())
+       throw CUDTException(MJ_SETUP, MN_NONE);
 
    int localid = 0;
 
@@ -99,15 +118,11 @@ ENOMEM: There was insufficient memory to create the kernel object.
    // on Windows, select
    #endif
 
-   if (++ m_iIDSeed >= 0x7FFFFFFF)
-      m_iIDSeed = 0;
+   pair<map<int, CEPollDesc>::iterator, bool> res = m_mPolls.insert(make_pair(m_iIDSeed, CEPollDesc(m_iIDSeed, localid)));
+   if (!res.second)  // Insertion failed (no memory?)
+       throw CUDTException(MJ_SETUP, MN_NONE);
 
-   CEPollDesc desc;
-   desc.m_iID = m_iIDSeed;
-   desc.m_iLocalID = localid;
-   m_mPolls[desc.m_iID] = desc;
-
-   return desc.m_iID;
+   return m_iIDSeed;
 }
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
@@ -217,22 +232,44 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
+    CEPollDesc& d = p->second;
+
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
     evts &= ~SRT_EPOLL_ET;
     if (evts)
     {
-        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = p->second.addWatch(u, evts, edgeTriggered);
+        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = d.addWatch(u, evts, edgeTriggered);
         CEPollDesc::Wait& wait = iter_new.first->second;
-        int newstate = wait.watch & wait.state;
+        if (!iter_new.second)
+        {
+            // The object exists. We only are certain about the `u`
+            // parameter, but others are probably unchanged. Change them
+            // forcefully and take out notices that are no longer valid.
+            const int removable = wait.watch & ~evts;
+
+            // Check if there are any events that would be removed.
+            // If there are no removed events watched (for example, when
+            // only new events are being added to existing socket),
+            // there's nothing to remove, but might be something to update.
+            if (removable)
+            {
+                d.removeExcessEvents(wait, evts);
+            }
+
+            // Update the watch configuration, including edge
+            wait.watch = evts;
+            if (edgeTriggered)
+                wait.edge = evts;
+
+            // Now it should look exactly like newly added
+            // and the state is also updated
+        }
+
+        const int newstate = wait.watch & wait.state;
         if (newstate)
         {
-            p->second.addEventNotice(wait, u, newstate);
-        }
-        else if (!iter_new.second) // if it was freshly added, no notice object exists
-        {
-            // This removes the event notice entry, but leaves the subscription
-            p->second.removeEvents(wait);
+            d.addEventNotice(wait, u, newstate);
         }
     }
     else if (edgeTriggered)
@@ -243,7 +280,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     else
     {
         // Update with no events means to remove subscription
-        p->second.removeSubscription(u);
+        d.removeSubscription(u);
     }
     return 0;
 }
@@ -418,6 +455,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     int total = 0;
 
     int64_t entertime = CTimer::getTime();
+
+    HLOGC(mglog.Debug, log << "CEPoll::wait: START for eid=" << eid);
+
     while (true)
     {
         {
@@ -447,10 +487,13 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                     throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
+            IF_HEAVY_LOGGING(int total_noticed);
+            IF_HEAVY_LOGGING(ostringstream debug_sockets);
             // Sockets with exceptions are returned to both read and write sets.
             for (CEPollDesc::enotice_t::iterator it = ed.enotice_begin(), it_next = it; it != ed.enotice_end(); it = it_next)
             {
                 ++it_next;
+                IF_HEAVY_LOGGING(++total_noticed);
                 if (readfds && ((it->events & UDT_EPOLL_IN) || (it->events & UDT_EPOLL_ERR)))
                 {
                     if (readfds->insert(it->fd).second)
@@ -463,8 +506,19 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                         ++total;
                 }
 
-                ed.checkEdge(it); // NOTE: potentially erases 'it'.
+                IF_HEAVY_LOGGING(debug_sockets << " " << it->fd << ":"
+                        << IF_DIRNAME(it->events, SRT_EPOLL_IN, "R")
+                        << IF_DIRNAME(it->events, SRT_EPOLL_OUT, "W")
+                        << IF_DIRNAME(it->events, SRT_EPOLL_ERR, "E"));
+
+                if (ed.checkEdge(it)) // NOTE: potentially erases 'it'.
+                {
+                    IF_HEAVY_LOGGING(debug_sockets << "!");
+                }
             }
+
+            HLOGC(mglog.Debug, log << "CEPoll::wait: REPORTED " << total << "/" << total_noticed
+                    << debug_sockets.str());
 
             if (lrfds || lwfds)
             {
@@ -473,6 +527,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 epoll_event ev[max_events];
                 int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
 
+                IF_HEAVY_LOGGING(const int prev_total = total);
                 for (int i = 0; i < nfds; ++ i)
                 {
                     if ((NULL != lrfds) && (ev[i].events & EPOLLIN))
@@ -486,12 +541,15 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                         ++ total;
                     }
                 }
+                HLOGC(mglog.Debug, log << "CEPoll::wait: LINUX: picking up " << (total - prev_total)  << " ready fds.");
+
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
                 struct timespec tmout = {0, 0};
                 const int max_events = ed.m_sLocals.size();
                 struct kevent ke[max_events];
 
                 int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
+                IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
                 {
@@ -506,6 +564,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                         ++ total;
                     }
                 }
+
+                HLOGC(mglog.Debug, log << "CEPoll::wait: Darwin/BSD: picking up " << (total - prev_total)  << " ready fds.");
+
 #else
                 //currently "select" is used for all non-Linux platforms.
                 //faster approaches can be applied for specific systems in the future.
@@ -513,52 +574,62 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 //"select" has a limitation on the number of sockets
                 int max_fd = 0;
 
-                fd_set readfds;
-                fd_set writefds;
-                FD_ZERO(&readfds);
-                FD_ZERO(&writefds);
+                fd_set rqreadfds;
+                fd_set rqwritefds;
+                FD_ZERO(&rqreadfds);
+                FD_ZERO(&rqwritefds);
 
                 for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                 {
                     if (lrfds)
-                        FD_SET(*i, &readfds);
+                        FD_SET(*i, &rqreadfds);
                     if (lwfds)
-                        FD_SET(*i, &writefds);
+                        FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
                         max_fd = *i;
                 }
 
+                IF_HEAVY_LOGGING(const int prev_total = total);
                 timeval tv;
                 tv.tv_sec = 0;
                 tv.tv_usec = 0;
-                if (::select(max_fd + 1, &readfds, &writefds, NULL, &tv) > 0)
+                if (::select(max_fd + 1, &rqreadfds, &rqwritefds, NULL, &tv) > 0)
                 {
                     for (set<SYSSOCKET>::const_iterator i = ed.m_sLocals.begin(); i != ed.m_sLocals.end(); ++ i)
                     {
-                        if (lrfds && FD_ISSET(*i, &readfds))
+                        if (lrfds && FD_ISSET(*i, &rqreadfds))
                         {
                             lrfds->insert(*i);
                             ++ total;
                         }
-                        if (lwfds && FD_ISSET(*i, &writefds))
+                        if (lwfds && FD_ISSET(*i, &rqwritefds))
                         {
                             lwfds->insert(*i);
                             ++ total;
                         }
                     }
                 }
+
+                HLOGC(mglog.Debug, log << "CEPoll::wait: select(otherSYS): picking up " << (total - prev_total)  << " ready fds.");
 #endif
             }
 
         } // END-LOCK: m_EPollLock
 
+        HLOGC(mglog.Debug, log << "CEPoll::wait: Total of " << total << " READY SOCKETS");
+
         if (total > 0)
             return total;
 
         if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+        {
+            HLOGP(mglog.Debug, "... not waiting longer - timeout");
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+        }
 
-        CTimer::waitForEvent();
+        CTimer::EWait wt ATR_UNUSED = CTimer::waitForEvent();
+        HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
+            << (wt == CTimer::WT_TIMEOUT ? "CHECKPOINT" : wt == CTimer::WT_EVENT ? "TRIGGERED" : "ERROR"));
     }
 
     return 0;

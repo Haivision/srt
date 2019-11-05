@@ -28,7 +28,7 @@ build_script:
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' ) { $ENABLE_UNITTESTS = 'ON' } else { $ENABLE_UNITTESTS = 'OFF' }
   - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS"
-  - ps: Update-AppveyorBuild -Version "1.0.0-$Env:APPVEYOR_BUILD_NUMBER"
+  - ps: ./scripts/set-version-metadata.ps1
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
     
 test_script:

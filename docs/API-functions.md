@@ -1056,8 +1056,9 @@ Creates a new epoll container.
 
 - Errors:
 
-  * `SRT_ECONNSETUP`: System operation failed. This is on systems that use a 
-special method for the system part of epoll and therefore associated resources,
+  * `SRT_ECONNSETUP`: System operation failed or not enough space to create a new epoll.
+System error might happen on systems that use a 
+special method for the system part of epoll (`epoll_create()`, `kqueue()`), and therefore associated resources,
 like epoll on Linux.
 
 ### srt_epoll_add_usock, srt_epoll_add_ssock, srt_epoll_update_usock, srt_epoll_update_ssock

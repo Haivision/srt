@@ -71,12 +71,6 @@ modified by
 
 using namespace std;
 
-#if ENABLE_HEAVY_LOGGING
-#define IF_HEAVY_LOGGING(instr) instr
-#else
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif
-
 namespace srt_logging
 {
 
@@ -1071,6 +1065,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pSndQueue->getIpTTL();
         else
             *(int32_t *)optval = m_iIpTTL;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_IPTOS:
@@ -1078,6 +1073,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pSndQueue->getIpToS();
         else
             *(int32_t *)optval = m_iIpToS;
+        optlen = sizeof(int32_t);
         break;
 #endif
 
@@ -1127,6 +1123,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pCryptoControl->m_SndKmState;
         else
             *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_SNDKMSTATE: // State imposed by Agent depending on PW and KMX
@@ -1142,6 +1139,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
         else
             *(int32_t *)optval = SRT_KM_S_UNSECURED;
+        optlen = sizeof(int32_t);
+        break;
+
+    case SRTO_LOSSMAXTTL:
+        *(int32_t*)optval = m_iMaxReorderTolerance;
         optlen = sizeof(int32_t);
         break;
 
@@ -8567,8 +8569,10 @@ int CUDT::processData(CUnit *in_unit)
             }
 
             HLOGC(mglog.Debug,
-                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (" << exc_type << "/"
-                      << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: " << packet.MessageFlagStr());
+                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
+                  << " BUFr=" << avail_bufsize
+                  << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
+                  << packet.MessageFlagStr());
 
             // Decryption should have made the crypto flags EK_NOENC.
             // Otherwise it's an error.
