@@ -328,6 +328,7 @@ CUDT::CUDT(const CUDT &ancestor)
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
     m_iIpV6Only             = ancestor.m_iIpV6Only;
+    m_iReorderTolerance     = ancestor.m_iMaxReorderTolerance;  // Initialize with maximum value
     m_iMaxReorderTolerance  = ancestor.m_iMaxReorderTolerance;
     // Runtime
     m_bRcvNakReport             = ancestor.m_bRcvNakReport;
@@ -708,6 +709,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void *optval, int optlen)
 
     case SRTO_LOSSMAXTTL:
         m_iMaxReorderTolerance = *(int *)optval;
+        if (!m_bConnected)
+            m_iReorderTolerance = m_iMaxReorderTolerance;
         break;
 
     case SRTO_VERSION:
