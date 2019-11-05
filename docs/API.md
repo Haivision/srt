@@ -612,8 +612,8 @@ immediately upon experiencing a "gap" in sequences.
 - `0`: relative to input rate (see `SRTO_INPUTBW`) 
 - `>0`: absolute limit in B/s
 
-- *NOTE: This option has a default value of -1. For cases when the stream rate
-is mostly constant however, it is recommended to use value 0 here and shape the
+- *NOTE: This option has a default value of -1. Although in case when the stream
+rate is mostly constant it is recommended to use value 0 here and shape the
 bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
 
 
