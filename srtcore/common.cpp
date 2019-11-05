@@ -95,7 +95,15 @@ m_TickCond(),
 m_TickLock()
 {
     pthread_mutex_init(&m_TickLock, NULL);
+
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pthread_cond_init(&m_TickCond, &CondAttribs);
+#else
     pthread_cond_init(&m_TickCond, NULL);
+#endif
 }
 
 CTimer::~CTimer()
@@ -219,12 +227,19 @@ void CTimer::sleepto(uint64_t nexttime_tk)
             break;
 #endif
 
+        timespec timeout;
+#if ENABLE_MONOTONIC_CLOCK
+        clock_gettime(CLOCK_MONOTONIC, &timeout);
+        const uint64_t time_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + wait_us;
+        timeout.tv_sec = time_us / 1000000;
+        timeout.tv_nsec = (time_us % 1000000) * 1000;
+#else
         timeval now;
         gettimeofday(&now, 0);
         const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
-        timespec timeout;
         timeout.tv_sec = time_us / 1000000;
         timeout.tv_nsec = (time_us % 1000000) * 1000;
+#endif
 
         THREAD_PAUSED();
         pthread_mutex_lock(&m_TickLock);
