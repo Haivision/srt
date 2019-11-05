@@ -6454,6 +6454,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRecvNAK           = m_stats.recvNAK;
     perf->usSndDuration        = m_stats.sndDuration;
     perf->pktReorderDistance   = m_stats.traceReorderDistance;
+    perf->pktReorderTolerance  = m_iReorderTolerance;
     perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
     perf->pktRcvBelated        = m_stats.traceRcvBelated;
 
