@@ -127,10 +127,8 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
-if (WIN32)
-	if (ENABLE_PKTINFO)
-		message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
-	endif()
+if (WIN32 AND ENABLE_PKTINFO)
+	message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
 endif()
 
 

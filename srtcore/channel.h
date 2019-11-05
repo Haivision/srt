@@ -46,7 +46,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************
 written by
    Yunhong Gu, last updated 01/27/2011
-#ifdef unix
 modified by
    Haivision Systems Inc.
 *****************************************************************************/

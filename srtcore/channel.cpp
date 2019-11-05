@@ -582,7 +582,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& 
 #ifdef SRT_ENABLE_PKTINFO
       if (m_bBindMasked && !source_addr.isany())
       {
-          if ( !setSourceAddress(mh, source_addr))
+          if (!setSourceAddress(mh, source_addr))
           {
               LOGC(mglog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
           }
