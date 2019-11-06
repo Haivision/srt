@@ -234,8 +234,6 @@ public:
    void probeArrival(const CPacket& pkt)
    {
        const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
-       // Still honor pre-1.2.0 clients that don't support
-       // rexmit flag.
 
        // for probe1, we want 16th packet
        if (inorder16 == 0)
@@ -263,8 +261,7 @@ public:
    {
        // Reject probes that don't refer to the very next packet
        // towards the one that was lately notified by probe1Arrival.
-       // Otherwise the result can be stupid, including measurement
-       // between regular 16th packet and retransmitted 17th one.
+       // Otherwise the result can be stupid.
 
        // Simply, in case when this wasn't called exactly for the
        // expected packet pair, behave as if the 17th packet was lost.
