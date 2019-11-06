@@ -8283,10 +8283,7 @@ int CUDT::processData(CUnit *in_unit)
     // Retransmitted and unordered packets do not provide expected measurement.
     // We expect the 16th and 17th packet to be sent regularly,
     // otherwise measurement must be rejected.
-    if (!unordered && !retransmitted)
-    {
-        m_RcvTimeWindow.probeArrival(packet);
-    }
+    m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     CGuard::enterCS(m_StatsLock);
     m_stats.traceBytesRecv += pktsz;

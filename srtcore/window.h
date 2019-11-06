@@ -231,15 +231,18 @@ public:
    }
 
    /// Shortcut to test a packet for possible probe 1 or 2
-   void probeArrival(const CPacket& pkt)
+   void probeArrival(const CPacket& pkt, bool unordered)
    {
        const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
 
        // for probe1, we want 16th packet
        if (inorder16 == 0)
        {
-           probe1Arrival(pkt);
+           probe1Arrival(pkt, unordered);
        }
+
+       if (unordered)
+           return;
 
        // for probe2, we want 17th packet
        if (inorder16 == 1)
@@ -249,8 +252,17 @@ public:
    }
 
    /// Record the arrival time of the first probing packet.
-   void probe1Arrival(const CPacket& pkt)
+   void probe1Arrival(const CPacket& pkt, bool unordered)
    {
+       if (unordered && pkt.m_iSeqNo == m_Probe1Sequence)
+       {
+           // Reset the starting probe into "undefined", when
+           // a packet has come as retransmitted before the
+           // measurement at arrival of 17th could be taken.
+           m_Probe1Sequence = -1;
+           return;
+       }
+
        m_ProbeTime = CTimer::getTime();
        m_Probe1Sequence = pkt.m_iSeqNo; // Record the sequence where 16th packet probe was taken
    }
@@ -282,7 +294,10 @@ public:
        CGuard cg(m_lockProbeWindow);
 
        m_CurrArrTime = now;
-       m_Probe1Sequence = -1; // this may speedup next check on 16th loss
+
+       // Reset the starting probe to prevent checking if the
+       // measurement was already taken.
+       m_Probe1Sequence = -1;
 
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
