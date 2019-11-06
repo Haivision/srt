@@ -8361,9 +8361,18 @@ int CUDT::processData(CUnit *in_unit)
 
    // Probe the packet pair if needed.
    // Conditions and any extra data required for the packet
-   // these functions will extract as needed.
-   m_RcvTimeWindow.probe1Arrival(packet, m_bPeerRexmitFlag);
-   m_RcvTimeWindow.probe2Arrival(packet, m_bPeerRexmitFlag);
+   // this function will extract and test as needed.
+
+    const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
+    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
+
+    // Retransmitted and unordered packets do not provide expected measurement.
+    // We expect the 16th and 17th packet to be sent regularly,
+    // otherwise measurement must be rejected.
+    if (!unordered && !retransmitted)
+    {
+        m_RcvTimeWindow.probeArrival(packet);
+    }
 
     CGuard::enterCS(m_StatsLock);
     m_stats.traceBytesRecv += pktsz;
