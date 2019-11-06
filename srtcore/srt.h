@@ -338,7 +338,8 @@ struct CBytePerfMon
    int      pktSndFilterExtra;          // number of control packets supplied by packet filter
    int      pktRcvFilterExtra;          // number of control packets received and not supplied back
    int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
-   int      pktRcvFilterLoss;           // number of packet loss not coverable by filter   
+   int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
+   int      pktReorderTolerance;        // packet reorder tolerance value
    //<
 };
 
@@ -562,7 +563,6 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
 
 
 
-typedef struct CPerfMon SRT_TRACEINFO;
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;

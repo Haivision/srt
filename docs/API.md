@@ -659,7 +659,7 @@ the bidirectional stream sending in version 1.2.0is not supported.
 | ------------------ | ----- | ------- | ----- | ------- | -------- | ---------- |
 | `SRTO_LOSSMAXTTL`  | 1.2.0 | pre     | `int` | packets | 0        | reasonable |
 
-- **[SET]** - The value up to which the *Reorder Tolerance* may grow. When 
+- **[GET or SET]** - The value up to which the *Reorder Tolerance* may grow. When 
 *Reorder Tolerance* is > 0, then packet loss report is delayed until that number 
 of packets come in. *Reorder Tolerance* increases every time a "belated" packet 
 has come, but it wasn't due to retransmission (that is, when UDP packets tend to 
