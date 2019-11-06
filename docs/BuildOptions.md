@@ -147,8 +147,8 @@ the library. For these reasons this option is turned OFF by default.
 
 Enables usage of `inet_pton` function by the applications, which should be used
 to resolve the network endpoint name into an IP address. This may be not
-availabe on some version of Windows, in which case you can turn this OFF,
-however at the expense of not being able to resolve IP address by name,
+availabe on some version of Windows, in which case you can turn this OFF.
+When this option is OFF, however, IP addresses cannot be resolved by name,
 as the `inet_pton` function gets a poor-man's simple replacement that can
 only resolve numeric IPv4 addresses.
 
@@ -178,7 +178,7 @@ The problem is based on the fact that POSIX functions that use timeout
 specification (all of `*_timedwait`) expect the absolute time value.
 A relative timeout value can be then only specified by adding it to
 the current time, which can be specified as either system or monotonic
-clock (which one, is configured in the resources used in the operation).
+clock (as configured in the resources used in the operation).
 However the current time of the monotonic clock can only be obtained by
 the `clock_gettime` function.
 
@@ -234,9 +234,9 @@ apply in this case). However, this problem still exists if the listener socket
 is bound to the "whole machine" (i.e. set to "any" address).
 
 When this option is ON, a mechanism is added to forcefully set the source
-IP address in such a response packet to 10.0.1.20 in the above example,
-as well as this address is first extracted from the incoming packet as the
-target address. This fixes the problem, as this will be interpreted by
+IP address in such a response packet (e.g. to 10.0.1.20 in the above example).
+This address is first extracted from the incoming packet as the
+target address, which fixes the problem, as this will be interpreted by
 the caller peer correctly.
 
 This feature is turned off by default because the impact on performance is 
@@ -368,7 +368,7 @@ built-in one).
 
 Encryption library to be used. Possible options for `<name>`:
 
-* openssl(default)
+* openssl (default)
 * gnutls (with nettle)
 * mbedtls
 
