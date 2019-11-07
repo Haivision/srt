@@ -1693,6 +1693,8 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     while (p != (q + 1) % m_iSize)
     {
         const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
+        // When unitsize is less than pktlen, only a fragment is copied to the output 'data',
+        // but still the whole packet is removed from the receiver buffer.
         if (pktlen > 0)
             countBytes(-1, -pktlen, true);
 
@@ -1705,9 +1707,6 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             memcpy(data, m_pUnit[p]->m_Packet.m_pcData, unitsize);
             data += unitsize;
             rs -= unitsize;
-            /* we removed bytes form receive buffer */
-            countBytes(-1, -unitsize, true);
-
 
 #if ENABLE_HEAVY_LOGGING
             {
