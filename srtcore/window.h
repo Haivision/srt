@@ -278,11 +278,8 @@ public:
        // Simply, in case when this wasn't called exactly for the
        // expected packet pair, behave as if the 17th packet was lost.
 
-       if (    // probe1Arrival wasn't called yet, no start point then
-               m_Probe1Sequence == -1
-               // not very next towards lately recorded 16th
-               || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo
-          )
+       // no start point yet (or was reset) OR not very next packet
+       if (m_Probe1Sequence == -1 || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
            return;
 
        // Grab the current time before trying to acquire
