@@ -73,6 +73,8 @@ public:
    CSndBuffer(int size = 32, int mss = 1500);
    ~CSndBuffer();
 
+public:
+
       /// Insert a user buffer into the sending list.
       /// @param [in] data pointer to the user data block.
       /// @param [in] len size of the block.
@@ -245,6 +247,9 @@ public:
    CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = 65536);
    ~CRcvBuffer();
 
+
+public:
+
       /// Write data into the buffer.
       /// @param [in] unit pointer to a data unit containing new packet
       /// @param [in] offset offset from last ACK point.
@@ -304,7 +309,7 @@ public:
       /// Query how many data of the receive buffer is acknowledged.
       /// @param [in] now current time in us.
       /// @return none.
-
+   
    void updRcvAvgDataSize(uint64_t now);
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
@@ -386,6 +391,9 @@ public:
 
    void skipData(int len);
 
+#if ENABLE_HEAVY_LOGGING
+   void reportBufferStats(); // Heavy logging Debug only
+#endif
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
@@ -397,11 +405,13 @@ private:
 
    bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
 
+public:
+
+      // (This is exposed as used publicly in logs)
       /// Get packet delivery local time base (adjusted for wrap around)
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
-
-   uint64_t getTsbPdTimeBase(uint32_t timestamp);
+   uint64_t getTsbPdTimeBase(uint32_t timestamp_us);
 
       /// Get packet local delivery time
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min

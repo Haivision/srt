@@ -205,7 +205,6 @@ public: //API
     static int32_t epoll_set(const int eid, int32_t flags);
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
-    static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
@@ -469,12 +468,6 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& optlen);
 
-    /// read the performance data since last sample() call.
-    /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
-    /// @param clear [in] flag to decide if the local performance trace should be cleared.
-
-    void sample(CPerfMon* perf, bool clear = true);
-
     /// read the performance data with bytes counters since bstats() 
     ///  
     /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
@@ -487,7 +480,7 @@ private:
     /// removes the loss record from both current receiver loss list and
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
-    void unlose(int32_t from, int32_t to);
+    void dropFromLossLists(int32_t from, int32_t to);
 
     void considerLegacySrtHandshake(uint64_t timebase);
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
@@ -726,7 +719,11 @@ private: // synchronization: mutexes and conditions
     pthread_cond_t m_SendBlockCond;              // used to block "send" call
     pthread_mutex_t m_SendBlockLock;             // lock associated to m_SendBlockCond
 
-    pthread_mutex_t m_AckLock;                   // used to protected sender's loss list when processing ACK
+    pthread_mutex_t m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
+
+    // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
+    pthread_mutex_t m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
+
 
     pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
     pthread_mutex_t m_RecvDataLock;              // lock associated to m_RecvDataCond
@@ -760,9 +757,15 @@ public:
 
 
 private: // Generation and processing of packets
-    void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
+    void sendCtrl(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
+
     void processCtrl(CPacket& ctrlpkt);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
+    void processCtrlAck(const CPacket& ctrlpkt, const uint64_t currtime_tk);
+
+    ///
+    /// @param ackdata_seqno    sequence number of a data packet being acknowledged
+    void updateSndLossListOnACK(int32_t ackdata_seqno);
 
     /// Pack a packet from a list of lost packets.
     ///
@@ -863,7 +866,7 @@ private: // Timers
     volatile uint64_t m_ullACKInt_tk;         // ACK interval
     volatile uint64_t m_ullNAKInt_tk;         // NAK interval
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
-    volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer
+    volatile uint64_t m_ullLastRspAckTime_tk; // time stamp of last ACK from the peer, protect with m_RecvAckLock
     volatile uint64_t m_ullLastSndTime_tk;    // time stamp of last data/ctrl sent (in system ticks)
     uint64_t m_ullMinNakInt_tk;               // NAK timeout lower bound; too small value can cause unnecessary retransmission
     uint64_t m_ullMinExpInt_tk;               // timeout lower bound threshold: too small timeout can cause problem

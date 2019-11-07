@@ -35,7 +35,6 @@ set internal_options {
 set cmake_options {
     cygwin-use-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
     enable-encryption "Should encryption features be enabled (default: ON)"
-    enable-unittests "Should the unit tests be enabled (default: OFF)"
     enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
     enable-apps "Should the Support Applications be Built? (default: ON)"
     enable-testing "Should developer testing applications be built (default: OFF)"

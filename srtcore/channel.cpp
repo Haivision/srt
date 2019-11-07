@@ -423,20 +423,23 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 
     if (packet.isControl())
     {
-        spec << " CONTROL size=" << packet.getLength()
+        spec << " type=CONTROL"
              << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
              << " arg=" << packet.header(SRT_PH_MSGNO);
     }
     else
     {
-        spec << " DATA size=" << packet.getLength()
-             << " seq=" << packet.getSeqNo();
-        if (packet.getRexmitFlag())
-            spec << " [REXMIT]";
+        spec << " type=DATA"
+             << " %" << packet.getSeqNo()
+             << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
+             << packet.MessageFlagStr()
+             << " !" << BufferStamp(packet.m_pcData, packet.getLength());
     }
 
-    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
-        << " target=%" << packet.m_iID
+    LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+        << " target=@" << packet.m_iID
+        << " size=" << packet.getLength()
+        << " pkt.ts=" << FormatTime(packet.m_iTimeStamp)
         << spec.str());
 #endif
 

@@ -40,6 +40,28 @@ options common for multiple media types.
 Note also that the *host* part is always tried to be resolved as a name,
 if its form is not directly the IPv4 address.
 
+Example for smoke testing
+-------------------------
+
+First we need to start up the SRT live transmit app, listening for unicast UDP TS input on port 1234 and making SRT available on port 4201. Note, these are randomly chosen ports. We also open the app in verbose mode for debugging
+
+    srt-live-transmit udp://:1234 srt://:4201 -v
+
+Now we need to generate a UDP stream. ffmpeg can be used to generate bars and tone as follows, doing a simple unicast push to our listening srt-live-tansmit app:
+
+    ffmpeg -f lavfi -re -i smptebars=duration=300:size=1280x720:rate=30 -f lavfi -re -i sine=frequency=1000:duration=60:sample_rate=44100 -pix_fmt yuv420p -c:v libx264 -b:v 1000k -g 30 -keyint_min 120 -profile:v baseline -preset veryfast -f mpegts "udp://127.0.0.1:1234?pkt_size=1316"
+
+You should see the stream connect in srt-live-transmit.
+
+Now you can test in VLC (make sure you're using the latest version!) - just go to file -> open network stream and enter
+
+    srt://127.0.0.1:4201
+
+and you should see bars and tone right away.
+
+If you're having trouble, make sure this works, then add complexity one step at a time (multicast, push vs listen, etc)
+
+
 Medium: FILE (including standard process pipes)
 -----------------------------------------------
 
@@ -102,6 +124,19 @@ This mode can be specified explicitly using the **mode** parameter. When it's n
 
 - `srt://:1234` - the *port* is specified (1234), but *host* is empty. This assumes **listener** mode.
 - `srt://remote.host.com:1234` - both *host* ***and*** *port* are specified. This assumes **caller** mode.
+
+When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
+
+* For caller, it's always the destination host address. If this is empty, it is resolved to `0.0.0.0`, which usually should mean connecting to the local host
+* For listener, it defines the IP address of the local device on which the socket should listen, e.g.:
+
+```
+srt://10.10.10.100:5001?mode=listener
+```
+An alternative method to specify this IP address is the `adapter` parameter:
+```
+srt://:5001?adapter=10.10.10.100
+```
 
 The **rendezvous** mode is not deduced and it has to be specified
 explicitly. Note also special cases of the **host** and **port** parts

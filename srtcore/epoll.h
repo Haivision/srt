@@ -62,7 +62,7 @@ modified by
 
 struct CEPollDesc
 {
-   int m_iID;                                // epoll ID
+   const int m_iID;                                // epoll ID
 
    struct Wait;
 
@@ -137,8 +137,10 @@ private:
 
 public:
 
-   CEPollDesc():
-       m_Flags(0)
+   CEPollDesc(int id, int localID)
+       : m_iID(id)
+       , m_Flags(0)
+       , m_iLocalID(localID)
     {
     }
 
@@ -164,7 +166,7 @@ public:
    enotice_t::iterator enotice_begin() { return m_USockEventNotice.begin(); }
    enotice_t::iterator enotice_end() { return m_USockEventNotice.end(); }
 
-   int m_iLocalID;                           // local system epoll ID
+   const int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
    std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, int32_t events, bool edgeTrg)
@@ -203,30 +205,7 @@ public:
        }
        else
        {
-           // `events` contains bits to be cleared.
-           // 1. If there is no notice event, do nothing - clear already.
-           // 2. If there is a notice event, update by clearing the bits
-           // 2.1. If this made resulting state to be 0, also remove the notice.
-
-           // If wait.notit is empty, there's no event to clear
-           if (wait.notit == nullNotice())
-               return;
-
-           // Update the state
-           const int newstate = wait.notit->events & (~events);
-
-           if (newstate == 0)
-           {
-               // If the new state is full 0 (no events),
-               // then remove the corresponding notice object
-               m_USockEventNotice.erase(wait.notit);
-
-               // and set the "corresponding notice object" to nothing
-               wait.notit = nullNotice();
-               return;
-           }
-
-           wait.notit->events = newstate;
+           removeExcessEvents(wait, ~events);
        }
    }
 
@@ -258,14 +237,49 @@ public:
        removeExistingNotices(wait);
    }
 
-   void checkEdge(enotice_t::iterator i)
+   // This function removes notices referring to
+   // events that are NOT present in @a nevts, but
+   // may be among subscriptions and therefore potentially
+   // have an associated notice.
+   void removeExcessEvents(Wait& wait, int nevts)
+   {
+       // Update the event notice, should it exist
+       // If the watch points to a null notice, there's simply
+       // no notice there, so nothing to update or prospectively
+       // remove - but may be something to add.
+       if (wait.notit == nullNotice())
+           return;
+
+       // `events` contains bits to be cleared.
+       // 1. If there is no notice event, do nothing - clear already.
+       // 2. If there is a notice event, update by clearing the bits
+       // 2.1. If this made resulting state to be 0, also remove the notice.
+
+       const int newstate = wait.notit->events & nevts;
+       if (newstate)
+       {
+           wait.notit->events = newstate;
+       }
+       else
+       {
+           // If the new state is full 0 (no events),
+           // then remove the corresponding notice object
+           removeExistingNotices(wait);
+       }
+   }
+
+   bool checkEdge(enotice_t::iterator i)
    {
        // This function should check if this event was subscribed
        // as edge-triggered, and if so, clear the event from the notice.
        // Update events and check edge mode at the subscriber
        i->events &= ~i->parent->edgeOnly();
        if(!i->events)
+       {
            removeExistingNotices(*i->parent);
+           return true;
+       }
+       return false;
    }
 };
 
