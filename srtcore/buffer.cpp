@@ -1048,12 +1048,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 {
     *tsbpdtime = 0;
 
-#if ENABLE_HEAVY_LOGGING
-    const char* reason = "NOT RECEIVED";
-#define IF_HEAVY_LOGGING(instr) instr
-#else 
-#define IF_HEAVY_LOGGING(instr) (void)0
-#endif 
+    IF_HEAVY_LOGGING(const char* reason = "NOT RECEIVED");
 
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
     {
