@@ -844,7 +844,6 @@ macro(srt_make_application name)
 	if (USE_GNUSTL)
 		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 	endif()
-
 	if (srt_libspec_static AND CMAKE_DL_LIBS)
 		target_link_libraries(${name} ${CMAKE_DL_LIBS})
 	endif()
