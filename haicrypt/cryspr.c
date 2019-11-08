@@ -176,7 +176,7 @@ int crysprFallback_AES_WrapKey(CRYSPR_cb *cryspr_cb,
 		}
 	}
 	memcpy(out, A, 8);
-	return inlen + 8;
+    return 0;
 }
 
 int crysprFallback_AES_UnwrapKey(CRYSPR_cb *cryspr_cb,
@@ -219,9 +219,9 @@ int crysprFallback_AES_UnwrapKey(CRYSPR_cb *cryspr_cb,
 	if (memcmp(A, iv, 8))
 	{
 		memset(out, 0, inlen);
-		return 0;
+        return -1;
 	}
-	return inlen;
+    return 0;
 }
 
 static unsigned char *_crysprFallback_GetOutbuf(CRYSPR_cb *cryspr_cb, size_t pfx_len, size_t out_len)

@@ -75,7 +75,12 @@ public:
 
    SRT_SOCKSTATUS m_Status;                  //< current socket state
 
-   uint64_t m_TimeStamp;                     //< time when the socket is closed
+   /// Time when the socket is closed.
+   /// When the socket is closed, it is not removed immediately from the list
+   /// of sockets in order to prevent other methods from accessing invalid address.
+   /// A timer is started and the socket will be removed after approximately
+   /// 1 second (see CUDTUnited::checkBrokenSockets()).
+   uint64_t m_ClosureTimeStamp;
 
    int m_iIPversion;                         //< IP version
    sockaddr* m_pSelfAddr;                    //< pointer to the local address of the socket
@@ -190,6 +195,8 @@ public:
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
+   int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+   int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
 
       /// record the UDT exception.

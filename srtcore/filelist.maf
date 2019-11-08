@@ -9,10 +9,12 @@ common.cpp
 core.cpp
 crypto.cpp
 epoll.cpp
+fec.cpp
 handshake.cpp
 list.cpp
 md5.cpp
 packet.cpp
+packetfilter.cpp
 queue.cpp
 congctl.cpp
 srt_c_api.cpp
@@ -50,4 +52,10 @@ srt_compat.h
 threadname.h
 utilities.h
 window.h
+
+SOURCES WIN32 SHARED
+srt_shared.rc
+
+PRIVATE HEADERS WIN32 SHARED
+../version.h
 

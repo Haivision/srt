@@ -83,7 +83,7 @@ struct TestResultBlocking
 template<typename TResult>
 struct TestCase
 {
-    bool                strictenc [PEER_COUNT];
+    bool                enforcedenc [PEER_COUNT];
     const std::string  (&password)[PEER_COUNT];
     TResult             expected_result;
 };
@@ -105,7 +105,7 @@ static const std::string s_pwd_no("");
  * Listener is sender   in a non-blocking mode
  * Caller   is receiver in a non-blocking mode
  *
- * In the cases B.2-B.4 the caller will reject the connection due to the strict encryption check
+ * In the cases B.2-B.4 the caller will reject the connection due to the enforced encryption check
  * of the HS response from the listener on the stage of the KM response check.
  * While the listener accepts the connection with the connected state. So the caller sends UMSG_SHUTDOWN
  * to notify the listener that he has closed the connection. Both get the SRTS_BROKEN states.
@@ -114,7 +114,7 @@ static const std::string s_pwd_no("");
  */
 const TestCaseNonBlocking g_test_matrix_non_blocking[] =
 {
-        // STRICTENC         |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
+        // ENFORCEDENC       |  Password           |                                |EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |  connect_ret   accept_ret      |ret | error          | rnum|wnum | caller              accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,  1,  0,               0,   1,   {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
 /*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK, -1,  SRT_ETIMEOUT,  -1,  -1,   {SRTS_BROKEN,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
@@ -148,7 +148,7 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  * Listener is sender   in a blocking mode
  * Caller   is receiver in a blocking mode
  *
- * In the cases B.2-B.4 the caller will reject the connection due to the strict encryption check
+ * In the cases B.2-B.4 the caller will reject the connection due to the enforced encryption check
  * of the HS response from the listener on the stage of the KM response check.
  * While the listener accepts the connection with the connected state. So the caller sends UMSG_SHUTDOWN
  * to notify the listener that he has closed the connection. The accepted socket gets the SRTS_BROKEN states.
@@ -157,7 +157,7 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  */
 const TestCaseBlocking g_test_matrix_blocking[] =
 {
-        // STRICTENC         |  Password           |                                      | socket_state                   |  KM State
+        // ENFORCEDENC       |  Password           |                                      | socket_state                   |  KM State
         // caller | listener |  caller  | listener |  connect_ret         accept_ret      | caller                accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
 /*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
@@ -186,16 +186,16 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 
 
 
-class TestStrictEncryption
+class TestEnforcedEncryption
     : public ::testing::Test
 {
 protected:
-    TestStrictEncryption()
+    TestEnforcedEncryption()
     {
         // initialization code here
     }
 
-    ~TestStrictEncryption()
+    ~TestEnforcedEncryption()
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
@@ -240,19 +240,19 @@ protected:
 public:
 
 
-    int SetStrictEncryption(PEER_TYPE peer, bool value)
+    int SetEnforcedEncryption(PEER_TYPE peer, bool value)
     {
         const SRTSOCKET &socket = peer == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_STRICTENC, value ? &s_yes : &s_no, sizeof s_yes);
+        return srt_setsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
     }
 
 
-    bool GetStrictEncryption(PEER_TYPE peer_type)
+    bool GetEnforcedEncryption(PEER_TYPE peer_type)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
         int value = -1;
         int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_STRICTENC, (void*)&value, &value_len), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
         return value ? true : false;
     }
 
@@ -313,8 +313,8 @@ public:
 
         // Prepare input state
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
-        ASSERT_EQ(SetStrictEncryption(PEER_CALLER, test.strictenc[PEER_CALLER]), SRT_SUCCESS);
-        ASSERT_EQ(SetStrictEncryption(PEER_LISTENER, test.strictenc[PEER_LISTENER]), SRT_SUCCESS);
+        ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_SUCCESS);
+        ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_SUCCESS);
 
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
@@ -368,13 +368,12 @@ public:
                 EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 if (m_is_tracing)
                 {
-                    std::cout << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
-                    std::cout << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cout << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cout << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
+                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
-            std::cout << "srt_accept() thread finished\n";
         });
 
         if (is_blocking == false)
@@ -382,12 +381,12 @@ public:
 
         if (m_is_tracing)
         {
-            std::cout << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
-            std::cout << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-            std::cout << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cout << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cout << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cout << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
+            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
+            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
+            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
+            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
+            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
@@ -403,7 +402,6 @@ public:
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            std::cout << "Closing the listener socket\n";
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             accepting_thread.join();
         }
@@ -421,7 +419,7 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = true;
+    const bool          m_is_tracing = false;
     static const char*  m_km_state[];
     static const char*  m_socket_state[];
 };
@@ -429,14 +427,14 @@ private:
 
 
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
+int TestEnforcedEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
 {
     return SRT_SUCCESS;
 }
 
 
 template<>
-int TestStrictEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultNonBlocking &expect)
+int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultNonBlocking &expect)
 {
     const int default_len = 3;
     int rlen = default_len;
@@ -473,20 +471,20 @@ int TestStrictEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultNon
 
 
 template<>
-const TestCase<TestResultBlocking>& TestStrictEncryption::GetTestMatrix<TestResultBlocking>(TEST_CASE test_case) const
+const TestCase<TestResultBlocking>& TestEnforcedEncryption::GetTestMatrix<TestResultBlocking>(TEST_CASE test_case) const
 {
     return g_test_matrix_blocking[test_case];
 }
 
 template<>
-const TestCase<TestResultNonBlocking>& TestStrictEncryption::GetTestMatrix<TestResultNonBlocking>(TEST_CASE test_case) const
+const TestCase<TestResultNonBlocking>& TestEnforcedEncryption::GetTestMatrix<TestResultNonBlocking>(TEST_CASE test_case) const
 {
     return g_test_matrix_non_blocking[test_case];
 }
 
 
 
-const char* TestStrictEncryption::m_km_state[] = {
+const char* TestEnforcedEncryption::m_km_state[] = {
     "SRT_KM_S_UNSECURED (0)",      //No encryption
     "SRT_KM_S_SECURING  (1)",      //Stream encrypted, exchanging Keying Material
     "SRT_KM_S_SECURED   (2)",      //Stream encrypted, keying Material exchanged, decrypting ok.
@@ -495,7 +493,7 @@ const char* TestStrictEncryption::m_km_state[] = {
 };
 
 
-const char* TestStrictEncryption::m_socket_state[] = {
+const char* TestEnforcedEncryption::m_socket_state[] = {
     "SRTS_INVALID",
     "SRTS_INIT",
     "SRTS_OPENED",
@@ -511,10 +509,10 @@ const char* TestStrictEncryption::m_socket_state[] = {
 
 
 /** 
- * @fn TEST_F(TestStrictEncryption, PasswordLength)
+ * @fn TEST_F(TestEnforcedEncryption, PasswordLength)
  * @brief The password length should belong to the interval of [10; 80]
  */
-TEST_F(TestStrictEncryption, PasswordLength)
+TEST_F(TestEnforcedEncryption, PasswordLength)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
@@ -546,28 +544,28 @@ TEST_F(TestStrictEncryption, PasswordLength)
 
 
 /**
- * @fn TEST_F(TestStrictEncryption, SetGetDefault)
- * @brief The default value for the strict encryption should be ON
+ * @fn TEST_F(TestEnforcedEncryption, SetGetDefault)
+ * @brief The default value for the enforced encryption should be ON
  */
-TEST_F(TestStrictEncryption, SetGetDefault)
+TEST_F(TestEnforcedEncryption, SetGetDefault)
 {
-    EXPECT_EQ(GetStrictEncryption(PEER_CALLER),   true);
-    EXPECT_EQ(GetStrictEncryption(PEER_LISTENER), true);
+    EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   true);
+    EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), true);
 
-    EXPECT_EQ(SetStrictEncryption(PEER_CALLER,    false), SRT_SUCCESS);
-    EXPECT_EQ(SetStrictEncryption(PEER_LISTENER,  false), SRT_SUCCESS);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_CALLER,    false), SRT_SUCCESS);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_LISTENER,  false), SRT_SUCCESS);
 
-    EXPECT_EQ(GetStrictEncryption(PEER_CALLER),   false);
-    EXPECT_EQ(GetStrictEncryption(PEER_LISTENER), false);
+    EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   false);
+    EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), false);
 }
 
 
-#define CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC) TEST_F(TestStrictEncryption, CASE_NUMBER##_Blocking_##DESC)\
+#define CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC) TEST_F(TestEnforcedEncryption, CASE_NUMBER##_Blocking_##DESC)\
 {\
     TestConnect<TestResultBlocking>(TEST_##CASE_NUMBER);\
 }
 
-#define CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) TEST_F(TestStrictEncryption, CASE_NUMBER##_NonBlocking_##DESC)\
+#define CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) TEST_F(TestEnforcedEncryption, CASE_NUMBER##_NonBlocking_##DESC)\
 {\
     TestConnect<TestResultNonBlocking>(TEST_##CASE_NUMBER);\
 }
@@ -578,34 +576,34 @@ TEST_F(TestStrictEncryption, SetGetDefault)
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
 #ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_A_1, Strict_On_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_A_2, Strict_On_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_A_3, Strict_On_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_A_4, Strict_On_On_Pwd_None_Set)
+CREATE_TEST_CASES(CASE_A_1, Enforced_On_On_Pwd_Set_Set_Match)
+CREATE_TEST_CASES(CASE_A_2, Enforced_On_On_Pwd_Set_Set_Mismatch)
+CREATE_TEST_CASES(CASE_A_3, Enforced_On_On_Pwd_Set_None)
+CREATE_TEST_CASES(CASE_A_4, Enforced_On_On_Pwd_None_Set)
 #endif
-CREATE_TEST_CASES(CASE_A_5, Strict_On_On_Pwd_None_None)
+CREATE_TEST_CASES(CASE_A_5, Enforced_On_On_Pwd_None_None)
 
 #ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_B_1, Strict_On_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_B_2, Strict_On_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_B_3, Strict_On_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_B_4, Strict_On_Off_Pwd_None_Set)
+CREATE_TEST_CASES(CASE_B_1, Enforced_On_Off_Pwd_Set_Set_Match)
+CREATE_TEST_CASES(CASE_B_2, Enforced_On_Off_Pwd_Set_Set_Mismatch)
+CREATE_TEST_CASES(CASE_B_3, Enforced_On_Off_Pwd_Set_None)
+CREATE_TEST_CASES(CASE_B_4, Enforced_On_Off_Pwd_None_Set)
 #endif
-CREATE_TEST_CASES(CASE_B_5, Strict_On_Off_Pwd_None_None)
+CREATE_TEST_CASES(CASE_B_5, Enforced_On_Off_Pwd_None_None)
 
 #ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_C_1, Strict_Off_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_C_2, Strict_Off_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_C_3, Strict_Off_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_C_4, Strict_Off_On_Pwd_None_Set)
+CREATE_TEST_CASES(CASE_C_1, Enforced_Off_On_Pwd_Set_Set_Match)
+CREATE_TEST_CASES(CASE_C_2, Enforced_Off_On_Pwd_Set_Set_Mismatch)
+CREATE_TEST_CASES(CASE_C_3, Enforced_Off_On_Pwd_Set_None)
+CREATE_TEST_CASES(CASE_C_4, Enforced_Off_On_Pwd_None_Set)
 #endif
-CREATE_TEST_CASES(CASE_C_5, Strict_Off_On_Pwd_None_None)
+CREATE_TEST_CASES(CASE_C_5, Enforced_Off_On_Pwd_None_None)
 
 #ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_D_1, Strict_Off_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_D_2, Strict_Off_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_D_3, Strict_Off_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_D_4, Strict_Off_Off_Pwd_None_Set)
+CREATE_TEST_CASES(CASE_D_1, Enforced_Off_Off_Pwd_Set_Set_Match)
+CREATE_TEST_CASES(CASE_D_2, Enforced_Off_Off_Pwd_Set_Set_Mismatch)
+CREATE_TEST_CASES(CASE_D_3, Enforced_Off_Off_Pwd_Set_None)
+CREATE_TEST_CASES(CASE_D_4, Enforced_Off_Off_Pwd_None_Set)
 #endif
-CREATE_TEST_CASES(CASE_D_5, Strict_Off_Off_Pwd_None_None)
+CREATE_TEST_CASES(CASE_D_5, Enforced_Off_Off_Pwd_None_None)
 

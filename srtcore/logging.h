@@ -70,11 +70,15 @@ written by
 #define HLOGP LOGP
 #define HLOGF LOGF
 
+#define IF_HEAVY_LOGGING(instr) instr
+
 #else
 
 #define HLOGC(...)
 #define HLOGF(...)
 #define HLOGP(...)
+
+#define IF_HEAVY_LOGGING(instr) (void)0
 
 #endif
 
@@ -87,6 +91,8 @@ written by
 #define HLOGC(...)
 #define HLOGF(...)
 #define HLOGP(...)
+
+#define IF_HEAVY_LOGGING(instr) (void)0
 
 #endif
 

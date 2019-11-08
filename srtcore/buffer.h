@@ -73,6 +73,8 @@ public:
    CSndBuffer(int size = 32, int mss = 1500);
    ~CSndBuffer();
 
+public:
+
       /// Insert a user buffer into the sending list.
       /// @param [in] data pointer to the user data block.
       /// @param [in] len size of the block.
@@ -239,8 +241,14 @@ public:
     std::string CONID() const { return ""; }
 
 
-   CRcvBuffer(CUnitQueue* queue, int bufsize = 65536);
+      /// Construct the buffer.
+      /// @param [in] queue  CUnitQueue that actually holds the units (packets)
+      /// @param [in] bufsize_pkts in units (packets)
+   CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = 65536);
    ~CRcvBuffer();
+
+
+public:
 
       /// Write data into the buffer.
       /// @param [in] unit pointer to a data unit containing new packet
@@ -264,18 +272,21 @@ public:
    int readBufferToFile(std::fstream& ofs, int len);
 
       /// Update the ACK point of the buffer.
-      /// @param [in] len size of data to be acknowledged.
+      /// @param [in] len number of units to be acknowledged.
       /// @return 1 if a user buffer is fulfilled, otherwise 0.
 
    void ackData(int len);
 
       /// Query how many buffer space left for data receiving.
+      /// Actually only acknowledged packets, that are still in the buffer,
+      /// are considered to take buffer space.
+      ///
       /// @return size of available buffer space (including user buffer) for data receiving.
+      ///         Not counting unacknowledged packets.
 
    int getAvailBufSize() const;
 
       /// Query how many data has been continuously received (for reading) and ready to play (tsbpdtime < now).
-      /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return size of valid (continous) data for reading.
 
    int getRcvDataSize() const;
@@ -298,7 +309,7 @@ public:
       /// Query how many data of the receive buffer is acknowledged.
       /// @param [in] now current time in us.
       /// @return none.
-
+   
    void updRcvAvgDataSize(uint64_t now);
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
@@ -380,6 +391,9 @@ public:
 
    void skipData(int len);
 
+#if ENABLE_HEAVY_LOGGING
+   void reportBufferStats(); // Heavy logging Debug only
+#endif
 
 private:
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
@@ -391,11 +405,13 @@ private:
 
    bool getRcvReadyMsg(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
 
+public:
+
+      // (This is exposed as used publicly in logs)
       /// Get packet delivery local time base (adjusted for wrap around)
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
-
-   uint64_t getTsbPdTimeBase(uint32_t timestamp);
+   uint64_t getTsbPdTimeBase(uint32_t timestamp_us);
 
       /// Get packet local delivery time
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
@@ -405,6 +421,14 @@ public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
    bool empty() const;
+
+   // Required by PacketFilter facility to use as a storage
+   // for provided packets
+   CUnitQueue* getUnitQueue()
+   {
+       return m_pUnitQueue;
+   }
+
 private:
 
    /// thread safe bytes counter of the Recv & Ack buffer
@@ -418,8 +442,8 @@ private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer
-   int m_iSize;                         // size of the protocol buffer
+   CUnit** m_pUnit;                     // pointer to the protocol buffer (array of CUnit* items)
+   const int m_iSize;                   // size of the array of CUnit* items
    CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
    int m_iStartPos;                     // the head position for I/O (inclusive)

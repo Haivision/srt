@@ -175,12 +175,14 @@ typedef enum SRT_SOCKOPT {
    SRTO_CONGESTION,          // Congestion controller type selection
    SRTO_MESSAGEAPI,          // In File mode, use message API (portions of data with boundaries)
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
-   SRTO_TRANSTYPE,           // Transmission type (set of options required for given transmission type)
+   SRTO_TRANSTYPE = 50,      // Transmission type (set of options required for given transmission type)
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
    SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
-   SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
+   SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+   // (some space left)
+   SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
 
 // DEPRECATED OPTIONS:
@@ -221,6 +223,7 @@ static const SRT_SOCKOPT SRTO_RCVPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)39;
 
 // Keeping old name for compatibility (deprecated)
 static const SRT_SOCKOPT SRTO_SMOOTHER SRT_ATR_DEPRECATED = SRTO_CONGESTION;
+static const SRT_SOCKOPT SRTO_STRICTENC SRT_ATR_DEPRECATED = SRTO_ENFORCEDENCRYPTION;
 
 typedef enum SRT_TRANSTYPE
 {
@@ -242,7 +245,7 @@ static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hd
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
 
-
+// Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
 {
    // global measurements
@@ -326,6 +329,17 @@ struct CBytePerfMon
    int      byteRcvBuf;                 // Undelivered bytes of UDT receiver
    int      msRcvBuf;                   // Undelivered timespan (msec) of UDT receiver
    int      msRcvTsbPdDelay;            // Timestamp-based Packet Delivery Delay
+
+   int      pktSndFilterExtraTotal;     // number of control packets supplied by packet filter
+   int      pktRcvFilterExtraTotal;     // number of control packets received and not supplied back
+   int      pktRcvFilterSupplyTotal;    // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLossTotal;      // number of packet loss not coverable by filter
+
+   int      pktSndFilterExtra;          // number of control packets supplied by packet filter
+   int      pktRcvFilterExtra;          // number of control packets received and not supplied back
+   int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
+   int      pktReorderTolerance;        // packet reorder tolerance value
    //<
 };
 
@@ -510,7 +524,24 @@ enum SRT_EPOLL_OPT
    // so that if system values are used by mistake, they should have the same effect
    SRT_EPOLL_IN       = 0x1,
    SRT_EPOLL_OUT      = 0x4,
-   SRT_EPOLL_ERR      = 0x8
+   SRT_EPOLL_ERR      = 0x8,
+   SRT_EPOLL_ET       = 1u << 31
+};
+// These are actually flags - use a bit container:
+typedef int32_t SRT_EPOLL_T;
+
+enum SRT_EPOLL_FLAGS
+{
+    /// This allows the EID container to be empty when calling the waiting
+    /// function with infinite time. This means an infinite hangup, although
+    /// a socket can be added to this EID from a separate thread.
+    SRT_EPOLL_ENABLE_EMPTY = 1,
+
+    /// This makes the waiting function check if there is output container
+    /// passed to it, and report an error if it isn't. By default it is allowed
+    /// that the output container is 0 size or NULL and therefore the readiness
+    /// state is reported only as a number of ready sockets from return value.
+    SRT_EPOLL_ENABLE_OUTPUTCHECK = 2
 };
 
 #ifdef __cplusplus
@@ -532,7 +563,6 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
 
 
 
-typedef struct CPerfMon SRT_TRACEINFO;
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
@@ -570,7 +600,7 @@ SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* op
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
-   int msgttl;           // TTL for a message, default -1 (delivered always)
+   int msgttl;           // TTL for a message, default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
    uint64_t srctime;     // source timestamp (usec), 0: use internal time     
@@ -633,8 +663,6 @@ SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
 // performance track
-// srt_perfmon is deprecated - use srt_bistats, which provides the same stats plus more.
-SRT_API int srt_perfmon(SRTSOCKET u, SRT_TRACEINFO * perf, int clear) SRT_ATR_DEPRECATED;
 // perfmon with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 // permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
@@ -653,6 +681,14 @@ SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+typedef struct SRT_EPOLL_EVENT_
+{
+    SRTSOCKET fd;
+    int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
+} SRT_EPOLL_EVENT;
+SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+
+SRT_API int32_t srt_epoll_set(int eid, int32_t flags);
 SRT_API int srt_epoll_release(int eid);
 
 // Logging control
