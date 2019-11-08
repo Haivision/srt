@@ -500,7 +500,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                     throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            IF_HEAVY_LOGGING(int total_noticed);
+            IF_HEAVY_LOGGING(int total_noticed = 0);
             IF_HEAVY_LOGGING(ostringstream debug_sockets);
             // Sockets with exceptions are returned to both read and write sets.
             for (CEPollDesc::enotice_t::iterator it = ed.enotice_begin(), it_next = it; it != ed.enotice_end(); it = it_next)

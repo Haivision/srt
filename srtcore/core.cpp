@@ -8272,13 +8272,27 @@ int CUDT::processData(CUnit *in_unit)
 
     const int pktsz = packet.getLength();
     // Update time information
+   // XXX Note that this adds the byte size of a packet
+   // of which we don't yet know as to whether this has
+   // carried out some useful data or some excessive data
+   // that will be later discarded.
+   // FIXME: before adding this on the rcv time window,
+   // make sure that this packet isn't going to be
+   // effectively discarded, as repeated retransmission,
+   // for example, burdens the link, but doesn't better the speed.
     m_RcvTimeWindow.onPktArrival(pktsz);
 
-    // Check if it is a probing packet pair
-    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
-        m_RcvTimeWindow.probe1Arrival();
-    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
-        m_RcvTimeWindow.probe2Arrival(pktsz);
+   // Probe the packet pair if needed.
+   // Conditions and any extra data required for the packet
+   // this function will extract and test as needed.
+
+    const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
+    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
+
+    // Retransmitted and unordered packets do not provide expected measurement.
+    // We expect the 16th and 17th packet to be sent regularly,
+    // otherwise measurement must be rejected.
+    m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     CGuard::enterCS(m_StatsLock);
     m_stats.traceBytesRecv += pktsz;
@@ -8401,6 +8415,7 @@ int CUDT::processData(CUnit *in_unit)
                           << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: " << packet.MessageFlagStr());
                 continue;
             }
+
             const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
             if (offset >= avail_bufsize)
             {

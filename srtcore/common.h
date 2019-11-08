@@ -168,7 +168,7 @@ const int64_t BW_INFINITE =  1000000000/8;         //Infinite=> 1 Gbps
 
 //////////////////////////////////////////////////
 //
-// The Smoother Event System
+// The Congestion Controller Event System
 //
 // The events are reported using: updateCC< Event_ID >( argument ).
 // There's only one arity supported: 1. Multiple arguments must be packed.

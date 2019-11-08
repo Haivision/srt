@@ -152,14 +152,14 @@ private:
 
     void updatePktSndPeriod_onTimer(ETransmissionEvent, ECheckTimerStage stage)
     {
-        HLOGC(mglog.Debug, log << "LiveSmoother: updatePktSndPeriod_onTimer");
+        HLOGC(mglog.Debug, log << "LiveCC: updatePktSndPeriod_onTimer");
         if ( stage != TEV_CHT_INIT )
             updatePktSndPeriod();
     }
 
     void updatePktSndPeriod_onAck(ETransmissionEvent , int32_t )
     {
-        HLOGC(mglog.Debug, log << "LiveSmoother: updatePktSndPeriod_onAck");
+        HLOGC(mglog.Debug, log << "LiveCC: updatePktSndPeriod_onAck");
         updatePktSndPeriod();
     }
 
@@ -174,7 +174,7 @@ private:
 
     void setMaxBW(int64_t maxbw)
     {
-        HLOGC(mglog.Debug, log << "LiveSmoother: updating MaxBW: " << maxbw);
+        HLOGC(mglog.Debug, log << "LiveCC: updating MaxBW: " << maxbw);
         m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
         updatePktSndPeriod();
 
@@ -283,7 +283,7 @@ public:
         , m_maxSR(0)
     {
         // Note that this function is called at the moment of
-        // calling m_Smoother.configure(this). It is placed more less
+        // calling m_CongCtl.configure(this). It is placed more less
         // at the same position as the series-of-parameter-setting-then-init
         // in the original UDT code. So, old CUDTCC::init() can be moved
         // to constructor.
@@ -497,13 +497,13 @@ private:
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
-        HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: "
+        HLOGC(mglog.Debug, log << "FileCCV2: LOSS: "
             << "sent=" << CSeqNo::seqlen(m_iLastAck, m_parent->sndSeqNo()) << ", inFlight=" << pktsInFlight
             << ", lost=" << numPktsLost << " ("
             << lost_pcent_x10 / 10 << "." << lost_pcent_x10 % 10 << "\%)");
         if (lost_pcent_x10 < 20)    // 2.0%
         {
-            HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
+            HLOGC(mglog.Debug, log << "FileCCV2: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
             m_dLastDecPeriod = m_dPktSndPeriod;
             return;
         }

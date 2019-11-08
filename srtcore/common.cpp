@@ -207,9 +207,9 @@ void CTimer::sleepto(uint64_t nexttime_tk)
 
 #if USE_BUSY_WAITING
 #if defined(_WIN32)
-    const uint64_t threshold = 10000;   // 10 ms on Windows: bad accuracy of timers
+    const uint64_t threshold_us = 10000;   // 10 ms on Windows: bad accuracy of timers
 #else
-    const uint64_t threshold = 1000;    // 1 ms on non-Windows platforms
+    const uint64_t threshold_us = 1000;    // 1 ms on non-Windows platforms
 #endif
 #endif
 
@@ -217,12 +217,11 @@ void CTimer::sleepto(uint64_t nexttime_tk)
     {
 #if USE_BUSY_WAITING
         uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
-        if (wait_us > threshold)
-            wait_us -= threshold;
-        if (wait_us < threshold)
+        if (wait_us <= 2 * threshold_us)
             break;
+        wait_us -= threshold_us;
 #else
-        const uint64_t wait_us = (m_ullSchedTime_tk - t) / getCPUFrequency();
+        const uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
         if (wait_us == 0)
             break;
 #endif
