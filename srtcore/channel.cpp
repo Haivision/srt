@@ -50,29 +50,6 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-/*
-#ifndef _WIN32
-   #if __APPLE__
-      #define __APPLE_USE_RFC_3542
-      //#define __POSIX_C_SOURCE
-      #include "TargetConditionals.h"
-   #endif
-   #include <sys/socket.h>
-   #include <sys/ioctl.h>
-   #include <netdb.h>
-   #include <arpa/inet.h>
-   #include <unistd.h>
-   #include <fcntl.h>
-   #include <cstring>
-   #include <cstdio>
-   #include <cerrno>
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <mswsock.h>
-#endif
-*/
-
 #include "platform_sys.h"
 
 #include <iostream>
@@ -339,7 +316,7 @@ void CChannel::setUDPSockOpt()
     if (m_bBindMasked)
     {
         HLOGP(mglog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
-        int on = 1, off = 0;
+        const int on = 1, off = 0;
         ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
         ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
@@ -662,15 +639,14 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
         mh.msg_iov = packet.m_PacketVector;
         mh.msg_iovlen = 2;
 
+        // Default
+        mh.msg_control = NULL;
+        mh.msg_controllen = 0;
+
 #ifdef SRT_ENABLE_PKTINFO
-        if (!m_bBindMasked)
-        {
-            // We don't need ancillary data - the source address
-            // will always be the bound address.
-            mh.msg_control = NULL;
-            mh.msg_controllen = 0;
-        }
-        else
+        // Without m_bBindMasked, we don't need ancillary data - the source
+        // address will always be the bound address.
+        if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary
             // data. This might be interesting for the connection to
@@ -679,9 +655,6 @@ EReadStatus CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
             mh.msg_control = m_acCmsgRecvBuffer;
             mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
         }
-#else
-        mh.msg_control = NULL;
-        mh.msg_controllen = 0;
 #endif
 
         mh.msg_flags = 0;

@@ -89,7 +89,7 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
-set (ENABLE_PKTINFO_DEFAULT 0)
+set (ENABLE_PKTINFO_DEFAULT OFF)
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
@@ -117,11 +117,6 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
-
-if (WIN32 AND ENABLE_PKTINFO)
-	message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
-endif()
-
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -429,6 +424,10 @@ if (ENABLE_GETNAMEINFO)
 endif()
 
 if (ENABLE_PKTINFO)
+	if (WIN32)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
+	endif()
+
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
 endif()
 
