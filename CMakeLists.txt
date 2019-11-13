@@ -597,11 +597,9 @@ if (ENABLE_SHARED)
 	if (MICROSOFT)
 		MafReadDir(srtcore filelist.maf
 			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
-			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32
 		)
 		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
-		message(STATUS "WINDOWS detected: Adding private headers to SRT shared project: ${HEADERS_srt_shared_win32}")
 	endif()
 endif()
 
