@@ -13,8 +13,9 @@ addons:
 matrix:
     include:
         - env: BUILD_TYPE=Debug
-        - env: BUILD_TYPE=Debug
-          env: BUILD_OPTS=-DENABLE_LOGGING=OFF
+        - env:
+          - BUILD_TYPE=Debug
+          - BUILD_OPTS=-DENABLE_LOGGING=OFF
         - env: BUILD_TYPE=Release
         - os: osx
           osx_image: xcode10.2
