@@ -94,6 +94,7 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+        allfa.set(SRT_LOGFA_CONGEST, true);
 #if ENABLE_HAICRYPT_LOGGING
         allfa.set(SRT_LOGFA_HAICRYPT, true);
 #endif
@@ -116,6 +117,7 @@ Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
 Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
 Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
 Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
+Logger cclog(SRT_LOGFA_CONGEST, srt_logger_config, "SRT.cc");
 
 } // namespace srt_logging
 
