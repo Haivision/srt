@@ -12,6 +12,7 @@ epoll.cpp
 fec.cpp
 handshake.cpp
 list.cpp
+logging.cpp
 md5.cpp
 packet.cpp
 packetfilter.cpp

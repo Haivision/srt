@@ -173,6 +173,9 @@ if (DEFINED WITH_COMPILER_PREFIX)
 	elseif (${WITH_COMPILER_TYPE} STREQUAL cc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc)
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++)
+	elseif (${WITH_COMPILER_TYPE} STREQUAL icc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc)
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc)
 	else()
 		# Use blindly <command> for C compiler and <command>++ for C++.
 		# At least this matches clang.

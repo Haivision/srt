@@ -3195,18 +3195,21 @@ void setloglevel(LogLevel::type ll)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
+    srt_logger_config.announce();
 }
 
 void addlogfa(LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
+    srt_logger_config.announce();
 }
 
 void dellogfa(LogFA fa)
 {
     CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
+    srt_logger_config.announce();
 }
 
 void resetlogfa(set<LogFA> fas)
@@ -3214,6 +3217,7 @@ void resetlogfa(set<LogFA> fas)
     CGuard gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
+    srt_logger_config.announce();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
@@ -3222,6 +3226,7 @@ void resetlogfa(const int* fara, size_t fara_size)
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
+    srt_logger_config.announce();
 }
 
 void setlogstream(std::ostream& stream)

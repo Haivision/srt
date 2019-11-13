@@ -53,7 +53,7 @@ void SrtCongestion::Check()
 
 // Useful macro to shorthand passing a method as argument
 // Requires "Me" name by which a class refers to itself
-#define SSLOT(method) EventSlot(this, &Me:: method)
+#define SSLOT(method) MakeEventSlot(this, &Me:: method)
 
 class LiveCC: public SrtCongestionControlBase
 {
@@ -88,13 +88,13 @@ public:
 
         // NOTE: TEV_SEND gets dispatched from Sending thread, all others
         // from receiving thread.
-        parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
+        parent->ConnectSignal<TEV_SEND>(SSLOT(updatePayloadSize));
 
         /*
          * Readjust the max SndPeriod onACK (and onTimeout)
          */
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(updatePktSndPeriod_onTimer));
-        parent->ConnectSignal(TEV_ACK, SSLOT(updatePktSndPeriod_onAck));
+        parent->ConnectSignal<TEV_CHECKTIMER>(SSLOT(updatePktSndPeriod_onTimer));
+        parent->ConnectSignal<TEV_ACK>(SSLOT(updatePktSndPeriod_onAck));
     }
 
     bool checkTransArgs(SrtCongestion::TransAPI api, SrtCongestion::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
@@ -136,9 +136,8 @@ private:
     // SLOTS:
 
     // TEV_SEND -> CPacket*.
-    void updatePayloadSize(ETransmissionEvent, EventVariant var)
+    void updatePayloadSize(ETransmissionEvent, CPacket* pkt)
     {
-        const CPacket& packet = *var.get<EventVariant::PACKET>();
 
         // XXX NOTE: TEV_SEND is sent from CSndQueue::worker thread, which is
         // different to threads running any other events (TEV_CHECKTIMER and TEV_ACK).
@@ -147,18 +146,20 @@ private:
         // Worst case scenario, the procedure running in CRcvQueue::worker
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
-        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
+        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, pkt->getLength());
         HLOGC(mglog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
     }
 
-    void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
+    void updatePktSndPeriod_onTimer(ETransmissionEvent, ECheckTimerStage stage)
     {
-        if ( var.get<EventVariant::STAGE>() != TEV_CHT_INIT )
+        HLOGC(mglog.Debug, log << "LiveCC: updatePktSndPeriod_onTimer");
+        if ( stage != TEV_CHT_INIT )
             updatePktSndPeriod();
     }
 
-    void updatePktSndPeriod_onAck(ETransmissionEvent , EventVariant )
+    void updatePktSndPeriod_onAck(ETransmissionEvent , int32_t )
     {
+        HLOGC(mglog.Debug, log << "LiveCC: updatePktSndPeriod_onAck");
         updatePktSndPeriod();
     }
 
@@ -173,6 +174,7 @@ private:
 
     void setMaxBW(int64_t maxbw)
     {
+        HLOGC(mglog.Debug, log << "LiveCC: updating MaxBW: " << maxbw);
         m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
         updatePktSndPeriod();
 
@@ -281,7 +283,7 @@ public:
         , m_maxSR(0)
     {
         // Note that this function is called at the moment of
-        // calling m_Smoother.configure(this). It is placed more less
+        // calling m_CongCtl.configure(this). It is placed more less
         // at the same position as the series-of-parameter-setting-then-init
         // in the original UDT code. So, old CUDTCC::init() can be moved
         // to constructor.
@@ -290,9 +292,9 @@ public:
         m_dCWndSize = 16;
         m_dPktSndPeriod = 1;
 
-        parent->ConnectSignal(TEV_ACK,        SSLOT(updateSndPeriod));
-        parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(slowdownSndPeriod));
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
+        parent->ConnectSignal<TEV_ACK>(       SSLOT(updateSndPeriod));
+        parent->ConnectSignal<TEV_LOSSREPORT>(SSLOT(slowdownSndPeriod));
+        parent->ConnectSignal<TEV_CHECKTIMER>(SSLOT(speedupToWindowSize));
 
         HLOGC(mglog.Debug, log << "Creating FileCC");
     }
@@ -332,9 +334,8 @@ public:
 private:
 
     // SLOTS
-    void updateSndPeriod(ETransmissionEvent, EventVariant arg)
+    void updateSndPeriod(ETransmissionEvent, const int32_t ack)
     {
-        const int ack = arg.get<EventVariant::ACK>();
 
         const uint64_t currtime = CTimer::getTime();
         if (currtime - m_LastRCTime < (uint64_t)m_iRCInterval)
@@ -458,10 +459,10 @@ private:
 
     // When a lossreport has been received, it might be due to having
     // reached the available bandwidth limit. Slowdown to avoid further losses.
-    void slowdownSndPeriod(ETransmissionEvent, EventVariant arg)
+    void slowdownSndPeriod(ETransmissionEvent, TevSeqArray arg)
     {
-        const int32_t* losslist = arg.get_ptr();
-        size_t losslist_size = arg.get_len();
+        const int32_t* losslist = arg.first;
+        size_t losslist_size = arg.second;
 
         // Sanity check. Should be impossible that TEV_LOSSREPORT event
         // is called with a nonempty loss list.
@@ -496,13 +497,13 @@ private:
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
-        HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: "
+        HLOGC(mglog.Debug, log << "FileCCV2: LOSS: "
             << "sent=" << CSeqNo::seqlen(m_iLastAck, m_parent->sndSeqNo()) << ", inFlight=" << pktsInFlight
             << ", lost=" << numPktsLost << " ("
             << lost_pcent_x10 / 10 << "." << lost_pcent_x10 % 10 << "\%)");
         if (lost_pcent_x10 < 20)    // 2.0%
         {
-            HLOGC(mglog.Debug, log << "FileSmootherV2: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
+            HLOGC(mglog.Debug, log << "FileCCV2: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
             m_dLastDecPeriod = m_dPktSndPeriod;
             return;
         }
@@ -561,10 +562,8 @@ private:
         }
     }
 
-    void speedupToWindowSize(ETransmissionEvent, EventVariant arg)
+    void speedupToWindowSize(ETransmissionEvent, ECheckTimerStage stg)
     {
-        ECheckTimerStage stg = arg.get<EventVariant::STAGE>();
-
         // TEV_INIT is in the beginning of checkTimers(), used
         // only to synchronize back the values (which is done in updateCC
         // after emitting the signal).

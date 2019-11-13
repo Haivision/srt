@@ -214,12 +214,32 @@ CUnit *CUnitQueue::getNextAvailUnit()
 
     CQEntry *entrance = m_pCurrQueue;
 
+#if ENABLE_HEAVY_LOGGING
+   struct PerfStats
+   {
+       int iterations;
+       bool found;
+       PerfStats(): iterations(0), found(true)
+       {
+       }
+
+       ~PerfStats()
+       {
+           LOGC(mglog.Debug, log << "getNextAvailUnit: PROF: Unit "
+                   << (found ? "" : "NOT ") << "found; done " << iterations << " iterations");
+       }
+   } l_perf_stats;
+#endif
+
     do
     {
-        for (CUnit *sentinel = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize - 1; m_pAvailUnit != sentinel;
-             ++m_pAvailUnit)
+        for (CUnit* sentinel = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize - 1; m_pAvailUnit != sentinel; ++ m_pAvailUnit)
+        {
             if (m_pAvailUnit->m_iFlag == CUnit::FREE)
                 return m_pAvailUnit;
+            IF_HEAVY_LOGGING(++l_perf_stats.iterations);
+
+        }
 
         if (m_pCurrQueue->m_pUnit->m_iFlag == CUnit::FREE)
         {
@@ -229,10 +249,13 @@ CUnit *CUnitQueue::getNextAvailUnit()
 
         m_pCurrQueue = m_pCurrQueue->m_pNext;
         m_pAvailUnit = m_pCurrQueue->m_pUnit;
+
+        // Count this as one extra iteration.
+        IF_HEAVY_LOGGING(++l_perf_stats.iterations);
     } while (m_pCurrQueue != entrance);
 
     increase();
-
+         IF_HEAVY_LOGGING(l_perf_stats.found = false);
     return NULL;
 }
 
@@ -936,9 +959,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 
         HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
 
-#if ENABLE_HEAVY_LOGGING
-        ++debug_nrun;
-#endif
+        IF_HEAVY_LOGGING(++debug_nrun);
 
         // XXX This looks like a loop that rolls in infinity without any sleeps
         // inside and makes it once per about 50 calls send a hs conclusion
@@ -978,9 +999,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         // Synchronous connection requests are handled in startConnect() completely.
         if (!i->m_pUDT->m_bSynRecving)
         {
-#if ENABLE_HEAVY_LOGGING
-            ++debug_nupd;
-#endif
+            IF_HEAVY_LOGGING(++debug_nupd);
             // IMPORTANT INFORMATION concerning changes towards UDT legacy.
             // In the UDT code there was no attempt to interpret any incoming data.
             // All data from the incoming packet were considered to be already deployed into
@@ -1011,9 +1030,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 LOGC(mglog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
                 i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                 i->m_ullTTL = 0; // Make it expire right now, will be picked up at the next iteration
-#if ENABLE_HEAVY_LOGGING
-                ++debug_nfail;
-#endif
+                IF_HEAVY_LOGGING(++debug_nfail);
             }
 
             // NOTE: safe loop, the incrementation was done before the loop body,
@@ -1554,7 +1571,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())
         {
-            packet.setLength(-1);
+            // XXX Probably a constant is required
+            packet.setLength(0);
             return -1;
         }
     }
@@ -1564,7 +1582,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
     if (packet.getLength() < newpkt->getLength())
     {
-        packet.setLength(-1);
+        // XXX Probably a constant is required
+        packet.setLength(0);
         return -1;
     }
 
