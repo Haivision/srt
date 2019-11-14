@@ -9305,12 +9305,18 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
      * not knowing what to retransmit when the only NAK sent by receiver is lost,
      * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
      */
-    if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
+    const int loss_len = m_pRcvLossList->getLossLength();
+    SRT_ASSERT(loss_len >= 0);
+    if (loss_len <= 0)
+    {
+        // If there are no losses so far, update the next NACK time,
+        // so that a loss report is not sent too erly right after a new loss happens.
+        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+    }
+    else if (currtime_tk > m_ullNextNAKTime_tk)
     {
         // NAK timer expired, and there is loss to be reported.
         sendCtrl(UMSG_LOSSREPORT);
-
-        CTimer::rdtsc(currtime_tk);
         m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
     }
 }
