@@ -9309,18 +9309,16 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
      */
     const int loss_len = m_pRcvLossList->getLossLength();
     SRT_ASSERT(loss_len >= 0);
-    if (loss_len <= 0)
+
+    if (loss_len > 0)
     {
-        // If there are no losses so far, update the next NACK time,
-        // so that a loss report is not sent too erly right after a new loss happens.
-        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
-    }
-    else if (currtime_tk > m_ullNextNAKTime_tk)
-    {
-        // NAK timer expired, and there is loss to be reported.
+        if (currtime_tk <= m_ullNextNAKTime_tk)
+            return; // wait for next NAK time
+
         sendCtrl(UMSG_LOSSREPORT);
-        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
     }
+
+    m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
 }
 
 bool CUDT::checkExpTimer(uint64_t currtime_tk)
