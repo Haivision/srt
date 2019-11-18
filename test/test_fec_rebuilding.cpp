@@ -4,7 +4,7 @@
 #include "packet.h"
 #include "fec.h"
 #include "packetfilter.h"
-#include "packetfilter_api.h"
+#include "srt/packetfilter_api.h"
 
 using namespace std;
 

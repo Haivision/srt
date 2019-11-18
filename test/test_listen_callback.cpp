@@ -17,7 +17,7 @@ extern "C" {
 #define INC__WIN_WINTIME // exclude gettimeofday from srt headers
 #endif
 
-#include "srt.h"
+#include "srt/srt.h"
 #include "utilities.h"
 
 

@@ -20,8 +20,8 @@ typedef int SOCKET;
 #define closesocket close
 #endif
 
-#include"platform_sys.h"
-#include "srt.h"
+#include "srt/platform_sys.h"
+#include "srt/srt.h"
 
 using namespace std;
 

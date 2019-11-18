@@ -3,6 +3,7 @@
 #include <thread>
 #include <condition_variable>
 #include "gtest/gtest.h"
+#include "srt/udt.h"
 #include "api.h"
 #include "epoll.h"
 
