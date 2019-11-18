@@ -56,6 +56,7 @@ modified by
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 
 #include <cstdlib>
+#include <cstdio>
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>

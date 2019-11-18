@@ -22,6 +22,7 @@ written by
 #include <set>
 #include <sstream>
 #include <cstdarg>
+#include <cstdio>
 #ifdef _WIN32
 #include "win/wintime.h"
 #include <sys/timeb.h>
