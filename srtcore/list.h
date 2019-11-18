@@ -54,7 +54,6 @@ modified by
 #define __UDT_LIST_H__
 
 
-// #include "srt/udt.h"
 #include "common.h"
 
 

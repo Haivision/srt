@@ -53,7 +53,6 @@ modified by
 #ifndef __UDT_PACKET_H__
 #define __UDT_PACKET_H__
 
-//#include "srt/udt.h"
 #include "common.h"
 #include "utilities.h"
 #include "srt/packetfilter_api.h"

@@ -45,7 +45,6 @@ written by
 #include <vector>
 
 #include "common.h"
-// #include "srt/udt.h"
 
 class CCacheItem
 {

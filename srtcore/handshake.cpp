@@ -49,7 +49,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iterator>
 #include <algorithm>
 
-//#include "srt/udt.h"
 #include "core.h"
 #include "handshake.h"
 #include "utilities.h"

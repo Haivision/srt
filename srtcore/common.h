@@ -64,7 +64,6 @@ modified by
    //#include <windows.h>
 #endif
 #include <pthread.h>
-// #include "srt/udt.h"
 #include "utilities.h"
 
 

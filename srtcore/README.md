@@ -12,7 +12,9 @@ be picked up from here
 
 Which header files are public, protected and private, it's defined in the manifest
 file together with all source files that the SRT library comprises of: `filelist.maf`.
-
+Curently all public and protected header files are stored in the `srt` directory
+so that applications can reach them the same way also if they are using compiled
+library without installation.
 
 Common files
 ============

@@ -54,7 +54,6 @@ modified by
 #define __UDT_CHANNEL_H__
 
 
-// #include "srt/udt.h"
 #include "packet.h"
 #include "netinet_any.h"
 

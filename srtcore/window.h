@@ -58,7 +58,6 @@ modified by
    #include <sys/time.h>
    #include <time.h>
 #endif
-// #include "srt/udt.h"
 #include "packet.h"
 
 namespace ACKWindowTools
