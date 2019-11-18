@@ -509,11 +509,15 @@ being acknowledged)
 | ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
 | `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t` | bytes/s | 0        | 0..    |
 
-- Sender nominal input rate. Used along with `OHEADBW`, when `MAXBW` is set to 
-relative (0), to calculate maximum sending rate when recovery packets are sent 
-along with main media stream (`INPUTBW * (100 + OHEADBW) / 100`). If `INPUTBW` 
-is not set while MAXBW is set to relative (0), the actual input rate is evaluated 
-inside the library.
+- This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
+controls the maximum bandwidth together with `SRTO_OHEADBW` option according
+to the formula: `MAXBW = INPUTBW * (100 + OHEADBW) / 100`. When this option
+is set to 0 (automatic) then the real INPUTBW value will be estimated from
+the rate of the input (cases when the application calls the `srt_send*`
+function) during transmission. 
+
+- *Recommended: set this option to the predicted bitrate of your live stream
+and keep default 25% value for `SRTO_OHEADBW`.
 
 ---
 
@@ -659,7 +663,7 @@ the bidirectional stream sending in version 1.2.0is not supported.
 | ------------------ | ----- | ------- | ----- | ------- | -------- | ---------- |
 | `SRTO_LOSSMAXTTL`  | 1.2.0 | pre     | `int` | packets | 0        | reasonable |
 
-- **[SET]** - The value up to which the *Reorder Tolerance* may grow. When 
+- **[GET or SET]** - The value up to which the *Reorder Tolerance* may grow. When 
 *Reorder Tolerance* is > 0, then packet loss report is delayed until that number 
 of packets come in. *Reorder Tolerance* increases every time a "belated" packet 
 has come, but it wasn't due to retransmission (that is, when UDP packets tend to 
@@ -675,10 +679,14 @@ immediately upon experiencing a "gap" in sequences.
 | `SRTO_MAXBW`          | 1.0.5 | pre     | `int64_t` | bytes/sec | -1       | -1     |
 
 - **[GET or SET]** - Maximum send bandwidth.
-- `-1`: infinite (CSRTCC limit is 30mbps)
-- `= 0`: relative to input rate (SRT 1.0.5 addition, see `SRTO_INPUTBW`) 
-- `>0`: absolute limit 
-- *SRT recommended value: 0 (relative)*
+- `-1`: infinite (the limit in Live Mode is 1Gbps)
+- `0`: relative to input rate (see `SRTO_INPUTBW`) 
+- `>0`: absolute limit in B/s
+
+- *NOTE: This option has a default value of -1. Although in case when the stream
+rate is mostly constant it is recommended to use value 0 here and shape the
+bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
+
 
 ---
 
@@ -752,8 +760,25 @@ dropped
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
 | `SRTO_OHEADBW`        | 1.0.5 | post    | `int` | %      | 25       | 5..100 | 
 
-- Recovery bandwidth overhead above input rate (see `SRTO_INPUTBW`). 
+- Recovery bandwidth overhead above input rate (see `SRTO_INPUTBW`). It is
+effective only if `SRTO_MAXBW` is set to 0.
+
 - *Sender: user configurable, default: 25%.* 
+
+- Recommendations:
+
+	- *Overhead is intended to give you extra bandwidth for a case when
+some packet has taken part of the bandwidth, but then was lost and has to be
+retransmitted. Therefore the effective maximum bandwidth should be
+appropriately higher than your stream's bitrate so that there's some room
+for retransmission, but still limited so that the retransmitted packets
+don't cause the bandwidth usage to skyrocket when larger groups of
+packets were lost*
+
+	- *Don't configure it too low and avoid 0 in case when you have
+`SRTO_INPUTBW` option set to 0 (automatic) otherwise your stream will
+choke and break quickly at any rising packet loss.*
+
 - ***To do: set-only. get should be supported.***
 
 ---
@@ -1181,7 +1206,7 @@ based on MSS value. Receive buffer must not be greater than FC size.
 | `SRTO_UDP_SNDBUF`     |       | pre     | `int` | bytes  | 65536    | MSS..  |
 
 - UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
-on `SRTO_MSS` value. *SRT recommended value:* `1024*1024`
+on `SRTO_MSS` value. *SRT recommended value:* `64*1024`
 
 ---
 

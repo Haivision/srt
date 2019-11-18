@@ -145,7 +145,8 @@ public:
         m_iMinPktSndInt(1000000),
         m_LastArrTime(),
         m_CurrArrTime(),
-        m_ProbeTime()
+        m_ProbeTime(),
+        m_Probe1Sequence(-1)
     {
         pthread_mutex_init(&m_lockPktWindow, NULL);
         pthread_mutex_init(&m_lockProbeWindow, NULL);
@@ -229,26 +230,76 @@ public:
        m_LastArrTime = m_CurrArrTime;
    }
 
-   /// Record the arrival time of the first probing packet.
-
-   void probe1Arrival()
+   /// Shortcut to test a packet for possible probe 1 or 2
+   void probeArrival(const CPacket& pkt, bool unordered)
    {
+       const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
+
+       // for probe1, we want 16th packet
+       if (inorder16 == 0)
+       {
+           probe1Arrival(pkt, unordered);
+       }
+
+       if (unordered)
+           return;
+
+       // for probe2, we want 17th packet
+       if (inorder16 == 1)
+       {
+           probe2Arrival(pkt);
+       }
+   }
+
+   /// Record the arrival time of the first probing packet.
+   void probe1Arrival(const CPacket& pkt, bool unordered)
+   {
+       if (unordered && pkt.m_iSeqNo == m_Probe1Sequence)
+       {
+           // Reset the starting probe into "undefined", when
+           // a packet has come as retransmitted before the
+           // measurement at arrival of 17th could be taken.
+           m_Probe1Sequence = -1;
+           return;
+       }
+
        m_ProbeTime = CTimer::getTime();
+       m_Probe1Sequence = pkt.m_iSeqNo; // Record the sequence where 16th packet probe was taken
    }
 
    /// Record the arrival time of the second probing packet and the interval between packet pairs.
 
-   void probe2Arrival(int pktsz = 0)
+   void probe2Arrival(const CPacket& pkt)
    {
+       // Reject probes that don't refer to the very next packet
+       // towards the one that was lately notified by probe1Arrival.
+       // Otherwise the result can be stupid.
+
+       // Simply, in case when this wasn't called exactly for the
+       // expected packet pair, behave as if the 17th packet was lost.
+
+       // no start point yet (or was reset) OR not very next packet
+       if (m_Probe1Sequence == -1 || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
+           return;
+
+       // Grab the current time before trying to acquire
+       // a mutex. This might add extra delay and therefore
+       // screw up the measurement.
+       const uint64_t now = CTimer::getTime();
+
        // Lock access to the packet Window
        CGuard cg(m_lockProbeWindow);
 
-       m_CurrArrTime = CTimer::getTime();
+       m_CurrArrTime = now;
+
+       // Reset the starting probe to prevent checking if the
+       // measurement was already taken.
+       m_Probe1Sequence = -1;
 
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
-       int64_t timediff = m_CurrArrTime - m_ProbeTime;
-       int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
+       const int64_t timediff = m_CurrArrTime - m_ProbeTime;
+       const int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
 
        // Let's take it simpler than it is coded here:
        // (stating that a packet has never zero size)
@@ -260,6 +311,7 @@ public:
        // provided the arrival time is proportional to the payload size and skipping
        // the ETH+IP+UDP+SRT header part elliminates the constant packet delivery time influence.
        //
+       const size_t pktsz = pkt.getLength();
        m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? timediff_times_pl_size / pktsz : int(timediff);
 
        // OLD CODE BEFORE BSTATS:
@@ -289,6 +341,7 @@ private:
    uint64_t m_LastArrTime;      // last packet arrival time
    uint64_t m_CurrArrTime;      // current packet arrival time
    uint64_t m_ProbeTime;        // arrival time of the first probing packet
+   int32_t m_Probe1Sequence;    // sequence number for which the arrival time was notified
 
 private:
    CPktTimeWindow(const CPktTimeWindow&);

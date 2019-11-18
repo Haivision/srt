@@ -53,3 +53,5 @@ threadname.h
 utilities.h
 window.h
 
+SOURCES WIN32 SHARED
+srt_shared.rc

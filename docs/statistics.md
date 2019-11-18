@@ -7,9 +7,9 @@ and are not exchanged between peers, unless explicitly stated.
 
 The following API functions can be used to retrieve statistics on an SRT socket.
 Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
+
 * `int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear)`
 * `int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
-
 
 # Total accumulated measurements
 
@@ -39,22 +39,22 @@ The total number of data packets detected lost on the receiver's side.
 
 Includes packets that failed to be decrypted (only as of SRT version 1.4.0).
 
-If a packet was received out of order, the gap (sequence discontinuity) is also 
+If a packet was received out of order, the gap (sequence discontinuity) is also
 treated as lost packets, independent of the reorder tolerance value.
 
-Loss detection is based on gaps in Sequence Numbers of SRT DATA packets. Detection 
-of a packet loss is triggered by a newly received packet. An offset is calculated 
-between sequence numbers of the newly arrived DATA packet and previously received 
-DATA packet (the received packet with highest sequence number). Receiving older 
-packets does not affect this value. The packets from that gap are considered lost, 
-and that number is added to this `pktRcvLossTotal` measurement. In the case where 
-the offset is negative, the packet is considered late, meaning that it was either 
-already acknowledged or dropped by TSBPD as too late to be delivered. Such late 
+Loss detection is based on gaps in Sequence Numbers of SRT DATA packets. Detection
+of a packet loss is triggered by a newly received packet. An offset is calculated
+between sequence numbers of the newly arrived DATA packet and previously received
+DATA packet (the received packet with highest sequence number). Receiving older
+packets does not affect this value. The packets from that gap are considered lost,
+and that number is added to this `pktRcvLossTotal` measurement. In the case where
+the offset is negative, the packet is considered late, meaning that it was either
+already acknowledged or dropped by TSBPD as too late to be delivered. Such late
 packets are ignored.
 
 ## pktRetransTotal
 
-The total number of retransmitted packets. Calculated on the sender's side only. 
+The total number of retransmitted packets. Calculated on the sender's side only.
 Not exchanged with the receiver.
 
 ## pktSentACKTotal
@@ -256,12 +256,26 @@ Same as `usSndDurationTotal`, but measured on a specified interval.
 
 ## pktReorderDistance
 
-`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value. The internal algorithm 
-checks the order of incoming packets and adjusts the tolerance based on the reorder 
-distance, but not to a value higher than the maximum.
+The distance in sequence numbers between the two original (not retransmitted) packets,
+that were received out of order. Receiver only.
 
-SRT starts from 0 tolerance. Once it receives the first 
-reordered packet, it increases the tolerance to the distance in the sequence
+The traceable distance values are limited by the maximum reorder tolerance set by  `SRTO_LOSSMAXTTL`.
+
+## pktReorderTolerance
+
+Instant value of the packet reorder tolerance. Receiver side. Refer to [pktReorderDistance](#pktReorderDistance).
+
+`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value. The value defines the maximum
+time-to-live for the original packet, that was received after with a gap in the sequence of incoming packets.
+Those missing packets are expected to come out of order, therefore no loss is reported.
+The actual TTL value (**pktReorderTolerance**) specifies the number of packets to receive further, before considering
+the preceding packets lost, and sending the loss report.
+
+The internal algorithm checks the order of incoming packets and adjusts the tolerance based on the reorder
+distance (**pktReorderTolerance**), but not to a value higher than the maximum (`SRTO_LOSSMAXTTL`).
+
+SRT starts from tolerance value set in `SRTO_LOSSMAXTTL` (initial tolerance is set to 0 in SRT v1.4.0 and prior versions).
+Once the receiver receives the first reordered packet, it increases the tolerance to the distance in the sequence
 discontinuity of the two packets. \
 After 10 consecutive original (not retransmitted) packets come in order, the reorder distance
 is decreased by 1 for every such packet.
@@ -279,6 +293,8 @@ Missing packets with sequence numbers 8 and 9 will be reported lost with the nex
 (reorder distance is still at 1).
 The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
 The packet with sequence number 9 is reported lost.
+
+
 
 ## pktRcvAvgBelatedTime
 

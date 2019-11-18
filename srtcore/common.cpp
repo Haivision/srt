@@ -90,12 +90,20 @@ pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
 
 CTimer::CTimer():
-m_ullSchedTime(),
+m_ullSchedTime_tk(),
 m_TickCond(),
 m_TickLock()
 {
     pthread_mutex_init(&m_TickLock, NULL);
+
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pthread_cond_init(&m_TickCond, &CondAttribs);
+#else
     pthread_cond_init(&m_TickCond, NULL);
+#endif
 }
 
 CTimer::~CTimer()
@@ -180,68 +188,93 @@ uint64_t CTimer::getCPUFrequency()
    return s_ullCPUFrequency;
 }
 
-void CTimer::sleep(uint64_t interval)
+void CTimer::sleep(uint64_t interval_tk)
 {
    uint64_t t;
    rdtsc(t);
 
    // sleep next "interval" time
-   sleepto(t + interval);
+   sleepto(t + interval_tk);
 }
 
-void CTimer::sleepto(uint64_t nexttime)
+void CTimer::sleepto(uint64_t nexttime_tk)
 {
-   // Use class member such that the method can be interrupted by others
-   m_ullSchedTime = nexttime;
+    // Use class member such that the method can be interrupted by others
+    m_ullSchedTime_tk = nexttime_tk;
 
-   uint64_t t;
-   rdtsc(t);
+    uint64_t t;
+    rdtsc(t);
 
-   while (t < m_ullSchedTime)
-   {
 #if USE_BUSY_WAITING
-#ifdef IA32
-       __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-#elif IA64
-       __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
-#elif AMD64
-       __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif defined(_WIN32) && !defined(__MINGW__)
-       __nop ();
-       __nop ();
-       __nop ();
-       __nop ();
-       __nop ();
-#endif
+#if defined(_WIN32)
+    const uint64_t threshold_us = 10000;   // 10 ms on Windows: bad accuracy of timers
 #else
-       const uint64_t wait_us = (m_ullSchedTime - t) / CTimer::getCPUFrequency();
-       // The while loop ensures that (t < m_ullSchedTime).
-       // Division by frequency may lose precision, therefore can be 0.
-       if (wait_us == 0)
-           break;
-
-       timeval now;
-       gettimeofday(&now, 0);
-       const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
-       timespec timeout;
-       timeout.tv_sec = time_us / 1000000;
-       timeout.tv_nsec = (time_us % 1000000) * 1000;
-
-       THREAD_PAUSED();
-       pthread_mutex_lock(&m_TickLock);
-       pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-       pthread_mutex_unlock(&m_TickLock);
-       THREAD_RESUMED();
+    const uint64_t threshold_us = 1000;    // 1 ms on non-Windows platforms
+#endif
 #endif
 
-       rdtsc(t);
-   }
+    while (t < m_ullSchedTime_tk)
+    {
+#if USE_BUSY_WAITING
+        uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
+        if (wait_us <= 2 * threshold_us)
+            break;
+        wait_us -= threshold_us;
+#else
+        const uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
+        if (wait_us == 0)
+            break;
+#endif
+
+        timespec timeout;
+#if ENABLE_MONOTONIC_CLOCK
+        clock_gettime(CLOCK_MONOTONIC, &timeout);
+        const uint64_t time_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + wait_us;
+        timeout.tv_sec = time_us / 1000000;
+        timeout.tv_nsec = (time_us % 1000000) * 1000;
+#else
+        timeval now;
+        gettimeofday(&now, 0);
+        const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
+        timeout.tv_sec = time_us / 1000000;
+        timeout.tv_nsec = (time_us % 1000000) * 1000;
+#endif
+
+        THREAD_PAUSED();
+        pthread_mutex_lock(&m_TickLock);
+        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
+        pthread_mutex_unlock(&m_TickLock);
+        THREAD_RESUMED();
+
+        rdtsc(t);
+    }
+
+#if USE_BUSY_WAITING
+    while (t < m_ullSchedTime_tk)
+    {
+#ifdef IA32
+        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+#elif IA64
+        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+#elif AMD64
+        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+#endif
+
+        rdtsc(t);
+    }
+#endif
 }
 
 void CTimer::interrupt()
 {
    // schedule the sleepto time to the current CCs, so that it will stop
-   rdtsc(m_ullSchedTime);
+   rdtsc(m_ullSchedTime_tk);
    tick();
 }
 

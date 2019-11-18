@@ -109,15 +109,6 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-
-# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
-# time, instead of gettimeofday. This function allows to force a monotonic
-# clock, which is independent on the currently set time in the system.  The CV,
-# for which the *_timedwait() functions are used with so obtained current time,
-# must be appropriately configured. The consequence of enabling this option,
-# however, may be portability issues around the clock_gettime() function, which
-# is not available on every SDK, or extra -lrt option is sometimes required
-# (this requirement will be autodetected).
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
@@ -460,7 +451,7 @@ endif()
 if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-elseif (WIN32 AND NOT MINGW)
+elseif (MICROSOFT)
 	find_package(pthreads QUIET)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
@@ -583,6 +574,12 @@ MafReadDir(srtcore filelist.maf
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
+if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
+	set(SRT_VERSION_BUILD ON)
+	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
@@ -595,6 +592,15 @@ if (ENABLE_SHARED)
 	foreach (tar srt_virtual haicrypt_virtual)
 		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
 	endforeach()
+
+	#add resource files to shared library, to set DLL metadata on Windows DLLs
+	if (MICROSOFT)
+		MafReadDir(srtcore filelist.maf
+			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
+		)
+		
+		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
+	endif()
 endif()
 
 # Manual handling of dependency on virtual library
@@ -604,7 +610,7 @@ endif()
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt} ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
@@ -615,6 +621,7 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
+		set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
