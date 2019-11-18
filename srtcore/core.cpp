@@ -63,12 +63,13 @@ modified by
 #endif
 #include <cmath>
 #include <sstream>
-#include "srt.h"
+#include "srt/srt.h"
+#include "srt/udt.h"
 #include "queue.h"
 #include "core.h"
 #include "logging.h"
 #include "crypto.h"
-#include "logging_api.h" // Required due to containing extern srt_logger_config
+#include "srt/logging_api.h" // Required due to containing extern srt_logger_config
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
@@ -123,8 +124,11 @@ using namespace srt_logging;
 
 CUDTUnited CUDT::s_UDTUnited;
 
-const SRTSOCKET UDT::INVALID_SOCK = CUDT::INVALID_SOCK;
-const int       UDT::ERROR        = CUDT::ERROR;
+namespace UDT
+{
+    const SRTSOCKET INVALID_SOCK = CUDT::INVALID_SOCK;
+    const int       ERROR        = CUDT::ERROR;
+}
 
 // SRT Version constants
 #define SRT_VERSION_UNK     0

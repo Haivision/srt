@@ -17,7 +17,7 @@ written by
 #define INC__NETINET_ANY_H
 
 #include <cstring>
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 
 // This structure should replace every use of sockaddr and its currently
 // used specializations, sockaddr_in and sockaddr_in6. This is to simplify

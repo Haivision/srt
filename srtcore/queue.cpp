@@ -62,6 +62,7 @@ modified by
 #include "threadname.h"
 #include "logging.h"
 #include "queue.h"
+#include "srt/udt.h"
 
 using namespace std;
 using namespace srt_logging;

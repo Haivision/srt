@@ -78,7 +78,7 @@ written by
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
 
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 
 // Happens that these are defined, undefine them in advance
 #undef min

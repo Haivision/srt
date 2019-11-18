@@ -76,9 +76,9 @@
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
-#include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
-#include <logging.h>
+#include <srt/srt.h>
+#include <srt/udt.h> // This TEMPORARILY contains extra C++-only SRT API.
+#include "logging.h"
 
 using namespace std;
 

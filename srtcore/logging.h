@@ -33,10 +33,10 @@ written by
 #include <mutex>
 #endif
 
-#include "srt.h"
+#include "srt/srt.h"
+#include "srt/logging_api.h"
 #include "utilities.h"
 #include "threadname.h"
-#include "logging_api.h"
 #include "srt_compat.h"
 
 #ifdef __GNUC__

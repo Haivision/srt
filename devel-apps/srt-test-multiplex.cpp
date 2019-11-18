@@ -29,8 +29,8 @@
 #include "threadname.h"
 #include "verbose.hpp"
 
-#include <srt.h>
-#include <logging.h>
+#include <srt/srt.h>
+#include "logging.h"
 
 // Make the windows-nonexistent alarm an empty call
 #ifdef _WIN32

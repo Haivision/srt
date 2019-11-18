@@ -17,7 +17,7 @@
 #include <vector>
 #include <deque>
 
-#include "packetfilter_api.h"
+#include "srt/packetfilter_api.h"
 
 class FECFilterBuiltin: public SrtPacketFilterBase
 {

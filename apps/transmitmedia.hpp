@@ -16,7 +16,7 @@
 #include <stdexcept>
 
 #include "transmitbase.hpp"
-#include <udt.h> // Needs access to CUDTException
+#include <srt/udt.h> // Needs access to CUDTException
 
 using namespace std;
 

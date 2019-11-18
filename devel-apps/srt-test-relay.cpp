@@ -13,7 +13,7 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 
 #include <iostream>
 #include <iterator>
@@ -29,8 +29,8 @@ written by
 #include <condition_variable>
 #include <csignal>
 #include <sys/stat.h>
-#include <srt.h>
-#include <udt.h>
+#include <srt/srt.h>
+#include <srt/udt.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"

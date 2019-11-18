@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "srt.h"
+#include "srt/srt.h"
 
 int main( int argc, char** argv )
 {

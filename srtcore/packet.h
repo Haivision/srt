@@ -53,10 +53,10 @@ modified by
 #ifndef __UDT_PACKET_H__
 #define __UDT_PACKET_H__
 
-#include "udt.h"
+//#include "srt/udt.h"
 #include "common.h"
 #include "utilities.h"
-#include "packetfilter_api.h"
+#include "srt/packetfilter_api.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // The purpose of the IOVector class is to proide a platform-independet interface

@@ -116,6 +116,11 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
+if (ENABLE_TESTING)
+	message(WARNING "-DENABLE_TESTING=1 is deprecated, please use -DENABLE_DEVEL=1")
+	set (ENABLE_DEVEL 1)
+endif()
+
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
 	message(STATUS "LOGGING: DISABLED")
@@ -889,7 +894,7 @@ if (ENABLE_APPS)
 		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
-	if (ENABLE_TESTING)
+	if (ENABLE_DEVEL)
 
 		macro(srt_add_testprogram name)
 			# Variables in macros are not local. Clear them forcefully.
@@ -899,9 +904,9 @@ if (ENABLE_APPS)
 			# of source files at the moment when defining the target
 			# and it can't be altered later.
 			#
-			# For testing applications, every application has its exclusive
+			# For devel applications, every application has its exclusive
 			# list of source files in its own Manifest file.
-			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
+			MafReadDir(devel-apps ${name}.maf SOURCES SOURCES_app)
 			srt_add_program(${name} ${SOURCES_app})
 		endmacro()
 

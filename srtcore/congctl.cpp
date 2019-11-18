@@ -33,6 +33,8 @@
 #include "congctl.h"
 #include "logging.h"
 
+#include "srt/udt.h" // CUDTException
+
 using namespace std;
 using namespace srt_logging;
 

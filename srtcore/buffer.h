@@ -54,7 +54,7 @@ modified by
 #define __UDT_BUFFER_H__
 
 
-#include "udt.h"
+// #include "srt/udt.h"
 #include "list.h"
 #include "queue.h"
 #include "utilities.h"

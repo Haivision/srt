@@ -56,12 +56,13 @@ modified by
 #include <iterator>
 
 #include <cstring>
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 #include "api.h"
 #include "core.h"
 #include "logging.h"
 #include "threadname.h"
-#include "srt.h"
+#include "srt/srt.h"
+#include "srt/udt.h"
 
 #ifdef _WIN32
    #include <win/wintime.h>
@@ -1710,6 +1711,12 @@ CUDTException* CUDTUnited::getError()
     return (CUDTException*)pthread_getspecific(m_TLSError);
 }
 
+void CUDTUnited::TLSDestroy(void* e)
+{
+    if (e)
+        delete (CUDTException*)e;
+}
+
 
 void CUDTUnited::updateMux(
    CUDTSocket* s, const sockaddr* addr, const UDPSOCKET* udpsock)
@@ -2826,6 +2833,11 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    }
 }
 
+int CUDT::setError(const CUDTException& e)
+{
+    s_UDTUnited.setError(new CUDTException(e));
+    return SRT_ERROR;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

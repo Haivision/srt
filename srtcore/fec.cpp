@@ -18,6 +18,7 @@
 #include "core.h"
 #include "packet.h"
 #include "logging.h"
+#include "srt/udt.h"
 
 #include "fec.h"
 

@@ -79,6 +79,7 @@ modified by
 #include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
 #include "utilities.h"
+#include "srt/udt.h" // For CUDTException
 
 #ifdef _WIN32
     typedef int socklen_t;

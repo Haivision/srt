@@ -56,6 +56,7 @@ modified by
 #include "packet.h"
 #include "core.h" // provides some constants
 #include "logging.h"
+#include "srt/udt.h" // For CUDTException
 
 using namespace std;
 using namespace srt_logging;

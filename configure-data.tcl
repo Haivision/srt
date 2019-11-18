@@ -37,7 +37,7 @@ set cmake_options {
     enable-encryption "Should encryption features be enabled (default: ON)"
     enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON)"
     enable-apps "Should the Support Applications be Built? (default: ON)"
-    enable-testing "Should developer testing applications be built (default: OFF)"
+    enable-devel "Should developer testing applications be built (default: OFF)"
     enable-c++-deps "Extra library dependencies in srt.pc for C language (default: OFF)"
     enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
     enable-logging "Should logging be enabled (default: ON)"
@@ -161,6 +161,12 @@ proc preprocess {} {
 	if { "--with-haicrypt-name" in $::optkeys } {
 		set ::haicrypt_name $::optval(--with-haicrypt-name)
 		unset ::optval(--with-haicrypt-name)
+	}
+
+	if { "--enable-testing" in $::optkeys } {
+		puts "WARNING: --enable-testing is deprecated; use --enable-devel"
+		unset ::optval(--enable-testing)
+		set ::optval(--enable-devel) 1
 	}
 }
 

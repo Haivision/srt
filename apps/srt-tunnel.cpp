@@ -4,7 +4,7 @@
 #include <io.h>
 #endif
 
-#include "platform_sys.h"
+#include "srt/platform_sys.h"
 
 #define REQUIRE_CXX11 1
 
@@ -37,8 +37,8 @@
 // NOTE: This is without "haisrt/" because it uses an internal path
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
-#include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
+#include <srt/srt.h>
+#include <srt/udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 #include <api.h>
 #include <utilities.h>

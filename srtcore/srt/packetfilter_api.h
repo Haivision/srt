@@ -11,6 +11,11 @@
 #ifndef INC__PACKETFILTER_API_H
 #define INC__PACKETFILTER_API_H
 
+#include <vector>
+#include <map>
+#include <string>
+#include "srt.h"
+
 enum SrtPktHeaderFields
 {
     SRT_PH_SEQNO = 0,     //< sequence number

@@ -9,7 +9,8 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include <srt.h>
+#include <srt/srt.h>
+#include <srt/logging_api.h>
 #include <assert.h>             // assert
 
 using namespace std;
@@ -26,7 +27,7 @@ int main(int argc, char* argv[])
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(logging::LogLevel::debug);
+   srt_setloglevel(srt_logging::LogLevel::debug);
 
    addrinfo hints;
    addrinfo* res;

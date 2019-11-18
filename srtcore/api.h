@@ -58,7 +58,7 @@ modified by
 #include <vector>
 #include <string>
 #include "netinet_any.h"
-#include "udt.h"
+//#include "srt/udt.h"
 #include "packet.h"
 #include "queue.h"
 #include "cache.h"
@@ -66,6 +66,7 @@ modified by
 #include "handshake.h"
 
 class CUDT;
+class CUDTException;
 
 class CUDTSocket
 {
@@ -185,7 +186,7 @@ public:
    int close(const SRTSOCKET u);
    int getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
    int getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
-   int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
+   int select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, std::set<SRTSOCKET>* exceptfds, const timeval* timeout);
    int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
    int epoll_create();
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
@@ -224,7 +225,7 @@ private:
 
 private:
    pthread_key_t m_TLSError;                         // thread local error record (last error)
-   static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
+   static void TLSDestroy(void* e);
 
 private:
    void connect_complete(const SRTSOCKET u);
