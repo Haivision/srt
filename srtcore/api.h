@@ -58,7 +58,6 @@ modified by
 #include <vector>
 #include <string>
 #include "netinet_any.h"
-//#include "srt/udt.h"
 #include "packet.h"
 #include "queue.h"
 #include "cache.h"

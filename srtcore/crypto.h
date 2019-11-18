@@ -19,7 +19,6 @@ written by
 #include <cstring>
 #include <string>
 
-// #include "srt/udt.h"
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
