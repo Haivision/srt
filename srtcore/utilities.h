@@ -76,7 +76,9 @@ written by
 
 
 // Windows warning disabler
-#define _CRT_SECURE_NO_WARNINGS 1
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include "srt/platform_sys.h"
 
