@@ -74,6 +74,9 @@ modified by
 
 #include <haicrypt.h>
 
+// Happens to be defined under Windows
+#undef ERROR
+
 namespace srt_logging
 {
 

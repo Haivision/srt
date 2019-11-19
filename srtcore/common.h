@@ -53,7 +53,7 @@ modified by
 #ifndef __UDT_COMMON_H__
 #define __UDT_COMMON_H__
 
-#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
+#define _CRT_SECURE_NO_WARNINGS // silences windows complaints for sscanf
 
 #include <cstdlib>
 #include <cstdio>
