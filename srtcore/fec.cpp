@@ -244,20 +244,22 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     for (size_t i = zero; i < which.size(); ++i)
     {
         int32_t seq = CSeqNo::incseq(isn, offset);
+        size_t col = i - zero;
+
+        HLOGC(mglog.Debug, log << "ConfigureColumns: [" << col << "]: -> ConfigureGroup...");
         ConfigureGroup(which[i], seq, sizeRow(), sizeCol() * numberCols());
 
-        size_t col = i - zero;
         if (col % numberRows() == numberRows() - 1)
         {
             offset = col + 1; // +1 because we want it for the next column
-            HLOGC(mglog.Debug, log << "ConfigureColumns: ... (resetting to column 0: +"
-                    << offset << " %" << CSeqNo::incseq(isn, offset));
+            HLOGC(mglog.Debug, log << "ConfigureColumns: [" << (col+1) << "]... (resetting to row 0: +"
+                    << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
         }
         else
         {
             offset += 1 + sizeRow();
-            HLOGC(mglog.Debug, log << "ConfigureColumns: ... (continue +"
-                    << offset << " %" << CSeqNo::incseq(isn, offset));
+            HLOGC(mglog.Debug, log << "ConfigureColumns: [" << (col+1) << "] ... (continue +"
+                    << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
         }
     }
 }
@@ -366,7 +368,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
         // SANITY: check if the rule applies on the group
         if (vert_off % sizeRow())
         {
-            LOGC(mglog.Fatal, log << "FEC:feedSource: VGroup #" << vert_gx << " base=%" << vert_base
+            LOGC(mglog.Fatal, log << "FEC:feedSource: IPE: VGroup #" << vert_gx << " base=%" << vert_base
                     << " WRONG with horiz base=%" << base << "coloff(" << vert_off
                     << ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
 
@@ -378,7 +380,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
         HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-                << ")[" << vert_gx << "][" << vert_pos << "] "
+                << ")[col=" << vert_gx << "][" << vert_pos << "/" << sizeCol() << "] "
                 << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
                 << " !" << BufferStamp(packet.data(), packet.size()));
@@ -404,7 +406,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
         HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
-                << ")[" << vert_gx << "]<NO-COLUMN-CLIP>"
+                << ")[col=" << vert_gx << "]<NO-COLUMN>"
                 << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
                 << " !" << BufferStamp(packet.data(), packet.size()));
@@ -521,7 +523,13 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     // If the FEC packet is not yet ready for extraction, do nothing and return false.
     // Check if seq is the last sequence of the group.
 
-    // 1. Check horizontal readiness first.
+    // Check VERTICAL group first, then HORIZONTAL.
+    //
+    // This is because when it happens that HORIZONTAL group is to be
+    // FEC-CTL reported, it also shifts the base to the next row, whereas
+    // this base sequence is used to determine the column index that is
+    // needed to reach the right column group and it must stay unupdated
+    // until the last packet in this row is checked for VERTICAL groups.
 
     // If it's ready for extraction, extract it, and write into the packet.
     //
@@ -539,11 +547,53 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     // - update the base sequence in the group for which it's packed
     // - make sure that pointers are reset to not suggest the packet is ready
 
+    // Handle the special case of m_number_rows == 1, which
+    // means we don't use columns.
+    if (m_number_rows <= 1)
+    {
+        HLOGC(mglog.Debug, log << "FEC/CTL not checking VERT group - rows only config");
+        // PASS ON to Horizontal group check
+    }
+    else
+    {
+        int offset_to_row_base = CSeqNo::seqoff(snd.row.base, seq);
+        int vert_gx = (offset_to_row_base + m_number_cols) % m_number_cols;
+
+        // This can actually happen only for the very first sent packet.
+        // It looks like "following the last packet from the previous group",
+        // however there was no previous group because this is the first packet.
+        if (offset_to_row_base < 0)
+        {
+            HLOGC(mglog.Debug, log << "FEC/CTL not checking VERT group [" << vert_gx << "] - negative offset_to_row_base %"
+                    << snd.row.base << " -> %" << seq << " (" << offset_to_row_base
+                    << ") (collected " << snd.cols[abs(vert_gx)].collected << "/" << sizeCol() << ")");
+            // PASS ON to Horizontal group check
+        }
+        else
+        {
+            if (snd.cols[vert_gx].collected >= m_number_rows)
+            {
+                HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq
+                        << " (base %" << snd.cols[vert_gx].base << ")");
+                // SHIP THE VERTICAL FEC packet.
+                PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
+
+                // RESET THE GROUP THAT WAS SENT
+                ResetGroup(snd.cols[vert_gx]);
+                return true;
+            }
+
+            HLOGC(mglog.Debug, log << "FEC/CTL NOT ready for VERT group [" << vert_gx << "]: %" << seq
+                    << " (base %" << snd.cols[vert_gx].base << ")"
+                    << " - collected " << snd.cols[vert_gx].collected << "/" << m_number_rows);
+        }
+    }
+
     if (snd.row.collected >= m_number_cols)
     {
         if (!m_cols_only)
         {
-            HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq);
+            HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq << " (base %" << snd.row.base << ")");
             // SHIP THE HORIZONTAL FEC packet.
             PackControl(snd.row, -1, rpkt, seq);
 
@@ -564,30 +614,11 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
             return true;
         }
     }
-
-    // Handle the special case of m_number_rows == 1, which
-    // means we don't use columns.
-    if (m_number_rows <= 1)
-        return false;
-
-    int offset = CSeqNo::seqoff(snd.row.base, seq);
-
-    // This can actually happen only for the very first sent packet.
-    // It looks like "following the last packet from the previous group",
-    // however there was no previous group because this is the first packet.
-    if (offset < 0)
-        return false;
-
-    int vert_gx = (offset + m_number_cols) % m_number_cols;
-    if (snd.cols[vert_gx].collected >= m_number_rows)
+    else
     {
-        HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq);
-        // SHIP THE VERTICAL FEC packet.
-        PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
-
-        // RESET THE GROUP THAT WAS SENT
-        ResetGroup(snd.cols[vert_gx]);
-        return true;
+        HLOGC(mglog.Debug, log << "FEC/CTL NOT ready for HORIZ group: %" << seq
+                << " (base %" << snd.row.base << ")"
+                << " - collected " << snd.row.collected << "/" << m_number_cols);
     }
 
     return false;
@@ -735,7 +766,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (!ok)
     {
         // Just informative.
-        LOGC(mglog.Error, log << "FEC/H: rebuilding FAILED.");
+        LOGC(mglog.Warn, log << "FEC/H: rebuilding/hanging FAILED.");
     }
 
     // Don't do HangVertical in case of row-only configuration
@@ -750,7 +781,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (!ok)
     {
         // Just informative.
-        LOGC(mglog.Error, log << "FEC/V: rebuilding FAILED.");
+        LOGC(mglog.Warn, log << "FEC/V: rebuilding/hanging FAILED.");
     }
 
     // Pack the following packets as irrecoverable:
@@ -991,7 +1022,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
 
     int rowx = RcvGetRowGroupIndex(seq);
     if (rowx == -1)
-        return false; // can't access any group to rebuild
+        return false;
 
     RcvGroup& rowg = rcv.rowq[rowx];
     // Clip the packet into the horizontal group.
