@@ -401,6 +401,10 @@ public:
        m_bClosing = true;
    }
 
+#if ENABLE_DEVEL_API
+   void setfakeloss(const std::string& conf) { m_pChannel->setfakeloss(conf); }
+#endif
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;

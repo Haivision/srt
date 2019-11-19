@@ -946,7 +946,8 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     }
     else if (*r_tsbpdtime != 0)
     {
-        HLOGC(dlog.Debug, log << "getRcvFirstMsg: no packets found");
+        HLOGC(dlog.Debug, log << "getRcvFirstMsg: no READY packets found (first playtime:"
+                << FormatTime(*r_tsbpdtime) << ")");
         return false;
     }
 

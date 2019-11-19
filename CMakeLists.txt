@@ -339,6 +339,9 @@ if (ENABLE_MONOTONIC_CLOCK AND LINUX)
 	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
 endif()
 
+if (ENABLE_DEVEL_API)
+	add_definitions(-DENABLE_DEVEL_API=1)
+endif()
 
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications

@@ -2826,6 +2826,23 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    }
 }
 
+#if ENABLE_DEVEL_API
+void CUDT::setfakeloss(SRTSOCKET s, const std::string& conf)
+{
+    CUDTSocket* us = s_UDTUnited.locate(s);
+    if (!us)
+        return;
+
+    CUDT* u = us->m_pUDT;
+    if (!u)
+        return;
+
+    if (u->m_pSndQueue)
+        u->m_pSndQueue->setfakeloss(conf);
+}
+
+#endif
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -3256,5 +3273,12 @@ SRT_REJECT_REASON getrejectreason(SRTSOCKET u)
 {
     return CUDT::rejectReason(u);
 }
+
+#if ENABLE_DEVEL_API
+void devel_setfakeloss(UDTSOCKET u, const std::string& config)
+{
+    CUDT::setfakeloss(u, config);
+}
+#endif
 
 }  // namespace UDT

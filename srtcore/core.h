@@ -217,6 +217,10 @@ public: //API
         return SRT_ERROR;
     }
 
+#if ENABLE_DEVEL_API
+    static void setfakeloss(SRTSOCKET s, const std::string& conf);
+#endif
+
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
     static const int ERROR = -1;                      // socket api error returned value

@@ -4809,14 +4809,14 @@ void *CUDT::tsbpd(void *param)
 #if ENABLE_LOGGING
                     int64_t timediff = 0;
                     if (tsbpdtime)
-                        timediff = int64_t(tsbpdtime) - int64_t(CTimer::getTime());
+                        timediff = int64_t(CTimer::getTime()) - int64_t(tsbpdtime);
 #if ENABLE_HEAVY_LOGGING
                     HLOGC(tslog.Debug,
                           log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno) << " ("
                               << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
-                              << (timediff / 1000) << "." << (timediff % 1000) << " ms");
+                              << (timediff / 1000.0) << " ms");
 #endif
-                    LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff / 1000) << "ms");
+                    LOGC(dlog.Debug, log << "RCV-DROPPED packet delay=" << (timediff / 1000.0) << "ms");
 #endif
 
                     tsbpdtime = 0; // Next sent ack will unblock
@@ -4825,6 +4825,8 @@ void *CUDT::tsbpd(void *param)
                 else if (passack)
                 {
                     /* Packets ready to play but not yet acknowledged (should happen within 10ms) */
+                    HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: No more ready packets, past-ack only, playtime: "
+                            << FormatTime(tsbpdtime) << " - resetting to wait for ACK");
                     rxready   = false;
                     tsbpdtime = 0; // Next sent ack will unblock
                 }                  /* else packet ready to play */
@@ -6888,12 +6890,16 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     {
         int32_t ack;
 
+        IF_HEAVY_LOGGING(int32_t floss = -1);
         // If there is no loss, the ACK is the current largest sequence number plus 1;
         // Otherwise it is the smallest sequence number in the receiver loss list.
         if (m_pRcvLossList->getLossLength() == 0)
             ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
         else
+        {
             ack = m_pRcvLossList->getFirstLostSeq();
+            IF_HEAVY_LOGGING(floss = ack);
+        }
 
         if (m_iRcvLastAckAck == ack)
             break;
@@ -6937,7 +6943,9 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             // will signal m_RecvDataCond when there's time to play for particular
             // data packet.
             HLOGC(dlog.Debug,
-                  log << "ACK: clip %" << oldack << "-%" << ack << ", REVOKED " << acksize << " from RCV buffer");
+                  log << "ACK: clip %" << oldack << "-%" << ack << ", REVOKED " << acksize
+                      << " from RCV buffer, BUFr=" << m_pRcvBuffer->getAvailBufSize()
+                      << " first loss: " << floss);
 
             if (m_bTsbPd)
             {
@@ -8385,13 +8393,13 @@ int CUDT::processData(CUnit *in_unit)
             // Meaning, this packet will be rejected, even if it could potentially be
             // one of missing packets in the transmission.
             int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
+            uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
 
             IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
             if (offset < 0)
             {
                 IF_HEAVY_LOGGING(exc_type = "BELATED");
-                uint64_t tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
                 uint64_t bltime =
                     CountIIR(uint64_t(m_stats.traceBelatedTime) * 1000, CTimer::getTime() - tsbpdtime, 0.2);
 
@@ -8483,7 +8491,7 @@ int CUDT::processData(CUnit *in_unit)
                   log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
                   << " BUFr=" << avail_bufsize
                   << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
-                  << packet.MessageFlagStr());
+                  << packet.MessageFlagStr() << " PLAY: " << FormatTime(tsbpdtime));
 
             // Decryption should have made the crypto flags EK_NOENC.
             // Otherwise it's an error.
