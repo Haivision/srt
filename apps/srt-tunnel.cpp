@@ -419,7 +419,7 @@ public:
 protected:
     virtual void Init() override;
 
-    void ConfigurePre(SRTSOCKET socket);
+    void ConfigurePre();
     void ConfigurePost(SRTSOCKET socket);
 
     using Medium::Error;
@@ -501,15 +501,15 @@ public:
 
 protected:
 
-    void ConfigurePre(int so)
+    void ConfigurePre()
     {
 #if defined(__APPLE__)
         int optval = 1;
-        setsockopt(so, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
+        setsockopt(m_socket, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
 #endif
     }
 
-    void ConfigurePost(int /*so*/)
+    void ConfigurePost(int)
     {
     }
 
@@ -545,11 +545,11 @@ void SrtMedium::Init()
     m_options["transtype"] = "file";
 }
 
-void SrtMedium::ConfigurePre(SRTSOCKET so)
+void SrtMedium::ConfigurePre()
 {
     vector<string> fails;
     m_options["mode"] = "caller";
-    SrtConfigurePre(so, "", m_options, &fails);
+    SrtConfigurePre(m_socket, "", m_options, &fails);
     if (!fails.empty())
     {
         cerr << "Failed options: " << Printable(fails) << endl;
@@ -572,7 +572,7 @@ void SrtMedium::CreateListener()
 
     m_socket = srt_create_socket();
 
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
@@ -599,7 +599,7 @@ void TcpMedium::CreateListener()
     int backlog = 5; // hardcoded!
 
     m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
@@ -657,7 +657,7 @@ unique_ptr<Medium> TcpMedium::Accept()
 void SrtMedium::CreateCaller()
 {
     m_socket = srt_create_socket();
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     // XXX setting up outgoing port not supported
 }
@@ -665,7 +665,7 @@ void SrtMedium::CreateCaller()
 void TcpMedium::CreateCaller()
 {
     m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
+    ConfigurePre();
 }
 
 void SrtMedium::Connect()
