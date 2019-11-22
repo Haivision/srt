@@ -1137,6 +1137,16 @@ protected:
             {
                 throw runtime_error("adding to multicast membership failed");
             }
+
+            if (adapter != "")
+            {
+                res = ::bind(m_sock, (sockaddr*)&maddr, sizeof maddr);
+                if ( res == status_error )
+                {
+                    Error(errno, "binding to user-specified adapter: " + adapter);
+                }
+            }
+
             attr.erase("multicast");
             attr.erase("adapter");
         }
