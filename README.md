@@ -172,6 +172,8 @@ statically.
 
 Compile and install Pthreads for Windows from this submodule:
 
+Note - you can also get pthreads for Windows from https://github.com/GerHobbelt/pthread-win32
+
   1. Using Visual Studio 2013, please open this file:  
 
     pthread_lib.2013.vcxproj
