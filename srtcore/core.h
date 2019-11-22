@@ -86,7 +86,8 @@ extern Logger
     mglog,
     dlog,
     tslog,
-    rxlog;
+    rxlog,
+    cclog;
 
 }
 

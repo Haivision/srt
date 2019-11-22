@@ -503,6 +503,7 @@ enum SRT_REJECT_REASON
 #define SRT_LOGFA_TSBPD     4
 #define SRT_LOGFA_REXMIT    5
 #define SRT_LOGFA_HAICRYPT  6
+#define SRT_LOGFA_CONGEST   7
 
 // To make a typical int32_t size, although still use std::bitset.
 // C API will carry it over.

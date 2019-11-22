@@ -95,6 +95,7 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+        allfa.set(SRT_LOGFA_CONGEST, true);
 #if ENABLE_HAICRYPT_LOGGING
         allfa.set(SRT_LOGFA_HAICRYPT, true);
 #endif
@@ -117,6 +118,7 @@ Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
 Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
 Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
 Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
+Logger cclog(SRT_LOGFA_CONGEST, srt_logger_config, "SRT.cc");
 
 } // namespace srt_logging
 
@@ -9309,14 +9311,18 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
      * not knowing what to retransmit when the only NAK sent by receiver is lost,
      * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
      */
-    if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
-    {
-        // NAK timer expired, and there is loss to be reported.
-        sendCtrl(UMSG_LOSSREPORT);
+    const int loss_len = m_pRcvLossList->getLossLength();
+    SRT_ASSERT(loss_len >= 0);
 
-        CTimer::rdtsc(currtime_tk);
-        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+    if (loss_len > 0)
+    {
+        if (currtime_tk <= m_ullNextNAKTime_tk)
+            return; // wait for next NAK time
+
+        sendCtrl(UMSG_LOSSREPORT);
     }
+
+    m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
 }
 
 bool CUDT::checkExpTimer(uint64_t currtime_tk)
