@@ -1053,15 +1053,6 @@ protected:
                 Error(errno, "adding to multicast membership failed");
             }
 
-            if (adapter != "")
-            {
-                res = ::bind(m_sock, (sockaddr*)&maddr, sizeof maddr);
-                if ( res == status_error )
-                {
-                    Error(errno, "binding to user-specified adapter: " + adapter);
-                }
-            }
-
             attr.erase("multicast");
             attr.erase("adapter");
         }
@@ -1171,6 +1162,18 @@ public:
     UdpTarget(string host, int port, const map<string,string>& attr )
     {
         Setup(host, port, attr);
+        if (adapter != "")
+        {
+            sockaddr_in maddr = CreateAddrInet(adapter, 0);
+            in_addr addr = maddr.sin_addr;
+
+            int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
+            if (res == -1)
+            {
+                Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
+            }
+        }
+
     }
 
     int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
