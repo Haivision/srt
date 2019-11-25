@@ -4209,7 +4209,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket &response, CUDTExcepti
     return postConnect(response, false, eout, synchro);
 }
 
-void CUDT::applyResponseSettings()
+void CUDT::applyResponseSettings() ATR_NOEXCEPT
 {
     // Re-configure according to the negotiated values.
     m_iMSS               = m_ConnRes.m_iMSS;
@@ -4234,7 +4234,7 @@ void CUDT::applyResponseSettings()
               << " peerID=" << m_ConnRes.m_iID);
 }
 
-EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro)
+EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_ullRcvPeerStartTime = 0; // will be set correctly in SRT HS.
@@ -4292,11 +4292,19 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
     // And, I am connected too.
     m_bConnecting = false;
-    m_bConnected  = true;
 
-    // register this socket for receiving data packets
-    m_pRNode->m_bOnList = true;
-    m_pRcvQueue->setNewEntry(this);
+    CUDTSocket* s = s_UDTUnited.locate(m_SocketID);
+    if (s)
+    {
+        // The socket could be closed at this very moment.
+        // Continue with removing the socket from the pending structures,
+        // but prevent it from setting it as connected.
+        m_bConnected  = true;
+
+        // register this socket for receiving data packets
+        m_pRNode->m_bOnList = true;
+        m_pRcvQueue->setNewEntry(this);
+    }
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
@@ -4320,8 +4328,23 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // being enqueued for later pickup from the queue.
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
+    // Ok, no more things to be done as per "clear connecting state"
+    if (!s)
+    {
+        LOGC(mglog.Error, log << "Connection broken in the process - socket @" << m_SocketID << " closed");
+        m_RejectReason = SRT_REJ_CLOSE;
+        return CONN_REJECT;
+    }
+
     // acknowledge the management module.
-    s_UDTUnited.connect_complete(m_SocketID);
+    // copy address information of local node
+    // the local port must be correctly assigned BEFORE CUDT::startConnect(),
+    // otherwise if startConnect() fails, the multiplexer cannot be located
+    // by garbage collection and will cause leak
+    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
+    CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
+
+    s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
