@@ -116,7 +116,7 @@ For sending to unicast:
     udp://TARGET:PORT?parameters...
 ```
 
-* The **HOST** part is mandatory and designates the target host
+* The **HOST** part (here: TARGET) is mandatory and designates the target host
 
 * The **iptos** parameter designates the Type-Of-Service (TOS) field for
 outgoing packets via `IP_TOS` socket option.
@@ -131,8 +131,8 @@ For receiving from unicast:
 ```
 
 
-* The **HOST** part designates the local interface to bind.
-It's optional and defaults to 0.0.0.0 (`INADDR_ANY`).
+* The **HOST** part (here: LOCALADDR) designates the local interface to bind.
+It's optional (can be empty) and defaults to 0.0.0.0 (`INADDR_ANY`).
 
 
 For multicast the scheme is:
@@ -141,9 +141,9 @@ For multicast the scheme is:
     udp://GROUPADDR:PORT?parameters...
 ```
 
-* The **HOST** part is mandatory always and designates the target
-multicast group. The `@` character is handled in this case, but it's not
-necessary, as the IGMP addresses are recognized by their mask
+* The **HOST** part (here: GROUPADDR) is mandatory always and designates the
+target multicast group. The `@` character is handled in this case, but it's not
+necessary, as the IGMP addresses are recognized by their mask.
 
 
 For sending to a multicast group:
@@ -165,8 +165,10 @@ For receiving from a multicast group:
 the given multicast group can be reached (it's used to bind the socket)
 
 * The **source** parameter enforces the use of `IP_ADD_SOURCE_MEMBERSHIP`
-instead of `IP_ADD_MEMBERSHIP`
+instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 
+Explanations for the symbols and terms used above can be found in POSIX
+manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
 
 Medium: SRT
