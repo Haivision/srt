@@ -876,15 +876,14 @@ if (ENABLE_APPS)
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
-	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
 		# FIXME: with MINGW, it fails to build apps that require C++11
 		# https://github.com/Haivision/srt/issues/177
+		# Pass --enable-libstdcxx-time
 		message(WARNING "On MinGW, some C++11 apps are blocked due to lacking proper C++11 headers for <thread>. FIX IF POSSIBLE.")
 	else()
-		# srt-multiplex temporarily blocked
-		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
+		srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
 		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
