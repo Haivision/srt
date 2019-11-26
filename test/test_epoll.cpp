@@ -640,7 +640,7 @@ protected:
 
     int m_server_pollid = SRT_ERROR;
 
-    void serverSocket()
+    void createServerSocket(SRTSOCKET& w_servsock)
     {
         int yes = 1;
         int no = 0;
@@ -664,7 +664,12 @@ protected:
         ASSERT_NE(srt_bind(servsock, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(servsock, SOMAXCONN), SRT_ERROR);
 
-        std::thread client([this] { clientSocket(); });
+        w_servsock = servsock;
+    }
+
+    void runServer(SRTSOCKET servsock)
+    {
+        int epoll_in = SRT_EPOLL_IN;
 
         { // wait for connection from client
             int rlen = 2;
@@ -688,10 +693,10 @@ protected:
         sockaddr_in scl;
         int sclen = sizeof scl;
 
-        SRTSOCKET sock = srt_accept(servsock, (sockaddr*)&scl, &sclen);
-        ASSERT_NE(sock, SRT_INVALID_SOCK);
+        SRTSOCKET acpsock = srt_accept(servsock, (sockaddr*)&scl, &sclen);
+        ASSERT_NE(acpsock, SRT_INVALID_SOCK);
 
-        srt_epoll_add_usock(m_server_pollid, sock, &epoll_in); // wait for input
+        srt_epoll_add_usock(m_server_pollid, acpsock, &epoll_in); // wait for input
 
         { // wait for 1316 packet from client
             int rlen = 2;
@@ -709,11 +714,11 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], sock); // read event is for bind socket        
+            ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
         }
 
         char buffer[1316];
-        ASSERT_EQ(srt_recvmsg(sock, buffer, sizeof buffer), 1316);
+        ASSERT_EQ(srt_recvmsg(acpsock, buffer, sizeof buffer), 1316);
 
         char pattern[4] = {1, 2, 3, 4};
         EXPECT_TRUE(std::mismatch(pattern, pattern+4, buffer).first == pattern+4);
@@ -736,30 +741,42 @@ protected:
         }
         std::cout << "serverSocket finished waiting" << std::endl;
 
-        srt_close(sock);
+        srt_close(acpsock);
         srt_close(servsock);
-        srt_close(m_client_sock); // cannot close m_client_sock after srt_sendmsg because of issue in api.c:2346 
-
-        client.join();
     }
 
+    void SetUp() override
+    {
+        ASSERT_EQ(srt_startup(), 0);
+
+        m_client_pollid = srt_epoll_create();
+        ASSERT_NE(SRT_ERROR, m_client_pollid);
+
+        m_server_pollid = srt_epoll_create();
+        ASSERT_NE(SRT_ERROR, m_server_pollid);
+
+    }
+
+    void TearDown() override
+    {
+        (void)srt_epoll_release(m_client_pollid);
+        (void)srt_epoll_release(m_server_pollid);
+        srt_cleanup();
+    }
 };
 
 
 TEST_F(TestEPoll, SimpleAsync)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    SRTSOCKET ss = SRT_INVALID_SOCK;
+    createServerSocket( (ss) );
 
-    m_client_pollid = srt_epoll_create();
-    ASSERT_NE(SRT_ERROR, m_client_pollid);
+    std::thread client([this] { clientSocket(); });
 
-    m_server_pollid = srt_epoll_create();
-    ASSERT_NE(SRT_ERROR, m_server_pollid);
+    runServer(ss);
 
-    serverSocket();
+    client.join(); // Make sure client has exit before you delete the socket
 
-    (void)srt_epoll_release(m_client_pollid);
-    (void)srt_epoll_release(m_server_pollid);
-    srt_cleanup();
+    srt_close(m_client_sock); // cannot close m_client_sock after srt_sendmsg because of issue in api.c:2346 
 }
 
