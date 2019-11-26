@@ -65,7 +65,7 @@ If you're having trouble, make sure this works, then add complexity one step at 
 General medium specification
 ----------------------------
 
-The media are specified as the standard URI format:
+The mediums are specified as the standard URI format:
 
 ```
     SCHEME://HOST:PORT?PARAM1=VALUE&PARAM2=VALUE...
@@ -84,7 +84,8 @@ can be handled by other applications from this project).
 Medium: FILE (including standard process pipes)
 -----------------------------------------------
 
-**NB!** File mode, except `file://con`, is not supported in *srt-file-transmit* tool!
+**NB!** File mode, except `file://con`, is not supported in the
+*srt-file-transmit* tool!
 
 The general syntax is: `file:///global/path/to/the/file`. No
 parameters in the URL are extracted. There's one (non-standard!)
@@ -107,8 +108,8 @@ UDP can only be used in listening mode for reading, and in calling mode
 for writing. The multicast specification is also possible. The specification
 and meaning of the fields in the URI depend on the mode.
 
-The **PORT** part is always mandatory and it designates the port number
-for either the target host or to be bound to read from.
+The **PORT** part is always mandatory and it designates either the port number
+for the target host or the port number to be bound to read from.
 
 For sending to unicast:
 
@@ -185,10 +186,10 @@ SRT can be connected using one of three connection modes:
   the peer, which must be **listener**, and this way it initiates the
 connection.
 
-- **listener**: the "agent" waits for being contacted by any peer **caller**
-  (note that a listener can accept multiple callers, but *srt-live-transmit*
-does not use this possibility - after the first connected one, it no longer
-accepts new connections).
+- **listener**: the "agent" waits to be contacted by any peer **caller**.
+Note that a listener can accept multiple callers, but *srt-live-transmit*
+does not use this ability; after the first connection, it no longer
+accepts new connections.
 
 - **rendezvous**: A one-to-one only connection where both parties are
   equivalent and both connect to one another simultaneously. Whoever happened
