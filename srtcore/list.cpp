@@ -364,18 +364,15 @@ void CSndLossList::remove(int32_t seqno)
    }
 }
 
-int CSndLossList::getLossLength()
+int CSndLossList::getLossLength() const
 {
    CGuard listguard(m_ListLock);
 
    return m_iLength;
 }
 
-int32_t CSndLossList::getLostSeq()
+int32_t CSndLossList::popLostSeq()
 {
-   if (0 == m_iLength)
-     return -1;
-
    CGuard listguard(m_ListLock);
 
    if (0 == m_iLength)

@@ -7874,7 +7874,7 @@ int CUDT::packLostData(CPacket &packet, uint64_t &origintime)
     // protect m_iSndLastDataAck from updating by ACK processing
     CGuard ackguard(m_RecvAckLock);
 
-    while ((packet.m_iSeqNo = m_pSndLossList->getLostSeq()) >= 0)
+    while ((packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
         const int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
         if (offset < 0)
