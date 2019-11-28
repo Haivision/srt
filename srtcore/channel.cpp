@@ -504,20 +504,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 #endif
 
    // convert control information into network order
-   // XXX USE HtoNLA!
-   if (packet.isControl())
-      for (ptrdiff_t i = 0, n = packet.getLength() / 4; i < n; ++i)
-         *((uint32_t *)packet.m_pcData + i) = htonl(*((uint32_t *)packet.m_pcData + i));
-
-   // convert packet header into network order
-   //for (int j = 0; j < 4; ++ j)
-   //   packet.m_nHeader[j] = htonl(packet.m_nHeader[j]);
-   uint32_t* p = packet.m_nHeader;
-   for (int j = 0; j < 4; ++ j)
-   {
-      *p = htonl(*p);
-      ++ p;
-   }
+   packet.toNL();
 
    #ifndef _WIN32
       msghdr mh;
@@ -529,7 +516,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       mh.msg_controllen = 0;
       mh.msg_flags = 0;
 
-      int res = ::sendmsg(m_iSocket, &mh, 0);
+      const int res = ::sendmsg(m_iSocket, &mh, 0);
    #else
       DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
       int addrsize = m_iSockAddrSize;
@@ -537,21 +524,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       res = (0 == res) ? size : -1;
    #endif
 
-   // convert back into local host order
-   //for (int k = 0; k < 4; ++ k)
-   //   packet.m_nHeader[k] = ntohl(packet.m_nHeader[k]);
-   p = packet.m_nHeader;
-   for (int k = 0; k < 4; ++ k)
-   {
-      *p = ntohl(*p);
-       ++ p;
-   }
-
-   if (packet.isControl())
-   {
-      for (ptrdiff_t l = 0, n = packet.getLength() / 4; l < n; ++ l)
-         *((uint32_t *)packet.m_pcData + l) = ntohl(*((uint32_t *)packet.m_pcData + l));
-   }
+   packet.toHL();
 
    return res;
 }
