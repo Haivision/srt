@@ -4321,18 +4321,26 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
-    try {
-        s_UDTUnited.connect_complete(m_SocketID);
-    }
-    catch (const CUDTException & e)
+    CUDTSocket* s = s_UDTUnited.locate(m_SocketID);
+    if (!s)
     {
         if (eout)
         {
             *eout = CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
         }
 
+        m_RejectReason = SRT_REJ_CLOSE;
         return CONN_REJECT;
     }
+
+    // copy address information of local node
+    // the local port must be correctly assigned BEFORE CUDT::startConnect(),
+    // otherwise if startConnect() fails, the multiplexer cannot be located
+    // by garbage collection and will cause leak
+    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
+    CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
+
+    s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
