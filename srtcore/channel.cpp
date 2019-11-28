@@ -415,6 +415,67 @@ void CChannel::getPeerAddr(sockaddr* addr) const
    ::getpeername(m_iSocket, addr, &namelen);
 }
 
+#if ENABLE_DEVEL_API
+CChannel::FakeLossConfig::FakeLossConfig(const std::string& f)
+    : dcounter(0)
+    , flwcounter(0)
+{
+    vector<string> out;
+    Split(f, '+', back_inserter(out));
+
+    config_length = atoi(out[0].c_str());
+    config_interval = out.size() > 1 ? atoi(out[1].c_str()) : 8;
+}
+
+void CChannel::setfakeloss(const std::string& conf)
+{
+    if (conf == "")
+        m_fakeloss.reset();
+    else
+        m_fakeloss.reset(new FakeLossConfig(conf));
+}
+
+// [[requires: (m_fakeloss != nullptr)]]
+bool CChannel::checkFakeLoss(int32_t seq SRT_ATR_UNUSED) const
+{
+    if (m_fakeloss->dcounter == 0)
+    {
+        timeval tv;
+        gettimeofday(&tv, 0);
+        srand(tv.tv_usec & 0xFFFF);
+    }
+    ++m_fakeloss->dcounter;
+
+    if (m_fakeloss->flwcounter)
+    {
+        // This is a counter of how many packets in a row shall be lost
+        --m_fakeloss->flwcounter;
+        HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << seq << " (" << m_fakeloss->flwcounter << " more to drop)");
+        return true; // fake successful sending
+    }
+
+    if (m_fakeloss->dcounter > 8)
+    {
+        // Make a random number in the range between 8 and 24
+        int rnd = rand() % 16 + m_fakeloss->config_length + m_fakeloss->config_interval;
+
+        if (m_fakeloss->dcounter > rnd)
+        {
+            m_fakeloss->dcounter = 1;
+            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << seq << " (will drop " << m_fakeloss->config_length << " more)");
+            m_fakeloss->flwcounter = m_fakeloss->config_length;
+            return true; // fake successful sending
+        }
+    }
+
+    int fcval = (m_fakeloss->config_length + m_fakeloss->config_interval);
+    HLOGC(mglog.Debug, log << "CChannel: NO FAKE LOSS yet. dc=" << m_fakeloss->dcounter << " (upto "
+            << fcval << " - " << (fcval + 16) << ") flw=" << m_fakeloss->flwcounter);
+
+    return false;
+}
+#endif
+
 
 int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 {
@@ -443,64 +504,14 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
         << spec.str());
 #endif
 
-#ifdef SRT_TEST_FAKE_LOSS
-
-#define FAKELOSS_STRING_0(x) #x
-#define FAKELOSS_STRING(x) FAKELOSS_STRING_0(x)
-    const char* fakeloss_text = FAKELOSS_STRING(SRT_TEST_FAKE_LOSS);
-#undef FAKELOSS_STRING
-#undef FAKELOSS_WRAP
-
-    static int dcounter = 0;
-    static int flwcounter = 0;
-
-    struct FakelossConfig
+#if ENABLE_DEVEL_API
+    if (m_fakeloss && !packet.isControl())
     {
-        pair<int,int> config;
-        FakelossConfig(const char* f)
+        if (checkFakeLoss(packet.getSeqNo()))
         {
-            vector<string> out;
-            Split(f, '+', back_inserter(out));
-
-            config.first = atoi(out[0].c_str());
-            config.second = out.size() > 1 ? atoi(out[1].c_str()) : 8;
-        }
-    };
-    static FakelossConfig fakeloss = fakeloss_text;
-
-    if (!packet.isControl())
-    {
-        if (dcounter == 0)
-        {
-            timeval tv;
-            gettimeofday(&tv, 0);
-            srand(tv.tv_usec & 0xFFFF);
-        }
-        ++dcounter;
-
-        if (flwcounter)
-        {
-            // This is a counter of how many packets in a row shall be lost
-            --flwcounter;
-            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
-            return packet.getLength(); // fake successful sendinf
-        }
-
-        if (dcounter > 8)
-        {
-            // Make a random number in the range between 8 and 24
-            int rnd = rand() % 16 + SRT_TEST_FAKE_LOSS;
-
-            if (dcounter > rnd)
-            {
-                dcounter = 1;
-                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
-                flwcounter = fakeloss.config.first;
-                return packet.getLength(); // fake successful sendinf
-            }
+            return packet.getLength();
         }
     }
-
 #endif
 
    // convert control information into network order

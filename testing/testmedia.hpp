@@ -50,6 +50,7 @@ protected:
     int m_outgoing_port = 0;
     string m_mode;
     string m_adapter;
+    string m_fakeloss;
     map<string, string> m_options; // All other options, as provided in the URI
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;

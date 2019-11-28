@@ -397,6 +397,10 @@ UDT_API void setlogflags(int flags);
 UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
 UDT_API std::string getstreamid(UDTSOCKET u);
 
+#if ENABLE_DEVEL_API
+UDT_API void devel_setfakeloss(UDTSOCKET u, const std::string& config);
+#endif
+
 }  // namespace UDT
 
 // This is a log configuration used inside SRT.

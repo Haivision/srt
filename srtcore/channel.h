@@ -165,6 +165,26 @@ public:
    const sockaddr* bindAddress() { return &m_BindAddr; }
    const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
+#if ENABLE_DEVEL_API
+   void setfakeloss(const std::string& conf);
+   bool checkFakeLoss(int32_t seq) const;
+
+    struct FakeLossConfig
+    {
+        int config_length;
+        int config_interval;
+        FakeLossConfig(const std::string& f);
+
+        // Fakeloss state
+        int dcounter;
+        int flwcounter;
+    };
+
+private:
+    mutable UniquePtr<FakeLossConfig> m_fakeloss;
+
+#endif
+
 private:
    void setUDPSockOpt();
 
