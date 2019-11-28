@@ -64,59 +64,59 @@ modified by
 // to the native structure for use in WSARecvFrom() and recvmsg(...) functions 
 class IOVector
 #ifdef _WIN32
-	: public WSABUF
+    : public WSABUF
 #else
-	: public iovec
+    : public iovec
 #endif
 {
 public:
 
-	inline void set(void  *buffer, size_t length)
-	{
+    inline void set(void  *buffer, size_t length)
+    {
 #ifdef _WIN32
-		len = (ULONG)length;
-		buf = (CHAR*)buffer;
+        len = (ULONG)length;
+        buf = (CHAR*)buffer;
 #else
-		iov_base = (void*)buffer;
-		iov_len = length;
+        iov_base = (void*)buffer;
+        iov_len = length;
 #endif
-	}
+    }
 
-	inline char*& dataRef()
-	{
+    inline char*& dataRef()
+    {
 #ifdef _WIN32
-		return buf;
+        return buf;
 #else
-		return (char*&) iov_base;
+        return (char*&) iov_base;
 #endif
-	}
+    }
 
-	inline char* data()
-	{
+    inline char* data()
+    {
 #ifdef _WIN32
-		return buf;
+        return buf;
 #else
-		return (char*)iov_base;
+        return (char*)iov_base;
 #endif
-	}
+    }
 
-	inline size_t size() const
-	{
+    inline size_t size() const
+    {
 #ifdef _WIN32
-		return (size_t) len;
+        return (size_t) len;
 #else
-		return iov_len;
+        return iov_len;
 #endif
-	}
+    }
 
-	inline void setLength(size_t length)
-	{
+    inline void setLength(size_t length)
+    {
 #ifdef _WIN32
-		len = length;
+        len = length;
 #else
-		iov_len = length;
+        iov_len = length;
 #endif
-	}
+    }
 };
 
 
@@ -355,6 +355,10 @@ public:
 
        PV_SIZE = 2
    };
+
+public:
+    void toNL();
+    void toHL();
 
 protected:
    // Length in bytes
