@@ -4333,6 +4333,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     {
         LOGC(mglog.Error, log << "Connection broken in the process - socket @" << m_SocketID << " closed");
         m_RejectReason = SRT_REJ_CLOSE;
+        *eout = CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         return CONN_REJECT;
     }
 
