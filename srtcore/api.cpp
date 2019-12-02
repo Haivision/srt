@@ -931,21 +931,6 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    return 0;
 }
 
-void CUDTUnited::connect_complete(const SRTSOCKET u)
-{
-   CUDTSocket* s = locate(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
-   // copy address information of local node
-   // the local port must be correctly assigned BEFORE CUDT::startConnect(),
-   // otherwise if startConnect() fails, the multiplexer cannot be located
-   // by garbage collection and will cause leak
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
-   CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
-
-   s->m_Status = SRTS_CONNECTED;
-}
 
 int CUDTUnited::close(const SRTSOCKET u)
 {

@@ -9,6 +9,9 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
+    homebrew:
+        packages:
+        - openssl
 
 matrix:
     include:
@@ -48,7 +51,8 @@ script:
       elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
-        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON" -DCMAKE_PREFIX_PATH=/usr/local/opt/openssl;
+        export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
+        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       fi
     - make
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
