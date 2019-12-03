@@ -830,8 +830,19 @@ macro(srt_make_application name)
 	endif()
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}" ${FORCE_RPATH})
 
+	target_link_libraries(${name} ${srt_link_library})
+	if (USE_GNUSTL)
+		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+	endif()
+	if (srt_libspec_static AND CMAKE_DL_LIBS)
+		target_link_libraries(${name} ${CMAKE_DL_LIBS})
+	endif()
+endmacro()
+
+# exampleapp differs to application by that C++11 is not required.
+macro(srt_make_exampleapp name)
 	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
 		target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
@@ -876,6 +887,9 @@ if (ENABLE_APPS)
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
+	if (DEFINED EXTRA_stransmit)
+		set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${EXTRA_stransmit}")
+	endif()
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
@@ -939,19 +953,19 @@ if (ENABLE_EXAMPLES)
 	endmacro()
 
 	srt_add_example(sendfile.cpp)
-	srt_make_application(sendfile)
+	srt_make_exampleapp(sendfile)
 
 	srt_add_example(recvfile.cpp)
-	srt_make_application(recvfile)
+	srt_make_exampleapp(recvfile)
 
 	srt_add_example(recvlive.cpp)
-	srt_make_application(recvlive)
+	srt_make_exampleapp(recvlive)
 
 	srt_add_example(test-c-client.c)
-	srt_make_application(test-c-client)
+	srt_make_exampleapp(test-c-client)
 
 	srt_add_example(test-c-server.c)
-	srt_make_application(test-c-server)
+	srt_make_exampleapp(test-c-server)
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
