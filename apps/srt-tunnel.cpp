@@ -458,7 +458,7 @@ public:
 
     enum { DEF_SEND_FLAG = 0 };
 
-#elif defined(LINUX)
+#elif defined(LINUX) || defined(GNU)
     static int tcp_close(int socket)
     {
         return ::close(socket);
