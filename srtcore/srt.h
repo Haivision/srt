@@ -78,7 +78,7 @@ written by
 #define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C++; this syntax is also supported by Clang
-#elif defined( __GNUC__)
+#elif defined( __GNUG__)
 #define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
 #define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
@@ -185,22 +185,6 @@ typedef enum SRT_SOCKOPT {
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
 
-#ifdef __cplusplus
-
-    // In C++, declare the value of THE SAME enum type, but as a static constant
-    #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
-        const SRT_SOCKOPT name SRT_ATR_DEPRECATED = (SRT_SOCKOPT)value;
-
-#else
-
-    // In C, declare them as a separate enum, as it's not an error in C to mix enum types
-    typedef enum SRT_SOCKOPT_DEPRECATED
-    {
-    #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
-        name SRT_ATR_DEPRECATED = value,
-
-#endif
-
 // DEPRECATED OPTIONS:
 
 // SRTO_TWOWAYDATA: not to be used. SRT connection is always bidirectional if
@@ -210,47 +194,36 @@ typedef enum SRT_SOCKOPT {
 // differences between bidirectional support (especially concerning encryption)
 // with HSv4 and HSv5 (that is, HSv4 was decided to remain unidirectional only,
 // even though partial support is already provided in this version).
-
-SRT_DECLARE_DEPRECATED_OPT(SRT_TWOWAYDATA, 37)
+static const SRT_SOCKOPT SRTO_TWOWAYDATA SRT_ATR_DEPRECATED = (SRT_SOCKOPT)37;
 
 // This has been deprecated a long time ago, treat this as never implemented.
 // The value is also already reused for another option.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_TSBPDMAXLAG, 32)
+static const SRT_SOCKOPT SRTO_TSBPDMAXLAG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)32;
 
 // This option is a derivative from UDT; the mechanism that uses it is now
 // settable by SRTO_CONGESTION, or more generally by SRTO_TRANSTYPE. The freed
 // number has been reused for a read-only option SRTO_ISN. This option should
 // have never been used anywhere, just for safety this is temporarily declared
 // as deprecated.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_CC, 3)
+static const SRT_SOCKOPT SRTO_CC SRT_ATR_DEPRECATED = (SRT_SOCKOPT)3;
 
 // These two flags were derived from UDT, but they were never used.
 // Probably it didn't make sense anyway. The maximum size of the message
 // in File/Message mode is defined by SRTO_SNDBUF, and the MSGTTL is
 // a parameter used in `srt_sendmsg` and `srt_sendmsg2`.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_MAXMSG, 10)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_MSGTTL, 11)
+static const SRT_SOCKOPT SRTO_MAXMSG SRT_ATR_DEPRECATED = (SRT_SOCKOPT)10;
+static const SRT_SOCKOPT SRTO_MSGTTL SRT_ATR_DEPRECATED = (SRT_SOCKOPT)11;
 
 // These flags come from an older experimental implementation of bidirectional
 // encryption support, which were used two different SEKs, KEKs and passphrases
 // per direction. The current implementation uses just one in both directions,
 // so SRTO_PBKEYLEN should be used for both cases.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_SNDPBKEYLEN, 38)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_RCVPBKEYLEN, 39)
+static const SRT_SOCKOPT SRTO_SNDPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)38;
+static const SRT_SOCKOPT SRTO_RCVPBKEYLEN SRT_ATR_DEPRECATED = (SRT_SOCKOPT)39;
 
 // Keeping old name for compatibility (deprecated)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_SMOOTHER, 47)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_STRICTENC, 53)
-
-#ifdef __cplusplus
-// That's it. In C++ no postfix needed
-#else
-
-// Dummy last option, as every entry ends with a comma
-    SRTO_DEPRECATED_END = 0
-
-} SRT_SOCKOPT_DEPRECATED;
-#endif
+static const SRT_SOCKOPT SRTO_SMOOTHER SRT_ATR_DEPRECATED = SRTO_CONGESTION;
+static const SRT_SOCKOPT SRTO_STRICTENC SRT_ATR_DEPRECATED = SRTO_ENFORCEDENCRYPTION;
 
 typedef enum SRT_TRANSTYPE
 {
