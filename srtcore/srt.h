@@ -72,12 +72,19 @@ written by
 // When compiling in C++17 mode, use the standard C++17 attributes
 // (out of these, only [[deprecated]] is supported in C++14, so
 // for all lesser standard use compiler-specific attributes).
-#if defined(__cplusplus) && __cplusplus > 201406
+#if defined(SRT_NO_DEPRECATED)
+
+#define SRT_ATR_UNUSED
+#define SRT_ATR_DEPRECATED
+#define SRT_ATR_NODISCARD
+
+#elif defined(__cplusplus) && __cplusplus > 201406
+
 #define SRT_ATR_UNUSED [[maybe_unused]]
 #define SRT_ATR_DEPRECATED [[deprecated]]
 #define SRT_ATR_NODISCARD [[nodiscard]]
 
-// GNUG is GNU C++; this syntax is also supported by Clang
+// GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined( __GNUC__)
 #define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
@@ -191,13 +198,20 @@ typedef enum SRT_SOCKOPT {
     #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
         const SRT_SOCKOPT name SRT_ATR_DEPRECATED = (SRT_SOCKOPT)value;
 
-#else
+#elif defined(__GNUC__) && (__GNUC__ >= 6)
+
+    // deprecated enums are supported only since gcc 6.
+    // When not C++ and not gcc 6, simply define nothing
 
     // In C, declare them as a separate enum, as it's not an error in C to mix enum types
     typedef enum SRT_SOCKOPT_DEPRECATED
     {
     #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
         name SRT_ATR_DEPRECATED = value,
+
+#else
+#define SRT_NO_DEPRECATED_ENUM
+#define SRT_DECLARE_DEPRECATED_OPT(name, value) \
 
 #endif
 
@@ -211,7 +225,7 @@ typedef enum SRT_SOCKOPT {
 // with HSv4 and HSv5 (that is, HSv4 was decided to remain unidirectional only,
 // even though partial support is already provided in this version).
 
-SRT_DECLARE_DEPRECATED_OPT(SRT_TWOWAYDATA, 37)
+SRT_DECLARE_DEPRECATED_OPT(SRTO_TWOWAYDATA, 37)
 
 // This has been deprecated a long time ago, treat this as never implemented.
 // The value is also already reused for another option.
@@ -242,7 +256,7 @@ SRT_DECLARE_DEPRECATED_OPT(SRTO_RCVPBKEYLEN, 39)
 SRT_DECLARE_DEPRECATED_OPT(SRTO_SMOOTHER, 47)
 SRT_DECLARE_DEPRECATED_OPT(SRTO_STRICTENC, 53)
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || defined(SRT_NO_DEPRECATED_ENUM)
 // That's it. In C++ no postfix needed
 #else
 

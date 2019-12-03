@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   constexpr int srtrfdslenmax = 100;
+   const int srtrfdslenmax = 100;
    SRTSOCKET srtrfds[srtrfdslenmax];
    char data[1500];
 

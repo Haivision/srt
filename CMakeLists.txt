@@ -938,13 +938,13 @@ if (ENABLE_EXAMPLES)
 		srt_add_program(${name} examples/${mainsrc} ${ARGN})
 	endmacro()
 
-	srt_add_example(sendfile.cpp apps/logsupport.cpp)
+	srt_add_example(sendfile.cpp)
 	srt_make_application(sendfile)
 
-	srt_add_example(recvfile.cpp apps/logsupport.cpp)
+	srt_add_example(recvfile.cpp)
 	srt_make_application(recvfile)
 
-	srt_add_example(recvlive.cpp apps/logsupport.cpp)
+	srt_add_example(recvlive.cpp)
 	srt_make_application(recvlive)
 
 	srt_add_example(test-c-client.c)
