@@ -192,27 +192,25 @@ typedef enum SRT_SOCKOPT {
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
 
+
 #ifdef __cplusplus
 
-    // In C++, declare the value of THE SAME enum type, but as a static constant
-    #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
-        const SRT_SOCKOPT name SRT_ATR_DEPRECATED = (SRT_SOCKOPT)value;
-
-#elif defined(__GNUC__) && (__GNUC__ >= 6)
-
-    // deprecated enums are supported only since gcc 6.
-    // When not C++ and not gcc 6, simply define nothing
-
-    // In C, declare them as a separate enum, as it's not an error in C to mix enum types
-    typedef enum SRT_SOCKOPT_DEPRECATED
-    {
-    #define SRT_DECLARE_DEPRECATED_OPT(name, value) \
-        name SRT_ATR_DEPRECATED = value,
+typedef SRT_ATR_DEPRECATED SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED;
+#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 
 #else
-#define SRT_NO_DEPRECATED_ENUM
-#define SRT_DECLARE_DEPRECATED_OPT(name, value) \
 
+// deprecated enum labels are supported only since gcc 6, so in C there
+// will be a whole deprecated enum type, as it's not an error in C to mix
+// enum types
+enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
+{
+
+    // Dummy last option, as every entry ends with a comma
+    SRTO_DEPRECATED_END = 0
+
+};
+#define SRT_DEPRECATED_OPTION(value) ((enum SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
 // DEPRECATED OPTIONS:
@@ -225,46 +223,38 @@ typedef enum SRT_SOCKOPT {
 // with HSv4 and HSv5 (that is, HSv4 was decided to remain unidirectional only,
 // even though partial support is already provided in this version).
 
-SRT_DECLARE_DEPRECATED_OPT(SRTO_TWOWAYDATA, 37)
+#define SRTO_TWOWAYDATA SRT_DEPRECATED_OPTION(37)
 
 // This has been deprecated a long time ago, treat this as never implemented.
 // The value is also already reused for another option.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_TSBPDMAXLAG, 32)
+#define SRTO_TSBPDMAXLAG SRT_DEPRECATED_OPTION(32)
 
 // This option is a derivative from UDT; the mechanism that uses it is now
 // settable by SRTO_CONGESTION, or more generally by SRTO_TRANSTYPE. The freed
 // number has been reused for a read-only option SRTO_ISN. This option should
 // have never been used anywhere, just for safety this is temporarily declared
 // as deprecated.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_CC, 3)
+#define SRTO_CC SRT_DEPRECATED_OPTION(3)
 
 // These two flags were derived from UDT, but they were never used.
 // Probably it didn't make sense anyway. The maximum size of the message
 // in File/Message mode is defined by SRTO_SNDBUF, and the MSGTTL is
 // a parameter used in `srt_sendmsg` and `srt_sendmsg2`.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_MAXMSG, 10)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_MSGTTL, 11)
+#define SRTO_MAXMSG SRT_DEPRECATED_OPTION(10)
+#define SRTO_MSGTTL SRT_DEPRECATED_OPTION(11)
 
 // These flags come from an older experimental implementation of bidirectional
 // encryption support, which were used two different SEKs, KEKs and passphrases
 // per direction. The current implementation uses just one in both directions,
 // so SRTO_PBKEYLEN should be used for both cases.
-SRT_DECLARE_DEPRECATED_OPT(SRTO_SNDPBKEYLEN, 38)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_RCVPBKEYLEN, 39)
+#define SRTO_SNDPBKEYLEN SRT_DEPRECATED_OPTION(38)
+#define SRTO_RCVPBKEYLEN SRT_DEPRECATED_OPTION(39)
 
 // Keeping old name for compatibility (deprecated)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_SMOOTHER, 47)
-SRT_DECLARE_DEPRECATED_OPT(SRTO_STRICTENC, 53)
+#define SRTO_SMOOTHER SRT_DEPRECATED_OPTION(47)
+#define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
 
-#if defined(__cplusplus) || defined(SRT_NO_DEPRECATED_ENUM)
-// That's it. In C++ no postfix needed
-#else
-
-// Dummy last option, as every entry ends with a comma
-    SRTO_DEPRECATED_END = 0
-
-} SRT_SOCKOPT_DEPRECATED;
-#endif
+#define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
 
 typedef enum SRT_TRANSTYPE
 {
