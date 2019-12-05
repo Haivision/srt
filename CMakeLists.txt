@@ -196,7 +196,7 @@ if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
 	endif()
-	message(STATUS "Compilers: ${CMAKE_C_COMPILER} (C), ${CMAKE_CXX_COMPILER} (C++)")
+	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
 else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
@@ -314,7 +314,7 @@ if ( USE_GNUSTL )
 endif()
 
 # Detect if the compiler is GNU compatable for flags
-if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Intel|Clang|AppleClang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
 else()
@@ -615,11 +615,9 @@ if (ENABLE_SHARED)
 	if (MICROSOFT)
 		MafReadDir(srtcore filelist.maf
 			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
-			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32
 		)
 		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
-		message(STATUS "WINDOWS detected: Adding private headers to SRT shared project: ${HEADERS_srt_shared_win32}")
 	endif()
 endif()
 

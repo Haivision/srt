@@ -593,27 +593,6 @@ At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
 (repeatedly, if necessary, until it is confirmed by the receiver).
 
 At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
-  encrypting and sending packets using the new key. The old key persists in
-  case it is needed to decrypt packets that were in the flight window, or
-  retransmitted packets.
-
-The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover . 
-
-The allowed range for this value is between 1 and half of the current value
-of `SRTO_KMREFRESHRATE`. The minimum value should never be less than the
-flight window (i.e. the number of packets that have already left the sender but
-have not yet arrived at the receiver).
-
-
-- **[GET or SET]** - The interval (defined in packets) between when a new
-  Stream Encrypting Key (SEK) is sent and when switchover occurs. This value
-also applies to the subsequent interval between when switchover occurs and when
-the old SEK is decommissioned.
-
-At `SRTO_KMPREANNOUNCE` packets before switchover the new key is sent
-(repeatedly, if necessary, until it is confirmed by the receiver).
-
-At the switchover point (see `SRTO_KMREFRESHRATE`), the sender starts
 encrypting and sending packets using the new key. The old key persists in case
 it is needed to decrypt packets that were in the flight window, or
 retransmitted packets.
