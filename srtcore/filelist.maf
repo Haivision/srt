@@ -55,7 +55,3 @@ window.h
 
 SOURCES WIN32 SHARED
 srt_shared.rc
-
-PRIVATE HEADERS WIN32 SHARED
-../version.h
-
