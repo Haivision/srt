@@ -68,13 +68,13 @@ using srt_logging::mglog;
 using namespace srt::sync;
 
 
-CSndLossList::CSndLossList(int size):
-m_caSeq(),
-m_iHead(-1),
-m_iLength(0),
-m_iSize(size),
-m_iLastInsertPos(-1),
-m_ListLock()
+CSndLossList::CSndLossList(int size)
+    : m_caSeq()
+    , m_iHead(-1)
+    , m_iLength(0)
+    , m_iSize(size)
+    , m_iLastInsertPos(-1)
+    , m_ListLock()
 {
     m_caSeq = new Seq[size];
 
@@ -113,24 +113,29 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
    }
 
    // otherwise find the position where the data can be inserted
-   int origlen = m_iLength;
-   int offset = CSeqNo::seqoff(m_caSeq[m_iHead].data1, seqno1);
+   const int origlen = m_iLength;
+   const int offset = CSeqNo::seqoff(m_caSeq[m_iHead].data1, seqno1);
    int loc = (m_iHead + offset + m_iSize) % m_iSize;
 
    if (offset < 0)
    {
       // Insert data prior to the head pointer
+      loc = (m_iHead + 1) % m_iSize;
+      while (loc != m_iHead && (-1 != m_caSeq[loc].data1 || -1 != m_caSeq[loc].data2)) // Improve search of first free element
+         loc = (loc + 1) % m_iSize;
+      if (loc != m_iHead) // Got one free element
+      {
+         m_caSeq[loc].data1 = seqno1;
+         if (seqno2 != seqno1)
+            m_caSeq[loc].data2 = seqno2;
 
-      m_caSeq[loc].data1 = seqno1;
-      if (seqno2 != seqno1)
-         m_caSeq[loc].data2 = seqno2;
+         // new node becomes head
+         m_caSeq[loc].next = m_iHead;
+         m_iHead = loc;
+         m_iLastInsertPos = loc;
 
-      // new node becomes head
-      m_caSeq[loc].next = m_iHead;
-      m_iHead = loc;
-      m_iLastInsertPos = loc;
-
-      m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+         m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+      } // List is full ... does nothing
    }
    else if (offset > 0)
    {
@@ -167,21 +172,36 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             i = m_iHead;
 
          while ((-1 != m_caSeq[i].next) && (CSeqNo::seqcmp(m_caSeq[m_caSeq[i].next].data1, seqno1) < 0))
-            i = m_caSeq[i].next;
+         {
+            if (i == m_caSeq[i].next)
+               m_caSeq[i].next = -1;
+            else
+               i = m_caSeq[i].next;
+         }
 
          if ((-1 == m_caSeq[i].data2) || (CSeqNo::seqcmp(m_caSeq[i].data2, seqno1) < 0))
          {
-            m_iLastInsertPos = loc;
-
             // no overlap, create new node
-            m_caSeq[loc].data1 = seqno1;
-            if (seqno2 != seqno1)
-               m_caSeq[loc].data2 = seqno2;
 
-            m_caSeq[loc].next = m_caSeq[i].next;
-            m_caSeq[i].next = loc;
+            // Search a free node
+            int h = loc;
+            loc = (h + 1) % m_iSize;
+            while (loc != h && (-1 != m_caSeq[loc].data1 || -1 != m_caSeq[loc].data2)) // Improve search of first free element
+               loc = (loc + 1) % m_iSize;
 
-            m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+            if (loc != h)
+            {
+               m_iLastInsertPos = loc;
+
+               m_caSeq[loc].data1 = seqno1;
+               if (seqno2 != seqno1)
+                  m_caSeq[loc].data2 = seqno2;
+
+               m_caSeq[loc].next = m_caSeq[i].next;
+               m_caSeq[i].next = loc;
+
+               m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+            } // List full ... nothing to do
          }
          else
          {
@@ -217,7 +237,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             m_iLength += CSeqNo::seqlen(m_caSeq[loc].data2, seqno2) - 1;
             m_caSeq[loc].data2 = seqno2;
          }
-         else 
+         else
             return 0;
       }
       else
@@ -264,7 +284,11 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 void CSndLossList::remove(int32_t seqno)
 {
    CGuard listguard(m_ListLock);
+   removeNoLock(seqno);
+}
 
+void CSndLossList::removeNoLock(int32_t seqno)
+{
    if (0 == m_iLength)
       return;
 
@@ -274,30 +298,29 @@ void CSndLossList::remove(int32_t seqno)
 
    if (0 == offset)
    {
-      // It is the head. Remove the head and point to the next node
-      loc = (loc + 1) % m_iSize;
-
+      // It is the head. Remove the head and point to the next node if any ?
       if (-1 == m_caSeq[m_iHead].data2)
-         loc = m_caSeq[m_iHead].next;
-      else
       {
-         m_caSeq[loc].data1 = CSeqNo::incseq(seqno);
-         if (CSeqNo::seqcmp(m_caSeq[m_iHead].data2, CSeqNo::incseq(seqno)) > 0)
-            m_caSeq[loc].data2 = m_caSeq[m_iHead].data2;
-
-         m_caSeq[m_iHead].data2 = -1;
-
-         m_caSeq[loc].next = m_caSeq[m_iHead].next;
+         m_caSeq[m_iHead].data1 = -1;
+         if (m_caSeq[m_iHead].next != -1) // Next node available ?
+         {
+            loc = m_caSeq[m_iHead].next; // Yes it will be the next head
+            m_caSeq[m_iHead].next = -1;
+         }
+         else
+            loc = m_iHead; // No, reset the current head content
       }
-
-      m_caSeq[m_iHead].data1 = -1;
-
+      else // data2 available, at least equals to (data1 + 1)
+      {
+         m_caSeq[m_iHead].data1 = CSeqNo::incseq(seqno);
+         m_caSeq[m_iHead].data2 = (m_caSeq[m_iHead].data2 == m_caSeq[m_iHead].data1) ? -1 : m_caSeq[m_iHead].data2;
+         loc = m_iHead;
+      }
       if (m_iLastInsertPos == m_iHead)
          m_iLastInsertPos = -1;
 
       m_iHead = loc;
-
-      m_iLength --;
+      m_iLength--;
    }
    else if (offset > 0)
    {
@@ -305,51 +328,53 @@ void CSndLossList::remove(int32_t seqno)
 
       if (seqno == m_caSeq[loc].data1)
       {
-         // target node is not empty, remove part/all of the seqno in the node.
-         int temp = loc;
-         loc = (loc + 1) % m_iSize;
-
-         if (-1 == m_caSeq[temp].data2)
-            m_iHead = m_caSeq[temp].next;
-         else
-         {
-            // remove part, e.g., [3, 7] becomes [], [4, 7] after remove(3)
-            m_caSeq[loc].data1 = CSeqNo::incseq(seqno);
-            if (CSeqNo::seqcmp(m_caSeq[temp].data2, m_caSeq[loc].data1) > 0)
-               m_caSeq[loc].data2 = m_caSeq[temp].data2;
-            m_iHead = loc;
-            m_caSeq[loc].next = m_caSeq[temp].next;
-            m_caSeq[temp].next = loc;
-            m_caSeq[temp].data2 = -1;
-         }
+         m_iHead = removeInNode(loc, seqno);
       }
       else
       {
          // target node is empty, check prior node
          int i = m_iHead;
-         while ((-1 != m_caSeq[i].next) && (CSeqNo::seqcmp(m_caSeq[m_caSeq[i].next].data1, seqno) < 0))
-            i = m_caSeq[i].next;
+         while ((-1 != m_caSeq[i].next) && (CSeqNo::seqcmp(m_caSeq[m_caSeq[i].next].data1, seqno) <= 0))
+         {
+            if (i == m_caSeq[i].next)
+               m_caSeq[i].next = -1;
+            else
+               i = m_caSeq[i].next;
+         }
 
-         loc = (loc + 1) % m_iSize;
-
-         if (-1 == m_caSeq[i].data2)
-            m_iHead = m_caSeq[i].next;
+         if (seqno == m_caSeq[i].data1)
+            m_iHead = removeInNode(i, seqno);
+         else if (-1 == m_caSeq[i].data2)
+         {
+            if (m_caSeq[i].next != -1)
+               m_iHead = m_caSeq[i].next;
+            else
+            {
+               m_iLength--;
+               m_caSeq[i].data1 = -1;
+               m_caSeq[i].data2 = -1;
+               m_iHead = i;
+            }
+         }
          else if (CSeqNo::seqcmp(m_caSeq[i].data2, seqno) > 0)
          {
-            // remove part/all seqno in the prior node
-            m_caSeq[loc].data1 = CSeqNo::incseq(seqno);
-            if (CSeqNo::seqcmp(m_caSeq[i].data2, m_caSeq[loc].data1) > 0)
-               m_caSeq[loc].data2 = m_caSeq[i].data2;
-
-            m_caSeq[i].data2 = seqno;
-
-            m_caSeq[loc].next = m_caSeq[i].next;
-            m_caSeq[i].next = loc;
-
-            m_iHead = loc;
+            m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, seqno);
+            m_caSeq[i].data1 = CSeqNo::incseq(seqno);
+            m_caSeq[i].data2 = (m_caSeq[i].data2 == m_caSeq[i].data1) ? -1 : m_caSeq[i].data2;
+            m_iHead = i;
+         }
+         else if (m_caSeq[i].next != -1)
+         {
+            m_iHead = m_caSeq[i].next;
          }
          else
-            m_iHead = m_caSeq[i].next;
+         {
+            m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, m_caSeq[i].data2);
+            m_caSeq[i].data1 = -1;
+            m_caSeq[i].data2 = -1;
+            m_caSeq[i].next = -1;
+            m_iHead = i;
+         }
       }
 
       // Remove all nodes prior to the new head
@@ -361,16 +386,18 @@ void CSndLossList::remove(int32_t seqno)
             m_caSeq[h].data2 = -1;
          }
          else
-            m_iLength --;
+            m_iLength--;
 
          m_caSeq[h].data1 = -1;
 
          if (m_iLastInsertPos == h)
             m_iLastInsertPos = -1;
 
+         const int o = h;
          h = m_caSeq[h].next;
+         m_caSeq[o].next = -1;
       }
-   }
+   } // A negative offset means that nothing has to be done
 }
 
 int CSndLossList::getLossLength() const
@@ -385,40 +412,40 @@ int32_t CSndLossList::popLostSeq()
    CGuard listguard(m_ListLock);
 
    if (0 == m_iLength)
-     return -1;
+      return -1;
 
    if (m_iLastInsertPos == m_iHead)
       m_iLastInsertPos = -1;
 
    // return the first loss seq. no.
    int32_t seqno = m_caSeq[m_iHead].data1;
-
-   // head moves to the next node
-   if (-1 == m_caSeq[m_iHead].data2)
-   {
-      //[3, -1] becomes [], and head moves to next node in the list
-      m_caSeq[m_iHead].data1 = -1;
-      m_iHead = m_caSeq[m_iHead].next;
-   }
-   else
-   {
-      // shift to next node, e.g., [3, 7] becomes [], [4, 7]
-      int loc = (m_iHead + 1) % m_iSize;
-
-      m_caSeq[loc].data1 = CSeqNo::incseq(seqno);
-      if (CSeqNo::seqcmp(m_caSeq[m_iHead].data2, m_caSeq[loc].data1) > 0)
-         m_caSeq[loc].data2 = m_caSeq[m_iHead].data2;
-
-      m_caSeq[m_iHead].data1 = -1;
-      m_caSeq[m_iHead].data2 = -1;
-
-      m_caSeq[loc].next = m_caSeq[m_iHead].next;
-      m_iHead = loc;
-   }
-
-   m_iLength --;
-
+   removeNoLock(seqno);
    return seqno;
+}
+
+int CSndLossList::removeInNode(int loc, int32_t seqno)
+{
+   int ret = loc;
+   if (-1 == m_caSeq[loc].data2)
+   {
+      m_caSeq[loc].data1 = -1;
+      if (m_caSeq[loc].next != -1) // Next node available ?
+      {
+         loc = m_caSeq[loc].next; // Yes it will be the next head,
+                                  // will be removed by the loop at the end of the function
+      }
+      else
+         m_iLength--;
+      ret = loc; // Whatever the use case is, the new head is loc
+   }
+   else // data2 available, at least equals to (data1 + 1)
+   {
+      m_iLength--;
+      m_caSeq[loc].data1 = CSeqNo::incseq(seqno);
+      m_caSeq[loc].data2 = (m_caSeq[loc].data2 == m_caSeq[loc].data1) ? -1 : m_caSeq[loc].data2;
+      ret = loc;
+   }
+   return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -430,7 +457,7 @@ m_iTail(-1),
 m_iLength(0),
 m_iSize(size)
 {
-    m_caSeq = new Seq[m_iSize];
+   m_caSeq = new Seq[m_iSize];
 
    // -1 means there is no data in the node
    for (int i = 0; i < size; ++ i)
@@ -554,7 +581,6 @@ bool CRcvLossList::remove(int32_t seqno)
          // remove the current node
          m_caSeq[loc].data1 = -1;
          m_caSeq[loc].data2 = -1;
- 
          // update list pointer
          m_caSeq[i].next = m_caSeq[loc].next;
          m_caSeq[i].prior = m_caSeq[loc].prior;

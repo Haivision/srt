@@ -104,6 +104,9 @@ private:
 private:
    CSndLossList(const CSndLossList&);
    CSndLossList& operator=(const CSndLossList&);
+
+   int removeInNode(int loc, int32_t seqno); // TODO
+   void removeNoLock(int32_t seqno);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
