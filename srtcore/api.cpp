@@ -50,13 +50,14 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <exception>
 #include <stdexcept>
 #include <typeinfo>
 #include <iterator>
 
 #include <cstring>
-#include "platform_sys.h"
 #include "api.h"
 #include "core.h"
 #include "logging.h"

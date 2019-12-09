@@ -53,7 +53,7 @@ modified by
 #ifndef __UDT_CHANNEL_H__
 #define __UDT_CHANNEL_H__
 
-
+#include "platform_sys.h"
 #include "udt.h"
 #include "packet.h"
 #include "netinet_any.h"
