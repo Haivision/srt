@@ -12,7 +12,7 @@
 // This is a controversial thing, so temporarily blocking
 //#define SRT_ENABLE_SYSTEMBUFFER_TRACE
 
-
+#include "platform_sys.h"
 
 
 #ifdef SRT_ENABLE_SYSTEMBUFFER_TRACE

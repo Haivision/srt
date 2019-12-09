@@ -50,17 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef _WIN32
-#include <unistd.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
-#include <cstdlib>
-#else
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
+#include "platform_sys.h"
+
 #include <cmath>
 #include <sstream>
 #include "srt.h"
