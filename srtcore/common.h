@@ -566,8 +566,8 @@ public:
        }
    }
 
-   static int enterCS(pthread_mutex_t& lock, const char* ln = 0, bool block = true);
-   static int leaveCS(pthread_mutex_t& lock, const char* ln = 0);
+   static int enterCS(pthread_mutex_t& lock, const char* ln, bool block = true);
+   static int leaveCS(pthread_mutex_t& lock, const char* ln);
 
    static bool isthread(const pthread_t& thrval);
 

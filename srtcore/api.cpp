@@ -303,9 +303,9 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
-   CGuard::enterCS(m_IDLock);
+   CGuard::enterCS(m_IDLock, "id");
    ns->m_SocketID = -- m_SocketIDGenerator;
-   CGuard::leaveCS(m_IDLock);
+   CGuard::leaveCS(m_IDLock, "id");
 
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
@@ -366,10 +366,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
          ns->m_Status = SRTS_CLOSED;
          ns->m_ClosureTimeStamp = CTimer::getTime();
 
-         CGuard::enterCS(ls->m_AcceptLock);
+         CGuard::enterCS(ls->m_AcceptLock, "Accept");
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
          ls->m_pAcceptSockets->erase(ns->m_SocketID);
-         CGuard::leaveCS(ls->m_AcceptLock);
+         CGuard::leaveCS(ls->m_AcceptLock, "Accept");
       }
       else
       {
@@ -423,10 +423,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
       return -1;
    }
 
-   CGuard::enterCS(m_IDLock);
+   CGuard::enterCS(m_IDLock, "id");
    ns->m_SocketID = -- m_SocketIDGenerator;
    HLOGF(mglog.Debug, "newConnection: generated socket id %d", ns->m_SocketID);
-   CGuard::leaveCS(m_IDLock);
+   CGuard::leaveCS(m_IDLock, "id");
 
    ns->m_ListenSocket = listen;
    ns->m_iIPversion = ls->m_iIPversion;

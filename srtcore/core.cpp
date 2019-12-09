@@ -4816,14 +4816,14 @@ void *CUDT::tsbpd(void *param)
                      */
 
                     /* Update drop/skip stats */
-                    CGuard::enterCS(self->m_StatsLock);
+                    CGuard::enterCS(self->m_StatsLock, "Stats");
                     self->m_stats.rcvDropTotal += seqlen;
                     self->m_stats.traceRcvDrop += seqlen;
                     /* Estimate dropped/skipped bytes from average payload */
                     int avgpayloadsz = self->m_pRcvBuffer->getRcvAvgPayloadSize();
                     self->m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
                     self->m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
-                    CGuard::leaveCS(self->m_StatsLock);
+                    CGuard::leaveCS(self->m_StatsLock, "Stats");
 
                     self->dropFromLossLists(self->m_iRcvLastSkipAck,
                                             CSeqNo::decseq(skiptoseqno)); // remove(from,to-inclusive)
@@ -7741,9 +7741,9 @@ void CUDT::processCtrl(CPacket &ctrlpkt)
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
-        CGuard::enterCS(m_RecvLock);
+        CGuard::enterCS(m_RecvLock, "Recv");
         m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-        CGuard::leaveCS(m_RecvLock);
+        CGuard::leaveCS(m_RecvLock, "Recv");
 
         dropFromLossLists(*(int32_t *)ctrlpkt.m_pcData, *(int32_t *)(ctrlpkt.m_pcData + 4));
 
