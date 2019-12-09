@@ -1734,7 +1734,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 }
 
 #if ENABLE_HEAVY_LOGGING
-int CRcvBuffer::readMsgHeavyLogging(int p)
+void CRcvBuffer::readMsgHeavyLogging(int p)
 {
     static uint64_t prev_now;
     static uint64_t prev_srctime;
