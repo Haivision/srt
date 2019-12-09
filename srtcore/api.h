@@ -227,7 +227,6 @@ private:
    static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
 
 private:
-   void connect_complete(const SRTSOCKET u);
    CUDTSocket* locate(const SRTSOCKET u);
    CUDTSocket* locate(const sockaddr* peer, const SRTSOCKET id, int32_t isn);
    void updateMux(CUDTSocket* s, const sockaddr* addr = NULL, const UDPSOCKET* = NULL);

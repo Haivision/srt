@@ -84,7 +84,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
     if ( fa == "" )
         return fas;
 
-    static string names [] = { "general", "bstats", "control", "data", "tsbpd", "rexmit" };
+    static string names [] = { "general", "bstats", "control", "data", "tsbpd", "rexmit", "haicrypt", "cc" };
     size_t names_s = sizeof (names)/sizeof (names[0]);
 
     if ( fa == "all" )
@@ -95,6 +95,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
         fas.insert(SRT_LOGFA_DATA);
         fas.insert(SRT_LOGFA_TSBPD);
         fas.insert(SRT_LOGFA_REXMIT);
+        fas.insert(SRT_LOGFA_CONGEST);
         return fas;
     }
 
