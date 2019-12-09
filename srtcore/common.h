@@ -526,44 +526,108 @@ private:
 
 class CGuard
 {
+#if ENABLE_THREAD_LOGGING
+    std::string lockname;
+#endif
 public:
    /// Constructs CGuard, which locks the given mutex for
    /// the scope where this object exists.
    /// @param lock Mutex to lock
    /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
+   CGuard(pthread_mutex_t& lock, const char* ln = 0, bool if_condition = true);
    ~CGuard();
 
 public:
-   static int enterCS(pthread_mutex_t& lock);
-   static int leaveCS(pthread_mutex_t& lock);
+
+   // The force-Lock/Unlock mechanism can be used to forcefully
+   // change the lock on the CGuard object. This is in order to
+   // temporarily change the lock status on the given mutex, but
+   // still do the right job in the destructor. For example, if
+   // a lock has been forcefully unlocked by forceUnlock, then
+   // the CGuard object will not try to unlock it in the destructor,
+   // but again, if the forceLock() was done again, the destructor
+   // will still unlock the mutex.
+   void forceLock()
+   {
+       if (m_iLocked == 0)
+           return;
+       Lock();
+   }
+
+   // After calling this on a scoped lock wrapper (CGuard),
+   // the mutex will be unlocked right now, and no longer
+   // in destructor
+   void forceUnlock()
+   {
+       if (m_iLocked == 0)
+       {
+           m_iLocked = -1;
+           Unlock();
+       }
+   }
+
+   static int enterCS(pthread_mutex_t& lock, const char* ln = 0, bool block = true);
+   static int leaveCS(pthread_mutex_t& lock, const char* ln = 0);
+
+   static bool isthread(const pthread_t& thrval);
+
+   static bool join(pthread_t& thr, void*& result);
+   static bool join(pthread_t& thr);
 
    static void createMutex(pthread_mutex_t& lock);
    static void releaseMutex(pthread_mutex_t& lock);
 
-   static void createCond(pthread_cond_t& cond);
+   static void createCond(pthread_cond_t& cond, pthread_condattr_t* opt_attr = NULL);
    static void releaseCond(pthread_cond_t& cond);
 
-   void forceUnlock();
+#if ENABLE_LOGGING
+
+   // Turned explicitly to string because this is exposed only for logging purposes.
+   std::string show_mutex()
+   {
+       std::ostringstream os;
+       os << (&m_Mutex);
+       return os.str();
+   }
+#endif
 
 private:
+
+   void Lock()
+   {
+       m_iLocked = pthread_mutex_lock(&m_Mutex);
+   }
+
+   void Unlock()
+   {
+        pthread_mutex_unlock(&m_Mutex);
+   }
+
    pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
    int m_iLocked;                       // Locking status
 
    CGuard& operator=(const CGuard&);
+
+   friend class CCondDelegate;
 };
 
 class InvertedGuard
 {
     pthread_mutex_t* m_pMutex;
+#if ENABLE_THREAD_LOGGING
+    std::string lockid;
+#endif
 public:
 
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
+    InvertedGuard(pthread_mutex_t* smutex, const char* ln = NULL): m_pMutex(smutex)
     {
         if ( !smutex )
             return;
-
-        CGuard::leaveCS(*smutex);
+#if ENABLE_THREAD_LOGGING
+        if (ln)
+            lockid = ln;
+#endif
+        CGuard::leaveCS(*smutex, ln);
     }
 
     ~InvertedGuard()
@@ -571,8 +635,58 @@ public:
         if ( !m_pMutex )
             return;
 
+#if ENABLE_THREAD_LOGGING
+        CGuard::enterCS(*m_pMutex, lockid.empty() ? (const char*)0 : lockid.c_str());
+#else
         CGuard::enterCS(*m_pMutex);
+#endif
     }
+};
+
+// This class is used for condition variable combined with mutex by different ways.
+// This should provide a cleaner API around locking with debug-logging inside.
+class CCondDelegate
+{
+    pthread_cond_t* m_cond;
+    pthread_mutex_t* m_mutex;
+#if ENABLE_THREAD_LOGGING
+    bool nolock;
+    std::string cvname;
+    std::string lockname;
+#endif
+
+public:
+
+    enum Nolock { NOLOCK };
+
+    // Locked version: must be declared only after the declaration of CGuard,
+    // which has locked the mutex. On this delegate you should call only
+    // signal_locked() and pass the CGuard variable that should remain locked.
+    // Also wait() and wait_until() can be used only with this socket.
+    CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln = 0);
+
+    // This is only for one-shot signaling. This doesn't need a CGuard
+    // variable, only the mutex itself. Only lock_signal() can be used.
+    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn = 0, const char* ln = 0);
+
+    // Wait indefinitely, until getting a signal on CV.
+    void wait();
+
+    // Wait only up to given time (microseconds since epoch, the same unit as
+    // for CTimer::getTime()).
+    // Return: true, if interrupted by a signal. False if exit on timeout.
+    bool wait_until(uint64_t timestamp);
+
+    // Wait only for a given time delay (in microseconds). This function
+    // extracts first current time using gettimeofday().
+    bool wait_for(uint64_t delay);
+
+    // You can signal using two methods:
+    // - lock_signal: expect the mutex NOT locked, lock it, signal, then unlock.
+    // - signal: expect the mutex locked, so only issue a signal, but you must pass the CGuard that keeps the lock.
+    void lock_signal();
+    void signal_locked(CGuard& lk);
+    void signal_relaxed();
 };
 
 ////////////////////////////////////////////////////////////////////////////////
