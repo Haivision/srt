@@ -823,7 +823,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
         if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
         {
             freeUnitAt(p);
-            p = shift_forward(p);
+            p = shiftFwd(p);
 
             m_iNotch = 0;
         }
@@ -860,7 +860,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
       {
          freeUnitAt(p);
 
-         p = shift_forward(p);
+         p = shiftFwd(p);
 
          m_iNotch = 0;
       }
@@ -986,7 +986,7 @@ bool CRcvBuffer::getRcvFirstMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<bool> r_passa
     // 1. Check if the VERY FIRST PACKET is valid; if so then:
     //    - check if it's ready to play, return boolean value that marks it.
 
-    for (int i = m_iLastAckPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shift_forward(i))
+    for (int i = m_iLastAckPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shiftFwd(i))
     {
         if ( !m_pUnit[i]
                 || m_pUnit[i]->m_iFlag != CUnit::GOOD )
@@ -1058,7 +1058,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
 
     IF_HEAVY_LOGGING(const char* reason = "NOT RECEIVED");
 
-    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shift_forward(i))
+    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
         bool freeunit = false;
 
@@ -1068,7 +1068,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
             HLOGC(mglog.Debug, log << "getRcvReadyMsg: POS=" << i
                     << " +" << ((i - m_iStartPos + m_iSize) % m_iSize)
                     << " SKIPPED - no unit there");
-            m_iStartPos = shift_forward(m_iStartPos);
+            m_iStartPos = shiftFwd(m_iStartPos);
             continue;
         }
 
@@ -1117,7 +1117,7 @@ bool CRcvBuffer::getRcvReadyMsg(ref_t<uint64_t> r_tsbpdtime, ref_t<int32_t> curp
             countBytes(-1, -rmbytes, true);
 
             freeUnitAt(i);
-            m_iStartPos = shift_forward(m_iStartPos);
+            m_iStartPos = shiftFwd(m_iStartPos);
         }
     }
 
@@ -1163,7 +1163,7 @@ bool CRcvBuffer::isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpkt
 // if m_bTsbPdMode.
 CPacket* CRcvBuffer::getRcvReadyPacket()
 {
-    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shift_forward(i))
+    for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
         /* 
          * Skip missing packets that did not arrive in time.
@@ -1334,7 +1334,7 @@ int CRcvBuffer::getRcvDataSize(int &bytes, int &timespan)
       // Get a valid startpos.
       // Skip invalid entries in the beginning, if any.
       int startpos = m_iStartPos;
-      for (; startpos != m_iLastAckPos; startpos = shift_forward(startpos))
+      for (; startpos != m_iLastAckPos; startpos = shiftFwd(startpos))
       {
          if ((NULL != m_pUnit[startpos]) && (CUnit::GOOD == m_pUnit[startpos]->m_iFlag))
              break;
@@ -1407,7 +1407,7 @@ int CRcvBuffer::getRcvAvgPayloadSize() const
 
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
 {
-   for (int i = m_iStartPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shift_forward(i))
+   for (int i = m_iStartPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shiftFwd(i))
       if ((m_pUnit[i] != NULL) 
               && (m_pUnit[i]->m_Packet.getMsgSeq(using_rexmit_flag) == msgno))
          m_pUnit[i]->m_iFlag = CUnit::DROPPED;
@@ -1683,7 +1683,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
     SRT_ASSERT(len > 0);
     int rs = len > 0 ? len : 0;
-    int past_q = shift_forward(q);
+    int past_q = shiftFwd(q);
     while (p != past_q)
     {
         const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
@@ -1718,7 +1718,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
                 int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
                 uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
 
-                int next_p = shift_forward(p);
+                int next_p = shiftFwd(p);
                 CUnit* u = m_pUnit[next_p];
                 string next_playtime = "NONE";
                 if (u && u->m_iFlag == CUnit::GOOD)
@@ -1757,7 +1757,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             m_pUnit[p]->m_iFlag = CUnit::PASSACK;
         }
 
-        p = shift_forward(p);
+        p = shiftFwd(p);
     }
 
     if (!passack)
@@ -1840,7 +1840,7 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
         rmpkts++;
         rmbytes += freeUnitAt(m_iStartPos);
 
-        m_iStartPos = shift_forward(m_iStartPos);
+        m_iStartPos = shiftFwd(m_iStartPos);
     }
     /* we removed bytes form receive buffer */
     countBytes(-rmpkts, -rmbytes, true);
@@ -1959,7 +1959,7 @@ bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
         // - Found no terminal packet (PB_LAST) for that message.
 
         // if the message is larger than the receiver buffer, return part of the message
-        if ((p != -1) && (shift_forward(q) == p))
+        if ((p != -1) && (shiftFwd(q) == p))
         {
             HLOGC(mglog.Debug, log << "scanMsg: BUFFER FULL and message is INCOMPLETE. Returning PARTIAL MESSAGE.");
             found = true;

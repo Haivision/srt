@@ -491,14 +491,14 @@ private:
    }
 
    // Simplified versions with ++ and --; avoid using division instruction
-   int shift_forward(int basepos) const
+   int shiftFwd(int basepos) const
    {
        if (++basepos == m_iSize)
            return 0;
        return basepos;
    }
 
-   int shift_backward(int basepos) const
+   int shiftBack(int basepos) const
    {
        if (basepos == 0)
            return m_iSize-1;
