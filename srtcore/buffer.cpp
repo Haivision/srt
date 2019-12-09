@@ -1178,7 +1178,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket()
 #if ENABLE_HEAVY_LOGGING
 // This function is for debug purposes only and it's called only
 // from within HLOG* macros.
-void CRcvBuffer::reportBufferStats()
+void CRcvBuffer::reportBufferStats() const
 {
     int nmissing = 0;
     int32_t low_seq= -1, high_seq = -1;
@@ -1619,7 +1619,7 @@ int CRcvBuffer::readMsg(char* data, int len)
 
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-void CRcvBuffer::debugJitter(uint64_t rplaytime)
+void CRcvBuffer::debugTraceJitter(uint64_t rplaytime)
 {
     uint64_t now = CTimer::getTime();
     if ((now - rplaytime)/10 < 10)
@@ -1658,7 +1658,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             // so in one "unit".
             p = q = m_iStartPos;
 
-            debugJitter(rplaytime);
+            debugTraceJitter(rplaytime);
         }
     }
     else
@@ -1683,7 +1683,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 
     SRT_ASSERT(len > 0);
     int rs = len > 0 ? len : 0;
-    int past_q = shiftFwd(q);
+    const int past_q = shiftFwd(q);
     while (p != past_q)
     {
         const int pktlen = (int)m_pUnit[p]->m_Packet.getLength();
@@ -1701,42 +1701,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
             memcpy(data, m_pUnit[p]->m_Packet.m_pcData, unitsize);
             data += unitsize;
             rs -= unitsize;
-
-#if ENABLE_HEAVY_LOGGING
-            {
-                static uint64_t prev_now;
-                static uint64_t prev_srctime;
-                CPacket& pkt = m_pUnit[p]->m_Packet;
-
-                int32_t seq = pkt.m_iSeqNo;
-
-                uint64_t nowtime = CTimer::getTime();
-                //CTimer::rdtsc(nowtime);
-                uint64_t srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
-
-                int64_t timediff = nowtime - srctime;
-                int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
-                uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
-
-                int next_p = shiftFwd(p);
-                CUnit* u = m_pUnit[next_p];
-                string next_playtime = "NONE";
-                if (u && u->m_iFlag == CUnit::GOOD)
-                {
-                    next_playtime = FormatTime(getPktTsbPdTime(u->m_Packet.getMsgTimeStamp()));
-                }
-
-                LOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq
-                        << " T=" << FormatTime(srctime)
-                        << " in " << (timediff/1000.0) << "ms - TIME-PREVIOUS: PKT: "
-                        << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0)
-                        << " !" << BufferStamp(pkt.data(), pkt.size())
-                        << " NEXT pkt T=" << next_playtime);
-
-                prev_now = nowtime;
-                prev_srctime = srctime;
-            }
-#endif
+            IF_HEAVY_LOGGING(readMsgHeavyLogging(p));
         }
         else
         {
@@ -1768,6 +1733,46 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
     return len - rs;
 }
 
+#if ENABLE_HEAVY_LOGGING
+int CRcvBuffer::readMsgHeavyLogging(int p)
+{
+    static uint64_t prev_now;
+    static uint64_t prev_srctime;
+    CPacket& pkt = m_pUnit[p]->m_Packet;
+
+    int32_t seq = pkt.m_iSeqNo;
+
+    uint64_t nowtime = CTimer::getTime();
+    //CTimer::rdtsc(nowtime);
+    uint64_t srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
+
+    int64_t timediff = nowtime - srctime;
+    int64_t nowdiff = prev_now ? (nowtime - prev_now) : 0;
+    uint64_t srctimediff = prev_srctime ? (srctime - prev_srctime) : 0;
+
+    const int next_p = shiftFwd(p);
+    CUnit* u = m_pUnit[next_p];
+    string next_playtime;
+    if (u && u->m_iFlag == CUnit::GOOD)
+    {
+        next_playtime = FormatTime(getPktTsbPdTime(u->m_Packet.getMsgTimeStamp()));
+    }
+    else
+    {
+        next_playtime = "NONE";
+    }
+
+    LOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq
+            << " T=" << FormatTime(srctime)
+            << " in " << (timediff/1000.0) << "ms - TIME-PREVIOUS: PKT: "
+            << (srctimediff/1000.0) << " LOCAL: " << (nowdiff/1000.0)
+            << " !" << BufferStamp(pkt.data(), pkt.size())
+            << " NEXT pkt T=" << next_playtime);
+
+    prev_now = nowtime;
+    prev_srctime = srctime;
+}
+#endif
 
 bool CRcvBuffer::scanMsg(ref_t<int> r_p, ref_t<int> r_q, ref_t<bool> passack)
 {

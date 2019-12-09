@@ -345,6 +345,10 @@ public:
 
    int readMsg(char* data, int len);
 
+#if ENABLE_HEAVY_LOGGING
+   void readMsgHeavyLogging(int p);
+#endif
+
       /// read a message.
       /// @param [out] data buffer to write the message into.
       /// @param [in] len size of the buffer.
@@ -362,9 +366,9 @@ public:
 
    bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-   void debugJitter(uint64_t);
+   void debugTraceJitter(uint64_t);
 #else
-   void debugJitter(uint64_t) {}
+   void debugTraceJitter(uint64_t) {}
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
 
    bool isRcvDataReady();
@@ -411,9 +415,9 @@ public:
    void skipData(int len);
 
 #if ENABLE_HEAVY_LOGGING
-   void reportBufferStats(); // Heavy logging Debug only
+   void reportBufferStats() const; // Heavy logging Debug only
 #endif
-   bool empty()
+   bool empty() const
    {
        // This will not always return the intended value,
        // that is, it may return false when the buffer really is
@@ -423,8 +427,8 @@ public:
        // is going to be broken - so this behavior is acceptable.
        return m_iStartPos == m_iLastAckPos;
    }
-   bool full() { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
-   int capacity() { return m_iSize; }
+   bool full() const { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
+   int capacity() const { return m_iSize; }
 
 
 private:
