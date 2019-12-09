@@ -638,7 +638,7 @@ public:
 #if ENABLE_THREAD_LOGGING
         CGuard::enterCS(*m_pMutex, lockid.empty() ? (const char*)0 : lockid.c_str());
 #else
-        CGuard::enterCS(*m_pMutex);
+        CGuard::enterCS(*m_pMutex, NULL);
 #endif
     }
 };
