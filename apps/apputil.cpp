@@ -16,6 +16,7 @@
 #include "apputil.hpp"
 #include "netinet_any.h"
 
+using namespace std;
 
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
@@ -31,7 +32,9 @@
 //    https://msdn.microsoft.com/en-us/library/windows/desktop/ms742214(v=vs.85).aspx
 //    http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
 #if defined(_WIN32) && !defined(HAVE_INET_PTON)
-static inline int inet_pton(int af, const char * src, void * dst)
+namespace // Prevent conflict in case when still defined
+{
+int inet_pton(int af, const char * src, void * dst)
 {
    struct sockaddr_storage ss;
    int ssSize = sizeof(ss);
@@ -69,9 +72,10 @@ static inline int inet_pton(int af, const char * src, void * dst)
 
    return 0;
 }
+}
 #endif // _WIN32 && !HAVE_INET_PTON
 
-inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
+sockaddr_in CreateAddrInet(const string& name, unsigned short port)
 {
     sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
@@ -89,7 +93,7 @@ inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
         //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
         hostent* he = gethostbyname(name.c_str());
         if ( !he || he->h_addrtype != AF_INET )
-            throw std::invalid_argument("SrtSource: host not found: " + name);
+            throw invalid_argument("SrtSource: host not found: " + name);
 
         sa.sin_addr = *(in_addr*)he->h_addr_list[0];
     }
@@ -97,12 +101,12 @@ inline sockaddr_in CreateAddrInet(const std::string& name, unsigned short port)
     return sa;
 }
 
-inline std::string Join(const std::vector<std::string>& in, std::string sep)
+string Join(const vector<string>& in, string sep)
 {
     if ( in.empty() )
         return "";
 
-    std::ostringstream os;
+    ostringstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)
@@ -110,7 +114,7 @@ inline std::string Join(const std::vector<std::string>& in, std::string sep)
     return os.str();
 }
 
-inline options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
+options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
 {
     using namespace std;
 
