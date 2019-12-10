@@ -103,7 +103,9 @@ STON(int, stoi);
 STON(size_t, stoul);
 STON(unsigned int, stoul);
 STON(long long, stoll);
+#ifndef _WIN32 // On Windows this type seems to be an alias to another
 STON(unsigned long long, stoull);
+#endif
 
 #undef STON
 
