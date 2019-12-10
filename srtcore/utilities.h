@@ -752,28 +752,6 @@ struct CallbackHolder
 
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
 
-template <class Result, class Arg>
-struct Callback
-{
-    void* opaque;
-    typedef Result fn_t(void*, Arg&);
-    fn_t* fn;
-
-    Callback(): opaque(0), fn(0)  {}
-
-    Result call(Arg& arg)
-    {
-        return fn(opaque, arg);
-    }
-
-    void set(void* o, fn_t* f)
-    {
-        opaque = o;
-        fn = f;
-    }
-};
-
-
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
     if ( size == 0 )
