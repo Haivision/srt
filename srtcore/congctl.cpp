@@ -636,8 +636,16 @@ bool SrtCongestion::configure(CUDT* parent)
     return !!congctl;
 }
 
+void SrtCongestion::dispose()
+{
+    if (congctl)
+    {
+        delete congctl;
+        congctl = 0;
+    }
+}
+
 SrtCongestion::~SrtCongestion()
 {
-    delete congctl;
-    congctl = 0;
+    dispose();
 }

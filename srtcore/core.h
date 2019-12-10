@@ -717,8 +717,21 @@ private: // synchronization: mutexes and conditions
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
+
+    // XXX This can fail only when it failed to create a congctl
+    // which only may happen when the congctl list is extended 
+    // with user-supplied congctl modules, not a case so far.
+    SRT_ATR_NODISCARD
     SRT_REJECT_REASON setupCC();
-    void updateCC(ETransmissionEvent, EventVariant arg);
+
+    // for updateCC it's ok to discard the value. This returns false only if
+    // the congctl isn't created, and this can be prevented from.
+    bool updateCC(ETransmissionEvent, EventVariant arg);
+
+    // XXX Unsure as to this return value is meaningful.
+    // May happen that this failure is acceptable slongs
+    // the other party will be sending unencrypted stream.
+    SRT_ATR_NODISCARD
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
