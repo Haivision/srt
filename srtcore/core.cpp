@@ -94,6 +94,7 @@ struct AllFaOn
         allfa.set(SRT_LOGFA_DATA, true);
         allfa.set(SRT_LOGFA_TSBPD, true);
         allfa.set(SRT_LOGFA_REXMIT, true);
+        allfa.set(SRT_LOGFA_CONGEST, true);
 #if ENABLE_HAICRYPT_LOGGING
         allfa.set(SRT_LOGFA_HAICRYPT, true);
 #endif
@@ -116,6 +117,7 @@ Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.c");
 Logger dlog(SRT_LOGFA_DATA, srt_logger_config, "SRT.d");
 Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.t");
 Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.r");
+Logger cclog(SRT_LOGFA_CONGEST, srt_logger_config, "SRT.cc");
 
 } // namespace srt_logging
 
@@ -328,6 +330,7 @@ CUDT::CUDT(const CUDT &ancestor)
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
     m_iIpV6Only             = ancestor.m_iIpV6Only;
+    m_iReorderTolerance     = ancestor.m_iMaxReorderTolerance;  // Initialize with maximum value
     m_iMaxReorderTolerance  = ancestor.m_iMaxReorderTolerance;
     // Runtime
     m_bRcvNakReport             = ancestor.m_bRcvNakReport;
@@ -708,6 +711,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void *optval, int optlen)
 
     case SRTO_LOSSMAXTTL:
         m_iMaxReorderTolerance = *(int *)optval;
+        if (!m_bConnected)
+            m_iReorderTolerance = m_iMaxReorderTolerance;
         break;
 
     case SRTO_VERSION:
@@ -4316,7 +4321,26 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
-    s_UDTUnited.connect_complete(m_SocketID);
+    CUDTSocket* s = s_UDTUnited.locate(m_SocketID);
+    if (!s)
+    {
+        if (eout)
+        {
+            *eout = CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+
+        m_RejectReason = SRT_REJ_CLOSE;
+        return CONN_REJECT;
+    }
+
+    // copy address information of local node
+    // the local port must be correctly assigned BEFORE CUDT::startConnect(),
+    // otherwise if startConnect() fails, the multiplexer cannot be located
+    // by garbage collection and will cause leak
+    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
+    CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
+
+    s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
@@ -6427,98 +6451,6 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     return size - torecv;
 }
 
-void CUDT::sample(CPerfMon *perf, bool clear)
-{
-    if (!m_bConnected)
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    if (m_bBroken || m_bClosing)
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-    CGuard   statsLock(m_StatsLock);
-    uint64_t currtime = CTimer::getTime();
-    perf->msTimeStamp = (currtime - m_stats.startTime) / 1000;
-
-    perf->pktSent              = m_stats.traceSent;
-    perf->pktRecv              = m_stats.traceRecv;
-    perf->pktSndLoss           = m_stats.traceSndLoss;
-    perf->pktRcvLoss           = m_stats.traceRcvLoss;
-    perf->pktRetrans           = m_stats.traceRetrans;
-    perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
-    perf->pktSentACK           = m_stats.sentACK;
-    perf->pktRecvACK           = m_stats.recvACK;
-    perf->pktSentNAK           = m_stats.sentNAK;
-    perf->pktRecvNAK           = m_stats.recvNAK;
-    perf->usSndDuration        = m_stats.sndDuration;
-    perf->pktReorderDistance   = m_stats.traceReorderDistance;
-    perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
-    perf->pktRcvBelated        = m_stats.traceRcvBelated;
-
-    perf->pktSentTotal       = m_stats.sentTotal;
-    perf->pktRecvTotal       = m_stats.recvTotal;
-    perf->pktSndLossTotal    = m_stats.sndLossTotal;
-    perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
-    perf->pktRetransTotal    = m_stats.retransTotal;
-    perf->pktSentACKTotal    = m_stats.sentACKTotal;
-    perf->pktRecvACKTotal    = m_stats.recvACKTotal;
-    perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
-    perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
-    perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
-
-    double interval = double(currtime - m_stats.lastSampleTime);
-
-    perf->mbpsSendRate = double(m_stats.traceSent) * m_iMaxSRTPayloadSize * 8.0 / interval;
-    perf->mbpsRecvRate = double(m_stats.traceRecv) * m_iMaxSRTPayloadSize * 8.0 / interval;
-
-    perf->usPktSndPeriod      = m_ullInterval_tk / double(m_ullCPUFrequency);
-    perf->pktFlowWindow       = m_iFlowWindowSize;
-    perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
-    perf->msRTT               = m_iRTT / 1000.0;
-    perf->mbpsBandwidth       = Bps2Mbps(m_iBandwidth * m_iMaxSRTPayloadSize);
-
-    if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
-    {
-        perf->byteAvailSndBuf = (m_pSndBuffer == NULL) ? 0 : sndBuffersLeft() * m_iMSS;
-        perf->byteAvailRcvBuf = (m_pRcvBuffer == NULL) ? 0 : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
-
-        pthread_mutex_unlock(&m_ConnectionLock);
-    }
-    else
-    {
-        perf->byteAvailSndBuf = 0;
-        perf->byteAvailRcvBuf = 0;
-    }
-
-    if (clear)
-    {
-        m_stats.traceSndDrop           = 0;
-        m_stats.traceRcvDrop           = 0;
-        m_stats.traceSndBytesDrop      = 0;
-        m_stats.traceRcvBytesDrop      = 0;
-        m_stats.traceRcvUndecrypt      = 0;
-        m_stats.traceRcvBytesUndecrypt = 0;
-        // new>
-        m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
-        //<
-        m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans =
-            m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.sndDuration                                                       = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceRcvBelated                                                   = 0;
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
-        m_stats.traceRcvBytesLoss = 0;
-#endif
-
-        m_stats.sndFilterExtra = 0;
-        m_stats.rcvFilterExtra = 0;
-
-        m_stats.rcvFilterSupply = 0;
-        m_stats.rcvFilterLoss   = 0;
-
-        m_stats.lastSampleTime = currtime;
-    }
-}
-
 void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 {
     if (!m_bConnected)
@@ -6543,6 +6475,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRecvNAK           = m_stats.recvNAK;
     perf->usSndDuration        = m_stats.sndDuration;
     perf->pktReorderDistance   = m_stats.traceReorderDistance;
+    perf->pktReorderTolerance  = m_iReorderTolerance;
     perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
     perf->pktRcvBelated        = m_stats.traceRcvBelated;
 
@@ -7941,7 +7874,7 @@ int CUDT::packLostData(CPacket &packet, uint64_t &origintime)
     // protect m_iSndLastDataAck from updating by ACK processing
     CGuard ackguard(m_RecvAckLock);
 
-    while ((packet.m_iSeqNo = m_pSndLossList->getLostSeq()) >= 0)
+    while ((packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
         const int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
         if (offset < 0)
@@ -8351,13 +8284,27 @@ int CUDT::processData(CUnit *in_unit)
 
     const int pktsz = packet.getLength();
     // Update time information
+   // XXX Note that this adds the byte size of a packet
+   // of which we don't yet know as to whether this has
+   // carried out some useful data or some excessive data
+   // that will be later discarded.
+   // FIXME: before adding this on the rcv time window,
+   // make sure that this packet isn't going to be
+   // effectively discarded, as repeated retransmission,
+   // for example, burdens the link, but doesn't better the speed.
     m_RcvTimeWindow.onPktArrival(pktsz);
 
-    // Check if it is a probing packet pair
-    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
-        m_RcvTimeWindow.probe1Arrival();
-    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
-        m_RcvTimeWindow.probe2Arrival(pktsz);
+   // Probe the packet pair if needed.
+   // Conditions and any extra data required for the packet
+   // this function will extract and test as needed.
+
+    const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
+    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
+
+    // Retransmitted and unordered packets do not provide expected measurement.
+    // We expect the 16th and 17th packet to be sent regularly,
+    // otherwise measurement must be rejected.
+    m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     CGuard::enterCS(m_StatsLock);
     m_stats.traceBytesRecv += pktsz;
@@ -9379,14 +9326,18 @@ void CUDT::checkNAKTimer(uint64_t currtime_tk)
      * not knowing what to retransmit when the only NAK sent by receiver is lost,
      * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
      */
-    if ((currtime_tk > m_ullNextNAKTime_tk) && (m_pRcvLossList->getLossLength() > 0))
-    {
-        // NAK timer expired, and there is loss to be reported.
-        sendCtrl(UMSG_LOSSREPORT);
+    const int loss_len = m_pRcvLossList->getLossLength();
+    SRT_ASSERT(loss_len >= 0);
 
-        CTimer::rdtsc(currtime_tk);
-        m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
+    if (loss_len > 0)
+    {
+        if (currtime_tk <= m_ullNextNAKTime_tk)
+            return; // wait for next NAK time
+
+        sendCtrl(UMSG_LOSSREPORT);
     }
+
+    m_ullNextNAKTime_tk = currtime_tk + m_ullNAKInt_tk;
 }
 
 bool CUDT::checkExpTimer(uint64_t currtime_tk)

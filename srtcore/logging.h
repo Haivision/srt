@@ -92,6 +92,8 @@ written by
 #define HLOGF(...)
 #define HLOGP(...)
 
+#define IF_HEAVY_LOGGING(instr) (void)0
+
 #endif
 
 namespace srt_logging

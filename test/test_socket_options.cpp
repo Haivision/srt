@@ -109,6 +109,10 @@ TEST_F(TestSocketOptions, LossMaxTTL)
     EXPECT_EQ(opt_val, loss_max_ttl) << "Wrong SRTO_LOSSMAXTTL value on the accepted socket";
     EXPECT_EQ(opt_len, sizeof opt_len) << "Wrong SRTO_LOSSMAXTTL value length on the accepted socket";
 
+    SRT_TRACEBSTATS stats;
+    EXPECT_EQ(srt_bstats(accepted_sock, &stats, 0), SRT_SUCCESS);
+    EXPECT_EQ(stats.pktReorderTolerance, loss_max_ttl);
+
     ASSERT_EQ(srt_getsockopt(m_listen_sock, 0, SRTO_LOSSMAXTTL, &opt_val, &opt_len), SRT_SUCCESS);
     EXPECT_EQ(opt_val, loss_max_ttl) << "Wrong SRTO_LOSSMAXTTL value on the listener socket";
     EXPECT_EQ(opt_len, sizeof opt_len) << "Wrong SRTO_LOSSMAXTTL value length on the listener socket";

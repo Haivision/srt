@@ -95,7 +95,15 @@ m_TickCond(),
 m_TickLock()
 {
     pthread_mutex_init(&m_TickLock, NULL);
+
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pthread_cond_init(&m_TickCond, &CondAttribs);
+#else
     pthread_cond_init(&m_TickCond, NULL);
+#endif
 }
 
 CTimer::~CTimer()
@@ -199,9 +207,9 @@ void CTimer::sleepto(uint64_t nexttime_tk)
 
 #if USE_BUSY_WAITING
 #if defined(_WIN32)
-    const uint64_t threshold = 10000;   // 10 ms on Windows: bad accuracy of timers
+    const uint64_t threshold_us = 10000;   // 10 ms on Windows: bad accuracy of timers
 #else
-    const uint64_t threshold = 1000;    // 1 ms on non-Windows platforms
+    const uint64_t threshold_us = 1000;    // 1 ms on non-Windows platforms
 #endif
 #endif
 
@@ -209,22 +217,28 @@ void CTimer::sleepto(uint64_t nexttime_tk)
     {
 #if USE_BUSY_WAITING
         uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
-        if (wait_us > threshold)
-            wait_us -= threshold;
-        if (wait_us < threshold)
+        if (wait_us <= 2 * threshold_us)
             break;
+        wait_us -= threshold_us;
 #else
-        const uint64_t wait_us = (m_ullSchedTime_tk - t) / getCPUFrequency();
+        const uint64_t wait_us = (m_ullSchedTime_tk - t) / s_ullCPUFrequency;
         if (wait_us == 0)
             break;
 #endif
 
+        timespec timeout;
+#if ENABLE_MONOTONIC_CLOCK
+        clock_gettime(CLOCK_MONOTONIC, &timeout);
+        const uint64_t time_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + wait_us;
+        timeout.tv_sec = time_us / 1000000;
+        timeout.tv_nsec = (time_us % 1000000) * 1000;
+#else
         timeval now;
         gettimeofday(&now, 0);
         const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + wait_us;
-        timespec timeout;
         timeout.tv_sec = time_us / 1000000;
         timeout.tv_nsec = (time_us % 1000000) * 1000;
+#endif
 
         THREAD_PAUSED();
         pthread_mutex_lock(&m_TickLock);

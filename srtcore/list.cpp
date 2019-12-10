@@ -213,40 +213,38 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
          return 0;
    }
 
-   // coalesce with next node. E.g., [3, 7], ..., [6, 9] becomes [3, 9] 
+   // coalesce with next node. E.g., [3, 7], ..., [6, 9] becomes [3, 9]
    while ((-1 != m_caSeq[loc].next) && (-1 != m_caSeq[loc].data2))
    {
-      int i = m_caSeq[loc].next;
+      const int i = m_caSeq[loc].next;
 
-      if (CSeqNo::seqcmp(m_caSeq[i].data1, CSeqNo::incseq(m_caSeq[loc].data2)) <= 0)
+      if (CSeqNo::seqcmp(m_caSeq[i].data1, CSeqNo::incseq(m_caSeq[loc].data2)) > 0)
+         break;
+
+      // coalesce if there is overlap
+      if (-1 != m_caSeq[i].data2)
       {
-         // coalesce if there is overlap
-         if (-1 != m_caSeq[i].data2)
+         if (CSeqNo::seqcmp(m_caSeq[i].data2, m_caSeq[loc].data2) > 0)
          {
-            if (CSeqNo::seqcmp(m_caSeq[i].data2, m_caSeq[loc].data2) > 0)
-            {
-               if (CSeqNo::seqcmp(m_caSeq[loc].data2, m_caSeq[i].data1) >= 0)
-                  m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, m_caSeq[loc].data2);
+            if (CSeqNo::seqcmp(m_caSeq[loc].data2, m_caSeq[i].data1) >= 0)
+               m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, m_caSeq[loc].data2);
 
-               m_caSeq[loc].data2 = m_caSeq[i].data2;
-            }
-            else
-               m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, m_caSeq[i].data2);
+            m_caSeq[loc].data2 = m_caSeq[i].data2;
          }
          else
-         {
-            if (m_caSeq[i].data1 == CSeqNo::incseq(m_caSeq[loc].data2))
-               m_caSeq[loc].data2 = m_caSeq[i].data1;
-            else
-               m_iLength --;
-         }
-
-         m_caSeq[i].data1 = -1;
-         m_caSeq[i].data2 = -1;
-         m_caSeq[loc].next = m_caSeq[i].next;
+            m_iLength -= CSeqNo::seqlen(m_caSeq[i].data1, m_caSeq[i].data2);
       }
       else
-         break;
+      {
+         if (m_caSeq[i].data1 == CSeqNo::incseq(m_caSeq[loc].data2))
+            m_caSeq[loc].data2 = m_caSeq[i].data1;
+         else
+            m_iLength--;
+      }
+
+      m_caSeq[i].data1  = -1;
+      m_caSeq[i].data2  = -1;
+      m_caSeq[loc].next = m_caSeq[i].next;
    }
 
    return m_iLength - origlen;
@@ -364,18 +362,15 @@ void CSndLossList::remove(int32_t seqno)
    }
 }
 
-int CSndLossList::getLossLength()
+int CSndLossList::getLossLength() const
 {
    CGuard listguard(m_ListLock);
 
    return m_iLength;
 }
 
-int32_t CSndLossList::getLostSeq()
+int32_t CSndLossList::popLostSeq()
 {
-   if (0 == m_iLength)
-     return -1;
-
    CGuard listguard(m_ListLock);
 
    if (0 == m_iLength)

@@ -83,7 +83,8 @@ extern Logger
     mglog,
     dlog,
     tslog,
-    rxlog;
+    rxlog,
+    cclog;
 
 }
 
@@ -204,7 +205,6 @@ public: //API
     static int32_t epoll_set(const int eid, int32_t flags);
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
-    static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
@@ -443,12 +443,6 @@ private:
     /// @param optlen [out] size of "optval".
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& optlen);
-
-    /// read the performance data since last sample() call.
-    /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
-    /// @param clear [in] flag to decide if the local performance trace should be cleared.
-
-    void sample(CPerfMon* perf, bool clear = true);
 
     /// read the performance data with bytes counters since bstats() 
     ///  

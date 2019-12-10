@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.3.4")
+#project(SRT VERSION "1.4.1")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -27,7 +27,8 @@ set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN)
+set_if(GNU         ${CMAKE_SYSTEM_NAME} MATCHES "GNU")
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -38,7 +39,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.4.0)
+set (SRT_VERSION 1.4.1)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -109,15 +110,6 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-
-# ENABLE_MONOTONIC_CLOCK: enforces the use of clock_gettime to get the current
-# time, instead of gettimeofday. This function allows to force a monotonic
-# clock, which is independent on the currently set time in the system.  The CV,
-# for which the *_timedwait() functions are used with so obtained current time,
-# must be appropriately configured. The consequence of enabling this option,
-# however, may be portability issues around the clock_gettime() function, which
-# is not available on every SDK, or extra -lrt option is sometimes required
-# (this requirement will be autodetected).
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
@@ -188,6 +180,8 @@ if (DEFINED WITH_COMPILER_PREFIX)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE}++)
 	endif()
+
+	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
 else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
@@ -305,7 +299,7 @@ if ( USE_GNUSTL )
 endif()
 
 # Detect if the compiler is GNU compatable for flags
-if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Intel|Clang|AppleClang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
 else()
@@ -396,6 +390,9 @@ elseif(LINUX)
 elseif(CYGWIN)
 	add_definitions(-DCYGWIN=1)
 	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
+elseif(GNU)
+	add_definitions(-DGNU=1)
+	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
 else()
 	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
@@ -606,11 +603,9 @@ if (ENABLE_SHARED)
 	if (MICROSOFT)
 		MafReadDir(srtcore filelist.maf
 			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
-			PRIVATE_HEADERS_WIN32_SHARED HEADERS_srt_shared_win32
 		)
 		
 		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
-		message(STATUS "WINDOWS detected: Adding private headers to SRT shared project: ${HEADERS_srt_shared_win32}")
 	endif()
 endif()
 
@@ -841,7 +836,7 @@ macro(srt_make_application name)
 	endif()
 
 	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
+	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}" ${FORCE_RPATH})
 
 	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
@@ -887,6 +882,9 @@ if (ENABLE_APPS)
 	# Applications
 
 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
+	if (DEFINED EXTRA_stransmit)
+		set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${EXTRA_stransmit}")
+	endif()
 	srt_add_application(srt-file-transmit ${VIRTUAL_srtsupport})
 
 	if (MINGW)
@@ -949,13 +947,13 @@ if (ENABLE_EXAMPLES)
 		srt_add_program(${name} examples/${mainsrc} ${ARGN})
 	endmacro()
 
-	srt_add_example(sendfile.cpp apps/logsupport.cpp)
+	srt_add_example(sendfile.cpp)
 	srt_make_application(sendfile)
 
-	srt_add_example(recvfile.cpp apps/logsupport.cpp)
+	srt_add_example(recvfile.cpp)
 	srt_make_application(recvfile)
 
-	srt_add_example(recvlive.cpp apps/logsupport.cpp)
+	srt_add_example(recvlive.cpp)
 	srt_make_application(recvlive)
 
 	srt_add_example(test-c-client.c)

@@ -930,21 +930,6 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    return 0;
 }
 
-void CUDTUnited::connect_complete(const SRTSOCKET u)
-{
-   CUDTSocket* s = locate(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-
-   // copy address information of local node
-   // the local port must be correctly assigned BEFORE CUDT::startConnect(),
-   // otherwise if startConnect() fails, the multiplexer cannot be located
-   // by garbage collection and will cause leak
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
-   CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
-
-   s->m_Status = SRTS_CONNECTED;
-}
 
 int CUDTUnited::close(const SRTSOCKET u)
 {
@@ -2752,28 +2737,6 @@ CUDTException& CUDT::getlasterror()
    return *s_UDTUnited.getError();
 }
 
-int CUDT::perfmon(SRTSOCKET u, CPerfMon* perf, bool clear)
-{
-   try
-   {
-      CUDT* udt = s_UDTUnited.lookup(u);
-      udt->sample(perf, clear);
-      return 0;
-   }
-   catch (const CUDTException& e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (const std::exception& ee)
-   {
-      LOGC(mglog.Fatal, log << "perfmon: UNEXPECTED EXCEPTION: "
-         << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
-      return ERROR;
-   }
-}
-
 int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
 {
    try
@@ -3201,12 +3164,6 @@ const char* geterror_desc(int code, int err)
 {
    CUDTException e (CodeMajor(code/1000), CodeMinor(code%1000), err);
    return(e.getErrorMessage());
-}
-
-
-SRT_ATR_DEPRECATED int perfmon(SRTSOCKET u, TRACEINFO* perf, bool clear)
-{
-   return CUDT::perfmon(u, perf, clear);
 }
 
 int bstats(SRTSOCKET u, TRACEBSTATS* perf, bool clear)
