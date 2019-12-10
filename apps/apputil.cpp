@@ -16,12 +16,6 @@
 #include "apputil.hpp"
 #include "netinet_any.h"
 
-#ifdef WIN32
-   #include <iphlpapi.h> // getting local interfaces
-#else
-   #include <ifaddrs.h> // getting local interfaces
-#endif
-
 using namespace std;
 
 
