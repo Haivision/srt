@@ -693,6 +693,24 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 
 #endif
 
+// Printable with prefix added for every element.
+// Useful when printing a container of sockets or sequence numbers.
+template <class Container> inline
+std::string PrintableMod(const Container& in, const std::string& prefix)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << prefix << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
+
+
+
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
 void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
@@ -737,6 +755,28 @@ struct CallbackHolder
 };
 
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
+
+template <class Result, class Arg>
+struct Callback
+{
+    void* opaque;
+    typedef Result fn_t(void*, Arg&);
+    fn_t* fn;
+
+    Callback(): opaque(0), fn(0)  {}
+
+    Result call(Arg& arg)
+    {
+        return fn(opaque, arg);
+    }
+
+    void set(void* o, fn_t* f)
+    {
+        opaque = o;
+        fn = f;
+    }
+};
+
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
@@ -828,6 +868,12 @@ public:
         // m_qTimeBase += m_qOverdrift;
 
         return true;
+    }
+
+    // For group overrides
+    void forceDrift(int64_t driftval)
+    {
+        m_qDrift = driftval;
     }
 
     // These values can be read at any time, however if you want
