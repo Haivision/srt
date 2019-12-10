@@ -21,7 +21,12 @@
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
 
+extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
+
 using namespace std;
+
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
+extern srt_logging::Logger applog;
 
 // Trial version of an exception. Try to implement later an official
 // interruption mechanism in SRT using this.
@@ -70,6 +75,7 @@ public:
 protected:
 
     void Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
+    void Error(string src);
     void Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);

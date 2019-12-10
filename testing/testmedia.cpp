@@ -24,6 +24,12 @@
 #endif
 
 #include "netinet_any.h"
+#include "common.h"
+#include "api.h"
+#include "udt.h"
+#include "logging.h"
+#include "utilities.h"
+
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -41,11 +47,15 @@ size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 bool transmit_printformat_json = false;
 srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
 void* transmit_accept_hook_op = nullptr;
+// Do not unblock. Copy this to an app that uses applog and set appropriate name.
+//srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+
+std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
 string DirectionName(SRT_EPOLL_T direction)
 {
     string dir_name;
-    if (direction)
+    if (direction & ~SRT_EPOLL_ERR)
     {
         if (direction & SRT_EPOLL_IN)
         {
@@ -58,6 +68,11 @@ string DirectionName(SRT_EPOLL_T direction)
                 dir_name = "relay";
             else
                 dir_name = "target";
+        }
+
+        if (direction & SRT_EPOLL_ERR)
+        {
+            dir_name += "+error";
         }
     }
     else
@@ -118,7 +133,7 @@ public:
     {
         ofile.write(data.data(), data.size());
 #ifdef PLEASE_LOG
-        extern logging::Logger applog;
+        extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
 #endif
     }
@@ -129,7 +144,7 @@ public:
     void Close() override
     {
 #ifdef PLEASE_LOG
-        extern logging::Logger applog;
+        extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Close";
 #endif
         ofile.close();
@@ -172,77 +187,6 @@ template <> struct File<Relay> { typedef FileRelay type; };
 
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
-
-
-template <class PerfMonType>
-void PrintSrtStats(int sid, const PerfMonType& mon)
-{
-    if (transmit_printformat_json)
-    {
-        cout << "{" << endl;
-        cout << "\t\"sid\":" << sid << "," << endl;
-        cout << "\t\"time\":" << mon.msTimeStamp << "," << endl;
-        cout << "\t\"window\":{" << endl;
-        cout << "\t\t\"flow\":" << mon.pktFlowWindow << "," << endl;
-        cout << "\t\t\"congestion\":" << mon.pktCongestionWindow << "," << endl;
-        cout << "\t\t\"flight\":" << mon.pktFlightSize << endl;
-        cout << "\t}," << endl;
-        cout << "\t\"link\":{" << endl;
-        cout << "\t\t\"rtt\":" << mon.msRTT << "," << endl;
-        cout << "\t\t\"bandwidth\":" << mon.mbpsBandwidth << "," << endl;
-        cout << "\t\t\"maxBandwidth\":" << mon.mbpsMaxBW << endl;
-        cout << "\t}," << endl;
-        cout << "\t\"send\":{" << endl;
-        cout << "\t\t\"packets\":" << mon.pktSent << "," << endl;
-        cout << "\t\t\"packetsLost\":" << mon.pktSndLoss << "," << endl;
-        cout << "\t\t\"packetsDropped\":" << mon.pktSndDrop << "," << endl;
-        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRetrans << "," << endl;
-        cout << "\t\t\"packetsFilterExtra\":" << mon.pktSndFilterExtra << "," << endl;
-        cout << "\t\t\"bytes\":" << mon.byteSent << "," << endl;
-        cout << "\t\t\"bytesDropped\":" << mon.byteSndDrop << "," << endl;
-        cout << "\t\t\"mbitRate\":" << mon.mbpsSendRate << endl;
-        cout << "\t}," << endl;
-        cout << "\t\"recv\":{" << endl;
-        cout << "\t\t\"packets\":" << mon.pktRecv << "," << endl;
-        cout << "\t\t\"packetsLost\":" << mon.pktRcvLoss << "," << endl;
-        cout << "\t\t\"packetsDropped\":" << mon.pktRcvDrop << "," << endl;
-        cout << "\t\t\"packetsRetransmitted\":" << mon.pktRcvRetrans << "," << endl;
-        cout << "\t\t\"packetsBelated\":" << mon.pktRcvBelated << "," << endl;
-        cout << "\t\t\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << "," << endl;
-        cout << "\t\t\"packetsFilterSupplied\":" << mon.pktRcvFilterSupply << "," << endl;
-        cout << "\t\t\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << "," << endl;
-        cout << "\t\t\"bytes\":" << mon.byteRecv << "," << endl;
-        cout << "\t\t\"bytesLost\":" << mon.byteRcvLoss << "," << endl;
-        cout << "\t\t\"bytesDropped\":" << mon.byteRcvDrop << "," << endl;
-        cout << "\t\t\"mbitRate\":" << mon.mbpsRecvRate << endl;
-        cout << "\t}," << endl;
-        cout << "\tfilter:{" << endl;
-        cout << "\t\t\"sndExtra\":" << mon.pktSndFilterExtra << endl;
-        cout << "\t\t\"rcvExtra\":" << mon.pktRcvFilterExtra << endl;
-        cout << "\t\t\"rcvSupply\":" << mon.pktRcvFilterSupply << endl;
-        cout << "\t\t\"rcvLoss\":" << mon.pktRcvFilterLoss << endl;
-        cout << "\t}" << endl;
-        cout << "}" << endl;
-
-        return;
-    }
-
-    cout << "======= SRT STATS: sid=" << sid << endl;
-    cout << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv << endl;
-    cout << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss << endl;
-    cout << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans << endl;
-    cout << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop << endl;
-    cout << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra << endl;
-    cout << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss << endl;
-    cout << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate << endl;
-    cout << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
-    cout << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
-    cout << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow
-           << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-    cout << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
-    cout << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf << endl;
-}
-
 
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
@@ -331,6 +275,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
     // Assign the others here.
     m_options = par;
+    m_options["mode"] = m_mode;
 }
 
 void SrtCommon::PrepareListener(string host, int port, int backlog)
@@ -371,12 +316,12 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if ( !m_blocking_mode )
     {
-        Verb() << "[ASYNC] ";
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
 
         int len = 2;
         SRTSOCKET ready[2];
         if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -474,8 +419,30 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
         << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
         << ") PBKEYLEN=" << pbkeylen;
 
+    // Display some selected options on the socket.
+    if (Verbose::on)
+    {
+        int64_t bandwidth = 0;
+        int latency = 0;
+        bool blocking_snd = false, blocking_rcv = false;
+        int dropdelay = 0;
+        int size_int = sizeof (int), size_int64 = sizeof (int64_t), size_bool = sizeof (bool);
+
+        srt_getsockflag(m_sock, SRTO_MAXBW, &bandwidth, &size_int64);
+        srt_getsockflag(m_sock, SRTO_RCVLATENCY, &latency, &size_int);
+        srt_getsockflag(m_sock, SRTO_RCVSYN, &blocking_rcv, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDSYN, &blocking_snd, &size_bool);
+        srt_getsockflag(m_sock, SRTO_SNDDROPDELAY, &dropdelay, &size_int);
+
+        Verb() << "OPTIONS: maxbw=" << bandwidth << " rcvlatency=" << latency << boolalpha
+            << " blocking{rcv=" << blocking_rcv << " snd=" << blocking_snd
+            << "} snddropdelay=" << dropdelay;
+    }
+
     if ( !m_blocking_mode )
     {
+        // Don't add new epoll if already created as a part
+        // of group management: if (srt_epoll == -1)...
         srt_epoll = AddPoller(m_sock, dir);
     }
 }
@@ -485,6 +452,8 @@ int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
     int pollid = srt_epoll_create();
     if ( pollid == -1 )
         throw std::runtime_error("Can't create epoll in nonblocking mode");
+    Verb() << "EPOLL: creating eid=" << pollid << " and adding @" << socket
+        << " in " << DirectionName(SRT_EPOLL_OPT(modes)) << " mode";
     srt_epoll_add_usock(pollid, socket, &modes);
     return pollid;
 }
@@ -495,22 +464,40 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     int result = 0;
     if ( m_direction & SRT_EPOLL_OUT )
     {
+        Verb() << "Setting SND blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
         if ( result == -1 )
+        {
+#ifdef PLEASE_LOG
+            extern srt_logging::Logger applog;
+            applog.Error() << "ERROR SETTING OPTION: SRTO_SNDSYN";
+#endif
             return result;
+        }
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+        {
+#ifdef PLEASE_LOG
+            extern srt_logging::Logger applog;
+            applog.Error() << "ERROR SETTING OPTION: SRTO_SNDTIMEO";
+#endif
+            return result;
+        }
     }
 
     if ( m_direction & SRT_EPOLL_IN )
     {
+        Verb() << "Setting RCV blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
         if ( result == -1 )
             return result;
 
         if ( m_timeout )
-            return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+            result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+        if ( result == -1 )
+            return result;
     }
 
     // host is only checked for emptiness and depending on that the connection mode is selected.
@@ -652,6 +639,10 @@ void SrtCommon::ConnectClient(string host, int port)
     if ( stat == SRT_ERROR )
     {
         SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
+#if PLEASE_LOG
+        extern srt_logging::Logger applog;
+        LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
+#endif
         srt_close(m_sock);
         Error(UDT::getlasterror(), "srt_connect", reason);
     }
@@ -673,7 +664,7 @@ void SrtCommon::ConnectClient(string host, int port)
         }
         else
         {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
         }
     }
 
@@ -687,19 +678,38 @@ void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON re
 {
     int udtResult = udtError.getErrorCode();
     string message = udtError.getErrorMessage();
+    string rejectreason;
     if (udtResult == SRT_ECONNREJ)
     {
-        message += ": ";
-        message += srt_rejectreason_str(reason);
+        rejectreason = srt_rejectreason_str(reason);
+
+        if ( Verbose::on )
+            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] "
+                << "Connection rejected: [" << int(reason) << "]: "
+                << srt_rejectreason_str(reason);
+        else
+            cerr << "\nERROR #" << udtResult
+                << ": Connection rejected: [" << int(reason) << "]: "
+                << srt_rejectreason_str(reason);
     }
-    if ( Verbose::on )
-        Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
     else
-        cerr << "\nERROR #" << udtResult << ": " << message << endl;
+    {
+        if ( Verbose::on )
+            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
+        else
+            cerr << "\nERROR #" << udtResult << ": " << message << endl;
+    }
 
     udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
 }
+
+void SrtCommon::Error(string msg)
+{
+    cerr << "\nERROR (app): " << msg << endl;
+    throw std::runtime_error(msg);
+}
+
 
 void SrtCommon::SetupRendezvous(string adapter, int port)
 {
@@ -719,6 +729,10 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
 
 void SrtCommon::Close()
 {
+#if PLEASE_LOG
+        extern srt_logging::Logger applog;
+        LOGP(applog.Error, "CLOSE requested - closing socket @", m_sock);
+#endif
     bool any = false;
     bool yes = true;
     if ( m_sock != SRT_INVALID_SOCK )
@@ -755,6 +769,20 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
     hostport_copy = os.str();
 }
 
+static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
+{
+    CBytePerfMon perf;
+    // clear only if stats report is to be read
+    srt_bstats(sock, &perf, clr);
+
+    if (bw)
+        cout << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth);
+    if (stats)
+        cout << transmit_stats_writer->WriteStats(sock, perf);
+}
+
+
+
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
@@ -780,22 +808,20 @@ bytevector SrtSource::Read(size_t chunk)
                     SRTSOCKET sready[2];
                     if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
                     {
-                        if ( Verbose::on )
-                        {
-                            Verb() << "... epoll reported ready " << len << " sockets";
-                        }
+                        Verb() << "... epoll reported ready " << len << " sockets";
                         continue;
                     }
                     // If was -1, then passthru.
                 }
             }
-            Error(UDT::getlasterror(), "recvmsg");
+            Error(UDT::getlasterror(), "srt_recvmsg2");
         }
 
         if ( stat == 0 )
         {
             throw ReadEOF(hostport_copy);
         }
+
     }
     while (!ready);
 
@@ -806,21 +832,9 @@ bytevector SrtSource::Read(size_t chunk)
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    CBytePerfMon perf;
-    if (need_stats_report || need_bw_report)
+    if (transmit_stats_report && (need_stats_report || need_bw_report))
     {
-        // clear only if stats report is to be read
-        srt_bstats(m_sock, &perf, need_stats_report /* clear */);
-
-        if (need_bw_report)
-        {
-            Verb() << "+++/+++SRT BANDWIDTH: " << perf.mbpsBandwidth;
-        }
-
-        if (need_stats_report)
-        {
-            PrintSrtStats(m_sock, perf);
-        }
+        PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
     }
 
     ++counter;
@@ -854,6 +868,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
 
 void SrtTarget::Write(const bytevector& data)
 {
+    static int counter = 1;
     ::transmit_throw_on_interrupt = true;
 
     // Check first if it's ready to write.
@@ -870,6 +885,16 @@ void SrtTarget::Write(const bytevector& data)
     if ( stat == SRT_ERROR )
         Error(UDT::getlasterror(), "srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
+
+    const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
+    const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
+
+    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    {
+        PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+    }
+
+    ++counter;
 }
 
 SrtRelay::SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par)
@@ -969,7 +994,8 @@ template <> struct Srt<Target> { typedef SrtTarget type; };
 template <> struct Srt<Relay> { typedef SrtRelay type; };
 
 template <class Iface>
-Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
+Iface* CreateSrt(const string& host, int port, const map<string,string>& par)
+{ return new typename Srt<Iface>::type (host, port, par); }
 
 bytevector ConsoleRead(size_t chunk)
 {
@@ -1315,13 +1341,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
 
     case UriParser::SRT:
-        iport = atoi(u.port().c_str());
-        if ( iport < 1024 )
-        {
-            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
-            throw invalid_argument("Invalid port number");
-        }
-        ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
+        ptr.reset( CreateSrt<Base>(u.host(), u.portno(), u.parameters()) );
         break;
 
 

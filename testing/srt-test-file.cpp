@@ -27,6 +27,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <logging.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -43,16 +44,16 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-
 static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-file");
+
 int main( int argc, char** argv )
 {
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_buffer = {"b", "buffer" },
         o_verbose = {"v", "verbose" },
@@ -87,9 +88,12 @@ int main( int argc, char** argv )
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 
-   string verbo = Option<OutString>(params, "no", o_verbose);
-   if ( verbo == "" || !false_names.count(verbo) )
-       Verbose::on = true;
+    string verbo = Option<OutString>(params, "no", o_verbose);
+    if ( verbo == "" || !false_names.count(verbo) )
+    {
+        Verbose::on = true;
+        Verbose::cverb = &std::cout;
+    }
 
     string bs = Option<OutString>(params, "", o_buffer);
     if ( bs != "" )

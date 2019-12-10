@@ -91,7 +91,8 @@ protected:
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
     {
-        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + SockaddrToString((sockaddr*)&sa)), chunk);
+        string addr = SockaddrToString((sockaddr*)&sa);
+        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
     }
@@ -985,7 +986,7 @@ int main( int argc, char** argv )
 
     size_t chunk = default_chunk;
 
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_logfa = { "lf", "logfa" },
         o_chunk = {"c", "chunk" },

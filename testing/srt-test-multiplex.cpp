@@ -47,7 +47,6 @@ using namespace std;
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
 
 volatile bool siplex_int_state = false;
