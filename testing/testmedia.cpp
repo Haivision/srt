@@ -24,6 +24,7 @@
 #endif
 
 #include "netinet_any.h"
+#include "api.h" // SockaddrToString - XXX move to utils or some more suitable place
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -647,6 +648,21 @@ void SrtCommon::ConnectClient(string host, int port)
 
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
+    {
+        // Check if trying to connect to self.
+        sockaddr_any lsa;
+        int size = lsa.size();
+        srt_getsockname(m_sock, &lsa, &size);
+
+        if (lsa.hport() == port && IsTargetAddrSelf(&lsa, psa))
+        {
+            Verb() << "ERROR: Trying to connect to SELF address " << SockaddrToString(psa)
+                << " with socket bound to " << SockaddrToString(&lsa);
+            UDT::ERRORINFO inval(MJ_SETUP, MN_INVAL, 0);
+            Error(inval, "srt_connect");
+        }
+    }
+
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
