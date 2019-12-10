@@ -718,7 +718,7 @@ private: // synchronization: mutexes and conditions
 
 private: // Common connection Congestion Control setup
 
-    // XXX This can fail only when it failed to create a congctl
+    // This can fail only when it failed to create a congctl
     // which only may happen when the congctl list is extended 
     // with user-supplied congctl modules, not a case so far.
     SRT_ATR_NODISCARD
@@ -728,9 +728,8 @@ private: // Common connection Congestion Control setup
     // the congctl isn't created, and this can be prevented from.
     bool updateCC(ETransmissionEvent, EventVariant arg);
 
-    // XXX Unsure as to this return value is meaningful.
-    // May happen that this failure is acceptable slongs
-    // the other party will be sending unencrypted stream.
+    // Failure to create the crypter means that an encrypted
+    // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
     bool createCrypter(HandshakeSide side, bool bidi);
 
