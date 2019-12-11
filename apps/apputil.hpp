@@ -100,12 +100,12 @@ static inline Number StrToNumber(const std::string& )
 template<> inline type StrToNumber(const std::string& s) { return function (s, 0, 0); }
 
 STON(int, stoi);
+#ifndef _WIN32 // On Windows this type seems to be an alias to some others below
 STON(size_t, stoul);
+#endif
 STON(unsigned int, stoul);
 STON(long long, stoll);
-#ifndef _WIN32 // On Windows this type seems to be an alias to another
 STON(unsigned long long, stoull);
-#endif
 
 #undef STON
 
