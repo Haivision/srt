@@ -1017,6 +1017,40 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
     return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
 }
 
+// Property accessor definitions
+//
+// "Property" is a special method that accesses given field.
+// This relies only on a convention, which is the following:
+//
+// V x = object.prop(); <-- get the property's value
+// object.prop(x); <-- set the property a value
+//
+// Properties might be also chained when setting:
+//
+// object.prop1(v1).prop2(v2).prop3(v3);
+//
+// Properties may be defined various even very complicated
+// ways, which is simply providing a method with body. In order
+// to define a property simplest possible way, that is, refer
+// directly to the field that keeps it, here are the following macros:
+//
+// Prefix: SRTU_PROPERTY_
+// Followed by:
+//  - access type: RO, WO, RW, RR, RRW
+//  - chain flag: optional _CHAIN
+// Where access type is:
+// - RO - read only. Defines reader accessor. The accessor method will be const.
+// - RR - read reference. The accessor isn't const to allow reference passthrough.
+// - WO - write only. Defines writer accessor.
+// - RW - combines RO and WO.
+// - RRW - combines RR and WO.
+//
+// The _CHAIN marker is optional for macros providing writable accessors
+// for properties. The difference is that while simple write accessors return
+// void, the chaining accessors return the reference to the object for which
+// the write accessor was called so that you can call the next accessor (or
+// any other method as well) for the result.
+
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
 #define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
