@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   SRTSOCKET sfd = srt_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+   SRTSOCKET sfd = srt_create_socket();
    if (SRT_INVALID_SOCK == sfd)
    {
       cout << "srt_socket: " << srt_getlasterror_str() << endl;
