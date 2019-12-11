@@ -16,6 +16,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <memory>
 
 #if _WIN32
 
