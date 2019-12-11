@@ -459,7 +459,7 @@ public:
 
     enum { DEF_SEND_FLAG = 0 };
 
-#elif defined(LINUX) || defined(GNU)
+#elif defined(LINUX) || defined(GNU) || defined(CYGWIN)
     static int tcp_close(int socket)
     {
         return ::close(socket);
@@ -467,7 +467,7 @@ public:
 
     enum { DEF_SEND_FLAG = MSG_NOSIGNAL };
 
-#elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#else
     static int tcp_close(int socket)
     {
         return ::close(socket);

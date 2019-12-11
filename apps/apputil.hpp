@@ -90,7 +90,7 @@ inline bool CheckTrue(const std::vector<std::string>& in)
 }
 
 template<class Number>
-Number StrToNumber(const std::string& )
+static inline Number StrToNumber(const std::string& )
 {
     typename Number::incorrect_version wrong = Number::incorrect_version;
     return Number();
