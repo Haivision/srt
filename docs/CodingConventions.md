@@ -67,9 +67,9 @@ Exceptions:
 --------------------------
 
 The pointer (`*`) and reference (`&`) modifiers placed after the type should
-immediately follow the type name without a space, and itself should be followed
-by a space. Also there should be no space between the symbol name when defining
-an array and the open bracket, nor inside the brackets.
+immediately follow the type name without a space, and they themselves should be
+followed by a space. Also there should be no space between the symbol name when
+defining an array and the open bracket, nor inside the brackets.
 
 Example:
 ```
@@ -85,7 +85,7 @@ This concerns two things:
 * Multi-declaration
 * Multi-modification
 
-Multi-declaration should be rather avoided at all. This concerns things like:
+Multi-declaration is a declaration like:
 
 ```
 int a, b;
@@ -93,10 +93,10 @@ int a, b;
 
 Multi-declarations are allowed only in case when the type name doesn't have
 any symbolic modifiers (pointer, reference, array), and even in this case they
-are discouraged. Use `typedef` in case when declaring multiple variables by
-one declaration was necessary to not repeat a long type name.
+are discouraged. Use rather `typedef` in case when declaring multiple variables
+by one declaration was necessary to not repeat a long type name.
 
-Multi-modifications are not allowed at all. This concerns:
+Multi-modifications are instruction expressions with:
 
 * Multi-assignment - like `a = b = c;`
 * More than one modification in one instruction caused by operators
@@ -118,31 +118,43 @@ behavior in C++ anyway.
 4. Spaces around symbol characters
 ----------------------------------
 
-Spaces are never used with parentheses, except:
+Most of the binary operators require spaces around themselves (note:
+not unary operators using the same symbol characters).
 
-* the external part (before open and after closed) in expressions
-* before open, when passing parameters to a local variable constructor
+Spaces are usually not used with parentheses (notably with function call
+expressions as well as declarations). Usually, however, spaces are
+placed on the external parts of the parentheses of expressions, but
+this is usually due to spaces around operators:
+
+```
+// spaces here ----\-\-\--\
+// no spaces here-\ \ \ \  \
+int a = numberRows() * (1 + col); // <- not for functions, but expr
+```
+
+A space is required before open parantheses in one case: when passing
+parameters to a local variable constructor:
+
+```
+// space here ----\
+Condition cc_write (cg_write);    // <- variable construction
+```
+
+Note that this doesn't concern a pure constructor call - this is allowed to
+look exactly like a function call:
+
+```
+// no space here-\
+Acquire(Condition(cg_write));     // <- function call with constructor-call
+```
 
 Symbols around which spaces are never used are:
 
 * Square brackets: `[]`
 * Field dereference operators `.` and `->`
-* All prefix unary operators (such as `*` `&` `++` etc.)
+* All unary operators (such as `*` `&` `++` etc.)
 
-Note: if you have a pure constructor call expression, you don't
-use a space before the open parenthesis - this is allowed to look
-exactly like a function call.
 
-Examples:
-```
-int a = numberRows() * (1 + col); // <- not for functions, but expr
-
-// space here ----\
-Condition cc_write (cg_write);    // <- variable construction
-
-// no space here-\
-Acquire(Condition(cg_write));     // <- function call with constructor-call
-```
 
 Conditionals
 ============
@@ -173,27 +185,35 @@ Examples:
 
 1. The `strcmp` function is an example where you don't know exactly
 what is going to be checked in the conditional expression using it,
-unless you know from upside to which value the result is compared:
+unless you know from upside to which value the result is compared.
+
+Consider:
 
 ```
 //Will compare... .  .  .  .  .  .  .  .  .  .  .  .  .  for equality
    if (strcmp(get_string_from_somewhere(), another_string) == 0)
+```
 
 Against:
 
+```
 //For equality will compare: (shorter: "check if equal:")
       if (0 ==      strcmp(get_string_from_somewhere(), another_string))
 ```
 
 2. A POSIX call that returns -1 as an error report can be more visible
-that the following condition is an error handler, if the function name
-and the return value are close to one another:
+that the following condition is an error handler (or, conversely, **isn't**
+an error handler and is executed only on success), if the function name
+and the return value are close to one another. Consider:
 
 ```
 // If bind() operation  .  .  .  .  .  .  .  .  failed
    if (bind(sock, (sockaddr*)&sa, sizeof sa) == -1)
+```
 
 Against:
+
+```
 // If failed bind() operation . . . . .
    if (-1 == bind(sock, (sockaddr*)&sa, sizeof sa))
 ```
@@ -294,89 +314,8 @@ needed to be broken. In that case also the rules of the prefix and extra
 parentheses do not apply.
 
 
-Naming of the fields
-====================
-
-This code makes a specific use of the Hungarian Notation.
-
-What is important in it, however, is to make it clear about the logical
-meaning of what the field defines, not exactly their declared type.
-Note that datatype-related Hungarian Notation cases can still be found
-in the source code.
-
-It is important to have appropriate markers in the field names in all cases
-when the meaning can be ambiguous or simply unobvious. If the name of the
-variable suggests something that can only be implemented using a 32-bit integer
-variable, the marker can be skipped. However in most cases it isn't clear
-enough from the name, what type was used to implement it. The goal of this
-rule is to help prevent misuse of a field due to used unit, relationship
-character, compatibility and needed translations to a different unit or
-character.
-
-Some detailed contentions:
-
-0. The general syntax for the field name is `[pfx][mk][name]`:
-
-* pfx: Field prefix: `m_` for members, `s_` for static, `g_` for global
-* mk: The marker (can be also empty)
-* name: field name using `PascalCase`
-
-1. Size: `m_zNumberElements`: `z` marker defines that the variable
-designates a size of a container or count of some finite elements
-and is using an unsigned type designed for keeping a size (usually
-it's `size_t`).
-
-2. A 64-bit integer was used to implement it: `m_llDistance`. It is
-important to highlight this when the value is dealing with others
-of different size.
-
-3. A 64-bit unsigned type is used: `m_ullBegin`. Having the `u`
-marker in the type is important in case when you consider whether
-it should be compared against 0, or compared against another integer
-variable without casting (comparison misuse can happen). Note that
-although usually unsigned integers are used to represent the size,
-use rather the `z` marker for that purpose, not `u*`.
-
-4. A variable that designates time should have a marker that states
-that it represents time (`t`) or duration (`td`) followed by a
-specification whether it's a monotonic clock (`m`) or a general clock
-(`c`). For cases when various different units of time are used for
-particular domain, a suffix such as `_us` or `_tk` may be required
-to designate it, in order to prevent mistakes with mixing incompatible
-units.
-
-5. Boolean type: `b` marker declares that the field represents only
-the on/off character of the designated value.
-
-6. The `p` marker designates a pointer. The pointer is usually for
-a bigger object and that one needs no futher markers. Note that this
-is only when you intend to keep only a single object here, see also
-p. 10.
-
-7. The `s` marker marks a variable of type `std::string` (not a
-bare array of characters).
-
-8. The `d` marker designates the `double` (floating-point) type.
-The `float` type is never used as it's completely useless.
-
-9. The `cb` marker designates a callback (pointer to function or
-some more elaborate wrapper for it).
-
-10. The `a` and `ca` markers define a raw array (note: not any advanced C++
-container). This marker is **independent** of the real type used to implement
-it (note: `p` marker just because it's a pointer type, is wrong, if the field
-actually designates an array). The `ca` marker is used in a special case when
-the field holding it is of pointer type and the array is to be dynamically
-allocated, but the size of the array doesn't change during the whole lifetime
-of the object containing it. In all other cases it should be `a`.
-
-11. The mutexes and condition variables must contain the words
-`Lock` and `Cond` respectively, usually at the end. Usually they
-have an empty marker, just like objects.
-
-
-Naming of other symbols
-=======================
+Naming convention
+=================
 
 Naming convention is the following:
 
@@ -391,6 +330,103 @@ is needed, use `snake_case`.
 
 4. Constants used anywhere among existing entities (except constant
 local variables) use `SCREAMING_SNAKE_CASE`.
+
+5. Class's fields and global variables use the "Fields' naming convention"
+as described below.
+
+
+Fields' naming convention
+=========================
+
+This code makes a specific use of the Hungarian Notation.
+
+What is important in it, however, is to make it clear about the logical
+meaning of what the field defines, not exactly their declared type.
+Note that datatype-related Hungarian Notation cases can still be found
+in the source code.
+
+It is important to have appropriate markers in the field names in all cases
+when the meaning can be ambiguous or simply unobvious. If the name of the
+variable suggests something that can only be implemented using just one kind of
+type, the marker can be skipped. However in most cases it isn't clear enough
+from the name, what type was used to implement it, or more in particular, what
+characteristics this function has because of both the type used to implement it
+and the way how it is being used in the code. The goal of this rule is to help
+prevent misuse of a field due to used unit, relationship character,
+compatibility and needed translations to a different unit or character.
+
+Some detailed contentions:
+
+0. The general syntax for the field name is `[pfx][mk][name]`:
+
+* pfx: Field prefix: `m_` for members, `s_` for static, `g_` for global
+* mk: The marker (can be also empty)
+* name: field name using `PascalCase`
+
+1. Size: `m_zNumberElements`: `z` marker defines that the variable
+designates a size of a container or count of some finite elements
+and is using an unsigned type designed for keeping a size (usually
+it's `size_t`).
+
+2. Integer type with specific size used to implement the field:
+
+* `ll` marker designates a signed 64-bit integer: `m_llDistance`. It is
+important to highlight this when the value is dealing with others
+of different size.
+
+* `i` marker designates a 32-bit integer type. Although usually there's
+`int` type meant here, in all today compilers `int` is a 32-bit type,
+even on 64-bit systems.
+
+* `u` before the integer marker designates an unsigned integer type.
+The integer type must always have a designation of signed or unsigned
+type, while it is signed by default. It is important when used in
+expressions that mix signed and unsigned integers. Note also that
+if the variable is to designate a size, it better use `size_t` type
+and `z` marker therefore.
+
+* Note that integer marker is important in case when it's not obvious
+that particular field designates something for which number representation
+is only one of the possible ones - for example, when it designates
+a number of microseconds since epoch.
+
+3. A variable that designates time should have a marker that states
+that it represents time (`t`) or duration (`td`) followed by a
+specification whether it's a monotonic clock (`m`) or a general clock
+(`c`). For cases when various different units of time are used for
+particular domain, a suffix such as `_us` or `_tk` may be required
+to designate it, in order to prevent mistakes with mixing incompatible
+units.
+
+4. Boolean type: `b` marker declares that the field represents only
+the on/off character of the designated value.
+
+5. The `p` marker designates a pointer. The pointer is usually for
+a bigger object and that one needs no futher markers. Note that this
+is only when you intend to keep only a single object here, see also
+p. 10.
+
+6. The `s` marker marks a variable of type `std::string` (not a
+bare array of characters).
+
+7. The `d` marker designates the `double` (floating-point) type.
+The `float` type is never used as it's completely useless.
+
+8. The `cb` marker designates a callback (pointer to function or
+some more elaborate wrapper for it).
+
+9. The `a` and `ca` markers define a raw array (note: not any advanced C++
+container). This marker is **independent** of the real type used to implement
+it (note: `p` marker just because it's a pointer type, is wrong, if the field
+actually designates an array). The `ca` marker is used in a special case when
+the field holding it is of pointer type and the array is to be dynamically
+allocated, but the size of the array doesn't change during the whole lifetime
+of the object containing it. In all other cases it should be `a`.
+
+10. The mutexes and condition variables must contain the words
+`Lock` and `Cond` respectively, usually at the end. Usually they
+have an empty marker, just like objects.
+
 
 
 EXPLANATIONS:
