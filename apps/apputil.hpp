@@ -227,10 +227,19 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 
 struct OptionScheme
 {
-    const OptionName& id;
+    const OptionName* pid;
     enum Args { ARG_NONE, ARG_ONE, ARG_VAR } type;
 
     OptionScheme(const OptionScheme&) = default;
+	OptionScheme(OptionScheme&& src)
+		: pid(src.pid)
+		, type(src.type)
+	{
+	}
+
+    OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
+
+	const std::set<std::string>& names() { return pid->names; }
 };
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
