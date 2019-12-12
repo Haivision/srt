@@ -519,7 +519,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
    #else
       DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
       int addrsize = m_iSockAddrSize;
-      int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr, addrsize, NULL, NULL);
+      int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, &addr, addrsize, NULL, NULL);
       res = (0 == res) ? size : -1;
    #endif
 
@@ -630,9 +630,9 @@ EReadStatus CChannel::recvfrom(ref_t<sockaddr_any> r_addr, CPacket& packet) cons
     if (select_ret > 0)     // the total number of socket handles that are ready
     {
         DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
-        int addrsize = m_iSockAddrSize;
+        int addrsize = r_addr.get().size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
+        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, &addr, &addrsize, NULL, NULL);
         if (recv_ret == 0)
             recv_size = size;
     }
