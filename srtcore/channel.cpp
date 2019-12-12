@@ -633,7 +633,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
         DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
         int addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, (w_addr), &addrsize, NULL, NULL);
+        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, (&w_addr), &addrsize, NULL, NULL);
         if (recv_ret == 0)
             recv_size = size;
     }
