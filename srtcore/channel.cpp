@@ -518,7 +518,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
       const int res = ::sendmsg(m_iSocket, &mh, 0);
    #else
       DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
-      int addrsize = m_iSockAddrSize;
+      int addrsize = addr.size();
       int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, &addr, addrsize, NULL, NULL);
       res = (0 == res) ? size : -1;
    #endif
@@ -632,7 +632,7 @@ EReadStatus CChannel::recvfrom(ref_t<sockaddr_any> r_addr, CPacket& packet) cons
         DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
         int addrsize = r_addr.get().size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, &addr, &addrsize, NULL, NULL);
+        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, addr, &addrsize, NULL, NULL);
         if (recv_ret == 0)
             recv_size = size;
     }
