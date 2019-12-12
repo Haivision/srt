@@ -3197,7 +3197,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_ConnReq.m_iMSS            = m_iMSS;
     m_ConnReq.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
     m_ConnReq.m_iID             = m_SocketID;
-    CIPAddress::ntop(serv_addr, m_ConnReq.m_piPeerIP);
+    CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
     if (forced_isn == 0)
     {
@@ -4258,7 +4258,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     }
 
     CInfoBlock ib;
-    ib.m_iFamily = m_PeerAddr.family();
+    ib.m_iIPversion = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
@@ -5041,7 +5041,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPac
     // Since now you can use m_pCryptoControl
 
     CInfoBlock ib;
-    ib.m_iFamily = peer.family();
+    ib.m_iIPversion = peer.family();
     CInfoBlock::convert(peer, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
@@ -5428,7 +5428,7 @@ bool CUDT::close()
 
         // Store current connection information.
         CInfoBlock ib;
-        ib.m_iFamily = m_PeerAddr.family();
+        ib.m_iIPversion = m_PeerAddr.family();
         CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
         ib.m_iRTT       = m_iRTT;
         ib.m_iBandwidth = m_iBandwidth;

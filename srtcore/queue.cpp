@@ -1262,7 +1262,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         temp.m_pcData = new char[m_iPayloadSize];
         temp.setLength(m_iPayloadSize);
         THREAD_PAUSED();
-        EReadStatus rst = m_pChannel->recvfrom(r_addr, temp);
+        EReadStatus rst = m_pChannel->recvfrom((*r_addr), (temp));
         THREAD_RESUMED();
 #if ENABLE_LOGGING
         LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << PacketInfo(temp));
@@ -1278,7 +1278,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
-    EReadStatus rst = m_pChannel->recvfrom(r_addr, r_unit->m_Packet);
+    EReadStatus rst = m_pChannel->recvfrom((*r_addr), (r_unit->m_Packet));
     THREAD_RESUMED();
 
     if (rst == RST_OK)

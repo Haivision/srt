@@ -426,7 +426,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), hs, hspkt))
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, &peer, hs, hspkt))
            {
                error = 1;
                goto ERR_ROLLBACK;
@@ -447,11 +447,11 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    // copy address information of local node
     // Precisely, what happens here is:
     // - Get the IP address and port from the system database
-    ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(Ref(ns->m_SelfAddr));
+    ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
     // - OVERWRITE just the IP address itself by a value taken from piSelfIP
     // (the family is used exactly as the one taken from what has been returned
     // by getsockaddr)
-    CIPAddress::pton(Ref(ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+    CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
    // protect the m_Sockets structure.
    CGuard::enterCS(m_ControlLock);
@@ -599,7 +599,7 @@ int CUDTUnited::bind(const SRTSOCKET u, const sockaddr_any& name)
    s->m_Status = SRTS_OPENED;
 
    // copy address information of local node
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(Ref(s->m_SelfAddr));
+   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
 
    return 0;
 }
@@ -632,7 +632,7 @@ int CUDTUnited::bind(SRTSOCKET u, UDPSOCKET udpsock)
    s->m_Status = SRTS_OPENED;
 
    // copy address information of local node
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(Ref(s->m_SelfAddr));
+   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
 
    return 0;
 }
@@ -1728,7 +1728,7 @@ void CUDTUnited::updateMux(
    }
 
    sockaddr_any sa;
-   m.m_pChannel->getSockAddr(Ref(sa));
+   m.m_pChannel->getSockAddr((sa));
    m.m_iPort = sa.hport();
 
    m.m_pTimer = new CTimer;
