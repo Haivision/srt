@@ -159,6 +159,7 @@ modified by
 //      For any single loss or consectutive loss less than 2 packets, use
 //      the original sequence numbers in the field.
 
+#include "platform_sys.h"
 
 #include <cstring>
 #include "packet.h"
@@ -326,6 +327,42 @@ void CPacket::pack(UDTMessageType pkttype, const void* lparam, void* rparam, int
       break;
    }
 }
+
+void CPacket::toNL()
+{
+    // XXX USE HtoNLA!
+    if (isControl())
+    {
+        for (ptrdiff_t i = 0, n = getLength() / 4; i < n; ++i)
+            *((uint32_t*)m_pcData + i) = htonl(*((uint32_t*)m_pcData + i));
+    }
+
+    // convert packet header into network order
+    uint32_t* p = m_nHeader;
+    for (int j = 0; j < 4; ++j)
+    {
+        *p = htonl(*p);
+        ++p;
+    }
+}
+
+void CPacket::toHL()
+{
+    // convert back into local host order
+    uint32_t* p = m_nHeader;
+    for (int k = 0; k < 4; ++k)
+    {
+        *p = ntohl(*p);
+        ++p;
+    }
+
+    if (isControl())
+    {
+        for (ptrdiff_t l = 0, n = getLength() / 4; l < n; ++l)
+            *((uint32_t*) m_pcData + l) = ntohl(*((uint32_t*) m_pcData + l));
+    }
+}
+
 
 IOVector* CPacket::getPacketVector()
 {

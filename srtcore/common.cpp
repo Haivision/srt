@@ -50,25 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-
-#ifndef _WIN32
-   #include <cstring>
-   #include <cerrno>
-   #include <unistd.h>
-   #if __APPLE__
-      #include "TargetConditionals.h"
-   #endif
-   #if defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-      #include <mach/mach_time.h>
-   #endif
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <win/wintime.h>
-#ifndef __MINGW__
-   #include <intrin.h>
-#endif
-#endif
+#define SRT_IMPORT_TIME 1
+#include "platform_sys.h"
 
 #include <string>
 #include <sstream>

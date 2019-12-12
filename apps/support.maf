@@ -8,6 +8,7 @@
 # take selectively whichever parts they need.
 
 SOURCES
+apputil.cpp
 logsupport.cpp
 socketoptions.cpp
 transmitmedia.cpp

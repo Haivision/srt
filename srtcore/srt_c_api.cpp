@@ -13,11 +13,10 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <iterator>
 #include <fstream>
-#if __APPLE__
-   #include "TargetConditionals.h"
-#endif
 #include "srt.h"
 #include "common.h"
 #include "core.h"
