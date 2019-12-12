@@ -226,7 +226,7 @@ private:
 private:
    CUDTSocket* locate(const SRTSOCKET u);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
-   void updateMux(CUDTSocket* s, const sockaddr_any& addr, const int* udp_sockets = NULL);
+   void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
@@ -263,15 +263,7 @@ private:
 // Debug support
 inline std::string SockaddrToString(const sockaddr_any& sadr)
 {
-    void* addr =
-        sadr.family() == AF_INET ?
-            (void*)&sadr.sin.sin_addr
-        : sadr.family() == AF_INET6 ?
-            (void*)&sadr.sin6.sin6_addr
-        : 0;
-    // (cast to (void*) is required because otherwise the 2-3 arguments
-    // of ?: operator would have different types, which isn't allowed in C++.
-    if ( !addr )
+    if (sadr.family() != AF_INET && sadr.family() != AF_INET6)
         return "unknown:0";
 
     std::ostringstream output;

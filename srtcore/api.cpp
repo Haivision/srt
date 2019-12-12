@@ -1630,7 +1630,7 @@ CUDTException* CUDTUnited::getError()
 
 
 void CUDTUnited::updateMux(
-   CUDTSocket* s, const sockaddr_any& addr, const int* udpsock /*[[nullable]]*/)
+   CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
    CGuard cg(m_ControlLock);
 
