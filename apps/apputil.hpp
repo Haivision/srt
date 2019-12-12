@@ -229,6 +229,9 @@ struct OptionScheme
 {
     const OptionName& id;
     enum Args { ARG_NONE, ARG_ONE, ARG_VAR } type;
+
+    OptionScheme(const OptionScheme&) = default;
+    OptionScheme(OptionScheme&&) = default;
 };
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
