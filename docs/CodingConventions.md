@@ -125,20 +125,30 @@ this is usually due to spaces around operators:
 int a = numberRows() * (1 + col); // <- not for functions, but expr
 ```
 
-A space is required before open parantheses in one case: when passing
-parameters to a local variable constructor:
+A space is required before open parantheses in the following cases:
+
+1. When passing parameters to a local variable constructor:
 
 ```
 // space here ----\
 Condition cc_write (cg_write);    // <- variable construction
 ```
-
 Note that this doesn't concern a pure constructor call - this is allowed to
 look exactly like a function call:
 
 ```
 // no space here-\
 Acquire(Condition(cg_write));     // <- function call with constructor-call
+```
+
+2. When a parenthesis is a part of a keyword-based statement:
+
+```
+// space here \
+            if (good) ...
+         while (stillGood()) ...
+           for (int i = 0; i < 10; ++i) ...
+        sizeof (int)
 ```
 
 Symbols around which spaces are never used are:
