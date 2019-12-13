@@ -46,6 +46,7 @@ set cmake_options {
     enable-inet-pton "Set to OFF to prevent usage of inet_pton when building against modern SDKs (default: ON)"
     enable-code-coverage "Enable code coverage reporting (default: OFF)"
     enable-monotonic-clock "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/ (default: OFF)"
+    enable-pktinfo "Should pktinfo reading and using be enabled (POSIX only) (default: OFF)"
     enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
     enable-relative-libpath "Should applications contain relative library paths, like ../lib (default: OFF)"
     enable-shared "Should libsrt be built as a shared library (default: ON)"

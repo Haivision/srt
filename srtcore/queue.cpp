@@ -295,7 +295,7 @@ void CSndUList::update(const CUDT *u, EReschedule reschedule)
     insert_(1, u);
 }
 
-int CSndUList::pop(sockaddr *&addr, CPacket &pkt)
+int CSndUList::pop(ref_t<sockaddr*> r_addr, ref_t<CPacket> r_pkt, ref_t<sockaddr_any> r_src)
 {
     CGuard listguard(m_ListLock);
 
@@ -323,10 +323,10 @@ int CSndUList::pop(sockaddr *&addr, CPacket &pkt)
         return -1;
 
     // pack a packet from the socket
-    if (u->packData(pkt, ts) <= 0)
+    if (u->packData(r_pkt, Ref(ts), r_src) <= 0)
         return -1;
 
-    addr = u->m_pPeerAddr;
+    *r_addr = u->m_pPeerAddr;
 
     // insert a new entry, ts is the next processing time
     if (ts > 0)
@@ -595,7 +595,8 @@ void *CSndQueue::worker(void *param)
         // it is time to send the next pkt
         sockaddr *addr;
         CPacket   pkt;
-        if (self->m_pSndUList->pop(addr, pkt) < 0)
+        sockaddr_any source_addr;
+        if (self->m_pSndUList->pop(Ref(addr), Ref(pkt), Ref(source_addr)) < 0)
         {
             continue;
 
@@ -613,7 +614,7 @@ void *CSndQueue::worker(void *param)
             HLOGC(dlog.Debug,
                   log << self->CONID() << "chn:SENDING SIZE " << pkt.getLength() << " SEQ: " << pkt.getSeqNo());
         }
-        self->m_pChannel->sendto(addr, pkt);
+        self->m_pChannel->sendto(addr, pkt, source_addr);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
         self->m_WorkerStats.lSendTo++;
@@ -624,10 +625,10 @@ void *CSndQueue::worker(void *param)
     return NULL;
 }
 
-int CSndQueue::sendto(const sockaddr *addr, CPacket &packet)
+int CSndQueue::sendto(const sockaddr* addr, CPacket& packet, const sockaddr_any& src)
 {
     // send out the packet immediately (high priority), this is a control packet
-    m_pChannel->sendto(addr, packet);
+    m_pChannel->sendto(addr, packet, src);
     return (int)packet.getLength();
 }
 
@@ -1577,6 +1578,8 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
     memcpy(packet.m_nHeader, newpkt->m_nHeader, CPacket::HDR_SIZE);
     memcpy(packet.m_pcData, newpkt->m_pcData, newpkt->getLength());
     packet.setLength(newpkt->getLength());
+
+   packet.m_DestAddr = newpkt->m_DestAddr;
 
     delete[] newpkt->m_pcData;
     delete newpkt;

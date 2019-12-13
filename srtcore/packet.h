@@ -334,6 +334,8 @@ public:
 
    uint32_t getMsgTimeStamp() const;
 
+   sockaddr_any udpDestAddr() const { return m_DestAddr; }
+
 #ifdef SRT_DEBUG_TSBPD_WRAP //Receiver
    static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; //27 bit fast wraparound for tests (~2m15s)
 #else
@@ -380,6 +382,7 @@ protected:
 
    int32_t __pad;
    bool m_data_owned;
+   sockaddr_any m_DestAddr;
 
 protected:
    CPacket& operator=(const CPacket&);

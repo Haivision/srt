@@ -3266,7 +3266,11 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
      */
     m_llLastReqTime = now;
     m_bConnecting   = true;
-    m_pSndQueue->sendto(serv_addr, reqpkt);
+
+    // At this point m_SourceAddr is probably default-any, but this function
+    // now requires that the address be specified here because there will be
+    // no possibility to do it at any next stage of sending.
+    m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
 
     //
     ///
@@ -3295,6 +3299,9 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
 
     CUDTException  e;
     EConnectStatus cst = CONN_CONTINUE;
+    // This is a temporary place to store the DESTINATION IP from the incoming packet.
+    // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
+    sockaddr_any use_source_adr(m_iIPversion); // use BindAddress.family() after refactoring
 
     while (!m_bClosing)
     {
@@ -3329,7 +3336,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
 
             m_llLastReqTime     = now;
             reqpkt.m_iTimeStamp = int32_t(now - m_stats.startTime);
-            m_pSndQueue->sendto(serv_addr, reqpkt);
+            m_pSndQueue->sendto(serv_addr, reqpkt, use_source_adr);
         }
         else
         {
@@ -3340,6 +3347,8 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
         response.setLength(m_iMaxSRTPayloadSize);
         if (m_pRcvQueue->recvfrom(m_SocketID, Ref(response)) > 0)
         {
+            use_source_adr = response.udpDestAddr();
+
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
             cst = processConnectResponse(response, &e, true /*synchro*/);
 
@@ -3485,7 +3494,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
         throw e;
     }
 
-    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded");
+    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded. sourceIP=" << SockaddrToString(&m_SourceAddr));
 
     // Parameters at the end.
     HLOGC(mglog.Debug,
@@ -3598,7 +3607,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus     rst,
 
     HLOGC(mglog.Debug, log << "processAsyncConnectRequest: sending request packet, setting REQ-TIME HIGH.");
     m_llLastReqTime = CTimer::getTime();
-    m_pSndQueue->sendto(serv_addr, request);
+    m_pSndQueue->sendto(serv_addr, request, m_SourceAddr);
     return status;
 }
 
@@ -3702,7 +3711,7 @@ EConnectStatus CUDT::processRendezvous(
     m_ConnReq.m_extension = needs_extension;
 
     // This must be done before prepareConnectionObjects().
-    applyResponseSettings();
+    applyResponseSettings(response);
 
     // This must be done before interpreting and creating HSv5 extensions.
     if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
@@ -3949,8 +3958,8 @@ EConnectStatus CUDT::processRendezvous(
         HLOGC(mglog.Debug,
               log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH ("
                   << now << ").");
-
-        m_pSndQueue->sendto(serv_addr, rpkt);
+                  
+        m_pSndQueue->sendto(serv_addr, rpkt, m_SourceAddr);
 
         return CONN_ACCEPT;
     }
@@ -4049,6 +4058,11 @@ EConnectStatus CUDT::processConnectResponse(const CPacket &response, CUDTExcepti
         }
         return CONN_CONFUSED;
     }
+
+   if (m_bRendezvous)
+   {
+       m_SourceAddr = response.udpDestAddr();
+   }
 
     if (m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1)
     {
@@ -4200,7 +4214,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket &response, CUDTExcepti
     return postConnect(response, false, eout, synchro);
 }
 
-void CUDT::applyResponseSettings()
+void CUDT::applyResponseSettings(const CPacket& hspkt)
 {
     // Re-configure according to the negotiated values.
     m_iMSS               = m_ConnRes.m_iMSS;
@@ -4218,11 +4232,13 @@ void CUDT::applyResponseSettings()
     m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID           = m_ConnRes.m_iID;
     memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
+    m_SourceAddr = hspkt.udpDestAddr();
 
     HLOGC(mglog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
               << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
-              << " peerID=" << m_ConnRes.m_iID);
+              << " peerID=" << m_ConnRes.m_iID
+              << " sourceIP=" << SockaddrToString(&m_SourceAddr));
 }
 
 EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro)
@@ -4245,7 +4261,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         //
         // Currently just this function must be called always BEFORE prepareConnectionObjects
         // everywhere except acceptAndRespond().
-        applyResponseSettings();
+        applyResponseSettings(response);
 
         // This will actually be done also in rendezvous HSv4,
         // however in this case the HSREQ extension will not be attached,
@@ -5118,6 +5134,9 @@ void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket 
     // Set target socket ID to the value from received handshake's source ID.
     response.m_iID = m_PeerID;
 
+   // We can safely assign it here stating that this has passed the cookie test.
+   m_SourceAddr = hspkt.udpDestAddr();
+
 #if ENABLE_HEAVY_LOGGING
     {
         // To make sure what REALLY is being sent, parse back the handshake
@@ -5127,16 +5146,16 @@ void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket 
         HLOGC(mglog.Debug,
               log << CONID() << "acceptAndRespond: sending HS to peer, reqtype=" << RequestTypeStr(debughs.m_iReqType)
                   << " version=" << debughs.m_iVersion << " (connreq:" << RequestTypeStr(m_ConnReq.m_iReqType)
-                  << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID);
+                  << "), target_socket=" << response.m_iID << ", my_socket=" << debughs.m_iID
+                  << " sourceIP=" << SockaddrToString(&m_SourceAddr));
     }
 #endif
-
     // NOTE: BLOCK THIS instruction in order to cause the final
     // handshake to be missed and cause the problem solved in PR #417.
     // When missed this message, the caller should not accept packets
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
-    m_pSndQueue->sendto(peer, response);
+    m_pSndQueue->sendto(peer, response, m_SourceAddr);
 }
 
 // This function is required to be called when a caller receives an INDUCTION
@@ -5328,7 +5347,7 @@ void CUDT::addressAndSend(CPacket &pkt)
     pkt.m_iID        = m_PeerID;
     pkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
 
-    m_pSndQueue->sendto(m_pPeerAddr, pkt);
+    m_pSndQueue->sendto(m_pPeerAddr, pkt, m_SourceAddr);
 }
 
 bool CUDT::close()
@@ -6922,7 +6941,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
         {
             ctrlpkt.pack(pkttype, NULL, &ack, size);
             ctrlpkt.m_iID = m_PeerID;
-            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
             DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
             break;
         }
@@ -7053,7 +7072,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
 
             ctrlpkt.m_iID        = m_PeerID;
             ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-            nbsent               = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
             DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
             m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
@@ -7070,7 +7089,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -7085,7 +7104,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
 
             ctrlpkt.m_iID = m_PeerID;
-            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
             CGuard::enterCS(m_StatsLock);
             ++m_stats.sentNAK;
@@ -7106,7 +7125,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             {
                 ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
                 ctrlpkt.m_iID = m_PeerID;
-                nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+                nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
                 CGuard::enterCS(m_StatsLock);
                 ++m_stats.sentNAK;
@@ -7135,7 +7154,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_CGWARNING: // 100 - Congestion Warning
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         CTimer::rdtsc(m_ullLastWarningTime);
 
@@ -7144,35 +7163,35 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_KEEPALIVE: // 001 - Keep-alive
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
         ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
         ctrlpkt.pack(pkttype, lparam, rparam, 8);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_PEERERROR: // 1000 - acknowledge the peer side a special error
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -7695,7 +7714,7 @@ void CUDT::processCtrl(CPacket &ctrlpkt)
             {
                 response.m_iID        = m_PeerID;
                 response.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-                int nbsent            = m_pSndQueue->sendto(m_pPeerAddr, response);
+                int nbsent = m_pSndQueue->sendto(m_pPeerAddr, response, m_SourceAddr);
                 if (nbsent)
                 {
                     uint64_t currtime_tk;
@@ -7938,8 +7957,10 @@ int CUDT::packLostData(CPacket &packet, uint64_t &origintime)
     return 0;
 }
 
-int CUDT::packData(CPacket &packet, uint64_t &ts_tk)
+int CUDT::packData(ref_t<CPacket> r_packet, ref_t<uint64_t> r_ts_tk, ref_t<sockaddr_any> r_src_adr)
 {
+   CPacket& packet = *r_packet;
+   uint64_t& ts_tk = *r_ts_tk;
     int      payload           = 0;
     bool     probe             = false;
     uint64_t origintime        = 0;
@@ -8161,6 +8182,9 @@ int CUDT::packData(CPacket &packet, uint64_t &ts_tk)
     }
 
     m_ullTargetTime_tk = ts_tk;
+
+   HLOGC(mglog.Debug, log << "packData: Setting source address: " << SockaddrToString(&m_SourceAddr));
+   *r_src_adr = m_SourceAddr;
 
     return payload;
 }
@@ -9069,6 +9093,14 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr *addr, CPacket &pac
 
     HLOGC(mglog.Debug, log << "processConnectRequest: new cookie: " << hex << cookie_val);
 
+   // Remember and use the incoming destination address here
+   // and use it as a source address when responding. It's not possible
+   // to record this address yet because this happens still in the frames
+   // of the listener socket. Only when processing switches to the newly
+   // spawned accepted socket can the address be recorded in its
+   // m_SourceAddr field.
+   sockaddr_any use_source_addr = packet.udpDestAddr();
+
     // REQUEST:INDUCTION.
     // Set a cookie, a target ID, and send back the same as
     // RESPONSE:INDUCTION.
@@ -9109,7 +9141,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr *addr, CPacket &pac
         size_t size = packet.getLength();
         hs.store_to(packet.m_pcData, Ref(size));
         packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-        m_pSndQueue->sendto(addr, packet);
+        m_pSndQueue->sendto(addr, packet, use_source_addr);
         return SRT_REJ_UNKNOWN; // EXCEPTION: this is a "no-error" code.
     }
 
@@ -9188,7 +9220,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr *addr, CPacket &pac
         hs.store_to(packet.m_pcData, Ref(size));
         packet.m_iID        = id;
         packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-        m_pSndQueue->sendto(addr, packet);
+        m_pSndQueue->sendto(addr, packet, use_source_addr);
     }
     else
     {
@@ -9244,7 +9276,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr *addr, CPacket &pac
             hs.store_to(packet.m_pcData, Ref(size));
             packet.m_iID        = id;
             packet.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-            m_pSndQueue->sendto(addr, packet);
+            m_pSndQueue->sendto(addr, packet, use_source_addr);
         }
         else
         {
