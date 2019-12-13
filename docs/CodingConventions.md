@@ -306,7 +306,7 @@ variant case with a possibility to pass NULL there. If the symbol through
 which the object is being passed is never intended to be NULL, always
 use reference.
 
-This convention should not be used when passing an object that it **not**
+This convention should not be used when passing an object that is **not**
 to be modified inside the call. There could be also cases when the passed
 object is not intended to be written, but the rule of having const there was
 needed to be broken. In that case also the rules of the prefix and extra
@@ -335,7 +335,7 @@ as described below.
 
 # Fields' naming convention
 
-This code makes a specific use of the Hungarian Notation.
+This convention uses a special form of the Hungarian Notation.
 
 What is important in it, however, is to make it clear about the logical
 meaning of what the field defines, not exactly their declared type.
@@ -347,18 +347,21 @@ when the meaning can be ambiguous or simply unobvious. If the name of the
 variable suggests something that can only be implemented using just one kind of
 type, the marker can be skipped. However in most cases it isn't clear enough
 from the name, what type was used to implement it, or more in particular, what
-characteristics this function has because of both the type used to implement it
-and the way how it is being used in the code. The goal of this rule is to help
-prevent misuse of a field due to used unit, relationship character,
+their characteristics of use are because of both the type used to implement
+it and the way how it is being used in the code. The goal of this rule is to
+help prevent misuse of a field due to used unit, relationship character,
 compatibility and needed translations to a different unit or character.
 
 Some detailed contentions:
 
-0. The general syntax for the field name is `[pfx][mk][name]`:
+0. The general syntax for the field name is `[pfx][mk][mkx][name]`:
 
 * pfx: Field prefix: `m_` for members, `s_` for static, `g_` for global
 * mk: The marker (can be also empty)
+* mkx: Optional extra marker for specific cases:
+   * for fields bound to socket options: `OPT_`
 * name: field name using `PascalCase`
+* Optional sufix `_[unit]`: designates a unit (in specific cases)
 
 1. Size: `m_zNumberElements`: `z` marker defines that the variable
 designates a size of a container or count of some finite elements
@@ -388,12 +391,16 @@ is only one of the possible ones - for example, when it designates
 a number of microseconds since epoch.
 
 3. A variable that designates time should have a marker that states
-that it represents time (`t`) or duration (`td`) followed by a
-specification whether it's a monotonic clock (`m`) or a general clock
-(`c`). For cases when various different units of time are used for
-particular domain, a suffix such as `_us` or `_tk` may be required
-to designate it, in order to prevent mistakes with mixing incompatible
-units.
+that it represents time or duration should have the following
+markers:
+
+* `ts` for steady clock (monotonic)
+* `tc` for system clock
+* `td` for duration
+
+For cases when various different units of time are used for particular domain,
+a suffix such as `_us` or `_tk` may be required to designate it, in order to
+prevent mistakes with mixing incompatible units.
 
 4. Boolean type: `b` marker declares that the field represents only
 the on/off character of the designated value.
@@ -432,7 +439,8 @@ have an empty marker, just like objects.
 
 This is a technique that had to be advantegous in mistake prevention,
 however in the end it was proven to cause more harm and trouble. This
-is further discussed [here](https://sektorvanskijlen.wordpress.com/2019/05/16/conditional-inversion-very-harmful-myth/)
+is further discussed
+[here](https://sektorvanskijlen.wordpress.com/2019/05/16/conditional-inversion-very-harmful-myth/).
 
 
 2. REFERENCE PASSING
