@@ -1,5 +1,4 @@
-PREFACE
-=======
+# PREFACE
 
 This document describes a set of conventions that need to be honored during
 development of this project. Note that not necessarily the whole code
@@ -23,8 +22,7 @@ the above principles better. If it doesn't contribute to the code this way, the
 convention shall be followed.
 
 
-The language standard
-=====================
+# The language standard
 
 The C language, where it is applicable, is expected to be supported as C90
 standard (ISO/IEC 9899:1990, AKA ANSI C). This concerns both the subprojects
@@ -40,15 +38,13 @@ applications, as well as C++ examples, should use C++11 standard (ISO/IEC
 14882:2011 - this may change to a higher standard in future).
 
 
-Technical syntax variants
-=========================
+# Technical syntax variants
 
 Detailed configuration for formatting should be provided as a configuration for
 the `clang-format` tool, although there are several things worth highlighting:
 
 
-1. Braces (curly brackets)
---------------------------
+## 1. Braces (curly brackets)
 
 The convention used in the code in most cases is that the open brace should
 start in the new line, indented to the exact column as the keyword starting the
@@ -63,8 +59,7 @@ Exceptions:
     * are allowed only with initializers and function body (including lambda)
 
 
-2. Symbolic type modifiers
---------------------------
+## 2. Symbolic type modifiers
 
 The pointer (`*`) and reference (`&`) modifiers placed after the type should
 immediately follow the type name without a space, and they themselves should be
@@ -77,8 +72,7 @@ int fn(const char* name, int* len);
 int f2(int ra[], size_t& size);
 ```
 
-3. Binding multiple expressions
--------------------------------
+## 3. Binding multiple expressions
 
 This concerns two things:
 
@@ -115,8 +109,7 @@ Note that modifying and reading the same object is considered undefined
 behavior in C++ anyway.
 
 
-4. Spaces around symbol characters
-----------------------------------
+## 4. Spaces around symbol characters
 
 Most of the binary operators require spaces around themselves (note:
 not unary operators using the same symbol characters).
@@ -156,8 +149,7 @@ Symbols around which spaces are never used are:
 
 
 
-Conditionals
-============
+# Conditionals
 
 There has been previously used a convention for conditional inversion
 (AKA *Yoda conditions*) and some examples of it can still be found in
@@ -223,8 +215,7 @@ exactly condition the following block is executed, less on what exactly
 is passed to the function.
 
 
-Constness
-=========
+# Constness
 
 The `const` modifier should be used everywhere where applicable, that is:
 
@@ -249,8 +240,7 @@ shall be declared `const`.
 is not intended to be modified, it must be a `const` pointer or reference.
 
 
-Passing parameters by pointer or reference
-==========================================
+# Passing parameters by pointer or reference
 
 Reference parameters in functions use a very specific convention, a
 further explanation is provided below in (EXPLANATIONS (2)).
@@ -314,8 +304,7 @@ needed to be broken. In that case also the rules of the prefix and extra
 parentheses do not apply.
 
 
-Naming convention
-=================
+# Naming convention
 
 Naming convention is the following:
 
@@ -335,8 +324,7 @@ local variables) use `SCREAMING_SNAKE_CASE`.
 as described below.
 
 
-Fields' naming convention
-=========================
+# Fields' naming convention
 
 This code makes a specific use of the Hungarian Notation.
 
@@ -429,8 +417,7 @@ have an empty marker, just like objects.
 
 
 
-EXPLANATIONS:
-=============
+# EXPLANATIONS:
 
 1. CONDITIONAL INVERSION (aka *Yoda conditions*)
 
