@@ -1,5 +1,5 @@
 SRT Live Transmit
----------
+-----------------
 
 The *srt-live-transmit* tool is a universal data transport tool, which's
 intention is to transport data between SRT and other medium.
@@ -62,10 +62,30 @@ and you should see bars and tone right away.
 If you're having trouble, make sure this works, then add complexity one step at a time (multicast, push vs listen, etc)
 
 
+General medium specification
+----------------------------
+
+The mediums are specified as the standard URI format:
+
+```
+    SCHEME://HOST:PORT?PARAM1=VALUE&PARAM2=VALUE...
+```
+
+This application handles the following schemes:
+
+* `file` - for file or standard input and output
+* `udp` - UDP output (unicast and multicast)
+* `srt` - SRT connection
+
+(Note that this application doesn't support file as a medium, but this
+can be handled by other applications from this project).
+
+
 Medium: FILE (including standard process pipes)
 -----------------------------------------------
 
-**NB!** File mode, except `file://con` is supported in *srt-file-transmit* tool!
+**NB!** File mode, except `file://con`, is not supported in the
+*srt-file-transmit* tool!
 
 The general syntax is: `file:///global/path/to/the/file`. No
 parameters in the URL are extracted. There's one (non-standard!)
@@ -80,29 +100,77 @@ Be careful with options being specified together with having standard
 output as output URI - some of them are not allowed as the extra output
 controlled by options might interfere with the data output.
 
+
 Medium: UDP
 -----------
 
 UDP can only be used in listening mode for reading, and in calling mode
-for writing. Therefore, when UDP is your \<input-uri\>, you usually
-specify the local port, e.g.:
+for writing. The multicast specification is also possible. The specification
+and meaning of the fields in the URI depend on the mode.
 
-    udp://:5555
+The **PORT** part is always mandatory and it designates either the port number
+for the target host or the port number to be bound to read from.
 
-UDP handles two parameters: **iptos** and **ttl**.
-**iptos** will set the value of Type-Of-Service (TOS) field for outgoing packets via IP_TOS socket option.
-**ttl** parameter will set time-to-live value for outgoing packets via IP_TTL or IP_MULTICAST_TTL socket options.
-See IP protocol documentation for details.
+For sending to unicast:
 
-For a single host IP address (unicast):
-* **reading**: The *host* part or **adapter** parameter can specify the adapter. The *port* part is mandatory.
-* **writing**: Both *host* and *port* are mandatory. The **adapter** parameter is of no use.
+```
+    udp://TARGET:PORT?parameters...
+```
 
-If you use multicast IP address:
-* For reading, need extra `@` character before the *host* part so that the application subscribes to the multicast group before reading
-* The *host* part designates the multicast group (also as a resolvable name)
-* The *port* designates the port in the multicast group
-* The **adapter** parameter can be used to specify the adapter through which the given multicast group can be reached
+* The **HOST** part (here: TARGET) is mandatory and designates the target host
+
+* The **iptos** parameter designates the Type-Of-Service (TOS) field for
+outgoing packets via `IP_TOS` socket option.
+
+* The **ttl** parameter will set time-to-live value for outgoing packets via
+`IP_TTL` socket options.
+
+For receiving from unicast:
+
+```
+    udp://LOCALADDR:PORT?parameters...
+```
+
+
+* The **HOST** part (here: LOCALADDR) designates the local interface to bind.
+It's optional (can be empty) and defaults to 0.0.0.0 (`INADDR_ANY`).
+
+
+For multicast the scheme is:
+
+```
+    udp://GROUPADDR:PORT?parameters...
+```
+
+* The **HOST** part (here: GROUPADDR) is mandatory always and designates the
+target multicast group. The `@` character is handled in this case, but it's not
+necessary, as the IGMP addresses are recognized by their mask.
+
+
+For sending to a multicast group:
+
+* The **iptos** parameter designates the Type-Of-Service (TOS) field for
+outgoing packets via `IP_TOS` socket option.
+
+* The **ttl** parameter will set time-to-live value for outgoing packets via
+`IP_MULTICAST_TTL` socket options.
+
+* The **adapter** parameter can be used to specify the adapter to be set
+through `IP_MULTICAST_IF` option to override the default device used for
+sending
+
+
+For receiving from a multicast group:
+
+* The **adapter** parameter can be used to specify the adapter through which
+the given multicast group can be reached (it's used to bind the socket)
+
+* The **source** parameter enforces the use of `IP_ADD_SOURCE_MEMBERSHIP`
+instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
+
+Explanations for the symbols and terms used above can be found in POSIX
+manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
+
 
 Medium: SRT
 -----------
@@ -110,25 +178,37 @@ Medium: SRT
 Most important about SRT is that it can be either input or output and in
 both these cases it can work in listener, caller and rendezvous mode. SRT
 also handles several parameters special way, in addition to standard SRT
-options that can be set through the parameters:
-
-    srt://HOST:PORT?PARAM1=VALUE&PARAM2=VALUE...
+options that can be set through the parameters.
 
 SRT can be connected using one of three connection modes:
 
-- **caller**: the "agent" (this application) sends the connection request to the peer, which must be **listener**, and this way it initiates the connection.
-- **listener**: the "agent" waits for being contacted by any peer **caller** (note that a listener can accept multiple callers, but *srt-live-transmit* does not use this possibility - after the first connected one, it no longer accepts new connections).
-- **rendezvous**: A one-to-one only connection where both parties are equivalent and both connect to one another simultaneously. Whoever happened to start first (or succeeded to punch through the firewall) is meant to have initiated the connection.
+- **caller**: the "agent" (this application) sends the connection request to
+  the peer, which must be **listener**, and this way it initiates the
+connection.
 
-This mode can be specified explicitly using the **mode** parameter. When it's not specified, then it is "deduced" the following way:
+- **listener**: the "agent" waits to be contacted by any peer **caller**.
+Note that a listener can accept multiple callers, but *srt-live-transmit*
+does not use this ability; after the first connection, it no longer
+accepts new connections.
+
+- **rendezvous**: A one-to-one only connection where both parties are
+  equivalent and both connect to one another simultaneously. Whoever happened
+to start first (or succeeded to punch through the firewall) is meant to have
+initiated the connection.
+
+This mode can be specified explicitly using the **mode** parameter. When it's
+not specified, then it is "deduced" the following way:
 
 - `srt://:1234` - the *port* is specified (1234), but *host* is empty. This assumes **listener** mode.
 - `srt://remote.host.com:1234` - both *host* ***and*** *port* are specified. This assumes **caller** mode.
 
 When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
 
-* For caller, it's always the destination host address. If this is empty, it is resolved to `0.0.0.0`, which usually should mean connecting to the local host
-* For listener, it defines the IP address of the local device on which the socket should listen, e.g.:
+* For caller, it's always the destination host address. If this is empty, it is
+resolved to `0.0.0.0`, which usually should mean connecting to the local host
+
+* For listener, it defines the IP address of the local device on which the
+socket should listen, e.g.:
 
 ```
 srt://10.10.10.100:5001?mode=listener
