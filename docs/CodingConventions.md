@@ -120,8 +120,7 @@ placed on the external parts of the parentheses of expressions, but
 this is usually due to spaces around operators:
 
 ```
-// spaces here ----\-\-\--\
-// no spaces here-\ \ \ \  \
+// spaces only here-|-|--|-|
 int a = numberRows() * (1 + col); // <- not for functions, but expr
 ```
 
