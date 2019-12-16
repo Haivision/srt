@@ -110,17 +110,17 @@ struct LogConfig
     pthread_mutex_t mutex;
     int flags;
 
-    LogConfig(const fa_bitset_t& initial_fa):
-        enabled_fa(initial_fa),
-        max_level(LogLevel::warning),
-        log_stream(&std::cerr)
+    LogConfig(const fa_bitset_t& efa,
+            LogLevel::type l = LogLevel::warning,
+            std::ostream* ls = 0)
+        : enabled_fa(efa)
+        , max_level(l)
+        , log_stream(ls)
+        , loghandler_fn()
+        , loghandler_opaque()
+        , flags()
     {
-        pthread_mutex_init(&mutex, 0);
-    }
-    LogConfig(const fa_bitset_t& efa, LogLevel::type l, std::ostream* ls):
-        enabled_fa(efa), max_level(l), log_stream(ls)
-    {
-        pthread_mutex_init(&mutex, 0);
+        pthread_mutex_init(&mutex, NULL);
     }
 
     ~LogConfig()
