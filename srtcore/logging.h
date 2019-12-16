@@ -112,7 +112,7 @@ struct LogConfig
 
     LogConfig(const fa_bitset_t& efa,
             LogLevel::type l = LogLevel::warning,
-            std::ostream* ls = 0)
+            std::ostream* ls = &std::cerr)
         : enabled_fa(efa)
         , max_level(l)
         , log_stream(ls)
