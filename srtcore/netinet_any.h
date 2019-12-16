@@ -273,7 +273,11 @@ struct sockaddr_any
     {
         if (sa.sa_family == AF_INET)
             return sin.sin_addr.s_addr == INADDR_ANY;
-        return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
+
+        if (sa.sa_family == AF_INET)
+            return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
+
+        return false;
     }
 
     bool operator==(const sockaddr_any& other) const
