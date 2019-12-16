@@ -32,6 +32,7 @@ struct sockaddr_any
         sockaddr_in sin;
         sockaddr_in6 sin6;
         sockaddr sa;
+        sockaddr_storage storage; // largest part
     };
     socklen_t len;
 
@@ -43,9 +44,16 @@ struct sockaddr_any
     // Others make the same effect as unspecified.
     explicit sockaddr_any(int domain = AF_UNSPEC)
     {
-        // Default domain is "unspecified"
-        memset(this, 0, sizeof *this);
-        sa.sa_family = domain;
+        // Default domain is "unspecified", 0
+        // The intermediate variable required to clear out warning
+        // by specifying that "I know what I'm doing" by memset-clearing
+        // a nontrivial object.
+        void* object_begin = this;
+        memset(object_begin, 0, sizeof *this);
+
+        // Overriding family as required in the parameters
+        // and the size then accordingly.
+        sa.sa_family = domain == AF_INET || domain == AF_INET6 ? domain : AF_UNSPEC;
         len = size();
     }
 
@@ -104,11 +112,12 @@ struct sockaddr_any
         }
         else
         {
-            // Clear as a sign or error
-            memset(&sa, 0, sizeof *this);
             // Error fallback: no other families than IP are regarded.
-            sa.sa_family = AF_UNSPEC;
-            len = 0;
+            void* object_begin = this;
+
+            // This embraces setting sockaddr::sa_family = AF_UNSPEC
+            // and sockaddr_any::len = 0.
+            memset(object_begin, 0, sizeof *this);
         }
     }
 
