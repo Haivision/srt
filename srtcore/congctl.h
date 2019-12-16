@@ -79,6 +79,7 @@ public:
     // 1. The congctl is individual, so don't copy it. Set NULL.
     // 2. The selected name is copied so that it's configured correctly.
     SrtCongestion(const SrtCongestion& source): congctl(), selector(source.selector) {}
+    void operator=(const SrtCongestion& source) { congctl = 0; selector = source.selector; }
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
