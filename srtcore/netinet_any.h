@@ -32,7 +32,6 @@ struct sockaddr_any
         sockaddr_in sin;
         sockaddr_in6 sin6;
         sockaddr sa;
-        sockaddr_storage storage; // largest part
     };
     socklen_t len;
 
