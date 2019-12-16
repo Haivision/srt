@@ -140,33 +140,33 @@ struct sockaddr_any
     {
         switch (family)
         {
-        case AF_INET: return socklen_t(sizeof (sockaddr_in));
-        case AF_INET6: return socklen_t(sizeof (sockaddr_in6));
+        case AF_INET:
+            return socklen_t(sizeof (sockaddr_in));
 
-        default: return 0; // fallback
+        case AF_INET6:
+            return socklen_t(sizeof (sockaddr_in6));
+
+        default:
+            return 0; // fallback
         }
     }
 
     bool empty() const
     {
-        switch (sa.sa_family)
+        bool isempty = true;  // unspec-family address is always empty
+
+        if (sa.sa_family == AF_INET)
         {
-        case AF_INET:
-            return sin.sin_port == 0 && sin.sin_addr.s_addr == 0;
-
-        case AF_INET6:
-            if (sin6.sin6_port != 0)
-                return false;
-
-            // This length expression should result in 4, as
-            // the size of sin6_addr is 16.
-            for (size_t i = 0; i < (sizeof sin6.sin6_addr)/sizeof(int32_t); ++i)
-                if (((int32_t*)&sin6.sin6_addr)[i] != 0)
-                    return false;
-            return true;
+            isempty = (sin.sin_port == 0
+                    && sin.sin_addr.s_addr == 0);
         }
-
-        return true; // unspec-family address is always empty
+        else if (sa.sa_family == AF_INET6)
+        {
+            isempty = (sin6.sin6_port == 0
+                    && memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0);
+        }
+        // otherwise isempty stays with default false
+        return isempty;
     }
 
     socklen_t size() const
