@@ -12,7 +12,7 @@
 // This is a controversial thing, so temporarily blocking
 //#define SRT_ENABLE_SYSTEMBUFFER_TRACE
 
-
+#include "platform_sys.h"
 
 
 #ifdef SRT_ENABLE_SYSTEMBUFFER_TRACE
@@ -636,8 +636,16 @@ bool SrtCongestion::configure(CUDT* parent)
     return !!congctl;
 }
 
+void SrtCongestion::dispose()
+{
+    if (congctl)
+    {
+        delete congctl;
+        congctl = 0;
+    }
+}
+
 SrtCongestion::~SrtCongestion()
 {
-    delete congctl;
-    congctl = 0;
+    dispose();
 }

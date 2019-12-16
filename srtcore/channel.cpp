@@ -50,24 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef _WIN32
-   #if __APPLE__
-      #include "TargetConditionals.h"
-   #endif
-   #include <sys/socket.h>
-   #include <sys/ioctl.h>
-   #include <netdb.h>
-   #include <arpa/inet.h>
-   #include <unistd.h>
-   #include <fcntl.h>
-   #include <cstring>
-   #include <cstdio>
-   #include <cerrno>
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <mswsock.h>
-#endif
+#include "platform_sys.h"
 
 #include <iostream>
 #include <iomanip> // Logging 
@@ -382,7 +365,7 @@ void CChannel::setIpToS(int tos)
 
 int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     int res = ::ioctl(m_iSocket, type, &value);
     if ( res != -1 )
@@ -393,7 +376,7 @@ int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
 
 int CChannel::sockoptQuery(int SRT_ATR_UNUSED level, int SRT_ATR_UNUSED option) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     socklen_t len = sizeof (int);
     int res = ::getsockopt(m_iSocket, level, option, &value, &len);
@@ -504,20 +487,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
 #endif
 
    // convert control information into network order
-   // XXX USE HtoNLA!
-   if (packet.isControl())
-      for (ptrdiff_t i = 0, n = packet.getLength() / 4; i < n; ++i)
-         *((uint32_t *)packet.m_pcData + i) = htonl(*((uint32_t *)packet.m_pcData + i));
-
-   // convert packet header into network order
-   //for (int j = 0; j < 4; ++ j)
-   //   packet.m_nHeader[j] = htonl(packet.m_nHeader[j]);
-   uint32_t* p = packet.m_nHeader;
-   for (int j = 0; j < 4; ++ j)
-   {
-      *p = htonl(*p);
-      ++ p;
-   }
+   packet.toNL();
 
    #ifndef _WIN32
       msghdr mh;
@@ -529,7 +499,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       mh.msg_controllen = 0;
       mh.msg_flags = 0;
 
-      int res = ::sendmsg(m_iSocket, &mh, 0);
+      const int res = ::sendmsg(m_iSocket, &mh, 0);
    #else
       DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
       int addrsize = m_iSockAddrSize;
@@ -537,21 +507,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
       res = (0 == res) ? size : -1;
    #endif
 
-   // convert back into local host order
-   //for (int k = 0; k < 4; ++ k)
-   //   packet.m_nHeader[k] = ntohl(packet.m_nHeader[k]);
-   p = packet.m_nHeader;
-   for (int k = 0; k < 4; ++ k)
-   {
-      *p = ntohl(*p);
-       ++ p;
-   }
-
-   if (packet.isControl())
-   {
-      for (ptrdiff_t l = 0, n = packet.getLength() / 4; l < n; ++ l)
-         *((uint32_t *)packet.m_pcData + l) = ntohl(*((uint32_t *)packet.m_pcData + l));
-   }
+   packet.toHL();
 
    return res;
 }

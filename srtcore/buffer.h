@@ -240,11 +240,11 @@ public:
     // Currently just "unimplemented".
     std::string CONID() const { return ""; }
 
-
+   static const int DEFAULT_SIZE = 65536;
       /// Construct the buffer.
       /// @param [in] queue  CUnitQueue that actually holds the units (packets)
       /// @param [in] bufsize_pkts in units (packets)
-   CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = 65536);
+   CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = DEFAULT_SIZE);
    ~CRcvBuffer();
 
 
@@ -332,6 +332,10 @@ public:
 
    int readMsg(char* data, int len);
 
+#if ENABLE_HEAVY_LOGGING
+   void readMsgHeavyLogging(int p);
+#endif
+
       /// read a message.
       /// @param [out] data buffer to write the message into.
       /// @param [in] len size of the buffer.
@@ -348,6 +352,12 @@ public:
       /// both cases).
 
    bool isRcvDataReady(ref_t<uint64_t> tsbpdtime, ref_t<int32_t> curpktseq);
+#ifdef SRT_DEBUG_TSBPD_OUTJITTER
+   void debugTraceJitter(uint64_t);
+#else
+   void debugTraceJitter(uint64_t) {}
+#endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
+
    bool isRcvDataReady();
    bool isRcvDataAvailable()
    {
@@ -392,10 +402,35 @@ public:
    void skipData(int len);
 
 #if ENABLE_HEAVY_LOGGING
-   void reportBufferStats(); // Heavy logging Debug only
+   void reportBufferStats() const; // Heavy logging Debug only
 #endif
+   bool empty() const
+   {
+       // This will not always return the intended value,
+       // that is, it may return false when the buffer really is
+       // empty - but it will return true then in one of next calls.
+       // This function will be always called again at some point
+       // if it returned false, and on true the connection
+       // is going to be broken - so this behavior is acceptable.
+       return m_iStartPos == m_iLastAckPos;
+   }
+   bool full() const { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
+   int capacity() const { return m_iSize; }
+
 
 private:
+   /// This gives up unit at index p. The unit is given back to the
+   /// free unit storage for further assignment for the new incoming
+   /// data.
+   size_t freeUnitAt(size_t p)
+   {
+       CUnit* u = m_pUnit[p];
+       m_pUnit[p] = NULL;
+       size_t rmbytes = u->m_Packet.getLength();
+       m_pUnitQueue->makeUnitFree(u);
+       return rmbytes;
+   }
+
       /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
       // Parameters (of the 1st packet queue, ready to play or not):
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
@@ -420,8 +455,8 @@ public:
 public:
    uint64_t getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
-   bool empty() const;
-
+   uint64_t debugGetDeliveryTime(int offset);
+   
    // Required by PacketFilter facility to use as a storage
    // for provided packets
    CUnitQueue* getUnitQueue()
@@ -441,17 +476,42 @@ private:
 private:
    bool scanMsg(ref_t<int> start, ref_t<int> end, ref_t<bool> passack);
 
+   int shift(int basepos, int shift) const
+   {
+       return (basepos + shift) % m_iSize;
+   }
+
+   // Simplified versions with ++ and --; avoid using division instruction
+   int shiftFwd(int basepos) const
+   {
+       if (++basepos == m_iSize)
+           return 0;
+       return basepos;
+   }
+
+   int shiftBack(int basepos) const
+   {
+       if (basepos == 0)
+           return m_iSize-1;
+       return --basepos;
+   }
+
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer (array of CUnit* items)
-   const int m_iSize;                   // size of the array of CUnit* items
+   CUnit** m_pUnit;                     // Array of pointed units collected in the buffer
+   const int m_iSize;                   // Size of the internal array of CUnit* items
    CUnitQueue* m_pUnitQueue;            // the shared unit queue
 
-   int m_iStartPos;                     // the head position for I/O (inclusive)
-   int m_iLastAckPos;                   // the last ACKed position (exclusive)
+   int m_iStartPos;                     // HEAD: first packet available for reading
+   int m_iLastAckPos;                   // the last ACKed position (exclusive), follows the last readable
                                         // EMPTY: m_iStartPos = m_iLastAckPos   FULL: m_iStartPos = m_iLastAckPos + 1
-   int m_iMaxPos;                       // the furthest data position
+   int m_iMaxPos;                       // delta between acked-TAIL and reception-TAIL
+
 
    int m_iNotch;                        // the starting read point of the first unit
+                                        // (this is required for stream reading mode; it's
+                                        // the position in the first unit in the list
+                                        // up to which data are already retrieved;
+                                        // in message reading mode it's unused and always 0)
 
    pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer

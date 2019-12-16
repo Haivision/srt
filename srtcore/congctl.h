@@ -86,6 +86,11 @@ public:
     // pin oneself in into CUDT for receiving event signals.
     bool configure(CUDT* parent);
 
+    // This function will intentionally delete the contained object.
+    // This makes future calls to ready() return false. Calling
+    // configure on it again will create it again.
+    void dispose();
+
     // Will delete the pinned in congctl object.
     // This must be defined in *.cpp file due to virtual
     // destruction.

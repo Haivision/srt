@@ -13,6 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cstring>
 #include <string>
 #include <sstream>
@@ -839,6 +841,7 @@ EncryptionStatus CCryptoControl::decrypt(ref_t<CPacket> r_packet SRT_ATR_UNUSED)
 CCryptoControl::~CCryptoControl()
 {
 #ifdef SRT_ENABLE_ENCRYPTION
+    close();
     if (m_hSndCrypto)
     {
         HaiCrypt_Close(m_hSndCrypto);
