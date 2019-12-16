@@ -35,6 +35,13 @@ struct sockaddr_any
     };
     socklen_t len;
 
+    void reset()
+    {
+        // sin6 is the largest field
+        memset(&sin6, 0, sizeof sin6);
+        len = 0;
+    }
+
     // Default domain is unspecified, and
     // in this case the size is 0.
     // Note that AF_* (and alias PF_*) types have
@@ -44,11 +51,7 @@ struct sockaddr_any
     explicit sockaddr_any(int domain = AF_UNSPEC)
     {
         // Default domain is "unspecified", 0
-        // The intermediate variable required to clear out warning
-        // by specifying that "I know what I'm doing" by memset-clearing
-        // a nontrivial object.
-        void* object_begin = this;
-        memset(object_begin, 0, sizeof *this);
+        reset();
 
         // Overriding family as required in the parameters
         // and the size then accordingly.
@@ -111,12 +114,7 @@ struct sockaddr_any
         }
         else
         {
-            // Error fallback: no other families than IP are regarded.
-            void* object_begin = this;
-
-            // This embraces setting sockaddr::sa_family = AF_UNSPEC
-            // and sockaddr_any::len = 0.
-            memset(object_begin, 0, sizeof *this);
+            reset();
         }
     }
 
