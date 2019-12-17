@@ -92,10 +92,9 @@ public:
       /// Get the description of the exception.
       /// @return Text message for the exception description.
 
-   const char* getErrorMessage() const noexcept;
+   const char* getErrorMessage() const ATR_NOEXCEPT;
 
-   //virtual const char* what() const ATR_NOEXCEPT ATR_OVERRIDE
-   virtual const char* what() const noexcept override
+   virtual const char* what() const ATR_NOEXCEPT ATR_OVERRIDE
    {
        return getErrorMessage();
    }
