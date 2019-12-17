@@ -35,6 +35,13 @@ struct sockaddr_any
     };
     socklen_t len;
 
+    void reset()
+    {
+        // sin6 is the largest field
+        memset(&sin6, 0, sizeof sin6);
+        len = 0;
+    }
+
     // Default domain is unspecified, and
     // in this case the size is 0.
     // Note that AF_* (and alias PF_*) types have
@@ -43,9 +50,12 @@ struct sockaddr_any
     // Others make the same effect as unspecified.
     explicit sockaddr_any(int domain = AF_UNSPEC)
     {
-        // Default domain is "unspecified"
-        memset(this, 0, sizeof *this);
-        sa.sa_family = domain;
+        // Default domain is "unspecified", 0
+        reset();
+
+        // Overriding family as required in the parameters
+        // and the size then accordingly.
+        sa.sa_family = domain == AF_INET || domain == AF_INET6 ? domain : AF_UNSPEC;
         len = size();
     }
 
@@ -104,11 +114,7 @@ struct sockaddr_any
         }
         else
         {
-            // Clear as a sign or error
-            memset(&sa, 0, sizeof *this);
-            // Error fallback: no other families than IP are regarded.
-            sa.sa_family = AF_UNSPEC;
-            len = 0;
+            reset();
         }
     }
 
@@ -134,33 +140,33 @@ struct sockaddr_any
     {
         switch (family)
         {
-        case AF_INET: return socklen_t(sizeof (sockaddr_in));
-        case AF_INET6: return socklen_t(sizeof (sockaddr_in6));
+        case AF_INET:
+            return socklen_t(sizeof (sockaddr_in));
 
-        default: return 0; // fallback
+        case AF_INET6:
+            return socklen_t(sizeof (sockaddr_in6));
+
+        default:
+            return 0; // fallback
         }
     }
 
     bool empty() const
     {
-        switch (sa.sa_family)
+        bool isempty = true;  // unspec-family address is always empty
+
+        if (sa.sa_family == AF_INET)
         {
-        case AF_INET:
-            return sin.sin_port == 0 && sin.sin_addr.s_addr == 0;
-
-        case AF_INET6:
-            if (sin6.sin6_port != 0)
-                return false;
-
-            // This length expression should result in 4, as
-            // the size of sin6_addr is 16.
-            for (size_t i = 0; i < (sizeof sin6.sin6_addr)/sizeof(int32_t); ++i)
-                if (((int32_t*)&sin6.sin6_addr)[i] != 0)
-                    return false;
-            return true;
+            isempty = (sin.sin_port == 0
+                    && sin.sin_addr.s_addr == 0);
         }
-
-        return true; // unspec-family address is always empty
+        else if (sa.sa_family == AF_INET6)
+        {
+            isempty = (sin6.sin6_port == 0
+                    && memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0);
+        }
+        // otherwise isempty stays with default false
+        return isempty;
     }
 
     socklen_t size() const
@@ -267,7 +273,11 @@ struct sockaddr_any
     {
         if (sa.sa_family == AF_INET)
             return sin.sin_addr.s_addr == INADDR_ANY;
-        return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
+
+        if (sa.sa_family == AF_INET)
+            return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
+
+        return false;
     }
 
     bool operator==(const sockaddr_any& other) const
