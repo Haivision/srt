@@ -314,4 +314,9 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
     return CUDT::installAcceptHook(lsn, hook, opaq);
 }
 
+uint32_t srt_getversion()
+{
+    return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
+}
+
 }
