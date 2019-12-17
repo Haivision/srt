@@ -224,7 +224,12 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     if (print_help)
     {
         cout << "SRT sample application to transmit live streaming.\n";
-        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
+        const uint32_t srtver = srt_getversion();
+        const int major = srtver / 0x10000;
+        const int minor = (srtver / 0x100) % 0x100;
+        const int patch = srtver % 0x100;
+        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 #ifndef _WIN32
