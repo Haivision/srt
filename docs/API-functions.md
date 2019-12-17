@@ -24,6 +24,7 @@ SRT API Functions
   * [srt_getsockname](#srt_getsockname)
   * [srt_getsockopt, srt_getsockflag](#srt_getsockopt-srt_getsockflag)
   * [srt_setsockopt, srt_setsockflag](#srt_setsockopt-srt_setsockflag)
+  * [srt_getversion](#srt_getversion)
 - [**Helper data types for transmission**](#Helper-data-types-for-transmission)
   * [SRT_MSGCTRL](#SRT_MSGCTRL)
 - [**Transmission**](#Transmission)
@@ -548,6 +549,20 @@ type with the option value to be set.
   * `SRT_EINVOP`: Option `opt` indicates no valid option
   * Various other errors that may result from problems when setting a specific 
   option (see option description for details).
+
+### srt_getversion
+
+```
+uint32_t srt_getversion();
+```
+
+Get SRT version value. The version format in hex is 0xXXYYZZ for x.y.z in human readable form, 
+where x = ("%d", (version>>16) & 0xff), etc.
+
+- Returns:
+
+  * srt version as an unsigned 32-bit integer
+
 
 Helper data types for transmission
 ----------------------------------
