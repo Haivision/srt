@@ -887,6 +887,8 @@ SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
 SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 
+SRT_API uint32_t srt_getversion();
+
 #ifdef __cplusplus
 }
 #endif
