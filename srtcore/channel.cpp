@@ -98,9 +98,9 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 
 #ifdef _WIN32
-    int invalid = INVALID_SOCKET;
+    const int invalid = INVALID_SOCKET;
 #else
-    int invalid = -1;
+    const int invalid = -1;
 #endif
 
     if (m_iSocket == invalid)
@@ -139,7 +139,7 @@ void CChannel::open(int family)
     hints.ai_family = family;
     hints.ai_socktype = SOCK_DGRAM;
 
-    int eai = ::getaddrinfo(NULL, "0", &hints, &res);
+    const int eai = ::getaddrinfo(NULL, "0", &hints, &res);
     if (eai != 0)
     {
         // Controversial a little bit because this function occasionally
@@ -337,7 +337,8 @@ int CChannel::getIpTTL() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       return -1;
+       LOGC(mglog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpTTL;
 }
@@ -358,7 +359,8 @@ int CChannel::getIpToS() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       return -1;
+       LOGC(mglog.Error, log << "IPE: CChannel::getIpToS called with unset family");
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpToS;
 }

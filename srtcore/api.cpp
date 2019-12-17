@@ -698,9 +698,9 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    return 0;
 }
 
-SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen)
+SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
-   if ((addr) && (!addrlen))
+   if (pw_addr && !pw_addrlen)
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    CUDTSocket* ls = locate(listen);
@@ -777,7 +777,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
    }
 
-   if ((addr != NULL) && (addrlen != NULL))
+   if (pw_addr != NULL && pw_addrlen != NULL)
    {
       CUDTSocket* s = locate(u);
       if (s == NULL)
@@ -787,12 +787,12 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
 
       // Check if the length of the buffer to fill the name in
       // was large enough.
-      int len = s->m_PeerAddr.size();
-      if (*addrlen < len)
+      const int len = s->m_PeerAddr.size();
+      if (*pw_addrlen < len)
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-      memcpy(addr, &s->m_PeerAddr, len);
-      *addrlen = len;
+      memcpy((pw_addr), &s->m_PeerAddr, len);
+      *pw_addrlen = len;
    }
 
    return u;
@@ -800,9 +800,10 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
 
 int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
-    sockaddr_any target_addr(name, namelen);
-    if (target_addr.len == 0)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+   sockaddr_any target_addr(name, namelen);
+   if (target_addr.len == 0)
+      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    CUDTSocket* s = locate(u);
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
@@ -1049,9 +1050,9 @@ void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
    *namelen = len;
 }
 
-void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* name, int* namelen)
+void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namelen)
 {
-   if (!name || !namelen)
+   if (!pw_name || !pw_namelen)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    CUDTSocket* s = locate(u);
@@ -1065,12 +1066,12 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* name, int* namelen)
    if (s->m_Status == SRTS_INIT)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   int len = s->m_SelfAddr.size();
-   if (*namelen < len)
+   const int len = s->m_SelfAddr.size();
+   if (*pw_namelen < len)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   memcpy(name, &s->m_SelfAddr.sa, len);
-   *namelen = len;
+   memcpy((pw_name), &s->m_SelfAddr.sa, len);
+   *pw_namelen = len;
 }
 
 int CUDTUnited::select(

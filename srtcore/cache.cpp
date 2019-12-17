@@ -106,13 +106,13 @@ int CInfoBlock::getKey()
 
 void CInfoBlock::convert(const sockaddr_any& addr, uint32_t ip[4])
 {
-    if (addr.family() == AF_INET)
-    {
-        ip[0] = addr.sin.sin_addr.s_addr;
-        ip[1] = ip[2] = ip[3] = 0;
+   if (addr.family() == AF_INET)
+   {
+      ip[0] = addr.sin.sin_addr.s_addr;
+      ip[1] = ip[2] = ip[3] = 0;
    }
    else
    {
-       memcpy(ip, addr.sin6.sin6_addr.s6_addr, 16);
+      memcpy((ip), addr.sin6.sin6_addr.s6_addr, 16);
    }
 }
