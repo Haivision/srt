@@ -88,13 +88,14 @@ class UDT_API CUDTException: public std::exception
 public:
 
    CUDTException(CodeMajor major = MJ_SUCCESS, CodeMinor minor = MN_NONE, int err = -1);
+   virtual ~CUDTException() ATR_NOTHROW {}
 
       /// Get the description of the exception.
       /// @return Text message for the exception description.
 
-   const char* getErrorMessage() const ATR_NOEXCEPT;
+   const char* getErrorMessage() const ATR_NOTHROW;
 
-   virtual const char* what() const ATR_NOEXCEPT ATR_OVERRIDE
+   virtual const char* what() const ATR_NOTHROW ATR_OVERRIDE
    {
        return getErrorMessage();
    }

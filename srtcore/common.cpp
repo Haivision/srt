@@ -410,7 +410,7 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-const char* CUDTException::getErrorMessage() const ATR_NOEXCEPT
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
    // translate "Major:Minor" code into text message.
 
