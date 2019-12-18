@@ -195,10 +195,17 @@ typedef enum SRT_SOCKOPT {
 
 #ifdef __cplusplus
 
-// typedef SRT_ATR_DEPRECATED SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED;
-//#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 
+#if __cplusplus > 199711L // C++11
+    // Newer compilers report error when [[deprecated]] is applied to types,
+    // and C++11 and higher uses this.
 #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT SRT_ATR_DEPRECATED)value)
+#else
+    // Older (pre-C++11) compilers use gcc deprecated applied to a typedef
+    typedef SRT_ATR_DEPRECATED SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED;
+#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
+#endif
+
 
 #else
 
