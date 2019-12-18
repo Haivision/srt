@@ -333,7 +333,7 @@ int main( int argc, char** argv )
         cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
         cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
         for (auto os: optargs)
-            cout << OptionHelpItem(os.id) << endl;
+            cout << OptionHelpItem(*os.pid) << endl;
         return 1;
     }
 
