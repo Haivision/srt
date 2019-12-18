@@ -169,7 +169,6 @@ void CUDT::construct()
 
     m_pSndQueue = NULL;
     m_pRcvQueue = NULL;
-    m_pPeerAddr = NULL;
     m_pSNode    = NULL;
     m_pRNode    = NULL;
 
@@ -221,7 +220,7 @@ CUDT::CUDT()
     m_bSynRecving     = true;
     m_iFlightFlagSize = 25600;
     m_iSndBufSize     = 8192;
-    m_iRcvBufSize = 8192; // Rcv buffer MUST NOT be bigger than Flight Flag size
+    m_iRcvBufSize     = 8192; // Rcv buffer MUST NOT be bigger than Flight Flag size
 
     // Linger: LIVE mode defaults, please refer to `SRTO_TRANSTYPE` option
     // for other modes.
@@ -229,8 +228,6 @@ CUDT::CUDT()
     m_Linger.l_linger = 0;
     m_iUDPSndBufSize  = 65536;
     m_iUDPRcvBufSize  = m_iRcvBufSize * m_iMSS;
-    m_iSockType       = UDT_DGRAM;
-    m_iIPversion      = AF_INET;
     m_bRendezvous     = false;
 #ifdef SRT_ENABLE_CONNTIMEO
     m_iConnTimeOut = 3000;
@@ -293,8 +290,6 @@ CUDT::CUDT(const CUDT &ancestor)
     m_Linger          = ancestor.m_Linger;
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
-    m_iSockType       = ancestor.m_iSockType;
-    m_iIPversion      = ancestor.m_iIPversion;
     m_bRendezvous     = ancestor.m_bRendezvous;
 #ifdef SRT_ENABLE_CONNTIMEO
     m_iConnTimeOut = ancestor.m_iConnTimeOut;
@@ -354,7 +349,6 @@ CUDT::~CUDT()
     delete m_pRcvBuffer;
     delete m_pSndLossList;
     delete m_pRcvLossList;
-    delete m_pPeerAddr;
     delete m_pSNode;
     delete m_pRNode;
 }
@@ -3116,7 +3110,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     return true;
 }
 
-void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
+void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     CGuard cg(m_ConnectionLock);
 
@@ -3132,9 +3126,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // record peer/server address
-    delete m_pPeerAddr;
-    m_pPeerAddr = (AF_INET == m_iIPversion) ? (sockaddr *)new sockaddr_in : (sockaddr *)new sockaddr_in6;
-    memcpy(m_pPeerAddr, serv_addr, (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+    m_PeerAddr = serv_addr;
 
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
@@ -3150,7 +3142,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
     if (m_bRendezvous)
         ttl *= 10;
     ttl += CTimer::getTime();
-    m_pRcvQueue->registerConnector(m_SocketID, this, m_iIPversion, serv_addr, ttl);
+    m_pRcvQueue->registerConnector(m_SocketID, this, serv_addr, ttl);
 
     // The m_iType is used in the INDUCTION for nothing. This value is only regarded
     // in CONCLUSION handshake, however this must be created after the handshake version
@@ -3205,7 +3197,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
     m_ConnReq.m_iMSS            = m_iMSS;
     m_ConnReq.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
     m_ConnReq.m_iID             = m_SocketID;
-    CIPAddress::ntop(serv_addr, m_ConnReq.m_piPeerIP, m_iIPversion);
+    CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
     if (forced_isn == 0)
     {
@@ -3513,10 +3505,10 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
     return cst;
 }
 
-bool CUDT::processAsyncConnectRequest(EReadStatus     rst,
-                                      EConnectStatus  cst,
-                                      const CPacket & response,
-                                      const sockaddr *serv_addr)
+bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
+                                      EConnectStatus      cst,
+                                      const CPacket&      response,
+                                      const sockaddr_any& serv_addr)
 {
     // IMPORTANT!
 
@@ -3649,7 +3641,7 @@ void CUDT::cookieContest()
 }
 
 EConnectStatus CUDT::processRendezvous(
-    ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr *serv_addr, bool synchro, EReadStatus rst)
+    ref_t<CPacket> reqpkt, const CPacket& response, const sockaddr_any& serv_addr, bool synchro, EReadStatus rst)
 {
     if (m_RdvState == CHandShake::RDV_CONNECTED)
     {
@@ -4266,8 +4258,8 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     }
 
     CInfoBlock ib;
-    ib.m_iIPversion = m_iIPversion;
-    CInfoBlock::convert(m_pPeerAddr, m_iIPversion, ib.m_piIP);
+    ib.m_iIPversion = m_PeerAddr.family();
+    CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
@@ -4328,15 +4320,15 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // the local port must be correctly assigned BEFORE CUDT::startConnect(),
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
-    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
-    CIPAddress::pton(s->m_pSelfAddr, s->m_pUDT->m_piSelfIP, s->m_iIPversion);
+    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
+    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, s->m_SelfAddr.family());
 
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
 
-    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_pPeerAddr));
+    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
     return CONN_ACCEPT;
 }
@@ -4972,7 +4964,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket &hspkt)
+void CUDT::acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt)
 {
     HLOGC(mglog.Debug, log << "acceptAndRespond: setting up data according to handshake");
 
@@ -5027,8 +5019,8 @@ void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket 
     }
 
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
-    memcpy(m_piSelfIP, hs->m_piPeerIP, 16);
-    CIPAddress::ntop(peer, hs->m_piPeerIP, m_iIPversion);
+    memcpy(m_piSelfIP, hs->m_piPeerIP, sizeof m_piSelfIP);
+    CIPAddress::ntop(peer, hs->m_piPeerIP);
 
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
@@ -5049,8 +5041,8 @@ void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket 
     // Since now you can use m_pCryptoControl
 
     CInfoBlock ib;
-    ib.m_iIPversion = m_iIPversion;
-    CInfoBlock::convert(peer, m_iIPversion, ib.m_piIP);
+    ib.m_iIPversion = peer.family();
+    CInfoBlock::convert(peer, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
@@ -5085,8 +5077,7 @@ void CUDT::acceptAndRespond(const sockaddr *peer, CHandShake *hs, const CPacket 
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
-    m_pPeerAddr = (AF_INET == m_iIPversion) ? (sockaddr *)new sockaddr_in : (sockaddr *)new sockaddr_in6;
-    memcpy(m_pPeerAddr, peer, (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+    m_PeerAddr = peer;
 
     // And of course, it is connected.
     m_bConnected = true;
@@ -5328,7 +5319,7 @@ void CUDT::addressAndSend(CPacket &pkt)
     pkt.m_iID        = m_PeerID;
     pkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
 
-    m_pSndQueue->sendto(m_pPeerAddr, pkt);
+    m_pSndQueue->sendto(m_PeerAddr, pkt);
 }
 
 bool CUDT::close()
@@ -5441,8 +5432,8 @@ bool CUDT::close()
 
         // Store current connection information.
         CInfoBlock ib;
-        ib.m_iIPversion = m_iIPversion;
-        CInfoBlock::convert(m_pPeerAddr, m_iIPversion, ib.m_piIP);
+        ib.m_iIPversion = m_PeerAddr.family();
+        CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
         ib.m_iRTT       = m_iRTT;
         ib.m_iBandwidth = m_iBandwidth;
         m_pCache->update(&ib);
@@ -6922,7 +6913,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
         {
             ctrlpkt.pack(pkttype, NULL, &ack, size);
             ctrlpkt.m_iID = m_PeerID;
-            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
             DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
             break;
         }
@@ -7053,7 +7044,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
 
             ctrlpkt.m_iID        = m_PeerID;
             ctrlpkt.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-            nbsent               = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent               = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
             DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
             m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
@@ -7070,7 +7061,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
@@ -7085,7 +7076,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
 
             ctrlpkt.m_iID = m_PeerID;
-            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
             CGuard::enterCS(m_StatsLock);
             ++m_stats.sentNAK;
@@ -7106,7 +7097,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             {
                 ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
                 ctrlpkt.m_iID = m_PeerID;
-                nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+                nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
                 CGuard::enterCS(m_StatsLock);
                 ++m_stats.sentNAK;
@@ -7135,7 +7126,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_CGWARNING: // 100 - Congestion Warning
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         CTimer::rdtsc(m_ullLastWarningTime);
 
@@ -7144,35 +7135,35 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_KEEPALIVE: // 001 - Keep-alive
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
         ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
         ctrlpkt.pack(pkttype, lparam, rparam, 8);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_PEERERROR: // 1000 - acknowledge the peer side a special error
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
         break;
 
@@ -7695,7 +7686,7 @@ void CUDT::processCtrl(CPacket &ctrlpkt)
             {
                 response.m_iID        = m_PeerID;
                 response.m_iTimeStamp = int(CTimer::getTime() - m_stats.startTime);
-                int nbsent            = m_pSndQueue->sendto(m_pPeerAddr, response);
+                int nbsent            = m_pSndQueue->sendto(m_PeerAddr, response);
                 if (nbsent)
                 {
                     uint64_t currtime_tk;
@@ -8943,7 +8934,7 @@ void CUDT::dropFromLossLists(int32_t from, int32_t to)
 }
 
 // This function, as the name states, should bake a new cookie.
-int32_t CUDT::bake(const sockaddr *addr, int32_t current_cookie, int correction)
+int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
     static unsigned int distractor = 0;
     unsigned int        rollover   = distractor + 10;
@@ -8953,8 +8944,8 @@ int32_t CUDT::bake(const sockaddr *addr, int32_t current_cookie, int correction)
         // SYN cookie
         char clienthost[NI_MAXHOST];
         char clientport[NI_MAXSERV];
-        getnameinfo(addr,
-                    (m_iIPversion == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6),
+        getnameinfo(&addr,
+                    addr.size(),
                     clienthost,
                     sizeof(clienthost),
                     clientport,
@@ -9000,7 +8991,7 @@ int32_t CUDT::bake(const sockaddr *addr, int32_t current_cookie, int correction)
 //
 // XXX Make this function return EConnectStatus enum type (extend if needed),
 // and this will be directly passed to the caller.
-SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr *addr, CPacket &packet)
+SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 {
     // XXX ASSUMPTIONS:
     // [[using assert(packet.m_iID == 0)]]
