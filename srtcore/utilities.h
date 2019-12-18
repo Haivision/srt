@@ -70,6 +70,7 @@ written by
 #define ATR_FINAL final
 #else
 #define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
