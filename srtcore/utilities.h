@@ -90,6 +90,7 @@ written by
 #include <map>
 #include <functional>
 #include <memory>
+#include <iomanip>
 #include <sstream>
 #include <iomanip>
 
@@ -577,6 +578,11 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 
 #else
 
+// XXX
+// (Sprint and Printable moved down.
+// Remove this line after merging)
+// 
+
 template <class Type>
 ref_t<Type> Ref(Type& arg)
 {
@@ -630,7 +636,15 @@ public:
     operator bool () { return 0!= get(); }
 };
 
-// A primitive one-argument version of Printable
+// A primitive one-argument versions of Sprint and Printable
+template <class Arg1>
+inline std::string Sprint(const Arg1& arg)
+{
+    std::ostringstream sout;
+    sout << arg;
+    return sout.str();
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -674,6 +688,37 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 }
 
 #endif
+
+// Printable with prefix added for every element.
+// Useful when printing a container of sockets or sequence numbers.
+template <class Container> inline
+std::string PrintableMod(const Container& in, const std::string& prefix)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << prefix << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
+
+
+
+template<typename InputIterator, typename OutputIterator, typename TransFunction>
+void FilterIf(InputIterator bg, InputIterator nd,
+        OutputIterator out, TransFunction fn)
+{
+    for (InputIterator i = bg; i != nd; ++i)
+    {
+        std::pair<typename TransFunction::result_type, bool> result = fn(*i);
+        if (!result.second)
+            continue;
+        *out++ = result.first;
+    }
+}
 
 template <class Signature>
 struct CallbackHolder
@@ -797,6 +842,12 @@ public:
         // m_qTimeBase += m_qOverdrift;
 
         return true;
+    }
+
+    // For group overrides
+    void forceDrift(int64_t driftval)
+    {
+        m_qDrift = driftval;
     }
 
     // These values can be read at any time, however if you want
@@ -965,5 +1016,49 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
     return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
 }
+
+// Property accessor definitions
+//
+// "Property" is a special method that accesses given field.
+// This relies only on a convention, which is the following:
+//
+// V x = object.prop(); <-- get the property's value
+// object.prop(x); <-- set the property a value
+//
+// Properties might be also chained when setting:
+//
+// object.prop1(v1).prop2(v2).prop3(v3);
+//
+// Properties may be defined various even very complicated
+// ways, which is simply providing a method with body. In order
+// to define a property simplest possible way, that is, refer
+// directly to the field that keeps it, here are the following macros:
+//
+// Prefix: SRTU_PROPERTY_
+// Followed by:
+//  - access type: RO, WO, RW, RR, RRW
+//  - chain flag: optional _CHAIN
+// Where access type is:
+// - RO - read only. Defines reader accessor. The accessor method will be const.
+// - RR - read reference. The accessor isn't const to allow reference passthrough.
+// - WO - write only. Defines writer accessor.
+// - RW - combines RO and WO.
+// - RRW - combines RR and WO.
+//
+// The _CHAIN marker is optional for macros providing writable accessors
+// for properties. The difference is that while simple write accessors return
+// void, the chaining accessors return the reference to the object for which
+// the write accessor was called so that you can call the next accessor (or
+// any other method as well) for the result.
+
+#define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
+#define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
+#define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& name(type arg) { field = arg; return *this; }
+#define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
+#define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
+#define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
+#define SRTU_PROPERTY_RRW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
+
 
 #endif
