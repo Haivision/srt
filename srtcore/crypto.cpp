@@ -137,7 +137,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
 #define KMREQ_RESULT_REJECTION() { srtlen = 1; goto HSv4_ErrorReport; }
 
     int rc = HAICRYPT_OK; // needed before 'goto' run from KMREQ_RESULT_REJECTION macro
-    bool SRT_ATR_UNUSED wasb4 = false;
+    bool wasb4 SRT_ATR_UNUSED = false;
     size_t sek_len = 0;
 
     // What we have to do:
