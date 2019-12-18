@@ -1298,10 +1298,10 @@ public:
         if (adapter != "")
         {
             sockaddr_in maddr = CreateAddrInet(adapter, 0);
-            in_addr addr = maddr.sin_addr.s_addr;
+            in_addr addr = maddr.sin_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
-            if ( res == status_error )
+            if (res == -1)
             {
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
