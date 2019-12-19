@@ -112,8 +112,6 @@ CSndBuffer::CSndBuffer(int size, int mss)
    }
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
-
-   pthread_mutex_init(&m_BufLock, NULL);
 }
 
 CSndBuffer::~CSndBuffer()
@@ -134,8 +132,6 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
-
-   pthread_mutex_destroy(&m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno)
@@ -192,12 +188,11 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
-        SRT_ASSERT(s->m_pNext);
         s = s->m_pNext;
     }
     m_pLastBlock = s;
 
-    CGuard::enterCS(m_BufLock);
+    CriticalSection::enter(m_BufLock);
     m_iCount += size;
 
     m_iBytesCount += len;
@@ -209,7 +204,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     updAvgBufSize(time);
 #endif
 
-    CGuard::leaveCS(m_BufLock);
+    CriticalSection::leave(m_BufLock);
 
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -316,11 +311,11 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    }
    m_pLastBlock = s;
 
-   CGuard::enterCS(m_BufLock);
+   CriticalSection::enter(m_BufLock);
    m_iCount += size;
    m_iBytesCount += total;
 
-   CGuard::leaveCS(m_BufLock);
+   CriticalSection::leave(m_BufLock);
 
    m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
@@ -389,7 +384,7 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, steady_clock::time_
 
 int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, steady_clock::time_point& srctime, int& msglen)
 {
-   CGuard bufferguard(m_BufLock);
+   ScopedLock bufferguard(m_BufLock);
 
    Block* p = m_pFirstBlock;
 
@@ -461,7 +456,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
 
 void CSndBuffer::ackData(int offset)
 {
-   CGuard bufferguard(m_BufLock);
+   ScopedLock bufferguard(m_BufLock);
 
    bool move = false;
    for (int i = 0; i < offset; ++ i)
@@ -480,7 +475,7 @@ void CSndBuffer::ackData(int offset)
    updAvgBufSize(steady_clock::now());
 #endif
 
-   CTimer::triggerEvent();
+   s_SyncEvent.notify_one();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -494,7 +489,7 @@ int CSndBuffer::getAvgBufSize(ref_t<int> r_bytes, ref_t<int> r_tsp)
 {
     int& bytes = *r_bytes;
     int& timespan = *r_tsp;
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
+    ScopedLock bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());
@@ -506,16 +501,16 @@ int CSndBuffer::getAvgBufSize(ref_t<int> r_bytes, ref_t<int> r_tsp)
 
 void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
 {
-   const uint64_t elapsed_ms = count_milliseconds(now - m_tsLastSamplingTime); //ms since last sampling
+    const uint64_t elapsed_ms = count_milliseconds(now - m_tsLastSamplingTime); //ms since last sampling
 
-   if ((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 > elapsed_ms)
-      return;
+    if ((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 > elapsed_ms)
+        return;
 
-   if (1000 < elapsed_ms)
-   {
-      /* No sampling in last 1 sec, initialize average */
-      m_iCountMAvg = getCurrBufSize(Ref(m_iBytesCountMAvg), Ref(m_TimespanMAvg));
-      m_tsLastSamplingTime = now;
+    if (1000 < elapsed_ms)
+    {
+        /* No sampling in last 1 sec, initialize average */
+        m_iCountMAvg = getCurrBufSize(Ref(m_iBytesCountMAvg), Ref(m_TimespanMAvg));
+        m_tsLastSamplingTime = now;
    } 
    else //((1000000 / SRT_MAVG_SAMPLING_RATE) / 1000 <= elapsed_ms)
    {
@@ -562,7 +557,7 @@ int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_lat
    int dbytes = 0;
    bool move = false;
 
-   CGuard bufferguard(m_BufLock);
+   ScopedLock bufferguard(m_BufLock);
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++ i)
    {
       dpkts++;
@@ -711,8 +706,6 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
-
-   pthread_mutex_init(&m_BytesCountLock, NULL);
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -726,8 +719,6 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
-
-   pthread_mutex_destroy(&m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -741,7 +732,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
    *  acked (bytes>0, acked=true),
    *  removed (bytes<0, acked=n/a)
    */
-   CGuard cg(m_BytesCountLock);
+   ScopedLock lock(m_BytesCountLock);
 
    if (!acked) //adding new pkt in RcvBuffer
    {
@@ -792,7 +783,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
     char* begin = data;
 #endif
 
-    const steady_clock::time_point now = (m_bTsbPdMode ? steady_clock::now() : steady_clock::time_point());
+   const steady_clock::time_point now = (m_bTsbPdMode ? steady_clock::now() : steady_clock::time_point());
 
     HLOGC(dlog.Debug, log << CONID() << "readBuffer: start=" << p << " lastack=" << lastack);
     while ((p != lastack) && (rs > 0))
@@ -803,15 +794,15 @@ int CRcvBuffer::readBuffer(char* data, int len)
             return -1;
         }
 
-        if (m_bTsbPdMode)
-        {
-            HLOGC(dlog.Debug, log << CONID() << "readBuffer: chk if time2play:"
-                << " NOW=" << FormatTime(now)
-                << " PKT TS=" << FormatTime(getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp())));
+      if (m_bTsbPdMode)
+      {
+          HLOGC(dlog.Debug, log << CONID() << "readBuffer: chk if time2play:"
+              << " NOW=" << FormatTime(now)
+              << " PKT TS=" << FormatTime(getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp())));
 
-            if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
-                break; /* too early for this unit, return whatever was copied */
-        }
+          if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
+              break; /* too early for this unit, return whatever was copied */
+      }
 
         int unitsize = (int) m_pUnit[p]->m_Packet.getLength() - m_iNotch;
         if (unitsize > rs)
@@ -902,7 +893,7 @@ void CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
-   CTimer::triggerEvent();
+   s_SyncEvent.notify_one();
 }
 
 void CRcvBuffer::skipData(int len)
@@ -1426,25 +1417,25 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     */
     int64_t carryover = 0;
 
-    // This function should generally return the timebase for the given timestamp_us.
-    // It's assumed that the timestamp_us, for which this function is being called,
-    // is received as monotonic clock. This function then traces the changes in the
-    // timestamps passed as argument and catches the moment when the 64-bit timebase
-    // should be increased by a "segment length" (MAX_TIMESTAMP+1).
+   // This function should generally return the timebase for the given timestamp_us.
+   // It's assumed that the timestamp_us, for which this function is being called,
+   // is received as monotonic clock. This function then traces the changes in the
+   // timestamps passed as argument and catches the moment when the 64-bit timebase
+   // should be increased by a "segment length" (MAX_TIMESTAMP+1).
 
-    // The checks will be provided for the following split:
-    // [INITIAL30][FOLLOWING30]....[LAST30] <-- == CPacket::MAX_TIMESTAMP
-    //
-    // The following actions should be taken:
-    // 1. Check if this is [LAST30]. If so, ENTER TSBPD-wrap-check state
-    // 2. Then, it should turn into [INITIAL30] at some point. If so, use carryover MAX+1.
-    // 3. Then it should switch to [FOLLOWING30]. If this is detected,
-    //    - EXIT TSBPD-wrap-check state
-    //    - save the carryover as the current time base.
+   // The checks will be provided for the following split:
+   // [INITIAL30][FOLLOWING30]....[LAST30] <-- == CPacket::MAX_TIMESTAMP
+   //
+   // The following actions should be taken:
+   // 1. Check if this is [LAST30]. If so, ENTER TSBPD-wrap-check state
+   // 2. Then, it should turn into [INITIAL30] at some point. If so, use carryover MAX+1.
+   // 3. Then it should switch to [FOLLOWING30]. If this is detected,
+   //    - EXIT TSBPD-wrap-check state
+   //    - save the carryover as the current time base.
 
-    if (m_bTsbPdWrapCheck)
-    {
-        // Wrap check period.
+   if (m_bTsbPdWrapCheck) 
+   {
+       // Wrap check period.
 
         if (timestamp_us < TSBPD_WRAP_PERIOD)
         {
@@ -1556,7 +1547,7 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& mutex_to_lock)
+void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_lock)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
         return;
@@ -1580,7 +1571,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& 
 
     const steady_clock::duration iDrift = steady_clock::now() - (getTsbPdTimeBase(timestamp_us) + microseconds_from(timestamp_us));
 
-    CGuard::enterCS(mutex_to_lock);
+    CriticalSection::enter(mutex_to_lock);
 
     bool updated = m_DriftTracer.update(count_microseconds(iDrift));
 
@@ -1608,7 +1599,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& 
         HLOGC(dlog.Debug, log << "DRIFT=" << count_milliseconds(iDrift) << "ms TB REMAINS: " << FormatTime(m_tsTsbPdTimeBase));
     }
 
-    CGuard::leaveCS(mutex_to_lock);
+    CriticalSection::leave(mutex_to_lock);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
