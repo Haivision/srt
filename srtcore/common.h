@@ -63,9 +63,10 @@ modified by
    // #include <winsock2.h>
    //#include <windows.h>
 #endif
-#include <pthread.h>
+
 #include "udt.h"
 #include "utilities.h"
+#include "sync.h"
 
 
 #ifdef _DEBUG
@@ -443,15 +444,10 @@ public:
 
 public:
 
-      /// Sleep for "interval_tk" CCs.
-      /// @param [in] interval_tk CCs to sleep.
-
-   void sleep(uint64_t interval_tk);
-
       /// Seelp until CC "nexttime_tk".
       /// @param [in] nexttime_tk next time the caller is waken up.
 
-   void sleepto(uint64_t nexttime_tk);
+   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
 
       /// Stop the sleep() or sleepto() methods.
 
@@ -462,21 +458,6 @@ public:
    void tick();
 
 public:
-
-      /// Read the CPU clock cycle into x.
-      /// @param [out] x to record cpu clock cycles.
-
-   static void rdtsc(uint64_t &x);
-
-      /// return the CPU frequency.
-      /// @return CPU frequency.
-
-   static uint64_t getCPUFrequency();
-
-      /// check the current time, 64bit, in microseconds.
-      /// @return current time in microseconds.
-
-   static uint64_t getTime();
 
       /// trigger an event such as new connection, close, new data, etc. for "select" call.
 
@@ -505,21 +486,13 @@ public:
    static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
 
 private:
-   uint64_t getTimeInMicroSec();
-
-private:
-   uint64_t m_ullSchedTime_tk;             // next schedulled time
+   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
    pthread_mutex_t m_TickLock;
 
    static pthread_cond_t m_EventCond;
    static pthread_mutex_t m_EventLock;
-
-private:
-   static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
-   static uint64_t readCPUFrequency();
-   static bool m_bUseMicroSecond;       // No higher resolution timer available, use gettimeofday().
 };
 
 ////////////////////////////////////////////////////////////////////////////////

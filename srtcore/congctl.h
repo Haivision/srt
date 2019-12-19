@@ -192,12 +192,12 @@ public:
 
     virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
-    virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
+    virtual uint64_t updateNAKInterval(uint64_t nakint_us, int rcv_speed, size_t loss_length)
     {
         if (rcv_speed > 0)
-            nakint_tk += (loss_length * uint64_t(1000000) / rcv_speed) * CTimer::getCPUFrequency();
+            nakint_us += (loss_length * uint64_t(1000000) / rcv_speed);
 
-        return nakint_tk;
+        return nakint_us;
     }
 
     virtual uint64_t minNAKInterval()
