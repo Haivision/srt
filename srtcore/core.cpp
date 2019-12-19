@@ -4170,7 +4170,7 @@ void CUDT::applyResponseSettings()
     m_iRcvCurrSeqNo    = m_ConnRes.m_iISN - 1;
     m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID           = m_ConnRes.m_iID;
-    memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
+    memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
 
     HLOGC(mglog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize

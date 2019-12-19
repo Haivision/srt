@@ -1641,18 +1641,18 @@ void CUDTUnited::updateMux(
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
          i != m_mMultiplexer.end(); ++ i)
       {
-           // Use the "family" value blindly from the address; we
-           // need to find an existing multiplexer that binds to the
-           // given port in the same family as requested address.
-           if ((i->second.m_iFamily == addr.family())
-                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
+          // Use the "family" value blindly from the address; we
+          // need to find an existing multiplexer that binds to the
+          // given port in the same family as requested address.
+          if ((i->second.m_iIPversion == addr.family())
+                  && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
 #ifdef SRT_ENABLE_IPOPTS
-            &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
-            && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
+                  &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
+                  && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
-            && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
-            &&  i->second.m_bReusable)
-         {
+                  && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
+                  &&  i->second.m_bReusable)
+          {
             if (i->second.m_iPort == port)
             {
                // HLOGF(mglog.Debug, "reusing multiplexer for port
@@ -1671,7 +1671,7 @@ void CUDTUnited::updateMux(
    // a new multiplexer is needed
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
-   m.m_iFamily = addr.family();
+   m.m_iIPversion = addr.family();
 #ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
@@ -1732,7 +1732,7 @@ void CUDTUnited::updateMux(
    m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
    m.m_pRcvQueue = new CRcvQueue;
    m.m_pRcvQueue->init(
-      32, s->m_pUDT->maxPayloadSize(), m.m_iFamily, 1024,
+      32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
       m.m_pChannel, m.m_pTimer);
 
    m_mMultiplexer[m.m_iID] = m;
@@ -2759,7 +2759,7 @@ int cleanup()
    return CUDT::cleanup();
 }
 
-SRTSOCKET socket(int , int , int )
+SRTSOCKET socket()
 {
    return CUDT::socket();
 }

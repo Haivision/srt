@@ -532,7 +532,7 @@ struct CMultiplexer
    CTimer* m_pTimer;        // The timer
 
    int m_iPort;         // The UDP port number of this multiplexer
-   int m_iFamily;       // Address family (AF_INET or AF_INET6)
+   int m_iIPversion;    // Address family (AF_INET or AF_INET6)
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
