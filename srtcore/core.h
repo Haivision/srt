@@ -692,7 +692,7 @@ private: // Receiving related data
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    pthread_cond_t m_RcvTsbPdCond;
+    srt::sync::SyncEvent m_RcvTSBPDSync;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -711,26 +711,20 @@ private:
 
 
 private: // synchronization: mutexes and conditions
-    pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
+    srt::sync::Mutex m_ConnectionLock;            // used to synchronize connection operation
 
-    pthread_cond_t m_SendBlockCond;              // used to block "send" call
-    pthread_mutex_t m_SendBlockLock;             // lock associated to m_SendBlockCond
+    srt::sync::SyncEvent m_SendBlockSync;         // used to block "send" call
 
-    pthread_mutex_t m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
-
+    srt::sync::Mutex m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    pthread_mutex_t m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
+    srt::sync::Mutex m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
 
+    srt::sync::SyncEvent m_RecvDataSync;          // used to block "recv" when there is no data
 
-    pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
-    pthread_mutex_t m_RecvDataLock;              // lock associated to m_RecvDataCond
-
-    pthread_mutex_t m_SendLock;                  // used to synchronize "send" call
-    pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
-
-    pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-
-    pthread_mutex_t m_StatsLock;                 // used to synchronize access to trace statistics
+    srt::sync::Mutex m_SendLock;                  // used to synchronize "send" call
+    srt::sync::Mutex m_RecvLock;                  // used to synchronize "recv" call
+    srt::sync::Mutex m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
+    srt::sync::Mutex m_StatsLock;                 // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();
@@ -742,7 +736,7 @@ private: // Common connection Congestion Control setup
     // which only may happen when the congctl list is extended 
     // with user-supplied congctl modules, not a case so far.
     SRT_ATR_NODISCARD
-    SRT_REJECT_REASON setupCC();
+        SRT_REJECT_REASON setupCC();
 
     // for updateCC it's ok to discard the value. This returns false only if
     // the congctl isn't created, and this can be prevented from.
@@ -751,7 +745,7 @@ private: // Common connection Congestion Control setup
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
-    bool createCrypter(HandshakeSide side, bool bidi);
+        bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -855,6 +849,7 @@ private: // Trace
     } m_stats;
 
 public:
+
     static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking
     static const int SEND_LITE_ACK = sizeof(int32_t); // special size for ack containing only ack seq
     static const int PACKETPAIR_MASK = 0xF;
@@ -862,6 +857,7 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+
     void checkTimers();
     void considerLegacySrtHandshake(const srt::sync::steady_clock::time_point &timebase);
     void checkACKTimer (const srt::sync::steady_clock::time_point& currtime);
