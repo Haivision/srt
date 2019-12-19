@@ -424,7 +424,7 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
         return;
     }
 #ifdef SRT_ENABLE_ENCRYPTION
-    uint64_t now = 0;
+    srt::sync::steady_clock::time_point now = srt::sync::steady_clock::now();
     /*
      * Crypto Key Distribution to peer:
      * If...
@@ -434,8 +434,8 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
      * - last sent Keying Material req should have been replied (RTT*1.5 elapsed);
      * then (re-)send handshake request.
      */
-    if (  ((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-      &&  ((m_SndKmLastTime + ((m_parent->RTT() * 3)/2)) <= (now = CTimer::getTime())))
+    if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
+        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->RTT() * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {
@@ -450,17 +450,14 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
         }
     }
 
-    if (now == 0)
-    {
-        HLOGC(mglog.Debug, log << "sendKeysToPeer: NO KEYS RESENT, will " <<
-                (regen ? "" : "NOT ") << "regenerate.");
-    }
 
     if (regen)
+    {
         regenCryptoKm(
-                true, // send UMSG_EXT + SRT_CMD_KMREQ to the peer, if regenerated the key
-                false // Do not apply the regenerated key to the to the receiver context
-                ); // regenerate and send
+            true, // send UMSG_EXT + SRT_CMD_KMREQ to the peer, if regenerated the key
+            false // Do not apply the regenerated key to the to the receiver context
+        ); // regenerate and send
+    }
 #endif
 }
 
@@ -539,7 +536,7 @@ void CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
 
     if (sent)
-        m_SndKmLastTime = CTimer::getTime();
+        m_SndKmLastTime = srt::sync::steady_clock::now();
 }
 #endif
 
@@ -557,7 +554,6 @@ m_bErrorReported(false)
 
     m_KmSecret.len = 0;
     //send
-    m_SndKmLastTime = 0;
     m_SndKmMsg[0].MsgLen = 0;
     m_SndKmMsg[0].iPeerRetry = 0;
     m_SndKmMsg[1].MsgLen = 0;
