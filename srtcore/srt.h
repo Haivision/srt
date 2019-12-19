@@ -632,7 +632,7 @@ SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, in
 SRT_API       int srt_bind_acquire (SRTSOCKET u, int sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
 SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
-static inline int srt_bind_peerof  (SRTSOCKET u, int sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
+static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
