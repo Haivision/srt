@@ -833,7 +833,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void *optval, int optlen)
             m_bRcvNakReport       = false;
             m_zOPT_ExpPayloadSize = 0; // use maximum
             m_Linger.l_onoff      = 1;
-            m_Linger.l_linger     = DEF_LINGER_MIN;
+            m_Linger.l_linger     = DEF_LINGER_S;
             m_CongCtl.select("file");
             break;
 
@@ -5270,7 +5270,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 void CUDT::addressAndSend(CPacket &pkt)
 {
     pkt.m_iID        = m_PeerID;
-    setPacketTS(pkt, CTimer::getTime());
+    setPacketTS(pkt, steady_clock::now());
 
     m_pSndQueue->sendto(m_PeerAddr, pkt);
 }
@@ -6013,7 +6013,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
             do
             {
                 HLOGC(tslog.Debug,
-                      log << CONID() << "receiveMessage: fall asleep for " << recvtmo << "us lock=" << (&m_RecvLock)
+                      log << CONID() << "receiveMessage: fall asleep for " << count_microseconds(recv_timeout) << "us lock=" << (&m_RecvLock)
                           << " cond=" << (&m_RecvDataCond));
 
                 if (SyncEvent::wait_for(&m_RecvDataCond, &m_RecvLock, recv_timeout) == ETIMEDOUT)
@@ -6768,9 +6768,6 @@ static inline void DebugAck(string, int, int) {}
 void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, int size)
 {
     CPacket  ctrlpkt;
-    uint64_t currtime_tk;
-    CTimer::rdtsc(currtime_tk);
-
     setPacketTS(ctrlpkt, steady_clock::now());
 
     int nbsent        = 0;
@@ -7785,7 +7782,7 @@ void CUDT::updateSrtSndSettings()
               "AFTER HS: Set Snd TsbPd mode %s TLPktDrop: delay=%d.%03ds START TIME: %s",
               m_bPeerTLPktDrop ? "with" : "without",
               m_iPeerTsbPdDelay_ms/1000, m_iPeerTsbPdDelay_ms%1000,
-              FormatTime(m_stats.startTime).c_str());
+              FormatTime(m_stats.tsStartTime).c_str());
     }
     else
     {
@@ -8030,7 +8027,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
              * When timestamp is carried over in this sending stream from a received stream,
              * it may be older than the session start time causing a negative packet time
              * that may block the receiver's Timestamp-based Packet Delivery.
-             * XXX Isn't it then better to not decrease it by m_stats.startTime? As long as it
+             * XXX Isn't it then better to not decrease it by m_stats.tsStartTime? As long as it
              * doesn't screw up the start time on the other side.
              */
             if (origintime >= m_stats.tsStartTime)
@@ -8039,15 +8036,15 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
             }
             else
             {
-                setPacketTS(packet, CTimer::getTime());
+                setPacketTS(packet, steady_clock::now());
                 LOGC(dlog.Error, log << "packData: reference time=" << FormatTime(origintime)
-                        << " is in the past towards start time=" << FormatTime(m_stats.startTime)
+                        << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
                         << " - setting NOW as reference time for the data packet");
             }
         }
         else
         {
-            setPacketTS(packet, CTimer::getTime());
+            setPacketTS(packet, steady_clock::now());
         }
     }
 
@@ -8264,16 +8261,17 @@ int CUDT::processData(CUnit *in_unit)
 
 #if ENABLE_HEAVY_LOGGING
    {
-       int tsbpddelay = m_iTsbPdDelay_ms*1000; // (value passed to CRcvBuffer::setRcvTsbPdMode)
+       steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
 
        // It's easier to remove the latency factor from this value than to add a function
        // that exposes the details basing on which this value is calculated.
-       uint64_t pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
-       uint64_t ets = pts - tsbpddelay;
+       steady_clock::time_point pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
+       steady_clock::time_point ets = pts - tsbpddelay;
 
        HLOGC(dlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
            << " seq=" << packet.getSeqNo()
-           << " OTS=" << FormatTime(packet.getMsgTimeStamp())
+           // XXX FIX IT. OTS should represent the original sending time, but it's relative.
+           //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
            << " ETS=" << FormatTime(ets)
            << " PTS=" << FormatTime(pts));
    }
@@ -9141,7 +9139,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
 
         size_t size = packet.getLength();
         hs.store_to(packet.m_pcData, Ref(size));
-        setPacketTS(packet, CTimer::getTime());
+        setPacketTS(packet, steady_clock::now());
 
         // Display the HS before sending it to peer
         HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (i): " << hs.show());
@@ -9224,7 +9222,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         size_t size   = CHandShake::m_iContentSize;
         hs.store_to(packet.m_pcData, Ref(size));
         packet.m_iID        = id;
-        setPacketTS(packet, CTimer::getTime());
+        setPacketTS(packet, steady_clock::now());
         HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (e): " << hs.show());
         m_pSndQueue->sendto(addr, packet);
     }
@@ -9281,7 +9279,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
             size_t size = CHandShake::m_iContentSize;
             hs.store_to(packet.m_pcData, Ref(size));
             packet.m_iID        = id;
-            setPacketTS(packet, CTimer::getTime());
+            setPacketTS(packet, steady_clock::now());
             HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
             m_pSndQueue->sendto(addr, packet);
         }

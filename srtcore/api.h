@@ -72,7 +72,6 @@ class CUDTSocket
 public:
    CUDTSocket():
        m_Status(SRTS_INIT),
-       m_ClosureTimeStamp(0),
        m_SocketID(0),
        m_ListenSocket(0),
        m_PeerID(0),

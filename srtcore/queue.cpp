@@ -828,7 +828,7 @@ CRendezvousQueue::~CRendezvousQueue()
 }
 
 void CRendezvousQueue::insert(
-    const SRTSOCKET &id, CUDT *u, int ipv, const sockaddr_any& addr, const steady_clock::time_point &ttl)
+    const SRTSOCKET &id, CUDT *u, const sockaddr_any& addr, const steady_clock::time_point &ttl)
 {
     CGuard vg(m_RIDVectorLock);
 
@@ -981,7 +981,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         else
         {
             HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
-                    << std::fixed << ((i->m_ullTTL - now)/1000000.0) << "s of TTL)...");
+                    << std::fixed << (count_microseconds(i->m_tsTTL - now)/1000000.0) << "s of TTL)...");
         }
 
         // This queue is used only in case of Async mode (rendezvous or caller-listener).

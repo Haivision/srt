@@ -125,7 +125,7 @@ void CUDTSocket::makeClosed()
     m_pUDT->m_bBroken = true;
     m_pUDT->close();
     m_Status = SRTS_CLOSED;
-    m_tsClosureTimeStamp = CTimer::getTime();
+    m_tsClosureTimeStamp = steady_clock::now();
 }
 
 bool CUDTSocket::readReady()

@@ -243,9 +243,9 @@ public: // internal API
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
         DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
-        DEF_LINGER = 180,  // 2 minutes
+        DEF_LINGER_S = 3*60,  // 3 minutes
         DEF_UDP_BUFFER_SIZE = 65536,
-        DEF_CONNTIMEO = 3000;
+        DEF_CONNTIMEO_S = 3; // 3 seconds
 
 
     int handshakeVersion()
@@ -286,7 +286,7 @@ public: // internal API
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
-    uint64_t minNAKInterval() const { return m_ullMinNakInt_tk; }
+    srt::sync::steady_clock::duration minNAKInterval() const { return m_tdMinNakInterval; }
     int32_t ISN() const { return m_iISN; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
@@ -297,7 +297,7 @@ public: // internal API
         return m_bMessageAPI ? (len+m_iMaxSRTPayloadSize-1)/m_iMaxSRTPayloadSize : 1;
     }
 
-    int makeTS(uint64_t from_time) const
+    int32_t makeTS(const srt::sync::steady_clock::time_point& from_time) const
     {
         // NOTE:
         // - This calculates first the time difference towards start time.
@@ -306,10 +306,10 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_StartTime,
         // otherwise it may go unnoticed with clock skew.
-        return int(from_time - m_stats.startTime);
+        return count_microseconds(from_time - m_stats.tsStartTime);
     }
 
-    void setPacketTS(CPacket& p, uint64_t local_time)
+    void setPacketTS(CPacket& p, const srt::sync::steady_clock::time_point& local_time)
     {
         p.m_iTimeStamp = makeTS(local_time);
     }
@@ -550,9 +550,9 @@ private:
         return m_iSndBufSize - m_pSndBuffer->getCurrBufSize();
     }
 
-    uint64_t socketStartTime()
+    srt::sync::steady_clock::time_point socketStartTime()
     {
-        return m_stats.startTime;
+        return m_stats.tsStartTime;
     }
 
     // TSBPD thread main function.
