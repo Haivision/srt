@@ -34,11 +34,17 @@ SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+int srt_bind_acquire(SRTSOCKET u, int udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
 int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+int srt_connect_bind(SRTSOCKET u,
+        const struct sockaddr* source, int source_len,
+        const struct sockaddr* target, int target_len)
+{
+    return CUDT::connect(u, source, source_len, target, target_len);
+}
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)

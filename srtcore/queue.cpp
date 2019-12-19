@@ -488,7 +488,10 @@ CSndQueue::~CSndQueue()
     pthread_cond_signal(&m_WindowCond);
     pthread_mutex_unlock(&m_WindowLock);
     if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+        HLOGC(mglog.Debug, log << "SndQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_cond_destroy(&m_WindowCond);
     pthread_mutex_destroy(&m_WindowLock);
 
@@ -833,6 +836,9 @@ void CRendezvousQueue::insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& 
     r.m_ullTTL = ttl;
 
     m_lRendezvousID.push_back(r);
+    HLOGC(mglog.Debug, log << "RID: adding socket @" << id << " for address: " << SockaddrToString(addr)
+            << " expires: " << FormatTime(ttl)
+            << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
 
 void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
@@ -859,10 +865,23 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> r_id
     {
         if (i->m_PeerAddr == addr && ((id == 0) || (id == i->m_iID)))
         {
+            HLOGC(mglog.Debug, log << "RID: found id @" << i->m_iID << " while looking for "
+                    << (id ? "THIS ID FROM " : "A NEW CONNECTION FROM ")
+                    << SockaddrToString(i->m_PeerAddr));
             id = i->m_iID;
             return i->m_pUDT;
         }
     }
+
+#if ENABLE_HEAVY_LOGGING
+   std::ostringstream spec;
+   if (id == 0)
+       spec << "A NEW CONNECTION REQUEST";
+   else
+       spec << " AGENT @" << id;
+   HLOGC(mglog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << SockaddrToString(addr)
+           << " while looking for " << spec.str() << " (" << m_lRendezvousID.size() << " connectors total)");
+#endif
 
     return NULL;
 }
@@ -910,14 +929,14 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             const uint64_t now      = CTimer::getTime();
             const bool     nowstime = (now - then) > 250000;
             HLOGC(mglog.Debug,
-                  log << "RID:%" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now - then)
+                  log << "RID:@" << i->m_iID << " then=" << then << " now=" << now << " passed=" << (now - then)
                       << "<=> 250000 -- now's " << (nowstime ? "" : "NOT ") << "the time");
 
             if (!nowstime)
                 continue;
         }
 
-        HLOGC(mglog.Debug, log << "RID:%" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
+        HLOGC(mglog.Debug, log << "RID:@" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- sending update NOW.");
 
 #if ENABLE_HEAVY_LOGGING
         ++debug_nrun;
@@ -933,11 +952,14 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         //
         // Maybe the time should be simply checked once and the whole loop not
         // done when "it's not the time"?
-        if (CTimer::getTime() >= i->m_ullTTL)
+        uint64_t now = CTimer::getTime();
+        if (now >= i->m_ullTTL)
         {
-            HLOGC(mglog.Debug,
-                  log << "RendezvousQueue: EXPIRED (" << (i->m_ullTTL ? "enforced on FAILURE" : "passed TTL")
-                      << ". removing from queue");
+            HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
+                << " removed - EXPIRED ("
+                // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
+                << (i->m_ullTTL == 0 ? "enforced on FAILURE" : "passed TTL")
+                << "). ");
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, UDT_EPOLL_ERR, true);
@@ -950,6 +972,11 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // the element next to erased one.
             i_next = m_lRendezvousID.erase(i);
             continue;
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
+                    << std::fixed << ((i->m_ullTTL - now)/1000000.0) << "s of TTL)...");
         }
 
         // This queue is used only in case of Async mode (rendezvous or caller-listener).
@@ -998,6 +1025,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // so the `i' node can be safely deleted. Just the body must end here.
             continue;
         }
+        else
+        {
+            HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID << " deemed SYNCHRONOUS, NOT UPDATING");
+        }
     }
 
     HLOGC(mglog.Debug,
@@ -1034,7 +1065,11 @@ CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
     if (!pthread_equal(m_WorkerThread, pthread_t()))
+    {
+
+        HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
+    }
     pthread_mutex_destroy(&m_PassLock);
     pthread_cond_destroy(&m_PassCond);
     pthread_mutex_destroy(&m_LSLock);
@@ -1208,30 +1243,6 @@ void *CRcvQueue::worker(void *param)
     return NULL;
 }
 
-#if ENABLE_LOGGING
-static string PacketInfo(const CPacket &pkt)
-{
-    ostringstream os;
-    os << "TARGET=" << pkt.m_iID << " ";
-
-    if (pkt.isControl())
-    {
-        os << "CONTROL: " << MessageTypeStr(pkt.getType(), pkt.getExtendedType()) << " size=" << pkt.getLength();
-    }
-    else
-    {
-        // It's hard to extract the information about peer's supported rexmit flag.
-        // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
-        // Declaring that the peer supports rexmit flag cuts off the highest bit from
-        // the displayed number.
-        os << "DATA: msg=" << pkt.getMsgSeq(true) << " seq=" << pkt.getSeqNo() << " size=" << pkt.getLength()
-           << " flags: " << PacketMessageFlagStr(pkt.m_iMsgNo);
-    }
-
-    return os.str();
-}
-#endif
-
 EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_unit, ref_t<sockaddr_any> r_addr)
 {
 #if !USE_BUSY_WAITING
@@ -1264,9 +1275,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
         THREAD_PAUSED();
         EReadStatus rst = m_pChannel->recvfrom((*r_addr), (temp));
         THREAD_RESUMED();
-#if ENABLE_LOGGING
-        LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << PacketInfo(temp));
-#endif
+        // Note: this will print nothing about the packet details unless heavy logging is on.
+        LOGC(mglog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
         delete[] temp.m_pcData;
 
         // Be transparent for RST_ERROR, but ignore the correct
@@ -1284,9 +1294,9 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(ref_t<int32_t> r_id, ref_t<CUnit*> r_
     if (rst == RST_OK)
     {
         *r_id = r_unit->m_Packet.m_iID;
-        HLOGC(mglog.Debug,
-              log << "INCOMING PACKET: BOUND=" << SockaddrToString(m_pChannel->bindAddressAny()) << " "
-                  << PacketInfo(r_unit->m_Packet));
+        HLOGC(mglog.Debug, log << "INCOMING PACKET: FROM=" << SockaddrToString(*r_addr)
+                << " BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
+                << " " << r_unit->m_Packet.Info());
     }
     return rst;
 }
@@ -1343,7 +1353,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     {
         // Pass this to either async rendezvous connection,
         // or store the packet in the queue.
-        HLOGC(mglog.Debug, log << "worker_ProcessAddressedPacket: resending to target socket %" << id);
+        HLOGC(mglog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
         return worker_TryAsyncRend_OrStore(id, unit, addr);
     }
 

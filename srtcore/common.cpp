@@ -59,6 +59,7 @@ modified by
 #include <iostream>
 #include <iomanip>
 #include "srt.h"
+#include "udt.h"
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
@@ -883,8 +884,44 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 namespace srt_logging
 {
 
+
+std::string SockStatusStr(SRT_SOCKSTATUS s)
+{
+    if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
+        return "???";
+
+    static struct AutoMap
+    {
+        // Values start from 1, so do -1 to avoid empty cell
+        std::string names[int(SRTS_NONEXIST)-1+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRTS_##statename-1] = #statename
+            SINI(INIT);
+            SINI(OPENED);
+            SINI(LISTENING);
+            SINI(CONNECTING);
+            SINI(CONNECTED);
+            SINI(BROKEN);
+            SINI(CLOSING);
+            SINI(CLOSED);
+            SINI(NONEXIST);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)-1];
+}
+
+
 std::string FormatTime(uint64_t time)
 {
+    if (time == 0)
+    {
+        // Use special string for 0
+        return "00:00:00.000000";
+    }
     using namespace std;
 
     time_t sec = time/1000000;

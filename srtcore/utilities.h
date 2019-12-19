@@ -448,19 +448,23 @@ template<typename Type>
 class ref_t
 {
     Type* m_data;
+    
+    // Use your own addressof to walk around any
+    // defined operator&.
+    template <class InType>
+    static InType* adrof(InType& refr)
+    {
+        unsigned char& mem = (unsigned char&)refr;
+        return (InType*)&mem;
+    }
+
 
 public:
     typedef Type type;
 
-#if HAVE_CXX11
     explicit ref_t(Type& __indata)
-        : m_data(std::addressof(__indata))
+        : m_data(adrof(__indata))
         { }
-#else
-    explicit ref_t(Type& __indata)
-        : m_data((Type*)(&(char&)(__indata)))
-        { }
-#endif
 
     ref_t(const ref_t<Type>& inref)
         : m_data(inref.m_data)
