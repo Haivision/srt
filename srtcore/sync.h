@@ -11,11 +11,19 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STL_CHRONO
+//
 //#define ENABLE_CXX17
 
 #include <cstdlib>
+
+#ifdef USE_STL_CHRONO
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#else
 #include <pthread.h>
+#endif // USE_STL_CHRONO
+
 #include "utilities.h"
 
 namespace srt
@@ -23,6 +31,51 @@ namespace srt
 namespace sync
 {
 using namespace std;
+
+#ifdef USE_STL_CHRONO
+
+template <class Clock, class Duration = typename Clock::duration>
+using time_point = chrono::time_point<Clock, Duration>;
+
+using system_clock   = chrono::system_clock;
+using high_res_clock = chrono::high_resolution_clock;
+using steady_clock   = chrono::steady_clock;
+
+uint64_t get_timestamp_us();
+
+inline long long count_microseconds(const steady_clock::duration &t)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(t).count();
+}
+
+inline long long count_microseconds(const steady_clock::time_point tp)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
+}
+
+inline long long count_milliseconds(const steady_clock::duration &t)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+}
+
+inline long long count_seconds(const steady_clock::duration& t)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(t).count();
+}
+
+inline steady_clock::duration microseconds_from(long t_us) { return std::chrono::microseconds(t_us); }
+
+inline steady_clock::duration milliseconds_from(long t_ms) { return std::chrono::milliseconds(t_ms); }
+
+inline steady_clock::duration seconds_from(long t_s) { return std::chrono::seconds(t_s); }
+
+template <class Clock, class Duration = typename Clock::duration>
+inline bool is_zero(const time_point<Clock, Duration> &tp)
+{
+    return tp.time_since_epoch() == Clock::duration::zero();
+}
+
+#else // !defined(USE_STL_CHRONO)
 
 template <class _Clock>
 class Duration
@@ -60,13 +113,12 @@ public: // Assignment operators
     inline Duration operator-(const Duration& rhs) const { return Duration(m_duration - rhs.m_duration); }
     inline Duration operator*(const int& rhs) const { return Duration(m_duration * rhs); }
 
-  private:
+private:
     // int64_t range is from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
     int64_t m_duration;
 };
 
-template <class _Clock>
-class TimePoint;
+template <class _Clock> class TimePoint;
 
 class steady_clock
 {
@@ -74,7 +126,7 @@ public:
     typedef Duration<steady_clock>  duration;
     typedef TimePoint<steady_clock> time_point;
 
-public:
+ public:
     static time_point now();
 };
 
@@ -174,15 +226,180 @@ Duration<steady_clock> seconds_from(int64_t t_s);
 
 inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 
+#endif  // USE_STL_CHRONO
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Common pthread/chrono section
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-class SyncEvent
+// Mutex section
+#ifdef USE_STL_CHRONO
+// Mutex for C++03 should call pthread init and destroy
+using Mutex      = mutex;
+using UniqueLock = unique_lock<mutex>;
+#if ENABLE_CXX17
+using ScopedLock = scoped_lock<mutex>;
+#else
+using ScopedLock = lock_guard<mutex>;
+#endif
+
+using Thread     = thread;
+
+inline void SleepFor(const steady_clock::duration &t) { this_thread::sleep_for(t); }
+
+#else
+
+class Mutex
+{
+    friend class SyncEvent;
+
+public:
+    Mutex();
+    ~Mutex();
+
+public:
+    int lock();
+    int unlock();
+
+    /// @return     true if the lock was acquired successfully, otherwise false
+    bool try_lock();
+
+private:
+
+    pthread_mutex_t m_mutex;
+};
+
+
+class ScopedLock
 {
 public:
+    ScopedLock(Mutex& m);
+    ~ScopedLock();
+
+private:
+    Mutex& m_mutex;
+};
+
+
+
+class UniqueLock
+{
+    friend class SyncEvent;
+
+public:
+    UniqueLock(Mutex &m);
+    ~UniqueLock();
+
+public:
+    void unlock();
+
+private:
+    int m_iLocked;
+    Mutex& m_Mutex;
+};
+
+
+inline void SleepFor(const steady_clock::duration& t)
+{
+#ifndef _WIN32
+    usleep(count_microseconds(t));
+#else
+    Sleep((DWORD)count_milliseconds(t));
+#endif
+}
+
+#endif  // USE_STL_CHRONO
+
+
+struct CriticalSection
+{
+    static void enter(Mutex &m) { m.lock(); }
+    static void leave(Mutex &m) { m.unlock(); }
+};
+
+
+class InvertedLock
+{
+    Mutex *m_pMutex;
+
+  public:
+    InvertedLock(Mutex *m)
+        : m_pMutex(m)
+    {
+        if (!m_pMutex)
+            return;
+
+        CriticalSection::leave(*m_pMutex);
+    }
+
+    ~InvertedLock()
+    {
+        if (!m_pMutex)
+            return;
+        CriticalSection::enter(*m_pMutex);
+    }
+};
+
+
+class SyncCond
+{
+
+public:
+    SyncCond();
+
+    ~SyncCond();
+
+public:
+    bool wait_for(UniqueLock& lk, steady_clock::duration timeout);
+    void wait(UniqueLock& lk);
+
+    void notify_one();
+    void notify_all();
+
+private:
+#ifdef USE_STL_CHRONO
+    condition_variable m_tick_cond;
+#else
+    pthread_cond_t  m_tick_cond;
+#endif
+};
+
+
+
+class SyncEvent
+{
+
+public:
+    SyncEvent();
+
+    ~SyncEvent();
+
+public:
+
+    Mutex &mutex() { return m_tick_lock; }
+
+public:
+
+    /// wait_until causes the current thread to block until
+    /// a specific time is reached.
+    ///
+    /// @return true  if the specified time was reached
+    ///         false should never happen
+    bool wait_until(steady_clock::time_point tp);
+
+    /// Blocks the current executing thread,
+    /// and adds it to the list of threads waiting on* this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously.
+    /// Uses internal mutex to lock.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool wait_for(const steady_clock::duration& rel_time);
+
     /// Atomically releases lock, blocks the current executing thread,
     /// and adds it to the list of threads waiting on* this.
     /// The thread will be unblocked when notify_all() or notify_one() is executed,
@@ -190,10 +407,36 @@ public:
     /// It may also be unblocked spuriously.
     /// When unblocked, regardless of the reason, lock is reacquiredand wait_for() exits.
     ///
-    /// @return result of pthread_cond_wait(...) function call
-    ///
-    static int wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool wait_for(UniqueLock &lk, const steady_clock::duration& rel_time);
+
+    void wait();
+
+    void wait(UniqueLock& lk);
+
+    void notify_one();
+
+    void notify_all();
+
+    /// Resets target wait time and interrupts all waits
+    void interrupt();
+
+  private:
+#ifdef USE_STL_CHRONO
+    Mutex              m_tick_lock;
+    condition_variable m_tick_cond;
+#else
+    Mutex              m_tick_lock;
+    pthread_cond_t     m_tick_cond;
+#endif
+    steady_clock::time_point m_sched_time;
 };
+
+// TODO: remove this object
+static SyncEvent s_SyncEvent;
+
+
 
 /// Print steady clock timepoint in a human readable way.
 /// days HH:MM::SS.us [STD]
