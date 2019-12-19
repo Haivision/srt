@@ -69,7 +69,7 @@ private:
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
-    uint64_t        m_SndKmLastTime;
+    srt::sync::steady_clock::time_point     m_SndKmLastTime;
     struct {
         unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
         size_t MsgLen;
@@ -161,7 +161,7 @@ public:
         using srt_logging::mglog;
 #endif
 
-        m_SndKmLastTime = CTimer::getTime();
+        m_SndKmLastTime = srt::sync::steady_clock::now();
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;

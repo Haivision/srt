@@ -247,7 +247,6 @@ class UDT_API CUDTException
 public:
 
    CUDTException(CodeMajor major = MJ_SUCCESS, CodeMinor minor = MN_NONE, int err = -1);
-   CUDTException(const CUDTException& e);
 
    ~CUDTException();
 

@@ -64,6 +64,7 @@ modified by
 #include "udt.h"
 
 using namespace std;
+using namespace srt::sync;
 
 namespace srt_logging
 {
@@ -79,7 +80,7 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
-   CGuard::createMutex(m_EPollLock);
+    CGuard::createMutex(m_EPollLock);
 }
 
 CEPoll::~CEPoll()
@@ -383,7 +384,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
     if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
-    int64_t entertime = CTimer::getTime();
+    steady_clock::time_point entertime = steady_clock::now();
 
     while (true)
     {
@@ -431,7 +432,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
                 return total;
         }
 
-        if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+        if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
         CTimer::waitForEvent();
@@ -454,10 +455,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
     int total = 0;
 
-    int64_t entertime = CTimer::getTime();
-
-    HLOGC(mglog.Debug, log << "CEPoll::wait: START for eid=" << eid);
-
+    srt::sync::steady_clock::time_point entertime = srt::sync::steady_clock::now();
     while (true)
     {
         {
@@ -621,7 +619,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
         if (total > 0)
             return total;
 
-        if ((msTimeOut >= 0) && (int64_t(CTimer::getTime() - entertime) >= msTimeOut * int64_t(1000)))
+        if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
         {
             HLOGP(mglog.Debug, "... not waiting longer - timeout");
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);

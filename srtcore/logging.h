@@ -28,16 +28,13 @@ written by
 #else
 #include <sys/time.h>
 #endif
-#include <pthread.h>
-#if HAVE_CXX11
-#include <mutex>
-#endif
 
 #include "srt.h"
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
 #include "srt_compat.h"
+#include "sync.h"
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))
@@ -292,7 +289,7 @@ struct LogDispatcher::Proxy
     // or better __func__.
     std::string ExtractName(std::string pretty_function);
 
-	Proxy(LogDispatcher& guy);
+    Proxy(LogDispatcher& guy);
 
     // Copy constructor is needed due to noncopyable ostringstream.
     // This is used only in creation of the default object, so just
@@ -407,7 +404,6 @@ inline bool LogDispatcher::CheckEnabled()
     return configured_enabled_fa && level <= configured_maxlevel;
 }
 
-SRT_API std::string FormatTime(uint64_t time);
 
 #if HAVE_CXX11
 
