@@ -445,13 +445,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    ns->m_Status = SRTS_CONNECTED;
 
    // copy address information of local node
-    // Precisely, what happens here is:
-    // - Get the IP address and port from the system database
-    ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
-    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
-    // (the family is used exactly as the one taken from what has been returned
-    // by getsockaddr)
-    CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+   // Precisely, what happens here is:
+   // - Get the IP address and port from the system database
+   ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+   // - OVERWRITE just the IP address itself by a value taken from piSelfIP
+   // (the family is used exactly as the one taken from what has been returned
+   // by getsockaddr)
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
    // protect the m_Sockets structure.
    CGuard::enterCS(m_ControlLock);
@@ -1028,8 +1028,8 @@ int CUDTUnited::close(const SRTSOCKET u)
 
 void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
 {
-    if (!name || !namelen)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+   if (!name || !namelen)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    if (getStatus(u) != SRTS_CONNECTED)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -1042,7 +1042,7 @@ void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
    if (!s->m_pUDT->m_bConnected || s->m_pUDT->m_bBroken)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   int len = s->m_PeerAddr.size();
+   const int len = s->m_PeerAddr.size();
    if (*namelen < len)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -1641,7 +1641,7 @@ void CUDTUnited::updateMux(
    // always a new multiplexer for that very socket.
    if (!udpsock && s->m_pUDT->m_bReuseAddr)
    {
-       int port = addr.hport();
+      const int port = addr.hport();
 
       // find a reusable address
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
@@ -1798,7 +1798,7 @@ void CUDTUnited::updateMux(
 void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    CGuard cg(m_ControlLock);
-   int port = ls->m_SelfAddr.hport();
+   const int port = ls->m_SelfAddr.hport();
 
    // find the listener's address
    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
