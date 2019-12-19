@@ -200,7 +200,7 @@ public:
       // socket APIs
 
    int bind(CUDTSocket* u, const sockaddr_any& name);
-   int bind(CUDTSocket* u, int udpsock);
+   int bind(CUDTSocket* u, UDPSOCKET udpsock);
    int listen(const SRTSOCKET u, int backlog);
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);

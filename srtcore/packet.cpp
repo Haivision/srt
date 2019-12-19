@@ -542,6 +542,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
         os << val;
 }
 
+#if ENABLE_LOGGING
 std::string CPacket::Info()
 {
     std::ostringstream os;
@@ -599,3 +600,4 @@ std::string CPacket::Info()
 
     return os.str();
 }
+#endif

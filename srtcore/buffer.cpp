@@ -1751,7 +1751,7 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 
     const int64_t timediff_ms = count_milliseconds(nowtime - srctime);
     const int64_t nowdiff_ms = is_zero(prev_now) ? count_milliseconds(nowtime - prev_now) : 0;
-    const int64_t srctimediff_ms = is_zero(prev_srctime) ? count_milliseconds(srctime - prev_srctime) : 0;
+    //const int64_t srctimediff_ms = is_zero(prev_srctime) ? count_milliseconds(srctime - prev_srctime) : 0;
 
     const int next_p = shiftFwd(p);
     CUnit* u = m_pUnit[next_p];
