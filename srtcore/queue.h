@@ -215,12 +215,9 @@ private:
    int m_iArrayLength;			// physical length of the array
    int m_iLastEntry;			// position of last entry on the heap array
 
-   pthread_mutex_t m_ListLock;
-
-   pthread_mutex_t* m_pWindowLock;
-   pthread_cond_t* m_pWindowCond;
-
-   CTimer* m_pTimer;
+   srt::sync::Mutex m_ListLock;
+   srt::sync::SyncEvent* m_pWindowSync;
+   srt::sync::SyncEvent* m_pTimer;
 
 private:
    CSndUList(const CSndUList&);
@@ -348,7 +345,7 @@ private:
    };
    std::list<CRL> m_lRendezvousID;    // The sockets currently in rendezvous mode
 
-   pthread_mutex_t m_RIDVectorLock;
+   srt::sync::Mutex m_RIDVectorLock;
 };
 
 class CSndQueue
@@ -370,9 +367,9 @@ public:
 
       /// Initialize the sending queue.
       /// @param [in] c UDP channel to be associated to the queue
-      /// @param [in] t Timer
+      /// @param [in] t SyncEvent
 
-   void init(CChannel* c, CTimer* t);
+   void init(CChannel* c, srt::sync::SyncEvent* t);
 
       /// Send out a packet to a given address.
       /// @param [in] addr destination address
@@ -410,12 +407,10 @@ private:
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
    CChannel* m_pChannel;                // The UDP channel for data sending
-   CTimer* m_pTimer;                    // Timing facility
+   srt::sync::SyncEvent* m_pTimer;      // Timing facility
+   srt::sync::SyncEvent  m_WindowSync;
 
-   pthread_mutex_t m_WindowLock;
-   pthread_cond_t m_WindowCond;
-
-   volatile bool m_bClosing;            // closing the worker
+   volatile bool m_bClosing;		    // closing the worker
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)//>>debug high freq worker
    uint64_t m_ullDbgPeriod;
@@ -458,9 +453,8 @@ public:
       /// @param [in] version IP version
       /// @param [in] hsize hash table size
       /// @param [in] c UDP channel to be associated to the queue
-      /// @param [in] t timer
 
-   void init(int size, int payload, int version, int hsize, CChannel* c, CTimer* t);
+   void init(int size, int payload, int version, int hsize, CChannel* c);
 
       /// Read a packet for a specific UDT socket id.
       /// @param [in] id Socket ID
@@ -489,7 +483,6 @@ private:
    CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
    CHash* m_pHash;			// Hash table for UDT socket looking up
    CChannel* m_pChannel;		// UDP channel for receving packets
-   CTimer* m_pTimer;			// shared timer with the snd queue
 
    int m_iPayloadSize;                  // packet payload size
 
@@ -509,16 +502,15 @@ private:
    void storePkt(int32_t id, CPacket* pkt);
 
 private:
-   pthread_mutex_t m_LSLock;
+   srt::sync::Mutex m_LSLock;
    CUDT* m_pListener;                                   // pointer to the (unique, if any) listening UDT entity
    CRendezvousQueue* m_pRendezvousQueue;                // The list of sockets in rendezvous mode
 
    std::vector<CUDT*> m_vNewEntry;                      // newly added entries, to be inserted
-   pthread_mutex_t m_IDLock;
+   srt::sync::Mutex m_IDLock;
 
    std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
-   pthread_mutex_t m_PassLock;
-   pthread_cond_t m_PassCond;
+   srt::sync::SyncEvent                     m_BufferSync;
 
 private:
    CRcvQueue(const CRcvQueue&);
@@ -530,7 +522,7 @@ struct CMultiplexer
    CSndQueue* m_pSndQueue;  // The sending queue
    CRcvQueue* m_pRcvQueue;  // The receiving queue
    CChannel* m_pChannel;    // The UDP channel for sending and receiving
-   CTimer* m_pTimer;        // The timer
+   srt::sync::SyncEvent* m_pTimer;        // The timer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // IP version

@@ -300,7 +300,7 @@ struct EventVariant
     union U
     {
         CPacket* packet;
-        int32_t ack;
+        uint32_t ack;
         struct
         {
             int32_t* ptr;
@@ -328,7 +328,7 @@ struct EventVariant
     }
 
     void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(int32_t  arg) { Assign<ACK>(arg); };
+    void operator=(uint32_t arg) { Assign<ACK>(arg); };
     void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
     void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
@@ -413,7 +413,7 @@ template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 
 template<> struct EventVariant::VariantFor<EventVariant::ACK>
 {
-    typedef int32_t type;
+    typedef uint32_t type;
     static type U::*field() { return &U::ack; }
 };
 
@@ -522,120 +522,6 @@ struct EventSlot
 };
 
 
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
-
-class CTimer
-{
-public:
-   CTimer();
-   ~CTimer();
-
-public:
-
-      /// Seelp until CC "nexttime_tk".
-      /// @param [in] nexttime_tk next time the caller is waken up.
-
-   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
-
-      /// Stop the sleep() or sleepto() methods.
-
-   void interrupt();
-
-      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
-
-   void tick();
-
-public:
-
-      /// trigger an event such as new connection, close, new data, etc. for "select" call.
-
-   static void triggerEvent();
-
-   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
-
-      /// wait for an event to br triggered by "triggerEvent".
-      /// @retval WT_EVENT The event has happened
-      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
-      /// @retval WT_ERROR The function has exit due to an error
-
-   static EWait waitForEvent();
-
-      /// sleep for a short interval. exact sleep time does not matter
-
-   static void sleep();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
-
-private:
-   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
-
-   pthread_cond_t m_TickCond;
-   pthread_mutex_t m_TickLock;
-
-   static pthread_cond_t m_EventCond;
-   static pthread_mutex_t m_EventLock;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-class CGuard
-{
-public:
-   /// Constructs CGuard, which locks the given mutex for
-   /// the scope where this object exists.
-   /// @param lock Mutex to lock
-   /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
-   ~CGuard();
-
-public:
-   static int enterCS(pthread_mutex_t& lock);
-   static int leaveCS(pthread_mutex_t& lock);
-
-   static void createMutex(pthread_mutex_t& lock);
-   static void releaseMutex(pthread_mutex_t& lock);
-
-   static void createCond(pthread_cond_t& cond);
-   static void releaseCond(pthread_cond_t& cond);
-
-   void forceUnlock();
-
-private:
-   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
-   int m_iLocked;                       // Locking status
-
-   CGuard& operator=(const CGuard&);
-};
-
-class InvertedGuard
-{
-    pthread_mutex_t* m_pMutex;
-public:
-
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
-    {
-        if ( !smutex )
-            return;
-
-        CGuard::leaveCS(*smutex);
-    }
-
-    ~InvertedGuard()
-    {
-        if ( !m_pMutex )
-            return;
-
-        CGuard::enterCS(*m_pMutex);
-    }
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
