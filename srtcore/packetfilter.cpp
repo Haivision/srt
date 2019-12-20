@@ -75,7 +75,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
     else
     {
         // Packet not to be passthru, update stats
-        CGuard lg(m_parent->m_StatsLock);
+        srt::sync::ScopedLock lg(m_parent->m_StatsLock);
         ++m_parent->m_stats.rcvFilterExtra;
         ++m_parent->m_stats.rcvFilterExtraTotal;
     }
@@ -89,7 +89,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         int dist = CSeqNo::seqoff(i->first, i->second) + 1;
         if (dist > 0)
         {
-            CGuard lg(m_parent->m_StatsLock);
+            srt::sync::ScopedLock lg(m_parent->m_StatsLock);
             m_parent->m_stats.rcvFilterLoss += dist;
             m_parent->m_stats.rcvFilterLossTotal += dist;
         }
@@ -108,7 +108,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         size_t nsupply = m_provided.size();
         InsertRebuilt(*r_incoming, m_unitq);
 
-        CGuard lg(m_parent->m_StatsLock);
+        srt::sync::ScopedLock lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvFilterSupply += nsupply;
         m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
     }
