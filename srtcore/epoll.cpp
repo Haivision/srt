@@ -625,8 +625,10 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
         // true if condition occured or spuriously woken up
         // false on timeout
-        IF_HEAVY_LOGGING(const bool wokenbycond = )
-            s_SyncEvent.wait_for(milliseconds_from(10));
+#if ENABLE_HEAVY_LOGGING
+        const bool wokenbycond =
+#endif
+        s_SyncEvent.wait_for(milliseconds_from(10));
 
         HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
             << (wokenbycond ? "TRIGGERED" : "TIMEOUT"));
