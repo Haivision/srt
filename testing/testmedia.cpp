@@ -686,7 +686,7 @@ void SrtCommon::ConnectClient(string host, int port)
 void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
 {
     int errnov = 0;
-    int result = srt_getlasterror(&errnov);
+    const int result = srt_getlasterror(&errnov);
     string message = srt_getlasterror_str();
     if (result == SRT_ECONNREJ)
     {

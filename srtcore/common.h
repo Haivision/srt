@@ -87,40 +87,37 @@ class UDT_API CUDTException: public std::exception
 {
 public:
 
-   CUDTException(CodeMajor major = MJ_SUCCESS, CodeMinor minor = MN_NONE, int err = -1);
-   virtual ~CUDTException() ATR_NOTHROW {}
+    CUDTException(CodeMajor major = MJ_SUCCESS, CodeMinor minor = MN_NONE, int err = -1);
+    virtual ~CUDTException() ATR_NOTHROW {}
 
-      /// Get the description of the exception.
-      /// @return Text message for the exception description.
+    /// Get the description of the exception.
+    /// @return Text message for the exception description.
+    const char* getErrorMessage() const ATR_NOTHROW;
 
-   const char* getErrorMessage() const ATR_NOTHROW;
+    virtual const char* what() const ATR_NOTHROW ATR_OVERRIDE
+    {
+        return getErrorMessage();
+    }
 
-   virtual const char* what() const ATR_NOTHROW ATR_OVERRIDE
-   {
-       return getErrorMessage();
-   }
+    /// Get the system errno for the exception.
+    /// @return errno.
+    int getErrorCode() const;
 
-      /// Get the system errno for the exception.
-      /// @return errno.
+    /// Get the system network errno for the exception.
+    /// @return errno.
+    int getErrno() const;
 
-   int getErrorCode() const;
-
-      /// Get the system network errno for the exception.
-      /// @return errno.
-
-   int getErrno() const;
-      /// Clear the error code.
-
-   void clear();
+    /// Clear the error code.
+    void clear();
 
 private:
-   CodeMajor m_iMajor;        // major exception categories
-   CodeMinor m_iMinor;		// for specific error reasons
-   int m_iErrno;		// errno returned by the system if there is any
-   mutable std::string m_strMsg; // text error message (cache)
+    CodeMajor m_iMajor;        // major exception categories
+    CodeMinor m_iMinor;		// for specific error reasons
+    int m_iErrno;		// errno returned by the system if there is any
+    mutable std::string m_strMsg; // text error message (cache)
 
-   std::string m_strAPI;	// the name of UDT function that returns the error
-   std::string m_strDebug;	// debug information, set to the original place that causes the error
+    std::string m_strAPI;	// the name of UDT function that returns the error
+    std::string m_strDebug;	// debug information, set to the original place that causes the error
 
 public: // Legacy Error Code
 
