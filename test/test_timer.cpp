@@ -3,7 +3,6 @@
 #include <thread>
 #include <array>
 #include <numeric>   // std::accumulate
-#include "common.h"
 #include "sync.h"
 
 
@@ -17,20 +16,20 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
     const int num_samples = 1000;
     array<uint64_t, num_samples> sleeps_us;
 
-    const uint64_t sleep_intervals_us[] = { 1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000 };
+    const long sleep_intervals_us[] = { 1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000 };
 
-    CTimer timer;
+    srt::sync::SyncEvent timer;
 
-    for (uint64_t interval_us : sleep_intervals_us)
+    for (long interval_us : sleep_intervals_us)
     {
         for (int i = 0; i < num_samples; i++)
         {
-            steady_clock::time_point currtime = steady_clock::now();
+            const auto currtime = steady_clock::now();
 
-            timer.sleepto(currtime + microseconds_from(interval_us));
+            timer.wait_until(currtime + microseconds_from(interval_us));
 
-            steady_clock::time_point new_time = steady_clock::now();
-            sleeps_us[i] = count_microseconds(new_time - currtime);
+            const auto newtime = steady_clock::now();
+            sleeps_us[i] = count_microseconds(newtime - currtime);
         }
 
         cerr << "Target sleep duration: " << interval_us << " us\n";
@@ -40,5 +39,4 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
         cerr << "\n";
     }
 }
-
 
