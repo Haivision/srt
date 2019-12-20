@@ -385,10 +385,10 @@ public: // for CUDT to acknowledge IO status
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID
-   pthread_mutex_t m_SeedLock;
+   CMutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   pthread_mutex_t m_EPollLock;
+   CMutex m_EPollLock;
 };
 
 

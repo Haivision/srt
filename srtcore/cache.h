@@ -82,7 +82,7 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
-      CGuard::createMutex(m_Lock);
+      CGuard::createMutex(m_Lock, "Cache");
    }
 
    ~CCache()
@@ -223,7 +223,7 @@ private:
    int m_iHashSize;
    int m_iCurrSize;
 
-   pthread_mutex_t m_Lock;
+   CMutex m_Lock;
 
 private:
    CCache(const CCache&);

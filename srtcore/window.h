@@ -172,7 +172,7 @@ public:
    int getPktRcvSpeed(ref_t<int> bytesps) const
    {
        // Lock access to the packet Window
-       CGuard cg(m_lockPktWindow, "pktwdw");
+       CGuard cg(m_lockPktWindow);
 
        int pktReplica[ASIZE];          // packet information window (inter-packet time)
        return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, *bytesps);
@@ -190,7 +190,7 @@ public:
    int getBandwidth() const
    {
        // Lock access to the packet Window
-       CGuard cg(m_lockProbeWindow, "probe");
+       CGuard cg(m_lockProbeWindow);
 
        int probeReplica[PSIZE];
        return getBandwidth_in(m_aProbeWindow, probeReplica, PSIZE);
@@ -213,7 +213,7 @@ public:
 
    void onPktArrival(int pktsz = 0)
    {
-       CGuard cg(m_lockPktWindow, "pktwdw");
+       CGuard cg(m_lockPktWindow);
 
        m_CurrArrTime = CTimer::getTime();
 
@@ -288,7 +288,7 @@ public:
        const uint64_t now = CTimer::getTime();
 
        // Lock access to the packet Window
-       CGuard cg(m_lockProbeWindow, "probe");
+       CGuard cg(m_lockProbeWindow);
 
        m_CurrArrTime = now;
 
@@ -329,11 +329,11 @@ private:
    int m_aPktWindow[ASIZE];          // packet information window (inter-packet time)
    int m_aBytesWindow[ASIZE];        // 
    int m_iPktWindowPtr;         // position pointer of the packet info. window.
-   mutable pthread_mutex_t m_lockPktWindow; // used to synchronize access to the packet window
+   mutable CMutex m_lockPktWindow; // used to synchronize access to the packet window
 
    int m_aProbeWindow[PSIZE];        // record inter-packet time for probing packet pairs
    int m_iProbeWindowPtr;       // position pointer to the probing window
-   mutable pthread_mutex_t m_lockProbeWindow; // used to synchronize access to the probe window
+   mutable CMutex m_lockProbeWindow; // used to synchronize access to the probe window
 
    int m_iLastSentTime;         // last packet sending time
    int m_iMinPktSndInt;         // Minimum packet sending interval

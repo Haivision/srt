@@ -34,6 +34,7 @@ written by
 #endif
 
 #include "srt.h"
+#include "common.h"
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
@@ -127,15 +128,15 @@ struct LogConfig
     pthread_mutex_t mutex;
     int flags;
 
-    LogConfig(const fa_bitset_t& initial_fa):
-        enabled_fa(initial_fa),
-        max_level(LogLevel::warning),
-        log_stream(&std::cerr)
-    {
-        pthread_mutex_init(&mutex, 0);
-    }
-    LogConfig(const fa_bitset_t& efa, LogLevel::type l, std::ostream* ls):
-        enabled_fa(efa), max_level(l), log_stream(ls)
+    LogConfig(const fa_bitset_t& efa,
+            LogLevel::type l = LogLevel::warning,
+            std::ostream* ls = &std::cerr)
+        : enabled_fa(efa)
+        , max_level(l)
+        , log_stream(ls)
+        , loghandler_fn()
+        , loghandler_opaque()
+        , flags()
     {
         pthread_mutex_init(&mutex, 0);
     }

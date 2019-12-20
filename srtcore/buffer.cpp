@@ -115,7 +115,7 @@ CSndBuffer::CSndBuffer(int size, int mss)
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
 
-   pthread_mutex_init(&m_BufLock, NULL);
+   CGuard::createMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
@@ -199,7 +199,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     }
     m_pLastBlock = s;
 
-    CGuard::enterCS(m_BufLock, "Buf");
+    CGuard::enterCS(m_BufLock);
     m_iCount += size;
 
     m_iBytesCount += len;
@@ -211,7 +211,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     updAvgBufSize(time);
 #endif
 
-    CGuard::leaveCS(m_BufLock, "Buf");
+    CGuard::leaveCS(m_BufLock);
 
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -318,11 +318,11 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    }
    m_pLastBlock = s;
 
-   CGuard::enterCS(m_BufLock, "Buf");
+   CGuard::enterCS(m_BufLock);
    m_iCount += size;
    m_iBytesCount += total;
 
-   CGuard::leaveCS(m_BufLock, "Buf");
+   CGuard::leaveCS(m_BufLock);
 
    m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
@@ -715,7 +715,7 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
 
-   pthread_mutex_init(&m_BytesCountLock, NULL);
+   CGuard::createMutex(m_BytesCountLock, "BytesCount");
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -1558,7 +1558,7 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mutex_to_lock)
+void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, CMutex& mutex_to_lock)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
         return;
@@ -1582,7 +1582,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
 
     int64_t iDrift = CTimer::getTime() - (getTsbPdTimeBase(timestamp) + timestamp);
 
-    CGuard::enterCS(mutex_to_lock, "ack");
+    CGuard::enterCS(mutex_to_lock);
 
     bool updated = m_DriftTracer.update(iDrift);
 
@@ -1610,7 +1610,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& mut
         HLOGC(dlog.Debug, log << "DRIFT=" << (iDrift/1000.0) << "ms TB REMAINS: " << FormatTime(m_ullTsbPdTimeBase));
     }
 
-    CGuard::leaveCS(mutex_to_lock, "ack");
+    CGuard::leaveCS(mutex_to_lock);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)

@@ -75,6 +75,43 @@ modified by
 #define SRT_ASSERT(cond)
 #endif
 
+#if ENABLE_THREAD_LOGGING
+struct CMutexWrapper
+{
+    pthread_mutex_t in_mutex;
+    std::string lockname;
+
+    operator pthread_mutex_t& () { return in_mutex; }
+    pthread_mutex_t* operator& () { return &in_mutex; }
+
+   // Turned explicitly to string because this is exposed only for logging purposes.
+   std::string show()
+   {
+       std::ostringstream os;
+       os << (&in_mutex);
+       return os.str();
+   }
+};
+
+typedef CMutexWrapper CMutex;
+
+struct CConditionWrapper
+{
+    pthread_cond_t in_cond;
+    std::string cvname;
+
+    operator pthread_cond_t& () { return in_cond; }
+    pthread_cond_t* operator& () { return &in_cond; }
+};
+
+typedef CConditionWrapper CCondition;
+
+#else
+typedef pthread_mutex_t CMutex;
+typedef pthread_cond_t CCondition;
+#endif
+
+
 
 enum UDTSockType
 {
@@ -502,8 +539,6 @@ public:
       /// @retval 0 Wait was successfull
       /// @retval ETIMEDOUT The wait timed out
 
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
-
 private:
    uint64_t getTimeInMicroSec();
 
@@ -526,15 +561,12 @@ private:
 
 class CGuard
 {
-#if ENABLE_THREAD_LOGGING
-    std::string lockname;
-#endif
 public:
    /// Constructs CGuard, which locks the given mutex for
    /// the scope where this object exists.
    /// @param lock Mutex to lock
    /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, const char* ln = 0, bool if_condition = true);
+   CGuard(CMutex& lock, bool if_condition = true);
    ~CGuard();
 
 public:
@@ -566,30 +598,24 @@ public:
        }
    }
 
-   static int enterCS(pthread_mutex_t& lock, const char* ln, bool block = true);
-   static int leaveCS(pthread_mutex_t& lock, const char* ln);
+   static int enterCS(CMutex& lock, bool block = true);
+   static int leaveCS(CMutex& lock);
 
    static bool isthread(const pthread_t& thrval);
 
    static bool join(pthread_t& thr, void*& result);
    static bool join(pthread_t& thr);
 
-   static void createMutex(pthread_mutex_t& lock);
-   static void releaseMutex(pthread_mutex_t& lock);
+   static void createMutex(CMutex& lock, const char* name);
+   static void releaseMutex(CMutex& lock);
 
-   static void createCond(pthread_cond_t& cond, pthread_condattr_t* opt_attr = NULL);
-   static void releaseCond(pthread_cond_t& cond);
+   static void createCond(CCondition& cond, const char* name, pthread_condattr_t* opt_attr = NULL);
+   static void releaseCond(CCondition& cond);
 
-#if ENABLE_LOGGING
-
-   // Turned explicitly to string because this is exposed only for logging purposes.
-   std::string show_mutex()
-   {
-       std::ostringstream os;
-       os << (&m_Mutex);
-       return os.str();
-   }
-#endif
+   // This is for a special case when one class keeps a pointer
+   // to another mutex/cond in another object. Required because
+   // the operator& has been defined to return the internal pointer
+   // so that the most used syntax matches directly the raw mutex/cond types.
 
 private:
 
@@ -603,31 +629,25 @@ private:
         pthread_mutex_unlock(&m_Mutex);
    }
 
-   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
+   CMutex& m_Mutex;            // Alias name of the mutex to be protected
    int m_iLocked;                       // Locking status
 
    CGuard& operator=(const CGuard&);
 
-   friend class CCondDelegate;
+   friend class SyncEvent;
 };
 
 class InvertedGuard
 {
-    pthread_mutex_t* m_pMutex;
-#if ENABLE_THREAD_LOGGING
-    std::string lockid;
-#endif
+    CMutex* m_pMutex;
 public:
 
-    InvertedGuard(pthread_mutex_t* smutex, const char* ln = NULL): m_pMutex(smutex)
+    InvertedGuard(CMutex& smutex, bool shouldlock = true): m_pMutex()
     {
-        if ( !smutex )
+        if ( !shouldlock)
             return;
-#if ENABLE_THREAD_LOGGING
-        if (ln)
-            lockid = ln;
-#endif
-        CGuard::leaveCS(*smutex, ln);
+        m_pMutex = AddressOf(smutex);
+        CGuard::leaveCS(smutex);
     }
 
     ~InvertedGuard()
@@ -635,24 +655,18 @@ public:
         if ( !m_pMutex )
             return;
 
-#if ENABLE_THREAD_LOGGING
-        CGuard::enterCS(*m_pMutex, lockid.empty() ? (const char*)0 : lockid.c_str());
-#else
-        CGuard::enterCS(*m_pMutex, NULL);
-#endif
+        CGuard::enterCS(*m_pMutex);
     }
 };
 
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
-class CCondDelegate
+class SyncEvent
 {
-    pthread_cond_t* m_cond;
-    pthread_mutex_t* m_mutex;
+    CCondition* m_cond;
+    CMutex* m_mutex;
 #if ENABLE_THREAD_LOGGING
     bool nolock;
-    std::string cvname;
-    std::string lockname;
 #endif
 
 public:
@@ -663,11 +677,11 @@ public:
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_until() can be used only with this socket.
-    CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln = 0);
+    SyncEvent(CCondition& cond, CGuard& g);
 
     // This is only for one-shot signaling. This doesn't need a CGuard
     // variable, only the mutex itself. Only lock_signal() can be used.
-    CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock, const char* cn = 0, const char* ln = 0);
+    SyncEvent(CCondition& cond, CMutex& mutex, Nolock);
 
     // Wait indefinitely, until getting a signal on CV.
     void wait();

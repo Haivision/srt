@@ -325,17 +325,6 @@ void CTimer::sleep()
    #endif
 }
 
-int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
-    timeval now;
-    gettimeofday(&now, 0);
-    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + delay;
-    timespec timeout;
-    timeout.tv_sec = time_us / 1000000;
-    timeout.tv_nsec = (time_us % 1000000) * 1000;
-
-    return pthread_cond_timedwait(cond, mutex, &timeout);
-}
-
 #ifdef ENABLE_THREAD_LOGGING
 struct CGuardLogMutex
 {
@@ -356,35 +345,28 @@ struct CGuardLogMutex
 #endif
 
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool shouldwork):
+CGuard::CGuard(CMutex& lock, bool shouldwork):
     m_Mutex(lock),
     m_iLocked(-1)
 {
 #if ENABLE_THREAD_LOGGING
-    std::ostringstream cv;
-    cv << &m_Mutex;
-    if (ln)
-    {
-        cv << "(" << ln << ")";
-    }
-    lockname = cv.str();
     char errbuf[256];
 #endif
     if (shouldwork)
     {
-        LOGS(std::cerr, log << "CGuard: { LOCK:" << lockname << " ...");
+        LOGS(std::cerr, log << "CGuard: { LOCK:" << lock.lockname << " ...");
         Lock();
 
 #if ENABLE_THREAD_ASSERT
         if (m_iLocked != 0)
             abort();
 #endif
-        LOGS(std::cerr, log << "... " << lockname << " lock state:" <<
+        LOGS(std::cerr, log << "... " << lock.lockname << " lock state:" <<
                 (m_iLocked == 0 ? "locked successfully" : SysStrError(m_iLocked, errbuf, 256)));
     }
     else
     {
-        LOGS(std::cerr, log << "CGuard: LOCK NOT DONE (not required):" << lockname);
+        LOGS(std::cerr, log << "CGuard: LOCK NOT DONE (not required):" << lock.lockname);
     }
 }
 
@@ -393,54 +375,36 @@ CGuard::~CGuard()
 {
     if (m_iLocked == 0)
     {
-        LOGS(std::cerr, log << "CGuard: } UNLOCK:" << lockname);
+        LOGS(std::cerr, log << "CGuard: } UNLOCK:" << m_Mutex.lockname);
         Unlock();
     }
     else
     {
-        LOGS(std::cerr, log << "CGuard: UNLOCK NOT DONE (not locked):" << lockname);
+        LOGS(std::cerr, log << "CGuard: UNLOCK NOT DONE (not locked):" << m_Mutex.lockname);
     }
 }
 
-int CGuard::enterCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED, bool block)
+int CGuard::enterCS(CMutex& lock, bool block)
 {
-#if ENABLE_THREAD_LOGGING
-    std::ostringstream cv;
-    cv << &lock;
-    if (ln)
-    {
-        cv << "(" << ln << ")";
-    }
-    std::string lockname = cv.str();
-#endif
     int retval;
     if (block)
     {
-        LOGS(std::cerr, log << "enterCS(block) {  LOCK: " << lockname << " ...");
+        LOGS(std::cerr, log << "enterCS(block) {  LOCK: " << lock.lockname << " ...");
         retval = pthread_mutex_lock(&lock);
-        LOGS(std::cerr, log << "... " << lockname << " locked.");
+        LOGS(std::cerr, log << "... " << lock.lockname << " locked.");
     }
     else
     {
         retval = pthread_mutex_trylock(&lock);
-        LOGS(std::cerr, log << "enterCS(try) {  LOCK: " << lockname << " "
+        LOGS(std::cerr, log << "enterCS(try) {  LOCK: " << lock.lockname << " "
                 << (retval == 0 ? " LOCKED." : " FAILED }"));
     }
     return retval;
 }
 
-int CGuard::leaveCS(pthread_mutex_t& lock, const char* ln SRT_ATR_UNUSED)
+int CGuard::leaveCS(CMutex& lock)
 {
-#if ENABLE_THREAD_LOGGING
-    std::ostringstream cv;
-    cv << &lock;
-    if (ln)
-    {
-        cv << "(" << ln << ")";
-    }
-    std::string lockname = cv.str();
-#endif
-    LOGS(std::cerr, log << "leaveCS: } UNLOCK: " << lockname);
+    LOGS(std::cerr, log << "leaveCS: } UNLOCK: " << lock.lockname);
     return pthread_mutex_unlock(&lock);
 }
 
@@ -469,7 +433,7 @@ bool CGuard::join(pthread_t& thr, void*& result)
     return ret == 0;
 }
 
-void CGuard::createMutex(pthread_mutex_t& lock)
+void CGuard::createMutex(CMutex& lock, const char* name SRT_ATR_UNUSED)
 {
     pthread_mutexattr_t* pattr = NULL;
 #if ENABLE_THREAD_LOGGING
@@ -477,49 +441,56 @@ void CGuard::createMutex(pthread_mutex_t& lock)
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
     pattr = &attr;
+    std::ostringstream cv;
+    cv << &lock.in_mutex;
+    if (name)
+    {
+        cv << "(" << name << ")";
+    }
+    lock.lockname = cv.str();
 #endif
     pthread_mutex_init(&lock, pattr);
 }
 
-void CGuard::releaseMutex(pthread_mutex_t& lock)
+void CGuard::releaseMutex(CMutex& lock)
 {
     pthread_mutex_destroy(&lock);
 }
 
-void CGuard::createCond(pthread_cond_t& cond, pthread_condattr_t* attr)
+void CGuard::createCond(CCondition& cond, const char* name SRT_ATR_UNUSED, pthread_condattr_t* attr)
 {
+#if ENABLE_THREAD_LOGGING
+    std::ostringstream cv;
+    cv << &cond;
+    if (name)
+    {
+        cv << "(" << name << ")";
+    }
+    cond.cvname = cv.str();
+#endif
     pthread_cond_init(&cond, attr);
 }
 
-void CGuard::releaseCond(pthread_cond_t& cond)
+void CGuard::releaseCond(CCondition& cond)
 {
     pthread_cond_destroy(&cond);
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln SRT_ATR_UNUSED)
-    : m_cond(&cond), m_mutex(&g.m_Mutex)
+SyncEvent::SyncEvent(CCondition& cond, CGuard& g)
+    : m_cond(AddressOf(cond)), m_mutex(AddressOf(g.m_Mutex))
 #if ENABLE_THREAD_LOGGING
-      , nolock(false)
+, nolock(false)
 #endif
 {
 #if ENABLE_THREAD_LOGGING
     // This constructor expects that the mutex is locked, and 'g' should designate
     // the CGuard variable that holds the mutex. Test in debug mode whether the
     // mutex is locked
-    std::ostringstream cv;
-    cv << &cond;
-    if (ln)
-    {
-        cv << "(" << ln << ")";
-    }
-    cvname = cv.str();
-    lockname = g.lockname;
-
-    int lockst = pthread_mutex_trylock(m_mutex);
+    int lockst = pthread_mutex_trylock(&m_mutex->in_mutex);
     if (lockst == 0)
     {
-        pthread_mutex_unlock(m_mutex);
-        LOGS(std::cerr, log << "CCond: IPE: Mutex " << g.lockname << " in CGuard IS NOT LOCKED.");
+        pthread_mutex_unlock(&m_mutex->in_mutex);
+        LOGS(std::cerr, log << "CCond: IPE: Mutex " << m_mutex->lockname << " in CGuard IS NOT LOCKED.");
         return;
     }
 #endif
@@ -531,29 +502,13 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, CGuard& g, const char* ln SRT
     // variable that you have used for construction as its argument.
 }
 
-CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock,
-        const char* cn SRT_ATR_UNUSED, const char* ln SRT_ATR_UNUSED)
-    : m_cond(&cond), m_mutex(&mutex)
+SyncEvent::SyncEvent(CCondition& cond, CMutex& mutex, Nolock)
+    : m_cond(AddressOf(cond))
+    , m_mutex(AddressOf(mutex))
 #if ENABLE_THREAD_LOGGING
-      , nolock(true)
+, nolock(false)
 #endif
 {
-#if ENABLE_THREAD_LOGGING
-    std::ostringstream cv;
-    cv << &m_cond;
-    if (cn)
-    {
-        cv << "(" << cn << ")";
-    }
-    cvname = cv.str();
-    std::ostringstream lv;
-    lv << &mutex;
-    if (ln)
-    {
-        lv << "(" << ln << ")";
-    }
-    lockname = lv.str();
-#endif
     // We expect that the mutex is NOT locked at this moment by the current thread,
     // but it is perfectly ok, if the mutex is locked by another thread. We'll just wait.
 
@@ -561,13 +516,13 @@ CCondDelegate::CCondDelegate(pthread_cond_t& cond, pthread_mutex_t& mutex, Noloc
     // to only call lock_signal() function.
 }
 
-void CCondDelegate::wait()
+void SyncEvent::wait()
 {
-    LOGS(std::cerr, log << "Cond: WAIT:" << cvname << " UNLOCK:" << lockname);
+    LOGS(std::cerr, log << "Cond: WAIT:" << m_cond->cvname << " UNLOCK:" << m_mutex->lockname);
     THREAD_PAUSED();
-    pthread_cond_wait(m_cond, m_mutex);
+    pthread_cond_wait(&*m_cond, &*m_mutex);
     THREAD_RESUMED();
-    LOGS(std::cerr, log << "Cond: CAUGHT:" << cvname << " LOCKED:" << lockname);
+    LOGS(std::cerr, log << "Cond: CAUGHT:" << m_cond->cvname << " LOCKED:" << m_mutex->lockname);
 }
 
 /// Block the call until either @a timestamp time achieved
@@ -575,17 +530,17 @@ void CCondDelegate::wait()
 /// @param [in] timestamp Absolute time (since epoch [us]) to wait up to
 /// @retval true Resumed due to getting a CV signal
 /// @retval false Resumed due to being past @a timestamp
-bool CCondDelegate::wait_until(uint64_t timestamp)
+bool SyncEvent::wait_until(uint64_t timestamp)
 {
     using namespace srt_logging;
     timespec locktime;
     locktime.tv_sec = timestamp / 1000000;
     locktime.tv_nsec = (timestamp % 1000000) * 1000;
-    LOGS(std::cerr, log << "Cond: WAIT:" << cvname << " UNLOCK:" << lockname << " - until TS=" << FormatTime(timestamp));
+    LOGS(std::cerr, log << "Cond: WAIT:" << m_cond->cvname << " UNLOCK:" << m_mutex->lockname << " - until TS=" << FormatTime(timestamp));
     THREAD_PAUSED();
-    bool signaled = pthread_cond_timedwait(m_cond, m_mutex, &locktime) != ETIMEDOUT;
+    bool signaled = pthread_cond_timedwait(&*m_cond, &*m_mutex, &locktime) != ETIMEDOUT;
     THREAD_RESUMED();
-    LOGS(std::cerr, log << "Cond: CAUGHT:" << cvname << " LOCKED:" << lockname << " REASON:" << (signaled ? "SIGNAL" : "TIMEOUT"));
+    LOGS(std::cerr, log << "Cond: CAUGHT:" << m_cond->cvname << " LOCKED:" << m_mutex->lockname << " REASON:" << (signaled ? "SIGNAL" : "TIMEOUT"));
     return signaled;
 }
 
@@ -594,7 +549,7 @@ bool CCondDelegate::wait_until(uint64_t timestamp)
 /// @param [in] delay Maximum time to wait since the moment of the call
 /// @retval true Resumed due to getting a CV signal
 /// @retval false Resumed due to being past @a timestamp
-bool CCondDelegate::wait_for(uint64_t delay)
+bool SyncEvent::wait_for(uint64_t delay)
 {
     timeval now;
     gettimeofday(&now, 0); //  CTimer::getTime ???
@@ -602,7 +557,7 @@ bool CCondDelegate::wait_for(uint64_t delay)
     return wait_until(time_us);
 }
 
-void CCondDelegate::lock_signal()
+void SyncEvent::lock_signal()
 {
     // We expect nolock == true.
 #if ENABLE_THREAD_LOGGING
@@ -611,19 +566,19 @@ void CCondDelegate::lock_signal()
         LOGS(std::cerr, log << "Cond: IPE: lock_signal done on LOCKED Cond.");
     }
 #endif
-    LOGS(std::cerr, log << "Cond: SIGNAL:" << cvname << " { LOCKING: " << lockname << "...");
+    LOGS(std::cerr, log << "Cond: SIGNAL:" << m_cond->cvname << " { LOCKING: " << m_mutex->lockname << "...");
 
     // Not using CGuard here because it would be logged
     // and this will result in unnecessary excessive logging.
-    pthread_mutex_lock(m_mutex);
-    LOGS(std::cerr, log << "Cond: ... locked: " << lockname << " - SIGNAL!");
-    pthread_cond_signal(m_cond);
-    pthread_mutex_unlock(m_mutex);
+    pthread_mutex_lock(&*m_mutex);
+    LOGS(std::cerr, log << "Cond: ... locked: " << m_mutex->lockname << " - SIGNAL!");
+    pthread_cond_signal(&*m_cond);
+    pthread_mutex_unlock(&*m_mutex);
 
-    LOGS(std::cerr, log << "Cond: } UNLOCK:" << lockname);
+    LOGS(std::cerr, log << "Cond: } UNLOCK:" << m_mutex->lockname);
 }
 
-void CCondDelegate::signal_locked(CGuard& lk SRT_ATR_UNUSED)
+void SyncEvent::signal_locked(CGuard& lk SRT_ATR_UNUSED)
 {
     // We expect nolock == false.
 #if ENABLE_THREAD_LOGGING
@@ -632,20 +587,20 @@ void CCondDelegate::signal_locked(CGuard& lk SRT_ATR_UNUSED)
         LOGS(std::cerr, log << "Cond: IPE: signal done on no-lock-checked Cond.");
     }
 
-    if (&lk.m_Mutex != m_mutex)
+    if (AddressOf(lk.m_Mutex) != AddressOf(*m_mutex))
     {
-        LOGS(std::cerr, log << "Cond: IPE: signal declares CGuard.mutex=" << lk.lockname << " but Cond.mutex=" << lockname);
+        LOGS(std::cerr, log << "Cond: IPE: signal declares CGuard.mutex=" << lk.m_Mutex.lockname << " but Cond.mutex=" << m_mutex->lockname);
     }
-    LOGS(std::cerr, log << "Cond: SIGNAL:" << cvname << " (with locked:" << lockname << ")");
+    LOGS(std::cerr, log << "Cond: SIGNAL:" << m_cond->cvname << " (with locked:" << m_mutex->lockname << ")");
 #endif
 
-    pthread_cond_signal(m_cond);
+    pthread_cond_signal(&*m_cond);
 }
 
-void CCondDelegate::signal_relaxed()
+void SyncEvent::signal_relaxed()
 {
-    LOGS(std::cerr, log << "Cond: SIGNAL:" << cvname << " (NOT locking " << lockname << ")");
-    pthread_cond_signal(m_cond);
+    LOGS(std::cerr, log << "Cond: SIGNAL:" << m_cond->cvname << " (NOT locking " << m_mutex->lockname << ")");
+    pthread_cond_signal(&*m_cond);
 }
 
 //

@@ -435,6 +435,14 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
+// std::addressof in C++11,
+// needs to be provided for C++03
+template <class RefType>
+inline RefType* AddressOf(RefType& r)
+{
+    return (RefType*)(&(unsigned char&)(r));
+}
+
 // Homecooked version of ref_t. It's a copy of std::reference_wrapper
 // voided of unwanted properties and renamed to ref_t.
 
