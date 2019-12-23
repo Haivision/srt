@@ -372,7 +372,7 @@ class SyncEvent
 {
 
 public:
-    SyncEvent();
+    SyncEvent(bool is_static = false);
 
     ~SyncEvent();
 
