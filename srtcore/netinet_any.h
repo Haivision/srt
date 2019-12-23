@@ -34,6 +34,17 @@ struct sockaddr_any
         sockaddr sa;
     };
     socklen_t len;
+    static size_t storage_size()
+    {
+        typedef union
+        {
+            sockaddr_in sin;
+            sockaddr_in6 sin6;
+            sockaddr sa;
+        } ucopy;
+        return sizeof (ucopy);
+    }
+
 
     void reset()
     {

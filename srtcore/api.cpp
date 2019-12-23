@@ -377,7 +377,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
       ns = new CUDTSocket;
       ns->m_pUDT = new CUDT(*(ls->m_pUDT));
-      ns->m_PeerAddr = peer; // Take the sa_family value as a good deal.
+      // No need to check the peer, this is the address from which the request has come.
+      ns->m_PeerAddr = peer;
    }
    catch (...)
    {
@@ -2102,7 +2103,7 @@ int CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      s_UDTUnited.getsockname(u, name, namelen);;
+      s_UDTUnited.getsockname(u, name, namelen);
       return 0;
    }
    catch (const CUDTException& e)
