@@ -335,22 +335,8 @@ as described below.
 
 # Fields' naming convention
 
-This convention uses a special form of the Hungarian Notation.
-
-What is important in it, however, is to make it clear about the logical
-meaning of what the field defines, not exactly their declared type.
-Note that datatype-related Hungarian Notation cases can still be found
-in the source code.
-
-It is important to have appropriate markers in the field names in all cases
-when the meaning can be ambiguous or simply unobvious. If the name of the
-variable suggests something that can only be implemented using just one kind of
-type, the marker can be skipped. However in most cases it isn't clear enough
-from the name, what type was used to implement it, or more in particular, what
-their characteristics of use are because of both the type used to implement
-it and the way how it is being used in the code. The goal of this rule is to
-help prevent misuse of a field due to used unit, relationship character,
-compatibility and needed translations to a different unit or character.
+This convention uses a special form of the Hungarian Notation. The
+motivation is explained in (EXPLANATIONS (3)).
 
 Some detailed contentions:
 
@@ -487,10 +473,32 @@ and this `Ref` required around the variable was similar to what is required
 in C# in this case. The problem is, however, that the parameter name
 inside the function that receive it require extra `*` operator to access
 the designated reference (or `.get()` method call), as creating a type that can
-transparently designate a reference in C++ can't be created. This can't
+transparently designate a reference in C++ is impossible. This can't
 even be helped by a defined conversion operator, as it would only work
 in a limited number of cases. For example, it won't work if the reference
 is to a structure and you want `s.field` access, or if its of a pointer
 type and you would like to access `s->field` through it.
+
+
+3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
+
+Hungarian Notation is usually a method of embracing the type designation
+in the variable name. It doesn't mandate exactly what it should be used
+for, although while it could be seen usually in various project a very
+strict requirement to have an obligatory data type marker, here the
+purpose is slightly different - it is to make it clear about the logical
+meaning of what the field defines, not exactly their declared type.
+Note that datatype-related Hungarian Notation cases can still be found
+in the source code.
+
+It is important to have appropriate markers in the field names in all cases
+when the meaning can be ambiguous or simply unobvious. If the name of the
+variable suggests something that can only be implemented using just one kind of
+type, the marker can be skipped. However in most cases it isn't clear enough
+from the name, what type was used to implement it, or more in particular, what
+their characteristics of use are because of both the type used to implement
+it and the way how it is being used in the code. The goal of this rule is to
+help prevent misuse of a field due to used unit, relationship character,
+compatibility and needed translations to a different unit or character.
 
 
