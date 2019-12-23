@@ -184,40 +184,50 @@ timespec us_to_timespec(const uint64_t time_us);
 #if ENABLE_THREAD_LOGGING
 struct CMutexWrapper
 {
-    pthread_mutex_t in_mutex;
+    typedef pthread_mutex_t sysobj_t;
+    pthread_mutex_t in_sysobj;
     std::string lockname;
 
-    //pthread_mutex_t* operator& () { return &in_mutex; }
+    //pthread_mutex_t* operator& () { return &in_sysobj; }
 
    // Turned explicitly to string because this is exposed only for logging purposes.
    std::string show()
    {
        std::ostringstream os;
-       os << (&in_mutex);
+       os << (&in_sysobj);
        return os.str();
    }
+
 };
 
 typedef CMutexWrapper CMutex;
 
 struct CConditionWrapper
 {
-    pthread_cond_t in_cond;
+    typedef pthread_cond_t sysobj_t;
+    pthread_cond_t in_sysobj;
     std::string cvname;
 
 };
 
 typedef CConditionWrapper CCondition;
 
+template<class SysObj>
+inline typename SysObj::sysobj_t* RawAddr(SysObj& obj)
+{
+    return &obj.in_sysobj;
+}
 
-inline ::pthread_mutex_t* RawAddr(CMutex& m) { return &m.in_mutex; }
-inline ::pthread_cond_t* RawAddr(CCondition& c) { return &c.in_cond; }
 #else
 typedef ::pthread_mutex_t CMutex;
 typedef ::pthread_cond_t CCondition;
 
-inline ::pthread_mutex_t* RawAddr(CMutex& m) { return &m; }
-inline ::pthread_cond_t* RawAddr(CCondition& c) { return &c; }
+// Note: This cannot be defined as overloaded for
+// two different types because on some platforms
+// the pthread_cond_t and pthread_mutex_t are distinct
+// types, while on others they resolve to the same type.
+template <class SysObj>
+inline SysObj* RawAddr(SysObj& m) { return &m; }
 #endif
 
 
@@ -337,7 +347,7 @@ int CondWaitFor(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock
 #if ENABLE_THREAD_LOGGING
 inline int CondWaitFor(CConditionWrapper* cond, CMutexWrapper* mutex, const steady_clock::duration& rel_time)
 {
-    return CondWaitFor(&cond->in_cond, &mutex->in_mutex, rel_time);
+    return CondWaitFor(&cond->in_sysobj, &mutex->in_sysobj, rel_time);
 }
 #endif
 // This class is used for condition variable combined with mutex by different ways.
