@@ -285,7 +285,7 @@ struct sockaddr_any
         if (sa.sa_family == AF_INET)
             return sin.sin_addr.s_addr == INADDR_ANY;
 
-        if (sa.sa_family == AF_INET)
+        if (sa.sa_family == AF_INET6)
             return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
 
         return false;
