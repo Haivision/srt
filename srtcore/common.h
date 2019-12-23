@@ -63,9 +63,10 @@ modified by
    // #include <winsock2.h>
    //#include <windows.h>
 #endif
-#include <pthread.h>
+
 #include "udt.h"
 #include "utilities.h"
+#include "sync.h"
 
 
 #ifdef _DEBUG
@@ -74,43 +75,6 @@ modified by
 #else
 #define SRT_ASSERT(cond)
 #endif
-
-#if ENABLE_THREAD_LOGGING
-struct CMutexWrapper
-{
-    pthread_mutex_t in_mutex;
-    std::string lockname;
-
-    operator pthread_mutex_t& () { return in_mutex; }
-    pthread_mutex_t* operator& () { return &in_mutex; }
-
-   // Turned explicitly to string because this is exposed only for logging purposes.
-   std::string show()
-   {
-       std::ostringstream os;
-       os << (&in_mutex);
-       return os.str();
-   }
-};
-
-typedef CMutexWrapper CMutex;
-
-struct CConditionWrapper
-{
-    pthread_cond_t in_cond;
-    std::string cvname;
-
-    operator pthread_cond_t& () { return in_cond; }
-    pthread_cond_t* operator& () { return &in_cond; }
-};
-
-typedef CConditionWrapper CCondition;
-
-#else
-typedef pthread_mutex_t CMutex;
-typedef pthread_cond_t CCondition;
-#endif
-
 
 
 enum UDTSockType
@@ -480,15 +444,10 @@ public:
 
 public:
 
-      /// Sleep for "interval_tk" CCs.
-      /// @param [in] interval_tk CCs to sleep.
-
-   void sleep(uint64_t interval_tk);
-
       /// Seelp until CC "nexttime_tk".
       /// @param [in] nexttime_tk next time the caller is waken up.
 
-   void sleepto(uint64_t nexttime_tk);
+   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
 
       /// Stop the sleep() or sleepto() methods.
 
@@ -499,21 +458,6 @@ public:
    void tick();
 
 public:
-
-      /// Read the CPU clock cycle into x.
-      /// @param [out] x to record cpu clock cycles.
-
-   static void rdtsc(uint64_t &x);
-
-      /// return the CPU frequency.
-      /// @return CPU frequency.
-
-   static uint64_t getCPUFrequency();
-
-      /// check the current time, 64bit, in microseconds.
-      /// @return current time in microseconds.
-
-   static uint64_t getTime();
 
       /// trigger an event such as new connection, close, new data, etc. for "select" call.
 
@@ -540,168 +484,15 @@ public:
       /// @retval ETIMEDOUT The wait timed out
 
 private:
-   uint64_t getTimeInMicroSec();
-
-private:
-   uint64_t m_ullSchedTime_tk;             // next schedulled time
+   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
    pthread_mutex_t m_TickLock;
 
    static pthread_cond_t m_EventCond;
    static pthread_mutex_t m_EventLock;
-
-private:
-   static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
-   static uint64_t readCPUFrequency();
-   static bool m_bUseMicroSecond;       // No higher resolution timer available, use gettimeofday().
 };
 
-////////////////////////////////////////////////////////////////////////////////
-
-class CGuard
-{
-public:
-   /// Constructs CGuard, which locks the given mutex for
-   /// the scope where this object exists.
-   /// @param lock Mutex to lock
-   /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(CMutex& lock, bool if_condition = true);
-   ~CGuard();
-
-public:
-
-   // The force-Lock/Unlock mechanism can be used to forcefully
-   // change the lock on the CGuard object. This is in order to
-   // temporarily change the lock status on the given mutex, but
-   // still do the right job in the destructor. For example, if
-   // a lock has been forcefully unlocked by forceUnlock, then
-   // the CGuard object will not try to unlock it in the destructor,
-   // but again, if the forceLock() was done again, the destructor
-   // will still unlock the mutex.
-   void forceLock()
-   {
-       if (m_iLocked == 0)
-           return;
-       Lock();
-   }
-
-   // After calling this on a scoped lock wrapper (CGuard),
-   // the mutex will be unlocked right now, and no longer
-   // in destructor
-   void forceUnlock()
-   {
-       if (m_iLocked == 0)
-       {
-           m_iLocked = -1;
-           Unlock();
-       }
-   }
-
-   static int enterCS(CMutex& lock, bool block = true);
-   static int leaveCS(CMutex& lock);
-
-   static bool isthread(const pthread_t& thrval);
-
-   static bool join(pthread_t& thr, void*& result);
-   static bool join(pthread_t& thr);
-
-   static void createMutex(CMutex& lock, const char* name);
-   static void releaseMutex(CMutex& lock);
-
-   static void createCond(CCondition& cond, const char* name, pthread_condattr_t* opt_attr = NULL);
-   static void releaseCond(CCondition& cond);
-
-   // This is for a special case when one class keeps a pointer
-   // to another mutex/cond in another object. Required because
-   // the operator& has been defined to return the internal pointer
-   // so that the most used syntax matches directly the raw mutex/cond types.
-
-private:
-
-   void Lock()
-   {
-       m_iLocked = pthread_mutex_lock(&m_Mutex);
-   }
-
-   void Unlock()
-   {
-        pthread_mutex_unlock(&m_Mutex);
-   }
-
-   CMutex& m_Mutex;            // Alias name of the mutex to be protected
-   int m_iLocked;                       // Locking status
-
-   CGuard& operator=(const CGuard&);
-
-   friend class SyncEvent;
-};
-
-class InvertedGuard
-{
-    CMutex* m_pMutex;
-public:
-
-    InvertedGuard(CMutex& smutex, bool shouldlock = true): m_pMutex()
-    {
-        if ( !shouldlock)
-            return;
-        m_pMutex = AddressOf(smutex);
-        CGuard::leaveCS(smutex);
-    }
-
-    ~InvertedGuard()
-    {
-        if ( !m_pMutex )
-            return;
-
-        CGuard::enterCS(*m_pMutex);
-    }
-};
-
-// This class is used for condition variable combined with mutex by different ways.
-// This should provide a cleaner API around locking with debug-logging inside.
-class SyncEvent
-{
-    CCondition* m_cond;
-    CMutex* m_mutex;
-#if ENABLE_THREAD_LOGGING
-    bool nolock;
-#endif
-
-public:
-
-    enum Nolock { NOLOCK };
-
-    // Locked version: must be declared only after the declaration of CGuard,
-    // which has locked the mutex. On this delegate you should call only
-    // signal_locked() and pass the CGuard variable that should remain locked.
-    // Also wait() and wait_until() can be used only with this socket.
-    SyncEvent(CCondition& cond, CGuard& g);
-
-    // This is only for one-shot signaling. This doesn't need a CGuard
-    // variable, only the mutex itself. Only lock_signal() can be used.
-    SyncEvent(CCondition& cond, CMutex& mutex, Nolock);
-
-    // Wait indefinitely, until getting a signal on CV.
-    void wait();
-
-    // Wait only up to given time (microseconds since epoch, the same unit as
-    // for CTimer::getTime()).
-    // Return: true, if interrupted by a signal. False if exit on timeout.
-    bool wait_until(uint64_t timestamp);
-
-    // Wait only for a given time delay (in microseconds). This function
-    // extracts first current time using gettimeofday().
-    bool wait_for(uint64_t delay);
-
-    // You can signal using two methods:
-    // - lock_signal: expect the mutex NOT locked, lock it, signal, then unlock.
-    // - signal: expect the mutex locked, so only issue a signal, but you must pass the CGuard that keeps the lock.
-    void lock_signal();
-    void signal_locked(CGuard& lk);
-    void signal_relaxed();
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 

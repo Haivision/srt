@@ -99,7 +99,7 @@ private:
    int m_iSize;                         // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
-   mutable CMutex m_ListLock; // used to synchronize list operation
+   mutable srt::sync::CMutex m_ListLock; // used to synchronize list operation
 
 private:
    CSndLossList(const CSndLossList&);
@@ -227,7 +227,7 @@ struct CRcvFreshLoss
 {
     int32_t seq[2];
     int ttl;
-    uint64_t timestamp;
+    srt::sync::steady_clock::time_point timestamp;
 
     CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
 

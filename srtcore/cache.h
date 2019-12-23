@@ -82,13 +82,13 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
-      CGuard::createMutex(m_Lock, "Cache");
+      srt::sync::createMutex(m_Lock, "Cache");
    }
 
    ~CCache()
    {
       clear();
-      CGuard::releaseMutex(m_Lock);
+      srt::sync::releaseMutex(m_Lock);
    }
 
 public:
@@ -98,7 +98,7 @@ public:
 
    int lookup(T* data)
    {
-      CGuard cacheguard(m_Lock, "cache");
+       srt::sync::CGuard cacheguard(m_Lock, "cache");
 
       int key = data->getKey();
       if (key < 0)
@@ -126,7 +126,7 @@ public:
 
    int update(T* data)
    {
-      CGuard cacheguard(m_Lock, "cache");
+       srt::sync::CGuard cacheguard(m_Lock, "cache");
 
       int key = data->getKey();
       if (key < 0)
@@ -223,7 +223,7 @@ private:
    int m_iHashSize;
    int m_iCurrSize;
 
-   CMutex m_Lock;
+   srt::sync::CMutex m_Lock;
 
 private:
    CCache(const CCache&);

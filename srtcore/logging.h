@@ -28,10 +28,6 @@ written by
 #else
 #include <sys/time.h>
 #endif
-#include <pthread.h>
-#if HAVE_CXX11
-#include <mutex>
-#endif
 
 #include "srt.h"
 #include "common.h"
@@ -39,6 +35,7 @@ written by
 #include "threadname.h"
 #include "logging_api.h"
 #include "srt_compat.h"
+#include "sync.h"
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))
@@ -88,9 +85,10 @@ written by
 #else
 
 // Note: can't use CGuard here because CGuard uses LOGS in itself and will cause infinite recursion.
+// also: LOGS can be only and exclusively used in sync.cpp, where g_gmtx is defined.
 #define LOGS(stream, args) if (::srt_logger_config.max_level == srt_logging::LogLevel::debug) { \
     char tn[512]; g_gmtx.lock(); ThreadName::get(tn); std::ostringstream log; \
-    log << srt_logging::FormatTime(CTimer::getTime()) << "/" << tn << "##: "; \
+    log << FormatTime(steady_clock::now()) << "/" << tn << "##: "; \
     args; \
     log << std::endl; stream << log.str(); \
     g_gmtx.unlock(); \
@@ -310,7 +308,7 @@ struct LogDispatcher::Proxy
     // or better __func__.
     std::string ExtractName(std::string pretty_function);
 
-	Proxy(LogDispatcher& guy);
+    Proxy(LogDispatcher& guy);
 
     // Copy constructor is needed due to noncopyable ostringstream.
     // This is used only in creation of the default object, so just
@@ -425,7 +423,6 @@ inline bool LogDispatcher::CheckEnabled()
     return configured_enabled_fa && level <= configured_maxlevel;
 }
 
-SRT_API std::string FormatTime(uint64_t time);
 
 #if HAVE_CXX11
 
