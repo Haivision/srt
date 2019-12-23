@@ -121,3 +121,12 @@ TEST_F(TestSocketOptions, LossMaxTTL)
 }
 
 
+
+/// A regression test for issue #735, fixed by PR #843.
+/// Checks propagation of listener's socket option SRTO_LOSSMAXTTL
+/// on SRT sockets being accepted.
+TEST_F(TestSocketOptions, Linger)
+{
+    const int linger = 5;
+    ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_LINGER, &linger, sizeof linger), SRT_SUCCESS);
+}

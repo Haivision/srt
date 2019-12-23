@@ -406,14 +406,14 @@ TEST(SyncEvent, WaitUntil)
     }
 }
 
-TEST(SyncEvent, WaitUntilInterrupt)
+TEST(Timer, SleepUntilInterrupt)
 {
-    SyncEvent e;
+    Timer e;
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](SyncEvent* e, const steady_clock::duration& timeout) {
+    auto wait_async = [](Timer* e, const steady_clock::duration& timeout) {
         const steady_clock::time_point start = steady_clock::now();
-        const int res = e->wait_until(start + timeout);
+        const int res = e->sleep_until(start + timeout);
         return res;
     };
     auto wait_async_res = async(launch::async, wait_async, &e, timeout);
@@ -425,14 +425,14 @@ TEST(SyncEvent, WaitUntilInterrupt)
     EXPECT_TRUE(wait_for_res);
 }
 
-TEST(SyncEvent, WaitUntilNotifyOne)
+TEST(Timer, SleepUntilNotifyOne)
 {
-    SyncEvent e;
+    Timer e;
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](SyncEvent* e, const steady_clock::duration& timeout) {
+    auto wait_async = [](Timer* e, const steady_clock::duration& timeout) {
         const steady_clock::time_point start = steady_clock::now();
-        const int res = e->wait_until(start + timeout);
+        const int res = e->sleep_until(start + timeout);
         return res;
     };
     auto wait_async_res = async(launch::async, wait_async, &e, timeout);
@@ -445,14 +445,14 @@ TEST(SyncEvent, WaitUntilNotifyOne)
     EXPECT_TRUE(wait_for_res);
 }
 
-TEST(SyncEvent, WaitUntilNotifyAll)
+TEST(Timer, SleepUntilNotifyAll)
 {
-    SyncEvent e;
+    Timer e;
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](SyncEvent* e, const steady_clock::duration& timeout) {
+    auto wait_async = [](Timer* e, const steady_clock::duration& timeout) {
         const steady_clock::time_point start = steady_clock::now();
-        const int res = e->wait_until(start + timeout);
+        const int res = e->sleep_until(start + timeout);
         return res;
     };
     auto wait_async_res = async(launch::async, wait_async, &e, timeout);

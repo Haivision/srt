@@ -217,7 +217,7 @@ private:
 
    srt::sync::Mutex m_ListLock;
    srt::sync::SyncEvent* m_pWindowSync;
-   srt::sync::SyncEvent* m_pTimer;
+   srt::sync::Timer* m_pTimer;
 
 private:
    CSndUList(const CSndUList&);
@@ -367,9 +367,9 @@ public:
 
       /// Initialize the sending queue.
       /// @param [in] c UDP channel to be associated to the queue
-      /// @param [in] t SyncEvent
+      /// @param [in] t Timer
 
-   void init(CChannel* c, srt::sync::SyncEvent* t);
+   void init(CChannel* c, srt::sync::Timer* t);
 
       /// Send out a packet to a given address.
       /// @param [in] addr destination address
@@ -407,7 +407,7 @@ private:
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
    CChannel* m_pChannel;                // The UDP channel for data sending
-   srt::sync::SyncEvent* m_pTimer;      // Timing facility
+   srt::sync::Timer* m_pTimer;          // Timing facility
    srt::sync::SyncEvent  m_WindowSync;
 
    volatile bool m_bClosing;		    // closing the worker
@@ -522,7 +522,7 @@ struct CMultiplexer
    CSndQueue* m_pSndQueue;  // The sending queue
    CRcvQueue* m_pRcvQueue;  // The receiving queue
    CChannel* m_pChannel;    // The UDP channel for sending and receiving
-   srt::sync::SyncEvent* m_pTimer;        // The timer
+   srt::sync::Timer* m_pTimer;        // The timer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // IP version

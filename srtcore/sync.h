@@ -386,8 +386,8 @@ public:
     /// a specific time is reached.
     ///
     /// @return true  if the specified time was reached
-    ///         false should never happen
-    bool wait_until(steady_clock::time_point tp);
+    ///         false if woken up before the time is reached
+    bool wait_until(const steady_clock::time_point& tp);
 
     /// Blocks the current executing thread,
     /// and adds it to the list of threads waiting on* this.
@@ -419,9 +419,6 @@ public:
 
     void notify_all();
 
-    /// Resets target wait time and interrupts all waits
-    void interrupt();
-
   private:
 #ifdef USE_STL_CHRONO
     Mutex              m_tick_lock;
@@ -430,12 +427,41 @@ public:
     Mutex              m_tick_lock;
     pthread_cond_t     m_tick_cond;
 #endif
-    steady_clock::time_point m_sched_time;
 };
 
-// TODO: remove this object
-static SyncEvent s_SyncEvent;
 
+class Timer
+{
+public:
+    Timer();
+
+    ~Timer();
+
+public:
+
+    /// sleep_until causes the current thread to block until
+    /// a specific time is reached.
+    /// Sleep can be interrupted by calling interrupt()
+    ///
+    /// @return true  if the specified time was reached
+    ///         false should never happen
+    bool sleep_until(steady_clock::time_point tp);
+
+
+    /// Resets target wait time and interrupts all sleeps
+    void interrupt();
+
+
+    void notify_one();
+
+    void notify_all();
+
+private:
+
+    SyncEvent m_event;
+    steady_clock::time_point m_sched_time;
+
+};
 
 
 /// Print steady clock timepoint in a human readable way.

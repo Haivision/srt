@@ -1737,7 +1737,7 @@ void CUDTUnited::updateMux(
    else
       delete (sockaddr_in6*)sa;
 
-   m.m_pTimer = new srt::sync::SyncEvent;
+   m.m_pTimer = new srt::sync::Timer;
 
    m.m_pSndQueue = new CSndQueue;
    m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
