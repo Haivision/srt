@@ -247,7 +247,8 @@ int CUDTUnited::cleanup()
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
-   // is set here above.
+   // is set here above. Worst case secenario, this
+   // jointhread() call will block for 1 second.
    CSync::signal_relaxed(m_GCStopCond);
    jointhread(m_GCThread);
 
@@ -772,6 +773,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
    while (!accepted)
    {
        CGuard cg(ls->m_AcceptLock);
+       CSync  axcond(ls->m_AcceptCond, cg);
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -810,7 +812,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
        }
 
        if (!accepted && (ls->m_Status == SRTS_LISTENING))
-           pthread_cond_wait(&(ls->m_AcceptCond), &(ls->m_AcceptLock));
+           axcond.wait();
 
        if (ls->m_pQueuedSockets->empty())
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);

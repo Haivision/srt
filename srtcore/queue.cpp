@@ -501,8 +501,8 @@ void CSndQueue::init(CChannel *c, CTimer *t)
     m_pChannel                 = c;
     m_pTimer                   = t;
     m_pSndUList                = new CSndUList;
-    m_pSndUList->m_pWindowLock = AddressOf(m_WindowLock);
-    m_pSndUList->m_pWindowCond = AddressOf(m_WindowCond);
+    m_pSndUList->m_pWindowLock = &m_WindowLock;
+    m_pSndUList->m_pWindowCond = &m_WindowCond;
     m_pSndUList->m_pTimer      = m_pTimer;
 
     ThreadName tn("SRT:SndQ:worker");

@@ -443,6 +443,14 @@ inline RefType* AddressOf(RefType& r)
     return (RefType*)(&(unsigned char&)(r));
 }
 
+template <class T>
+struct explicit_t
+{
+    T inobject;
+    explicit_t(const T& uo): inobject(uo) {}
+    operator T() const { return inobject; }
+};
+
 // Homecooked version of ref_t. It's a copy of std::reference_wrapper
 // voided of unwanted properties and renamed to ref_t.
 

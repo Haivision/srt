@@ -187,8 +187,7 @@ struct CMutexWrapper
     pthread_mutex_t in_mutex;
     std::string lockname;
 
-    operator pthread_mutex_t& () { return in_mutex; }
-    pthread_mutex_t* operator& () { return &in_mutex; }
+    //pthread_mutex_t* operator& () { return &in_mutex; }
 
    // Turned explicitly to string because this is exposed only for logging purposes.
    std::string show()
@@ -206,15 +205,19 @@ struct CConditionWrapper
     pthread_cond_t in_cond;
     std::string cvname;
 
-    operator pthread_cond_t& () { return in_cond; }
-    pthread_cond_t* operator& () { return &in_cond; }
 };
 
 typedef CConditionWrapper CCondition;
 
+
+inline ::pthread_mutex_t* RawAddr(CMutex& m) { return &m.in_mutex; }
+inline ::pthread_cond_t* RawAddr(CCondition& c) { return &c.in_cond; }
 #else
 typedef ::pthread_mutex_t CMutex;
 typedef ::pthread_cond_t CCondition;
+
+inline ::pthread_mutex_t* RawAddr(CMutex& m) { return &m; }
+inline ::pthread_cond_t* RawAddr(CCondition& c) { return &c; }
 #endif
 
 
@@ -225,7 +228,7 @@ public:
    /// the scope where this object exists.
    /// @param lock Mutex to lock
    /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(CMutex& lock, bool if_condition = true);
+   CGuard(CMutex& lock, explicit_t<bool> if_condition = true);
    ~CGuard();
 
 public:
@@ -257,7 +260,7 @@ public:
        }
    }
 
-   static int enterCS(CMutex& lock, bool block = true);
+   static int enterCS(CMutex& lock, explicit_t<bool> block = true);
    static int leaveCS(CMutex& lock);
 
    // This is for a special case when one class keeps a pointer
@@ -269,12 +272,12 @@ private:
 
    void Lock()
    {
-       m_iLocked = pthread_mutex_lock(&m_Mutex);
+       m_iLocked = pthread_mutex_lock(RawAddr(m_Mutex));
    }
 
    void Unlock()
    {
-        pthread_mutex_unlock(&m_Mutex);
+        pthread_mutex_unlock(RawAddr(m_Mutex));
    }
 
    CMutex& m_Mutex;            // Alias name of the mutex to be protected
@@ -331,6 +334,12 @@ public:
 ///
 int CondWaitFor(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 
+#if ENABLE_THREAD_LOGGING
+inline int CondWaitFor(CConditionWrapper* cond, CMutexWrapper* mutex, const steady_clock::duration& rel_time)
+{
+    return CondWaitFor(&cond->in_cond, &mutex->in_mutex, rel_time);
+}
+#endif
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
@@ -387,6 +396,7 @@ public:
     void signal_locked(CGuard& lk);
     void signal_relaxed();
     static void signal_relaxed(CCondition& cond);
+    static void broadcast_relaxed(CCondition& cond);
 };
 
 

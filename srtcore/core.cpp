@@ -5934,9 +5934,7 @@ int CUDT::receiveMessage(char *data, int len, ref_t<SRT_MSGCTRL> r_mctrl)
 
         /* Kick TsbPd thread to schedule next wakeup (if running) */
         if (m_bTsbPd)
-        {
             tscond.signal_locked(recvguard);
-        }
 
         if (!m_pRcvBuffer->isRcvDataReady())
         {
@@ -8002,8 +8000,7 @@ void CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
-        CSync cc(m_RcvTsbPdCond,  m_RecvLock, CSync::NOLOCK);
-        cc.lock_signal();
+        CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
     }
 
     // Signal the sender and recver if they are waiting for data.
@@ -8059,7 +8056,7 @@ int CUDT::processData(CUnit *in_unit)
    m_tsLastRspTime = srt::sync::steady_clock::now();
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (m_bTsbPd && !srt::sync::isthread(m_RcvTsbPdThread))
+    if (m_bTsbPd && !isthread(m_RcvTsbPdThread))
     {
         HLOGP(mglog.Debug, "Spawning TSBPD thread");
         int st = 0;
