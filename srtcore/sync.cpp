@@ -277,7 +277,11 @@ srt::sync::SyncEvent::SyncEvent(bool is_static)
     : m_tick_cond(PTHREAD_COND_INITIALIZER)
 {
     if (is_static)
+    {
+        const pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
+        m_tick_cond = cv;
         return;
+    }
 
     const int res = pthread_cond_init(&m_tick_cond, NULL);
     if (res != 0)
@@ -377,9 +381,11 @@ srt::sync::Timer::~Timer()
 
 bool srt::sync::Timer::sleep_until(TimePoint<steady_clock> tp)
 {
-    UniqueLock lck(m_event.mutex());
-    // Use class member such that the method can be interrupted by others
+    // The class member m_sched_time can be used to interrupt the sleep.
+    // Refer to Timer::interrupt().
+    CriticalSection::enter(m_event.mutex());
     m_sched_time = tp;
+    CriticalSection::leave(m_event.mutex());
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
 
