@@ -385,8 +385,8 @@ public:
     /// wait_until causes the current thread to block until
     /// a specific time is reached.
     ///
-    /// @return true  if the specified time was reached
-    ///         false if woken up before the time is reached
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
     bool wait_until(const steady_clock::time_point& tp);
 
     /// Blocks the current executing thread,

@@ -274,13 +274,10 @@ void srt::sync::UniqueLock::unlock()
 
 
 srt::sync::SyncEvent::SyncEvent(bool is_static)
-    : m_tick_cond()
+    : m_tick_cond(PTHREAD_COND_INITIALIZER)
 {
     if (is_static)
-    {
-        m_tick_cond = PTHREAD_COND_INITIALIZER;
         return;
-    }
 
     const int res = pthread_cond_init(&m_tick_cond, NULL);
     if (res != 0)
