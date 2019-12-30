@@ -261,34 +261,62 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
  */
 /*****************************************************************************/
 
-TEST(SyncEvent, WaitFor)
+template <bool USE_MONOTONIC_CLOCK = false>
+void TestSyncWaitFor()
 {
     pthread_cond_t  cond;
     pthread_mutex_t mutex;
+#if ENABLE_MONOTONIC_CLOCK
+    if (USE_MONOTONIC_CLOCK)
+    {
+        pthread_condattr_t  CondAttribs;
+        pthread_condattr_init(&CondAttribs);
+        pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+        pthread_cond_init(&cond, &CondAttribs);
+    }
+    else
+    {
+        pthread_cond_init(&cond, NULL);
+    }
+#else
     pthread_cond_init(&cond, NULL);
+#endif
     pthread_mutex_init(&mutex, NULL);
 
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
-        const steady_clock::time_point start   = steady_clock::now();
-        EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex, timeout) == 0);
+        const steady_clock::time_point start = steady_clock::now();
+        EXPECT_FALSE(SyncEvent::wait_for<USE_MONOTONIC_CLOCK>(&cond, &mutex, timeout) == 0);
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {
             cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took " << count_microseconds(stop - start)
-                 << "us" << endl;
+                << "us" << endl;
         }
         else
         {
             cerr << "SyncEvent::wait_for(" << count_milliseconds(timeout) << " ms) took "
-                 << count_microseconds(stop - start) / 1000.0 << " ms" << endl;
+                << count_microseconds(stop - start) / 1000.0 << " ms" << endl;
         }
     }
 
     pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
+
+
+TEST(SyncEvent, WaitFor)
+{
+    TestSyncWaitFor();
+}
+
+#if ENABLE_MONOTONIC_CLOCK
+TEST(SyncEvent, WaitForMonotonic)
+{
+    TestSyncWaitFor<true>();
+}
+#endif
 
 TEST(SyncEvent, WaitForNotifyOne)
 {

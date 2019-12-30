@@ -1885,7 +1885,7 @@ void* CUDTUnited::garbageCollect(void* p)
        self->checkBrokenSockets();
 
        HLOGC(mglog.Debug, log << "GC: sleep 1 s");
-       SyncEvent::wait_for(&self->m_GCStopCond, &self->m_GCStopLock, seconds_from(1));
+       SyncEvent::wait_for_monotonic(&self->m_GCStopCond, &self->m_GCStopLock, seconds_from(1));
    }
 
    // remove all sockets and multiplexers
