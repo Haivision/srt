@@ -1768,7 +1768,7 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
     LOGC(dlog.Debug, log << CONID() << "readMsg: DELIVERED seq=" << seq
             << " T=" << FormatTime(srctime)
             << " in " << timediff_ms << "ms - TIME-PREVIOUS: PKT: "
-            << FormatTime(srctime) << " LOCAL: " << nowdiff_ms
+            << srctimediff_ms << " LOCAL: " << nowdiff_ms
             << " !" << BufferStamp(pkt.data(), pkt.size())
             << " NEXT pkt T=" << next_playtime);
 
