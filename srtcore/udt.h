@@ -243,7 +243,7 @@ namespace UDT
 
 typedef CUDTException ERRORINFO;
 typedef CPerfMon TRACEINFO;
-typedef class CBytePerfMon TRACEBSTATS;
+typedef struct CBytePerfMon TRACEBSTATS;
 typedef ud_set UDSET;
 
 UDT_API extern const SRTSOCKET INVALID_SOCK;
