@@ -6613,7 +6613,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_tdSendInterval      = srt::sync::microseconds_from((long)m_CongCtl->pktSndPeriod_us());
+        m_tdSendInterval      = srt::sync::microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
         m_dCongestionWindow = m_CongCtl->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
         HLOGC(mglog.Debug,

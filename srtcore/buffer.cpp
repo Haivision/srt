@@ -1424,7 +1424,7 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     * In this period, timestamps smaller than 30 seconds are considered to have wrapped around (then adjusted).
     * The wrap check period ends 30 seconds after the wrap point, afterwhich time base has been adjusted.
     */
-    uint64_t carryover = 0;
+    int64_t carryover = 0;
 
     // This function should generally return the timebase for the given timestamp_us.
     // It's assumed that the timestamp_us, for which this function is being called,
@@ -1448,7 +1448,7 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
 
         if (timestamp_us < TSBPD_WRAP_PERIOD)
         {
-            carryover = uint64_t(CPacket::MAX_TIMESTAMP) + 1;
+            carryover = int64_t(CPacket::MAX_TIMESTAMP) + 1;
         }
         //
         else if ((timestamp_us >= TSBPD_WRAP_PERIOD)
@@ -1456,7 +1456,7 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
         {
             /* Exiting wrap check period (if for packet delivery head) */
             m_bTsbPdWrapCheck = false;
-            m_tsTsbPdTimeBase += microseconds_from(uint64_t(CPacket::MAX_TIMESTAMP) + 1);
+            m_tsTsbPdTimeBase += microseconds_from(int64_t(CPacket::MAX_TIMESTAMP) + 1);
             tslog.Debug("tsbpd wrap period ends");
         }
     }
