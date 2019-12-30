@@ -1,6 +1,6 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2018 Haivision Systems Inc.
+ * Copyright (c) 2019 Haivision Systems Inc.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,6 +8,8 @@
  *
  */
 #pragma once
+#ifndef __SRT_SYNC_H__
+#define __SRT_SYNC_H__
 
 //#define USE_STL_CHRONO
 //#define ENABLE_CXX17
@@ -209,3 +211,5 @@ std::string FormatTimeSys(const steady_clock::time_point& time);
 
 }; // namespace sync
 }; // namespace srt
+
+#endif // __SRT_SYNC_H__
