@@ -164,7 +164,7 @@ public:
    int ioctlQuery(int type) const;
    int sockoptQuery(int level, int option) const;
 
-   const sockaddr* bindAddress() { return &m_BindAddr; }
+   const sockaddr* bindAddress() { return m_BindAddr.get(); }
    const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
 private:

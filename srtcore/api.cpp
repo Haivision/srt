@@ -429,7 +429,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, &peer, hs, hspkt))
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), hs, hspkt))
            {
                error = 1;
                goto ERR_ROLLBACK;

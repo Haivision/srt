@@ -407,14 +407,14 @@ void CChannel::getSockAddr(sockaddr_any& w_addr) const
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
     socklen_t namelen = w_addr.storage_size();
-    ::getsockname(m_iSocket, (&w_addr), (&namelen));
+    ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
 void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 {
     socklen_t namelen = w_addr.storage_size();
-    ::getpeername(m_iSocket, (&w_addr), (&namelen));
+    ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
