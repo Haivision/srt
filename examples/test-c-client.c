@@ -61,6 +61,9 @@ int main(int argc, char** argv)
     printf("srt setsockflag\n");
     srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
 
+    // Test deprecated
+    //srt_setsockflag(ss, SRTO_STRICTENC, &yes, sizeof yes);
+
     printf("srt connect\n");
     st = srt_connect(ss, (struct sockaddr*)&sa, sizeof sa);
     if (st == SRT_ERROR)

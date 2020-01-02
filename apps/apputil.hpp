@@ -61,7 +61,7 @@ inline void SysCleanupNetwork() {}
 
 #endif
 
-#include "srt.h"
+#include "srt.h" // Required for stats module
 
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
@@ -128,9 +128,13 @@ struct NumberAutoConvert
 {
     std::string value;
 
-    NumberAutoConvert() {}
-    NumberAutoConvert(const std::string& arg): value(arg) {}
-    NumberAutoConvert(const char* arg): value(arg) {}
+    NumberAutoConvert(): NumberAutoConvert("") {}
+    NumberAutoConvert(const std::string& arg): NumberAutoConvert(arg.c_str()) {}
+    NumberAutoConvert(const char* arg): value(arg)
+    {
+        if (value.empty())
+            value = "0"; // Must convert to a default 0 number
+    }
 
     template<class Number>
     operator Number()
@@ -169,61 +173,7 @@ struct OutBool
     static type process(const options_t::mapped_type& i) { return CheckTrue(i); }
 };
 
-struct OptionName
-{
-    std::string helptext;
-    std::string main_name;
-    std::set<std::string> names;
-
-    template <class... Args>
-    OptionName(std::string ht, std::string first, Args... rest)
-        : helptext(ht), main_name(first),
-          names {first, rest...}
-    {
-    }
-
-    OptionName(std::initializer_list<std::string> args): main_name(*args.begin()), names(args) {}
-
-    operator std::set<std::string>() { return names; }
-    operator const std::set<std::string>() const { return names; }
-};
-
-
-
-template <class OutType, class OutValue> inline
-typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
-
-template <class OutType, class OutValue, class... Args> inline
-typename OutType::type Option(const options_t& options, OutValue deflt, std::string key, Args... further_keys)
-{
-    auto i = options.find(key);
-    if ( i == options.end() )
-        return Option<OutType>(options, deflt, further_keys...);
-    return OutType::process(i->second);
-}
-
-template <class OutType, class OutValue> inline
-typename OutType::type Option(const options_t& options, OutValue deflt, const OptionName& oname)
-{
-    for (auto key: oname.names)
-    {
-        auto i = options.find(key);
-        if ( i != options.end() )
-            return OutType::process(i->second);
-    }
-    return deflt;
-}
-
-inline bool OptionPresent(const options_t& options, const std::set<std::string>& keys)
-{
-    for (auto key: keys)
-    {
-        auto i = options.find(key);
-        if ( i != options.end() )
-            return true;
-    }
-    return false;
-}
+struct OptionName;
 
 struct OptionScheme
 {
@@ -237,10 +187,119 @@ struct OptionScheme
 	{
 	}
 
-    OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
+    OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names() { return pid->names; }
+	const std::set<std::string>& names();
 };
+
+struct OptionName
+{
+    std::string helptext;
+    std::string main_name;
+    std::set<std::string> names;
+
+    template <class... Args>
+    OptionName(std::string ht, std::string first, Args... rest)
+        : helptext(ht), main_name(first),
+          names {first, rest...}
+    {
+    }
+
+    template <class... Args>
+    OptionName(std::vector<OptionScheme>& sc, OptionScheme::Args type,
+            std::string ht, std::string first, Args... rest)
+        : helptext(ht), main_name(first),
+          names {first, rest...}
+    {
+        sc.push_back(OptionScheme(*this, type));
+    }
+
+    template <class... Args>
+    OptionName(std::vector<OptionScheme>& sc,
+            std::string ht, std::string first, Args... rest)
+        : helptext(ht), main_name(first),
+          names {first, rest...}
+    {
+        OptionScheme::Args type = DetermineTypeFromHelpText(ht);
+        sc.push_back(OptionScheme(*this, type));
+    }
+
+    OptionName(std::initializer_list<std::string> args): main_name(*args.begin()), names(args) {}
+
+    operator std::set<std::string>() { return names; }
+    operator const std::set<std::string>() const { return names; }
+
+private:
+    static OptionScheme::Args DetermineTypeFromHelpText(const std::string& helptext);
+};
+
+inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
+inline const std::set<std::string>& OptionScheme::names() { return pid->names; }
+
+template <class OutType, class OutValue> inline
+typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
+
+template <class OutType, class OutValue, class... Args> inline
+typename OutType::type Option(const options_t& options, OutValue deflt, std::string key, Args... further_keys)
+{
+    auto i = options.find(key);
+    if ( i == options.end() )
+        return Option<OutType>(options, deflt, further_keys...);
+    return OutType::process(i->second);
+}
+
+template<typename TrapType>
+struct OptionTrapType
+{
+    static TrapType pass(TrapType v) { return v; }
+};
+
+template<>
+struct OptionTrapType<const char*>
+{
+    static std::string pass(const char* v) { return v; }
+};
+
+template <class OutType, class OutValue> inline
+typename OutType::type Option(const options_t& options, OutValue deflt, const OptionName& oname)
+{
+    (void)OptionTrapType<OutValue>::pass(deflt);
+    for (auto key: oname.names)
+    {
+        auto i = options.find(key);
+        if ( i != options.end() )
+        {
+            return OutType::process(i->second);
+        }
+    }
+    return deflt;
+}
+
+template <class OutType> inline
+typename OutType::type Option(const options_t& options, const OptionName& oname)
+{
+    typedef typename OutType::type out_t;
+    for (auto key: oname.names)
+    {
+        auto i = options.find(key);
+        if ( i != options.end() )
+        {
+            return OutType::process(i->second);
+        }
+    }
+    return out_t();
+}
+
+inline bool OptionPresent(const options_t& options, const std::set<std::string>& keys)
+{
+    for (auto key: keys)
+    {
+        auto i = options.find(key);
+        if ( i != options.end() )
+            return true;
+    }
+    return false;
+}
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);

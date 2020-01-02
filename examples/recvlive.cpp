@@ -70,6 +70,9 @@ int main(int argc, char* argv[])
       return 0;
    }
 
+   // Test the deprecated option feature here:
+   //srt_setsockopt(sfd, 0, SRTO_STRICTENC, &no, sizeof no);
+
    // Windows UDP issue
    // For better performance, modify HKLM\System\CurrentControlSet\Services\Afd\Parameters\FastSendDatagramThreshold
 #ifdef WIN32

@@ -16,6 +16,16 @@ written by
 #ifndef INC__SRT_UTILITIES_H
 #define INC__SRT_UTILITIES_H
 
+// ATTRIBUTES:
+//
+// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
+// ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
+// ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
+// ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
+// ATR_CONSTEXPR: In C++11: `constexpr`. Otherwise empty.
+// ATR_OVERRIDE: In C++11: `override`. Otherwise empty.
+// ATR_FINAL: In C++11: `final`. Otherwise empty.
+
 
 #ifdef __GNUG__
 #define ATR_UNUSED __attribute__((unused))
@@ -32,12 +42,14 @@ written by
 // however it's only the "most required C++11 support".
 #if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
 #define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
 #else
 #define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
+#define ATR_NOTHROW noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
@@ -52,18 +64,21 @@ written by
 #if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
 #define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
+#define ATR_NOTHROW noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
 #else
 #define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
 #endif
 #else
 #define HAVE_CXX11 0
-#define ATR_NOEXCEPT // throw() - bad idea
+#define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL

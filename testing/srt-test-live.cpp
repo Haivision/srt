@@ -256,45 +256,29 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
+    vector<OptionScheme> optargs;
 
     OptionName
-        o_timeout   ("<timeout[s]=0> Data transmission timeout", "t",   "to", "timeout" ),
-        o_chunk     ("<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
-        o_bandwidth ("<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
-        o_report    ("<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   (" Print size of every packet transferred on stdout", "v",   "verbose"),
-        o_crash     (" Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
-        o_loglevel  ("<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
-        o_logfa     ("<FA=all> Enabled Functional Areas", "lfa", "logfa"),
-        o_logfile   ("<filepath> File to send logs to", "lf",  "logfile"),
-        o_stats     ("<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
-        o_statspf   ("<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
-        o_logint    (" Use internal function for receiving logs (for testing)",        "loginternal"),
-        o_skipflush (" Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
-        o_stoptime  ("<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
-        o_help      (" This help", "?",   "help", "-help")
+        o_timeout   ((optargs), "<timeout[s]=0> Data transmission timeout", "t",   "to", "timeout" ),
+        o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
+        o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
+        o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
+        o_verbose   ((optargs), " Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
+        o_loglevel  ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
+        o_logfa     ((optargs), "<FA=all> Enabled Functional Areas", "lfa", "logfa"),
+        o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
+        o_stats     ((optargs), "<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_statspf   ((optargs), "<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
+        o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
+        o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
+        o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_help      ((optargs), " This help", "?",   "help", "-help")
             ;
-
-
-    vector<OptionScheme> optargs = {
-        { o_timeout, OptionScheme::ARG_ONE },
-        { o_chunk, OptionScheme::ARG_ONE },
-        { o_bandwidth, OptionScheme::ARG_ONE },
-        { o_report, OptionScheme::ARG_ONE },
-        { o_verbose, OptionScheme::ARG_NONE },
-        { o_crash, OptionScheme::ARG_NONE },
-        { o_loglevel, OptionScheme::ARG_ONE },
-        { o_logfa, OptionScheme::ARG_ONE },
-        { o_logfile, OptionScheme::ARG_ONE },
-        { o_stats, OptionScheme::ARG_ONE },
-        { o_statspf, OptionScheme::ARG_ONE },
-        { o_skipflush, OptionScheme::ARG_NONE },
-        { o_stoptime, OptionScheme::ARG_ONE },
-    };
 
     options_t params = ProcessOptions(argv, argc, optargs);
 
-    bool need_help = Option<OutString>(params, "no", o_help) != "no";
+    bool need_help = OptionPresent(params, o_help);
 
     vector<string> args = params[""];
 

@@ -217,7 +217,7 @@ private:
         return SrtCongestion::SRM_FASTREXMIT;
     }
 
-    uint64_t updateNAKInterval(uint64_t nakint_us, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
+    int64_t updateNAKInterval(int64_t nakint_us, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
     {
         /*
          * duB:
@@ -238,7 +238,7 @@ private:
         return nakint_us / m_iNakReportAccel;
     }
 
-    uint64_t minNAKInterval() ATR_OVERRIDE
+    int64_t minNAKInterval() ATR_OVERRIDE
     {
         return m_iMinNakInterval_us;
     }
