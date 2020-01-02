@@ -69,7 +69,7 @@ public:
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
+    void Error(string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
     void Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);

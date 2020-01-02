@@ -1163,7 +1163,7 @@ void *CRcvQueue::worker(void *param)
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
         // take care of the timing event for all UDT sockets
-        steady_clock::time_point curtime_minus_syn = steady_clock::now() - milliseconds_from(CUDT::COMM_SYN_INTERVAL_US);
+        const steady_clock::time_point curtime_minus_syn = steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
         CRNode *ul = self->m_pRcvUList->m_pUList;
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))

@@ -65,6 +65,7 @@ modified by
 #include "logging.h"
 #include "threadname.h"
 #include "srt.h"
+#include "udt.h"
 
 #ifdef _WIN32
    #include <win/wintime.h>
@@ -1706,13 +1707,14 @@ void CUDTUnited::updateMux(
            // The case of previously used case of a NULL address.
            // This here is used to pass family only, in this case
            // just automatically bind to the "0" address to autoselect
-           // everything. If at least the IP address is specified,
-           // then bind to that address, but still possibly autoselect
-           // the outgoing port, if the port was specified as 0.
+           // everything.
            m.m_pChannel->open(addr.family());
        }
        else
        {
+           // If at least the IP address is specified, then bind to that
+           // address, but still possibly autoselect the outgoing port, if the
+           // port was specified as 0.
            m.m_pChannel->open(addr);
        }
    }

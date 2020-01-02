@@ -303,11 +303,7 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-CUDTException::~CUDTException()
-{
-}
-
-const char* CUDTException::getErrorMessage()
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
    // translate "Major:Minor" code into text message.
 
@@ -587,7 +583,7 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
 {
    if (AF_INET == ver)
    {
-      sockaddr_in* a = &w_addr.sin;
+      sockaddr_in* a = (&w_addr.sin);
       a->sin_addr.s_addr = ip[0];
    }
    else
