@@ -17,7 +17,7 @@ written by
 #define SRT4UDT_H
 
 #ifndef INC__SRTC_H
-#error "This is protected header, used by udt.h. This shouldn't be included directly"
+#error "This is protected header, used by srt.h. This shouldn't be included directly"
 #endif
 
 //undef SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
