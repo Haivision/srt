@@ -61,7 +61,7 @@ void rdtsc(uint64_t& x)
     // get_cpu_frequency() returns 1 us accuracy in this case
     timespec tm;
     clock_gettime(CLOCK_MONOTONIC, &tm);
-    x = tm.tv_sec * uint64_t(1000000) + t.tv_usec;
+    x = tm.tv_sec * uint64_t(1000000) + tm.tv_usec;
 #elif defined(TIMING_USE_MACH_ABS_TIME)
     x = mach_absolute_time();
 #else
@@ -72,44 +72,44 @@ void rdtsc(uint64_t& x)
 #endif
 }
 
- int64_t get_cpu_frequency()
- {
-     int64_t frequency = 1; // 1 tick per microsecond.
+int64_t get_cpu_frequency()
+{
+    int64_t frequency = 1; // 1 tick per microsecond.
 
 #if defined(TIMING_USE_QPC)
-     LARGE_INTEGER ccf; // in counts per second
-     if (QueryPerformanceFrequency(&ccf))
-         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+    LARGE_INTEGER ccf; // in counts per second
+    if (QueryPerformanceFrequency(&ccf))
+        frequency = ccf.QuadPart / 1000000; // counts per microsecond
 
 #elif defined(TIMING_USE_CLOCK_GETTIME)
-     frequency = 1;
+    frequency = 1;
 
 #elif defined(TIMING_USE_MACH_ABS_TIME)
 
-     mach_timebase_info_data_t info;
-     mach_timebase_info(&info);
-     frequency = info.denom * int64_t(1000) / info.numer;
+    mach_timebase_info_data_t info;
+    mach_timebase_info(&info);
+    frequency = info.denom * int64_t(1000) / info.numer;
 
 #elif defined(IA32) || defined(IA64) || defined(AMD64)
-     uint64_t t1, t2;
+    uint64_t t1, t2;
 
-     rdtsc(t1);
-     timespec ts;
-     ts.tv_sec  = 0;
-     ts.tv_nsec = 100000000;
-     nanosleep(&ts, NULL);
-     rdtsc(t2);
+    rdtsc(t1);
+    timespec ts;
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 100000000;
+    nanosleep(&ts, NULL);
+    rdtsc(t2);
 
-     // CPU clocks per microsecond
-     frequency = int64_t(t2 - t1) / 100000;
+    // CPU clocks per microsecond
+    frequency = int64_t(t2 - t1) / 100000;
 #endif
 
-     return frequency;
- }
+    return frequency;
+}
 
- const int64_t s_cpu_frequency = get_cpu_frequency();
+const int64_t s_cpu_frequency = get_cpu_frequency();
 
-    } // namespace sync
+} // namespace sync
 } // namespace srt
 
 template <>
@@ -278,8 +278,6 @@ srt::sync::SyncEvent::SyncEvent(bool is_static)
 {
     if (is_static)
     {
-        const pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-        m_tick_cond = cv;
         return;
     }
 

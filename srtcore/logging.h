@@ -284,7 +284,7 @@ struct LogDispatcher::Proxy
     // or better __func__.
     std::string ExtractName(std::string pretty_function);
 
-	Proxy(LogDispatcher& guy);
+    Proxy(LogDispatcher& guy);
 
     // Copy constructor is needed due to noncopyable ostringstream.
     // This is used only in creation of the default object, so just

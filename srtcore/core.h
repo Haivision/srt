@@ -736,7 +736,7 @@ private: // Common connection Congestion Control setup
     // which only may happen when the congctl list is extended 
     // with user-supplied congctl modules, not a case so far.
     SRT_ATR_NODISCARD
-        SRT_REJECT_REASON setupCC();
+    SRT_REJECT_REASON setupCC();
 
     // for updateCC it's ok to discard the value. This returns false only if
     // the congctl isn't created, and this can be prevented from.
@@ -745,7 +745,7 @@ private: // Common connection Congestion Control setup
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
-        bool createCrypter(HandshakeSide side, bool bidi);
+    bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -849,7 +849,6 @@ private: // Trace
     } m_stats;
 
 public:
-
     static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking
     static const int SEND_LITE_ACK = sizeof(int32_t); // special size for ack containing only ack seq
     static const int PACKETPAIR_MASK = 0xF;
@@ -857,7 +856,6 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
-
     void checkTimers();
     void considerLegacySrtHandshake(const srt::sync::steady_clock::time_point &timebase);
     void checkACKTimer (const srt::sync::steady_clock::time_point& currtime);

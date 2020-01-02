@@ -70,7 +70,7 @@ modified by
 #endif
 
 #ifdef _MSC_VER
-#pragma warning(error: 4530)
+   #pragma warning(error: 4530)
 #endif
 
 using namespace std;
@@ -147,6 +147,7 @@ m_ClosedSockets()
    m_SocketIDGenerator = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
    pthread_key_create(&m_TLSError, TLSDestroy);
+
    m_pCache = new CCache<CInfoBlock>;
 }
 
@@ -182,14 +183,14 @@ int CUDTUnited::startup()
    if (m_iInstanceCount++ > 0)
       return 0;
 
-// Global initialization code
+   // Global initialization code
 #ifdef _WIN32
-    WORD wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 2);
+   WORD wVersionRequested;
+   WSADATA wsaData;
+   wVersionRequested = MAKEWORD(2, 2);
 
-    if (0 != WSAStartup(wVersionRequested, &wsaData))
-        throw CUDTException(MJ_SETUP, MN_NONE,  WSAGetLastError());
+   if (0 != WSAStartup(wVersionRequested, &wsaData))
+      throw CUDTException(MJ_SETUP, MN_NONE,  WSAGetLastError());
 #endif
 
    PacketFilter::globalInit();
@@ -229,7 +230,7 @@ int CUDTUnited::cleanup()
 
    // Global destruction code
 #ifdef _WIN32
-    WSACleanup();
+   WSACleanup();
 #endif
 
    return 0;
@@ -1379,12 +1380,12 @@ int CUDTUnited::epoll_wait(
 }
 
 int CUDTUnited::epoll_uwait(
-    const int eid,
-    SRT_EPOLL_EVENT* fdsSet,
-    int fdsSize,
-    int64_t msTimeOut)
+   const int eid,
+   SRT_EPOLL_EVENT* fdsSet,
+   int fdsSize,
+   int64_t msTimeOut)
 {
-    return m_EPoll.uwait(eid, fdsSet, fdsSize, msTimeOut);
+   return m_EPoll.uwait(eid, fdsSet, fdsSize, msTimeOut);
 }
 
 int32_t CUDTUnited::epoll_set(int eid, int32_t flags)
@@ -3065,7 +3066,7 @@ int epoll_wait2(
 
 int epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    return CUDT::epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
+   return CUDT::epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
 }
 
 int epoll_release(int eid)

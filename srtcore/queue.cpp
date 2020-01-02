@@ -270,14 +270,14 @@ CSndUList::~CSndUList()
 
 void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
-   ScopedLock listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
-   CSNode* n = u->m_pSNode;
+    CSNode* n = u->m_pSNode;
 
-   if (n->m_iHeapLoc >= 0)
-   {
-      if (!reschedule) // EReschedule to bool conversion, predicted.
-         return;
+    if (n->m_iHeapLoc >= 0)
+    {
+        if (!reschedule) // EReschedule to bool conversion, predicted.
+            return;
 
         if (n->m_iHeapLoc == 0)
         {
@@ -286,10 +286,10 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
             return;
         }
 
-      remove_(u);
-      insert_norealloc_(steady_clock::now(), u);
-      return;
-   }
+        remove_(u);
+        insert_norealloc_(steady_clock::now(), u);
+        return;
+    }
 
     insert_(steady_clock::now(), u);
 }
@@ -355,21 +355,21 @@ steady_clock::time_point CSndUList::getNextProcTime()
 
 void CSndUList::realloc_()
 {
-   CSNode** temp = NULL;
+    CSNode** temp = NULL;
 
-   try
-   {
-       temp = new CSNode *[2 * m_iArrayLength];
-   }
-   catch (...)
-   {
-       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-   }
+    try
+    {
+        temp = new CSNode *[2 * m_iArrayLength];
+    }
+    catch (...)
+    {
+        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
 
-   memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
-   m_iArrayLength *= 2;
-   delete[] m_pHeap;
-   m_pHeap = temp;
+    memcpy(temp, m_pHeap, sizeof(CSNode*) * m_iArrayLength);
+    m_iArrayLength *= 2;
+    delete[] m_pHeap;
+    m_pHeap = temp;
 }
 
 void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
@@ -383,30 +383,30 @@ void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 
 void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
 {
-   CSNode* n = u->m_pSNode;
+    CSNode* n = u->m_pSNode;
 
     // do not insert repeated node
     if (n->m_iHeapLoc >= 0)
         return;
 
-   SRT_ASSERT(m_iLastEntry < m_iArrayLength);
+    SRT_ASSERT(m_iLastEntry < m_iArrayLength);
 
-   m_iLastEntry++;
-   m_pHeap[m_iLastEntry] = n;
-   n->m_tsTimeStamp = ts;
+    m_iLastEntry++;
+    m_pHeap[m_iLastEntry] = n;
+    n->m_tsTimeStamp = ts;
 
-   int q = m_iLastEntry;
-   int p = q;
-   while (p != 0)
-   {
-      p = (q - 1) >> 1;
-      if (m_pHeap[p]->m_tsTimeStamp <= m_pHeap[q]->m_tsTimeStamp)
-          break;
+    int q = m_iLastEntry;
+    int p = q;
+    while (p != 0)
+    {
+        p = (q - 1) >> 1;
+        if (m_pHeap[p]->m_tsTimeStamp <= m_pHeap[q]->m_tsTimeStamp)
+            break;
 
-      swap(m_pHeap[p], m_pHeap[q]);
-      m_pHeap[q]->m_iHeapLoc = q;
-      q                      = p;
-   }
+        swap(m_pHeap[p], m_pHeap[q]);
+        m_pHeap[q]->m_iHeapLoc = q;
+        q                      = p;
+    }
 
     n->m_iHeapLoc = q;
 
@@ -440,11 +440,11 @@ void CSndUList::remove_(const CUDT* u)
             if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->m_tsTimeStamp > m_pHeap[p + 1]->m_tsTimeStamp))
                 p++;
 
-         if (m_pHeap[q]->m_tsTimeStamp > m_pHeap[p]->m_tsTimeStamp)
-         {
-            swap(m_pHeap[p], m_pHeap[q]);
-            m_pHeap[p]->m_iHeapLoc = p;
-            m_pHeap[q]->m_iHeapLoc = q;
+            if (m_pHeap[q]->m_tsTimeStamp > m_pHeap[p]->m_tsTimeStamp)
+            {
+                swap(m_pHeap[p], m_pHeap[q]);
+                m_pHeap[p]->m_iHeapLoc = p;
+                m_pHeap[q]->m_iHeapLoc = q;
 
                 q = p;
                 p = q * 2 + 1;
@@ -1113,29 +1113,29 @@ void *CRcvQueue::worker(void *param)
             // This state should be maintained through any next failed calls to worker_RetrieveUnit.
             // Any error switches this to rejection, just for a case.
 
-           // Note to rendezvous connection. This can accept:
-           // - ID == 0 - take the first waiting rendezvous socket
-           // - ID > 0  - find the rendezvous socket that has this ID.
-           if (id == 0)
-           {
-               // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
-               cst = self->worker_ProcessConnectionRequest(unit, &sa);
-           }
-           else
-           {
-               // Otherwise ID is expected to be associated with:
-               // - an enqueued rendezvous socket
-               // - a socket connected to a peer
-               cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
-               // CAN RETURN CONN_REJECT, but m_RejectReason is already set
-           }
-           HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
-           if (cst == CONN_AGAIN)
-           {
-               HLOGC(mglog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
-               continue;
-           }
-           have_received = true;
+            // Note to rendezvous connection. This can accept:
+            // - ID == 0 - take the first waiting rendezvous socket
+            // - ID > 0  - find the rendezvous socket that has this ID.
+            if (id == 0)
+            {
+                // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
+                cst = self->worker_ProcessConnectionRequest(unit, &sa);
+            }
+            else
+            {
+                // Otherwise ID is expected to be associated with:
+                // - an enqueued rendezvous socket
+                // - a socket connected to a peer
+                cst = self->worker_ProcessAddressedPacket(id, unit, &sa);
+                // CAN RETURN CONN_REJECT, but m_RejectReason is already set
+            }
+            HLOGC(mglog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
+            if (cst == CONN_AGAIN)
+            {
+                HLOGC(mglog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
+                continue;
+            }
+            have_received = true;
        }
        else if (rst == RST_ERROR)
        {

@@ -401,7 +401,7 @@ public:
 
    void skipData(int len);
 
-   #if ENABLE_HEAVY_LOGGING
+#if ENABLE_HEAVY_LOGGING
    void reportBufferStats() const; // Heavy logging Debug only
 #endif
    bool empty() const
