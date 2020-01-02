@@ -60,7 +60,7 @@ public:
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src);
+    void Error(string src);
     void Init(string host, int port, map<string,string> par, bool dir_output);
 
     virtual int ConfigurePost(SRTSOCKET sock);

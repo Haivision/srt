@@ -136,7 +136,7 @@ struct LogConfig
         , loghandler_opaque()
         , flags()
     {
-        pthread_mutex_init(&mutex, 0);
+        pthread_mutex_init(&mutex, NULL);
     }
 
     ~LogConfig()

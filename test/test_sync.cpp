@@ -46,6 +46,21 @@ TEST(SyncDuration, BasicChecks)
     EXPECT_EQ(count_seconds(a), 0);
 }
 
+/// Check operations on (uint32_t + 1)
+TEST(SyncDuration, DurationFrom)
+{
+    const int64_t val = int64_t(numeric_limits<uint32_t>::max()) + 1;
+
+    const steady_clock::duration us_from = microseconds_from(val);
+    EXPECT_EQ(count_microseconds(us_from), val);
+
+    const steady_clock::duration ms_from = milliseconds_from(val);
+    EXPECT_EQ(count_milliseconds(ms_from), val);
+
+    const steady_clock::duration s_from = seconds_from(val);
+    EXPECT_EQ(count_seconds(s_from), val);
+}
+
 TEST(SyncDuration, RelOperators)
 {
     const steady_clock::duration a;

@@ -1,6 +1,6 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2018 Haivision Systems Inc.
+ * Copyright (c) 2019 Haivision Systems Inc.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,6 +8,8 @@
  *
  */
 #pragma once
+#ifndef __SRT_SYNC_H__
+#define __SRT_SYNC_H__
 
 //#define USE_STL_CHRONO
 //#define ENABLE_CXX17
@@ -157,18 +159,18 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
     return rhs * lhs;
 }
 
-inline long long count_microseconds(const TimePoint<steady_clock> tp)
+inline int64_t count_microseconds(const TimePoint<steady_clock> tp)
 {
-    return static_cast<long long>(tp.us_since_epoch());
+    return static_cast<int64_t>(tp.us_since_epoch());
 }
 
-long long count_microseconds(const steady_clock::duration& t);
-long long count_milliseconds(const steady_clock::duration& t);
-long long count_seconds(const steady_clock::duration& t);
+int64_t count_microseconds(const steady_clock::duration& t);
+int64_t count_milliseconds(const steady_clock::duration& t);
+int64_t count_seconds(const steady_clock::duration& t);
 
-Duration<steady_clock> microseconds_from(long t_us);
-Duration<steady_clock> milliseconds_from(long t_ms);
-Duration<steady_clock> seconds_from(long t_s);
+Duration<steady_clock> microseconds_from(int64_t t_us);
+Duration<steady_clock> milliseconds_from(int64_t t_ms);
+Duration<steady_clock> seconds_from(int64_t t_s);
 
 inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 
@@ -437,4 +439,4 @@ void ThreadCheckAffinity(const char* function, pthread_t thr);
 } // namespace sync
 } // namespace srt
 
-
+#endif // __SRT_SYNC_H__

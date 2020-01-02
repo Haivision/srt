@@ -236,98 +236,14 @@ typedef SRTSOCKET UDTSOCKET; //legacy alias
 
 #ifdef __cplusplus
 
-// Class CUDTException exposed for C++ API.
-// This is actually useless, unless you'd use a DIRECT C++ API,
-// however there's no such API so far. The current C++ API for UDT/SRT
-// is predicted to NEVER LET ANY EXCEPTION out of implementation,
-// so it's useless to catch this exception anyway.
-
-class UDT_API CUDTException
-{
-public:
-
-   CUDTException(CodeMajor major = MJ_SUCCESS, CodeMinor minor = MN_NONE, int err = -1);
-
-   ~CUDTException();
-
-      /// Get the description of the exception.
-      /// @return Text message for the exception description.
-
-   const char* getErrorMessage();
-
-      /// Get the system errno for the exception.
-      /// @return errno.
-
-   int getErrorCode() const;
-
-      /// Get the system network errno for the exception.
-      /// @return errno.
-
-   int getErrno() const;
-      /// Clear the error code.
-
-   void clear();
-
-private:
-   CodeMajor m_iMajor;        // major exception categories
-   CodeMinor m_iMinor;		// for specific error reasons
-   int m_iErrno;		// errno returned by the system if there is any
-   std::string m_strMsg;	// text error message
-
-   std::string m_strAPI;	// the name of UDT function that returns the error
-   std::string m_strDebug;	// debug information, set to the original place that causes the error
-
-public: // Legacy Error Code
-
-    static const int EUNKNOWN = SRT_EUNKNOWN;
-    static const int SUCCESS = SRT_SUCCESS;
-    static const int ECONNSETUP = SRT_ECONNSETUP;
-    static const int ENOSERVER = SRT_ENOSERVER;
-    static const int ECONNREJ = SRT_ECONNREJ;
-    static const int ESOCKFAIL = SRT_ESOCKFAIL;
-    static const int ESECFAIL = SRT_ESECFAIL;
-    static const int ECONNFAIL = SRT_ECONNFAIL;
-    static const int ECONNLOST = SRT_ECONNLOST;
-    static const int ENOCONN = SRT_ENOCONN;
-    static const int ERESOURCE = SRT_ERESOURCE;
-    static const int ETHREAD = SRT_ETHREAD;
-    static const int ENOBUF = SRT_ENOBUF;
-    static const int EFILE = SRT_EFILE;
-    static const int EINVRDOFF = SRT_EINVRDOFF;
-    static const int ERDPERM = SRT_ERDPERM;
-    static const int EINVWROFF = SRT_EINVWROFF;
-    static const int EWRPERM = SRT_EWRPERM;
-    static const int EINVOP = SRT_EINVOP;
-    static const int EBOUNDSOCK = SRT_EBOUNDSOCK;
-    static const int ECONNSOCK = SRT_ECONNSOCK;
-    static const int EINVPARAM = SRT_EINVPARAM;
-    static const int EINVSOCK = SRT_EINVSOCK;
-    static const int EUNBOUNDSOCK = SRT_EUNBOUNDSOCK;
-    static const int ESTREAMILL = SRT_EINVALMSGAPI;
-    static const int EDGRAMILL = SRT_EINVALBUFFERAPI;
-    static const int ENOLISTEN = SRT_ENOLISTEN;
-    static const int ERDVNOSERV = SRT_ERDVNOSERV;
-    static const int ERDVUNBOUND = SRT_ERDVUNBOUND;
-    static const int EINVALMSGAPI = SRT_EINVALMSGAPI;
-    static const int EINVALBUFFERAPI = SRT_EINVALBUFFERAPI;
-    static const int EDUPLISTEN = SRT_EDUPLISTEN;
-    static const int ELARGEMSG = SRT_ELARGEMSG;
-    static const int EINVPOLLID = SRT_EINVPOLLID;
-    static const int EASYNCFAIL = SRT_EASYNCFAIL;
-    static const int EASYNCSND = SRT_EASYNCSND;
-    static const int EASYNCRCV = SRT_EASYNCRCV;
-    static const int ETIMEOUT = SRT_ETIMEOUT;
-    static const int ECONGEST = SRT_ECONGEST;
-    static const int EPEERERR = SRT_EPEERERR;
-};
+class CUDTException;
 
 namespace UDT
 {
 
 typedef CUDTException ERRORINFO;
-//typedef UDT_SOCKOPT SOCKOPT;
 typedef CPerfMon TRACEINFO;
-typedef CBytePerfMon TRACEBSTATS;
+typedef struct CBytePerfMon TRACEBSTATS;
 typedef ud_set UDSET;
 
 UDT_API extern const SRTSOCKET INVALID_SOCK;

@@ -545,8 +545,8 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            CGuard windlock(self->m_WindowLock);
-            CSync windsync(self->m_WindowCond, windlock);
+            CGuard windlock (self->m_WindowLock);
+            CSync windsync  (self->m_WindowCond, windlock);
 
             // wait here if there is no sockets with data to be sent
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
@@ -1180,7 +1180,7 @@ void *CRcvQueue::worker(void *param)
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
         // take care of the timing event for all UDT sockets
-        steady_clock::time_point curtime_minus_syn = steady_clock::now() - milliseconds_from(CUDT::COMM_SYN_INTERVAL_US);
+        const steady_clock::time_point curtime_minus_syn = steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
         CRNode *ul = self->m_pRcvUList->m_pUList;
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
@@ -1664,8 +1664,8 @@ CUDT *CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
 {
-    CGuard bufferlock(m_PassLock);
-    CSync passcond(m_PassCond, bufferlock);
+    CGuard bufferlock (m_PassLock);
+    CSync passcond    (m_PassCond, bufferlock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
 

@@ -1,4 +1,14 @@
-﻿#include <iomanip>
+﻿/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2019 Haivision Systems Inc.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ */
+
+#include <iomanip>
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
@@ -221,7 +231,7 @@ void createMutex(CMutex& lock, const char* name SRT_ATR_UNUSED)
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
     pattr = &attr;
     std::ostringstream cv;
-    cv << &lock.in_mutex;
+    cv << &lock.in_sysobj;
     if (name)
     {
         cv << "(" << name << ")";
@@ -240,7 +250,7 @@ void createCond(CCondition& cond, const char* name SRT_ATR_UNUSED)
 {
 #if ENABLE_THREAD_LOGGING
     std::ostringstream cv;
-    cv << &cond.in_cond;
+    cv << &cond.in_sysobj;
     if (name)
     {
         cv << "(" << name << ")";
@@ -273,10 +283,10 @@ CSync::CSync(CCondition& cond, CGuard& g)
     // This constructor expects that the mutex is locked, and 'g' should designate
     // the CGuard variable that holds the mutex. Test in debug mode whether the
     // mutex is locked
-    int lockst = pthread_mutex_trylock(&m_mutex->in_mutex);
+    int lockst = pthread_mutex_trylock(&m_mutex->in_sysobj);
     if (lockst == 0)
     {
-        pthread_mutex_unlock(&m_mutex->in_mutex);
+        pthread_mutex_unlock(&m_mutex->in_sysobj);
         LOGS(std::cerr, log << "CCond: IPE: Mutex " << m_mutex->lockname << " in CGuard IS NOT LOCKED.");
         return;
     }
@@ -460,32 +470,32 @@ srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
     return TimePoint<steady_clock>(x);
 }
 
-long long srt::sync::count_microseconds(const steady_clock::duration& t)
+int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
 {
     return t.count() / s_cpu_frequency;
 }
 
-long long srt::sync::count_milliseconds(const steady_clock::duration& t)
+int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
 {
     return t.count() / s_cpu_frequency / 1000;
 }
 
-long long srt::sync::count_seconds(const steady_clock::duration& t)
+int64_t srt::sync::count_seconds(const steady_clock::duration& t)
 {
     return t.count() / s_cpu_frequency / 1000000;
 }
 
-srt::sync::steady_clock::duration srt::sync::microseconds_from(long t_us)
+srt::sync::steady_clock::duration srt::sync::microseconds_from(int64_t t_us)
 {
     return steady_clock::duration(t_us * s_cpu_frequency);
 }
 
-srt::sync::steady_clock::duration srt::sync::milliseconds_from(long t_ms)
+srt::sync::steady_clock::duration srt::sync::milliseconds_from(int64_t t_ms)
 {
     return steady_clock::duration((1000 * t_ms) * s_cpu_frequency);
 }
 
-srt::sync::steady_clock::duration srt::sync::seconds_from(long t_s)
+srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 {
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
