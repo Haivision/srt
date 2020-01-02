@@ -111,7 +111,7 @@ written by
 #define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_UNUSED
-#define SRT_ATR_DEPRECATED_FN
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_NODISCARD
 #endif
