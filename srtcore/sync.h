@@ -481,4 +481,6 @@ std::string FormatTimeSys(const steady_clock::time_point& time);
 }; // namespace sync
 }; // namespace srt
 
+extern srt::sync::SyncEvent s_SyncEvent;
+
 #endif // __SRT_SYNC_H__

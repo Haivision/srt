@@ -1732,6 +1732,7 @@ int CRcvBuffer::readMsg(char* data, int len, ref_t<SRT_MSGCTRL> r_msgctl)
 void CRcvBuffer::readMsgHeavyLogging(int p)
 {
     static steady_clock::time_point prev_now;
+    static steady_clock::time_point prev_srctime;
     const CPacket& pkt = m_pUnit[p]->m_Packet;
 
     const int32_t seq = pkt.m_iSeqNo;
@@ -1741,6 +1742,7 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 
     const int64_t timediff_ms = count_milliseconds(nowtime - srctime);
     const int64_t nowdiff_ms = is_zero(prev_now) ? count_milliseconds(nowtime - prev_now) : 0;
+    const int64_t srctimediff_ms = is_zero(prev_srctime) ? count_milliseconds(srctime - prev_srctime) : 0;
 
     const int next_p = shiftFwd(p);
     CUnit* u = m_pUnit[next_p];
