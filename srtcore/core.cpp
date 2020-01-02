@@ -4171,7 +4171,7 @@ void CUDT::applyResponseSettings()
 
     m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID           = m_ConnRes.m_iID;
-    memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, 16);
+    memcpy(m_piSelfIP, m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
 
     HLOGC(mglog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
@@ -8984,7 +8984,7 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
         // SYN cookie
         char clienthost[NI_MAXHOST];
         char clientport[NI_MAXSERV];
-        getnameinfo(&addr,
+        getnameinfo(addr.get(),
                     addr.size(),
                     clienthost,
                     sizeof(clienthost),

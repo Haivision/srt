@@ -58,7 +58,6 @@ modified by
 #include "utilities.h"
 #include "netinet_any.h"
 #include "packetfilter_api.h"
-#include "netinet_any.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // The purpose of the IOVector class is to proide a platform-independet interface

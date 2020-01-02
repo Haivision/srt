@@ -512,7 +512,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
       ns = new CUDTSocket;
       ns->m_pUDT = new CUDT(*(ls->m_pUDT));
-      ns->m_PeerAddr = peer; // Take the sa_family value as a good deal.
+      // No need to check the peer, this is the address from which the request has come.
+      ns->m_PeerAddr = peer;
    }
    catch (...)
    {
@@ -597,13 +598,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    ns->m_Status = SRTS_CONNECTED;
 
    // copy address information of local node
-    // Precisely, what happens here is:
-    // - Get the IP address and port from the system database
-    ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
-    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
-    // (the family is used exactly as the one taken from what has been returned
-    // by getsockaddr)
-    CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+   // Precisely, what happens here is:
+   // - Get the IP address and port from the system database
+   ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+   // - OVERWRITE just the IP address itself by a value taken from piSelfIP
+   // (the family is used exactly as the one taken from what has been returned
+   // by getsockaddr)
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
    // protect the m_Sockets structure.
    CGuard::enterCS(m_ControlLock);
@@ -1175,8 +1176,8 @@ int CUDTUnited::close(CUDTSocket* s)
 
 void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
 {
-    if (!name || !namelen)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+   if (!name || !namelen)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    if (getStatus(u) != SRTS_CONNECTED)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -1189,7 +1190,7 @@ void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
    if (!s->m_pUDT->m_bConnected || s->m_pUDT->m_bBroken)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   int len = s->m_PeerAddr.size();
+   const int len = s->m_PeerAddr.size();
    if (*namelen < len)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -1784,24 +1785,24 @@ void CUDTUnited::updateMux(
    // always a new multiplexer for that very socket.
    if (!udpsock && s->m_pUDT->m_bReuseAddr)
    {
-       int port = addr.hport();
+      const int port = addr.hport();
 
       // find a reusable address
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
          i != m_mMultiplexer.end(); ++ i)
       {
-           // Use the "family" value blindly from the address; we
-           // need to find an existing multiplexer that binds to the
-           // given port in the same family as requested address.
-           if ((i->second.m_iFamily == addr.family())
-                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
+          // Use the "family" value blindly from the address; we
+          // need to find an existing multiplexer that binds to the
+          // given port in the same family as requested address.
+          if ((i->second.m_iIPversion == addr.family())
+                  && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
 #ifdef SRT_ENABLE_IPOPTS
-                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
-                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
+                  &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
+                  && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
-            && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
-            &&  i->second.m_bReusable)
-         {
+                  && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
+                  &&  i->second.m_bReusable)
+          {
             if (i->second.m_iPort == port)
             {
                // HLOGF(mglog.Debug, "reusing multiplexer for port
@@ -1820,7 +1821,7 @@ void CUDTUnited::updateMux(
    // a new multiplexer is needed
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
-   m.m_iFamily = addr.family();
+   m.m_iIPversion = addr.family();
 #ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
@@ -1854,13 +1855,14 @@ void CUDTUnited::updateMux(
            // The case of previously used case of a NULL address.
            // This here is used to pass family only, in this case
            // just automatically bind to the "0" address to autoselect
-           // everything. If at least the IP address is specified,
-           // then bind to that address, but still possibly autoselect
-           // the outgoing port, if the port was specified as 0.
+           // everything.
            m.m_pChannel->open(addr.family());
        }
        else
        {
+           // If at least the IP address is specified, then bind to that
+           // address, but still possibly autoselect the outgoing port, if the
+           // port was specified as 0.
            m.m_pChannel->open(addr);
        }
    }
@@ -1881,7 +1883,7 @@ void CUDTUnited::updateMux(
    m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
    m.m_pRcvQueue = new CRcvQueue;
    m.m_pRcvQueue->init(
-      32, s->m_pUDT->maxPayloadSize(), m.m_iFamily, 1024,
+      32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
       m.m_pChannel, m.m_pTimer);
 
    m_mMultiplexer[m.m_iID] = m;
@@ -1941,7 +1943,7 @@ void CUDTUnited::updateMux(
 void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    CGuard cg(m_ControlLock);
-   int port = ls->m_SelfAddr.hport();
+   const int port = ls->m_SelfAddr.hport();
 
    // find the listener's address
    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
@@ -2289,7 +2291,7 @@ int CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      s_UDTUnited.getsockname(u, name, namelen);;
+      s_UDTUnited.getsockname(u, name, namelen);
       return 0;
    }
    catch (const CUDTException& e)
@@ -2952,7 +2954,7 @@ int cleanup()
    return CUDT::cleanup();
 }
 
-SRTSOCKET socket(int , int , int )
+SRTSOCKET socket()
 {
    return CUDT::socket();
 }

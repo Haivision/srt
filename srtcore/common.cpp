@@ -584,7 +584,7 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
 {
    if (AF_INET == ver)
    {
-      sockaddr_in* a = &w_addr.sin;
+      sockaddr_in* a = (&w_addr.sin);
       a->sin_addr.s_addr = ip[0];
    }
    else

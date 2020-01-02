@@ -60,7 +60,7 @@ modified by
 
 class CChannel
 {
-    void createSocket(int family);
+   void createSocket(int family);
 public:
 
    // XXX There's currently no way to access the socket ID set for
