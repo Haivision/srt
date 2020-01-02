@@ -264,8 +264,10 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
 template <bool USE_MONOTONIC_CLOCK = false>
 void TestSyncWaitFor()
 {
-    pthread_cond_t  cond;
     pthread_mutex_t mutex;
+    pthread_mutex_init(&mutex, NULL);
+
+    pthread_cond_t  cond;
 #if ENABLE_MONOTONIC_CLOCK
     if (USE_MONOTONIC_CLOCK)
     {
@@ -281,13 +283,15 @@ void TestSyncWaitFor()
 #else
     pthread_cond_init(&cond, NULL);
 #endif
-    pthread_mutex_init(&mutex, NULL);
 
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
         const steady_clock::time_point start = steady_clock::now();
-        EXPECT_FALSE(SyncEvent::wait_for<USE_MONOTONIC_CLOCK>(&cond, &mutex, timeout) == 0);
+        if (USE_MONOTONIC_CLOCK)
+            EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex, timeout) == 0);
+        else
+            EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex, timeout) == 0);
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {
@@ -469,7 +473,7 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[STD\\]");
+        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[STD\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_LE(sm.size(), 6);
