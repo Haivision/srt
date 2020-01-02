@@ -8755,7 +8755,7 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
         // SYN cookie
         char clienthost[NI_MAXHOST];
         char clientport[NI_MAXSERV];
-        getnameinfo(&addr,
+        getnameinfo(addr.get(),
                     addr.size(),
                     clienthost,
                     sizeof(clienthost),
