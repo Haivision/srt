@@ -86,6 +86,12 @@ public:
 
    int32_t popLostSeq();
 
+public:
+
+    int capacity() const { return m_iSize; }
+
+    void traceState() const;
+
 private:
    struct Seq
    {
@@ -96,7 +102,7 @@ private:
 
    int m_iHead;                         // first node
    int m_iLength;                       // loss length
-   int m_iSize;                         // size of the static array
+   const int m_iSize;                   // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
    mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
@@ -105,8 +111,19 @@ private:
    CSndLossList(const CSndLossList&);
    CSndLossList& operator=(const CSndLossList&);
 
-   int removeInNode(int loc, int32_t seqno); // TODO
+private:
+   int removeInNode(int loc, int32_t seqno);
    void removeNoLock(int32_t seqno);
+
+   /// Inserts an element to the beginning and updates head pointer.
+   /// No lock.
+   void push_front(int pos, int32_t seqno1, int32_t seqno2);
+
+   bool update_element(int pos, int32_t seqno1, int32_t seqno2);
+
+   /// Check if it is possible to coalesce element at loc with further elements.
+   /// @param loc - last changed location
+   void coalesce(int loc);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

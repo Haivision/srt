@@ -547,6 +547,11 @@ TEST_F(CSndLossListTest, InsertUpdateElement02)
     ASSERT_EQ(pt->popLostSeq(), 4);
 }
 
+TEST_F(CSndLossListTest, InsertUpdateLowLevel)
+{
+    ASSERT_EQ(pt->update_element(0, -1, -1), false);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
 TEST_F(CSndLossListTest, InsertCorruptionUseCase)
