@@ -593,11 +593,6 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 
 #else
 
-// XXX
-// (Sprint and Printable moved down.
-// Remove this line after merging)
-// 
-
 template <class Type>
 ref_t<Type> Ref(Type& arg)
 {
@@ -718,9 +713,6 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
     os << "]";
     return os.str();
 }
-
-
-
 
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
 void FilterIf(InputIterator bg, InputIterator nd,
@@ -1074,6 +1066,5 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
 #define SRTU_PROPERTY_RRW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
-
 
 #endif
