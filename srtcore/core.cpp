@@ -2098,7 +2098,7 @@ bool CUDT::createSrtHandshake(
 }
 
 static int FindExtensionBlock(uint32_t *begin, size_t total_length,
-        size_t& w_out_len, uint32_t *& w_next_block)
+        size_t& w_out_len, uint32_t*& w_next_block)
 {
     // Check if there's anything to process
     if (total_length == 0)
@@ -2552,9 +2552,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
 
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
 bool CUDT::interpretSrtHandshake(const CHandShake& hs,
-                                 const CPacket&   hspkt,
-                                 uint32_t*        out_data,
-                                 size_t*          pw_len)
+                                 const CPacket&    hspkt,
+                                 uint32_t*         out_data,
+                                 size_t*           pw_len)
 {
     // Initialize pw_len to 0 to handle the unencrypted case
     if (pw_len)
@@ -3227,9 +3227,6 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
     m_tsLastReqTime = now;
     m_bConnecting = true;
 
-    // At this point m_SourceAddr is probably default-any, but this function
-    // now requires that the address be specified here because there will be
-    // no possibility to do it at any next stage of sending.
     m_pSndQueue->sendto(serv_addr, reqpkt);
 
     //
@@ -3452,7 +3449,7 @@ void CUDT::startConnect(const sockaddr *serv_addr, int32_t forced_isn)
         throw e;
     }
 
-    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded. sourceIP=" << SockaddrToString(&m_SourceAddr));
+    HLOGC(mglog.Debug, log << CONID() << "startConnect: handshake exchange succeeded.");
 
     // Parameters at the end.
     HLOGC(mglog.Debug,
@@ -4192,8 +4189,7 @@ void CUDT::applyResponseSettings()
     HLOGC(mglog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
               << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
-              << " peerID=" << m_ConnRes.m_iID
-              << " sourceIP=" << SockaddrToString(&m_SourceAddr));
+              << " peerID=" << m_ConnRes.m_iID);
 }
 
 EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro)
@@ -4417,11 +4413,12 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
 
         ~LogAtTheEnd()
         {
-            HLOGC(mglog.Debug, log << "rendezvousSwitchState: STATE[" << CHandShake::RdvStateStr(ost) << "->"
-                    << CHandShake::RdvStateStr(nst) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
-                    << RequestTypeStr(nrq) << "] "
-                    << "ext:" << (needext ? (needrsp ? "HSRSP" : "HSREQ") : "NONE")
-                    << (reason == "" ? string() : "reason:" + reason));
+            HLOGC(mglog.Debug,
+                  log << "rendezvousSwitchState: STATE[" << CHandShake::RdvStateStr(ost) << "->"
+                      << CHandShake::RdvStateStr(nst) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
+                      << RequestTypeStr(nrq) << "] "
+                      << "ext:" << (needext ? (needrsp ? "HSRSP" : "HSREQ") : "NONE")
+                      << (reason == "" ? string() : "reason:" + reason));
         }
     } l_logend = {m_RdvState, req, m_RdvState, w_rsptype, w_needs_extension, w_needs_hsrsp, reason};
 
@@ -4433,272 +4430,272 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
         return;
 
     case CHandShake::RDV_WAVING:
+    {
+        if (req == URQ_WAVEAHAND)
         {
-            if (req == URQ_WAVEAHAND)
-            {
-                m_RdvState = CHandShake::RDV_ATTENTION;
+            m_RdvState = CHandShake::RDV_ATTENTION;
 
-                // NOTE: if this->isWinner(), attach HSREQ
-                w_rsptype = URQ_CONCLUSION;
-                if (hsd == HSD_INITIATOR)
-                    w_needs_extension = true;
-                return;
-            }
-
-            if (req == URQ_CONCLUSION)
-            {
-                m_RdvState = CHandShake::RDV_FINE;
-                w_rsptype   = URQ_CONCLUSION;
-
-                w_needs_extension = true; // (see below - this needs to craft either HSREQ or HSRSP)
-                // if this->isWinner(), then craft HSREQ for that response.
-                // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
-                if (hsd == HSD_RESPONDER)
-                    w_needs_hsrsp = true;
-                return;
-            }
+            // NOTE: if this->isWinner(), attach HSREQ
+            w_rsptype = URQ_CONCLUSION;
+            if (hsd == HSD_INITIATOR)
+                w_needs_extension = true;
+            return;
         }
+
+        if (req == URQ_CONCLUSION)
+        {
+            m_RdvState = CHandShake::RDV_FINE;
+            w_rsptype   = URQ_CONCLUSION;
+
+            w_needs_extension = true; // (see below - this needs to craft either HSREQ or HSRSP)
+            // if this->isWinner(), then craft HSREQ for that response.
+            // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
+            if (hsd == HSD_RESPONDER)
+                w_needs_hsrsp = true;
+            return;
+        }
+    }
         reason = "WAVING -> WAVEAHAND or CONCLUSION";
         break;
 
     case CHandShake::RDV_ATTENTION:
+    {
+        if (req == URQ_WAVEAHAND)
         {
-            if (req == URQ_WAVEAHAND)
-            {
-                // This is only possible if the URQ_CONCLUSION sent to the peer
-                // was lost on track. The peer is then simply unaware that the
-                // agent has switched to ATTENTION state and continues sending
-                // waveahands. In this case, just remain in ATTENTION state and
-                // retry with URQ_CONCLUSION, as normally.
-                w_rsptype = URQ_CONCLUSION;
-                if (hsd == HSD_INITIATOR)
-                    w_needs_extension = true;
-                return;
-            }
-
-            if (req == URQ_CONCLUSION)
-            {
-                // We have two possibilities here:
-                //
-                // WINNER (HSD_INITIATOR): send URQ_AGREEMENT
-                if (hsd == HSD_INITIATOR)
-                {
-                    // WINNER should get a response with HSRSP, otherwise this is kinda empty conclusion.
-                    // If no HSRSP attached, stay in this state.
-                    if (hs_flags == 0)
-                    {
-                        HLOGC(
-                                mglog.Debug,
-                                log << "rendezvousSwitchState: "
-                                "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
-                        w_rsptype         = URQ_CONCLUSION;
-                        w_needs_extension = true; // If you expect to receive HSRSP, continue sending HSREQ
-                        return;
-                    }
-                    m_RdvState = CHandShake::RDV_CONNECTED;
-                    w_rsptype   = URQ_AGREEMENT;
-                    return;
-                }
-
-                // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
-                if (hsd == HSD_RESPONDER)
-                {
-                    // If no HSREQ attached, stay in this state.
-                    // (Although this seems completely impossible).
-                    if (hs_flags == 0)
-                    {
-                        LOGC(
-                                mglog.Warn,
-                                log << "rendezvousSwitchState: (IPE!)"
-                                "{RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
-                        w_rsptype         = URQ_CONCLUSION;
-                        w_needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
-                        // for the right message)
-                        return;
-                    }
-                    m_RdvState       = CHandShake::RDV_INITIATED;
-                    w_rsptype         = URQ_CONCLUSION;
-                    w_needs_extension = true;
-                    w_needs_hsrsp     = true;
-                    return;
-                }
-
-                LOGC(mglog.Error, log << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
-                // Fallback for cookie draw
-                m_RdvState = CHandShake::RDV_INVALID;
-                w_rsptype   = URQFailure(SRT_REJ_RDVCOOKIE);
-                return;
-            }
-
-            if (req == URQ_AGREEMENT)
-            {
-                // This means that the peer has received our URQ_CONCLUSION, but
-                // the agent missed the peer's URQ_CONCLUSION (received only initial
-                // URQ_WAVEAHAND).
-                if (hsd == HSD_INITIATOR)
-                {
-                    // In this case the missed URQ_CONCLUSION was sent without extensions,
-                    // whereas the peer received our URQ_CONCLUSION with HSREQ, and therefore
-                    // it sent URQ_AGREEMENT already with HSRSP. This isn't a problem for
-                    // us, we can go on with it, especially that the peer is already switched
-                    // into CHandShake::RDV_CONNECTED state.
-                    m_RdvState = CHandShake::RDV_CONNECTED;
-
-                    // Both sides are connected, no need to send anything anymore.
-                    w_rsptype = URQ_DONE;
-                    return;
-                }
-
-                if (hsd == HSD_RESPONDER)
-                {
-                    // In this case the missed URQ_CONCLUSION was sent with extensions, so
-                    // we have to request this once again. Send URQ_CONCLUSION in order to
-                    // inform the other party that we need the conclusion message once again.
-                    // The ATTENTION state should be maintained.
-                    w_rsptype         = URQ_CONCLUSION;
-                    w_needs_extension = true;
-                    w_needs_hsrsp     = true;
-                    return;
-                }
-            }
+            // This is only possible if the URQ_CONCLUSION sent to the peer
+            // was lost on track. The peer is then simply unaware that the
+            // agent has switched to ATTENTION state and continues sending
+            // waveahands. In this case, just remain in ATTENTION state and
+            // retry with URQ_CONCLUSION, as normally.
+            w_rsptype = URQ_CONCLUSION;
+            if (hsd == HSD_INITIATOR)
+                w_needs_extension = true;
+            return;
         }
-        reason = "ATTENTION -> WAVEAHAND(conclusion), CONCLUSION(agreement/conclusion), AGREEMENT (done/conclusion)";
-        break;
 
-    case CHandShake::RDV_FINE:
+        if (req == URQ_CONCLUSION)
         {
-            // In FINE state we can't receive URQ_WAVEAHAND because if the peer has already
-            // sent URQ_CONCLUSION, it's already in CHandShake::RDV_ATTENTION, and in this state it can
-            // only send URQ_CONCLUSION, whereas when it isn't in CHandShake::RDV_ATTENTION, it couldn't
-            // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in CHandShake::RDV_FINE state.
-
-            if (req == URQ_CONCLUSION)
+            // We have two possibilities here:
+            //
+            // WINNER (HSD_INITIATOR): send URQ_AGREEMENT
+            if (hsd == HSD_INITIATOR)
             {
-                // There's only one case when it should receive CONCLUSION in FINE state:
-                // When it's the winner. If so, it should then contain HSREQ extension.
-                // In case of loser, it shouldn't receive CONCLUSION at all - it should
-                // receive AGREEMENT.
-
-                // The winner case, received CONCLUSION + HSRSP - switch to CONNECTED and send AGREEMENT.
-                // So, check first if HAS EXTENSION
-
-                bool correct_switch = false;
-                if (hsd == HSD_INITIATOR && !has_extension)
+                // WINNER should get a response with HSRSP, otherwise this is kinda empty conclusion.
+                // If no HSRSP attached, stay in this state.
+                if (hs_flags == 0)
                 {
-                    // Received REPEATED empty conclusion that has initially switched it into FINE state.
-                    // To exit FINE state we need the CONCLUSION message with HSRSP.
-                    HLOGC(mglog.Debug,
-                            log << "rendezvousSwitchState: {INITIATOR}[FINE] <CONCLUSION without HSRSP. Stay in [FINE], "
-                            "await CONCLUSION+HSRSP");
-                }
-                else if (hsd == HSD_RESPONDER)
-                {
-                    // In FINE state the RESPONDER expects only to be sent AGREEMENT.
-                    // It has previously received CONCLUSION in WAVING state and this has switched
-                    // it to FINE state. That CONCLUSION message should have contained extension,
-                    // so if this is a repeated CONCLUSION+HSREQ, it should be responded with
-                    // CONCLUSION+HSRSP.
-                    HLOGC(mglog.Debug,
-                            log << "rendezvousSwitchState: {RESPONDER}[FINE] <CONCLUSION. Stay in [FINE], await AGREEMENT");
-                }
-                else
-                {
-                    correct_switch = true;
-                }
-
-                if (!correct_switch)
-                {
-                    w_rsptype = URQ_CONCLUSION;
-                    // initiator should send HSREQ, responder HSRSP,
-                    // in both cases extension is needed
-                    w_needs_extension = true;
-                    w_needs_hsrsp     = hsd == HSD_RESPONDER;
+                    HLOGC(
+                        mglog.Debug,
+                        log << "rendezvousSwitchState: "
+                               "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
+                    w_rsptype         = URQ_CONCLUSION;
+                    w_needs_extension = true; // If you expect to receive HSRSP, continue sending HSREQ
                     return;
                 }
-
                 m_RdvState = CHandShake::RDV_CONNECTED;
                 w_rsptype   = URQ_AGREEMENT;
                 return;
             }
 
-            if (req == URQ_AGREEMENT)
+            // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
+            if (hsd == HSD_RESPONDER)
             {
-                // The loser case, the agreement was sent in response to conclusion that
-                // already carried over the HSRSP extension.
-
-                // There's a theoretical case when URQ_AGREEMENT can be received in case of
-                // parallel arrangement, while the agent is already in CHandShake::RDV_CONNECTED state.
-                // This will be dispatched in the main loop and discarded.
-
-                m_RdvState = CHandShake::RDV_CONNECTED;
-                w_rsptype   = URQ_DONE;
-                return;
-            }
-        }
-
-        reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
-        break;
-    case CHandShake::RDV_INITIATED:
-        {
-            // In this state we just wait for URQ_AGREEMENT, which should cause it to
-            // switch to CONNECTED. No response required.
-            if (req == URQ_AGREEMENT)
-            {
-                // No matter in which state we'd be, just switch to connected.
-                if (m_RdvState == CHandShake::RDV_CONNECTED)
-                {
-                    HLOGC(mglog.Debug, log << "<-- AGREEMENT: already connected");
-                }
-                else
-                {
-                    HLOGC(mglog.Debug, log << "<-- AGREEMENT: switched to connected");
-                }
-                m_RdvState = CHandShake::RDV_CONNECTED;
-                w_rsptype   = URQ_DONE;
-                return;
-            }
-
-            if (req == URQ_CONCLUSION)
-            {
-                // Receiving conclusion in this state means that the other party
-                // didn't get our conclusion, so send it again, the same as when
-                // exiting the ATTENTION state.
-                w_rsptype = URQ_CONCLUSION;
-                if (hsd == HSD_RESPONDER)
-                {
-                    HLOGC(mglog.Debug,
-                            log << "rendezvousSwitchState: "
-                            "{RESPONDER}[INITIATED] awaits AGREEMENT, "
-                            "got CONCLUSION, sending CONCLUSION+HSRSP");
-                    w_needs_extension = true;
-                    w_needs_hsrsp     = true;
-                    return;
-                }
-
-                // Loser, initiated? This may only happen in parallel arrangement, where
-                // the agent exchanges empty conclusion messages with the peer, simultaneously
-                // exchanging HSREQ-HSRSP conclusion messages. Check if THIS message contained
-                // HSREQ, and set responding HSRSP in that case.
+                // If no HSREQ attached, stay in this state.
+                // (Although this seems completely impossible).
                 if (hs_flags == 0)
                 {
-                    HLOGC(mglog.Debug,
-                            log << "rendezvousSwitchState: "
-                            "{INITIATOR}[INITIATED] awaits AGREEMENT, "
-                            "got empty CONCLUSION, STILL RESPONDING CONCLUSION+HSRSP");
+                    LOGC(
+                        mglog.Warn,
+                        log << "rendezvousSwitchState: (IPE!)"
+                               "{RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
+                    w_rsptype         = URQ_CONCLUSION;
+                    w_needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
+                                               // for the right message)
+                    return;
                 }
-                else
-                {
+                m_RdvState       = CHandShake::RDV_INITIATED;
+                w_rsptype         = URQ_CONCLUSION;
+                w_needs_extension = true;
+                w_needs_hsrsp     = true;
+                return;
+            }
 
-                    HLOGC(mglog.Debug,
-                            log << "rendezvousSwitchState: "
-                            "{INITIATOR}[INITIATED] awaits AGREEMENT, "
-                            "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
-                }
+            LOGC(mglog.Error, log << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
+            // Fallback for cookie draw
+            m_RdvState = CHandShake::RDV_INVALID;
+            w_rsptype   = URQFailure(SRT_REJ_RDVCOOKIE);
+            return;
+        }
+
+        if (req == URQ_AGREEMENT)
+        {
+            // This means that the peer has received our URQ_CONCLUSION, but
+            // the agent missed the peer's URQ_CONCLUSION (received only initial
+            // URQ_WAVEAHAND).
+            if (hsd == HSD_INITIATOR)
+            {
+                // In this case the missed URQ_CONCLUSION was sent without extensions,
+                // whereas the peer received our URQ_CONCLUSION with HSREQ, and therefore
+                // it sent URQ_AGREEMENT already with HSRSP. This isn't a problem for
+                // us, we can go on with it, especially that the peer is already switched
+                // into CHandShake::RDV_CONNECTED state.
+                m_RdvState = CHandShake::RDV_CONNECTED;
+
+                // Both sides are connected, no need to send anything anymore.
+                w_rsptype = URQ_DONE;
+                return;
+            }
+
+            if (hsd == HSD_RESPONDER)
+            {
+                // In this case the missed URQ_CONCLUSION was sent with extensions, so
+                // we have to request this once again. Send URQ_CONCLUSION in order to
+                // inform the other party that we need the conclusion message once again.
+                // The ATTENTION state should be maintained.
+                w_rsptype         = URQ_CONCLUSION;
                 w_needs_extension = true;
                 w_needs_hsrsp     = true;
                 return;
             }
         }
+    }
+    reason = "ATTENTION -> WAVEAHAND(conclusion), CONCLUSION(agreement/conclusion), AGREEMENT (done/conclusion)";
+    break;
+
+    case CHandShake::RDV_FINE:
+    {
+        // In FINE state we can't receive URQ_WAVEAHAND because if the peer has already
+        // sent URQ_CONCLUSION, it's already in CHandShake::RDV_ATTENTION, and in this state it can
+        // only send URQ_CONCLUSION, whereas when it isn't in CHandShake::RDV_ATTENTION, it couldn't
+        // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in CHandShake::RDV_FINE state.
+
+        if (req == URQ_CONCLUSION)
+        {
+            // There's only one case when it should receive CONCLUSION in FINE state:
+            // When it's the winner. If so, it should then contain HSREQ extension.
+            // In case of loser, it shouldn't receive CONCLUSION at all - it should
+            // receive AGREEMENT.
+
+            // The winner case, received CONCLUSION + HSRSP - switch to CONNECTED and send AGREEMENT.
+            // So, check first if HAS EXTENSION
+
+            bool correct_switch = false;
+            if (hsd == HSD_INITIATOR && !has_extension)
+            {
+                // Received REPEATED empty conclusion that has initially switched it into FINE state.
+                // To exit FINE state we need the CONCLUSION message with HSRSP.
+                HLOGC(mglog.Debug,
+                      log << "rendezvousSwitchState: {INITIATOR}[FINE] <CONCLUSION without HSRSP. Stay in [FINE], "
+                             "await CONCLUSION+HSRSP");
+            }
+            else if (hsd == HSD_RESPONDER)
+            {
+                // In FINE state the RESPONDER expects only to be sent AGREEMENT.
+                // It has previously received CONCLUSION in WAVING state and this has switched
+                // it to FINE state. That CONCLUSION message should have contained extension,
+                // so if this is a repeated CONCLUSION+HSREQ, it should be responded with
+                // CONCLUSION+HSRSP.
+                HLOGC(mglog.Debug,
+                      log << "rendezvousSwitchState: {RESPONDER}[FINE] <CONCLUSION. Stay in [FINE], await AGREEMENT");
+            }
+            else
+            {
+                correct_switch = true;
+            }
+
+            if (!correct_switch)
+            {
+                w_rsptype = URQ_CONCLUSION;
+                // initiator should send HSREQ, responder HSRSP,
+                // in both cases extension is needed
+                w_needs_extension = true;
+                w_needs_hsrsp     = hsd == HSD_RESPONDER;
+                return;
+            }
+
+            m_RdvState = CHandShake::RDV_CONNECTED;
+            w_rsptype   = URQ_AGREEMENT;
+            return;
+        }
+
+        if (req == URQ_AGREEMENT)
+        {
+            // The loser case, the agreement was sent in response to conclusion that
+            // already carried over the HSRSP extension.
+
+            // There's a theoretical case when URQ_AGREEMENT can be received in case of
+            // parallel arrangement, while the agent is already in CHandShake::RDV_CONNECTED state.
+            // This will be dispatched in the main loop and discarded.
+
+            m_RdvState = CHandShake::RDV_CONNECTED;
+            w_rsptype   = URQ_DONE;
+            return;
+        }
+    }
+
+        reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
+        break;
+    case CHandShake::RDV_INITIATED:
+    {
+        // In this state we just wait for URQ_AGREEMENT, which should cause it to
+        // switch to CONNECTED. No response required.
+        if (req == URQ_AGREEMENT)
+        {
+            // No matter in which state we'd be, just switch to connected.
+            if (m_RdvState == CHandShake::RDV_CONNECTED)
+            {
+                HLOGC(mglog.Debug, log << "<-- AGREEMENT: already connected");
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "<-- AGREEMENT: switched to connected");
+            }
+            m_RdvState = CHandShake::RDV_CONNECTED;
+            w_rsptype   = URQ_DONE;
+            return;
+        }
+
+        if (req == URQ_CONCLUSION)
+        {
+            // Receiving conclusion in this state means that the other party
+            // didn't get our conclusion, so send it again, the same as when
+            // exiting the ATTENTION state.
+            w_rsptype = URQ_CONCLUSION;
+            if (hsd == HSD_RESPONDER)
+            {
+                HLOGC(mglog.Debug,
+                      log << "rendezvousSwitchState: "
+                             "{RESPONDER}[INITIATED] awaits AGREEMENT, "
+                             "got CONCLUSION, sending CONCLUSION+HSRSP");
+                w_needs_extension = true;
+                w_needs_hsrsp     = true;
+                return;
+            }
+
+            // Loser, initiated? This may only happen in parallel arrangement, where
+            // the agent exchanges empty conclusion messages with the peer, simultaneously
+            // exchanging HSREQ-HSRSP conclusion messages. Check if THIS message contained
+            // HSREQ, and set responding HSRSP in that case.
+            if (hs_flags == 0)
+            {
+                HLOGC(mglog.Debug,
+                      log << "rendezvousSwitchState: "
+                             "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                             "got empty CONCLUSION, STILL RESPONDING CONCLUSION+HSRSP");
+            }
+            else
+            {
+
+                HLOGC(mglog.Debug,
+                      log << "rendezvousSwitchState: "
+                             "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                             "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
+            }
+            w_needs_extension = true;
+            w_needs_hsrsp     = true;
+            return;
+        }
+    }
 
         reason = "INITIATED -> AGREEMENT(done)";
         break;
@@ -5290,7 +5287,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
     }
 }
 
-void CUDT::addressAndSend(CPacket &w_pkt)
+void CUDT::addressAndSend(CPacket& w_pkt)
 {
     w_pkt.m_iID        = m_PeerID;
     w_pkt.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
@@ -6775,7 +6772,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
         {
             ctrlpkt.pack(pkttype, NULL, &ack, size);
             ctrlpkt.m_iID = m_PeerID;
-            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
             DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
             break;
         }
@@ -6906,7 +6903,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
 
             ctrlpkt.m_iID        = m_PeerID;
             ctrlpkt.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
-            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent               = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
             DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
             m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
@@ -6923,7 +6920,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
@@ -6938,7 +6935,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
 
             ctrlpkt.m_iID = m_PeerID;
-            nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+            nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
             CGuard::enterCS(m_StatsLock);
             ++m_stats.sentNAK;
@@ -6959,7 +6956,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             {
                 ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
                 ctrlpkt.m_iID = m_PeerID;
-                nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+                nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
                 CGuard::enterCS(m_StatsLock);
                 ++m_stats.sentNAK;
@@ -6990,7 +6987,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_CGWARNING: // 100 - Congestion Warning
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         m_tsLastWarningTime = steady_clock::now();
 
@@ -6999,35 +6996,35 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
     case UMSG_KEEPALIVE: // 001 - Keep-alive
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
         ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
         ctrlpkt.pack(pkttype, lparam, rparam, 8);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
     case UMSG_PEERERROR: // 1000 - acknowledge the peer side a special error
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
+        nbsent        = m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
         break;
 
@@ -7543,8 +7540,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
             // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
             // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
-            if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
-                        kmdata, kmdatasize,
+            if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
                         (response), (initdata)))
             {
                 response.m_iID        = m_PeerID;
@@ -7812,8 +7808,8 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     {
         reason = "reXmit";
     }
-    else if (m_PacketFilter && m_PacketFilter.packControlPacket(
-                m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
+    else if (m_PacketFilter &&
+             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(mglog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
         payload        = w_packet.getLength();
@@ -7931,8 +7927,8 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(mglog.Debug,
-            log << CONID() << "packData: " << reason << " packet seq=" << w_packet.m_iSeqNo << " (ACK=" << m_iSndLastAck
-            << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
+          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.m_iSeqNo << " (ACK=" << m_iSndLastAck
+              << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
 #endif
 
     // Fix keepalive
