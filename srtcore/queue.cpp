@@ -419,9 +419,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
     {
-        pthread_mutex_lock(m_pWindowLock);
-        pthread_cond_signal(m_pWindowCond);
-        pthread_mutex_unlock(m_pWindowLock);
+        CSync::lock_signal(*m_pWindowCond, *m_pWindowLock);
     }
 }
 
@@ -487,9 +485,8 @@ CSndQueue::~CSndQueue()
         m_pTimer->interrupt();
     }
 
-    pthread_mutex_lock(&m_WindowLock);
-    pthread_cond_signal(&m_WindowCond);
-    pthread_mutex_unlock(&m_WindowLock);
+    CSync::lock_signal(m_WindowCond, m_WindowLock);
+
     if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
     pthread_cond_destroy(&m_WindowCond);
@@ -547,19 +544,18 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
+            CGuard windlock (self->m_WindowLock);
+            CSync windsync  (self->m_WindowCond, windlock);
+
             // wait here if there is no sockets with data to be sent
-            THREAD_PAUSED();
-            pthread_mutex_lock(&self->m_WindowLock);
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
             {
-                pthread_cond_wait(&self->m_WindowCond, &self->m_WindowLock);
+                windsync.wait();
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
                 self->m_WorkerStats.lCondWait++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
             }
-            THREAD_RESUMED();
-            pthread_mutex_unlock(&self->m_WindowLock);
 
             continue;
         }
@@ -1543,14 +1539,15 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit *unit, c
 
 int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 {
-    CGuard   bufferlock(m_PassLock);
+    CGuard bufferlock (m_PassLock);
+    CSync passcond    (m_PassCond, bufferlock);
     CPacket &packet = *r_packet;
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
-        SyncEvent::wait_for(&m_PassCond, &m_PassLock, seconds_from(1));
+        passcond.wait_for(seconds_from(1));
 
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())
@@ -1665,14 +1662,15 @@ CUDT *CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
 {
-    CGuard bufferlock(m_PassLock);
+    CGuard bufferlock (m_PassLock);
+    CSync passcond    (m_PassCond, bufferlock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
         m_mBuffer[id].push(pkt);
-        pthread_cond_signal(&m_PassCond);
+        passcond.signal_locked(bufferlock);
     }
     else
     {

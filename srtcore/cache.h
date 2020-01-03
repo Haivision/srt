@@ -44,7 +44,7 @@ written by
 #include <list>
 #include <vector>
 
-#include "common.h"
+#include "sync.h"
 #include "udt.h"
 
 class CCacheItem
@@ -82,13 +82,13 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
-      CGuard::createMutex(m_Lock);
+      srt::sync::CGuard::createMutex(m_Lock);
    }
 
    ~CCache()
    {
       clear();
-      CGuard::releaseMutex(m_Lock);
+      srt::sync::CGuard::releaseMutex(m_Lock);
    }
 
 public:
@@ -98,7 +98,7 @@ public:
 
    int lookup(T* data)
    {
-      CGuard cacheguard(m_Lock);
+       srt::sync::CGuard cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)
@@ -126,7 +126,7 @@ public:
 
    int update(T* data)
    {
-      CGuard cacheguard(m_Lock);
+       srt::sync::CGuard cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)

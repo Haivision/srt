@@ -170,7 +170,7 @@ public:
    int getPktRcvSpeed(ref_t<int> bytesps) const
    {
        // Lock access to the packet Window
-       CGuard cg(m_lockPktWindow);
+       srt::sync::CGuard cg(m_lockPktWindow);
 
        int pktReplica[ASIZE];          // packet information window (inter-packet time)
        return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, *bytesps);
@@ -188,7 +188,7 @@ public:
    int getBandwidth() const
    {
        // Lock access to the packet Window
-       CGuard cg(m_lockProbeWindow);
+       srt::sync::CGuard cg(m_lockProbeWindow);
 
        int probeReplica[PSIZE];
        return getBandwidth_in(m_aProbeWindow, probeReplica, PSIZE);
@@ -211,7 +211,7 @@ public:
 
    void onPktArrival(int pktsz = 0)
    {
-       CGuard cg(m_lockPktWindow);
+       srt::sync::CGuard cg(m_lockPktWindow);
 
        m_tsCurrArrTime = srt::sync::steady_clock::now();
 
@@ -286,7 +286,7 @@ public:
        const srt::sync::steady_clock::time_point now = srt::sync::steady_clock::now();
 
        // Lock access to the packet Window
-       CGuard cg(m_lockProbeWindow);
+       srt::sync::CGuard cg(m_lockProbeWindow);
 
        m_tsCurrArrTime = now;
 
