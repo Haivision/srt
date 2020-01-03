@@ -7843,7 +7843,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
                 if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
                     probe = true;
 
-            new_packet_packed = true;
+                new_packet_packed = true;
             }
             else
             {
