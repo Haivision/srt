@@ -50,8 +50,14 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include "list.h"
 #include "packet.h"
+
+
+using namespace srt::sync;
+
 
 CSndLossList::CSndLossList(int size):
 m_caSeq(),
@@ -687,9 +693,10 @@ void CRcvLossList::getLossArray(int32_t* array, int& len, int limit)
 }
 
 
-CRcvFreshLoss::CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_age): ttl(initial_age)
+CRcvFreshLoss::CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_age)
+    : ttl(initial_age)
+    , timestamp(steady_clock::now())
 {
-    CTimer::rdtsc(timestamp);
     seq[0] = seqlo;
     seq[1] = seqhi;
 }

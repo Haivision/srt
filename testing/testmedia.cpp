@@ -337,11 +337,11 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
     m_bindsock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     if ( m_bindsock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+        Error("srt_socket");
 
     int stat = ConfigurePre(m_bindsock);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePre");
+        Error("ConfigurePre");
 
     if ( !m_blocking_mode )
     {
@@ -355,7 +355,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     if ( stat == SRT_ERROR )
     {
         srt_close(m_bindsock);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error("srt_bind");
     }
 
     Verb() << " listen... " << VerbNoEOL;
@@ -363,7 +363,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     if ( stat == SRT_ERROR )
     {
         srt_close(m_bindsock);
-        Error(UDT::getlasterror(), "srt_listen");
+        Error("srt_listen");
     }
 
     Verb() << " accept... " << VerbNoEOL;
@@ -376,7 +376,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         int len = 2;
         SRTSOCKET ready[2];
         if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error("srt_epoll_wait");
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -409,7 +409,7 @@ void SrtCommon::AcceptNewClient()
     {
         srt_close(m_bindsock);
         m_bindsock = SRT_INVALID_SOCK;
-        Error(UDT::getlasterror(), "srt_accept");
+        Error("srt_accept");
     }
 
     Verb() << " connected.";
@@ -419,7 +419,7 @@ void SrtCommon::AcceptNewClient()
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
     int stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePost");
+        Error("ConfigurePost");
 }
 
 void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir)
@@ -582,7 +582,7 @@ void SrtCommon::SetupAdapter(const string& host, int port)
     sockaddr* psa = (sockaddr*)&localsa;
     int stat = srt_bind(m_sock, psa, sizeof localsa);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_bind");
+        Error("srt_bind");
 }
 
 void SrtCommon::OpenClient(string host, int port)
@@ -601,11 +601,11 @@ void SrtCommon::PrepareClient()
 {
     m_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
     if ( m_sock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+        Error("srt_socket");
 
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePre");
+        Error("ConfigurePre");
 
     if ( !m_blocking_mode )
     {
@@ -634,7 +634,7 @@ void SrtCommon::PrepareClient()
    }
    else if ( int(state) > SRTS_CONNECTED )
    {
-   Error(UDT::getlasterror(), "UDT::connect status=" + udt_status_names[state]);
+   Error("UDT::connect status=" + udt_status_names[state]);
    }
 
    return;
@@ -653,7 +653,7 @@ void SrtCommon::ConnectClient(string host, int port)
     {
         SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "srt_connect", reason);
+        Error("srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -673,31 +673,31 @@ void SrtCommon::ConnectClient(string host, int port)
         }
         else
         {
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error("srt_epoll_wait");
         }
     }
 
     Verb() << " connected.";
     stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePost");
+        Error("ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
+void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
 {
-    int udtResult = udtError.getErrorCode();
-    string message = udtError.getErrorMessage();
-    if (udtResult == SRT_ECONNREJ)
+    int errnov = 0;
+    const int result = srt_getlasterror(&errnov);
+    string message = srt_getlasterror_str();
+    if (result == SRT_ECONNREJ)
     {
         message += ": ";
         message += srt_rejectreason_str(reason);
     }
     if ( Verbose::on )
-        Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
+        Verb() << "FAILURE\n" << src << ": [" << result << "." << errnov << "] " << message;
     else
-        cerr << "\nERROR #" << udtResult << ": " << message << endl;
+        cerr << "\nERROR #" << result << "." << errnov << ": " << message << endl;
 
-    udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
 }
 
@@ -713,7 +713,7 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error("srt_bind");
     }
 }
 
@@ -789,7 +789,7 @@ bytevector SrtSource::Read(size_t chunk)
                     // If was -1, then passthru.
                 }
             }
-            Error(UDT::getlasterror(), "recvmsg");
+            Error("recvmsg");
         }
 
         if ( stat == 0 )
@@ -863,12 +863,12 @@ void SrtTarget::Write(const bytevector& data)
         int ready[2];
         int len = 2;
         if ( srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+            Error("srt_epoll_wait");
     }
 
     int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
     if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_sendmsg");
+        Error("srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 }
 
@@ -937,7 +937,7 @@ void SrtModel::Establish(ref_t<std::string> name)
             int namelen = s.size();
             if ( srt_getsockname(Socket(), &s, &namelen) == SRT_ERROR )
             {
-                Error(UDT::getlasterror(), "srt_getsockname");
+                Error("srt_getsockname");
             }
 
             m_outgoing_port = s.hport();
@@ -1089,8 +1089,14 @@ protected:
 
         if (is_multicast)
         {
-            adapter = attr.count("adapter") ? attr.at("adapter") : string();
+            ip_mreq_source mreq_ssm;
+            ip_mreq mreq;
             sockaddr_in maddr;
+            int opt_name;
+            void* mreq_arg_ptr;
+            socklen_t mreq_arg_size;
+
+            adapter = attr.count("adapter") ? attr.at("adapter") : string();
             if ( adapter == "" )
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
@@ -1104,14 +1110,30 @@ protected:
                 maddr = CreateAddrInet(adapter, port);
             }
 
-            ip_mreq mreq;
-            mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
-            mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+            if (attr.count("source"))
+            {
+                /* this is an ssm.  we need to use the right struct and opt */
+                opt_name = IP_ADD_SOURCE_MEMBERSHIP;
+                mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
+                mreq_arg_size = sizeof(mreq_ssm);
+                mreq_arg_ptr = &mreq_ssm;
+            }
+            else
+            {
+                opt_name = IP_ADD_MEMBERSHIP;
+                mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
+                mreq_arg_size = sizeof(mreq);
+                mreq_arg_ptr = &mreq;
+            }
+
 #ifdef _WIN32
-            const char* mreq_arg = (const char*)&mreq;
+            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = &mreq;
+            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
 
@@ -1131,12 +1153,13 @@ protected:
 #else
             Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
 #endif
-            int res = setsockopt(m_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq_arg, sizeof(mreq));
+            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
 
             if ( res == status_error )
             {
-                throw runtime_error("adding to multicast membership failed");
+                Error(errno, "adding to multicast membership failed");
             }
+
             attr.erase("multicast");
             attr.erase("adapter");
         }
@@ -1246,6 +1269,18 @@ public:
     UdpTarget(string host, int port, const map<string,string>& attr )
     {
         Setup(host, port, attr);
+        if (adapter != "")
+        {
+            sockaddr_in maddr = CreateAddrInet(adapter, 0);
+            in_addr addr = maddr.sin_addr;
+
+            int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
+            if (res == -1)
+            {
+                Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
+            }
+        }
+
     }
 
     void Write(const bytevector& data) override

@@ -159,6 +159,7 @@ modified by
 //      For any single loss or consectutive loss less than 2 packets, use
 //      the original sequence numbers in the field.
 
+#include "platform_sys.h"
 
 #include <cstring>
 #include "packet.h"

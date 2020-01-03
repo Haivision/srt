@@ -50,24 +50,7 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef _WIN32
-   #if __APPLE__
-      #include "TargetConditionals.h"
-   #endif
-   #include <sys/socket.h>
-   #include <sys/ioctl.h>
-   #include <netdb.h>
-   #include <arpa/inet.h>
-   #include <unistd.h>
-   #include <fcntl.h>
-   #include <cstring>
-   #include <cstdio>
-   #include <cerrno>
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <mswsock.h>
-#endif
+#include "platform_sys.h"
 
 #include <iostream>
 #include <iomanip> // Logging 
@@ -380,9 +363,9 @@ void CChannel::setIpToS(int tos)
 
 #endif
 
-int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
+int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     int res = ::ioctl(m_iSocket, type, &value);
     if ( res != -1 )
@@ -391,9 +374,9 @@ int CChannel::ioctlQuery(int SRT_ATR_UNUSED type) const
     return -1;
 }
 
-int CChannel::sockoptQuery(int SRT_ATR_UNUSED level, int SRT_ATR_UNUSED option) const
+int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
 {
-#ifdef unix
+#if defined(unix) || defined(__APPLE__)
     int value = 0;
     socklen_t len = sizeof (int);
     int res = ::getsockopt(m_iSocket, level, option, &value, &len);
@@ -439,7 +422,7 @@ int CChannel::sendto(const sockaddr* addr, CPacket& packet) const
     LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
-        << " pkt.ts=" << FormatTime(packet.m_iTimeStamp)
+        << " pkt.ts=" << packet.m_iTimeStamp
         << spec.str());
 #endif
 
