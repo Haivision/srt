@@ -79,6 +79,7 @@ public:
     // 1. The congctl is individual, so don't copy it. Set NULL.
     // 2. The selected name is copied so that it's configured correctly.
     SrtCongestion(const SrtCongestion& source): congctl(), selector(source.selector) {}
+    void operator=(const SrtCongestion& source) { congctl = 0; selector = source.selector; }
 
     // This function will be called by the parent CUDT
     // in appropriate time. It should select appropriate
@@ -191,15 +192,15 @@ public:
 
     virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
-    virtual uint64_t updateNAKInterval(uint64_t nakint_tk, int rcv_speed, size_t loss_length)
+    virtual int64_t updateNAKInterval(int64_t nakint_us, int rcv_speed, size_t loss_length)
     {
         if (rcv_speed > 0)
-            nakint_tk += (loss_length * uint64_t(1000000) / rcv_speed) * CTimer::getCPUFrequency();
+            nakint_us += (loss_length * int64_t(1000000) / rcv_speed);
 
-        return nakint_tk;
+        return nakint_us;
     }
 
-    virtual uint64_t minNAKInterval()
+    virtual int64_t minNAKInterval()
     {
         return 0; // Leave default
     }

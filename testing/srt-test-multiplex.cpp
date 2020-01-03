@@ -470,6 +470,7 @@ int main( int argc, char** argv )
         { {"i"}, OptionScheme::ARG_VAR },
         { {"o"}, OptionScheme::ARG_VAR }
     };
+
     map<string, vector<string>> params = ProcessOptions(argv, argc, optargs);
 
     // The call syntax is:

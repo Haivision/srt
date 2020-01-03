@@ -9,4 +9,5 @@ test_fec_rebuilding.cpp
 test_listen_callback.cpp
 test_seqno.cpp
 test_socket_options.cpp
+test_sync.cpp
 test_timer.cpp

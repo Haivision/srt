@@ -9,17 +9,26 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
+    sonarcloud:
+        organization: "haivision"
+        token:
+            secure: "wJZC0kyyjuf4SZyonZ6p/5Ga9asEqSnKWF9NpRbu6S6ceERO7vbebuSJF5qX3A6ivPuw0TTk5WASOdnvIyfA28FU/D0MWRdH8K7T3w77wdE9EgAEYTUXzdrbzJY18+9pxjljHwWXWALPSGf3MClg4irWrdk1e6uHK+68R39+ZvBGBFpWeeZy/+at9+xwhtAGKBlSHe8zc+3wPxuYdvviLVJ25qbpNmnzkUR0X89G+UBl90raCPSN32EHFdImHZ5DxfEQQJgZFRjzQUY4EW/iYwaMel7jufAq0ClgV4psKujl9Lz8cPqx3WgqRfJyiIthOMTsac7G4zAw8LK2CI0VsssBp0JalLXaumi6vG7o6c3rIwKckzSKccq3pHa7h45praIVVn9s3nq+Q/JGA11FMkKQxdQtmwgFsLhbi6ZxabgsUi5KtWoWY2z6MgpJuROuAjNxZi9XJzUoJs7zSTUtRRW7V8Q2lRiOnknYh25N6TCA5bpyy1EZmRdJErm071YNI9P01gbFz5137FWJFiJzro9TGF0KoHSGiCIdUt3WlMzwr/i/wFLxFBQOZQ2rjTXvhs4hxONxMZV3gzxA1NdLaf9i5Mh6jxVMV+ujaRSV7JmPGzxqiAlpT9cJUhTCYuar9diLLeDrpe7RawEZR8V1xVDQ7yT8ruDNQ78VbSn/sC0="
     homebrew:
         packages:
         - openssl
 
 matrix:
     include:
-        - env: BUILD_TYPE=Debug
+        - os: linux
+          env:
+          - BUILD_TYPE=Debug
+          - BUILD_OPTS=-DENABLE_CODE_COVERAGE=ON
+          - RUN_SONARCUBE=1
         - env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS=-DENABLE_LOGGING=OFF
-        - env: BUILD_TYPE=Release
+          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON'
+        - os: linux
+          env: BUILD_TYPE=Release
         - os: osx
           osx_image: xcode10.2
           env: BUILD_TYPE=Debug
@@ -54,5 +63,17 @@ script:
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       fi
-    - make
+    - echo "TRAVIS_REPO_SLUG=$TRAVIS_REPO_SLUG"
+    - echo "TRAVIS_PULL_REQUEST=$TRAVIS_PULL_REQUEST"
+    - if [[ "$TRAVIS_REPO_SLUG" != "Haivision/srt" || "$TRAVIS_PULL_REQUEST" -gt 0 ]]; then
+        export RUN_SONARCUBE=0;
+      fi
+    - echo "RUN_SONARCUBE=$RUN_SONARCUBE"
+    - if (( "$RUN_SONARCUBE" )); then
+        build-wrapper-linux-x86-64 --out-dir bw-output make;
+      else
+        make;
+      fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then ctest --extra-verbose; fi
+    - if (( "$RUN_SONARCUBE" )); then source ./scripts/collect-gcov.sh; fi
+    - if (( "$RUN_SONARCUBE" )); then sonar-scanner -D"sonar.cfamily.gcov.reportPath=."; fi

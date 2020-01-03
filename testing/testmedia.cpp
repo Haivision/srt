@@ -90,10 +90,10 @@ bytevector FileRead(FileBase& ifile, size_t chunk, const string& filename)
     bytevector data(chunk);
     ifile.read(data.data(), chunk);
     size_t nread = ifile.gcount();
-    if ( nread < data.size() )
+    if (nread < data.size())
         data.resize(nread);
 
-    if ( data.empty() )
+    if (data.empty())
         throw Source::ReadEOF(filename);
     return data;
 }
@@ -107,7 +107,7 @@ public:
 
     FileSource(const string& path): ifile(path, ios::in | ios::binary), filename_copy(path)
     {
-        if ( !ifile )
+        if (!ifile)
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
@@ -164,7 +164,7 @@ public:
     FileRelay(const string& path):
         iofile(path, ios::in | ios::out | ios::binary), filename_copy(path)
     {
-        if ( !iofile )
+        if (!iofile)
             throw std::runtime_error(path + ": Can't open file for reading");
     }
     bytevector Read(size_t chunk) override { return FileRead(iofile, chunk, filename_copy); }
@@ -201,42 +201,42 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     }
 
     m_mode = "default";
-    if ( par.count("mode") )
+    if (par.count("mode"))
         m_mode = par.at("mode");
 
-    if ( m_mode == "default" )
+    if (m_mode == "default")
     {
         // Use the following convention:
         // 1. Server for source, Client for target
         // 2. If host is empty, then always server.
-        if ( host == "" )
+        if (host == "")
             m_mode = "listener";
-        //else if ( !dir_output )
+        //else if (!dir_output)
         //m_mode = "server";
         else
             m_mode = "caller";
     }
 
-    if ( m_mode == "client" )
+    if (m_mode == "client")
         m_mode = "caller";
-    else if ( m_mode == "server" )
+    else if (m_mode == "server")
         m_mode = "listener";
 
     par.erase("mode");
 
-    if ( par.count("blocking") )
+    if (par.count("blocking"))
     {
         m_blocking_mode = !false_names.count(par.at("blocking"));
         par.erase("blocking");
     }
 
-    if ( par.count("timeout") )
+    if (par.count("timeout"))
     {
         m_timeout = stoi(par.at("timeout"), 0, 0);
         par.erase("timeout");
     }
 
-    if ( par.count("adapter") )
+    if (par.count("adapter"))
     {
         m_adapter = par.at("adapter");
         par.erase("adapter");
@@ -248,7 +248,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
-    if ( par.count("tsbpd") && false_names.count(par.at("tsbpd")) )
+    if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
     }
@@ -280,15 +280,15 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 
 void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
-    m_bindsock = srt_socket(AF_INET, SOCK_DGRAM, 0);
-    if ( m_bindsock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+    m_bindsock = srt_create_socket();
+    if (m_bindsock == SRT_ERROR)
+        Error("srt_create_socket");
 
     int stat = ConfigurePre(m_bindsock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePre");
+    if (stat == SRT_ERROR)
+        Error("ConfigurePre");
 
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
     }
@@ -297,31 +297,31 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Binding a server on " << host << ":" << port << " ...";
     stat = srt_bind(m_bindsock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error("srt_bind");
     }
 
     Verb() << " listen... " << VerbNoEOL;
     stat = srt_listen(m_bindsock, backlog);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
-        Error(UDT::getlasterror(), "srt_listen");
+        Error("srt_listen");
     }
 
     Verb() << " accept... " << VerbNoEOL;
     ::transmit_throw_on_interrupt = true;
 
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
 
         int len = 2;
         SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1 )
-            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
+        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+            Error("srt_epoll_wait(srt_conn_epoll)");
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -350,11 +350,11 @@ void SrtCommon::AcceptNewClient()
     Verb() << " accept..." << VerbNoEOL;
 
     m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
-    if ( m_sock == SRT_INVALID_SOCK )
+    if (m_sock == SRT_INVALID_SOCK)
     {
         srt_close(m_bindsock);
         m_bindsock = SRT_INVALID_SOCK;
-        Error(UDT::getlasterror(), "srt_accept");
+        Error("srt_accept");
     }
 
     Verb() << " connected.";
@@ -363,8 +363,8 @@ void SrtCommon::AcceptNewClient()
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
     int stat = ConfigurePost(m_sock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePost");
+    if (stat == SRT_ERROR)
+        Error("ConfigurePost");
 }
 
 void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir)
@@ -378,11 +378,11 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
 
     try
     {
-        if ( m_mode == "caller" )
+        if (m_mode == "caller")
             OpenClient(host, port);
-        else if ( m_mode == "listener" )
+        else if (m_mode == "listener")
             OpenServer(m_adapter, port);
-        else if ( m_mode == "rendezvous" )
+        else if (m_mode == "rendezvous")
             OpenRendezvous(m_adapter, host, port);
         else
         {
@@ -439,7 +439,7 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
             << "} snddropdelay=" << dropdelay;
     }
 
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         // Don't add new epoll if already created as a part
         // of group management: if (srt_epoll == -1)...
@@ -450,7 +450,7 @@ void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OP
 int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
 {
     int pollid = srt_epoll_create();
-    if ( pollid == -1 )
+    if (pollid == -1)
         throw std::runtime_error("Can't create epoll in nonblocking mode");
     Verb() << "EPOLL: creating eid=" << pollid << " and adding @" << socket
         << " in " << DirectionName(SRT_EPOLL_OPT(modes)) << " mode";
@@ -462,11 +462,11 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 {
     bool yes = m_blocking_mode;
     int result = 0;
-    if ( m_direction & SRT_EPOLL_OUT )
+    if (m_direction & SRT_EPOLL_OUT)
     {
         Verb() << "Setting SND blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
-        if ( result == -1 )
+        if (result == -1)
         {
 #ifdef PLEASE_LOG
             extern srt_logging::Logger applog;
@@ -475,9 +475,9 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             return result;
         }
 
-        if ( m_timeout )
+        if (m_timeout)
             result = srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
-        if ( result == -1 )
+        if (result == -1)
         {
 #ifdef PLEASE_LOG
             extern srt_logging::Logger applog;
@@ -487,16 +487,16 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         }
     }
 
-    if ( m_direction & SRT_EPOLL_IN )
+    if (m_direction & SRT_EPOLL_IN)
     {
         Verb() << "Setting RCV blocking mode: " << boolalpha << yes << " timeout=" << m_timeout;
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
-        if ( result == -1 )
+        if (result == -1)
             return result;
 
-        if ( m_timeout )
+        if (m_timeout)
             result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
-        if ( result == -1 )
+        if (result == -1)
             return result;
     }
 
@@ -525,10 +525,10 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     int result = 0;
 
     int no = 0;
-    if ( !m_tsbpdmode )
+    if (!m_tsbpdmode)
     {
         result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
-        if ( result == -1 )
+        if (result == -1)
             return result;
     }
 
@@ -536,7 +536,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     // This is for asynchronous connect.
     int maybe = m_blocking_mode;
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &maybe, sizeof maybe);
-    if ( result == -1 )
+    if (result == -1)
         return result;
 
     // host is only checked for emptiness and depending on that the connection mode is selected.
@@ -548,7 +548,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     // checking for failures.
     SocketOption::Mode conmode = SrtConfigurePre(sock, "",  m_options, &failures);
 
-    if ( conmode == SocketOption::FAILURE )
+    if (conmode == SocketOption::FAILURE)
     {
         if (Verbose::on )
         {
@@ -568,15 +568,15 @@ void SrtCommon::SetupAdapter(const string& host, int port)
     sockaddr_in localsa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&localsa;
     int stat = srt_bind(m_sock, psa, sizeof localsa);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_bind");
+    if (stat == SRT_ERROR)
+        Error("srt_bind");
 }
 
 void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if ( m_outgoing_port )
+    if (m_outgoing_port)
     {
         SetupAdapter("", m_outgoing_port);
     }
@@ -586,15 +586,15 @@ void SrtCommon::OpenClient(string host, int port)
 
 void SrtCommon::PrepareClient()
 {
-    m_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
-    if ( m_sock == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_socket");
+    m_sock = srt_create_socket();
+    if (m_sock == SRT_ERROR)
+        Error("srt_create_socket");
 
     int stat = ConfigurePre(m_sock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePre");
+    if (stat == SRT_ERROR)
+        Error("ConfigurePre");
 
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
     }
@@ -612,16 +612,16 @@ void SrtCommon::PrepareClient()
    for (;;)
    {
    SRT_SOCKSTATUS state = srt_getsockstate(m_sock);
-   if ( int(state) < SRTS_CONNECTED )
+   if (int(state) < SRTS_CONNECTED)
    {
-   if ( Verbose::on )
+   if (Verbose::on)
    Verb() << state;
    usleep(250000);
    continue;
    }
-   else if ( int(state) > SRTS_CONNECTED )
+   else if (int(state) > SRTS_CONNECTED)
    {
-   Error(UDT::getlasterror(), "UDT::connect status=" + udt_status_names[state]);
+   Error("UDT::connect status=" + udt_status_names[state]);
    }
 
    return;
@@ -636,7 +636,7 @@ void SrtCommon::ConnectClient(string host, int port)
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
     int stat = srt_connect(m_sock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
@@ -644,11 +644,11 @@ void SrtCommon::ConnectClient(string host, int port)
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
 #endif
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "srt_connect", reason);
+        Error("srt_connect", reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         Verb() << "[ASYNC] " << VerbNoEOL;
 
@@ -658,58 +658,53 @@ void SrtCommon::ConnectClient(string host, int port)
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
         int len = 2;
         SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1 )
+        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1)
         {
             Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
         }
         else
         {
-            Error(UDT::getlasterror(), "srt_epoll_wait(srt_conn_epoll)");
+            Error("srt_epoll_wait(srt_conn_epoll)");
         }
     }
 
     Verb() << " connected.";
     stat = ConfigurePost(m_sock);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "ConfigurePost");
+    if (stat == SRT_ERROR)
+        Error("ConfigurePost");
 }
 
-void SrtCommon::Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason)
+void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
 {
-    int udtResult = udtError.getErrorCode();
-    string message = udtError.getErrorMessage();
-    string rejectreason;
-    if (udtResult == SRT_ECONNREJ)
+    int errnov = 0;
+    const int result = srt_getlasterror(&errnov);
+    if (result == SRT_SUCCESS)
     {
-        rejectreason = srt_rejectreason_str(reason);
-
+        cerr << "\nERROR (app): " << src << endl;
+        throw std::runtime_error(src);
+    }
+    string message = srt_getlasterror_str();
+    if (result == SRT_ECONNREJ)
+    {
         if ( Verbose::on )
-            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] "
+            Verb() << "FAILURE\n" << src << ": [" << result << "] "
                 << "Connection rejected: [" << int(reason) << "]: "
                 << srt_rejectreason_str(reason);
         else
-            cerr << "\nERROR #" << udtResult
+            cerr << "\nERROR #" << result
                 << ": Connection rejected: [" << int(reason) << "]: "
                 << srt_rejectreason_str(reason);
     }
     else
     {
         if ( Verbose::on )
-            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
+        Verb() << "FAILURE\n" << src << ": [" << result << "." << errnov << "] " << message;
         else
-            cerr << "\nERROR #" << udtResult << ": " << message << endl;
+        cerr << "\nERROR #" << result << "." << errnov << ": " << message << endl;
     }
 
-    udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
 }
-
-void SrtCommon::Error(string msg)
-{
-    cerr << "\nERROR (app): " << msg << endl;
-    throw std::runtime_error(msg);
-}
-
 
 void SrtCommon::SetupRendezvous(string adapter, int port)
 {
@@ -720,10 +715,10 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     sockaddr* plsa = (sockaddr*)&localsa;
     Verb() << "Binding a server on " << adapter << ":" << port << " ...";
     int stat = srt_bind(m_sock, plsa, sizeof localsa);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_sock);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error("srt_bind");
     }
 }
 
@@ -735,7 +730,7 @@ void SrtCommon::Close()
 #endif
     bool any = false;
     bool yes = true;
-    if ( m_sock != SRT_INVALID_SOCK )
+    if (m_sock != SRT_INVALID_SOCK)
     {
         Verb() << "SrtCommon: DESTROYING CONNECTION, closing socket (rt%" << m_sock << ")...";
         srt_setsockflag(m_sock, SRTO_SNDSYN, &yes, sizeof yes);
@@ -743,7 +738,7 @@ void SrtCommon::Close()
         any = true;
     }
 
-    if ( m_bindsock != SRT_INVALID_SOCK )
+    if (m_bindsock != SRT_INVALID_SOCK)
     {
         Verb() << "SrtCommon: DESTROYING SERVER, closing socket (ls%" << m_bindsock << ")...";
         // Set sndsynchro to the socket to synch-close it.
@@ -795,18 +790,18 @@ bytevector SrtSource::Read(size_t chunk)
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg(m_sock, data.data(), chunk);
         ::transmit_throw_on_interrupt = false;
-        if ( stat == SRT_ERROR )
+        if (stat == SRT_ERROR)
         {
-            if ( !m_blocking_mode )
+            if (!m_blocking_mode)
             {
                 // EAGAIN for SRT READING
-                if ( srt_getlasterror(NULL) == SRT_EASYNCRCV )
+                if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                 {
                     Verb() << "AGAIN: - waiting for data by epoll...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
                     SRTSOCKET sready[2];
-                    if ( srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1 )
+                    if (srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1)
                     {
                         Verb() << "... epoll reported ready " << len << " sockets";
                         continue;
@@ -814,19 +809,18 @@ bytevector SrtSource::Read(size_t chunk)
                     // If was -1, then passthru.
                 }
             }
-            Error(UDT::getlasterror(), "srt_recvmsg2");
+            Error("srt_recvmsg2");
         }
 
-        if ( stat == 0 )
+        if (stat == 0)
         {
             throw ReadEOF(hostport_copy);
         }
-
     }
     while (!ready);
 
     chunk = size_t(stat);
-    if ( chunk < data.size() )
+    if (chunk < data.size())
         data.resize(chunk);
 
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
@@ -851,7 +845,7 @@ SrtTarget::SrtTarget(std::string host, int port, const std::map<std::string,std:
 int SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
     int result = SrtCommon::ConfigurePre(sock);
-    if ( result == -1 )
+    if (result == -1)
         return result;
 
     int yes = 1;
@@ -860,7 +854,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     // In HSv4 this setting is obligatory; otherwise the SRT handshake
     // extension will not be done at all.
     result = srt_setsockopt(sock, 0, SRTO_SENDER, &yes, sizeof yes);
-    if ( result == -1 )
+    if (result == -1)
         return result;
 
     return 0;
@@ -873,17 +867,17 @@ void SrtTarget::Write(const bytevector& data)
 
     // Check first if it's ready to write.
     // If not, wait indefinitely.
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         int ready[2];
         int len = 2;
-        if ( srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR )
-            Error(UDT::getlasterror(), "srt_epoll_wait");
+        if (srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR)
+            Error("srt_epoll_wait");
     }
 
     int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
-    if ( stat == SRT_ERROR )
-        Error(UDT::getlasterror(), "srt_sendmsg");
+    if (stat == SRT_ERROR)
+        Error("srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
@@ -960,9 +954,9 @@ void SrtModel::Establish(ref_t<std::string> name)
             // so that it will be reused next time.
             sockaddr_any s(AF_INET);
             int namelen = s.size();
-            if ( srt_getsockname(Socket(), &s, &namelen) == SRT_ERROR )
+            if (srt_getsockname(Socket(), &s, &namelen) == SRT_ERROR)
             {
-                Error(UDT::getlasterror(), "srt_getsockname");
+                Error("srt_getsockname");
             }
 
             m_outgoing_port = s.hport();
@@ -1002,12 +996,12 @@ bytevector ConsoleRead(size_t chunk)
     bytevector data(chunk);
     bool st = cin.read(data.data(), chunk).good();
     chunk = cin.gcount();
-    if ( chunk == 0 && !st )
+    if (chunk == 0 && !st)
         return bytevector();
 
-    if ( chunk < data.size() )
+    if (chunk < data.size())
         data.resize(chunk);
-    if ( data.empty() )
+    if (data.empty())
         throw Source::ReadEOF("CONSOLE device");
 
     return data;
@@ -1100,7 +1094,7 @@ protected:
 
         bool is_multicast = false;
 
-        if ( attr.count("multicast") )
+        if (attr.count("multicast"))
         {
             if (!IsMulticast(sadr.sin_addr))
             {
@@ -1123,7 +1117,7 @@ protected:
             socklen_t mreq_arg_size;
 
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
-            if ( adapter == "" )
+            if (adapter == "")
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
                 maddr.sin_family = AF_INET;
@@ -1181,7 +1175,7 @@ protected:
 #endif
             int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
 
-            if ( res == status_error )
+            if (res == status_error)
             {
                 Error(errno, "adding to multicast membership failed");
             }
@@ -1210,11 +1204,11 @@ protected:
         for (auto o: udp_options)
         {
             // Ignore "binding" - for UDP there are no post options.
-            if ( m_options.count(o.name) )
+            if (m_options.count(o.name))
             {
                 string value = m_options.at(o.name);
                 bool ok = o.apply<SocketOption::SYSTEM>(m_sock, value);
-                if ( !ok )
+                if (!ok)
                     Verb() << "WARNING: failed to set '" << o.name << "' to " << value;
             }
         }
@@ -1225,7 +1219,7 @@ protected:
         char buf[512];
         string message = SysStrError(err, buf, 512u);
 
-        if ( Verbose::on )
+        if (Verbose::on)
             Verb() << "FAILURE\n" << src << ": [" << err << "] " << message;
         else
             cerr << "\nERROR #" << err << ": " << message << endl;
@@ -1258,7 +1252,7 @@ public:
     {
         Setup(host, port, attr);
         int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
-        if ( stat == -1 )
+        if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
     }
@@ -1269,17 +1263,17 @@ public:
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if ( stat == -1 )
+        if (stat == -1)
             Error(SysError(), "UDP Read/recvfrom");
 
-        if ( stat < 1 )
+        if (stat < 1)
         {
             eof = true;
             return bytevector();
         }
 
         chunk = size_t(stat);
-        if ( chunk < data.size() )
+        if (chunk < data.size())
             data.resize(chunk);
 
         return data;
@@ -1298,10 +1292,10 @@ public:
         if (adapter != "")
         {
             sockaddr_in maddr = CreateAddrInet(adapter, 0);
-            in_addr addr = maddr.sin_addr.s_addr;
+            in_addr addr = maddr.sin_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
-            if ( res == status_error )
+            if (res == -1)
             {
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
@@ -1312,7 +1306,7 @@ public:
     void Write(const bytevector& data) override
     {
         int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
-        if ( stat == -1 )
+        if (stat == -1)
             Error(SysError(), "UDP Write/sendto");
     }
 
@@ -1359,7 +1353,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     default:
         break; // do nothing, return nullptr
     case UriParser::FILE:
-        if ( u.host() == "con" || u.host() == "console" )
+        if (u.host() == "con" || u.host() == "console")
         {
             if ( IsOutput<Base>() && (
                         (Verbose::on && Verbose::cverb == &cout)
@@ -1382,7 +1376,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 
     case UriParser::UDP:
         iport = atoi(u.port().c_str());
-        if ( iport < 1024 )
+        if (iport < 1024)
         {
             cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");

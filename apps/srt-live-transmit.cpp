@@ -206,8 +206,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     options_t params = ProcessOptions(argv, argc, optargs);
 
-          bool print_help    = Option<OutBool>(params, false, o_help);
-    const bool print_version = Option<OutBool>(params, false, o_version);
+          bool print_help    = OptionPresent(params, o_help);
+    const bool print_version = OptionPresent(params, o_version);
 
     if (params[""].size() != 2 && !print_help && !print_version)
     {
@@ -265,12 +265,12 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         return 2;
     }
 
-    cfg.timeout      = Option<OutNumber>(params, "0", o_timeout);
-    cfg.timeout_mode = Option<OutNumber>(params, "0", o_timeout_mode);
+    cfg.timeout      = Option<OutNumber>(params, o_timeout);
+    cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
-    cfg.bw_report    = Option<OutNumber>(params, "0", o_bwreport);
-    cfg.stats_report = Option<OutNumber>(params, "0", o_statsrep);
-    cfg.stats_out    = Option<OutString>(params, "", o_statsout);
+    cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
+    cfg.stats_report = Option<OutNumber>(params, o_statsrep);
+    cfg.stats_out    = Option<OutString>(params, o_statsout);
     const string pf  = Option<OutString>(params, "default", o_statspf);
     cfg.stats_pf     = ParsePrintFormat(pf);
     if (cfg.stats_pf == SRTSTATS_PROFMAT_INVALID)
@@ -280,14 +280,14 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         return 1;
     }
 
-    cfg.full_stats   = Option<OutBool>(params, false, o_statsfull);
+    cfg.full_stats   = OptionPresent(params, o_statsfull);
     cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
-    cfg.log_internal = Option<OutBool>(params, false, o_log_internal);
-    cfg.logfile      = Option<OutString>(params, "", o_logfile);
-    cfg.quiet        = Option<OutBool>(params, false, o_quiet);
+    cfg.log_internal = OptionPresent(params, o_log_internal);
+    cfg.logfile      = Option<OutString>(params, o_logfile);
+    cfg.quiet        = OptionPresent(params, o_quiet);
     
-    if (Option<OutBool>(params, false, o_verbose))
+    if (OptionPresent(params, o_verbose))
         Verbose::on = !cfg.quiet;
 
     cfg.auto_reconnect = Option<OutBool>(params, true, o_autorecon);
