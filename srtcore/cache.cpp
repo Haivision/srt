@@ -113,6 +113,6 @@ void CInfoBlock::convert(const sockaddr* addr, int ver, uint32_t ip[])
    }
    else
    {
-      memcpy((char*)ip, (char*)((sockaddr_in6*)addr)->sin6_addr.s6_addr, 16);
+      memcpy(((char*)ip), (char*)((sockaddr_in6*)addr)->sin6_addr.s6_addr, 16);
    }
 }

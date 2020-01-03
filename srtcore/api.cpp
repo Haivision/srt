@@ -344,12 +344,12 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
    return ns->m_SocketID;
 }
 
-int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt,
-        ref_t<SRT_REJECT_REASON> r_error)
+int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, const CPacket& hspkt,
+        CHandShake& w_hs, SRT_REJECT_REASON& w_error)
 {
    CUDTSocket* ns = NULL;
 
-   *r_error = SRT_REJ_IPE;
+   w_error = SRT_REJ_IPE;
 
    // Can't manage this error through an exception because this is
    // running in the listener loop.
@@ -361,7 +361,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
 
    // if this connection has already been processed
-   if ((ns = locate(peer, hs->m_iID, hs->m_iISN)) != NULL)
+   if ((ns = locate(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
    {
       if (ns->m_pUDT->m_bBroken)
       {
@@ -379,11 +379,11 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
          // connection already exist, this is a repeated connection request
          // respond with existing HS information
 
-         hs->m_iISN = ns->m_pUDT->m_iISN;
-         hs->m_iMSS = ns->m_pUDT->m_iMSS;
-         hs->m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
-         hs->m_iReqType = URQ_CONCLUSION;
-         hs->m_iID = ns->m_SocketID;
+         w_hs.m_iISN = ns->m_pUDT->m_iISN;
+         w_hs.m_iMSS = ns->m_pUDT->m_iMSS;
+         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
+         w_hs.m_iReqType = URQ_CONCLUSION;
+         w_hs.m_iID = ns->m_SocketID;
 
          return 0;
 
@@ -394,7 +394,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    // exceeding backlog, refuse the connection request
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
    {
-       *r_error = SRT_REJ_BACKLOG;
+       w_error = SRT_REJ_BACKLOG;
        LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
        return -1;
    }
@@ -408,19 +408,19 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
          ((sockaddr_in*)(ns->m_pSelfAddr))->sin_port = 0;
          ns->m_pPeerAddr = (sockaddr*)(new sockaddr_in);
-         memcpy(ns->m_pPeerAddr, peer, sizeof(sockaddr_in));
+         memcpy((ns->m_pPeerAddr), peer, sizeof(sockaddr_in));
       }
       else
       {
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in6);
          ((sockaddr_in6*)(ns->m_pSelfAddr))->sin6_port = 0;
          ns->m_pPeerAddr = (sockaddr*)(new sockaddr_in6);
-         memcpy(ns->m_pPeerAddr, peer, sizeof(sockaddr_in6));
+         memcpy((ns->m_pPeerAddr), peer, sizeof(sockaddr_in6));
       }
    }
    catch (...)
    {
-      *r_error = SRT_REJ_RESOURCE;
+      w_error = SRT_REJ_RESOURCE;
       delete ns;
       LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
       return -1;
@@ -434,14 +434,14 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    ns->m_ListenSocket = listen;
    ns->m_iIPversion = ls->m_iIPversion;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
-   ns->m_PeerID = hs->m_iID;
-   ns->m_iISN = hs->m_iISN;
+   ns->m_PeerID = w_hs.m_iID;
+   ns->m_iISN = w_hs.m_iISN;
 
    int error = 0;
 
    // Set the error code for all prospective problems below.
    // It won't be interpreted when result was successful.
-   *r_error = SRT_REJ_RESOURCE;
+   w_error = SRT_REJ_RESOURCE;
 
    // These can throw exception only when the memory allocation failed.
    // CUDT::connect() translates exception into CUDTException.
@@ -454,7 +454,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        // this call causes sending the SRT Handshake through this socket.
        // Without this mapping the socket cannot be found and therefore
        // the SRT Handshake message would fail.
-       HLOGF(mglog.Debug, 
+       HLOGF(mglog.Debug,
                "newConnection: incoming %s, mapping socket %d",
                SockaddrToString(peer).c_str(), ns->m_SocketID);
        {
@@ -467,18 +467,18 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer, hs, hspkt))
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer, w_hs, hspkt))
            {
                error = 1;
                goto ERR_ROLLBACK;
            }
        }
-       ns->m_pUDT->acceptAndRespond(peer, hs, hspkt);
+       ns->m_pUDT->acceptAndRespond(peer, hspkt, (w_hs));
    }
    catch (...)
    {
        // Extract the error that was set in this new failed entity.
-       *r_error = ns->m_pUDT->m_RejectReason;
+       w_error = ns->m_pUDT->m_RejectReason;
        error = 1;
        goto ERR_ROLLBACK;
    }
@@ -847,7 +847,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
          *addrlen = sizeof(sockaddr_in6);
 
       // copy address information of peer node
-      memcpy(addr, s->m_pPeerAddr, *addrlen);
+      memcpy((addr), s->m_pPeerAddr, *addrlen);
    }
 
    return u;
@@ -920,12 +920,12 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    if (AF_INET == s->m_iIPversion)
    {
       s->m_pPeerAddr = (sockaddr*)(new sockaddr_in);
-      memcpy(s->m_pPeerAddr, name, sizeof(sockaddr_in));
+      memcpy((s->m_pPeerAddr), name, sizeof(sockaddr_in));
    }
    else
    {
       s->m_pPeerAddr = (sockaddr*)(new sockaddr_in6);
-      memcpy(s->m_pPeerAddr, name, sizeof(sockaddr_in6));
+      memcpy((s->m_pPeerAddr), name, sizeof(sockaddr_in6));
    }
 
    // CGuard destructor will delete cg and unlock s->m_ControlLock
@@ -1112,7 +1112,7 @@ int CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
       *namelen = sizeof(sockaddr_in6);
 
    // copy address information of peer node
-   memcpy(name, s->m_pPeerAddr, *namelen);
+   memcpy((name), s->m_pPeerAddr, *namelen);
 
    return 0;
 }
@@ -1136,7 +1136,7 @@ int CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* name, int* namelen)
       *namelen = sizeof(sockaddr_in6);
 
    // copy address information of local node
-   memcpy(name, s->m_pSelfAddr, *namelen);
+   memcpy((name), s->m_pSelfAddr, *namelen);
 
    return 0;
 }
@@ -2287,12 +2287,12 @@ int CUDT::sendmsg(
 }
 
 int CUDT::sendmsg2(
-   SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
+   SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->sendmsg2(buf, len, r_m);
+      return udt->sendmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
    {
@@ -2334,12 +2334,12 @@ int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
    }
 }
 
-int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> r_m)
+int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
 {
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recvmsg2(buf, len, r_m);
+      return udt->recvmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
    {

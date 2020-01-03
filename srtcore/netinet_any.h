@@ -38,7 +38,7 @@ struct sockaddr_any
     void reset()
     {
         // sin6 is the largest field
-        memset(&sin6, 0, sizeof sin6);
+        memset((&sin6), 0, sizeof sin6);
         len = 0;
     }
 
@@ -80,12 +80,12 @@ struct sockaddr_any
         // all data required for particular family.
         if (source->sa_family == AF_INET)
         {
-            memcpy(&sin, source, sizeof sin);
+            memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
         else if (source->sa_family == AF_INET6)
         {
-            memcpy(&sin6, source, sizeof sin6);
+            memcpy((&sin6), source, sizeof sin6);
             len = sizeof sin6;
         }
         else
@@ -101,7 +101,7 @@ struct sockaddr_any
         // It's not safe to copy it directly, so check.
         if (source->sa_family == AF_INET && namelen >= sizeof sin)
         {
-            memcpy(&sin, source, sizeof sin);
+            memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
         else if (source->sa_family == AF_INET6 && namelen >= sizeof sin6)
@@ -109,7 +109,7 @@ struct sockaddr_any
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data
             // in the source structure, so make sure it's correct first.
-            memcpy(&sin6, source, sizeof sin6);
+            memcpy((&sin6), source, sizeof sin6);
             len = sizeof sin6;
         }
         else
