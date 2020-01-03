@@ -7957,7 +7957,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
     else
     {
 #if USE_BUSY_WAITING
-        ts_tk = entertime_tk + m_tdSendInterval;
+        m_tsNextSendTime = enter_time + m_tdSendInterval;
 #else
         if (m_tdSendTimeDiff >= m_tdSendInterval)
         {
