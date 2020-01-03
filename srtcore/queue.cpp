@@ -304,9 +304,7 @@ int CSndUList::pop(sockaddr *&addr, CPacket &pkt)
         return -1;
 
     // no pop until the next schedulled time
-    const steady_clock::time_point ts = steady_clock::now();
-
-    if (ts < m_pHeap[0]->m_tsTimeStamp)
+    if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
         return -1;
 
     CUDT *u = m_pHeap[0]->m_pUDT;
@@ -332,8 +330,9 @@ int CSndUList::pop(sockaddr *&addr, CPacket &pkt)
     addr = u->m_pPeerAddr;
 
     // insert a new entry, ts is the next processing time
-    if (!is_zero(ts))
-        insert_norealloc_(ts, u);
+    const steady_clock::time_point send_time = res_time.second;
+    if (!is_zero(send_time))
+        insert_norealloc_(send_time, u);
 
     return 1;
 }
