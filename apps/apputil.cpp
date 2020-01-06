@@ -10,8 +10,10 @@
 
 #include <cstring>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <utility>
+#include <memory>
 
 #include "apputil.hpp"
 #include "netinet_any.h"
@@ -114,6 +116,38 @@ string Join(const vector<string>& in, string sep)
     return os.str();
 }
 
+// OPTION LIBRARY
+
+OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& helptext)
+{
+    if (helptext.empty())
+        return OptionScheme::ARG_NONE;
+
+
+    if (helptext[0] == '<')
+    {
+        // If the argument is <one-argument>, then it's ARG_NONE.
+        // If it's <multiple-arguments...>, then it's ARG_VAR.
+        // When closing angle bracket isn't found, fallback to ARG_ONE.
+        size_t pos = helptext.find('>');
+        if (pos == std::string::npos)
+            return OptionScheme::ARG_ONE;
+
+        if (pos >= 4 && helptext.substr(pos-4, 4) == "...>")
+            return OptionScheme::ARG_VAR;
+    }
+
+    if (helptext[0] == '[')
+    {
+        // Argument in [] means it is optional; in this case
+        // you should state that the argument can be given or not.
+        return OptionScheme::ARG_VAR;
+    }
+
+    // Also as fallback
+    return OptionScheme::ARG_NONE;
+}
+
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme)
 {
     using namespace std;
@@ -168,7 +202,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
             for (auto s: scheme)
             {
-                if (s.names.count(current_key))
+                if (s.names().count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
                     if (s.type == OptionScheme::ARG_NONE)
@@ -217,4 +251,239 @@ Found:
 
     return params;
 }
+
+string OptionHelpItem(const OptionName& o)
+{
+    string out = "\t-" + o.main_name;
+    string hlp = o.helptext;
+    string prefix;
+
+    if (hlp == "")
+    {
+        hlp = " (Undocumented)";
+    }
+    else if (hlp[0] != ' ')
+    {
+        size_t end = string::npos;
+        if (hlp[0] == '<')
+        {
+            end = hlp.find('>');
+        }
+        else if (hlp[0] == '[')
+        {
+            end = hlp.find(']');
+        }
+
+        if (end != string::npos)
+        {
+            ++end;
+        }
+        else
+        {
+            end = hlp.find(' ');
+        }
+
+        if (end != string::npos)
+        {
+            prefix = hlp.substr(0, end);
+            //while (hlp[end] == ' ')
+            //    ++end;
+            hlp = hlp.substr(end);
+            out += " " + prefix;
+        }
+    }
+
+    out += " -" + hlp;
+    return out;
+}
+
+// Stats module
+
+class SrtStatsJson : public SrtStatsWriter
+{
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
+        output << "{";
+        output << "\"sid\":" << sid << ",";
+        output << "\"time\":" << mon.msTimeStamp << ",";
+        output << "\"window\":{";
+        output << "\"flow\":" << mon.pktFlowWindow << ",";
+        output << "\"congestion\":" << mon.pktCongestionWindow << ",";    
+        output << "\"flight\":" << mon.pktFlightSize;    
+        output << "},";
+        output << "\"link\":{";
+        output << "\"rtt\":" << mon.msRTT << ",";
+        output << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
+        output << "\"maxBandwidth\":" << mon.mbpsMaxBW;
+        output << "},";
+        output << "\"send\":{";
+        output << "\"packets\":" << mon.pktSent << ",";
+        output << "\"packetsLost\":" << mon.pktSndLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
+        output << "\"bytes\":" << mon.byteSent << ",";
+        output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsSendRate;
+        output << "},";
+        output << "\"recv\": {";
+        output << "\"packets\":" << mon.pktRecv << ",";
+        output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
+        output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
+        output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
+        output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
+        output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
+        output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
+        output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
+        output << "\"bytes\":" << mon.byteRecv << ",";
+        output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
+        output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
+        output << "\"mbitRate\":" << mon.mbpsRecvRate;
+        output << "}";
+        output << "}" << endl;
+        return output.str();
+    } 
+
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
+        std::ostringstream output;
+        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCsv : public SrtStatsWriter
+{
+private:
+    bool first_line_printed;
+
+public: 
+    SrtStatsCsv() : first_line_printed(false) {}
+
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
+        if (!first_line_printed)
+        {
+            output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
+            output << "msRTT,mbpsBandwidth,mbpsMaxBW,pktSent,pktSndLoss,pktSndDrop,";
+            output << "pktRetrans,byteSent,byteSndDrop,mbpsSendRate,usPktSndPeriod,";
+            output << "pktRecv,pktRcvLoss,pktRcvDrop,pktRcvRetrans,pktRcvBelated,";
+            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms,";
+            // Filter stats
+            output << "pktSndFilterExtra,pktRcvFilterExtra,pktRcvFilterSupply,pktRcvFilterLoss";
+            output << endl;
+            first_line_printed = true;
+        }
+        int rcv_latency = 0;
+        int int_len = sizeof rcv_latency;
+        srt_getsockopt(sid, 0, SRTO_RCVLATENCY, &rcv_latency, &int_len);
+
+        output << mon.msTimeStamp << ",";
+        output << sid << ",";
+        output << mon.pktFlowWindow << ",";
+        output << mon.pktCongestionWindow << ",";
+        output << mon.pktFlightSize << ",";
+        output << mon.msRTT << ",";
+        output << mon.mbpsBandwidth << ",";
+        output << mon.mbpsMaxBW << ",";
+        output << mon.pktSent << ",";
+        output << mon.pktSndLoss << ",";
+        output << mon.pktSndDrop << ",";
+        output << mon.pktRetrans << ",";
+        output << mon.byteSent << ",";
+        output << mon.byteSndDrop << ",";
+        output << mon.mbpsSendRate << ",";
+        output << mon.usPktSndPeriod << ",";
+        output << mon.pktRecv << ",";
+        output << mon.pktRcvLoss << ",";
+        output << mon.pktRcvDrop << ",";
+        output << mon.pktRcvRetrans << ",";
+        output << mon.pktRcvBelated << ",";
+        output << mon.byteRecv << ",";
+        output << mon.byteRcvLoss << ",";
+        output << mon.byteRcvDrop << ",";
+        output << mon.mbpsRecvRate << ",";
+        output << rcv_latency << ",";
+        // Filter stats
+        output << mon.pktSndFilterExtra << ",";
+        output << mon.pktRcvFilterExtra << ",";
+        output << mon.pktRcvFilterSupply << ",";
+        output << mon.pktRcvFilterLoss; //<< ",";
+        output << endl;
+        return output.str();
+    }
+
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
+        std::ostringstream output;
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
+    }
+};
+
+class SrtStatsCols : public SrtStatsWriter
+{
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    { 
+        std::ostringstream output;
+        output << "======= SRT STATS: sid=" << sid << endl;
+        output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
+        output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
+        output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
+        output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
+        output << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra    << endl;
+        output << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss     << endl;
+        output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
+        output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
+        output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
+        output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
+        output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+        output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+        return output.str();
+    } 
+
+    string WriteBandwidth(double mbpsBandwidth) override 
+    {
+        std::ostringstream output;
+        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
+        return output.str();
+    }
+};
+
+shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat)
+{
+    switch (printformat)
+    {
+    case SRTSTATS_PROFMAT_JSON:
+        return make_shared<SrtStatsJson>();
+        break;
+    case SRTSTATS_PROFMAT_CSV:
+        return make_shared<SrtStatsCsv>();
+        break;
+    case SRTSTATS_PROFMAT_2COLS:
+        return make_shared<SrtStatsCols>();
+        break;
+    default:
+        return nullptr;
+    }
+}
+
+SrtStatsPrintFormat ParsePrintFormat(string pf)
+{
+    if (pf == "default")
+        return SRTSTATS_PROFMAT_2COLS;
+
+    if (pf == "json")
+        return SRTSTATS_PROFMAT_JSON;
+
+    if (pf == "csv")
+        return SRTSTATS_PROFMAT_CSV;
+
+    return SRTSTATS_PROFMAT_INVALID;
+}
+
 

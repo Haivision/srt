@@ -138,7 +138,7 @@ struct LiveTransmitConfig
     int bw_report = 0;
     int stats_report = 0;
     string stats_out;
-    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
     bool auto_reconnect = true;
     bool full_stats = false;
 
@@ -147,11 +147,11 @@ struct LiveTransmitConfig
 };
 
 
-void PrintOptionHelp(const set<string> &opt_names, const string &value, const string &desc)
+void PrintOptionHelp(const OptionName& opt_names, const string &value, const string &desc)
 {
     cerr << "\t";
     int i = 0;
-    for (auto opt : opt_names)
+    for (auto opt : opt_names.names)
     {
         if (i++) cerr << ", ";
         cerr << "-" << opt;
@@ -165,7 +165,7 @@ void PrintOptionHelp(const set<string> &opt_names, const string &value, const st
 
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
-    const set<string>
+    const OptionName
         o_timeout       = { "t", "to", "timeout" },
         o_timeout_mode  = { "tm", "timeout-mode" },
         o_autorecon     = { "a", "auto", "autoreconnect" },
@@ -206,8 +206,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     options_t params = ProcessOptions(argv, argc, optargs);
 
-          bool print_help    = Option<OutBool>(params, false, o_help);
-    const bool print_version = Option<OutBool>(params, false, o_version);
+          bool print_help    = OptionPresent(params, o_help);
+    const bool print_version = OptionPresent(params, o_version);
 
     if (params[""].size() != 2 && !print_help && !print_version)
     {
@@ -265,40 +265,29 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         return 2;
     }
 
-    cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
-    cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
-    cfg.chunk_size   = stoi(Option<OutString>(params, "-1", o_chunk));
-    cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
-    cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
-    cfg.stats_out    = Option<OutString>(params, "", o_statsout);
+    cfg.timeout      = Option<OutNumber>(params, o_timeout);
+    cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
+    cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
+    cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
+    cfg.stats_report = Option<OutNumber>(params, o_statsrep);
+    cfg.stats_out    = Option<OutString>(params, o_statsout);
     const string pf  = Option<OutString>(params, "default", o_statspf);
-    if (pf == "default")
+    cfg.stats_pf     = ParsePrintFormat(pf);
+    if (cfg.stats_pf == SRTSTATS_PROFMAT_INVALID)
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-    }
-    else if (pf == "json")
-    {
-        cfg.stats_pf = PRINT_FORMAT_JSON;
-    }
-    else if (pf == "csv")
-    {
-        cfg.stats_pf = PRINT_FORMAT_CSV;
-    }
-    else
-    {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
+        cerr << "ERROR: Unsupported print format: " << pf << " -- fallback to default" << endl;
         return 1;
     }
 
-    cfg.full_stats   = Option<OutBool>(params, false, o_statsfull);
+    cfg.full_stats   = OptionPresent(params, o_statsfull);
     cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
-    cfg.log_internal = Option<OutBool>(params, false, o_log_internal);
-    cfg.logfile      = Option<OutString>(params, "", o_logfile);
-    cfg.quiet        = Option<OutBool>(params, false, o_quiet);
+    cfg.log_internal = OptionPresent(params, o_log_internal);
+    cfg.logfile      = Option<OutString>(params, o_logfile);
+    cfg.quiet        = OptionPresent(params, o_quiet);
     
-    if (Option<OutBool>(params, false, o_verbose))
+    if (OptionPresent(params, o_verbose))
         Verbose::on = !cfg.quiet;
 
     cfg.auto_reconnect = Option<OutBool>(params, true, o_autorecon);
@@ -341,7 +330,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size > 0)
         transmit_chunk_size = cfg.chunk_size;
-    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
+    transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
