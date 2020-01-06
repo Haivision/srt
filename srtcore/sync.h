@@ -193,6 +193,8 @@ public:
     /// @return result of pthread_cond_wait(...) function call
     ///
     static int wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
+
+    static int wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 };
 
 /// Print steady clock timepoint in a human readable way.

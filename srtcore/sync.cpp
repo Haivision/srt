@@ -54,11 +54,6 @@ void rdtsc(uint64_t& x)
     // when calling to QueryPerformanceFrequency. If it failed,
     // the m_bUseMicroSecond was set to true.
     QueryPerformanceCounter((LARGE_INTEGER*)&x);
-#elif defined(TIMING_USE_CLOCK_GETTIME)
-    // get_cpu_frequency() returns 1 us accuracy in this case
-    timespec tm;
-    clock_gettime(CLOCK_MONOTONIC, &tm);
-    x = tm.tv_sec * uint64_t(1000000) + t.tv_usec;
 #elif defined(TIMING_USE_MACH_ABS_TIME)
     x = mach_absolute_time();
 #else
@@ -77,9 +72,6 @@ int64_t get_cpu_frequency()
     LARGE_INTEGER ccf; // in counts per second
     if (QueryPerformanceFrequency(&ccf))
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
-
-#elif defined(TIMING_USE_CLOCK_GETTIME)
-    frequency = 1;
 
 #elif defined(TIMING_USE_MACH_ABS_TIME)
 
@@ -200,19 +192,30 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
-#if ENABLE_MONOTONIC_CLOCK
-    clock_gettime(CLOCK_MONOTONIC, &timeout);
-    const uint64_t time_us =
-        timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + count_microseconds(rel_time);
-    timeout.tv_sec  = time_us / 1000000;
-    timeout.tv_nsec = (time_us % 1000000) * 1000;
-#else
     timeval now;
     gettimeofday(&now, 0);
     const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + count_microseconds(rel_time);
     timeout.tv_sec         = time_us / 1000000;
     timeout.tv_nsec        = (time_us % 1000000) * 1000;
-#endif
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
+
+#if ENABLE_MONOTONIC_CLOCK
+int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+{
+    timespec timeout;
+    clock_gettime(CLOCK_MONOTONIC, &timeout);
+    const uint64_t time_us =
+        timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + count_microseconds(rel_time);
+    timeout.tv_sec = time_us / 1000000;
+    timeout.tv_nsec = (time_us % 1000000) * 1000;
+
+    return pthread_cond_timedwait(cond, mutex, &timeout);
+}
+#else
+int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+{
+    return wait_for(cond, mutex, rel_time);
+}
+#endif

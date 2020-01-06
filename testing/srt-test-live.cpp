@@ -68,7 +68,7 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmediabase.hpp"
+#include "testmedia.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -81,21 +81,9 @@
 
 using namespace std;
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
 
 map<string,string> g_options;
-
-string Option(string deflt="") { return deflt; }
-
-template <class... Args>
-string Option(string deflt, string key, Args... further_keys)
-{
-    map<string, string>::iterator i = g_options.find(key);
-    if ( i == g_options.end() )
-        return Option(deflt, further_keys...);
-    return i->second;
-}
-
-ostream* cverb = &cout;
 
 struct ForcedExit: public std::runtime_error
 {
@@ -268,44 +256,73 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    vector<string> args;
-    copy(argv+1, argv+argc, back_inserter(args));
+    vector<OptionScheme> optargs;
 
-    // Check options
-    vector<string> params;
+    OptionName
+        o_timeout   ((optargs), "<timeout[s]=0> Data transmission timeout", "t",   "to", "timeout" ),
+        o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
+        o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
+        o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
+        o_verbose   ((optargs), " Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
+        o_loglevel  ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
+        o_logfa     ((optargs), "<FA=all> Enabled Functional Areas", "lfa", "logfa"),
+        o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
+        o_stats     ((optargs), "<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_statspf   ((optargs), "<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
+        o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
+        o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
+        o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_help      ((optargs), " This help", "?",   "help", "-help")
+            ;
 
-    for (string a: args)
+    options_t params = ProcessOptions(argv, argc, optargs);
+
+    bool need_help = OptionPresent(params, o_help);
+
+    vector<string> args = params[""];
+
+    string source_spec, target_spec;
+
+    if (!need_help)
     {
-        if ( a[0] == '-' )
-        {
-            string key = a.substr(1);
-            size_t pos = key.find(':');
-            if ( pos == string::npos )
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos+1);
-            key = key.substr(0, pos);
-            g_options[key] = value;
-            continue;
-        }
+        // You may still need help.
 
-        params.push_back(a);
+        if (args.size() < 2)
+        {
+            cerr << "ERROR: source and target URI must be specified.\n\n";
+            need_help = true;
+        }
+        else
+        {
+            source_spec = args[0];
+            target_spec = args[1];
+        }
     }
 
-    if ( params.size() != 2 )
+    if (need_help)
     {
-        cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
-        cerr << "\t-t:<timeout=0> - connection timeout\n";
-        cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
-        cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
-        cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
-        cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
-        cerr << "\t-k - crash on error (aka developer mode)\n";
-        cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
+        cerr << "Usage:\n";
+        cerr << "     " << argv[0] << " [options] <input> <output>\n";
+        cerr << "*** (Position of [options] is unrestricted.)\n";
+        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+        cerr << "where:\n";
+        cerr << "    <input> and <output> is specified by an URI.\n";
+        cerr << "SUPPORTED URI SCHEMES:\n";
+        cerr << "    srt: use SRT connection\n";
+        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
+        cerr << "    file (default if scheme not specified) specified as:\n";
+        cerr << "       - empty host/port and absolute file path in the URI\n";
+        cerr << "       - only a filename, also as a relative path\n";
+        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
+        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
+        for (auto os: optargs)
+            cout << OptionHelpItem(*os.pid) << endl;
         return 1;
     }
 
-    int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
-    size_t chunk = stoul(Option("0", "c", "chunk"), 0, 0);
+    int timeout = Option<OutNumber>(params, "30", o_timeout);
+    size_t chunk = Option<OutNumber>(params, "0", o_chunk);
     if ( chunk == 0 )
     {
         chunk = SRT_LIVE_DEF_PLSIZE;
@@ -314,8 +331,11 @@ int main( int argc, char** argv )
     {
         transmit_chunk_size = chunk;
     }
+    
+    size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
+    transmit_bw_report = Option<OutNumber>(params, "0", o_report);
+    string verbose_val = Option<OutString>(params, "no", o_verbose);
 
-    string verbose_val = Option("no", "v", "verbose");
     int verbch = 1; // default cerr
     if (verbose_val != "no")
     {
@@ -343,44 +363,17 @@ int main( int argc, char** argv )
         }
     }
 
-    bool crashonx = Option("no", "k", "crash") != "no";
-    string loglevel = Option("error", "loglevel");
-    string logfa = Option("general", "logfa");
-    string logfile = Option("", "logfile");
-    bool internal_log = Option("no", "loginternal") != "no";
-    bool skip_flushing = Option("no", "S", "skipflush") != "no";
+    bool crashonx = OptionPresent(params, o_crash);
 
-    // Print format
-    string pf = Option("default", "pf", "printformat");
-    if (pf == "json")
-    {
-        transmit_printformat_json = true;
-    }
-    else if (pf != "default")
-    {
-        cerr << "ERROR: Unsupported print format: " << pf << endl;
-        return 1;
-    }
+    string loglevel = Option<OutString>(params, "error", o_loglevel);
+    string logfa = Option<OutString>(params, "general", o_logfa);
+    string logfile = Option<OutString>(params, "", o_logfile);
+    transmit_stats_report = Option<OutNumber>(params, "0", o_stats);
 
+    bool internal_log = OptionPresent(params, o_logint);
+    bool skip_flushing = OptionPresent(params, o_skipflush);
 
-    // Options that require integer conversion
-    size_t bandwidth;
-    size_t stoptime;
-
-    try
-    {
-        bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
-        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
-        transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
-        stoptime = stoul(Option("0", "d", "stoptime"));
-    }
-    catch (std::invalid_argument &)
-    {
-        cerr << "ERROR: Incorrect integer number specified for an option.\n";
-        return 1;
-    }
-
-    string hook = Option("", "hook");
+    string hook = Option<OutString>(params, "", "hook");
     if (hook != "")
     {
         if (hook == "user-password")
@@ -390,12 +383,25 @@ int main( int argc, char** argv )
         }
     }
 
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    if (statspf == SRTSTATS_PROFMAT_INVALID)
+    {
+        cerr << "Invalid stats print format\n";
+        return 1;
+    }
+    transmit_stats_writer = SrtStatsWriterFactory(statspf);
+
+    // Options that require integer conversion
+    size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
     set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
     for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
         srt_addlogfa(*i);
+
+
+    UDT::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -465,8 +471,8 @@ int main( int argc, char** argv )
 
     try
     {
-        src = Source::Create(params[0]);
-        tar = Target::Create(params[1]);
+        src = Source::Create(source_spec);
+        tar = Target::Create(target_spec);
     }
     catch(std::exception& x)
     {
@@ -502,7 +508,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'";
+    Verb() << "STARTING TRANSMISSION: '" << args[0] << "' --> '" << args[1] << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -530,6 +536,7 @@ int main( int argc, char** argv )
             {
                 alarm(timeout);
             }
+            Verb() << " << ... " << VerbNoEOL;
             const bytevector& data = src->Read(chunk);
             Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
             if ( data.empty() && src->End() )
@@ -542,16 +549,18 @@ int main( int argc, char** argv )
             {
                 alarm(0);
             }
+
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken\n";
+                Verb() << " OUTPUT broken";
                 break;
             }
 
-            Verb() << " sent";
+            Verb() << "sent";
+
             if ( int_state )
             {
-                cerr << "\n (interrupted on request)\n";
+                Verror() << "\n (interrupted on request)";
                 break;
             }
 
@@ -563,7 +572,7 @@ int main( int argc, char** argv )
                 int remain = stoptime - final_delay - elapsed;
                 if (remain < 0)
                 {
-                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
+                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -575,17 +584,17 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    cerr << "(DEBUG) DEPLETED. Done.\n";
+                    Verror() << "(DEBUG) DEPLETED. Done.\n";
                     break;
                 }
 
-                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
@@ -593,20 +602,24 @@ int main( int argc, char** argv )
 
         if (stoptime != 0 && ::timer_state)
         {
-            cerr << "Exit on timeout.\n";
+            Verror() << "Exit on timeout.";
         }
         else if (::int_state)
         {
+            Verror() << "Exit on interrupt.";
             // Do nothing.
         }
         else
         {
-            cerr << "STD EXCEPTION: " << x.what() << endl;
+            Verror() << "STD EXCEPTION: " << x.what();
         }
+
+        if ( crashonx )
+            throw;
 
         if (final_delay > 0)
         {
-            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
+            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -616,7 +629,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        cerr << "UNKNOWN type of EXCEPTION\n";
+        Verror() << "UNKNOWN type of EXCEPTION";
         if ( crashonx )
             throw;
 
