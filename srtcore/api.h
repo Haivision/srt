@@ -243,7 +243,7 @@ private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
    sockets_t m_Sockets;
 
-   pthread_mutex_t m_ControlLock;                    // used to synchronize UDT API
+   pthread_mutex_t m_GlobControlLock;                // used to synchronize UDT API
 
    pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
 

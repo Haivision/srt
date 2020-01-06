@@ -111,7 +111,7 @@ int main( int argc, char** argv )
     UDT::setloglevel(lev);
     UDT::addlogfa(SRT_LOGFA_APP);
 
-    bool verbo = Option<OutBool>(params, false, o_verbose);
+    bool verbo = OptionPresent(params, o_verbose);
     if (verbo)
     {
         Verbose::on = true;

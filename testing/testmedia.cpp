@@ -676,38 +676,33 @@ void SrtCommon::ConnectClient(string host, int port)
 
 void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
 {
-    CUDTException& udtError = UDT::getlasterror();
-    int udtResult = udtError.getErrorCode();
-    if (udtResult == SRT_SUCCESS)
+    int errnov = 0;
+    const int result = srt_getlasterror(&errnov);
+    if (result == SRT_SUCCESS)
     {
         cerr << "\nERROR (app): " << src << endl;
         throw std::runtime_error(src);
     }
-
-    string message = udtError.getErrorMessage();
-    string rejectreason;
-    if (udtResult == SRT_ECONNREJ)
+    string message = srt_getlasterror_str();
+    if (result == SRT_ECONNREJ)
     {
-        rejectreason = srt_rejectreason_str(reason);
-
-        if (Verbose::on)
-            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] "
+        if ( Verbose::on )
+            Verb() << "FAILURE\n" << src << ": [" << result << "] "
                 << "Connection rejected: [" << int(reason) << "]: "
                 << srt_rejectreason_str(reason);
         else
-            Verror() << "\nERROR #" << udtResult
+            cerr << "\nERROR #" << result
                 << ": Connection rejected: [" << int(reason) << "]: "
                 << srt_rejectreason_str(reason);
     }
     else
     {
-        if (Verbose::on)
-            Verb() << "FAILURE\n" << src << ": [" << udtResult << "] " << message;
+        if ( Verbose::on )
+        Verb() << "FAILURE\n" << src << ": [" << result << "." << errnov << "] " << message;
         else
-            Verror() << "\nERROR #" << udtResult << ": " << message;
+        cerr << "\nERROR #" << result << "." << errnov << ": " << message << endl;
     }
 
-    udtError.clear();
     throw TransmissionError("error: " + src + ": " + message);
 }
 

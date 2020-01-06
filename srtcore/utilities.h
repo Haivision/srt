@@ -723,9 +723,6 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
     return os.str();
 }
 
-
-
-
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
 void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)

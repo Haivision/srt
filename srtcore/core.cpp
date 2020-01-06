@@ -7992,7 +7992,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
                 if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
                     probe = true;
 
-            new_packet_packed = true;
+                new_packet_packed = true;
             }
             else
             {
@@ -8113,7 +8113,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
     else
     {
 #if USE_BUSY_WAITING
-        ts_tk = entertime_tk + m_tdSendInterval;
+        m_tsNextSendTime = enter_time + m_tdSendInterval;
 #else
         if (m_tdSendTimeDiff >= m_tdSendInterval)
         {
