@@ -209,11 +209,6 @@ struct sockaddr_any
 
     sockaddr* get() { return &sa; }
     const sockaddr* get() const { return &sa; }
-    sockaddr* operator&() { return &sa; }
-    const sockaddr* operator&() const { return &sa; }
-
-    operator sockaddr&() { return sa; }
-    operator const sockaddr&() const { return sa; }
 
     template <int> struct TypeMap;
 

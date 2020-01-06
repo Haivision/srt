@@ -407,14 +407,14 @@ void CChannel::getSockAddr(sockaddr_any& w_addr) const
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
     socklen_t namelen = w_addr.storage_size();
-    ::getsockname(m_iSocket, (&w_addr), (&namelen));
+    ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
 void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 {
     socklen_t namelen = w_addr.storage_size();
-    ::getpeername(m_iSocket, (&w_addr), (&namelen));
+    ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
@@ -523,7 +523,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
    #else
       DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
       int addrsize = addr.size();
-      int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, &addr, addrsize, NULL, NULL);
+      int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, NULL, NULL);
       res = (0 == res) ? size : -1;
    #endif
 
@@ -560,7 +560,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
     if (select_ret > 0)
     {
         msghdr mh;
-        mh.msg_name = (&w_addr);
+        mh.msg_name = (w_addr.get());
         mh.msg_namelen = w_addr.size();
         mh.msg_iov = packet.m_PacketVector;
         mh.msg_iovlen = 2;
@@ -635,7 +635,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
         DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
         int addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, (&w_addr), &addrsize, NULL, NULL);
+        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, (w_addr.get()), &addrsize, NULL, NULL);
         if (recv_ret == 0)
             recv_size = size;
     }
