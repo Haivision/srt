@@ -7263,6 +7263,7 @@ void CUDT::processCtrl(CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
+    m_tsLastRspTime = steady_clock::now();
     const steady_clock::time_point currtime = steady_clock::now();
     bool using_rexmit_flag = m_bPeerRexmitFlag;
 
