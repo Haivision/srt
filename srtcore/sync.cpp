@@ -100,7 +100,7 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
+CGuard::CGuard(pthread_mutex_t& lock, explicit_t<bool> shouldwork):
     m_Mutex(lock),
     m_iLocked(-1)
 {
@@ -115,51 +115,86 @@ CGuard::~CGuard()
         pthread_mutex_unlock(&m_Mutex);
 }
 
-// After calling this on a scoped lock wrapper (CGuard),
-// the mutex will be unlocked right now, and no longer
-// in destructor
-void CGuard::forceUnlock()
+int CGuard::enterCS(CMutex& lock, explicit_t<bool> block)
 {
-    if (m_iLocked == 0)
+    int retval;
+    if (block)
     {
-        pthread_mutex_unlock(&m_Mutex);
-        m_iLocked = -1;
+        retval = pthread_mutex_lock(RawAddr(lock));
     }
+    else
+    {
+        retval = pthread_mutex_trylock(RawAddr(lock));
+    }
+    return retval;
 }
 
-int CGuard::enterCS(pthread_mutex_t& lock)
+int CGuard::leaveCS(CMutex& lock)
 {
-    return pthread_mutex_lock(&lock);
+    return pthread_mutex_unlock(RawAddr(lock));
 }
 
-int CGuard::leaveCS(pthread_mutex_t& lock)
+/// This function checks if the given thread id
+/// is a thread id, stating that a thread id variable
+/// that doesn't hold a running thread, is equal to
+/// a null thread (pthread_t()).
+bool isthread(const pthread_t& thr)
 {
-    return pthread_mutex_unlock(&lock);
+    return pthread_equal(thr, pthread_t()) == 0; // NOT equal to a null thread
 }
 
-void CGuard::createMutex(pthread_mutex_t& lock)
+bool jointhread(pthread_t& thr)
 {
-    pthread_mutex_init(&lock, NULL);
+    int ret = pthread_join(thr, NULL);
+    thr = pthread_t(); // prevent dangling
+    return ret == 0;
 }
 
-void CGuard::releaseMutex(pthread_mutex_t& lock)
+bool jointhread(pthread_t& thr, void*& result)
 {
-    pthread_mutex_destroy(&lock);
+    int ret = pthread_join(thr, &result);
+    thr = pthread_t();
+    return ret == 0;
 }
 
-void CGuard::createCond(pthread_cond_t& cond)
+void createMutex(CMutex& lock, const char* name SRT_ATR_UNUSED)
 {
-    pthread_cond_init(&cond, NULL);
+    pthread_mutexattr_t* pattr = NULL;
+    pthread_mutex_init(RawAddr(lock), pattr);
 }
 
-void CGuard::releaseCond(pthread_cond_t& cond)
+void releaseMutex(CMutex& lock)
 {
-    pthread_cond_destroy(&cond);
+    pthread_mutex_destroy(RawAddr(lock));
+}
+
+void createCond(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+
+    pthread_condattr_t* pattr = NULL;
+    pthread_cond_init(RawAddr(cond), pattr);
+}
+
+void createCond_monotonic(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+
+    pthread_condattr_t* pattr = NULL;
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pattr = &CondAttribs;
+#endif
+    pthread_cond_init(RawAddr(cond), pattr);
 }
 
 
+void releaseCond(CCondition& cond)
+{
+    pthread_cond_destroy(RawAddr(cond));
+}
 
-CSync::CSync(pthread_cond_t& cond, CGuard& g)
+CSync::CSync(CCondition& cond, CGuard& g)
     : m_cond(&cond), m_mutex(&g.m_Mutex)
 {
     // XXX it would be nice to check whether the owner is also current thread
@@ -170,7 +205,7 @@ CSync::CSync(pthread_cond_t& cond, CGuard& g)
     // variable that you have used for construction as its argument.
 }
 
-CSync::CSync(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock)
+CSync::CSync(CCondition& cond, CMutex& mutex, Nolock)
     : m_cond(&cond)
     , m_mutex(&mutex)
 {
@@ -184,7 +219,7 @@ CSync::CSync(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock)
 void CSync::wait()
 {
     THREAD_PAUSED();
-    pthread_cond_wait(&(*m_cond), &(*m_mutex));
+    pthread_cond_wait(RawAddr(*m_cond), RawAddr(*m_mutex));
     THREAD_RESUMED();
 }
 
@@ -198,7 +233,7 @@ bool CSync::wait_until(const steady_clock::time_point& exptime)
         return false; // timeout
 
     THREAD_PAUSED();
-    bool signaled = SyncEvent::wait_for(m_cond, m_mutex, exptime - now) != ETIMEDOUT;
+    bool signaled = CondWaitFor(m_cond, m_mutex, exptime - now) != ETIMEDOUT;
     THREAD_RESUMED();
 
     return signaled;
@@ -217,11 +252,31 @@ bool CSync::wait_for(const steady_clock::duration& delay)
     /// time waiting, you may want to implement it better way.
 
     THREAD_PAUSED();
-    bool signaled = SyncEvent::wait_for(m_cond, m_mutex, delay) != ETIMEDOUT;
+    bool signaled = CondWaitFor(m_cond, m_mutex, delay) != ETIMEDOUT;
     THREAD_RESUMED();
 
     return signaled;
 }
+
+/// Block the call until either @a timestamp time achieved
+/// or the conditional is signaled.
+/// @param [in] delay Maximum time to wait since the moment of the call
+/// @retval true Resumed due to getting a CV signal
+/// @retval false Resumed due to being past @a timestamp
+bool CSync::wait_for_monotonic(const steady_clock::duration& delay)
+{
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
+    THREAD_PAUSED();
+    bool signaled = CondWaitFor_monotonic(m_cond, m_mutex, delay) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
 
 void CSync::lock_signal()
 {
@@ -229,28 +284,28 @@ void CSync::lock_signal()
     lock_signal(*m_cond, *m_mutex);
 }
 
-void CSync::lock_signal(pthread_cond_t& cond, pthread_mutex_t& mutex)
+void CSync::lock_signal(CCondition& cond, CMutex& mutex)
 {
     // Not using CGuard here because it would be logged
     // and this will result in unnecessary excessive logging.
-    pthread_mutex_lock(&(mutex));
-    pthread_cond_signal(&(cond));
-    pthread_mutex_unlock(&(mutex));
+    pthread_mutex_lock(RawAddr(mutex));
+    pthread_cond_signal(RawAddr(cond));
+    pthread_mutex_unlock(RawAddr(mutex));
 }
 
-void CSync::lock_broadcast(pthread_cond_t& cond, pthread_mutex_t& mutex)
+void CSync::lock_broadcast(CCondition& cond, CMutex& mutex)
 {
     // Not using CGuard here because it would be logged
     // and this will result in unnecessary excessive logging.
-    pthread_mutex_lock(&(mutex));
-    pthread_cond_broadcast(&(cond));
-    pthread_mutex_unlock(&(mutex));
+    pthread_mutex_lock(RawAddr(mutex));
+    pthread_cond_broadcast(RawAddr(cond));
+    pthread_mutex_unlock(RawAddr(mutex));
 }
 
 void CSync::signal_locked(CGuard& lk SRT_ATR_UNUSED)
 {
     // We expect m_nolock == false.
-    pthread_cond_signal(&(*m_cond));
+    pthread_cond_signal(RawAddr(*m_cond));
 }
 
 void CSync::signal_relaxed()
@@ -258,18 +313,19 @@ void CSync::signal_relaxed()
     signal_relaxed(*m_cond);
 }
 
-void CSync::signal_relaxed(pthread_cond_t& cond)
+void CSync::signal_relaxed(CCondition& cond)
 {
-    pthread_cond_signal(&(cond));
+    pthread_cond_signal(RawAddr(cond));
 }
 
-void CSync::broadcast_relaxed(pthread_cond_t& cond)
+void CSync::broadcast_relaxed(CCondition& cond)
 {
-    pthread_cond_broadcast(&(cond));
+    pthread_cond_broadcast(RawAddr(cond));
 }
 
 } // namespace sync
 } // namespace srt
+
 
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
@@ -367,7 +423,7 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
-int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
     timeval now;
@@ -379,7 +435,7 @@ int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex,
 }
 
 #if ENABLE_MONOTONIC_CLOCK
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
     clock_gettime(CLOCK_MONOTONIC, &timeout);
@@ -389,8 +445,8 @@ int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 #else
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
-    return wait_for(cond, mutex, rel_time);
+    return CondWaitFor(cond, mutex, rel_time);
 }
 #endif

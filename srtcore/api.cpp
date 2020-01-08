@@ -97,9 +97,9 @@ m_AcceptLock(),
 m_uiBackLog(0),
 m_iMuxID(-1)
 {
-      pthread_mutex_init(&m_AcceptLock, NULL);
-      pthread_cond_init(&m_AcceptCond, NULL);
-      pthread_mutex_init(&m_ControlLock, NULL);
+    createMutex(m_AcceptLock, "Accept");
+    createCond(m_AcceptCond, "Accept");
+    createMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
@@ -121,9 +121,9 @@ CUDTSocket::~CUDTSocket()
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
 
-   pthread_mutex_destroy(&m_AcceptLock);
-   pthread_cond_destroy(&m_AcceptCond);
-   pthread_mutex_destroy(&m_ControlLock);
+   releaseMutex(m_AcceptLock);
+   releaseCond(m_AcceptCond);
+   releaseMutex(m_ControlLock);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -156,9 +156,9 @@ m_ClosedSockets()
    srand((unsigned int)t.tv_usec);
    m_SocketIDGenerator = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
-   pthread_mutex_init(&m_GlobControlLock, NULL);
-   pthread_mutex_init(&m_IDLock, NULL);
-   pthread_mutex_init(&m_InitLock, NULL);
+   createMutex(m_GlobControlLock, "GlobControl");
+   createMutex(m_IDLock, "ID");
+   createMutex(m_InitLock, "Init");
 
    pthread_key_create(&m_TLSError, TLSDestroy);
 
@@ -175,9 +175,9 @@ CUDTUnited::~CUDTUnited()
         cleanup();
     }
 
-    pthread_mutex_destroy(&m_GlobControlLock);
-    pthread_mutex_destroy(&m_IDLock);
-    pthread_mutex_destroy(&m_InitLock);
+    releaseMutex(m_GlobControlLock);
+    releaseMutex(m_IDLock);
+    releaseMutex(m_InitLock);
 
     delete (CUDTException*)pthread_getspecific(m_TLSError);
     pthread_key_delete(m_TLSError);
@@ -220,15 +220,8 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-   pthread_mutex_init(&m_GCStopLock, NULL);
-#if ENABLE_MONOTONIC_CLOCK
-   pthread_condattr_t  CondAttribs;
-   pthread_condattr_init(&CondAttribs);
-   pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-   pthread_cond_init(&m_GCStopCond, &CondAttribs);
-#else
-   pthread_cond_init(&m_GCStopCond, NULL);
-#endif
+   createMutex(m_GCStopLock, "GCStop");
+   createCond_monotonic(m_GCStopCond, "GCStop");
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);
@@ -252,8 +245,13 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   pthread_cond_signal(&m_GCStopCond);
-   pthread_join(m_GCThread, NULL);
+   // NOTE: we can do relaxed signaling here because
+   // waiting on m_GCStopCond has a 1-second timeout,
+   // after which the m_bClosing flag is cheched, which
+   // is set here above. Worst case secenario, this
+   // jointhread() call will block for 1 second.
+   CSync::signal_relaxed(m_GCStopCond);
+   jointhread(m_GCThread);
 
    // XXX There's some weird bug here causing this
    // to hangup on Windows. This might be either something
@@ -262,8 +260,8 @@ int CUDTUnited::cleanup()
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
 #ifndef _WIN32
-   pthread_mutex_destroy(&m_GCStopLock);
-   pthread_cond_destroy(&m_GCStopCond);
+   releaseMutex(m_GCStopLock);
+   releaseCond(m_GCStopCond);
 #endif
 
    m_bGCStatus = false;
@@ -535,7 +533,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
       SRTSOCKET id = ns->m_SocketID;
       ns->m_pUDT->close();
       ns->m_Status = SRTS_CLOSED;
-      ns->m_tsClosureTimeStamp = srt::sync::steady_clock::now();
+      ns->m_tsClosureTimeStamp = steady_clock::now();
       // The mapped socket should be now unmapped to preserve the situation that
       // was in the original UDT code.
       // In SRT additionally the acceptAndRespond() function (it was called probably
@@ -551,9 +549,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
 
    // wake up a waiting accept() call
-   pthread_mutex_lock(&(ls->m_AcceptLock));
-   pthread_cond_signal(&(ls->m_AcceptCond));
-   pthread_mutex_unlock(&(ls->m_AcceptLock));
+   CSync::lock_signal(ls->m_AcceptCond, ls->m_AcceptLock);
 
    return 1;
 }
@@ -778,6 +774,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
    while (!accepted)
    {
        CGuard cg(ls->m_AcceptLock);
+       CSync  axcond(ls->m_AcceptCond, cg);
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -816,7 +813,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
        }
 
        if (!accepted && (ls->m_Status == SRTS_LISTENING))
-           pthread_cond_wait(&(ls->m_AcceptCond), &(ls->m_AcceptLock));
+           axcond.wait();
 
        if (ls->m_pQueuedSockets->empty())
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);
@@ -905,7 +902,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    {
        // InvertedGuard unlocks in the constructor, then locks in the
        // destructor, no matter if an exception has fired.
-       InvertedGuard l_unlocker( s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0 );
+       InvertedGuard l_unlocker (s->m_ControlLock, s->m_pUDT->m_bSynRecving);
        s->m_pUDT->startConnect(name, forced_isn);
    }
    catch (CUDTException& e) // Interceptor, just to change the state.
@@ -972,10 +969,7 @@ int CUDTUnited::close(const SRTSOCKET u)
       }
 
       // broadcast all "accept" waiting
-      pthread_mutex_lock(&(s->m_AcceptLock));
-      pthread_cond_broadcast(&(s->m_AcceptCond));
-      pthread_mutex_unlock(&(s->m_AcceptLock));
-
+      CSync::lock_broadcast(s->m_AcceptCond, s->m_AcceptLock);
    }
    else
    {
@@ -1557,17 +1551,17 @@ void CUDTUnited::checkBrokenSockets()
          // asynchronous close:
          if ((!j->second->m_pUDT->m_pSndBuffer)
             || (0 == j->second->m_pUDT->m_pSndBuffer->getCurrBufSize())
-            || (j->second->m_pUDT->m_tsLingerExpiration <= srt::sync::steady_clock::now()))
+            || (j->second->m_pUDT->m_tsLingerExpiration <= steady_clock::now()))
          {
             j->second->m_pUDT->m_tsLingerExpiration = steady_clock::time_point();
             j->second->m_pUDT->m_bClosing = true;
-            j->second->m_tsClosureTimeStamp = srt::sync::steady_clock::now();
+            j->second->m_tsClosureTimeStamp = steady_clock::now();
          }
       }
 
       // timeout 1 second to destroy a socket AND it has been removed from
       // RcvUList
-      if ((srt::sync::steady_clock::now() - j->second->m_tsClosureTimeStamp > seconds_from(1))
+      if ((steady_clock::now() - j->second->m_tsClosureTimeStamp > seconds_from(1))
          && ((!j->second->m_pUDT->m_pRNode)
             || !j->second->m_pUDT->m_pRNode->m_bOnList))
       {
@@ -1607,7 +1601,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       {
          m_Sockets[*q]->m_pUDT->m_bBroken = true;
          m_Sockets[*q]->m_pUDT->close();
-         m_Sockets[*q]->m_tsClosureTimeStamp = srt::sync::steady_clock::now();
+         m_Sockets[*q]->m_tsClosureTimeStamp = steady_clock::now();
          m_Sockets[*q]->m_Status = SRTS_CLOSED;
          m_ClosedSockets[*q] = m_Sockets[*q];
          m_Sockets.erase(*q);
@@ -1877,6 +1871,7 @@ void* CUDTUnited::garbageCollect(void* p)
    THREAD_STATE_INIT("SRT:GC");
 
    CGuard gcguard(self->m_GCStopLock);
+   CSync  gcsync(self->m_GCStopCond, gcguard);
 
    while (!self->m_bClosing)
    {
@@ -1884,7 +1879,7 @@ void* CUDTUnited::garbageCollect(void* p)
        self->checkBrokenSockets();
 
        HLOGC(mglog.Debug, log << "GC: sleep 1 s");
-       SyncEvent::wait_for_monotonic(&self->m_GCStopCond, &self->m_GCStopLock, seconds_from(1));
+       gcsync.wait_for_monotonic(seconds_from(1));
    }
 
    // remove all sockets and multiplexers
@@ -3156,54 +3151,62 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 
 void setloglevel(LogLevel::type ll)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.max_level = ll;
+    srt_logger_config.unlock();
 }
 
 void addlogfa(LogFA fa)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.enabled_fa.set(fa, true);
+    srt_logger_config.unlock();
 }
 
 void dellogfa(LogFA fa)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.enabled_fa.set(fa, false);
+    srt_logger_config.unlock();
 }
 
 void resetlogfa(set<LogFA> fas)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
+    srt_logger_config.unlock();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
+    srt_logger_config.unlock();
 }
 
 void setlogstream(std::ostream& stream)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.log_stream = &stream;
+    srt_logger_config.unlock();
 }
 
 void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.loghandler_opaque = opaque;
     srt_logger_config.loghandler_fn = handler;
+    srt_logger_config.unlock();
 }
 
 void setlogflags(int flags)
 {
-    CGuard gg(srt_logger_config.mutex);
+    srt_logger_config.lock();
     srt_logger_config.flags = flags;
+    srt_logger_config.unlock();
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)

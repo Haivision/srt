@@ -1055,7 +1055,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (m_pRcvBuffer)
         {
             CGuard::enterCS(m_RecvLock);
-            *(int32_t *)optval = m_pRcvBuffer->getRcvDataSize();
+            *(int32_t*)optval = m_pRcvBuffer->getRcvDataSize();
             CGuard::leaveCS(m_RecvLock);
         }
         else
@@ -5408,12 +5408,12 @@ bool CUDT::close()
         m_bConnected = false;
     }
 
-    if (m_bTsbPd && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (m_bTsbPd && isthread(m_RcvTsbPdThread))
     {
         HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        void *retval;
-        int ret SRT_ATR_UNUSED = pthread_join(m_RcvTsbPdThread, &retval);
-        HLOGC(mglog.Debug, log << "... " << (ret == 0 ? "SUCCEEDED" : "FAILED"));
+        void* retval;
+        bool ret SRT_ATR_UNUSED = jointhread(m_RcvTsbPdThread, retval);
+        HLOGC(mglog.Debug, log << "... " << (ret ? "SUCCEEDED" : "FAILED"));
     }
 
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
@@ -6413,7 +6413,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
-    if (pthread_mutex_trylock(&m_ConnectionLock) == 0)
+    if (CGuard::enterCS(m_ConnectionLock, false) == 0)
     {
         if (m_pSndBuffer)
         {
@@ -6473,7 +6473,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             //<
         }
 
-        pthread_mutex_unlock(&m_ConnectionLock);
+        CGuard::leaveCS(m_ConnectionLock);
     }
     else
     {
@@ -6638,36 +6638,36 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 void CUDT::initSynch()
 {
-    pthread_mutex_init(&m_SendBlockLock, NULL);
-    pthread_cond_init(&m_SendBlockCond, NULL);
-    pthread_mutex_init(&m_RecvDataLock, NULL);
-    pthread_cond_init(&m_RecvDataCond, NULL);
-    pthread_mutex_init(&m_SendLock, NULL);
-    pthread_mutex_init(&m_RecvLock, NULL);
-    pthread_mutex_init(&m_RcvLossLock, NULL);
-    pthread_mutex_init(&m_RecvAckLock, NULL);
-    pthread_mutex_init(&m_RcvBufferLock, NULL);
-    pthread_mutex_init(&m_ConnectionLock, NULL);
-    pthread_mutex_init(&m_StatsLock, NULL);
+    createMutex(m_SendBlockLock, "SendBlock");
+    createCond(m_SendBlockCond, "SendBlock");
+    createMutex(m_RecvDataLock, "RecvData");
+    createCond(m_RecvDataCond, "RecvData");
+    createMutex(m_SendLock, "Send");
+    createMutex(m_RecvLock, "Recv");
+    createMutex(m_RcvLossLock, "RcvLoss");
+    createMutex(m_RecvAckLock, "RecvAck");
+    createMutex(m_RcvBufferLock, "RcvBuffer");
+    createMutex(m_ConnectionLock, "Connection");
+    createMutex(m_StatsLock, "Stats");
 
     memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
-    pthread_cond_init(&m_RcvTsbPdCond, NULL);
+    createCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
 void CUDT::destroySynch()
 {
-    pthread_mutex_destroy(&m_SendBlockLock);
-    pthread_cond_destroy(&m_SendBlockCond);
-    pthread_mutex_destroy(&m_RecvDataLock);
-    pthread_cond_destroy(&m_RecvDataCond);
-    pthread_mutex_destroy(&m_SendLock);
-    pthread_mutex_destroy(&m_RecvLock);
-    pthread_mutex_destroy(&m_RcvLossLock);
-    pthread_mutex_destroy(&m_RecvAckLock);
-    pthread_mutex_destroy(&m_RcvBufferLock);
-    pthread_mutex_destroy(&m_ConnectionLock);
-    pthread_mutex_destroy(&m_StatsLock);
-    pthread_cond_destroy(&m_RcvTsbPdCond);
+    releaseMutex(m_SendBlockLock);
+    releaseCond(m_SendBlockCond);
+    releaseMutex(m_RecvDataLock);
+    releaseCond(m_RecvDataCond);
+    releaseMutex(m_SendLock);
+    releaseMutex(m_RecvLock);
+    releaseMutex(m_RcvLossLock);
+    releaseMutex(m_RecvAckLock);
+    releaseMutex(m_RcvBufferLock);
+    releaseMutex(m_ConnectionLock);
+    releaseMutex(m_StatsLock);
+    releaseCond(m_RcvTsbPdCond);
 }
 
 void CUDT::releaseSynch()
@@ -6675,23 +6675,22 @@ void CUDT::releaseSynch()
     // wake up user calls
     CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
 
-    pthread_mutex_lock(&m_SendLock);
-    pthread_mutex_unlock(&m_SendLock);
+    CGuard::enterCS(m_SendLock);
+    CGuard::leaveCS(m_SendLock);
 
     CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
 
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
-    pthread_mutex_lock(&m_RecvDataLock);
-    if (!pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    CGuard::enterCS(m_RecvDataLock);
+    if (isthread(m_RcvTsbPdThread))
     {
-        pthread_join(m_RcvTsbPdThread, NULL);
-        m_RcvTsbPdThread = pthread_t();
+        jointhread(m_RcvTsbPdThread);
     }
-    pthread_mutex_unlock(&m_RecvDataLock);
+    CGuard::leaveCS(m_RecvDataLock);
 
-    pthread_mutex_lock(&m_RecvLock);
-    pthread_mutex_unlock(&m_RecvLock);
+    CGuard::enterCS(m_RecvLock);
+    CGuard::leaveCS(m_RecvLock);
 }
 
 #if ENABLE_HEAVY_LOGGING
@@ -7323,83 +7322,80 @@ void CUDT::processCtrl(CPacket &ctrlpkt)
 
         bool secure = true;
 
-        // protect packet retransmission
-        CGuard::enterCS(m_RecvAckLock);
-
         // This variable is used in "normal" logs, so it may cause a warning
         // when logging is forcefully off.
         int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
 
-        // decode loss list message and insert loss into the sender loss list
-        for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
+        // protect packet retransmission
         {
-            if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
+            CGuard ack_lock (m_RecvAckLock);
+
+            // decode loss list message and insert loss into the sender loss list
+            for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
             {
-                // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-                int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-                int32_t losslist_hi = losslist[i + 1];
-                // <lo, hi> specification means that the consecutive cell has been already interpreted.
-                ++i;
-
-                HLOGF(mglog.Debug,
-                      "received UMSG_LOSSREPORT: %d-%d (%d packets)...",
-                      losslist_lo,
-                      losslist_hi,
-                      CSeqNo::seqoff(losslist_lo, losslist_hi) + 1);
-
-                if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
-                    (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
+                if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
                 {
-                    // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
-                    secure     = false;
-                    wrong_loss = losslist_hi;
-                    // XXX leaveCS: really necessary? 'break' will break the 'for' loop, not the 'switch' statement.
-                    // and the leaveCS is done again next to the 'for' loop end.
-                    CGuard::leaveCS(m_RecvAckLock);
-                    break;
-                }
+                    // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
+                    int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                    int32_t losslist_hi = losslist[i + 1];
+                    // <lo, hi> specification means that the consecutive cell has been already interpreted.
+                    ++i;
 
-                int num = 0;
-                if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
-                    num = m_pSndLossList->insert(losslist_lo, losslist_hi);
-                else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                    HLOGF(mglog.Debug,
+                            "received UMSG_LOSSREPORT: %d-%d (%d packets)...",
+                            losslist_lo,
+                            losslist_hi,
+                            CSeqNo::seqoff(losslist_lo, losslist_hi) + 1);
+
+                    if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
+                            (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
+                    {
+                        // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
+                        secure     = false;
+                        wrong_loss = losslist_hi;
+                        break;
+                    }
+
+                    int num = 0;
+                    if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
+                        num = m_pSndLossList->insert(losslist_lo, losslist_hi);
+                    else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                    {
+                        // This should be theoretically impossible because this would mean
+                        // that the received packet loss report informs about the loss that predates
+                        // the ACK sequence.
+                        // However, this can happen if the packet reordering has caused the earlier sent
+                        // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
+                        // more important, so simply drop the part that predates ACK.
+                        num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                    }
+
+                    CGuard::enterCS(m_StatsLock);
+                    m_stats.traceSndLoss += num;
+                    m_stats.sndLossTotal += num;
+                    CGuard::leaveCS(m_StatsLock);
+                }
+                else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
                 {
-                    // This should be theoretically impossible because this would mean
-                    // that the received packet loss report informs about the loss that predates
-                    // the ACK sequence.
-                    // However, this can happen if the packet reordering has caused the earlier sent
-                    // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
-                    // more important, so simply drop the part that predates ACK.
-                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                    HLOGF(mglog.Debug, "received UMSG_LOSSREPORT: %d (1 packet)...", losslist[i]);
+
+                    if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                    {
+                        // seq_a must not be greater than the most recent sent seq
+                        secure     = false;
+                        wrong_loss = losslist[i];
+                        break;
+                    }
+
+                    int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                    CGuard::enterCS(m_StatsLock);
+                    m_stats.traceSndLoss += num;
+                    m_stats.sndLossTotal += num;
+                    CGuard::leaveCS(m_StatsLock);
                 }
-
-                CGuard::enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
-                CGuard::leaveCS(m_StatsLock);
-            }
-            else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
-            {
-                HLOGF(mglog.Debug, "received UMSG_LOSSREPORT: %d (1 packet)...", losslist[i]);
-
-                if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
-                {
-                    // seq_a must not be greater than the most recent sent seq
-                    secure     = false;
-                    wrong_loss = losslist[i];
-                    CGuard::leaveCS(m_RecvAckLock);
-                    break;
-                }
-
-                int num = m_pSndLossList->insert(losslist[i], losslist[i]);
-
-                CGuard::enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
-                CGuard::leaveCS(m_StatsLock);
             }
         }
-        CGuard::leaveCS(m_RecvAckLock);
 
         updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
@@ -8046,7 +8042,7 @@ int CUDT::processData(CUnit *in_unit)
    m_tsLastRspTime = steady_clock::now();
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (m_bTsbPd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (m_bTsbPd && !isthread(m_RcvTsbPdThread))
     {
         HLOGP(mglog.Debug, "Spawning TSBPD thread");
         int st = 0;

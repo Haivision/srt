@@ -261,13 +261,13 @@ CSndUList::CSndUList()
     , m_pTimer(NULL)
 {
     m_pHeap = new CSNode *[m_iArrayLength];
-    pthread_mutex_init(&m_ListLock, NULL);
+    createMutex(m_ListLock, "List");
 }
 
 CSndUList::~CSndUList()
 {
     delete[] m_pHeap;
-    pthread_mutex_destroy(&m_ListLock);
+    releaseMutex(m_ListLock);
 }
 
 void CSndUList::update(const CUDT *u, EReschedule reschedule)
@@ -471,8 +471,8 @@ CSndQueue::CSndQueue()
     , m_WindowCond()
     , m_bClosing(false)
 {
-    pthread_cond_init(&m_WindowCond, NULL);
-    pthread_mutex_init(&m_WindowLock, NULL);
+    createCond(m_WindowCond, "Window");
+    createMutex(m_WindowLock, "Window");
 }
 
 CSndQueue::~CSndQueue()
@@ -486,10 +486,11 @@ CSndQueue::~CSndQueue()
 
     CSync::lock_signal(m_WindowCond, m_WindowLock);
 
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
-        pthread_join(m_WorkerThread, NULL);
-    pthread_cond_destroy(&m_WindowCond);
-    pthread_mutex_destroy(&m_WindowLock);
+    if (isthread(m_WorkerThread))
+        jointhread(m_WorkerThread);
+
+    releaseCond(m_WindowCond);
+    releaseMutex(m_WindowLock);
 
     delete m_pSndUList;
 }
@@ -808,12 +809,12 @@ CRendezvousQueue::CRendezvousQueue()
     : m_lRendezvousID()
     , m_RIDVectorLock()
 {
-    pthread_mutex_init(&m_RIDVectorLock, NULL);
+    createMutex(m_RIDVectorLock, "RIDVector");
 }
 
 CRendezvousQueue::~CRendezvousQueue()
 {
-    pthread_mutex_destroy(&m_RIDVectorLock);
+    releaseMutex(m_RIDVectorLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
@@ -1044,21 +1045,21 @@ CRcvQueue::CRcvQueue()
     , m_PassLock()
     , m_PassCond()
 {
-    pthread_mutex_init(&m_PassLock, NULL);
-    pthread_cond_init(&m_PassCond, NULL);
-    pthread_mutex_init(&m_LSLock, NULL);
-    pthread_mutex_init(&m_IDLock, NULL);
+    createMutex(m_PassLock, "Pass");
+    createCond(m_PassCond, "Pass");
+    createMutex(m_LSLock, "LS");
+    createMutex(m_IDLock, "ID");
 }
 
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
-        pthread_join(m_WorkerThread, NULL);
-    pthread_mutex_destroy(&m_PassLock);
-    pthread_cond_destroy(&m_PassCond);
-    pthread_mutex_destroy(&m_LSLock);
-    pthread_mutex_destroy(&m_IDLock);
+    if (isthread(m_WorkerThread))
+        jointhread(m_WorkerThread);
+    releaseMutex(m_PassLock);
+    releaseCond(m_PassCond);
+    releaseMutex(m_LSLock);
+    releaseMutex(m_IDLock);
 
     delete m_pRcvUList;
     delete m_pHash;
