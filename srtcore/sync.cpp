@@ -100,19 +100,23 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 
 // Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, explicit_t<bool> shouldwork):
+CGuard::CGuard(CMutex& lock, explicit_t<bool> shouldwork):
     m_Mutex(lock),
     m_iLocked(-1)
 {
     if (shouldwork)
-        m_iLocked = pthread_mutex_lock(&m_Mutex);
+    {
+        Lock();
+    }
 }
 
 // Automatically unlock in destructor
 CGuard::~CGuard()
 {
     if (m_iLocked == 0)
-        pthread_mutex_unlock(&m_Mutex);
+    {
+        Unlock();
+    }
 }
 
 int CGuard::enterCS(CMutex& lock, explicit_t<bool> block)
