@@ -174,6 +174,9 @@ Duration<steady_clock> seconds_from(int64_t t_s);
 
 inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 
+timespec us_to_timespec(const uint64_t time_us);
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Common pthread/chrono section
@@ -196,6 +199,118 @@ public:
 
     static int wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 };
+
+
+class CGuard
+{
+public:
+   /// Constructs CGuard, which locks the given mutex for
+   /// the scope where this object exists.
+   /// @param lock Mutex to lock
+   /// @param if_condition If this is false, CGuard will do completely nothing
+   CGuard(pthread_mutex_t& lock, bool if_condition = true);
+   ~CGuard();
+
+public:
+   static int enterCS(pthread_mutex_t& lock);
+   static int leaveCS(pthread_mutex_t& lock);
+
+   static void createMutex(pthread_mutex_t& lock);
+   static void releaseMutex(pthread_mutex_t& lock);
+
+   static void createCond(pthread_cond_t& cond);
+   static void releaseCond(pthread_cond_t& cond);
+
+   void forceUnlock();
+
+private:
+   friend class CSync;
+
+   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
+   int m_iLocked;                       // Locking status
+
+   CGuard& operator=(const CGuard&);
+};
+
+class InvertedGuard
+{
+    pthread_mutex_t* m_pMutex;
+public:
+
+    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
+    {
+        if ( !smutex )
+            return;
+
+        CGuard::leaveCS(*smutex);
+    }
+
+    ~InvertedGuard()
+    {
+        if ( !m_pMutex )
+            return;
+
+        CGuard::enterCS(*m_pMutex);
+    }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+// This class is used for condition variable combined with mutex by different ways.
+// This should provide a cleaner API around locking with debug-logging inside.
+class CSync
+{
+    pthread_cond_t* m_cond;
+    pthread_mutex_t* m_mutex;
+
+public:
+    enum Nolock { NOLOCK };
+
+    // Locked version: must be declared only after the declaration of CGuard,
+    // which has locked the mutex. On this delegate you should call only
+    // signal_locked() and pass the CGuard variable that should remain locked.
+    // Also wait() and wait_for() can be used only with this socket.
+    CSync(pthread_cond_t& cond, CGuard& g);
+
+    // This is only for one-shot signaling. This doesn't need a CGuard
+    // variable, only the mutex itself. Only lock_signal() can be used.
+    CSync(pthread_cond_t& cond, pthread_mutex_t& mutex, Nolock);
+
+    // An alternative method
+    static CSync nolock(pthread_cond_t& cond, pthread_mutex_t& m)
+    {
+        return CSync(cond, m, NOLOCK);
+    }
+
+    // COPY CONSTRUCTOR: DEFAULT!
+
+    // Wait indefinitely, until getting a signal on CV.
+    void wait();
+
+    // Wait only for a given time delay (in microseconds). This function
+    // extracts first current time using steady_clock::now().
+    bool wait_for(const steady_clock::duration& delay);
+
+    // Wait until the given time is achieved. This actually
+    // refers to wait_for for the time remaining to achieve
+    // given time.
+    bool wait_until(const steady_clock::time_point& exptime);
+
+    // You can signal using two methods:
+    // - lock_signal: expect the mutex NOT locked, lock it, signal, then unlock.
+    // - signal: expect the mutex locked, so only issue a signal, but you must pass the CGuard that keeps the lock.
+    void lock_signal();
+
+    // Static ad-hoc version
+    static void lock_signal(pthread_cond_t& cond, pthread_mutex_t& m);
+    static void lock_broadcast(pthread_cond_t& cond, pthread_mutex_t& m);
+
+    void signal_locked(CGuard& lk);
+    void signal_relaxed();
+    static void signal_relaxed(pthread_cond_t& cond);
+    static void broadcast_relaxed(pthread_cond_t& cond);
+};
+
 
 /// Print steady clock timepoint in a human readable way.
 /// days HH:MM::SS.us [STD]
