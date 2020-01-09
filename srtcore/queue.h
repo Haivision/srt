@@ -402,6 +402,8 @@ public:
        m_bClosing = true;
    }
 
+   pthread_t threadId() { return m_WorkerThread; }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -468,6 +470,8 @@ public:
       /// @return Data size of the packet
 
    int recvfrom(int32_t id, ref_t<CPacket> packet);
+
+   pthread_t threadId() { return m_WorkerThread; }
 
    void setClosing()
    {

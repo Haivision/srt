@@ -266,8 +266,8 @@ void TestSyncWaitFor()
 {
     CCondition  cond;
     CMutex mutex;
-    createCond(cond, "cond");
-    createMutex_monotonic(mutex, "mutex");
+    createCond_monotonic(cond, "cond");
+    createMutex(mutex, "mutex");
 
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
@@ -276,7 +276,7 @@ void TestSyncWaitFor()
         if (USE_MONOTONIC_CLOCK)
             EXPECT_FALSE(CondWaitFor_monotonic(&cond, &mutex, timeout) == 0);
         else
-            EXPECT_FALSE(CondWaitfor(&cond, &mutex, timeout) == 0);
+            EXPECT_FALSE(CondWaitFor(&cond, &mutex, timeout) == 0);
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {

@@ -7078,6 +7078,8 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
+    THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
+
     const int32_t *ackdata       = (const int32_t *)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
@@ -7778,6 +7780,8 @@ int CUDT::packLostData(CPacket &packet, steady_clock::time_point &origintime)
 
 std::pair<int, steady_clock::time_point> CUDT::packData(CPacket &packet)
 {
+    THREAD_CHECK_AFFINITY(m_pSndQueue->threadId());
+
     int payload = 0;
     bool probe = false;
     steady_clock::time_point origintime;
@@ -8033,6 +8037,8 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
 int CUDT::processData(CUnit *in_unit)
 {
+    THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
+
     CPacket &packet = in_unit->m_Packet;
 
    // XXX This should be called (exclusively) here:

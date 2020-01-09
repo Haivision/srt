@@ -188,6 +188,44 @@ class SyncEvent
 public:
 };
 
+#if ENABLE_THREAD_LOGGING
+struct CMutexWrapper
+{
+    typedef pthread_mutex_t sysobj_t;
+    pthread_mutex_t in_sysobj;
+    std::string lockname;
+
+    //pthread_mutex_t* operator& () { return &in_sysobj; }
+
+   // Turned explicitly to string because this is exposed only for logging purposes.
+   std::string show()
+   {
+       std::ostringstream os;
+       os << (&in_sysobj);
+       return os.str();
+   }
+
+};
+
+typedef CMutexWrapper CMutex;
+
+struct CConditionWrapper
+{
+    typedef pthread_cond_t sysobj_t;
+    pthread_cond_t in_sysobj;
+    std::string cvname;
+
+};
+
+typedef CConditionWrapper CCondition;
+
+template<class SysObj>
+inline typename SysObj::sysobj_t* RawAddr(SysObj& obj)
+{
+    return &obj.in_sysobj;
+}
+
+#else
 typedef ::pthread_mutex_t CMutex;
 typedef ::pthread_cond_t CCondition;
 
@@ -197,6 +235,8 @@ typedef ::pthread_cond_t CCondition;
 // types, while on others they resolve to the same type.
 template <class SysObj>
 inline SysObj* RawAddr(SysObj& m) { return &m; }
+#endif
+
 
 class CGuard
 {
@@ -313,12 +353,25 @@ public:
 int CondWaitFor(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 int CondWaitFor_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 
+#if ENABLE_THREAD_LOGGING
+inline int CondWaitFor(CConditionWrapper* cond, CMutexWrapper* mutex, const steady_clock::duration& rel_time)
+{
+    return CondWaitFor(&cond->in_sysobj, &mutex->in_sysobj, rel_time);
+}
+inline int CondWaitFor_monotonic(CConditionWrapper* cond, CMutexWrapper* mutex, const steady_clock::duration& rel_time)
+{
+    return CondWaitFor_monotonic(&cond->in_sysobj, &mutex->in_sysobj, rel_time);
+}
+#endif
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
 {
     CCondition* m_cond;
     CMutex* m_mutex;
+#if ENABLE_THREAD_LOGGING
+    bool m_nolock;
+#endif
 
 
 public:
@@ -385,7 +438,15 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
 
-}; // namespace sync
-}; // namespace srt
+// Debug purposes
+#if ENABLE_THREAD_LOGGING
+void ThreadCheckAffinity(const char* function, pthread_t thr);
+#define THREAD_CHECK_AFFINITY(thr) srt::sync::ThreadCheckAffinity(__FUNCTION__, thr)
+#else
+#define THREAD_CHECK_AFFINITY(thr)
+#endif
+
+} // namespace sync
+} // namespace srt
 
 #endif // __SRT_SYNC_H__
