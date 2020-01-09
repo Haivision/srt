@@ -174,7 +174,6 @@ void releaseMutex(CMutex& lock)
 
 void createCond(CCondition& cond, const char* name SRT_ATR_UNUSED)
 {
-
     pthread_condattr_t* pattr = NULL;
     pthread_cond_init(RawAddr(cond), pattr);
 }
