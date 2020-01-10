@@ -465,6 +465,10 @@ struct explicit_t
     T inobject;
     explicit_t(const T& uo): inobject(uo) {}
     operator T() const { return inobject; }
+
+private:
+    template <class X>
+    explicit_t(const X& another);
 };
 
 // Homecooked version of ref_t. It's a copy of std::reference_wrapper
