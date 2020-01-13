@@ -101,9 +101,7 @@ static inline Number StrToNumber(const std::string& )
 template<> inline type StrToNumber(const std::string& s) { return function (s, 0, 0); }
 
 STON(int, stoi);
-#ifndef _WIN32 // On Windows this type seems to be an alias to some others below
-STON(size_t, stoul);
-#endif
+STON(unsigned long, stoul);
 STON(unsigned int, stoul);
 STON(long long, stoll);
 STON(unsigned long long, stoull);
@@ -162,6 +160,10 @@ struct OutNumberAs
     typedef Number type;
     static type process(const options_t::mapped_type& i)
     {
+        // Numbers can't be joined, use the "last overrides" rule.
+        if (i.empty())
+            return {"0"};
+
         return OutNumber::process(i);
     }
 };
