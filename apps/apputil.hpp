@@ -101,7 +101,8 @@ static inline Number StrToNumber(const std::string& )
 template<> inline type StrToNumber(const std::string& s) { return function (s, 0, 0); }
 
 STON(int, stoi);
-#ifndef _WIN32 // On Windows this type seems to be an alias to some others below
+/* In some architectures like i386, size_t is defined as 'unsigned int' */
+#if defined (size_t) && (__SIZEOF_SIZE_T__ != __SIZEOF_INT__)
 STON(size_t, stoul);
 #endif
 STON(unsigned int, stoul);
