@@ -451,6 +451,26 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
+// std::addressof in C++11,
+// needs to be provided for C++03
+template <class RefType>
+inline RefType* AddressOf(RefType& r)
+{
+    return (RefType*)(&(unsigned char&)(r));
+}
+
+template <class T>
+struct explicit_t
+{
+    T inobject;
+    explicit_t(const T& uo): inobject(uo) {}
+    operator T() const { return inobject; }
+
+private:
+    template <class X>
+    explicit_t(const X& another);
+};
+
 // This is required for Printable function if you have a container of pairs,
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op

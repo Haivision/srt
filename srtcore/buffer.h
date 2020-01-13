@@ -161,7 +161,7 @@ private:    // Constants
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
-   pthread_mutex_t m_BufLock;           // used to synchronize buffer operation
+   srt::sync::CMutex m_BufLock;           // used to synchronize buffer operation
 
    struct Block
    {
@@ -376,7 +376,7 @@ public:
       /// @param [in] timestamp packet time stamp
       /// @param [ref] lock Mutex that should be locked for the operation
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp, pthread_mutex_t& lock);
+   void addRcvTsbPdDriftSample(uint32_t timestamp, srt::sync::CMutex& lock);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -514,7 +514,7 @@ private:
                                         // up to which data are already retrieved;
                                         // in message reading mode it's unused and always 0)
 
-   pthread_mutex_t m_BytesCountLock;    // used to protect counters operations
+   srt::sync::CMutex m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer
    int m_iAckedPktsCount;               // Number of acknowledged pkts in the buffer
    int m_iAckedBytesCount;              // Number of acknowledged payload bytes in the buffer

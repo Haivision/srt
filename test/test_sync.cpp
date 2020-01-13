@@ -261,52 +261,40 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
  */
 /*****************************************************************************/
 
-template <bool USE_MONOTONIC_CLOCK = false>
+template <bool TEST_MONOTONIC_CLOCK = false>
 void TestSyncWaitFor()
 {
-    pthread_mutex_t mutex;
-    pthread_mutex_init(&mutex, NULL);
-
-    pthread_cond_t  cond;
-#if ENABLE_MONOTONIC_CLOCK
-    if (USE_MONOTONIC_CLOCK)
-    {
-        pthread_condattr_t  CondAttribs;
-        pthread_condattr_init(&CondAttribs);
-        pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-        pthread_cond_init(&cond, &CondAttribs);
-    }
+    CCondition  cond;
+    CMutex mutex;
+    if (TEST_MONOTONIC_CLOCK)
+        createCond_monotonic(cond, "cond");
     else
-    {
-        pthread_cond_init(&cond, NULL);
-    }
-#else
-    pthread_cond_init(&cond, NULL);
-#endif
+        createCond(cond, "cond");
+    createMutex(mutex, "mutex");
 
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
         const steady_clock::time_point start = steady_clock::now();
-        if (USE_MONOTONIC_CLOCK)
-            EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex, timeout) == 0);
+        if (TEST_MONOTONIC_CLOCK)
+            EXPECT_FALSE(CondWaitFor_monotonic(&cond, &mutex, timeout) == 0);
         else
-            EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex, timeout) == 0);
+            EXPECT_FALSE(CondWaitFor(&cond, &mutex, timeout) == 0);
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {
-            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took " << count_microseconds(stop - start)
+            cerr << "CondWaitFor(" << count_microseconds(timeout) << "us) took " << count_microseconds(stop - start)
                 << "us" << endl;
         }
         else
         {
-            cerr << "SyncEvent::wait_for(" << count_milliseconds(timeout) << " ms) took "
+            cerr << "CondWaitFor(" << count_milliseconds(timeout) << " ms) took "
                 << count_microseconds(stop - start) / 1000.0 << " ms" << endl;
         }
     }
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 
@@ -324,69 +312,70 @@ TEST(SyncEvent, WaitForMonotonic)
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
-    pthread_cond_t  cond;
-    pthread_mutex_t mutex;
-    pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
+    CCondition  cond;
+    CMutex mutex;
+    createCond(cond, "cond");
+    createMutex(mutex, "mutex");
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
+    auto wait_async = [](CCondition* cond, CMutex* mutex, const steady_clock::duration& timeout) {
         CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+        return CondWaitFor(&*cond, &*mutex, timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    CSync::signal_relaxed(cond);
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     const int wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res == 0);
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
-    pthread_cond_t  cond;
-    pthread_mutex_t mutex;
-    pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
+    CCondition  cond;
+    CMutex mutex;
+    createCond(cond, "cond");
+    createMutex(mutex, "mutex");
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex) {
+    auto wait_async = [](CCondition* cond, CMutex* mutex) {
         CGuard gcguard(*mutex);
-        return pthread_cond_wait(cond, mutex);
+        CSync gcsync(*cond, gcguard);
+        return gcsync.wait();
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    CSync::signal_relaxed(cond);
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
-    pthread_cond_t  cond;
-    pthread_mutex_t mutex;
-    pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
+    CCondition  cond;
+    CMutex mutex;
+    createCond(cond, "cond");
+    createMutex(mutex, "mutex");
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
+    auto wait_async = [](CCondition* cond, CMutex* mutex, const steady_clock::duration& timeout) {
         CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+        return CondWaitFor(&*cond, &*mutex, timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async1_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
     EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    CSync::signal_relaxed(cond);
     // Now only one waiting thread should become ready
     const future_status status1 = wait_async1_res.wait_for(chrono::milliseconds(100));
     const future_status status2 = wait_async2_res.wait_for(chrono::milliseconds(100));
@@ -400,28 +389,28 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // Expect timeout on another thread
     EXPECT_FALSE(isready1 ? (wait_async2_res.get() == 0) : (wait_async1_res.get() == 0));
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
-    pthread_cond_t  cond;
-    pthread_mutex_t mutex;
-    pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
+    CCondition  cond;
+    CMutex mutex;
+    createCond(cond, "cond");
+    createMutex(mutex, "mutex");
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
+    auto wait_async = [](CCondition* cond, CMutex* mutex, const steady_clock::duration& timeout) {
         CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+        return CondWaitFor(&*cond, &*mutex, timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async1_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
     EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_broadcast(&cond);
+    CSync::broadcast_relaxed(cond);
     // Now only one waiting thread should become ready
     const future_status status1 = wait_async1_res.wait_for(chrono::milliseconds(100));
     const future_status status2 = wait_async2_res.wait_for(chrono::milliseconds(100));
@@ -431,32 +420,32 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     EXPECT_TRUE(wait_async1_res.get() == 0);
     EXPECT_TRUE(wait_async2_res.get() == 0);
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
-    pthread_cond_t  cond;
-    pthread_mutex_t mutex;
-    pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
+    CCondition  cond;
+    CMutex mutex;
+    createCond(cond, "cond");
+    createMutex(mutex, "mutex");
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
+    auto wait_async = [](CCondition* cond, CMutex* mutex, const steady_clock::duration& timeout) {
         CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+        return CondWaitFor(&*cond, &*mutex, timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(500)), future_status::timeout);
-    pthread_cond_broadcast(&cond);
+    CSync::broadcast_relaxed(cond);
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(500)), future_status::ready);
     const int wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res == 0);
 
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    releaseMutex(mutex);
+    releaseCond(cond);
 }
 
 /*****************************************************************************/
