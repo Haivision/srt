@@ -34,6 +34,17 @@ struct sockaddr_any
         sockaddr sa;
     };
     socklen_t len;
+    static size_t storage_size()
+    {
+        typedef union
+        {
+            sockaddr_in sin;
+            sockaddr_in6 sin6;
+            sockaddr sa;
+        } ucopy;
+        return sizeof (ucopy);
+    }
+
 
     void reset()
     {
@@ -198,11 +209,6 @@ struct sockaddr_any
 
     sockaddr* get() { return &sa; }
     const sockaddr* get() const { return &sa; }
-    sockaddr* operator&() { return &sa; }
-    const sockaddr* operator&() const { return &sa; }
-
-    operator sockaddr&() { return sa; }
-    operator const sockaddr&() const { return sa; }
 
     template <int> struct TypeMap;
 
@@ -274,7 +280,7 @@ struct sockaddr_any
         if (sa.sa_family == AF_INET)
             return sin.sin_addr.s_addr == INADDR_ANY;
 
-        if (sa.sa_family == AF_INET)
+        if (sa.sa_family == AF_INET6)
             return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
 
         return false;
