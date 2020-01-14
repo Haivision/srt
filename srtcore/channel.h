@@ -60,6 +60,7 @@ modified by
 
 class CChannel
 {
+   void createSocket(int family);
 public:
 
    // XXX There's currently no way to access the socket ID set for
@@ -69,18 +70,19 @@ public:
    std::string CONID() const { return ""; }
 
    CChannel();
-   CChannel(int version);
    ~CChannel();
 
       /// Open a UDP channel.
       /// @param [in] addr The local address that UDP will use.
 
-   void open(const sockaddr* addr = NULL);
+   void open(const sockaddr_any& addr);
+
+   void open(int family);
 
       /// Open a UDP channel based on an existing UDP socket.
       /// @param [in] udpsock UDP socket descriptor.
 
-   void attach(UDPSOCKET udpsock);
+   void attach(UDPSOCKET udpsock, const sockaddr_any& adr);
 
       /// Disconnect and close the UDP entity.
 
@@ -114,26 +116,26 @@ public:
       /// Query the socket address that the channel is using.
       /// @param [out] addr pointer to store the returned socket address.
 
-   void getSockAddr(sockaddr* addr) const;
+   void getSockAddr(sockaddr_any& addr) const;
 
       /// Query the peer side socket address that the channel is connect to.
       /// @param [out] addr pointer to store the returned socket address.
 
-   void getPeerAddr(sockaddr* addr) const;
+   void getPeerAddr(sockaddr_any& addr) const;
 
       /// Send a packet to the given address.
       /// @param [in] addr pointer to the destination address.
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data sent.
 
-   int sendto(const sockaddr* addr, CPacket& packet) const;
+   int sendto(const sockaddr_any& addr, CPacket& packet) const;
 
       /// Receive a packet from the channel and record the source address.
       /// @param [in] addr pointer to the source address.
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   EReadStatus recvfrom(sockaddr* addr, CPacket& packet) const;
+   EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
 #ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
@@ -162,15 +164,13 @@ public:
    int ioctlQuery(int type) const;
    int sockoptQuery(int level, int option) const;
 
-   const sockaddr* bindAddress() { return &m_BindAddr; }
+   const sockaddr* bindAddress() { return m_BindAddr.get(); }
    const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
 private:
    void setUDPSockOpt();
 
 private:
-   const int m_iIPversion;              // IP version
-   int m_iSockAddrSize;                 // socket address structure size (pre-defined to avoid run-time test)
 
    UDPSOCKET m_iSocket;                 // socket descriptor
 #ifdef SRT_ENABLE_IPOPTS

@@ -58,6 +58,8 @@ modified by
 #include <iterator>
 
 #include <cstring>
+#include "utilities.h"
+#include "netinet_any.h"
 #include "api.h"
 #include "core.h"
 #include "logging.h"
@@ -82,9 +84,6 @@ extern LogConfig srt_logger_config;
 CUDTSocket::CUDTSocket():
 m_Status(SRTS_INIT),
 m_tsClosureTimeStamp(0),
-m_iIPversion(0),
-m_pSelfAddr(NULL),
-m_pPeerAddr(NULL),
 m_SocketID(0),
 m_ListenSocket(0),
 m_PeerID(0),
@@ -104,16 +103,6 @@ m_iMuxID(-1)
 
 CUDTSocket::~CUDTSocket()
 {
-   if (m_iIPversion == AF_INET)
-   {
-      delete (sockaddr_in*)m_pSelfAddr;
-      delete (sockaddr_in*)m_pPeerAddr;
-   }
-   else
-   {
-      delete (sockaddr_in6*)m_pSelfAddr;
-      delete (sockaddr_in6*)m_pPeerAddr;
-   }
 
    delete m_pUDT;
    m_pUDT = NULL;
@@ -276,28 +265,15 @@ int CUDTUnited::cleanup()
    return 0;
 }
 
-SRTSOCKET CUDTUnited::newSocket(int af, int)
+SRTSOCKET CUDTUnited::newSocket()
 {
 
    CUDTSocket* ns = NULL;
 
    try
    {
-      // XXX REFACTOR:
-      // Use sockaddr_any for m_pSelfAddr and just initialize it
-      // with 'af'.
       ns = new CUDTSocket;
       ns->m_pUDT = new CUDT;
-      if (af == AF_INET)
-      {
-         ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
-         ((sockaddr_in*)(ns->m_pSelfAddr))->sin_port = 0;
-      }
-      else
-      {
-         ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in6);
-         ((sockaddr_in6*)(ns->m_pSelfAddr))->sin6_port = 0;
-      }
    }
    catch (...)
    {
@@ -317,7 +293,6 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
    // in the handshake, always to UDT_DGRAM.
    //ns->m_pUDT->m_iSockType = (type == SOCK_STREAM) ? UDT_STREAM : UDT_DGRAM;
    ns->m_pUDT->m_iSockType = UDT_DGRAM;
-   ns->m_pUDT->m_iIPversion = ns->m_iIPversion = af;
    ns->m_pUDT->m_pCache = m_pCache;
 
    // protect the m_Sockets structure.
@@ -343,7 +318,7 @@ SRTSOCKET CUDTUnited::newSocket(int af, int)
    return ns->m_SocketID;
 }
 
-int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHandShake* hs, const CPacket& hspkt,
+int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt,
         ref_t<SRT_REJECT_REASON> r_error)
 {
    CUDTSocket* ns = NULL;
@@ -360,7 +335,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    }
 
    // if this connection has already been processed
-   if ((ns = locate(peer, hs->m_iID, hs->m_iISN)) != NULL)
+   if ((ns = locatePeer(peer, hs->m_iID, hs->m_iISN)) != NULL)
    {
       if (ns->m_pUDT->m_bBroken)
       {
@@ -402,20 +377,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    {
       ns = new CUDTSocket;
       ns->m_pUDT = new CUDT(*(ls->m_pUDT));
-      if (ls->m_iIPversion == AF_INET)
-      {
-         ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
-         ((sockaddr_in*)(ns->m_pSelfAddr))->sin_port = 0;
-         ns->m_pPeerAddr = (sockaddr*)(new sockaddr_in);
-         memcpy(ns->m_pPeerAddr, peer, sizeof(sockaddr_in));
-      }
-      else
-      {
-         ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in6);
-         ((sockaddr_in6*)(ns->m_pSelfAddr))->sin6_port = 0;
-         ns->m_pPeerAddr = (sockaddr*)(new sockaddr_in6);
-         memcpy(ns->m_pPeerAddr, peer, sizeof(sockaddr_in6));
-      }
+      // No need to check the peer, this is the address from which the request has come.
+      ns->m_PeerAddr = peer;
    }
    catch (...)
    {
@@ -431,7 +394,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    CGuard::leaveCS(m_IDLock);
 
    ns->m_ListenSocket = listen;
-   ns->m_iIPversion = ls->m_iIPversion;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
    ns->m_PeerID = hs->m_iID;
    ns->m_iISN = hs->m_iISN;
@@ -466,7 +428,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
        updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer, hs, hspkt))
+           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), hs, hspkt))
            {
                error = 1;
                goto ERR_ROLLBACK;
@@ -485,8 +447,13 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr* peer, CHan
    ns->m_Status = SRTS_CONNECTED;
 
    // copy address information of local node
-   ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(ns->m_pSelfAddr);
-   CIPAddress::pton(ns->m_pSelfAddr, ns->m_pUDT->m_piSelfIP, ns->m_iIPversion);
+   // Precisely, what happens here is:
+   // - Get the IP address and port from the system database
+   ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+   // - OVERWRITE just the IP address itself by a value taken from piSelfIP
+   // (the family is used exactly as the one taken from what has been returned
+   // by getsockaddr)
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
    // protect the m_Sockets structure.
    CGuard::enterCS(m_GlobControlLock);
@@ -617,7 +584,7 @@ SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
     return s->m_Status;
 }
 
-int CUDTUnited::bind(const SRTSOCKET u, const sockaddr* name, int namelen)
+int CUDTUnited::bind(const SRTSOCKET u, const sockaddr_any& name)
 {
    CUDTSocket* s = locate(u);
    if (!s)
@@ -629,24 +596,12 @@ int CUDTUnited::bind(const SRTSOCKET u, const sockaddr* name, int namelen)
    if (s->m_Status != SRTS_INIT)
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
-   // check the size of SOCKADDR structure
-   if (s->m_iIPversion == AF_INET)
-   {
-      if (namelen != sizeof(sockaddr_in))
-         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-   }
-   else
-   {
-      if (namelen != sizeof(sockaddr_in6))
-         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-   }
-
    s->m_pUDT->open();
    updateMux(s, name);
    s->m_Status = SRTS_OPENED;
 
    // copy address information of local node
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
+   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
 
    return 0;
 }
@@ -663,31 +618,23 @@ int CUDTUnited::bind(SRTSOCKET u, UDPSOCKET udpsock)
    if (s->m_Status != SRTS_INIT)
       throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
-   sockaddr_in name4;
-   sockaddr_in6 name6;
-   sockaddr* name;
-   socklen_t namelen;
+   sockaddr_any name;
+   socklen_t namelen = sizeof name; // max of inet and inet6
 
-   if (s->m_iIPversion == AF_INET)
-   {
-      namelen = sizeof(sockaddr_in);
-      name = (sockaddr*)&name4;
-   }
-   else
-   {
-      namelen = sizeof(sockaddr_in6);
-      name = (sockaddr*)&name6;
-   }
-
-   if (::getsockname(udpsock, name, &namelen) == -1)
+   // This will preset the sa_family as well; the namelen is given simply large
+   // enough for any family here.
+   if (::getsockname(udpsock, &name.sa, &namelen) == -1)
       throw CUDTException(MJ_NOTSUP, MN_INVAL);
+
+   // Successfully extracted, so update the size
+   name.len = namelen;
 
    s->m_pUDT->open();
    updateMux(s, name, &udpsock);
    s->m_Status = SRTS_OPENED;
 
    // copy address information of local node
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
+   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
 
    return 0;
 }
@@ -753,9 +700,9 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    return 0;
 }
 
-SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen)
+SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
-   if ((addr) && (!addrlen))
+   if (pw_addr && !pw_addrlen)
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    CUDTSocket* ls = locate(listen);
@@ -832,7 +779,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
    }
 
-   if ((addr != NULL) && (addrlen != NULL))
+   if (pw_addr != NULL && pw_addrlen != NULL)
    {
       CUDTSocket* s = locate(u);
       if (s == NULL)
@@ -840,13 +787,14 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
 
       CGuard cg(s->m_ControlLock);
 
-      if (AF_INET == s->m_iIPversion)
-         *addrlen = sizeof(sockaddr_in);
-      else
-         *addrlen = sizeof(sockaddr_in6);
+      // Check if the length of the buffer to fill the name in
+      // was large enough.
+      const int len = s->m_PeerAddr.size();
+      if (*pw_addrlen < len)
+          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-      // copy address information of peer node
-      memcpy(addr, s->m_pPeerAddr, *addrlen);
+      memcpy((pw_addr), &s->m_PeerAddr, len);
+      *pw_addrlen = len;
    }
 
    return u;
@@ -854,38 +802,35 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* addr, int* addrle
 
 int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
+   sockaddr_any target_addr(name, namelen);
+   if (target_addr.len == 0)
+      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    CUDTSocket* s = locate(u);
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
    CGuard cg(s->m_ControlLock);
 
-   // XXX Consider translating this to using sockaddr_any,
-   // this should take out all the "IP version check" things.
-   if (AF_INET == s->m_iIPversion)
-   {
-      if (namelen != sizeof(sockaddr_in))
-         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-   }
-   else
-   {
-      if (namelen != sizeof(sockaddr_in6))
-         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-   }
-
    // a socket can "connect" only if it is in INIT or OPENED status
    if (s->m_Status == SRTS_INIT)
    {
-      if (!s->m_pUDT->m_bRendezvous)
-      {
-         s->m_pUDT->open(); // XXX here use the AF_* family value from 'name'
-         updateMux(s);  // <<---- updateMux
-                        // -> C(Snd|Rcv)Queue::init
-                        // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
-         s->m_Status = SRTS_OPENED;
-      }
-      else
-         throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
+       if (s->m_pUDT->m_bRendezvous)
+           throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
+
+       // If bind() was done first on this socket, then the
+       // socket will not perform this step. This actually does the
+       // same thing as bind() does, just with empty address so that
+       // the binding parameters are autoselected.
+
+       s->m_pUDT->open();
+       sockaddr_any autoselect_sa (target_addr.family());
+       // This will create such a sockaddr_any that
+       // will return true from empty(). 
+       updateMux(s, autoselect_sa);  // <<---- updateMux
+       // -> C(Snd|Rcv)Queue::init
+       // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
+       s->m_Status = SRTS_OPENED;
    }
    else if (s->m_Status != SRTS_OPENED)
       throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -906,7 +851,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
        // InvertedGuard unlocks in the constructor, then locks in the
        // destructor, no matter if an exception has fired.
        InvertedGuard l_unlocker( s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0 );
-       s->m_pUDT->startConnect(name, forced_isn);
+       s->m_pUDT->startConnect(target_addr, forced_isn);
    }
    catch (CUDTException& e) // Interceptor, just to change the state.
    {
@@ -915,17 +860,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
    }
 
    // record peer address
-   delete s->m_pPeerAddr;
-   if (AF_INET == s->m_iIPversion)
-   {
-      s->m_pPeerAddr = (sockaddr*)(new sockaddr_in);
-      memcpy(s->m_pPeerAddr, name, sizeof(sockaddr_in));
-   }
-   else
-   {
-      s->m_pPeerAddr = (sockaddr*)(new sockaddr_in6);
-      memcpy(s->m_pPeerAddr, name, sizeof(sockaddr_in6));
-   }
+   s->m_PeerAddr = target_addr;
 
    // CGuard destructor will delete cg and unlock s->m_ControlLock
 
@@ -1092,8 +1027,11 @@ int CUDTUnited::close(const SRTSOCKET u)
    return 0;
 }
 
-int CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
+void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
 {
+   if (!name || !namelen)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    if (getStatus(u) != SRTS_CONNECTED)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
@@ -1105,19 +1043,19 @@ int CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
    if (!s->m_pUDT->m_bConnected || s->m_pUDT->m_bBroken)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   if (AF_INET == s->m_iIPversion)
-      *namelen = sizeof(sockaddr_in);
-   else
-      *namelen = sizeof(sockaddr_in6);
+   const int len = s->m_PeerAddr.size();
+   if (*namelen < len)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   // copy address information of peer node
-   memcpy(name, s->m_pPeerAddr, *namelen);
-
-   return 0;
+   memcpy(name, &s->m_PeerAddr.sa, len);
+   *namelen = len;
 }
 
-int CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* name, int* namelen)
+void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namelen)
 {
+   if (!pw_name || !pw_namelen)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    CUDTSocket* s = locate(u);
 
    if (!s)
@@ -1129,15 +1067,12 @@ int CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* name, int* namelen)
    if (s->m_Status == SRTS_INIT)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-   if (AF_INET == s->m_iIPversion)
-      *namelen = sizeof(sockaddr_in);
-   else
-      *namelen = sizeof(sockaddr_in6);
+   const int len = s->m_SelfAddr.size();
+   if (*pw_namelen < len)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   // copy address information of local node
-   memcpy(name, s->m_pSelfAddr, *namelen);
-
-   return 0;
+   memcpy((pw_name), &s->m_SelfAddr.sa, len);
+   *pw_namelen = len;
 }
 
 int CUDTUnited::select(
@@ -1452,8 +1387,8 @@ CUDTSocket* CUDTUnited::locate(const SRTSOCKET u)
    return i->second;
 }
 
-CUDTSocket* CUDTUnited::locate(
-   const sockaddr* peer,
+CUDTSocket* CUDTUnited::locatePeer(
+   const sockaddr_any& peer,
    const SRTSOCKET id,
    int32_t isn)
 {
@@ -1472,8 +1407,7 @@ CUDTSocket* CUDTUnited::locate(
       if (k == m_Sockets.end())
          continue;
 
-      if (CIPAddress::ipcmp(
-         peer, k->second->m_pPeerAddr, k->second->m_iIPversion))
+      if (k->second->m_PeerAddr == peer)
       {
          return k->second;
       }
@@ -1692,29 +1626,34 @@ CUDTException* CUDTUnited::getError()
 
 
 void CUDTUnited::updateMux(
-   CUDTSocket* s, const sockaddr* addr, const UDPSOCKET* udpsock)
+   CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
    CGuard cg(m_GlobControlLock);
 
-   if ((s->m_pUDT->m_bReuseAddr) && (addr))
+   // Don't try to reuse given address, if udpsock was given.
+   // In such a case rely exclusively on that very socket and
+   // use it the way as it is configured, of course, create also
+   // always a new multiplexer for that very socket.
+   if (!udpsock && s->m_pUDT->m_bReuseAddr)
    {
-      int port = (AF_INET == s->m_pUDT->m_iIPversion)
-         ? ntohs(((sockaddr_in*)addr)->sin_port)
-         : ntohs(((sockaddr_in6*)addr)->sin6_port);
+      const int port = addr.hport();
 
       // find a reusable address
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
          i != m_mMultiplexer.end(); ++ i)
       {
-         if ((i->second.m_iIPversion == s->m_pUDT->m_iIPversion)
-            && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
+          // Use the "family" value blindly from the address; we
+          // need to find an existing multiplexer that binds to the
+          // given port in the same family as requested address.
+          if ((i->second.m_iIPversion == addr.family())
+                  && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
 #ifdef SRT_ENABLE_IPOPTS
-            &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
-            && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
+                  &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
+                  && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
-            && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
-            &&  i->second.m_bReusable)
-         {
+                  && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
+                  &&  i->second.m_bReusable)
+          {
             if (i->second.m_iPort == port)
             {
                // HLOGF(mglog.Debug, "reusing multiplexer for port
@@ -1733,7 +1672,7 @@ void CUDTUnited::updateMux(
    // a new multiplexer is needed
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
-   m.m_iIPversion = s->m_pUDT->m_iIPversion;
+   m.m_iIPversion = addr.family();
 #ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
@@ -1743,7 +1682,7 @@ void CUDTUnited::updateMux(
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
-   m.m_pChannel = new CChannel(s->m_pUDT->m_iIPversion);
+   m.m_pChannel = new CChannel();
 #ifdef SRT_ENABLE_IPOPTS
    m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
    m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
@@ -1755,10 +1694,28 @@ void CUDTUnited::updateMux(
 
    try
    {
-      if (udpsock)
-         m.m_pChannel->attach(*udpsock);
-      else
-         m.m_pChannel->open(addr);
+       if (udpsock)
+       {
+           // In this case, addr contains the address
+           // that has been extracted already from the
+           // given socket
+           m.m_pChannel->attach(*udpsock, addr);
+       }
+       else if (addr.empty())
+       {
+           // The case of previously used case of a NULL address.
+           // This here is used to pass family only, in this case
+           // just automatically bind to the "0" address to autoselect
+           // everything.
+           m.m_pChannel->open(addr.family());
+       }
+       else
+       {
+           // If at least the IP address is specified, then bind to that
+           // address, but still possibly autoselect the outgoing port, if the
+           // port was specified as 0.
+           m.m_pChannel->open(addr);
+       }
    }
    catch (CUDTException& e)
    {
@@ -1767,19 +1724,9 @@ void CUDTUnited::updateMux(
       throw;
    }
 
-   // XXX Simplify this. Use sockaddr_any.
-   sockaddr* sa = (AF_INET == s->m_pUDT->m_iIPversion)
-      ? (sockaddr*) new sockaddr_in
-      : (sockaddr*) new sockaddr_in6;
-   m.m_pChannel->getSockAddr(sa);
-   m.m_iPort = (AF_INET == s->m_pUDT->m_iIPversion)
-      ? ntohs(((sockaddr_in*)sa)->sin_port)
-      : ntohs(((sockaddr_in6*)sa)->sin6_port);
-
-   if (AF_INET == s->m_pUDT->m_iIPversion)
-      delete (sockaddr_in*)sa;
-   else
-      delete (sockaddr_in6*)sa;
+   sockaddr_any sa;
+   m.m_pChannel->getSockAddr((sa));
+   m.m_iPort = sa.hport();
 
    m.m_pTimer = new CTimer;
 
@@ -1847,10 +1794,7 @@ void CUDTUnited::updateMux(
 void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    CGuard cg(m_GlobControlLock);
-
-   int port = (AF_INET == ls->m_iIPversion)
-      ? ntohs(((sockaddr_in*)ls->m_pSelfAddr)->sin_port)
-      : ntohs(((sockaddr_in6*)ls->m_pSelfAddr)->sin6_port);
+   const int port = ls->m_SelfAddr.hport();
 
    // find the listener's address
    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
@@ -1954,14 +1898,14 @@ int CUDT::cleanup()
    return s_UDTUnited.cleanup();
 }
 
-SRTSOCKET CUDT::socket(int af, int, int)
+SRTSOCKET CUDT::socket()
 {
    if (!s_UDTUnited.m_bGCStatus)
       s_UDTUnited.startup();
 
    try
    {
-      return s_UDTUnited.newSocket(af, 0);
+      return s_UDTUnited.newSocket();
    }
    catch (const CUDTException& e)
    {
@@ -1987,7 +1931,17 @@ int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
 {
    try
    {
-      return s_UDTUnited.bind(u, name, namelen);
+       sockaddr_any sa (name, namelen);
+       if ( sa.len == 0 )
+       {
+           // This happens if the namelen check proved it to be
+           // too small for particular family, or that family is
+           // not recognized (is none of AF_INET, AF_INET6).
+           // This is a user error.
+           s_UDTUnited.setError(new CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+           return ERROR;
+       }
+       return s_UDTUnited.bind(u, sa);
    }
    catch (const CUDTException& e)
    {
@@ -2129,7 +2083,8 @@ int CUDT::getpeername(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      return s_UDTUnited.getpeername(u, name, namelen);
+      s_UDTUnited.getpeername(u, name, namelen);
+      return 0;
    }
    catch (const CUDTException& e)
    {
@@ -2149,7 +2104,8 @@ int CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      return s_UDTUnited.getsockname(u, name, namelen);;
+      s_UDTUnited.getsockname(u, name, namelen);
+      return 0;
    }
    catch (const CUDTException& e)
    {
@@ -2805,9 +2761,9 @@ int cleanup()
    return CUDT::cleanup();
 }
 
-SRTSOCKET socket(int af, int type, int protocol)
+SRTSOCKET socket()
 {
-   return CUDT::socket(af, type, protocol);
+   return CUDT::socket();
 }
 
 int bind(SRTSOCKET u, const struct sockaddr* name, int namelen)

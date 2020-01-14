@@ -30,23 +30,8 @@ extern "C" {
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
-SRTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
-SRTSOCKET srt_create_socket()
-{
-    // XXX This must include rework around m_iIPVersion. This must be
-    // abandoned completely and all "IP VERSION" thing should rely on
-    // the exact specification in the 'sockaddr' objects passed to other functions,
-    // that is, the "current IP Version" remains undefined until any of
-    // srt_bind() or srt_connect() function is done. And when any of these
-    // functions are being called, the IP version is contained in the
-    // sockaddr object passed there.
-
-    // Until this rework is done, srt_create_socket() will set the
-    // default AF_INET family.
-
-    // Note that all arguments except the first one here are ignored.
-    return CUDT::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-}
+SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
+SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
 int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
