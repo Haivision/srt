@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
    hints.ai_family = AF_INET;
    hints.ai_socktype = SOCK_DGRAM;
 
-   SRTSOCKET fhandle = srt_socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
+   SRTSOCKET fhandle = srt_create_socket();
    // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
    // although there's also lots of other options to be set, for which there's a convenience option,
    // SRTO_TRANSTYPE.

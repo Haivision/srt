@@ -68,7 +68,7 @@ TEST(CEPoll, WaitEmptyCall)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -92,7 +92,7 @@ TEST(CEPoll, UWaitEmptyCall)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -116,7 +116,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -151,7 +151,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -181,7 +181,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -205,7 +205,7 @@ TEST(CEPoll, HandleEpollEvent)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -266,7 +266,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(srt_startup(), 0);
 
     // 1. Prepare client
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes SRT_ATR_UNUSED = 1;
@@ -288,7 +288,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa_client.sin_addr), 1);
 
     // 2. Prepare server
-    SRTSOCKET server_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET server_sock = srt_create_socket();
     ASSERT_NE(server_sock, SRT_ERROR);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -381,7 +381,7 @@ TEST(CEPoll, HandleEpollEvent2)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -442,7 +442,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -492,7 +492,7 @@ TEST(CEPoll, ThreadedUpdate)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;

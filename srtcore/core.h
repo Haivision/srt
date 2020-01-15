@@ -172,7 +172,7 @@ private: // constructor and desctructor
 public: //API
     static int startup();
     static int cleanup();
-    static SRTSOCKET socket(int af, int type = SOCK_STREAM, int protocol = 0);
+    static SRTSOCKET socket();
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, UDPSOCKET udpsock);
     static int listen(SRTSOCKET u, int backlog);
@@ -298,7 +298,7 @@ private:
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
 
-    void startConnect(const sockaddr* peer, int32_t forced_isn);
+    void startConnect(const sockaddr_any& peer, int32_t forced_isn);
 
     /// Process the response handshake packet. Failure reasons can be:
     /// * Socket is not in connecting state
@@ -330,12 +330,12 @@ private:
     /// @param serv_addr incoming packet's address
     /// @param synchro True when this function was called in blocking mode
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD EConnectStatus processRendezvous(ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr* serv_addr, bool synchro, EReadStatus);
+    SRT_ATR_NODISCARD EConnectStatus processRendezvous(ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr_any& serv_addr, bool synchro, EReadStatus);
     SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
     SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro);
     void applyResponseSettings();
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
-    SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr* serv_addr);
+    SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr_any& serv_addr);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
@@ -365,7 +365,7 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
-    void acceptAndRespond(const sockaddr* peer, CHandShake* hs, const CPacket& hspkt);
+    void acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
@@ -523,7 +523,6 @@ private: // Identification
     linger m_Linger;                             // Linger information on close
     int m_iUDPSndBufSize;                        // UDP sending buffer size
     int m_iUDPRcvBufSize;                        // UDP receiving buffer size
-    int m_iIPversion;                            // IP version
     bool m_bRendezvous;                          // Rendezvous connection mode
 
 #ifdef SRT_ENABLE_CONNTIMEO
@@ -785,9 +784,9 @@ private: // Generation and processing of packets
 
     int processData(CUnit* unit);
     void processClose();
-    SRT_REJECT_REASON processConnectRequest(const sockaddr* addr, CPacket& packet);
+    SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
-    int32_t bake(const sockaddr* addr, int32_t previous_cookie = 0, int correction = 0);
+    int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
 private: // Trace
     struct CoreStats
@@ -878,7 +877,7 @@ public: // For the use of CCryptoControl
 private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;         // packet sending queue
     CRcvQueue* m_pRcvQueue;         // packet receiving queue
-    sockaddr* m_pPeerAddr;          // peer address
+    sockaddr_any m_PeerAddr;        // peer address
     uint32_t m_piSelfIP[4];         // local UDP IP address
     CSNode* m_pSNode;               // node information for UDT list used in snd queue
     CRNode* m_pRNode;               // node information for UDT list used in rcv queue
