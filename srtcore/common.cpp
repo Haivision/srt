@@ -295,16 +295,17 @@ m_iMajor(major),
 m_iMinor(minor)
 {
    if (err == -1)
-      #ifndef _WIN32
-         m_iErrno = errno;
-      #else
-         m_iErrno = GetLastError();
-      #endif
+       m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
 }
 
 const char* CUDTException::getErrorMessage() const ATR_NOTHROW
+{
+    return getErrorString().c_str();
+}
+
+const string& CUDTException::getErrorString() const
 {
    // translate "Major:Minor" code into text message.
 
@@ -510,7 +511,7 @@ const char* CUDTException::getErrorMessage() const ATR_NOTHROW
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   return m_strMsg.c_str();
+   return m_strMsg;
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
@@ -580,6 +581,8 @@ void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
+// XXX This has void return and the first argument is passed by reference.
+// Consider simply returning sockaddr_any by value.
 void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
 {
    if (AF_INET == ver)

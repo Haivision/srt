@@ -20,6 +20,7 @@ written by
 #include <iterator>
 #include <vector>
 #include <map>
+#include <tuple>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -105,7 +106,6 @@ int main( int argc, char** argv )
         return 1;
     }
 
-
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
@@ -171,7 +171,7 @@ int main( int argc, char** argv )
     return 0;
 }
 
-void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
+tuple<string, string> ExtractPath(string path)
 {
     //string& dir = r_dir;
     //string& fname = r_fname;
@@ -215,8 +215,7 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         directory = wd + "/" + directory;
     }
 
-    *dir = directory;
-    *fname = filename;
+    return make_tuple(directory, filename);
 }
 
 bool DoUpload(UriParser& ut, string path, string filename)
@@ -226,7 +225,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     string id = filename;
     Verb() << "Passing '" << id << "' as stream ID\n";
 
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     // Check if the filename was changed
     if (id != filename)
@@ -314,7 +313,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
     SrtModel m(us.host(), us.portno(), us.parameters());
 
     string id = filename;
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     // Disregard the filename, unless the destination file exists.
 
@@ -392,7 +391,7 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
 
     string path = fileuri.path();
     string directory, filename;
-    ExtractPath(path, ref(directory), ref(filename));
+    tie(directory, filename) = ExtractPath(path);
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
@@ -412,7 +411,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri)
     }
 
     string path = fileuri.path(), directory, filename;
-    ExtractPath(path, Ref(directory), Ref(filename));
+    tie(directory, filename) = ExtractPath(path);
 
     srt_source_uri["transtype"] = "file";
 

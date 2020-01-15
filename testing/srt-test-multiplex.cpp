@@ -593,7 +593,7 @@ int main( int argc, char** argv )
         for(;;)
         {
             string id = *ids.begin();
-            m.Establish(Ref(id));
+            m.Establish((id));
 
             // The 'id' could have been altered.
             // If Establish did connect(), then it gave this stream id,
@@ -604,7 +604,7 @@ int main( int argc, char** argv )
             // close the stream and ignore it.
 
             // Select medium from parameters.
-            if ( SelectAndLink(m, id, mode_output) )
+            if (SelectAndLink(m, id, mode_output))
             {
                 ids.erase(id);
                 if (ids.empty())

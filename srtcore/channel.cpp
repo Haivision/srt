@@ -61,16 +61,11 @@ modified by
 #include "packet.h"
 #include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
+#include "netinet_any.h"
 #include "utilities.h"
 
 #ifdef _WIN32
     typedef int socklen_t;
-#endif
-
-#ifndef _WIN32
-   #define NET_ERROR errno
-#else
-   #define NET_ERROR WSAGetLastError()
 #endif
 
 using namespace std;
@@ -421,30 +416,11 @@ void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
-#if ENABLE_HEAVY_LOGGING
-    std::ostringstream spec;
-
-    if (packet.isControl())
-    {
-        spec << " type=CONTROL"
-             << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.header(SRT_PH_MSGNO);
-    }
-    else
-    {
-        spec << " type=DATA"
-             << " %" << packet.getSeqNo()
-             << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
-             << packet.MessageFlagStr()
-             << " !" << BufferStamp(packet.m_pcData, packet.getLength());
-    }
-
     LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
         << " pkt.ts=" << packet.m_iTimeStamp
-        << spec.str());
-#endif
+        << " " << packet.Info());
 
 #ifdef SRT_TEST_FAKE_LOSS
 
@@ -532,7 +508,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
    return res;
 }
 
-EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
+EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
     EReadStatus status = RST_OK;
     int msg_flags = 0;
@@ -552,7 +528,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
 
     if (select_ret == 0)   // timeout
     {
-        packet.setLength(-1);
+        w_packet.setLength(-1);
         return RST_AGAIN;
     }
 
@@ -562,13 +538,13 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
         msghdr mh;
         mh.msg_name = (w_addr.get());
         mh.msg_namelen = w_addr.size();
-        mh.msg_iov = packet.m_PacketVector;
+        mh.msg_iov = (w_packet.m_PacketVector);
         mh.msg_iovlen = 2;
         mh.msg_control = NULL;
         mh.msg_controllen = 0;
         mh.msg_flags = 0;
 
-        recv_size = ::recvmsg(m_iSocket, &mh, 0);
+        recv_size = ::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
@@ -632,10 +608,11 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
 
     if (select_ret > 0)     // the total number of socket handles that are ready
     {
-        DWORD size = (DWORD) (CPacket::HDR_SIZE + packet.getLength());
+        DWORD size = (DWORD) (CPacket::HDR_SIZE + w_packet.getLength());
         int addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, &flag, (w_addr.get()), &addrsize, NULL, NULL);
+        recv_ret = ::WSARecvFrom(m_iSocket, ((LPWSABUF)w_packet.m_PacketVector), 2,
+                (&size), (&flag), (w_addr.get()), (&addrsize), NULL, NULL);
         if (recv_ret == 0)
             recv_size = size;
     }
@@ -712,14 +689,14 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
         goto Return_error;
     }
 
-    packet.setLength(recv_size - CPacket::HDR_SIZE);
+    w_packet.setLength(recv_size - CPacket::HDR_SIZE);
 
     // convert back into local host order
     // XXX use NtoHLA().
     //for (int i = 0; i < 4; ++ i)
-    //   packet.m_nHeader[i] = ntohl(packet.m_nHeader[i]);
+    //   w_packet.m_nHeader[i] = ntohl(w_packet.m_nHeader[i]);
     {
-        uint32_t* p = packet.m_nHeader;
+        uint32_t* p = w_packet.m_nHeader;
         for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
         {
             *p = ntohl(*p);
@@ -727,15 +704,15 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& packet) const
         }
     }
 
-    if (packet.isControl())
+    if (w_packet.isControl())
     {
-        for (size_t j = 0, n = packet.getLength() / sizeof (uint32_t); j < n; ++ j)
-            *((uint32_t *)packet.m_pcData + j) = ntohl(*((uint32_t *)packet.m_pcData + j));
+        for (size_t j = 0, n = w_packet.getLength() / sizeof (uint32_t); j < n; ++ j)
+            *((uint32_t *)w_packet.m_pcData + j) = ntohl(*((uint32_t *)w_packet.m_pcData + j));
     }
 
     return RST_OK;
 
 Return_error:
-    packet.setLength(-1);
+    w_packet.setLength(-1);
     return status;
 }

@@ -451,51 +451,25 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
-// Homecooked version of ref_t. It's a copy of std::reference_wrapper
-// voided of unwanted properties and renamed to ref_t.
-
-
-#if HAVE_CXX11
-#include <functional>
-#endif
-
-template<typename Type>
-class ref_t
+// std::addressof in C++11,
+// needs to be provided for C++03
+template <class RefType>
+inline RefType* AddressOf(RefType& r)
 {
-    Type* m_data;
-    
-    // Use your own addressof to walk around any
-    // defined operator&.
-    template <class InType>
-    static InType* adrof(InType& refr)
-    {
-        unsigned char& mem = (unsigned char&)refr;
-        return (InType*)&mem;
-    }
+    return (RefType*)(&(unsigned char&)(r));
+}
 
+template <class T>
+struct explicit_t
+{
+    T inobject;
+    explicit_t(const T& uo): inobject(uo) {}
 
-public:
-    typedef Type type;
+    operator T() const { return inobject; }
 
-    explicit ref_t(Type& __indata)
-        : m_data(adrof(__indata))
-        { }
-
-    ref_t(const ref_t<Type>& inref)
-        : m_data(inref.m_data)
-    { }
-
-#if HAVE_CXX11
-    ref_t(const std::reference_wrapper<Type>& i): m_data(std::addressof(i.get())) {}
-#endif
-
-    Type& operator*() { return *m_data; }
-
-    Type& get() const
-    { return *m_data; }
-
-    Type operator->() const
-    { return *m_data; }
+private:
+    template <class X>
+    explicit_t(const X& another);
 };
 
 // This is required for Printable function if you have a container of pairs,
@@ -511,15 +485,6 @@ namespace srt_pair_op
 }
 
 #if HAVE_CXX11
-
-// This alias was created so that 'Ref' (not 'ref') is used everywhere.
-// Normally the C++11 'ref' fits perfectly here, however in C++03 mode
-// it would have to be newly created. This would then cause a conflict
-// between C++03 SRT and C++11 applications as well as between C++ standard
-// library and SRT when SRT is compiled in C++11 mode (as it happens on
-// Darwin/clang).
-template <class In>
-inline auto Ref(In& i) -> decltype(std::ref(i)) { return std::ref(i); }
 
 template <class In>
 inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
@@ -596,17 +561,6 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 
 
 #else
-
-// XXX
-// (Sprint and Printable moved down.
-// Remove this line after merging)
-// 
-
-template <class Type>
-ref_t<Type> Ref(Type& arg)
-{
-    return ref_t<Type>(arg);
-}
 
 // The unique_ptr requires C++11, and the rvalue-reference feature,
 // so here we're simulate the behavior using the old std::auto_ptr.
@@ -943,8 +897,8 @@ inline std::string BufferStamp(const char* mem, size_t size)
 
     int n = 16-size;
     if (n > 0)
-        memset(spread+16-n, 0, n);
-    memcpy(spread, mem, min(size_t(16), size));
+        memset((spread + 16 - n), 0, n);
+    memcpy((spread), mem, min(size_t(16), size));
 
     // Now prepare 4 cells for uint32_t.
     union
@@ -952,7 +906,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         uint32_t sum;
         char cells[4];
     };
-    memset(cells, 0, 4);
+    memset((cells), 0, 4);
 
     for (size_t x = 0; x < 4; ++x)
         for (size_t y = 0; y < 4; ++y)
@@ -1030,7 +984,7 @@ ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 template <size_t DEPRLEN, typename ValueType>
 inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
-    return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
+    return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
 }
 
 // Property accessor definitions
@@ -1075,6 +1029,5 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
 #define SRTU_PROPERTY_RRW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
-
 
 #endif

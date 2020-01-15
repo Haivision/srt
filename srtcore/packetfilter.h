@@ -173,10 +173,10 @@ public:
     ~PacketFilter();
 
     // Simple wrappers
-    void feedSource(ref_t<CPacket> r_packet);
+    void feedSource(CPacket& w_packet);
     SRT_ARQLevel arqLevel();
-    bool packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg);
-    void receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs);
+    bool packControlPacket(int32_t seq, int kflg, CPacket& w_packet);
+    void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
 
 protected:
     void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
@@ -192,7 +192,7 @@ protected:
 };
 
 
-inline void PacketFilter::feedSource(ref_t<CPacket> r_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource(*r_packet); }
+inline void PacketFilter::feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
 inline SRT_ARQLevel PacketFilter::arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
 
 #endif

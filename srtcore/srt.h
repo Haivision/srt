@@ -639,8 +639,10 @@ SRT_API       int srt_cleanup(void);
 //
 // Socket operations
 //
-SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int af, int type, int protocol) SRT_ATR_DEPRECATED;
-SRT_API SRTSOCKET srt_create_socket();
+// DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
+// and socket creation doesn't need any arguments. Use srt_create_socket().
+SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
+SRT_API       SRTSOCKET srt_create_socket();
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use

@@ -506,9 +506,9 @@ uint32_t CPacket::getMsgTimeStamp() const
 CPacket* CPacket::clone() const
 {
    CPacket* pkt = new CPacket;
-   memcpy(pkt->m_nHeader, m_nHeader, HDR_SIZE);
+   memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
    pkt->m_pcData = new char[m_PacketVector[PV_DATA].size()];
-   memcpy(pkt->m_pcData, m_pcData, m_PacketVector[PV_DATA].size());
+   memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
    pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
 
    return pkt;

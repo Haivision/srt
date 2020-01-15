@@ -145,17 +145,17 @@ int srt_sendmsg2(SRTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     // Allow NULL mctrl in the API, but not internally.
     if (mctrl)
-        return CUDT::sendmsg2(u, buf, len, Ref(*mctrl));
+        return CUDT::sendmsg2(u, buf, len, (*mctrl));
     SRT_MSGCTRL mignore = srt_msgctrl_default;
-    return CUDT::sendmsg2(u, buf, len, Ref(mignore));
+    return CUDT::sendmsg2(u, buf, len, (mignore));
 }
 
 int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     if (mctrl)
-        return CUDT::recvmsg2(u, buf, len, Ref(*mctrl));
+        return CUDT::recvmsg2(u, buf, len, (*mctrl));
     SRT_MSGCTRL mignore = srt_msgctrl_default;
-    return CUDT::recvmsg2(u, buf, len, Ref(mignore));
+    return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
 const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }

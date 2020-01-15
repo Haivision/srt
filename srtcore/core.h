@@ -188,8 +188,8 @@ public: //API
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
-    static int sendmsg2(SRTSOCKET u, const char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
-    static int recvmsg2(SRTSOCKET u, char* buf, int len, ref_t<SRT_MSGCTRL> mctrl);
+    static int sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& mctrl);
+    static int recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_mctrl);
     static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_SENDFILE_BLOCK);
     static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_RECVFILE_BLOCK);
     static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
@@ -212,13 +212,8 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-
+    static int setError(const CUDTException& e);
     static int setError(CodeMajor mj, CodeMinor mn, int syserr);
-    static int setError(const CUDTException& e)
-    {
-        s_UDTUnited.setError(new CUDTException(e));
-        return SRT_ERROR;
-    }
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -318,7 +313,7 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        CGuard cg(m_ConnectionLock, "Connection");
+        CGuard cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
@@ -342,6 +337,7 @@ public: // internal API
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
+    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 private:
     /// initialize a UDT entity and bind to a local address.
 
@@ -374,7 +370,7 @@ private:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
-    void rendezvousSwitchState(ref_t<UDTRequestType> rsptype, ref_t<bool> needs_extension, ref_t<bool> needs_hsrsp);
+    void rendezvousSwitchState(UDTRequestType& rsptype, bool& needs_extension, bool& needs_hsrsp);
     void cookieContest();
 
     /// Interpret the incoming handshake packet in order to perform appropriate
@@ -385,7 +381,8 @@ private:
     /// @param serv_addr incoming packet's address
     /// @param synchro True when this function was called in blocking mode
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD EConnectStatus processRendezvous(ref_t<CPacket> reqpkt, const CPacket &response, const sockaddr_any& serv_addr, bool synchro, EReadStatus);
+    SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket &response, const sockaddr_any& serv_addr, bool synchro, EReadStatus,
+            CPacket& reqpkt);
     SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
     SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro);
     void applyResponseSettings();
@@ -398,8 +395,8 @@ private:
     SRT_ATR_NODISCARD size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
     SRT_ATR_NODISCARD size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int hs_version);
 
-    SRT_ATR_NODISCARD bool createSrtHandshake(ref_t<CPacket> reqpkt, ref_t<CHandShake> hs,
-            int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen);
+    SRT_ATR_NODISCARD bool createSrtHandshake(int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen,
+            CPacket& w_reqpkt, CHandShake& w_hs);
 
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
@@ -414,14 +411,14 @@ private:
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
 
-    void checkNeedDrop(ref_t<bool> bCongestion);
+    void checkNeedDrop(bool& bCongestion);
 
     /// Connect to a UDT entity listening at address "peer", which has sent "hs" request.
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
-    void acceptAndRespond(const sockaddr_any& peer, CHandShake* hs, const CPacket& hspkt);
-    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake* hs, const CPacket& hspkt);
+    void acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
@@ -458,13 +455,13 @@ private:
     /// @param len [in] size of the buffer.
     /// @return Actual size of data received.
 
-    SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
 
-    SRT_ATR_NODISCARD int recvmsg2(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
 
-    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, ref_t<SRT_MSGCTRL> m);
+    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
@@ -784,10 +781,7 @@ private: // Receiving related data
 
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
-    {
-        return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
-    }
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -841,7 +835,7 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
 
-    void processCtrl(CPacket& ctrlpkt);
+    void processCtrl(const CPacket& ctrlpkt);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
     void processCtrlAck(const CPacket& ctrlpkt, const srt::sync::steady_clock::time_point &currtime);
 
@@ -855,7 +849,7 @@ private: // Generation and processing of packets
     /// @param origintime [in, out] origin timestamp of the packet
     ///
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, srt::sync::steady_clock::time_point &origintime);
+    int packLostData(CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime);
 
     /// Pack in CPacket the next data to be send.
     ///

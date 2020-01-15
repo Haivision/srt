@@ -91,7 +91,7 @@ protected:
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
     {
-        string addr = SockaddrToString((sockaddr*)&sa);
+        string addr = SockaddrToString(sockaddr_any((sockaddr*)&sa, sizeof sa));
         DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
@@ -118,8 +118,8 @@ public:
     virtual int ReadInternal(char* output, int size) = 0;
     virtual bool IsErrorAgain() = 0;
 
-    ReadStatus Read(ref_t<bytevector> output);
-    virtual void Write(ref_t<bytevector> portion) = 0;
+    ReadStatus Read(bytevector& output);
+    virtual void Write(bytevector& portion) = 0;
 
     virtual void CreateListener() = 0;
     virtual void CreateCaller() = 0;
@@ -335,14 +335,14 @@ void Engine::Worker()
         try
         {
             which_medium = media[DIR_IN];
-            rdst = media[DIR_IN]->Read(Ref(outbuf));
+            rdst = media[DIR_IN]->Read((outbuf));
             switch (rdst)
             {
             case Medium::RD_DATA:
                 {
                     which_medium = media[DIR_OUT];
                     // We get the data, write them to the output
-                    media[DIR_OUT]->Write(Ref(outbuf));
+                    media[DIR_OUT]->Write((outbuf));
                 }
                 break;
 
@@ -411,7 +411,7 @@ public:
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
 
-    virtual void Write(ref_t<bytevector> portion) override;
+    virtual void Write(bytevector& portion) override;
     virtual void CreateListener() override;
     virtual void CreateCaller() override;
     virtual unique_ptr<Medium> Accept() override;
@@ -494,7 +494,7 @@ public:
     virtual const char* type() override { return "tcp"; }
     virtual int ReadInternal(char* output, int size) override;
     virtual bool IsErrorAgain() override;
-    virtual void Write(ref_t<bytevector> portion) override;
+    virtual void Write(bytevector& portion) override;
     virtual void CreateListener() override;
     virtual void CreateCaller() override;
     virtual unique_ptr<Medium> Accept() override;
@@ -691,17 +691,17 @@ void TcpMedium::Connect()
     ConfigurePost(m_socket);
 }
 
-int SrtMedium::ReadInternal(char* buffer, int size)
+int SrtMedium::ReadInternal(char* w_buffer, int size)
 {
-    int st = srt_recv(m_socket, buffer, size);
+    int st = srt_recv(m_socket, (w_buffer), size);
     if (st == SRT_ERROR)
         return -1;
     return st;
 }
 
-int TcpMedium::ReadInternal(char* buffer, int size)
+int TcpMedium::ReadInternal(char* w_buffer, int size)
 {
-    return ::recv(m_socket, buffer, size, 0);
+    return ::recv(m_socket, (w_buffer), size, 0);
 }
 
 bool SrtMedium::IsErrorAgain()
@@ -722,19 +722,17 @@ bool TcpMedium::IsErrorAgain()
 // This will cause the worker loop to redirect to Write immediately
 // thereafter and possibly will flush out the remains of the buffer.
 // It's still possible that the buffer won't be completely purged
-Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
+Medium::ReadStatus Medium::Read(bytevector& w_output)
 {
-    bytevector& output = *r_output;
-
     // Don't read, but fake that you read
-    if (output.size() > m_chunk)
+    if (w_output.size() > m_chunk)
     {
         Verb() << "BUFFER EXCEEDED";
         return RD_DATA;
     }
 
     // Resize to maximum first
-    size_t shift = output.size();
+    size_t shift = w_output.size();
     if (shift && m_eof)
     {
         // You have nonempty buffer, but eof was already
@@ -747,8 +745,8 @@ Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
 
     size_t pred_size = shift + m_chunk;
 
-    output.resize(pred_size);
-    int st = ReadInternal(output.data() + shift, m_chunk);
+    w_output.resize(pred_size);
+    int st = ReadInternal((w_output.data() + shift), m_chunk);
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -769,22 +767,20 @@ Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
             //
             // Set back the size this buffer had before we attempted
             // to read into it.
-            output.resize(shift);
+            w_output.resize(shift);
             return RD_DATA;
         }
-        output.clear();
+        w_output.clear();
         return RD_EOF;
     }
 
-    output.resize(shift+st);
+    w_output.resize(shift+st);
     return RD_DATA;
 }
 
-void SrtMedium::Write(ref_t<bytevector> r_buffer)
+void SrtMedium::Write(bytevector& w_buffer)
 {
-    bytevector& buffer = *r_buffer;
-
-    int st = srt_send(m_socket, buffer.data(), buffer.size());
+    int st = srt_send(m_socket, w_buffer.data(), w_buffer.size());
     if (st == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_send");
@@ -792,8 +788,8 @@ void SrtMedium::Write(ref_t<bytevector> r_buffer)
 
     // This should be ==, whereas > is not possible, but
     // this should simply embrace this case as a sanity check.
-    if (st >= int(buffer.size()))
-        buffer.clear();
+    if (st >= int(w_buffer.size()))
+        w_buffer.clear();
     else if (st == 0)
     {
         Error("Unexpected EOF on Write");
@@ -801,15 +797,13 @@ void SrtMedium::Write(ref_t<bytevector> r_buffer)
     else
     {
         // Remove only those bytes that were sent
-        buffer.erase(buffer.begin(), buffer.begin()+st);
+        w_buffer.erase(w_buffer.begin(), w_buffer.begin()+st);
     }
 }
 
-void TcpMedium::Write(ref_t<bytevector> r_buffer)
+void TcpMedium::Write(bytevector& w_buffer)
 {
-    bytevector& buffer = *r_buffer;
-
-    int st = ::send(m_socket, buffer.data(), buffer.size(), DEF_SEND_FLAG);
+    int st = ::send(m_socket, w_buffer.data(), w_buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -817,8 +811,8 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
 
     // This should be ==, whereas > is not possible, but
     // this should simply embrace this case as a sanity check.
-    if (st >= int(buffer.size()))
-        buffer.clear();
+    if (st >= int(w_buffer.size()))
+        w_buffer.clear();
     else if (st == 0)
     {
         Error("Unexpected EOF on Write");
@@ -826,7 +820,7 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
     else
     {
         // Remove only those bytes that were sent
-        buffer.erase(buffer.begin(), buffer.begin()+st);
+        w_buffer.erase(w_buffer.begin(), w_buffer.begin()+st);
     }
 }
 
