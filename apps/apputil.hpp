@@ -160,10 +160,6 @@ struct OutNumberAs
     typedef Number type;
     static type process(const options_t::mapped_type& i)
     {
-        // Numbers can't be joined, use the "last overrides" rule.
-        if (i.empty())
-            return {"0"};
-
         return OutNumber::process(i);
     }
 };
