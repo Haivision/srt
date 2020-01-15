@@ -423,7 +423,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
          p = p->m_pNext;
          if (move)
             m_pCurrBlock = p;
-         msglen ++;
+         msglen++;
       }
 
       HLOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno);
@@ -558,7 +558,7 @@ int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_lat
    int dbytes = 0;
    bool move = false;
 
-   CGuard bufferguard(m_BufLock);
+   CGuard bufferguard (m_BufLock);
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++ i)
    {
       dpkts++;
@@ -927,10 +927,12 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - w_passack: false (the report concerns a packet with an exactly next sequence)
     // - w_skipseqno == -1: no packets to skip towards the first RTP
-    // - ppkt: that exactly packet that is reported (for debugging purposes)
+    // - w_curpktseq: sequence number for reported packet (for debug purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
+    // getRcvReadyMsg returns true if the time to play for the first message
+    // (returned in w_tsbpdtime) is in the past.
     if (getRcvReadyMsg((w_tsbpdtime), (w_curpktseq)))
     {
         HLOGC(dlog.Debug, log << "getRcvFirstMsg: ready CONTIG packet: %" << w_curpktseq);
@@ -938,7 +940,9 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     }
     else if (!is_zero(w_tsbpdtime))
     {
-        HLOGC(dlog.Debug, log << "getRcvFirstMsg: no packets found");
+        HLOGC(dlog.Debug, log << "getRcvFirstMsg: packets found, but in future");
+        // This means that a message next to be played, has been found,
+        // but the time to play is in future.
         return false;
     }
 
@@ -946,7 +950,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, ppkt=0, @return false
+    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=0, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
     //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, ppkt=PKT, @return LOCAL(PKT.TS) <= NOW
 

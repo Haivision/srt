@@ -458,7 +458,6 @@ inline RefType* AddressOf(RefType& r)
 {
     return (RefType*)(&(unsigned char&)(r));
 }
-
 template <class T>
 struct explicit_t
 {

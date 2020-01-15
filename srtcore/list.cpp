@@ -54,6 +54,15 @@ modified by
 
 #include "list.h"
 #include "packet.h"
+#include "logging.h"
+
+// Use "inline namespace" in C++11
+namespace srt_logging
+{
+    extern Logger dlog, mglog;
+}
+
+using srt_logging::mglog;
 
 
 using namespace srt::sync;
@@ -88,7 +97,7 @@ CSndLossList::~CSndLossList()
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-   CGuard listguard(m_ListLock);
+   CGuard listguard (m_ListLock);
 
    if (0 == m_iLength)
    {
@@ -258,7 +267,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::remove(int32_t seqno)
 {
-   CGuard listguard(m_ListLock);
+   CGuard listguard (m_ListLock);
 
    if (0 == m_iLength)
       return;
@@ -370,14 +379,14 @@ void CSndLossList::remove(int32_t seqno)
 
 int CSndLossList::getLossLength() const
 {
-   CGuard listguard(m_ListLock);
+   CGuard listguard (m_ListLock);
 
    return m_iLength;
 }
 
 int32_t CSndLossList::popLostSeq()
 {
-   CGuard listguard(m_ListLock);
+   CGuard listguard (m_ListLock);
 
    if (0 == m_iLength)
      return -1;
@@ -463,6 +472,13 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
    // otherwise searching for the position where the node should be
    int offset = CSeqNo::seqoff(m_caSeq[m_iHead].data1, seqno1);
+   if (offset < 0)
+   {
+       LOGC(mglog.Error, log << "RCV-LOSS/insert: IPE: new LOSS %(" << seqno1 << "-" << seqno2
+               << ") PREDATES HEAD %" << m_caSeq[m_iHead].data1 << " -- REJECTING");
+       return;
+   }
+
    int loc = (m_iHead + offset) % m_iSize;
 
    if ((-1 != m_caSeq[m_iTail].data2) && (CSeqNo::incseq(m_caSeq[m_iTail].data2) == seqno1))

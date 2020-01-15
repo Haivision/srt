@@ -119,6 +119,10 @@ struct CEPollDesc
 
    typedef std::map<SRTSOCKET, Wait> ewatch_t;
 
+#if ENABLE_HEAVY_LOGGING
+std::string DisplayEpollWatch();
+#endif
+
 private:
 
    /// Sockets that are subscribed for events in this eid.

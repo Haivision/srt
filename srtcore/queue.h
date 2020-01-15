@@ -342,7 +342,7 @@ private:
    {
       SRTSOCKET m_iID;        // UDT socket ID (self)
       CUDT* m_pUDT;           // UDT instance
-      sockaddr_any m_PeerAddr;		// UDT sonnection peer address
+      sockaddr_any m_PeerAddr;// UDT sonnection peer address
       srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
    };
    std::list<CRL> m_lRendezvousID;    // The sockets currently in rendezvous mode
