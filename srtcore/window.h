@@ -167,19 +167,19 @@ public:
    /// Calculate the packets arrival speed.
    /// @return Packet arrival speed (packets per second).
 
-   int getPktRcvSpeed(ref_t<int> bytesps) const
+   int getPktRcvSpeed(int& w_bytesps) const
    {
        // Lock access to the packet Window
        srt::sync::CGuard cg(m_lockPktWindow);
 
        int pktReplica[ASIZE];          // packet information window (inter-packet time)
-       return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, *bytesps);
+       return getPktRcvSpeed_in(m_aPktWindow, pktReplica, m_aBytesWindow, ASIZE, (w_bytesps));
    }
 
    int getPktRcvSpeed() const
    {
        int bytesps;
-       return getPktRcvSpeed(Ref(bytesps));
+       return getPktRcvSpeed((bytesps));
    }
 
    /// Estimate the bandwidth.

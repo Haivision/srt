@@ -74,10 +74,9 @@ m_extension(false)
       m_piPeerIP[i] = 0;
 }
 
-int CHandShake::store_to(char* buf, ref_t<size_t> r_size)
+int CHandShake::store_to(char* buf, size_t& w_size)
 {
-   size_t& size = *r_size;
-   if (size < m_iContentSize)
+   if (w_size < m_iContentSize)
       return -1;
 
    int32_t* p = reinterpret_cast<int32_t*>(buf);
@@ -92,7 +91,7 @@ int CHandShake::store_to(char* buf, ref_t<size_t> r_size)
    for (int i = 0; i < 4; ++ i)
       *p++ = m_piPeerIP[i];
 
-   size = m_iContentSize;
+   w_size = m_iContentSize;
 
    return 0;
 }
