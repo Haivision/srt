@@ -639,7 +639,6 @@ SRT_API       int srt_cleanup(void);
 //
 // Socket operations
 //
-
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int af, int type, int protocol) SRT_ATR_DEPRECATED;
 SRT_API SRTSOCKET srt_create_socket();
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);

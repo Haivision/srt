@@ -82,7 +82,6 @@ extern LogConfig srt_logger_config;
 
 
 void CUDTSocket::construct()
-
 {
       pthread_mutex_init(&m_AcceptLock, NULL);
       pthread_cond_init(&m_AcceptCond, NULL);
@@ -943,7 +942,6 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t 
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    CUDTSocket* s = locateSocket(u);
-
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
