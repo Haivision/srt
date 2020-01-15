@@ -45,6 +45,7 @@ written by
 #include <vector>
 
 #include "sync.h"
+#include "netinet_any.h"
 #include "udt.h"
 
 class CCacheItem
@@ -235,7 +236,7 @@ class CInfoBlock
 {
 public:
    uint32_t m_piIP[4];		// IP address, machine read only, not human readable format
-   int m_iIPversion;		// IP version
+   int m_iIPversion;   		// Address family: AF_INET or AF_INET6
    uint64_t m_ullTimeStamp;	// last update time
    int m_iRTT;			// RTT
    int m_iBandwidth;		// estimated bandwidth
@@ -259,7 +260,7 @@ public:
       /// @param [in] ver IP version
       /// @param [out] ip the result machine readable IP address in integer array
 
-   static void convert(const sockaddr* addr, int ver, uint32_t ip[]);
+   static void convert(const sockaddr_any& addr, uint32_t ip[4]);
 };
 
 
