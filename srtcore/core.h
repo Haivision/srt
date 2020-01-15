@@ -691,7 +691,7 @@ private: // Receiving related data
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    pthread_cond_t m_RcvTsbPdCond;
+    srt::sync::CCondition m_RcvTsbPdCond;
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -710,26 +710,26 @@ private:
 
 
 private: // synchronization: mutexes and conditions
-    pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
+    srt::sync::CMutex m_ConnectionLock;            // used to synchronize connection operation
 
-    pthread_cond_t m_SendBlockCond;              // used to block "send" call
-    pthread_mutex_t m_SendBlockLock;             // lock associated to m_SendBlockCond
+    srt::sync::CCondition m_SendBlockCond;              // used to block "send" call
+    srt::sync::CMutex m_SendBlockLock;             // lock associated to m_SendBlockCond
 
-    pthread_mutex_t m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
+    srt::sync::CMutex m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
 
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    pthread_mutex_t m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
+    srt::sync::CMutex m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
 
 
-    pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
-    pthread_mutex_t m_RecvDataLock;              // lock associated to m_RecvDataCond
+    srt::sync::CCondition m_RecvDataCond;               // used to block "recv" when there is no data
+    srt::sync::CMutex m_RecvDataLock;              // lock associated to m_RecvDataCond
 
-    pthread_mutex_t m_SendLock;                  // used to synchronize "send" call
-    pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
+    srt::sync::CMutex m_SendLock;                  // used to synchronize "send" call
+    srt::sync::CMutex m_RecvLock;                  // used to synchronize "recv" call
 
-    pthread_mutex_t m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
+    srt::sync::CMutex m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
 
-    pthread_mutex_t m_StatsLock;                 // used to synchronize access to trace statistics
+    srt::sync::CMutex m_StatsLock;                 // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();

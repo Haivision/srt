@@ -113,7 +113,7 @@ CSndBuffer::CSndBuffer(int size, int mss)
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
 
-   pthread_mutex_init(&m_BufLock, NULL);
+   createMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
@@ -135,7 +135,7 @@ CSndBuffer::~CSndBuffer()
       delete temp;
    }
 
-   pthread_mutex_destroy(&m_BufLock);
+   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, ref_t<int32_t> r_msgno)
@@ -712,7 +712,7 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
 
-   pthread_mutex_init(&m_BytesCountLock, NULL);
+   createMutex(m_BytesCountLock, "BytesCount");
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -727,7 +727,7 @@ CRcvBuffer::~CRcvBuffer()
 
    delete [] m_pUnit;
 
-   pthread_mutex_destroy(&m_BytesCountLock);
+   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -1556,7 +1556,7 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& mutex_to_lock)
+void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, CMutex& mutex_to_lock)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
         return;
