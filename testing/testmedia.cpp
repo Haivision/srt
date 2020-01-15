@@ -954,7 +954,7 @@ void SrtModel::Establish(ref_t<std::string> name)
             // so that it will be reused next time.
             sockaddr_any s(AF_INET);
             int namelen = s.size();
-            if (srt_getsockname(Socket(), &s, &namelen) == SRT_ERROR)
+            if (srt_getsockname(Socket(), (s.get()), (&namelen)) == SRT_ERROR)
             {
                 Error("srt_getsockname");
             }

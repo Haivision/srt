@@ -40,7 +40,7 @@ TEST(Core, ListenCallback) {
 
     // Create server on 127.0.0.1:5555
 
-    const SRTSOCKET server_sock = srt_socket(AF_INET, 0, 0);
+    const SRTSOCKET server_sock = srt_create_socket();
     ASSERT_GT(server_sock, 0);    // socket_id should be > 0
 
     sockaddr_in bind_sa;
@@ -66,7 +66,7 @@ TEST(Core, ListenCallback) {
 
     cerr << "TEST 1: Connect to an encrypted socket correctly (should succeed)\n";
 
-    client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
     string username_spec = "#!::u=admin";
@@ -85,7 +85,7 @@ TEST(Core, ListenCallback) {
 
 
     cerr << "TEST 2: Connect with a wrong password (should reject the handshake)\n";
-    client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
     password = "thelokalmanager"; // (typo :D)
@@ -103,7 +103,7 @@ TEST(Core, ListenCallback) {
 
 
     cerr << "TEST 3: Connect with wrong username (should exit on exception)\n";
-    client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
     username_spec = "#!::u=haivision";
