@@ -150,8 +150,6 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
 
-const char* const duration_unit_names [] = { "s", "ms", "us" };
-
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
     const uint64_t total_us  = timestamp.us_since_epoch();
