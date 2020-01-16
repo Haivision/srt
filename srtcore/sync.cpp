@@ -98,13 +98,250 @@ int64_t get_cpu_frequency()
 
 const int64_t s_cpu_frequency = get_cpu_frequency();
 
+
+// Automatically lock in constructor
+CGuard::CGuard(CMutex& lock, explicit_t<bool> shouldwork):
+    m_Mutex(lock),
+    m_iLocked(-1)
+{
+    if (shouldwork)
+    {
+        Lock();
+    }
+}
+
+// Automatically unlock in destructor
+CGuard::~CGuard()
+{
+    if (m_iLocked == 0)
+    {
+        Unlock();
+    }
+}
+
+int CGuard::enterCS(CMutex& lock, explicit_t<bool> block)
+{
+    int retval;
+    if (block)
+    {
+        retval = pthread_mutex_lock(RawAddr(lock));
+    }
+    else
+    {
+        retval = pthread_mutex_trylock(RawAddr(lock));
+    }
+    return retval;
+}
+
+int CGuard::leaveCS(CMutex& lock)
+{
+    return pthread_mutex_unlock(RawAddr(lock));
+}
+
+/// This function checks if the given thread id
+/// is a thread id, stating that a thread id variable
+/// that doesn't hold a running thread, is equal to
+/// a null thread (pthread_t()).
+bool isthread(const pthread_t& thr)
+{
+    return pthread_equal(thr, pthread_t()) == 0; // NOT equal to a null thread
+}
+
+bool jointhread(pthread_t& thr)
+{
+    int ret = pthread_join(thr, NULL);
+    thr = pthread_t(); // prevent dangling
+    return ret == 0;
+}
+
+bool jointhread(pthread_t& thr, void*& result)
+{
+    int ret = pthread_join(thr, &result);
+    thr = pthread_t();
+    return ret == 0;
+}
+
+void createMutex(CMutex& lock, const char* name SRT_ATR_UNUSED)
+{
+    pthread_mutexattr_t* pattr = NULL;
+    pthread_mutex_init(RawAddr(lock), pattr);
+}
+
+void releaseMutex(CMutex& lock)
+{
+    pthread_mutex_destroy(RawAddr(lock));
+}
+
+void createCond(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+    pthread_condattr_t* pattr = NULL;
+    pthread_cond_init(RawAddr(cond), pattr);
+}
+
+void createCond_monotonic(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+
+    pthread_condattr_t* pattr = NULL;
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pattr = &CondAttribs;
+#endif
+    pthread_cond_init(RawAddr(cond), pattr);
+}
+
+
+void releaseCond(CCondition& cond)
+{
+    pthread_cond_destroy(RawAddr(cond));
+}
+
+CSync::CSync(CCondition& cond, CGuard& g)
+    : m_cond(&cond), m_mutex(&g.m_Mutex)
+{
+    // XXX it would be nice to check whether the owner is also current thread
+    // but this can't be done portable way.
+
+    // When constructed by this constructor, the user is expected
+    // to only call signal_locked() function. You should pass the same guard
+    // variable that you have used for construction as its argument.
+}
+
+CSync::CSync(CCondition& cond, CMutex& mutex, Nolock)
+    : m_cond(&cond)
+    , m_mutex(&mutex)
+{
+    // We expect that the mutex is NOT locked at this moment by the current thread,
+    // but it is perfectly ok, if the mutex is locked by another thread. We'll just wait.
+
+    // When constructed by this constructor, the user is expected
+    // to only call lock_signal() function.
+}
+
+void CSync::wait()
+{
+    THREAD_PAUSED();
+    pthread_cond_wait(RawAddr(*m_cond), RawAddr(*m_mutex));
+    THREAD_RESUMED();
+}
+
+bool CSync::wait_until(const steady_clock::time_point& exptime)
+{
+    // This will work regardless as to which clock is in use. The time
+    // should be specified as steady_clock::time_point, so there's no
+    // question of the timer base.
+    steady_clock::time_point now = steady_clock::now();
+    if (now >= exptime)
+        return false; // timeout
+
+    THREAD_PAUSED();
+    bool signaled = CondWaitFor(m_cond, m_mutex, exptime - now) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+/// Block the call until either @a timestamp time achieved
+/// or the conditional is signaled.
+/// @param [in] delay Maximum time to wait since the moment of the call
+/// @retval true Resumed due to getting a CV signal
+/// @retval false Resumed due to being past @a timestamp
+bool CSync::wait_for(const steady_clock::duration& delay)
+{
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
+    THREAD_PAUSED();
+    bool signaled = CondWaitFor(m_cond, m_mutex, delay) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+/// Block the call until either @a timestamp time achieved
+/// or the conditional is signaled.
+/// @param [in] delay Maximum time to wait since the moment of the call
+/// @retval true Resumed due to getting a CV signal
+/// @retval false Resumed due to being past @a timestamp
+bool CSync::wait_for_monotonic(const steady_clock::duration& delay)
+{
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
+    THREAD_PAUSED();
+    bool signaled = CondWaitFor_monotonic(m_cond, m_mutex, delay) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+
+void CSync::lock_signal()
+{
+    // We expect m_nolock == true.
+    lock_signal(*m_cond, *m_mutex);
+}
+
+void CSync::lock_signal(CCondition& cond, CMutex& mutex)
+{
+    // Not using CGuard here because it would be logged
+    // and this will result in unnecessary excessive logging.
+    pthread_mutex_lock(RawAddr(mutex));
+    pthread_cond_signal(RawAddr(cond));
+    pthread_mutex_unlock(RawAddr(mutex));
+}
+
+void CSync::lock_broadcast(CCondition& cond, CMutex& mutex)
+{
+    // Not using CGuard here because it would be logged
+    // and this will result in unnecessary excessive logging.
+    pthread_mutex_lock(RawAddr(mutex));
+    pthread_cond_broadcast(RawAddr(cond));
+    pthread_mutex_unlock(RawAddr(mutex));
+}
+
+void CSync::signal_locked(CGuard& lk SRT_ATR_UNUSED)
+{
+    // We expect m_nolock == false.
+    pthread_cond_signal(RawAddr(*m_cond));
+}
+
+void CSync::signal_relaxed()
+{
+    signal_relaxed(*m_cond);
+}
+
+void CSync::signal_relaxed(CCondition& cond)
+{
+    pthread_cond_signal(RawAddr(cond));
+}
+
+void CSync::broadcast_relaxed(CCondition& cond)
+{
+    pthread_cond_broadcast(RawAddr(cond));
+}
+
 } // namespace sync
 } // namespace srt
+
 
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
 {
     return m_timestamp / s_cpu_frequency;
+}
+
+timespec srt::sync::us_to_timespec(const uint64_t time_us)
+{
+    timespec timeout;
+    timeout.tv_sec         = time_us / 1000000;
+    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    return timeout;
 }
 
 template <>
@@ -189,33 +426,30 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
-int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
     timeval now;
     gettimeofday(&now, 0);
-    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + count_microseconds(rel_time);
-    timeout.tv_sec         = time_us / 1000000;
-    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
+    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 
 #if ENABLE_MONOTONIC_CLOCK
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
     clock_gettime(CLOCK_MONOTONIC, &timeout);
-    const uint64_t time_us =
-        timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + count_microseconds(rel_time);
-    timeout.tv_sec = time_us / 1000000;
-    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
+    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
 #else
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
+int srt::sync::CondWaitFor_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
-    return wait_for(cond, mutex, rel_time);
+    return CondWaitFor(cond, mutex, rel_time);
 }
 #endif
