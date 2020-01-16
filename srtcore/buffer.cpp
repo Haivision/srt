@@ -1473,7 +1473,15 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
 
 steady_clock::time_point CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-   return(getTsbPdTimeBase(timestamp) + m_tdTsbPdDelay + microseconds_from(timestamp + m_DriftTracer.drift()));
+    const steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
+
+    // Display only ingredients, not the result, as the result will
+    // be displayed anyway in the next logs.
+    HLOGC(mglog.Debug, log << "getPktTsbPdTime: TIMEBASE="
+            << FormatTime(time_base) << " + dTS="
+            << timestamp << "us + LATENCY=" << FormatDuration<DUNIT_MS>(m_tdTsbPdDelay)
+            << " + uDRIFT=" << m_DriftTracer.drift());
+    return(time_base + m_tdTsbPdDelay + microseconds_from(timestamp + m_DriftTracer.drift()));
 }
 
 int CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const steady_clock::duration& delay)
