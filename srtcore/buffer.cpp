@@ -1473,7 +1473,7 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
 
 steady_clock::time_point CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-    steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
+    const steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
 
     // Display only ingredients, not the result, as the result will
     // be displayed anyway in the next logs.
