@@ -333,7 +333,7 @@ public:
    // and the lock IS ALREADY APPLIED, use false here to prevent
    // double locking and deadlock in result.
    void remove(const SRTSOCKET& id, bool should_lock);
-   CUDT* retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> id);
+   CUDT* retrieve(const sockaddr_any& addr, SRTSOCKET& id);
 
    void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
 
@@ -466,7 +466,7 @@ public:
       /// @param [out] packet received packet
       /// @return Data size of the packet
 
-   int recvfrom(int32_t id, ref_t<CPacket> packet);
+   int recvfrom(int32_t id, CPacket& to_packet);
 
    void setClosing()
    {
@@ -477,7 +477,7 @@ private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
    // Subroutines of worker
-   EReadStatus worker_RetrieveUnit(ref_t<int32_t> id, ref_t<CUnit*> unit, sockaddr_any& sa);
+   EReadStatus worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
    EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);

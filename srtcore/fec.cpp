@@ -654,11 +654,11 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
     out[off++] = g.flag_clip;
 
     // Ok, now the length clip
-    memcpy(out+off, &g.length_clip, sizeof g.length_clip);
+    memcpy((out + off), &g.length_clip, sizeof g.length_clip);
     off += sizeof g.length_clip;
 
     // And finally the payload clip
-    memcpy(out+off, &g.payload_clip[0], g.payload_clip.size());
+    memcpy((out + off), &g.payload_clip[0], g.payload_clip.size());
 
     // Ready. Now fill the header and finalize other data.
     pkt.length = total_size;

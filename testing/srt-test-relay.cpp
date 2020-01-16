@@ -623,7 +623,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     Verb() << "Establishing SRT connection: " << srt_uri;
 
     ::g_pending_model = &m;
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     ::g_program_established = true;
     ::g_pending_model = nullptr;
