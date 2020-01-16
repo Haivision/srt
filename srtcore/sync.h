@@ -164,6 +164,8 @@ inline int64_t count_microseconds(const TimePoint<steady_clock> tp)
     return static_cast<int64_t>(tp.us_since_epoch());
 }
 
+typedef int64_t count_fn_t(const steady_clock::duration& t);
+
 int64_t count_microseconds(const steady_clock::duration& t);
 int64_t count_milliseconds(const steady_clock::duration& t);
 int64_t count_seconds(const steady_clock::duration& t);
@@ -210,6 +212,45 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
+
+extern const char* const duration_unit_names [];
+
+enum eUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
+
+template <eUnit u>
+struct DurationUnitName;
+
+template<>
+struct DurationUnitName<DUNIT_US>
+{
+    static const char* name() { return "us"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur); }
+};
+
+template<>
+struct DurationUnitName<DUNIT_MS>
+{
+    static const char* name() { return "ms"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000.0; }
+};
+
+template<>
+struct DurationUnitName<DUNIT_S>
+{
+    static const char* name() { return "s"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000000.0; }
+};
+
+template<eUnit UNIT>
+inline std::string FormatDuration(const steady_clock::duration& dur)
+{
+    return Sprint(DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
+}
+
+inline std::string FormatDuration(const steady_clock::duration& dur)
+{
+    return FormatDuration<DUNIT_US>(dur);
+}
 
 }; // namespace sync
 }; // namespace srt
