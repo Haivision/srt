@@ -211,9 +211,9 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
 
-enum eUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
+enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
 
-template <eUnit u>
+template <eDurationUnit u>
 struct DurationUnitName;
 
 template<>
@@ -237,7 +237,7 @@ struct DurationUnitName<DUNIT_S>
     static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000000.0; }
 };
 
-template<eUnit UNIT>
+template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
     return Sprint(DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
