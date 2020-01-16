@@ -221,7 +221,9 @@ Against:
 
 This is important as during the review you usually focus on under which
 exactly condition the following block is executed, less on what exactly
-is passed to the function.
+is passed to the function. It saves time and effort of the reviewers
+if both things are collected in one place rather than dispersed
+throughout the whole line.
 
 
 # Constness
@@ -263,7 +265,9 @@ This splits into the following parts:
 1. Function declaration: just use the pointer or reference type.
 
 2. Function definition: every parameter that is of mutable reference
-type must have the `w_` prefix. In case of pointers, the prefix is `pw_`.
+type must have the `w_` prefix. In case of pointers, the prefix is `pw_`,
+or if the pointer is intended to get passed a raw array to fill, the
+prefix is `aw_`.
 
 3. When a function is called, and it gets parameters passed by mutable
 pointer or reference, the expression, that results in the actualt pointer
@@ -338,21 +342,20 @@ as described below.
 This convention uses a special form of the Hungarian Notation. The
 motivation is explained in (EXPLANATIONS (3)).
 
-Some detailed contentions:
-
-0. The general syntax for the field name is `[pfx][mk][mkx][name]`:
+The general syntax for the field name is `[pfx][mk][mkx][name]`:
 
 * pfx: Field prefix: `m_` for members, `s_` for static, `g_` for global
-* mk: The marker (can be also empty)
+* mk: The marker (can be also empty) - lowercase only
 * mkx: Optional extra marker for specific cases:
    * for fields bound to socket options: `OPT_`
 * name: field name using `PascalCase`
 * Optional sufix `_[unit]`: designates a unit (in specific cases)
 
-1. Size: `m_zNumberElements`: `z` marker defines that the variable
-designates a size of a container or count of some finite elements
-and is using an unsigned type designed for keeping a size (usually
-it's `size_t`).
+Possible marker values (`[mk]` part):
+
+1. Size: `z` marker defines that the variable designates a size of a
+container or count of some finite elements and is using an unsigned type
+designed for keeping a size (usually it's `size_t`): `m_zNumberElements` 
 
 2. Integer type with specific size used to implement the field:
 
@@ -362,7 +365,8 @@ of different size.
 
 * `i` marker designates a 32-bit integer type. Although usually there's
 `int` type meant here, in all today compilers `int` is a 32-bit type,
-even on 64-bit systems.
+even on 64-bit systems. The real type of this variable could be `int`
+or `int32_t`.
 
 * `u` before the integer marker designates an unsigned integer type.
 The integer type must always have a designation of signed or unsigned
@@ -375,6 +379,9 @@ and `z` marker therefore.
 that particular field designates something for which number representation
 is only one of the possible ones - for example, when it designates
 a number of microseconds since epoch.
+
+* Note: there's no `l` marker in use, as well as there's no use of
+`long` type, at least directly, see EXPLANATIONS(4).
 
 3. A variable that designates time should have a marker that states
 that it represents time or duration should have the following
@@ -501,4 +508,20 @@ it and the way how it is being used in the code. The goal of this rule is to
 help prevent misuse of a field due to used unit, relationship character,
 compatibility and needed translations to a different unit or character.
 
+
+4. NO USE OF LONG TYPE
+
+The `long` type's size differs on 32-bit and 64-bit systems and therefore it
+only makes sense to use it if there's something in the hardware reflecting
+this difference. There should be exclusively `int` (or `int32_t`) used for
+32-bit integer and `long long` (or `int64_t`) used for 64-bit type. The
+fixed-size are prefered, if you intend to have a type of certain size,
+although remember that `int64_t` resolves to `long long` on 32-bit systems
+and to `long` (!) on 64-bit systems (this causes confusion in case of
+format strings). Still, variables of `int64_t` type should have `ll`
+prefix, no matter that this type resolves to either `long long` or `long`,
+depending on the platform. And still, as for today platofm definitions,
+the `int` type can be safely treated as 32-bit, though in order to
+highlight the fact that a fixed-size integer is meant, `int32_t` should
+be used - especially if you are going to make operations on single bits.
 
