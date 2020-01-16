@@ -620,7 +620,8 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmreq",
         "EXT:kmrsp",
         "EXT:sid",
-        "EXT:congctl"
+        "EXT:congctl",
+        "EXT:group"
     };
 
 
@@ -686,7 +687,8 @@ extern const char* const srt_rejectreason_msg [] = {
     "Password required or unexpected",
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
-    "Packet Filter type collision"
+    "Packet Filter type collision",
+    "Group settings collision"
 };
 
 const char* srt_rejectreason_str(SRT_REJECT_REASON rid)

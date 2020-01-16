@@ -291,6 +291,7 @@ class CEPoll
 {
 friend class CUDT;
 friend class CRendezvousQueue;
+friend class CUDTGroup;
 
 public:
    CEPoll();
