@@ -224,9 +224,6 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 
 void ExtractPath(string path, string& w_dir, string& w_fname)
 {
-    //string& dir = r_dir;
-    //string& fname = r_fname;
-
     string directory = path;
     string filename = "";
 
