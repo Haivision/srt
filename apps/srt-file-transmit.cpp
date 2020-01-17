@@ -221,7 +221,6 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 }
 
 
-
 void ExtractPath(string path, string& w_dir, string& w_fname)
 {
     string directory = path;
@@ -645,7 +644,7 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri,
 
     string path = fileuri.path();
     string directory, filename;
-    ExtractPath(path,(directory), (filename));
+    ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
@@ -666,7 +665,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     }
 
     string path = fileuri.path(), directory, filename;
-    ExtractPath(path,(directory), (filename));
+    ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);

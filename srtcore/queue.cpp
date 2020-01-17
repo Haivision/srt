@@ -850,7 +850,7 @@ void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
     }
 }
 
-CUDT *CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
+CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
 {
     CGuard     vg(m_RIDVectorLock);
 

@@ -3903,7 +3903,7 @@ EConnectStatus CUDT::processRendezvous(
         w_reqpkt.m_iTimeStamp              = count_microseconds(now - m_stats.tsStartTime);
         HLOGC(mglog.Debug,
               log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
-                  
+
         m_pSndQueue->sendto(serv_addr, w_reqpkt);
 
         return CONN_ACCEPT;
@@ -4927,7 +4927,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket &hspkt, CHandShake& w_hs)
+void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(mglog.Debug, log << "acceptAndRespond: setting up data according to handshake");
 
