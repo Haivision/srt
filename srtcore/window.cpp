@@ -92,7 +92,7 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
             r_ack = r_aSeq[i].iACK;
 
             // calculate RTT
-            int rtt = count_microseconds(steady_clock::now() - r_aSeq[i].tsTimeStamp);
+            const int rtt = count_microseconds(steady_clock::now() - r_aSeq[i].tsTimeStamp);
 
             if (i + 1 == r_iHead)
             {
@@ -121,7 +121,7 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
          r_ack = r_aSeq[j].iACK;
 
          // calculate RTT
-         int rtt = count_microseconds(steady_clock::now() - r_aSeq[j].tsTimeStamp);
+         const int rtt = count_microseconds(steady_clock::now() - r_aSeq[j].tsTimeStamp);
 
          if (j == r_iHead)
          {

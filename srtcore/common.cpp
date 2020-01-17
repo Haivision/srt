@@ -70,16 +70,13 @@ modified by
 using namespace srt::sync;
 
 
-pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
+Mutex CTimer::m_EventLock;
 pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
 
-CTimer::CTimer():
-m_tsSchedTime(),
-m_TickCond(),
-m_TickLock()
+CTimer::CTimer()
+    : m_tsSchedTime()
+    , m_TickCond()
 {
-    pthread_mutex_init(&m_TickLock, NULL);
-
 #if ENABLE_MONOTONIC_CLOCK
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
@@ -92,16 +89,15 @@ m_TickLock()
 
 CTimer::~CTimer()
 {
-    pthread_mutex_destroy(&m_TickLock);
     pthread_cond_destroy(&m_TickCond);
 }
 
-void CTimer::sleepto(const srt::sync::steady_clock::time_point &nexttime)
+void CTimer::sleepto(const srt::sync::steady_clock::time_point& nexttime)
 {
-   // Use class member such that the method can be interrupted by others
-   m_tsSchedTime = nexttime;
+    // Use class member such that the method can be interrupted by others
+    m_tsSchedTime = nexttime;
 
-   steady_clock::time_point t = steady_clock::now();
+    steady_clock::time_point t = steady_clock::now();
 
 #if USE_BUSY_WAITING
 #if defined(_WIN32)
@@ -139,9 +135,9 @@ void CTimer::sleepto(const srt::sync::steady_clock::time_point &nexttime)
 #endif // ENABLE_MONOTONIC_CLOCK
 
         THREAD_PAUSED();
-        pthread_mutex_lock(&m_TickLock);
-        pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-        pthread_mutex_unlock(&m_TickLock);
+        enterCS(m_TickLock);
+        pthread_cond_timedwait(&m_TickCond, &m_TickLock.ref(), &timeout);
+        leaveCS(m_TickLock);
         THREAD_RESUMED();
 
         t = steady_clock::now();
@@ -164,7 +160,7 @@ void CTimer::sleepto(const srt::sync::steady_clock::time_point &nexttime)
         __nop();
 #endif
 
-       t = steady_clock::now();
+        t = steady_clock::now();
     }
 #endif // USE_BUSY_WAITING
 }
@@ -202,9 +198,9 @@ CTimer::EWait CTimer::waitForEvent()
         timeout.tv_sec = now.tv_sec + 1;
         timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
     }
-    pthread_mutex_lock(&m_EventLock);
-    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
-    pthread_mutex_unlock(&m_EventLock);
+    enterCS(m_EventLock);
+    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock.ref(), &timeout);
+    leaveCS(m_EventLock);
 
     return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
 }
@@ -218,65 +214,6 @@ int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64
     timeout.tv_nsec = (time_us % 1000000) * 1000;
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
-}
-
-
-// Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock, bool shouldwork):
-    m_Mutex(lock),
-    m_iLocked(-1)
-{
-    if (shouldwork)
-        m_iLocked = pthread_mutex_lock(&m_Mutex);
-}
-
-// Automatically unlock in destructor
-CGuard::~CGuard()
-{
-    if (m_iLocked == 0)
-        pthread_mutex_unlock(&m_Mutex);
-}
-
-// After calling this on a scoped lock wrapper (CGuard),
-// the mutex will be unlocked right now, and no longer
-// in destructor
-void CGuard::forceUnlock()
-{
-    if (m_iLocked == 0)
-    {
-        pthread_mutex_unlock(&m_Mutex);
-        m_iLocked = -1;
-    }
-}
-
-int CGuard::enterCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_lock(&lock);
-}
-
-int CGuard::leaveCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_unlock(&lock);
-}
-
-void CGuard::createMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_init(&lock, NULL);
-}
-
-void CGuard::releaseMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_destroy(&lock);
-}
-
-void CGuard::createCond(pthread_cond_t& cond)
-{
-    pthread_cond_init(&cond, NULL);
-}
-
-void CGuard::releaseCond(pthread_cond_t& cond)
-{
-    pthread_cond_destroy(&cond);
 }
 
 //
@@ -761,24 +698,6 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 
 namespace srt_logging
 {
-
-std::string FormatTime(uint64_t time)
-{
-    using namespace std;
-
-    time_t sec = time/1000000;
-    time_t usec = time%1000000;
-
-    time_t tt = sec;
-    struct tm tm = SysLocalTime(tt);
-
-    char tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
-
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << usec;
-    return out.str();
-}
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {

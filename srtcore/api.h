@@ -97,13 +97,13 @@ public:
    std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
 
    pthread_cond_t m_AcceptCond;              //< used to block "accept" call
-   pthread_mutex_t m_AcceptLock;             //< mutex associated to m_AcceptCond
+   srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
 
    int m_iMuxID;                             //< multiplexer ID
 
-   pthread_mutex_t m_ControlLock;            //< lock this socket exclusively for control APIs: bind/listen/connect
+   srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
 
    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
@@ -212,10 +212,10 @@ private:
 private:
    std::map<SRTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
 
-   pthread_mutex_t m_GlobControlLock;                // used to synchronize UDT API
+   srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
-   pthread_mutex_t m_IDLock;                         // used to synchronize ID generation
-   SRTSOCKET m_SocketIDGenerator;                             // seed to generate a new unique socket ID
+   srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
+   SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
@@ -231,17 +231,17 @@ private:
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
-   pthread_mutex_t m_MultiplexerLock;
+   srt::sync::Mutex            m_MultiplexerLock;
 
 private:
    CCache<CInfoBlock>* m_pCache;			// UDT network information cache
 
 private:
    volatile bool m_bClosing;
-   pthread_mutex_t m_GCStopLock;
+   srt::sync::Mutex m_GCStopLock;
    pthread_cond_t m_GCStopCond;
 
-   pthread_mutex_t m_InitLock;
+   srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 

@@ -261,20 +261,18 @@ CSndUList::CSndUList()
     , m_pTimer(NULL)
 {
     m_pHeap = new CSNode *[m_iArrayLength];
-    pthread_mutex_init(&m_ListLock, NULL);
 }
 
 CSndUList::~CSndUList()
 {
     delete[] m_pHeap;
-    pthread_mutex_destroy(&m_ListLock);
 }
 
-void CSndUList::update(const CUDT *u, EReschedule reschedule)
+void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
     CGuard listguard(m_ListLock);
 
-    CSNode *n = u->m_pSNode;
+    CSNode* n = u->m_pSNode;
 
     if (n->m_iHeapLoc >= 0)
     {
@@ -395,7 +393,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     m_iLastEntry++;
     m_pHeap[m_iLastEntry] = n;
     n->m_tsTimeStamp = ts;
-    
+
     int q = m_iLastEntry;
     int p = q;
     while (p != 0)
@@ -418,9 +416,8 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
     {
-        pthread_mutex_lock(m_pWindowLock);
+        CGuard lock(*m_pWindowLock);
         pthread_cond_signal(m_pWindowCond);
-        pthread_mutex_unlock(m_pWindowLock);
     }
 }
 
@@ -469,12 +466,10 @@ CSndQueue::CSndQueue()
     , m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_WindowLock()
     , m_WindowCond()
     , m_bClosing(false)
 {
     pthread_cond_init(&m_WindowCond, NULL);
-    pthread_mutex_init(&m_WindowLock, NULL);
 }
 
 CSndQueue::~CSndQueue()
@@ -486,13 +481,12 @@ CSndQueue::~CSndQueue()
         m_pTimer->interrupt();
     }
 
-    pthread_mutex_lock(&m_WindowLock);
+    enterCS(m_WindowLock);
     pthread_cond_signal(&m_WindowCond);
-    pthread_mutex_unlock(&m_WindowLock);
+    leaveCS(m_WindowLock);
     if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
     pthread_cond_destroy(&m_WindowCond);
-    pthread_mutex_destroy(&m_WindowLock);
 
     delete m_pSndUList;
 }
@@ -534,7 +528,7 @@ void *CSndQueue::worker(void *param)
 
     while (!self->m_bClosing)
     {
-        steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
+        const steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
         self->m_WorkerStats.lIteration++;
@@ -548,17 +542,17 @@ void *CSndQueue::worker(void *param)
 
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
-            pthread_mutex_lock(&self->m_WindowLock);
+            enterCS(self->m_WindowLock);
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
             {
-                pthread_cond_wait(&self->m_WindowCond, &self->m_WindowLock);
+                pthread_cond_wait(&self->m_WindowCond, &self->m_WindowLock.ref());
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
                 self->m_WorkerStats.lCondWait++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
             }
             THREAD_RESUMED();
-            pthread_mutex_unlock(&self->m_WindowLock);
+            leaveCS(self->m_WindowLock);
 
             continue;
         }
@@ -813,13 +807,10 @@ CRendezvousQueue::CRendezvousQueue()
     : m_lRendezvousID()
     , m_RIDVectorLock()
 {
-    pthread_mutex_init(&m_RIDVectorLock, NULL);
 }
 
 CRendezvousQueue::~CRendezvousQueue()
 {
-    pthread_mutex_destroy(&m_RIDVectorLock);
-
     m_lRendezvousID.clear();
 }
 
@@ -839,16 +830,20 @@ void CRendezvousQueue::insert(
 
 void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
 {
-    CGuard vg(m_RIDVectorLock, should_lock);
+    if (should_lock)
+        enterCS(m_RIDVectorLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_iID == id)
         {
             m_lRendezvousID.erase(i);
-            return;
+            break;
         }
     }
+
+    if (should_lock)
+        leaveCS(m_RIDVectorLock);
 }
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, ref_t<SRTSOCKET> r_id)
@@ -1025,13 +1020,9 @@ CRcvQueue::CRcvQueue()
     , m_vNewEntry()
     , m_IDLock()
     , m_mBuffer()
-    , m_BufferLock()
     , m_BufferCond()
 {
-    pthread_mutex_init(&m_BufferLock, NULL);
     pthread_cond_init(&m_BufferCond, NULL);
-    pthread_mutex_init(&m_LSLock, NULL);
-    pthread_mutex_init(&m_IDLock, NULL);
 }
 
 CRcvQueue::~CRcvQueue()
@@ -1039,10 +1030,7 @@ CRcvQueue::~CRcvQueue()
     m_bClosing = true;
     if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
-    pthread_mutex_destroy(&m_BufferLock);
     pthread_cond_destroy(&m_BufferCond);
-    pthread_mutex_destroy(&m_LSLock);
-    pthread_mutex_destroy(&m_IDLock);
 
     delete m_pRcvUList;
     delete m_pHash;
@@ -1529,7 +1517,7 @@ int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 
     if (i == m_mBuffer.end())
     {
-        SyncEvent::wait_for(&m_BufferCond, &m_BufferLock, seconds_from(1));
+        SyncEvent::wait_for(&m_BufferCond, &m_BufferLock.ref(), seconds_from(1));
 
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())
