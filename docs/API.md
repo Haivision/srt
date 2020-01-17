@@ -662,10 +662,13 @@ immediately upon experiencing a "gap" in sequences.
 - `0`: relative to input rate (see `SRTO_INPUTBW`) 
 - `>0`: absolute limit in B/s
 
-- *NOTE: This option has a default value of -1. Although in case when the stream
-rate is mostly constant it is recommended to use value 0 here and shape the
-bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
-
+- *NOTE: This option has a default value of -1, regardless of the mode. However
+for live streams it is typically recommended to set the value 0 here and rely
+on `SRTO_INPUTBW` and `SRTO_OHEADBW` options. However, if you want to do so,
+you should make sure that your stream has a rather constant bitrate, or changes
+are smooth at best, as high bitrate changes may work against the measurement.
+SRT cannot state that this is always the case for a live stream, therefore for
+safety reasons the default -1 remains even in live mode.*
 
 ---
 
