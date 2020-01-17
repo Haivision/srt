@@ -1879,7 +1879,7 @@ void* CUDTUnited::garbageCollect(void* p)
       if (empty)
          break;
 
-      CTimer::sleep();
+      SleepFor(milliseconds_from(1));
    }
 
    THREAD_EXIT();

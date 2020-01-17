@@ -560,11 +560,7 @@ public:
       /// @retval WT_ERROR The function has exit due to an error
 
    static EWait waitForEvent();
-
-      /// sleep for a short interval. exact sleep time does not matter
-
-   static void sleep();
-   
+ 
       /// Wait for condition with timeout 
       /// @param [in] cond Condition variable to wait for
       /// @param [in] mutex locked mutex associated with the condition variable
