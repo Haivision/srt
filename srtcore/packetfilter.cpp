@@ -23,6 +23,7 @@
 
 using namespace std;
 using namespace srt_logging;
+using namespace srt::sync;
 
 bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
 {

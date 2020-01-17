@@ -189,6 +189,66 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+srt::sync::Mutex::Mutex()
+{
+    pthread_mutex_init(&m_mutex, NULL);
+}
+
+srt::sync::Mutex::~Mutex()
+{
+    pthread_mutex_destroy(&m_mutex);
+}
+
+int srt::sync::Mutex::lock()
+{
+    return pthread_mutex_lock(&m_mutex);
+}
+
+int srt::sync::Mutex::unlock()
+{
+    return pthread_mutex_unlock(&m_mutex);
+}
+
+bool srt::sync::Mutex::try_lock()
+{
+    return (pthread_mutex_trylock(&m_mutex) == 0);
+}
+
+srt::sync::ScopedLock::ScopedLock(Mutex& m)
+    : m_mutex(m)
+{
+    m_mutex.lock();
+}
+
+srt::sync::ScopedLock::~ScopedLock()
+{
+    m_mutex.unlock();
+}
+
+//
+//
+//
+
+srt::sync::UniqueLock::UniqueLock(Mutex& m)
+    : m_Mutex(m)
+{
+    m_iLocked = m_Mutex.lock();
+}
+
+srt::sync::UniqueLock::~UniqueLock()
+{
+    unlock();
+}
+
+void srt::sync::UniqueLock::unlock()
+{
+    if (m_iLocked == 0)
+    {
+        m_Mutex.unlock();
+        m_iLocked = -1;
+    }
+}
+
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
