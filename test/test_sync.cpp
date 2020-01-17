@@ -264,9 +264,7 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
 template <bool USE_MONOTONIC_CLOCK = false>
 void TestSyncWaitFor()
 {
-    pthread_mutex_t mutex;
-    pthread_mutex_init(&mutex, NULL);
-
+    Mutex mutex;
     pthread_cond_t  cond;
 #if ENABLE_MONOTONIC_CLOCK
     if (USE_MONOTONIC_CLOCK)
@@ -289,9 +287,9 @@ void TestSyncWaitFor()
         const steady_clock::duration   timeout = microseconds_from(tout_us);
         const steady_clock::time_point start = steady_clock::now();
         if (USE_MONOTONIC_CLOCK)
-            EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex, timeout) == 0);
+            EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex.ref(), timeout) == 0);
         else
-            EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex, timeout) == 0);
+            EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex.ref(), timeout) == 0);
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {
@@ -305,7 +303,6 @@ void TestSyncWaitFor()
         }
     }
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
@@ -324,16 +321,15 @@ TEST(SyncEvent, WaitForMonotonic)
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
+    Mutex mutex;
     pthread_cond_t  cond;
-    pthread_mutex_t mutex;
     pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
-        CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        ScopedLock lock(*mutex);
+        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -343,20 +339,18 @@ TEST(SyncEvent, WaitForNotifyOne)
     const int wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res == 0);
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
+    Mutex mutex;
     pthread_cond_t  cond;
-    pthread_mutex_t mutex;
     pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex) {
-        CGuard gcguard(*mutex);
-        return pthread_cond_wait(cond, mutex);
+    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex) {
+        ScopedLock lock(*mutex);
+        return pthread_cond_wait(cond, &mutex->ref());
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
@@ -365,21 +359,19 @@ TEST(SyncEvent, WaitNotifyOne)
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
+    Mutex mutex;
     pthread_cond_t  cond;
-    pthread_mutex_t mutex;
     pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
-        CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        ScopedLock lock(*mutex);
+        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -400,21 +392,19 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // Expect timeout on another thread
     EXPECT_FALSE(isready1 ? (wait_async2_res.get() == 0) : (wait_async1_res.get() == 0));
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
+    Mutex mutex;
     pthread_cond_t  cond;
-    pthread_mutex_t mutex;
     pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
-        CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        ScopedLock lock(*mutex);
+        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -431,21 +421,19 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     EXPECT_TRUE(wait_async1_res.get() == 0);
     EXPECT_TRUE(wait_async2_res.get() == 0);
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
+    Mutex mutex;
     pthread_cond_t  cond;
-    pthread_mutex_t mutex;
     pthread_cond_init(&cond, NULL);
-    pthread_mutex_init(&mutex, NULL);
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& timeout) {
-        CGuard gcguard(*mutex);
-        return SyncEvent::wait_for(cond, mutex, timeout);
+    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        ScopedLock lock(*mutex);
+        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -455,7 +443,6 @@ TEST(SyncEvent, WaitForNotifyAll)
     const int wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res == 0);
 
-    pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond);
 }
 
