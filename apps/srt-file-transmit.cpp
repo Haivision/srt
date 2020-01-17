@@ -19,7 +19,6 @@ written by
 #include <iterator>
 #include <vector>
 #include <map>
-#include <tuple>
 #include <stdexcept>
 #include <string>
 #include <csignal>
@@ -223,8 +222,11 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 
 
 
-tuple<string, string> ExtractPath(string path)
+void ExtractPath(string path, string& w_dir, string& w_fname)
 {
+    //string& dir = r_dir;
+    //string& fname = r_fname;
+
     string directory = path;
     string filename = "";
 
@@ -270,7 +272,8 @@ tuple<string, string> ExtractPath(string path)
         directory = wd + "/" + directory;
     }
 
-    return make_tuple(directory, filename);
+    w_dir = directory;
+    w_fname = filename;
 }
 
 bool DoUpload(UriParser& ut, string path, string filename,
@@ -645,7 +648,7 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri,
 
     string path = fileuri.path();
     string directory, filename;
-    tie(directory, filename) = ExtractPath(path);
+    ExtractPath(path,(directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
@@ -666,7 +669,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     }
 
     string path = fileuri.path(), directory, filename;
-    tie(directory, filename) = ExtractPath(path);
+    ExtractPath(path,(directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
