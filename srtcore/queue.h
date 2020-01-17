@@ -516,8 +516,8 @@ private:
    pthread_mutex_t m_IDLock;
 
    std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
-   pthread_mutex_t m_PassLock;
-   pthread_cond_t m_PassCond;
+   pthread_mutex_t m_BufferLock;
+   pthread_cond_t m_BufferCond;
 
 private:
    CRcvQueue(const CRcvQueue&);

@@ -1025,11 +1025,11 @@ CRcvQueue::CRcvQueue()
     , m_vNewEntry()
     , m_IDLock()
     , m_mBuffer()
-    , m_PassLock()
-    , m_PassCond()
+    , m_BufferLock()
+    , m_BufferCond()
 {
-    pthread_mutex_init(&m_PassLock, NULL);
-    pthread_cond_init(&m_PassCond, NULL);
+    pthread_mutex_init(&m_BufferLock, NULL);
+    pthread_cond_init(&m_BufferCond, NULL);
     pthread_mutex_init(&m_LSLock, NULL);
     pthread_mutex_init(&m_IDLock, NULL);
 }
@@ -1039,8 +1039,8 @@ CRcvQueue::~CRcvQueue()
     m_bClosing = true;
     if (!pthread_equal(m_WorkerThread, pthread_t()))
         pthread_join(m_WorkerThread, NULL);
-    pthread_mutex_destroy(&m_PassLock);
-    pthread_cond_destroy(&m_PassCond);
+    pthread_mutex_destroy(&m_BufferLock);
+    pthread_cond_destroy(&m_BufferCond);
     pthread_mutex_destroy(&m_LSLock);
     pthread_mutex_destroy(&m_IDLock);
 
@@ -1522,14 +1522,14 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
 
 int CRcvQueue::recvfrom(int32_t id, ref_t<CPacket> r_packet)
 {
-    CGuard   bufferlock(m_PassLock);
+    CGuard   bufferlock(m_BufferLock);
     CPacket &packet = *r_packet;
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
-        SyncEvent::wait_for(&m_PassCond, &m_PassLock, seconds_from(1));
+        SyncEvent::wait_for(&m_BufferCond, &m_BufferLock, seconds_from(1));
 
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())
@@ -1603,7 +1603,7 @@ void CRcvQueue::removeConnector(const SRTSOCKET &id, bool should_lock)
     HLOGC(mglog.Debug, log << "removeConnector: removing %" << id);
     m_pRendezvousQueue->remove(id, should_lock);
 
-    CGuard bufferlock(m_PassLock);
+    CGuard bufferlock(m_BufferLock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
@@ -1644,14 +1644,14 @@ CUDT *CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
 {
-    CGuard bufferlock(m_PassLock);
+    CGuard bufferlock(m_BufferLock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
         m_mBuffer[id].push(pkt);
-        pthread_cond_signal(&m_PassCond);
+        pthread_cond_signal(&m_BufferCond);
     }
     else
     {
