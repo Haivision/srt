@@ -1185,7 +1185,7 @@ based on MSS value. Receive buffer must not be greater than FC size.
 | `SRTO_UDP_SNDBUF`     |       | pre     | `int` | bytes  | 65536    | MSS..  |
 
 - UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
-on `SRTO_MSS` value. *SRT recommended value:* `64*1024`
+on `SRTO_MSS` value.
 
 ---
 
