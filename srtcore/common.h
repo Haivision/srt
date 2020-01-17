@@ -560,7 +560,7 @@ public:
       /// @retval WT_ERROR The function has exit due to an error
 
    static EWait waitForEvent();
- 
+   
       /// Wait for condition with timeout 
       /// @param [in] cond Condition variable to wait for
       /// @param [in] mutex locked mutex associated with the condition variable
@@ -574,64 +574,12 @@ private:
    srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
-   pthread_mutex_t m_TickLock;
+   srt::sync::Mutex m_TickLock;
 
    static pthread_cond_t m_EventCond;
-   static pthread_mutex_t m_EventLock;
+   static srt::sync::Mutex m_EventLock;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-
-class CGuard
-{
-public:
-   /// Constructs CGuard, which locks the given mutex for
-   /// the scope where this object exists.
-   /// @param lock Mutex to lock
-   /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
-   ~CGuard();
-
-public:
-   static int enterCS(pthread_mutex_t& lock);
-   static int leaveCS(pthread_mutex_t& lock);
-
-   static void createMutex(pthread_mutex_t& lock);
-   static void releaseMutex(pthread_mutex_t& lock);
-
-   static void createCond(pthread_cond_t& cond);
-   static void releaseCond(pthread_cond_t& cond);
-
-   void forceUnlock();
-
-private:
-   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
-   int m_iLocked;                       // Locking status
-
-   CGuard& operator=(const CGuard&);
-};
-
-class InvertedGuard
-{
-    pthread_mutex_t* m_pMutex;
-public:
-
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
-    {
-        if ( !smutex )
-            return;
-
-        CGuard::leaveCS(*smutex);
-    }
-
-    ~InvertedGuard()
-    {
-        if ( !m_pMutex )
-            return;
-
-        CGuard::enterCS(*m_pMutex);
-    }
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
