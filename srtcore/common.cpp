@@ -209,15 +209,6 @@ CTimer::EWait CTimer::waitForEvent()
     return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
 }
 
-void CTimer::sleep()
-{
-   #ifndef _WIN32
-      usleep(10);
-   #else
-      Sleep(1);
-   #endif
-}
-
 int CTimer::condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay) {
     timeval now;
     gettimeofday(&now, 0);

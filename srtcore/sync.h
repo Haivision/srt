@@ -180,6 +180,15 @@ inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+inline void SleepFor(const steady_clock::duration& t)
+{
+#ifndef _WIN32
+    usleep(count_microseconds(t)); // microseconds
+#else
+    Sleep(count_milliseconds(t));
+#endif
+}
+
 class SyncEvent
 {
 public:
