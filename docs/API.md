@@ -665,10 +665,10 @@ immediately upon experiencing a "gap" in sequences.
 - *NOTE: This option has a default value of -1, regardless of the mode. However
 for live streams it is typically recommended to set the value 0 here and rely
 on `SRTO_INPUTBW` and `SRTO_OHEADBW` options. However, if you want to do so,
-you should make sure that your stream has a rather constant bitrate, or changes
-are smooth at best, as high bitrate changes may work against the measurement.
-SRT cannot state that this is always the case for a live stream, therefore for
-safety reasons the default -1 remains even in live mode.*
+you should make sure that your stream has a fairly constant bitrate, or that
+changes are not abrupt, as high bitrate changes may work against the
+measurement. SRT cannot ensure that this is always the case for a live stream,
+therefore the default -1 remains even in live mode.*
 
 ---
 
