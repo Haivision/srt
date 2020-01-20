@@ -6130,8 +6130,8 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         unitsize = int((tosend >= block) ? block : tosend);
 
         {
-            CGuard lk      (m_SendBlockLock);
-            CSync sendcond (m_SendBlockCond,  lk);
+            CGuard lock(m_SendBlockLock);
+            CSync sendcond (m_SendBlockCond,  lock);
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
                 sendcond.wait();
@@ -8397,8 +8397,8 @@ int CUDT::processData(CUnit *in_unit)
 
         if (m_bTsbPd)
         {
-           HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
-           CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+            HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
+            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 

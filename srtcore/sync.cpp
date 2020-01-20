@@ -328,7 +328,7 @@ int srt::sync::Mutex::unlock()
 
 bool srt::sync::Mutex::try_lock()
 {
-    return (pthread_mutex_lock(&m_mutex) == 0);
+    return (pthread_mutex_trylock(&m_mutex) == 0);
 }
 
 srt::sync::ScopedLock::ScopedLock(Mutex& m)
