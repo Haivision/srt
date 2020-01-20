@@ -112,8 +112,6 @@ CSndBuffer::CSndBuffer(int size, int mss)
    }
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
-
-   pthread_mutex_init(&m_BufLock, NULL);
 }
 
 CSndBuffer::~CSndBuffer()
@@ -134,8 +132,6 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
-
-   pthread_mutex_destroy(&m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_msgno)
@@ -195,7 +191,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     }
     m_pLastBlock = s;
 
-    CGuard::enterCS(m_BufLock);
+    enterCS(m_BufLock);
     m_iCount += size;
 
     m_iBytesCount += len;
@@ -207,7 +203,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
     updAvgBufSize(time);
 #endif
 
-    CGuard::leaveCS(m_BufLock);
+    leaveCS(m_BufLock);
 
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -314,11 +310,11 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    }
    m_pLastBlock = s;
 
-   CGuard::enterCS(m_BufLock);
+   enterCS(m_BufLock);
    m_iCount += size;
    m_iBytesCount += total;
 
-   CGuard::leaveCS(m_BufLock);
+   leaveCS(m_BufLock);
 
    m_iNextMsgNo ++;
    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
@@ -707,8 +703,6 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
-
-   pthread_mutex_init(&m_BytesCountLock, NULL);
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -722,8 +716,6 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
-
-   pthread_mutex_destroy(&m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -1469,7 +1461,15 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
 
 steady_clock::time_point CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-   return(getTsbPdTimeBase(timestamp) + m_tdTsbPdDelay + microseconds_from(timestamp + m_DriftTracer.drift()));
+    const steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
+
+    // Display only ingredients, not the result, as the result will
+    // be displayed anyway in the next logs.
+    HLOGC(mglog.Debug, log << "getPktTsbPdTime: TIMEBASE="
+            << FormatTime(time_base) << " + dTS="
+            << timestamp << "us + LATENCY=" << FormatDuration<DUNIT_MS>(m_tdTsbPdDelay)
+            << " + uDRIFT=" << m_DriftTracer.drift());
+    return(time_base + m_tdTsbPdDelay + microseconds_from(timestamp + m_DriftTracer.drift()));
 }
 
 int CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const steady_clock::duration& delay)
@@ -1552,7 +1552,7 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& mutex_to_lock)
+void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_lock)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
         return;
@@ -1576,7 +1576,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& 
 
     const steady_clock::duration iDrift = steady_clock::now() - (getTsbPdTimeBase(timestamp_us) + microseconds_from(timestamp_us));
 
-    CGuard::enterCS(mutex_to_lock);
+    enterCS(mutex_to_lock);
 
     bool updated = m_DriftTracer.update(count_microseconds(iDrift));
 
@@ -1604,7 +1604,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, pthread_mutex_t& 
         HLOGC(dlog.Debug, log << "DRIFT=" << count_milliseconds(iDrift) << "ms TB REMAINS: " << FormatTime(m_tsTsbPdTimeBase));
     }
 
-    CGuard::leaveCS(mutex_to_lock);
+    leaveCS(mutex_to_lock);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
@@ -1737,9 +1737,9 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 {
     static steady_clock::time_point prev_now;
     static steady_clock::time_point prev_srctime;
-    CPacket& pkt = m_pUnit[p]->m_Packet;
+    const CPacket& pkt = m_pUnit[p]->m_Packet;
 
-    int32_t seq = pkt.m_iSeqNo;
+    const int32_t seq = pkt.m_iSeqNo;
 
     steady_clock::time_point nowtime = steady_clock::now();
     steady_clock::time_point srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
