@@ -468,8 +468,6 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
-   pthread_t threadId() { return m_WorkerThread; }
-
    void setClosing()
    {
        m_bClosing = true;

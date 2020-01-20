@@ -1300,7 +1300,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     SRT_REJECT_REASON listener_ret  = SRT_REJ_UNKNOWN;
     bool              have_listener = false;
     {
-        CGuard cg (m_LSLock);
+        CGuard cg(m_LSLock);
         if (m_pListener)
         {
             LOGC(mglog.Note,
@@ -1625,7 +1625,7 @@ bool CRcvQueue::ifNewEntry() { return !(m_vNewEntry.empty()); }
 
 CUDT *CRcvQueue::getNewEntry()
 {
-    CGuard listguard (m_IDLock);
+    CGuard listguard(m_IDLock);
 
     if (m_vNewEntry.empty())
         return NULL;

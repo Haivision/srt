@@ -569,7 +569,7 @@ protected:
         int yes = 1;
         int no = 0;
 
-        m_client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+        m_client_sock = srt_create_socket();
         ASSERT_NE(m_client_sock, SRT_ERROR);
 
         ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -645,7 +645,7 @@ protected:
         int yes = 1;
         int no = 0;
 
-        SRTSOCKET servsock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+        SRTSOCKET servsock = srt_create_socket();
         ASSERT_NE(servsock, SRT_ERROR);
 
         ASSERT_NE(srt_setsockopt(servsock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect

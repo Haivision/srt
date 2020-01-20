@@ -5417,8 +5417,8 @@ bool CUDT::close()
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
 
     // waiting all send and recv calls to stop
-    CGuard sendguard (m_SendLock);
-    CGuard recvguard (m_RecvLock);
+    CGuard sendguard(m_SendLock);
+    CGuard recvguard(m_RecvLock);
 
     // Locking m_RcvBufferLock to protect calling to m_pCryptoControl->decrypt((packet))
     // from the processData(...) function while resetting Crypto Control.
@@ -5441,7 +5441,7 @@ int CUDT::receiveBuffer(char *data, int len)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
-    CGuard recvguard (m_RecvLock);
+    CGuard recvguard(m_RecvLock);
 
     if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
     {
@@ -5700,7 +5700,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     }
     */
 
-    CGuard sendguard (m_SendLock);
+    CGuard sendguard(m_SendLock);
 
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
@@ -5731,7 +5731,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         {
             // wait here during a blocking sending
-            CGuard sendblock_lock (m_SendBlockLock);
+            CGuard sendblock_lock(m_SendBlockLock);
 
             if (m_iSndTimeOut < 0)
             {
@@ -5903,7 +5903,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
-    CGuard recvguard (m_RecvLock);
+    CGuard recvguard(m_RecvLock);
 
     /* XXX DEBUG STUFF - enable when required
        char charbool[2] = {'0', '1'};
@@ -8183,23 +8183,8 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
     }
 }
 
-inline void ThreadCheckAffinity(const char* function SRT_ATR_UNUSED, pthread_t thr SRT_ATR_UNUSED)
-{
-#if ENABLE_THREAD_LOGGING
-    if (thr == pthread_self())
-        return;
-
-    LOGC(mglog.Fatal, log << "IPE: '" << function << "' should not be executed in this thread!");
-    throw std::runtime_error("INTERNAL ERROR: incorrect function affinity");
-#endif
-}
-
-#define THREAD_CHECK_AFFINITY(thr) ThreadCheckAffinity(__FUNCTION__, thr)
-
 int CUDT::processData(CUnit *in_unit)
 {
-    THREAD_CHECK_AFFINITY(m_pRcvQueue->threadId());
-
     if (m_bClosing)
         return -1;
 
@@ -8339,7 +8324,7 @@ int CUDT::processData(CUnit *in_unit)
        // >1 - jump over a packet loss (loss = seqdiff-1)
         if (diff > 1)
         {
-            CGuard lg (m_StatsLock);
+            CGuard lg(m_StatsLock);
             int    loss = diff - 1; // loss is all that is above diff == 1
             m_stats.traceRcvLoss += loss;
             m_stats.rcvLossTotal += loss;
@@ -8362,7 +8347,7 @@ int CUDT::processData(CUnit *in_unit)
         // Start of offset protected section
         // Prevent TsbPd thread from modifying Ack position while adding data
         // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
-        CGuard recvbuf_acklock (m_RcvBufferLock);
+        CGuard recvbuf_acklock(m_RcvBufferLock);
 
         // vector<CUnit*> undec_units;
         if (m_PacketFilter)
@@ -8486,7 +8471,7 @@ int CUDT::processData(CUnit *in_unit)
                         // Crypto flags are still set
                         // It will be acknowledged
                         {
-                            CGuard lg (m_StatsLock);
+                            CGuard lg(m_StatsLock);
                             m_stats.traceRcvUndecrypt += 1;
                             m_stats.traceRcvBytesUndecrypt += pktsz;
                             m_stats.m_rcvUndecryptTotal += 1;
@@ -8626,7 +8611,7 @@ int CUDT::processData(CUnit *in_unit)
             HLOGC(mglog.Debug, log << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
             // if record_loss == false, nothing will be contained here
             // Insert lost sequence numbers to the receiver loss list
-            CGuard lg (m_RcvLossLock);
+            CGuard lg(m_RcvLossLock);
             for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
             {
                 // If loss found, insert them to the receiver loss list
@@ -8784,7 +8769,7 @@ int CUDT::processData(CUnit *in_unit)
 /// This value can be set in options - SRT_LOSSMAXTTL.
 void CUDT::unlose(const CPacket &packet)
 {
-    CGuard lg (m_RcvLossLock);
+    CGuard lg(m_RcvLossLock);
     int32_t sequence = packet.m_iSeqNo;
     m_pRcvLossList->remove(sequence);
 
@@ -8929,7 +8914,7 @@ breakbreak:;
 
 void CUDT::dropFromLossLists(int32_t from, int32_t to)
 {
-    CGuard lg (m_RcvLossLock);
+    CGuard lg(m_RcvLossLock);
     m_pRcvLossList->remove(from, to);
 
     HLOGF(mglog.Debug, "TLPKTDROP seq %d-%d (%d packets)", from, to, CSeqNo::seqoff(from, to));

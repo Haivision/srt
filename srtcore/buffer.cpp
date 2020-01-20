@@ -419,7 +419,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
          p = p->m_pNext;
          if (move)
             m_pCurrBlock = p;
-         msglen++;
+         msglen ++;
       }
 
       HLOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno);
@@ -486,7 +486,7 @@ int CSndBuffer::getCurrBufSize() const
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. w_bytes vs. spantime */
+    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());
@@ -554,7 +554,7 @@ int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_lat
    int dbytes = 0;
    bool move = false;
 
-   CGuard bufferguard (m_BufLock);
+   CGuard bufferguard(m_BufLock);
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++ i)
    {
       dpkts++;
