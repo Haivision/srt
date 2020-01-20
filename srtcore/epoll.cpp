@@ -86,12 +86,10 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
-    CGuard::createMutex(m_EPollLock);
 }
 
 CEPoll::~CEPoll()
 {
-   CGuard::releaseMutex(m_EPollLock);
 }
 
 int CEPoll::create()

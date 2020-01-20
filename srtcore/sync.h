@@ -60,7 +60,7 @@ public: // Assignment operators
     inline Duration operator-(const Duration& rhs) const { return Duration(m_duration - rhs.m_duration); }
     inline Duration operator*(const int& rhs) const { return Duration(m_duration * rhs); }
 
-  private:
+private:
     // int64_t range is from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
     int64_t m_duration;
 };
@@ -176,9 +176,109 @@ inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// Common pthread/chrono section
+// Mutex section
 //
 ///////////////////////////////////////////////////////////////////////////////
+
+/// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
+/// At the moment the extra function ref() is temporally added to allow calls
+/// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
+class Mutex
+{
+    friend class SyncEvent;
+
+public:
+    Mutex();
+    ~Mutex();
+
+public:
+    int lock();
+    int unlock();
+
+    /// @return     true if the lock was acquired successfully, otherwise false
+    bool try_lock();
+
+    // TODO: To be removed with introduction of the CEvent.
+    pthread_mutex_t& ref() { return m_mutex; }
+
+private:
+    pthread_mutex_t m_mutex;
+};
+
+/// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
+class ScopedLock
+{
+public:
+    ScopedLock(Mutex& m);
+    ~ScopedLock();
+
+private:
+    Mutex& m_mutex;
+};
+
+/// A pthread version of std::chrono::unique_lock<mutex>
+class UniqueLock
+{
+    friend class SyncEvent;
+
+public:
+    UniqueLock(Mutex &m);
+    ~UniqueLock();
+
+public:
+    void unlock();
+
+private:
+    int m_iLocked;
+    Mutex& m_Mutex;
+};
+
+/// The purpose of this typedef is to reduce the number of changes in the code (renamings)
+/// and produce less merge conflicts with some other parallel work done.
+/// TODO: Replace CGuard with ScopedLock. Use UniqueLock only when required.
+typedef UniqueLock CGuard;
+
+
+inline void enterCS(Mutex &m) { m.lock(); }
+inline void leaveCS(Mutex &m) { m.unlock(); }
+
+
+class InvertedLock
+{
+    Mutex *m_pMutex;
+
+  public:
+    InvertedLock(Mutex *m)
+        : m_pMutex(m)
+    {
+        if (!m_pMutex)
+            return;
+
+        leaveCS(*m_pMutex);
+    }
+
+    ~InvertedLock()
+    {
+        if (!m_pMutex)
+            return;
+        enterCS(*m_pMutex);
+    }
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Event (CV) section
+//
+///////////////////////////////////////////////////////////////////////////////
+
+inline void SleepFor(const steady_clock::duration& t)
+{
+#ifndef _WIN32
+    usleep(count_microseconds(t)); // microseconds
+#else
+    Sleep(count_milliseconds(t));
+#endif
+}
 
 class SyncEvent
 {
@@ -210,6 +310,43 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
+
+enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
+
+template <eDurationUnit u>
+struct DurationUnitName;
+
+template<>
+struct DurationUnitName<DUNIT_US>
+{
+    static const char* name() { return "us"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur); }
+};
+
+template<>
+struct DurationUnitName<DUNIT_MS>
+{
+    static const char* name() { return "ms"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000.0; }
+};
+
+template<>
+struct DurationUnitName<DUNIT_S>
+{
+    static const char* name() { return "s"; }
+    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000000.0; }
+};
+
+template<eDurationUnit UNIT>
+inline std::string FormatDuration(const steady_clock::duration& dur)
+{
+    return Sprint(DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
+}
+
+inline std::string FormatDuration(const steady_clock::duration& dur)
+{
+    return FormatDuration<DUNIT_US>(dur);
+}
 
 }; // namespace sync
 }; // namespace srt

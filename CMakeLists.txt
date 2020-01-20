@@ -358,8 +358,6 @@ endif()
 set (srt_libspec_shared ${ENABLE_SHARED})
 set (srt_libspec_static ${ENABLE_STATIC})
 
-set (haicrypt_libspec VIRTUAL)
-
 set (srtpack_libspec_common)
 if (srt_libspec_shared)
 	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
@@ -559,8 +557,6 @@ endif()
 # so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>.
 set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
 
-add_library(haicrypt_virtual OBJECT ${SOURCES_haicrypt} ${SOURCES_common})
-
 # NOTE: The "virtual library" is a library specification that cmake
 # doesn't support (the library of OBJECT type is something in kind of that,
 # but not fully supported - for example it doesn't support transitive flags,
@@ -592,13 +588,11 @@ configure_file("srtcore/version.h.in" "version.h" @ONLY)
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt})
+add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt} ${SOURCES_haicrypt} ${SOURCES_common})
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
-	foreach (tar srt_virtual haicrypt_virtual)
-		set_target_properties(${tar} PROPERTIES POSITION_INDEPENDENT_CODE 1)
-	endforeach()
+	set_target_properties(srt_virtual PROPERTIES POSITION_INDEPENDENT_CODE 1)
 
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
 	if (MICROSOFT)
@@ -610,11 +604,7 @@ if (ENABLE_SHARED)
 	endif()
 endif()
 
-# Manual handling of dependency on virtual library
-# By setting the target, all settings applied to the haicrypt target
-# will now apply to the dependent library.
-#list(APPEND SOURCES_srt ${SOURCES_haicrypt})
-set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual> $<TARGET_OBJECTS:haicrypt_virtual>)
+set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt} ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
@@ -670,29 +660,13 @@ if (srt_libspec_static)
 	endif()
 endif()
 
-
-
-# ---
-# And back to target: haicrypt. Both targets must be defined
-# prior to setting flags, and after defining the list of sources
-# can no longer be extended.
-#
-# For haicrypt.spec = VIRTUAL, these settings apply to srt.
-# Otherwise they apply to haicrypt.
-# ---
-
-
-target_include_directories(haicrypt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
+target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
 if (MICROSOFT)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 elseif (MINGW)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32)
 endif()
-
-# ---
-# So, back to target: srt. Setting the rest of the settings for srt target.
-# ---
 
 # Applying this to public includes is not transitive enough.
 # On Windows, apps require this as well, so it's safer to
@@ -714,10 +688,10 @@ endforeach()
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
-target_compile_definitions(haicrypt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
+target_compile_definitions(srt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
-	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC) 
-	target_compile_definitions(haicrypt_virtual PRIVATE -DHAICRYPT_EXPORTS)
+	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
+	target_compile_definitions(srt_virtual PRIVATE -DHAICRYPT_EXPORTS)
 endif()
 
 if (srt_libspec_shared)

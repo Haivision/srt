@@ -152,6 +152,12 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
+    if (is_zero(timestamp))
+    {
+        // Use special string for 0
+        return "00:00:00.000000";
+    }
+
     const uint64_t total_us  = timestamp.us_since_epoch();
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
@@ -187,6 +193,66 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     ostringstream out;
     out << tmp_buf << setfill('0') << setw(6) << (timestamp.us_since_epoch() % 1000000) << " [SYS]";
     return out.str();
+}
+
+srt::sync::Mutex::Mutex()
+{
+    pthread_mutex_init(&m_mutex, NULL);
+}
+
+srt::sync::Mutex::~Mutex()
+{
+    pthread_mutex_destroy(&m_mutex);
+}
+
+int srt::sync::Mutex::lock()
+{
+    return pthread_mutex_lock(&m_mutex);
+}
+
+int srt::sync::Mutex::unlock()
+{
+    return pthread_mutex_unlock(&m_mutex);
+}
+
+bool srt::sync::Mutex::try_lock()
+{
+    return (pthread_mutex_trylock(&m_mutex) == 0);
+}
+
+srt::sync::ScopedLock::ScopedLock(Mutex& m)
+    : m_mutex(m)
+{
+    m_mutex.lock();
+}
+
+srt::sync::ScopedLock::~ScopedLock()
+{
+    m_mutex.unlock();
+}
+
+//
+//
+//
+
+srt::sync::UniqueLock::UniqueLock(Mutex& m)
+    : m_Mutex(m)
+{
+    m_iLocked = m_Mutex.lock();
+}
+
+srt::sync::UniqueLock::~UniqueLock()
+{
+    unlock();
+}
+
+void srt::sync::UniqueLock::unlock()
+{
+    if (m_iLocked == 0)
+    {
+        m_Mutex.unlock();
+        m_iLocked = -1;
+    }
 }
 
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)

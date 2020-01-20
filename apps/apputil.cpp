@@ -460,16 +460,14 @@ shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat
     {
     case SRTSTATS_PROFMAT_JSON:
         return make_shared<SrtStatsJson>();
-        break;
     case SRTSTATS_PROFMAT_CSV:
         return make_shared<SrtStatsCsv>();
-        break;
     case SRTSTATS_PROFMAT_2COLS:
         return make_shared<SrtStatsCols>();
-        break;
     default:
-        return nullptr;
+        break;
     }
+    return nullptr;
 }
 
 SrtStatsPrintFormat ParsePrintFormat(string pf)
