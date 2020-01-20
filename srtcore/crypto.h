@@ -119,7 +119,8 @@ public:
     void updateKmState(int cmd, size_t srtlen);
 
     // Detailed processing
-    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
+    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv,
+            uint32_t srtdata_out[], size_t&);
 
     // This returns:
     // 1 - the given payload is the same as the currently used key
@@ -218,7 +219,7 @@ public:
         m_iRcvKmKeyLen = keylen;
     }
 
-    bool createCryptoCtx(ref_t<HaiCrypt_Handle> rh, size_t keylen, HaiCrypt_CryptoDir tx);
+    bool createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir tx, HaiCrypt_Handle& rh);
 
     int getSndCryptoFlags() const
     {
@@ -253,14 +254,14 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(ref_t<CPacket> r_packet);
+    EncryptionStatus encrypt(CPacket& w_packet);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts
     /// only if the encryption correctly configured, otherwise it
     /// fails. After successful decryption, the ENCKEYSPEC part
     // in PH_MSGNO is set to EK_NOENC.
-    EncryptionStatus decrypt(ref_t<CPacket> r_packet);
+    EncryptionStatus decrypt(CPacket& w_packet);
 
     ~CCryptoControl();
 };
