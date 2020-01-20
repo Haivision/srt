@@ -164,7 +164,7 @@ bool CSync::wait_for(const steady_clock::duration& delay)
 
 void CSync::lock_signal()
 {
-    // We expect m_nolock == true.
+    // EXPECTED: m_mutex is not locked.
     lock_signal(*m_cond, *m_mutex);
 }
 
@@ -188,9 +188,22 @@ void CSync::lock_broadcast(pthread_cond_t& cond, Mutex& mutex)
 
 void CSync::signal_locked(CGuard& lk SRT_ATR_UNUSED)
 {
-    // We expect m_nolock == false.
+    // EXPECTED: lk.mutex() is LOCKED.
     pthread_cond_signal(&(*m_cond));
 }
+
+// The signal_relaxed and broadcast_relaxed functions are to be used in case
+// when you don't care whether the associated mutex is locked or not (you
+// accept the case that a mutex isn't locked and the signal gets effectively
+// missed), or you somehow know that the mutex is locked, but you don't have
+// access to the associated CGuard object. This function, although it does
+// the same thing as signal_locked() and broadcast_locked(), is here for
+// the user to declare explicitly that the signal/broadcast is done without
+// being prematurely certain that the associated mutex is locked.
+//
+// It is then expected that whenever these functions are used, an extra
+// comment is provided to explain, why the use of the relaxed signaling is
+// correctly used.
 
 void CSync::signal_relaxed()
 {
@@ -214,14 +227,6 @@ template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
 {
     return m_timestamp / s_cpu_frequency;
-}
-
-timespec srt::sync::us_to_timespec(const uint64_t time_us)
-{
-    timespec timeout;
-    timeout.tv_sec         = time_us / 1000000;
-    timeout.tv_nsec        = (time_us % 1000000) * 1000;
-    return timeout;
 }
 
 template <>
@@ -369,6 +374,14 @@ void srt::sync::UniqueLock::unlock()
 srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 {
     return &m_Mutex;
+}
+
+static timespec us_to_timespec(const uint64_t time_us)
+{
+    timespec timeout;
+    timeout.tv_sec         = time_us / 1000000;
+    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    return timeout;
 }
 
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)

@@ -174,8 +174,6 @@ Duration<steady_clock> seconds_from(int64_t t_s);
 
 inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 
-timespec us_to_timespec(const uint64_t time_us);
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //
