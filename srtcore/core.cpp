@@ -614,7 +614,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void *optval, int optlen)
         memset(&m_CryptoSecret, 0, sizeof(m_CryptoSecret));
         m_CryptoSecret.typ = HAICRYPT_SECTYP_PASSPHRASE;
         m_CryptoSecret.len = (optlen <= (int)sizeof(m_CryptoSecret.str) ? optlen : (int)sizeof(m_CryptoSecret.str));
-        memcpy(m_CryptoSecret.str, optval, m_CryptoSecret.len);
+        memcpy((m_CryptoSecret.str), optval, m_CryptoSecret.len);
 #else
         if (optlen == 0)
             break;
@@ -1418,7 +1418,7 @@ size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int
 
     srtlen = SRT_HS__SIZE; // We use only that much space.
 
-    memset(srtdata, 0, sizeof(uint32_t) * srtlen);
+    memset((srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
     srtdata[SRT_HS_VERSION] = m_lSrtVersion; /* Required version */
     srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
@@ -1874,7 +1874,7 @@ bool CUDT::createSrtHandshake(
 
     // Now attach the SRT handshake for HSREQ
     size_t    offset = ra_size;
-    uint32_t* p      = reinterpret_cast<uint32_t *>(w_pkt.m_pcData);
+    uint32_t *p      = reinterpret_cast<uint32_t *>(w_pkt.m_pcData);
     // NOTE: since this point, ra_size has a size in int32_t elements, NOT BYTES.
 
     // The first 4-byte item is the CMD/LENGTH spec.
@@ -3910,7 +3910,7 @@ EConnectStatus CUDT::processRendezvous(
         setPacketTS(w_reqpkt, now);
         HLOGC(mglog.Debug,
               log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
-                  
+
         m_pSndQueue->sendto(serv_addr, w_reqpkt);
         return CONN_ACCEPT;
     }
@@ -4935,7 +4935,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket &hspkt, CHandShake& w_hs)
+void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(mglog.Debug, log << "acceptAndRespond: setting up data according to handshake");
 
@@ -5878,7 +5878,7 @@ int CUDT::recvmsg(char *data, int len, uint64_t &srctime)
     return receiveBuffer(data, len);
 }
 
-int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
+int CUDT::recvmsg2(char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
     if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -5895,7 +5895,7 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return receiveBuffer(data, len);
 }
 
-int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl)
+int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
     // Recvmsg isn't restricted to the congctl type, it's the most
     // basic method of passing the data. You can retrieve data as
@@ -7302,7 +7302,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     leaveCS(m_StatsLock);
 }
 
-void CUDT::processCtrl(const CPacket& ctrlpkt)
+void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
@@ -9648,7 +9648,7 @@ SRT_REJECT_REASON CUDT::rejectReason(SRTSOCKET u)
     return s->m_pUDT->m_RejectReason;
 }
 
-bool CUDT::runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
+bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.
 

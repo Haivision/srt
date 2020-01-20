@@ -294,7 +294,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
     insert_(steady_clock::now(), u);
 }
 
-int CSndUList::pop(sockaddr_any& addr, CPacket &pkt)
+int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 {
     CGuard listguard(m_ListLock);
 
@@ -320,12 +320,12 @@ int CSndUList::pop(sockaddr_any& addr, CPacket &pkt)
         return -1;
 
     // pack a packet from the socket
-    const std::pair<int, steady_clock::time_point> res_time = u->packData(pkt);
+    const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
 
     if (res_time.first <= 0)
         return -1;
 
-    addr = u->m_PeerAddr;
+    w_addr = u->m_PeerAddr;
 
     // insert a new entry, ts is the next processing time
     const steady_clock::time_point send_time = res_time.second;
@@ -365,7 +365,7 @@ void CSndUList::realloc_()
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    memcpy(temp, m_pHeap, sizeof(CSNode *) * m_iArrayLength);
+    memcpy((temp), m_pHeap, sizeof(CSNode *) * m_iArrayLength);
     m_iArrayLength *= 2;
     delete[] m_pHeap;
     m_pHeap = temp;
@@ -593,7 +593,6 @@ void *CSndQueue::worker(void *param)
         // it is time to send the next pkt
         sockaddr_any addr;
         CPacket      pkt;
-        sockaddr_any source_addr;
         if (self->m_pSndUList->pop((addr), (pkt)) < 0)
         {
             continue;
@@ -623,11 +622,11 @@ void *CSndQueue::worker(void *param)
     return NULL;
 }
 
-int CSndQueue::sendto(const sockaddr_any& addr, CPacket& packet)
+int CSndQueue::sendto(const sockaddr_any& w_addr, CPacket& w_packet)
 {
     // send out the packet immediately (high priority), this is a control packet
-    m_pChannel->sendto(addr, packet);
-    return (int)packet.getLength();
+    m_pChannel->sendto(w_addr, w_packet);
+    return (int)w_packet.getLength();
 }
 
 //
@@ -852,7 +851,7 @@ void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
         leaveCS(m_RIDVectorLock);
 }
 
-CUDT *CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
+CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
 {
     CGuard     vg(m_RIDVectorLock);
 
@@ -1392,7 +1391,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     // stored in the rendezvous queue (see CRcvQueue::registerConnector)
     // or simply 0, but then at least the address must match one of these.
     // If the id was 0, it will be set to the actual socket ID of the returned CUDT.
-    CUDT* u = m_pRendezvousQueue->retrieve(addr, (id));
+    CUDT *u = m_pRendezvousQueue->retrieve(addr, (id));
     if (!u)
     {
         // this socket is then completely unknown to the system.

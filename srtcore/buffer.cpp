@@ -919,7 +919,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - w_passack: false (the report concerns a packet with an exactly next sequence)
     // - w_skipseqno == -1: no packets to skip towards the first RTP
-    // - w_curpktseq: sequence number for reported packet (for debug purposes)
+    // - w_curpktseq: that exactly packet that is reported (for debugging purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
@@ -942,9 +942,9 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=0, @return false
+    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=<unchanged>, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
-    //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, ppkt=PKT, @return LOCAL(PKT.TS) <= NOW
+    //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, w_curpktseq=PKT, @return LOCAL(PKT.TS) <= NOW
 
     /* 
      * No acked packets ready but caller want to know next packet to wait for
