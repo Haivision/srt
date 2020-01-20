@@ -54,7 +54,7 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -83,7 +83,7 @@ public:
 
     FileTarget(const string& path): ofile(path, ios::out | ios::trunc | ios::binary) {}
 
-    int Write(const char* data, size_t size, ostream &SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t size, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         ofile.write(data, size);
         return !(ofile.bad()) ? (int) size : 0;
@@ -598,7 +598,7 @@ SrtModel::SrtModel(string host, int port, map<string,string> par)
     m_port = port;
 }
 
-void SrtModel::Establish(ref_t<std::string> name)
+void SrtModel::Establish(std::string& w_name)
 {
     // This does connect or accept.
     // When this returned true, the caller should create
@@ -614,10 +614,10 @@ void SrtModel::Establish(ref_t<std::string> name)
 
         PrepareClient();
 
-        if (name.get() != "")
+        if (w_name != "")
         {
-            Verb() << "Connect with requesting stream [" << name.get() << "]";
-            UDT::setstreamid(m_sock, *name);
+            Verb() << "Connect with requesting stream [" << w_name << "]";
+            UDT::setstreamid(m_sock, w_name);
         }
         else
         {
@@ -660,8 +660,8 @@ void SrtModel::Establish(ref_t<std::string> name)
         Verb() << "Accepting a client...";
         AcceptNewClient();
         // This rewrites m_sock with a new SRT socket ("accepted" socket)
-        *name = UDT::getstreamid(m_sock);
-        Verb() << "... GOT CLIENT for stream [" << name.get() << "]";
+        w_name = UDT::getstreamid(m_sock);
+        Verb() << "... GOT CLIENT for stream [" << w_name << "]";
     }
 }
 
@@ -686,7 +686,7 @@ public:
 #endif
     }
 
-    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -728,7 +728,7 @@ public:
         cout.flush();
     }
 
-    int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t len, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         cout.write(data, len);
         return (int) len;
@@ -958,7 +958,7 @@ public:
         eof = false;
     }
 
-    int Read(size_t chunk, bytevector& data, ostream &SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         if (data.size() < chunk)
             data.resize(chunk);
@@ -1007,7 +1007,7 @@ public:
 
     }
 
-    int Write(const char* data, size_t len, ostream &SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t len, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )

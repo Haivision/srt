@@ -61,17 +61,17 @@ struct SortBySequence
     }
 };
 
-void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming, ref_t<loss_seqs_t> r_loss_seqs)
+void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
 {
     const CPacket& rpkt = unit->m_Packet;
 
-    if (m_filter->receive(rpkt, *r_loss_seqs))
+    if (m_filter->receive(rpkt, w_loss_seqs))
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
         unit->m_iFlag = CUnit::GOOD;
         HLOGC(mglog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
-        r_incoming.get().push_back(unit);
+        w_incoming.push_back(unit);
     }
     else
     {
@@ -81,9 +81,9 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         ++m_parent->m_stats.rcvFilterExtraTotal;
     }
 
-    // r_loss_seqs enters empty into this function and can be only filled here.
-    for (loss_seqs_t::iterator i = r_loss_seqs.get().begin();
-            i != r_loss_seqs.get().end(); ++i)
+    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
+    for (loss_seqs_t::iterator i = w_loss_seqs.begin();
+            i != w_loss_seqs.end(); ++i)
     {
         // Sequences here are low-high, if there happens any negative distance
         // here, simply skip and report IPE.
@@ -107,7 +107,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
         HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
 
         size_t nsupply = m_provided.size();
-        InsertRebuilt(*r_incoming, m_unitq);
+        InsertRebuilt(w_incoming, m_unitq);
 
         CGuard lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvFilterSupply += nsupply;
@@ -121,8 +121,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
     // with FREE and therefore will be returned at the next
     // call to getNextAvailUnit().
     unit->m_iFlag = CUnit::FREE;
-    vector<CUnit*>& inco = *r_incoming;
-    for (vector<CUnit*>::iterator i = inco.begin(); i != inco.end(); ++i)
+    for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
     {
         CUnit* u = *i;
         u->m_iFlag = CUnit::FREE;
@@ -130,7 +129,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
 
     // Packets must be sorted by sequence number, ascending, in order
     // not to challenge the SRT's contiguity checker.
-    sort(inco.begin(), inco.end(), SortBySequence());
+    sort(w_incoming.begin(), w_incoming.end(), SortBySequence());
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -148,7 +147,7 @@ void PacketFilter::receive(CUnit* unit, ref_t< std::vector<CUnit*> > r_incoming,
 
 }
 
-bool PacketFilter::packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int kflg)
+bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
     bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
     if (!have)
@@ -156,12 +155,12 @@ bool PacketFilter::packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int k
 
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
-    uint32_t* hdr = r_packet.get().getHeader();
-    memcpy(hdr, m_sndctlpkt.hdr, SRT_PH__SIZE * sizeof(*hdr));
+    uint32_t* hdr = w_packet.getHeader();
+    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH__SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
-    r_packet.get().m_pcData = m_sndctlpkt.buffer;
-    r_packet.get().setLength(m_sndctlpkt.length);
+    w_packet.m_pcData = m_sndctlpkt.buffer;
+    w_packet.setLength(m_sndctlpkt.length);
 
     // This sets only the Packet Boundary flags, while all other things:
     // - Order
@@ -169,10 +168,10 @@ bool PacketFilter::packControlPacket(ref_t<CPacket> r_packet, int32_t seq, int k
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    r_packet.get().m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    w_packet.m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
 
     // ... and then fix only the Crypto flags
-    r_packet.get().setMsgCryptoFlags(EncryptionKeySpec(kflg));
+    w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
 
     // Don't set the ID, it will be later set for any kind of packet.
     // Write the timestamp clip into the timestamp field.
@@ -203,8 +202,8 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 
         CPacket& packet = u->m_Packet;
 
-        memcpy(packet.getHeader(), i->hdr, CPacket::HDR_SIZE);
-        memcpy(packet.m_pcData, i->buffer, i->length);
+        memcpy((packet.getHeader()), i->hdr, CPacket::HDR_SIZE);
+        memcpy((packet.m_pcData), i->buffer, i->length);
         packet.setLength(i->length);
 
         HLOGC(mglog.Debug, log << "FILTER: PROVIDING rebuilt packet %" << packet.getSeqNo());

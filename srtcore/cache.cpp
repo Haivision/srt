@@ -104,15 +104,15 @@ int CInfoBlock::getKey()
    return m_piIP[0] + m_piIP[1] + m_piIP[2] + m_piIP[3];
 }
 
-void CInfoBlock::convert(const sockaddr_any& addr, uint32_t ip[4])
+void CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
 {
    if (addr.family() == AF_INET)
    {
-      ip[0] = addr.sin.sin_addr.s_addr;
-      ip[1] = ip[2] = ip[3] = 0;
+      aw_ip[0] = addr.sin.sin_addr.s_addr;
+      aw_ip[1] = aw_ip[2] = aw_ip[3] = 0;
    }
    else
    {
-      memcpy((ip), addr.sin6.sin6_addr.s6_addr, 16);
+      memcpy((aw_ip), addr.sin6.sin6_addr.s6_addr, sizeof addr.sin6.sin6_addr.s6_addr);
    }
 }

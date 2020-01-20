@@ -267,7 +267,7 @@ class CHandShake
 public:
    CHandShake();
 
-   int store_to(char* buf, ref_t<size_t> size);
+   int store_to(char* buf, size_t& size);
    int load_from(const char* buf, size_t size);
 
 public:
