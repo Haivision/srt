@@ -5393,8 +5393,6 @@ bool CUDT::close()
             sendCtrl(UMSG_SHUTDOWN);
         }
 
-        m_pCryptoControl->close();
-
         // Store current connection information.
         CInfoBlock ib;
         ib.m_iIPversion = m_PeerAddr.family();
@@ -5405,6 +5403,9 @@ bool CUDT::close()
 
         m_bConnected = false;
     }
+
+    if (m_pCryptoControl)
+        m_pCryptoControl->close();
 
     if (m_bTsbPd && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
     {
