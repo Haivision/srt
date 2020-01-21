@@ -61,16 +61,11 @@ modified by
 #include "packet.h"
 #include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
+#include "netinet_any.h"
 #include "utilities.h"
 
 #ifdef _WIN32
     typedef int socklen_t;
-#endif
-
-#ifndef _WIN32
-   #define NET_ERROR errno
-#else
-   #define NET_ERROR WSAGetLastError()
 #endif
 
 using namespace std;
