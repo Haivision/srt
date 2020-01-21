@@ -237,6 +237,15 @@ public: // internal API
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
     static const int COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS = 3000;
 
+    static const int
+        DEF_MSS = 1500,
+        DEF_FLIGHT_SIZE = 25600,
+        DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
+        DEF_LINGER_S = 3*60,  // 3 minutes
+        DEF_UDP_BUFFER_SIZE = 65536,
+        DEF_CONNTIMEO_S = 3; // 3 seconds
+
+
     int handshakeVersion()
     {
         return m_ConnRes.m_iVersion;
@@ -246,14 +255,14 @@ public: // internal API
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "%" << m_SocketID << ":";
+        os << "@" << m_SocketID << ":";
         return os.str();
 #else
         return "";
 #endif
     }
 
-    SRTSOCKET socketID() { return m_SocketID; }
+    SRTSOCKET socketID() const { return m_SocketID; }
 
     static CUDT* getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET> existingSockets();
@@ -261,19 +270,21 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
 
-    bool isTsbPd() { return m_bOPT_TsbPd; }
-    int RTT() { return m_iRTT; }
-    int32_t sndSeqNo() { return m_iSndCurrSeqNo; }
-    int32_t rcvSeqNo() { return m_iRcvCurrSeqNo; }
-    int flowWindowSize() { return m_iFlowWindowSize; }
-    int32_t deliveryRate() { return m_iDeliveryRate; }
-    int bandwidth() { return m_iBandwidth; }
-    int64_t maxBandwidth() { return m_llMaxBW; }
-    int MSS() { return m_iMSS; }
-    size_t maxPayloadSize() { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
-    int32_t ISN() { return m_iISN; }
+    bool isTsbPd() const { return m_bOPT_TsbPd; }
+    int RTT() const { return m_iRTT; }
+    int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
+    int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
+    int flowWindowSize() const { return m_iFlowWindowSize; }
+    int32_t deliveryRate() const { return m_iDeliveryRate; }
+    int bandwidth() const { return m_iBandwidth; }
+    int64_t maxBandwidth() const { return m_llMaxBW; }
+    int MSS() const { return m_iMSS; }
+
+    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
+    int32_t ISN() const { return m_iISN; }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -282,6 +293,14 @@ public: // internal API
     // sequence to be skipped, if that packet has been otherwise arrived through
     // a different channel.
     void skipIncoming(int32_t seq);
+
+
+    SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
+    SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
+    SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
+    SRTU_PROPERTY_RR(pthread_cond_t*, recvDataCond, &m_RecvDataCond);
+    SRTU_PROPERTY_RR(pthread_cond_t*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
@@ -496,6 +515,10 @@ private:
         return m_iSndBufSize - m_pSndBuffer->getCurrBufSize();
     }
 
+    srt::sync::steady_clock::time_point socketStartTime()
+    {
+        return m_stats.tsStartTime;
+    }
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
@@ -504,11 +527,6 @@ private:
 
 private: // Identification
     SRTSOCKET m_SocketID;                        // UDT socket number
-
-    // XXX Deprecated field. In any place where it's used, UDT_DGRAM is
-    // the only allowed value. The functionality of distinguishing the transmission
-    // method is now in m_CongCtl.
-    UDTSockType m_iSockType;                     // Type of the UDT connection (SOCK_STREAM or SOCK_DGRAM)
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
     int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
@@ -649,6 +667,15 @@ private: // Timers
 
     volatile int32_t m_iSndLastFullAck;          // Last full ACK received
     volatile int32_t m_iSndLastAck;              // Last ACK received
+
+    // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
+    // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
+    // this value is shifted to the acknowledged position, and the blocks are removed from the
+    // m_pSndBuffer buffer up to excluding this sequence number.
+    // XXX CONSIDER removing this field and give up the maintenance of this sequence number
+    // to the sending buffer. This way, extraction of an old packet for retransmission should
+    // require only the lost sequence number, and how to find the packet with this sequence
+    // will be up to the sending buffer.
     volatile int32_t m_iSndLastDataAck;          // The real last ACK that updates the sender buffer and loss list
     volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that has been sent
     int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
@@ -699,10 +726,7 @@ private: // Receiving related data
 
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
-    {
-        return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
-    }
+    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {

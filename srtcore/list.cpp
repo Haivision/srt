@@ -54,6 +54,15 @@ modified by
 
 #include "list.h"
 #include "packet.h"
+#include "logging.h"
+
+// Use "inline namespace" in C++11
+namespace srt_logging
+{
+    extern Logger dlog, mglog;
+}
+
+using srt_logging::mglog;
 
 
 using namespace srt::sync;

@@ -84,7 +84,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class UDT_API CUDTException: public std::exception
+class SRT_API CUDTException: public std::exception
 {
 public:
 
@@ -822,6 +822,10 @@ public:
 #endif
 };
 
+namespace srt_logging
+{
+std::string SockStatusStr(SRT_SOCKSTATUS s);
+}
 
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)

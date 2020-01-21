@@ -270,15 +270,10 @@ SRTSOCKET CUDTUnited::newSocket()
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
-   // The "Socket type" is deprecated. For the sake of
-   // HSv4 there will be only a "socket type" field set
-   // in the handshake, always to UDT_DGRAM.
-   //ns->m_pUDT->m_iSockType = (type == SOCK_STREAM) ? UDT_STREAM : UDT_DGRAM;
-   ns->m_pUDT->m_iSockType = UDT_DGRAM;
    ns->m_pUDT->m_pCache = m_pCache;
 
    // protect the m_Sockets structure.
-   enterCS(m_GlobControlLock);
+   CGuard cs(m_GlobControlLock);
    try
    {
       HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
@@ -292,7 +287,6 @@ SRTSOCKET CUDTUnited::newSocket()
       delete ns;
       ns = NULL;
    }
-   leaveCS(m_GlobControlLock);
 
    if (!ns)
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
@@ -316,6 +310,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        return -1;
    }
 
+    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @" << listen << " contacted with backlog=" << ls->m_uiBackLog);
+
    // if this connection has already been processed
    if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
    {
@@ -325,15 +321,17 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
          ns->m_Status = SRTS_CLOSED;
          ns->m_tsClosureTimeStamp = steady_clock::now();
 
-         enterCS(ls->m_AcceptLock);
+         CGuard acceptcg(ls->m_AcceptLock);
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
          ls->m_pAcceptSockets->erase(ns->m_SocketID);
-         leaveCS(ls->m_AcceptLock);
       }
       else
       {
          // connection already exist, this is a repeated connection request
-         // respond with existing HS information
+        // respond with existing HS information
+         HLOGC(mglog.Debug, log
+               << "newConnection: located a WORKING peer @"
+               << w_hs.m_iID << " - ADAPTING.");
 
          w_hs.m_iISN = ns->m_pUDT->m_iISN;
          w_hs.m_iMSS = ns->m_pUDT->m_iMSS;
@@ -345,6 +343,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
          //except for this situation a new connection should be started
       }
+   }
+   else
+   {
+       HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
    }
 
    // exceeding backlog, refuse the connection request
@@ -379,6 +381,11 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
    ns->m_PeerID = w_hs.m_iID;
    ns->m_iISN = w_hs.m_iISN;
+
+   HLOGC(mglog.Debug, log << "newConnection: DATA: lsnid=" << listen
+            << " id=" << ns->m_pUDT->m_SocketID
+            << " peerid=" << ns->m_pUDT->m_PeerID
+            << " ISN=" << ns->m_iISN);
 
    int error = 0;
 
@@ -464,7 +471,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    leaveCS(ls->m_AcceptLock);
 
    // acknowledge users waiting for new connections on the listening socket
-   m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, true);
+   m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, true);
 
    CTimer::triggerEvent();
 
@@ -505,6 +512,12 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    leaveCS(ls->m_AcceptLock);
 
    return 1;
+}
+
+// static forwarder
+int CUDT::installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+{
+    return s_UDTUnited.installAcceptHook(lsn, hook, opaq);
 }
 
 int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
@@ -793,8 +806,11 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
    CGuard cg(s->m_ControlLock);
+   // a socket can "connect" only if it is in the following states:
+   // - OPENED: assume the socket binding parameters are configured
+   // - INIT: configure binding parameters here
+   // - any other (meaning, already connected): report error
 
-   // a socket can "connect" only if it is in INIT or OPENED status
    if (s->m_Status == SRTS_INIT)
    {
        if (s->m_pUDT->m_bRendezvous)
@@ -926,7 +942,7 @@ int CUDTUnited::close(const SRTSOCKET u)
        CTimer::triggerEvent();
    }
 
-   HLOGC(mglog.Debug, log << "%" << u << ": GLOBAL: CLOSING DONE");
+   HLOGC(mglog.Debug, log << "@" << u << ": GLOBAL: CLOSING DONE");
 
    // Check if the ID is still in closed sockets before you access it
    // (the last triggerEvent could have deleted it).
@@ -1008,9 +1024,9 @@ int CUDTUnited::close(const SRTSOCKET u)
    return 0;
 }
 
-void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
+void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* pw_name, int* pw_namelen)
 {
-   if (!name || !namelen)
+   if (!pw_name || !pw_namelen)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
    if (getStatus(u) != SRTS_CONNECTED)
@@ -1025,11 +1041,11 @@ void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* name, int* namelen)
       throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
    const int len = s->m_PeerAddr.size();
-   if (*namelen < len)
+   if (*pw_namelen < len)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   memcpy(name, &s->m_PeerAddr.sa, len);
-   *namelen = len;
+   memcpy((pw_name), &s->m_PeerAddr.sa, len);
+   *pw_namelen = len;
 }
 
 void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namelen)
@@ -1508,17 +1524,19 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    if (i == m_ClosedSockets.end())
       return;
 
-   // decrease multiplexer reference count, and remove it if necessary
-   const int mid = i->second->m_iMuxID;
+   CUDTSocket* s = i->second;
 
-   if (i->second->m_pQueuedSockets)
+   // decrease multiplexer reference count, and remove it if necessary
+   const int mid = s->m_iMuxID;
+
+   if (s->m_pQueuedSockets)
    {
-      CGuard cg(i->second->m_AcceptLock);
+      CGuard cg(s->m_AcceptLock);
 
       // if it is a listener, close all un-accepted sockets in its queue
       // and remove them later
-      for (set<SRTSOCKET>::iterator q = i->second->m_pQueuedSockets->begin();
-         q != i->second->m_pQueuedSockets->end(); ++ q)
+      for (set<SRTSOCKET>::iterator q = s->m_pQueuedSockets->begin();
+         q != s->m_pQueuedSockets->end(); ++ q)
       {
          m_Sockets[*q]->m_pUDT->m_bBroken = true;
          m_Sockets[*q]->m_pUDT->close();
@@ -1532,7 +1550,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    // remove from peer rec
    map<int64_t, set<SRTSOCKET> >::iterator j = m_PeerRec.find(
-      i->second->getPeerSpec());
+      s->getPeerSpec());
    if (j != m_PeerRec.end())
    {
       j->second.erase(u);
@@ -1545,8 +1563,8 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    * remains forever causing epoll_wait to unblock continuously for inexistent
    * sockets. Get rid of all events for this socket.
    */
-   m_EPoll.update_events(u, i->second->m_pUDT->m_sPollID,
-      UDT_EPOLL_IN|UDT_EPOLL_OUT|UDT_EPOLL_ERR, false);
+   m_EPoll.update_events(u, s->m_pUDT->m_sPollID,
+      SRT_EPOLL_IN|SRT_EPOLL_OUT|SRT_EPOLL_ERR, false);
 
    // delete this one
    HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
