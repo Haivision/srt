@@ -224,7 +224,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   pthread_cond_signal(&m_GCStopCond);
+   CSync::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
@@ -500,9 +500,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
 
    // wake up a waiting accept() call
-   enterCS(ls->m_AcceptLock);
-   pthread_cond_signal(&(ls->m_AcceptCond));
-   leaveCS(ls->m_AcceptLock);
+   CSync::lock_signal(ls->m_AcceptCond, ls->m_AcceptLock);
 
    return 1;
 }
@@ -706,7 +704,8 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    // !!only one conection can be set up each time!!
    while (!accepted)
    {
-       CGuard cg(ls->m_AcceptLock);
+       CGuard accept_lock(ls->m_AcceptLock);
+       CSync accept_sync(ls->m_AcceptCond, accept_lock);
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -745,7 +744,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        }
 
        if (!accepted && (ls->m_Status == SRTS_LISTENING))
-           pthread_cond_wait(&(ls->m_AcceptCond), &ls->m_AcceptLock.ref());
+           accept_sync.wait();
 
        if (ls->m_pQueuedSockets->empty())
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, false);
