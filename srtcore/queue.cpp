@@ -1059,7 +1059,6 @@ CRcvQueue::~CRcvQueue()
     m_bClosing = true;
     if (!pthread_equal(m_WorkerThread, pthread_t()))
     {
-
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }

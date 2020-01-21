@@ -420,10 +420,7 @@ public:
 #else
    std::string MessageFlagStr() { return ""; }
    std::string Info() { return ""; }
-
 #endif
-
 };
-
 
 #endif
