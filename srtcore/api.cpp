@@ -764,7 +764,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            pthread_cond_wait(&(ls->m_AcceptCond), &ls->m_AcceptLock.ref());
 
        if (ls->m_pQueuedSockets->empty())
-           m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);
+           m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, false);
    }
 
    if (u == CUDT::INVALID_SOCK)

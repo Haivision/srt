@@ -4302,7 +4302,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
 
     LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
@@ -7627,7 +7627,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // Signal the sender and recver if they are waiting for data.
         releaseSynch();
         // Unblock any call so they learn the connection_broken error
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
         CTimer::triggerEvent();
 
@@ -8085,7 +8085,7 @@ void CUDT::processClose()
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
     CTimer::triggerEvent();
