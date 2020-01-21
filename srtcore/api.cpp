@@ -464,7 +464,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    leaveCS(ls->m_AcceptLock);
 
    // acknowledge users waiting for new connections on the listening socket
-   m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, true);
+   m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, true);
 
    CTimer::triggerEvent();
 
@@ -748,7 +748,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            pthread_cond_wait(&(ls->m_AcceptCond), &ls->m_AcceptLock.ref());
 
        if (ls->m_pQueuedSockets->empty())
-           m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);
+           m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, false);
    }
 
    if (u == CUDT::INVALID_SOCK)
@@ -1546,7 +1546,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    * sockets. Get rid of all events for this socket.
    */
    m_EPoll.update_events(u, i->second->m_pUDT->m_sPollID,
-      UDT_EPOLL_IN|UDT_EPOLL_OUT|UDT_EPOLL_ERR, false);
+      SRT_EPOLL_IN|SRT_EPOLL_OUT|SRT_EPOLL_ERR, false);
 
    // delete this one
    HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);

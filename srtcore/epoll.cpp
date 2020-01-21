@@ -141,11 +141,11 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    else
    {
       ev.events = 0;
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
          ev.events |= EPOLLIN;
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
          ev.events |= EPOLLOUT;
-      if (*events & UDT_EPOLL_ERR)
+      if (*events & SRT_EPOLL_ERR)
          ev.events |= EPOLLERR;
    }
 
@@ -163,11 +163,11 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    else
    {
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
       {
          EV_SET(&ke[num++], s, EVFILT_READ, EV_ADD, 0, 0, NULL);
       }
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
       {
          EV_SET(&ke[num++], s, EVFILT_WRITE, EV_ADD, 0, 0, NULL);
       }
@@ -301,11 +301,11 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    else
    {
       ev.events = 0;
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
          ev.events |= EPOLLIN;
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
          ev.events |= EPOLLOUT;
-      if (*events & UDT_EPOLL_ERR)
+      if (*events & SRT_EPOLL_ERR)
          ev.events |= EPOLLERR;
    }
 
@@ -331,11 +331,11 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    else
    {
-      if (*events & UDT_EPOLL_IN)
+      if (*events & SRT_EPOLL_IN)
       {
          EV_SET(&ke[num++], s, EVFILT_READ, EV_ADD, 0, 0, NULL);
       }
-      if (*events & UDT_EPOLL_OUT)
+      if (*events & SRT_EPOLL_OUT)
       {
          EV_SET(&ke[num++], s, EVFILT_WRITE, EV_ADD, 0, 0, NULL);
       }
@@ -490,13 +490,13 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             {
                 ++it_next;
                 IF_HEAVY_LOGGING(++total_noticed);
-                if (readfds && ((it->events & UDT_EPOLL_IN) || (it->events & UDT_EPOLL_ERR)))
+                if (readfds && ((it->events & SRT_EPOLL_IN) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (readfds->insert(it->fd).second)
                         ++total;
                 }
 
-                if (writefds && ((it->events & UDT_EPOLL_OUT) || (it->events & UDT_EPOLL_ERR)))
+                if (writefds && ((it->events & SRT_EPOLL_OUT) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (writefds->insert(it->fd).second)
                         ++total;
