@@ -272,13 +272,14 @@ SRTSOCKET CUDTUnited::newSocket()
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
    ns->m_pUDT->m_pCache = m_pCache;
 
-   // protect the m_Sockets structure.
-   CGuard cs(m_GlobControlLock);
    try
    {
       HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
          << "newSocket: mapping socket "
          << ns->m_SocketID);
+
+      // protect the m_Sockets structure.
+      CGuard cs(m_GlobControlLock);
       m_Sockets[ns->m_SocketID] = ns;
    }
    catch (...)
@@ -310,7 +311,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        return -1;
    }
 
-    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @" << listen << " contacted with backlog=" << ls->m_uiBackLog);
+    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @"
+            << listen << " contacted with backlog=" << ls->m_uiBackLog);
 
    // if this connection has already been processed
    if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
@@ -328,7 +330,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       else
       {
          // connection already exist, this is a repeated connection request
-        // respond with existing HS information
+         // respond with existing HS information
          HLOGC(mglog.Debug, log
                << "newConnection: located a WORKING peer @"
                << w_hs.m_iID << " - ADAPTING.");
@@ -346,7 +348,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    else
    {
-       HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
+       HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @"
+               << w_hs.m_iID << " - resuming with initial connection.");
    }
 
    // exceeding backlog, refuse the connection request
