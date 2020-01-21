@@ -138,11 +138,11 @@ public:
    // you'd like to call cudtsocket->m_pUDT->close().
    void makeClosed();
 
-    // Instrumentally used by select() and also required for non-blocking
-    // mode check in groups
-    bool readReady();
-    bool writeReady();
-    bool broken();
+   // Instrumentally used by select() and also required for non-blocking
+   // mode check in groups
+   bool readReady();
+   bool writeReady();
+   bool broken();
 
 private:
    CUDTSocket(const CUDTSocket&);
