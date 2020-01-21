@@ -209,13 +209,19 @@ public:
 private:
 //   void init();
 
+   SRTSOCKET generateSocketID();
+
 private:
    std::map<SRTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
 
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
+
+   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+
    SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
+   SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 

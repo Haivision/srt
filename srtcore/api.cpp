@@ -116,7 +116,6 @@ CUDTUnited::CUDTUnited():
 m_Sockets(),
 m_GlobControlLock(),
 m_IDLock(),
-m_SocketIDGenerator(0),
 m_TLSError(),
 m_mMultiplexer(),
 m_MultiplexerLock(),
@@ -135,9 +134,15 @@ m_ClosedSockets()
    // a static member s_ullCPUFrequency with dynamic initialization.
    // The order of initialization is not guaranteed.
    timeval t;
+
    gettimeofday(&t, 0);
    srand((unsigned int)t.tv_usec);
-   m_SocketIDGenerator = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
+
+   double rand1_0 = double(rand())/RAND_MAX;
+
+   m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
+   m_SocketIDGenerator_init = m_SocketIDGenerator;
+
 
    pthread_key_create(&m_TLSError, TLSDestroy);
 
@@ -247,6 +252,95 @@ int CUDTUnited::cleanup()
    return 0;
 }
 
+SRTSOCKET CUDTUnited::generateSocketID()
+{
+    int sockval = m_SocketIDGenerator - 1;
+
+    // First problem: zero-value should be avoided by various reasons.
+
+    if (sockval <= 0)
+    {
+        // We have a rollover on the socket value, so
+        // definitely we haven't made the Columbus mistake yet.
+        m_SocketIDGenerator = MAX_SOCKET_VAL-1;
+    }
+
+    // Check all sockets if any of them has this value.
+    // Socket IDs are begin created this way:
+    //
+    //                              Initial random
+    //                              |
+    //                             |
+    //                            |
+    //                           |
+    // ...
+    // The only problem might be if the number rolls over
+    // and reaches the same value from the opposite side.
+    // This is still a valid socket value, but this time
+    // we have to check, which sockets have been used already.
+    if ( sockval == m_SocketIDGenerator_init )
+    {
+        // Mark that since this point on the checks for
+        // whether the socket ID is in use must be done.
+        m_SocketIDGenerator_init = 0;
+    }
+
+    // This is when all socket numbers have been already used once.
+    // This may happen after many years of running an application
+    // constantly when the connection breaks and gets restored often.
+    if ( m_SocketIDGenerator_init == 0 )
+    {
+        int startval = sockval;
+        for (;;) // Roll until an unused value is found
+        {
+            bool exists = false;
+            {
+                CGuard cg(m_GlobControlLock);
+                exists = m_Sockets.count(sockval);
+            }
+
+            if (exists)
+            {
+                // The socket value is in use.
+                --sockval;
+                if (sockval <= 0)
+                    sockval = MAX_SOCKET_VAL-1;
+
+                // Before continuing, check if we haven't rolled back to start again
+                // This is virtually impossible, so just make an RTI error.
+                if (sockval == startval)
+                {
+                    // Of course, we don't lack memory, but actually this is so impossible
+                    // that a complete memory extinction is much more possible than this.
+                    // So treat this rather as a formal fallback for something that "should
+                    // never happen". This should make the socket creation functions, from
+                    // socket_create and accept, return this error.
+
+                    m_SocketIDGenerator = sockval+1; // so that any next call will cause the same error
+                    throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+                }
+
+                // try again, if this is a free socket
+                continue;
+            }
+
+            // No socket found, this ID is free to use
+            m_SocketIDGenerator = sockval;
+            break;
+        }
+    }
+    else
+    {
+        m_SocketIDGenerator = sockval;
+    }
+
+    // The socket value counter remains with the value rolled
+    // without the group bit set; only the returned value may have
+    // the group bit set.
+
+    return m_SocketIDGenerator;
+}
+
 SRTSOCKET CUDTUnited::newSocket()
 {
 
@@ -263,9 +357,10 @@ SRTSOCKET CUDTUnited::newSocket()
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
-   enterCS(m_IDLock);
-   ns->m_SocketID = -- m_SocketIDGenerator;
-   leaveCS(m_IDLock);
+    {
+        CGuard guard(m_IDLock);
+        ns->m_SocketID = generateSocketID();
+    }
 
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
@@ -370,10 +465,21 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       return -1;
    }
 
-   enterCS(m_IDLock);
-   ns->m_SocketID = -- m_SocketIDGenerator;
-   HLOGF(mglog.Debug, "newConnection: generated socket id %d", ns->m_SocketID);
-   leaveCS(m_IDLock);
+   try
+   {
+       CGuard l_idlock(m_IDLock);
+       ns->m_SocketID = generateSocketID();
+   }
+   catch (CUDTException& e)
+   {
+       LOGF(mglog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
+       // generateSocketID throws exception, which can be naturally handled
+       // when the call is derived from the API call, but here it's called
+       // internally in response to receiving a handshake. It must be handled
+       // here and turned into an erroneous return value.
+       delete ns;
+       return -1;
+   }
 
    ns->m_ListenSocket = listen;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
