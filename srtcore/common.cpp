@@ -59,6 +59,7 @@ modified by
 #include <iostream>
 #include <iomanip>
 #include "srt.h"
+#include "udt.h"
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
@@ -222,16 +223,17 @@ m_iMajor(major),
 m_iMinor(minor)
 {
    if (err == -1)
-      #ifndef _WIN32
-         m_iErrno = errno;
-      #else
-         m_iErrno = GetLastError();
-      #endif
+       m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
 }
 
 const char* CUDTException::getErrorMessage() const ATR_NOTHROW
+{
+    return getErrorString().c_str();
+}
+
+const string& CUDTException::getErrorString() const
 {
    // translate "Major:Minor" code into text message.
 
@@ -437,7 +439,7 @@ const char* CUDTException::getErrorMessage() const ATR_NOTHROW
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   return m_strMsg.c_str();
+   return m_strMsg;
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
@@ -507,6 +509,8 @@ void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
+// XXX This has void return and the first argument is passed by reference.
+// Consider simply returning sockaddr_any by value.
 void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
 {
    if (AF_INET == ver)
@@ -698,6 +702,36 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 
 namespace srt_logging
 {
+
+
+std::string SockStatusStr(SRT_SOCKSTATUS s)
+{
+    if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
+        return "???";
+
+    static struct AutoMap
+    {
+        // Values start from 1, so do -1 to avoid empty cell
+        std::string names[int(SRTS_NONEXIST)-1+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRTS_##statename-1] = #statename
+            SINI(INIT);
+            SINI(OPENED);
+            SINI(LISTENING);
+            SINI(CONNECTING);
+            SINI(CONNECTED);
+            SINI(BROKEN);
+            SINI(CLOSING);
+            SINI(CLOSED);
+            SINI(NONEXIST);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)-1];
+}
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {

@@ -274,6 +274,12 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
+    if (is_zero(timestamp))
+    {
+        // Use special string for 0
+        return "00:00:00.000000";
+    }
+
     const uint64_t total_us  = timestamp.us_since_epoch();
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
