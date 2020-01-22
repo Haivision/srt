@@ -110,12 +110,12 @@ struct sockaddr_any
     void set(const sockaddr* source, socklen_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (source->sa_family == AF_INET && namelen >= sizeof sin)
+        if (source->sa_family == AF_INET && namelen >= socklen_t(sizeof sin))
         {
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
-        else if (source->sa_family == AF_INET6 && namelen >= sizeof sin6)
+        else if (source->sa_family == AF_INET6 && namelen >= socklen_t(sizeof sin6))
         {
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data

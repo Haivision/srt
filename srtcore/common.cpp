@@ -507,6 +507,8 @@ void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
+// XXX This has void return and the first argument is passed by reference.
+// Consider simply returning sockaddr_any by value.
 void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
 {
    if (AF_INET == ver)
@@ -698,6 +700,36 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 
 namespace srt_logging
 {
+
+
+std::string SockStatusStr(SRT_SOCKSTATUS s)
+{
+    if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
+        return "???";
+
+    static struct AutoMap
+    {
+        // Values start from 1, so do -1 to avoid empty cell
+        std::string names[int(SRTS_NONEXIST)-1+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRTS_##statename-1] = #statename
+            SINI(INIT);
+            SINI(OPENED);
+            SINI(LISTENING);
+            SINI(CONNECTING);
+            SINI(CONNECTED);
+            SINI(BROKEN);
+            SINI(CLOSING);
+            SINI(CLOSED);
+            SINI(NONEXIST);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)-1];
+}
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
