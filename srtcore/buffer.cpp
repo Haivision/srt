@@ -923,6 +923,8 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
+    // getRcvReadyMsg returns true if the time to play for the first message
+    // (returned in w_tsbpdtime) is in the past.
     if (getRcvReadyMsg((w_tsbpdtime), (w_curpktseq)))
     {
         HLOGC(dlog.Debug, log << "getRcvFirstMsg: ready CONTIG packet: %" << w_curpktseq);
@@ -930,7 +932,9 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     }
     else if (!is_zero(w_tsbpdtime))
     {
-        HLOGC(dlog.Debug, log << "getRcvFirstMsg: no packets found");
+        HLOGC(dlog.Debug, log << "getRcvFirstMsg: packets found, but in future");
+        // This means that a message next to be played, has been found,
+        // but the time to play is in future.
         return false;
     }
 

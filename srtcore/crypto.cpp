@@ -649,7 +649,7 @@ std::string CCryptoControl::CONID() const
         return "";
 
     std::ostringstream os;
-    os << "%" << m_SocketID << ":";
+    os << "@" << m_SocketID << ":";
 
     return os.str();
 }
