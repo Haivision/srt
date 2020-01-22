@@ -419,7 +419,7 @@ public:
    std::string Info();
 #else
    std::string MessageFlagStr() { return std::string(); }
-   std::string Info() { return return std::string(); }
+   std::string Info() { return std::string(); }
 #endif
 };
 
