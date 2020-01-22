@@ -477,7 +477,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
        ns->m_SocketID = generateSocketID();
    }
-   catch (CUDTException& e)
+   catch (const CUDTException& e)
    {
        LOGF(mglog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
        // generateSocketID throws exception, which can be naturally handled
