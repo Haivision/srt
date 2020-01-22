@@ -3177,12 +3177,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_iISN = m_ConnReq.m_iISN = forced_isn;
     }
 
-    m_iLastDecSeq     = m_iISN - 1;
-    m_iSndLastAck     = m_iISN;
-    m_iSndLastDataAck = m_iISN;
-    m_iSndLastFullAck = m_iISN;
-    m_iSndCurrSeqNo   = m_iISN - 1;
-    m_iSndLastAck2    = m_iISN;
+    setInitialSndSeq(m_iISN);
     m_SndLastAck2Time = steady_clock::now();
 
     // Inform the server my configurations.
@@ -3212,7 +3207,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     reqpkt.setLength(hs_size);
 
     steady_clock::time_point now = steady_clock::now();
-    reqpkt.m_iTimeStamp          = count_microseconds(now - m_stats.tsStartTime);
+    setPacketTS(reqpkt, now);
 
     HLOGC(mglog.Debug,
           log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.m_iTimeStamp << "). SENDING HS: " << m_ConnReq.show());
@@ -3291,7 +3286,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 #endif
 
             m_tsLastReqTime       = now;
-            reqpkt.m_iTimeStamp = count_microseconds(now - m_stats.tsStartTime);
+            setPacketTS(reqpkt, now);
             m_pSndQueue->sendto(serv_addr, reqpkt);
         }
         else
@@ -3304,7 +3299,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         if (m_pRcvQueue->recvfrom(m_SocketID, (response)) > 0)
         {
             HLOGC(mglog.Debug, log << CONID() << "startConnect: got response for connect request");
-            cst = processConnectResponse(response, &e, true /*synchro*/);
+            cst = processConnectResponse(response, &e, COM_SYNCHRO);
 
             HLOGC(mglog.Debug, log << CONID() << "startConnect: response processing result: " << ConnectStatusStr(cst));
 
@@ -3467,7 +3462,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
 
     CGuard cg(m_ConnectionLock); // FIX
     HLOGC(mglog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
-    cst = processConnectResponse(pkt, &e, false);
+    cst = processConnectResponse(pkt, &e, COM_ASYNCHRO);
 
     HLOGC(mglog.Debug,
           log << CONID() << "processAsyncConnectResponse: response processing result: " << ConnectStatusStr(cst)
@@ -3493,7 +3488,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     request.setControl(UMSG_HANDSHAKE);
     request.allocate(m_iMaxSRTPayloadSize);
     const steady_clock::time_point now = steady_clock::now();
-    request.m_iTimeStamp               = count_microseconds(now - m_stats.tsStartTime);
+    setPacketTS(request, now);
 
     HLOGC(mglog.Debug,
           log << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
@@ -3912,7 +3907,7 @@ EConnectStatus CUDT::processRendezvous(
 
         const steady_clock::time_point now = steady_clock::now();
         m_tsLastReqTime                    = now;
-        w_reqpkt.m_iTimeStamp              = count_microseconds(now - m_stats.tsStartTime);
+        setPacketTS(w_reqpkt, now);
         HLOGC(mglog.Debug,
               log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
 
@@ -3936,7 +3931,7 @@ EConnectStatus CUDT::processRendezvous(
     return CONN_CONTINUE;
 }
 
-EConnectStatus CUDT::processConnectResponse(const CPacket &response, CUDTException *eout, bool synchro) ATR_NOEXCEPT
+EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT
 {
     // NOTE: ASSUMED LOCK ON: m_ConnectionLock.
 
@@ -4176,13 +4171,9 @@ void CUDT::applyResponseSettings()
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN           = m_ConnRes.m_iISN;
-    m_iRcvLastAck        = m_ConnRes.m_iISN;
-#ifdef ENABLE_LOGGING
-    m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-    m_iRcvLastSkipAck  = m_iRcvLastAck;
-    m_iRcvLastAckAck   = m_ConnRes.m_iISN;
-    m_iRcvCurrSeqNo    = m_ConnRes.m_iISN - 1;
+
+    setInitialRcvSeq(m_iPeerISN);
+
     m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
     m_PeerID           = m_ConnRes.m_iID;
     memcpy((m_piSelfIP), m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
@@ -4280,7 +4271,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
-    CUDTSocket* s = s_UDTUnited.locate(m_SocketID);
+    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
     if (!s)
     {
         if (eout)
@@ -4772,18 +4763,7 @@ void *CUDT::tsbpd(void *param)
                      * packet ready to play but preceeded by missing packets (hole).
                      */
 
-                    /* Update drop/skip stats */
-                    enterCS(self->m_StatsLock);
-                    self->m_stats.rcvDropTotal += seqlen;
-                    self->m_stats.traceRcvDrop += seqlen;
-                    /* Estimate dropped/skipped bytes from average payload */
-                    int avgpayloadsz = self->m_pRcvBuffer->getRcvAvgPayloadSize();
-                    self->m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
-                    self->m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
-                    leaveCS(self->m_StatsLock);
-
-                    self->dropFromLossLists(self->m_iRcvLastSkipAck,
-                                            CSeqNo::decseq(skiptoseqno)); // remove(from,to-inclusive)
+                    self->updateForgotten(seqlen, self->m_iRcvLastSkipAck, skiptoseqno);
                     self->m_pRcvBuffer->skipData(seqlen);
 
                     self->m_iRcvLastSkipAck = skiptoseqno;
@@ -4877,6 +4857,21 @@ void *CUDT::tsbpd(void *param)
     return NULL;
 }
 
+void CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
+{
+    /* Update drop/skip stats */
+    enterCS(m_StatsLock);
+    m_stats.rcvDropTotal += seqlen;
+    m_stats.traceRcvDrop += seqlen;
+    /* Estimate dropped/skipped bytes from average payload */
+    int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+    m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
+    m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
+    leaveCS(m_StatsLock);
+
+    dropFromLossLists(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
+}
+
 bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
 {
     // This will be lazily created due to being the common
@@ -4959,13 +4954,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
 
     m_iPeerISN = w_hs.m_iISN;
 
-    m_iRcvLastAck = w_hs.m_iISN;
-#ifdef ENABLE_LOGGING
-    m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-    m_iRcvLastSkipAck  = m_iRcvLastAck;
-    m_iRcvLastAckAck   = w_hs.m_iISN;
-    m_iRcvCurrSeqNo    = w_hs.m_iISN - 1;
+   setInitialRcvSeq(m_iPeerISN);
     m_iRcvCurrPhySeqNo = w_hs.m_iISN - 1;
 
     m_PeerID  = w_hs.m_iID;
@@ -4974,12 +4963,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
     // use peer's ISN and send it back for security check
     m_iISN = w_hs.m_iISN;
 
-    m_iLastDecSeq     = m_iISN - 1;
-    m_iSndLastAck     = m_iISN;
-    m_iSndLastDataAck = m_iISN;
-    m_iSndLastFullAck = m_iISN;
-    m_iSndCurrSeqNo   = m_iISN - 1;
-    m_iSndLastAck2    = m_iISN;
+   setInitialSndSeq(m_iISN);
     m_SndLastAck2Time = steady_clock::now();
 
     // this is a reponse handshake
@@ -5291,7 +5275,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
 void CUDT::addressAndSend(CPacket& w_pkt)
 {
     w_pkt.m_iID        = m_PeerID;
-    w_pkt.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+    setPacketTS(w_pkt, steady_clock::now());
 
     // NOTE: w_pkt isn't modified in this call,
     // just in CChannel::sendto it's modified in place
@@ -6718,6 +6702,29 @@ void CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
+void CUDT::ackDataUpTo(int32_t ack)
+{
+    int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
+
+    HLOGC(mglog.Debug, log << "ackDataUpTo: %" << ack << " vs. current %" << m_iRcvLastSkipAck
+            << " (signing off " << acksize << " packets)");
+
+    m_iRcvLastAck = ack;
+    m_iRcvLastSkipAck = ack;
+
+    // NOTE: This is new towards UDT and prevents spurious
+    // wakeup of select/epoll functions when no new packets
+    // were signed off for extraction.
+    if (acksize > 0)
+    {
+        m_pRcvBuffer->ackData(acksize);
+
+        // Signal threads waiting in CTimer::waitForEvent(),
+        // which are select(), selectEx() and epoll_wait().
+        CTimer::triggerEvent();
+    }
+}
+
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
 {
@@ -6753,7 +6760,7 @@ static inline void DebugAck(string, int, int) {}
 void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, int size)
 {
     CPacket ctrlpkt;
-    ctrlpkt.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+    setPacketTS(ctrlpkt, steady_clock::now());
 
     int nbsent        = 0;
     int local_prevack = 0;
@@ -6820,21 +6827,9 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
         // IF ack %> m_iRcvLastAck
         if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
         {
-            int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
-
-            IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
-            m_iRcvLastAck     = ack;
-            m_iRcvLastSkipAck = ack;
-
-            // XXX Unknown as to whether it matters.
-            // This if (acksize) causes that ackData() won't be called.
-            // With size == 0 it wouldn't do anything except calling CTimer::triggerEvent().
-            // This, again, signals the condition, CTimer::m_EventCond.
-            // This releases CTimer::waitForEvent() call used in CUDTUnited::selectEx().
-            // Preventing to call this on zero size makes sense, if it prevents false alerts.
-            if (acksize > 0)
-                m_pRcvBuffer->ackData(acksize);
+            ackDataUpTo(ack);
             leaveCS(m_RcvBufferLock);
+            IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
             // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
             // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
@@ -6939,7 +6934,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             }
 
             ctrlpkt.m_iID        = m_PeerID;
-            ctrlpkt.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+            setPacketTS(ctrlpkt, steady_clock::now());
             nbsent               = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
             DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
 
@@ -7629,7 +7624,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                         (response), (initdata)))
             {
                 response.m_iID        = m_PeerID;
-                response.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+                setPacketTS(response, steady_clock::now());
                 const int nbsent      = m_pSndQueue->sendto(m_PeerAddr, response);
                 if (nbsent)
                 {
@@ -8021,13 +8016,20 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
              * doesn't screw up the start time on the other side.
              */
             if (origintime >= m_stats.tsStartTime)
-                w_packet.m_iTimeStamp = count_microseconds(origintime - m_stats.tsStartTime);
+            {
+                setPacketTS(w_packet, origintime);
+            }
             else
-                w_packet.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+            {
+                setPacketTS(w_packet, steady_clock::now());
+                LOGC(dlog.Error, log << "packData: reference time=" << FormatTime(origintime)
+                        << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
+                        << " - setting NOW as reference time for the data packet");
+            }
         }
         else
         {
-            w_packet.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+            setPacketTS(w_packet, steady_clock::now());
         }
     }
 
@@ -8278,7 +8280,6 @@ int CUDT::processData(CUnit *in_unit)
     ++m_stats.recvTotal;
     leaveCS(m_StatsLock);
 
-    typedef vector<pair<int32_t, int32_t> > loss_seqs_t;
     loss_seqs_t                             filter_loss_seqs;
     loss_seqs_t                             srt_loss_seqs;
     vector<CUnit *>                         incoming;
@@ -9109,7 +9110,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
 
         size_t size = packet.getLength();
         hs.store_to((packet.m_pcData), (size));
-        packet.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+        setPacketTS(packet, steady_clock::now());
 
         // Display the HS before sending it to peer
         HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (i): " << hs.show());
@@ -9192,7 +9193,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         size_t size   = CHandShake::m_iContentSize;
         hs.store_to((packet.m_pcData), (size));
         packet.m_iID        = id;
-        packet.m_iTimeStamp = count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+        setPacketTS(packet, steady_clock::now());
         m_pSndQueue->sendto(addr, packet);
     }
     else
@@ -9248,7 +9249,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
             packet.m_iID        = id;
-            packet.m_iTimeStamp = (int32_t) count_microseconds(steady_clock::now() - m_stats.tsStartTime);
+            setPacketTS(packet, steady_clock::now());
             HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
             m_pSndQueue->sendto(addr, packet);
         }
@@ -9591,7 +9592,7 @@ void CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
 
 int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 {
-    CUDTSocket *s = s_UDTUnited.locate(u);
+    CUDTSocket *s = s_UDTUnited.locateSocket(u);
     if (!s || !s->m_pUDT)
         return -1;
 
@@ -9614,7 +9615,7 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 
 SRT_REJECT_REASON CUDT::rejectReason(SRTSOCKET u)
 {
-    CUDTSocket *s = s_UDTUnited.locate(u);
+    CUDTSocket* s = s_UDTUnited.locateSocket(u);
     if (!s || !s->m_pUDT)
         return SRT_REJ_UNKNOWN;
 

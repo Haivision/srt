@@ -56,6 +56,7 @@ modified by
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 
 #include <cstdlib>
+#include <cstdio>
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
@@ -67,6 +68,14 @@ modified by
 #include "udt.h"
 #include "utilities.h"
 #include "sync.h"
+#include "netinet_any.h"
+
+// System-independent errno
+#ifndef _WIN32
+   #define NET_ERROR errno
+#else
+   #define NET_ERROR WSAGetLastError()
+#endif
 
 
 #ifdef _DEBUG
@@ -99,6 +108,8 @@ public:
     {
         return getErrorMessage();
     }
+
+    const std::string& getErrorString() const;
 
     /// Get the system errno for the exception.
     /// @return errno.
@@ -249,6 +260,12 @@ enum EConnectStatus
     CONN_CONFUSED = 3,   //< listener thinks it's connected, but caller missed conclusion
     CONN_RUNNING = 10,   //< no connection in progress, already connected
     CONN_AGAIN = -2      //< No data was read, don't change any state.
+};
+
+enum EConnectMethod
+{
+    COM_ASYNCHRO,
+    COM_SYNCHRO
 };
 
 std::string ConnectStatusStr(EConnectStatus est);
@@ -663,6 +680,13 @@ public:
            return m_iMaxSeqNo - left + 1;
        }
        return seq - dec;
+   }
+
+   static int32_t maxseq(int32_t seq1, int32_t seq2)
+   {
+       if (seqcmp(seq1, seq2) < 0)
+           return seq2;
+       return seq1;
    }
 
 public:

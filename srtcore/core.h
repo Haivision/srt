@@ -211,12 +211,8 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-
-    static int setError(const CUDTException& e)
-    {
-        s_UDTUnited.setError(new CUDTException(e));
-        return SRT_ERROR;
-    }
+    static int setError(const CUDTException& e);
+    static int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -285,6 +281,41 @@ public: // internal API
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
+    srt::sync::steady_clock::duration minNAKInterval() const { return m_tdMinNakInterval; }
+    sockaddr_any peerAddr() const { return m_PeerAddr; }
+
+    int minSndSize(int len = 0) const
+    {
+        if (len == 0) // wierd, can't use non-static data member as default argument!
+            len = m_iMaxSRTPayloadSize;
+        return m_bMessageAPI ? (len+m_iMaxSRTPayloadSize-1)/m_iMaxSRTPayloadSize : 1;
+    }
+
+    int32_t makeTS(const srt::sync::steady_clock::time_point& from_time) const
+    {
+        // NOTE:
+        // - This calculates first the time difference towards start time.
+        // - This difference value is also CUT OFF THE SEGMENT information
+        //   (a multiple of MAX_TIMESTAMP+1)
+        // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
+        // XXX Would be nice to check if local_time > m_StartTime,
+        // otherwise it may go unnoticed with clock skew.
+        return count_microseconds(from_time - m_stats.tsStartTime);
+    }
+
+    void setPacketTS(CPacket& p, const srt::sync::steady_clock::time_point& local_time)
+    {
+        p.m_iTimeStamp = makeTS(local_time);
+    }
+
+    // Utility used for closing a listening socket
+    // immediately to free the socket
+    void notListening()
+    {
+        srt::sync::CGuard cg(m_ConnectionLock);
+        m_bListening = false;
+        m_pRcvQueue->removeListener(this);
+    }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -305,6 +336,7 @@ public: // internal API
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
+    typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 private:
     /// initialize a UDT entity and bind to a local address.
 
@@ -328,8 +360,7 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
-
+    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
     // according to the present state and received message type, as well as the
@@ -523,6 +554,8 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
+    void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
+
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
 private: // Identification
@@ -681,6 +714,27 @@ private: // Timers
     int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     srt::sync::steady_clock::time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
+    void setInitialSndSeq(int32_t isn)
+    {
+        m_iLastDecSeq = isn - 1; // <-- purpose unknown; duplicate from FileSmoother?
+        m_iSndLastAck = isn;
+        m_iSndLastDataAck = isn;
+        m_iSndLastFullAck = isn;
+        m_iSndCurrSeqNo = isn - 1;
+        m_iSndLastAck2 = isn;
+    }
+
+    void setInitialRcvSeq(int32_t isn)
+    {
+        m_iRcvLastAck = isn;
+#ifdef ENABLE_LOGGING
+        m_iDebugPrevLastAck = m_iRcvLastAck;
+#endif
+        m_iRcvLastSkipAck = m_iRcvLastAck;
+        m_iRcvLastAckAck = isn;
+        m_iRcvCurrSeqNo = isn - 1;
+    }
+
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
@@ -808,6 +862,8 @@ private: // Generation and processing of packets
     SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
+    void ackDataUpTo(int32_t seq);
+
 
 private: // Trace
     struct CoreStats
