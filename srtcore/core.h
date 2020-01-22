@@ -295,7 +295,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
 
-    SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+    SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);

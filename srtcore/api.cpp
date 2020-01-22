@@ -1526,7 +1526,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    if (i == m_ClosedSockets.end())
       return;
 
-   CUDTSocket* s = i->second;
+   CUDTSocket* const s = i->second;
 
    // decrease multiplexer reference count, and remove it if necessary
    const int mid = s->m_iMuxID;

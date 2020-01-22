@@ -192,7 +192,7 @@ string CHandShake::show()
     // CHandShake, not CUDT.
     if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_iType);
+        const int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_iType);
         so << "FLAGS: ";
         if (flags == SrtHSRequest::SRT_MAGIC_CODE)
             so << "MAGIC";
@@ -215,7 +215,7 @@ string CHandShake::ExtensionFlagStr(int32_t fl)
     if ( fl & HS_EXT_CONFIG )
         out << " config";
 
-    int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+    const int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
     if (kl != 0)
     {
         out << " AES-" << kl;

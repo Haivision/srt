@@ -70,7 +70,7 @@ using namespace srt::sync;
 #if ENABLE_HEAVY_LOGGING
 static void PrintEpollEvent(ostream& os, int events);
 #endif
-// Use "inline namespace" in C++11
+
 namespace srt_logging
 {
     extern Logger dlog, mglog;

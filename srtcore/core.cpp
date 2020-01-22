@@ -8329,7 +8329,7 @@ int CUDT::processData(CUnit *in_unit)
                 long bltime = CountIIR<uint64_t>(
                         uint64_t(m_stats.traceBelatedTime) * 1000,
                         count_microseconds(steady_clock::now() - tsbpdtime), 0.2);
-            
+
                 enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = double(bltime) / 1000.0;
                 m_stats.traceRcvBelated++;
@@ -8420,33 +8420,33 @@ int CUDT::processData(CUnit *in_unit)
                 }
             }
 #if ENABLE_HEAVY_LOGGING
-      std::ostringstream timebufspec;
-      if (m_bTsbPd)
-      {
-          int dsize = m_pRcvBuffer->getRcvDataSize();
-          timebufspec << "(" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
-              << "-" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
-      }
+            std::ostringstream timebufspec;
+            if (m_bTsbPd)
+            {
+                int dsize = m_pRcvBuffer->getRcvDataSize();
+                timebufspec << "(" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
+                    << "-" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
+            }
 
-      std::ostringstream expectspec;
-      if (excessive)
-          expectspec << "EXCESSIVE(" << exc_type << rexmit_reason << ")";
-      else
-          expectspec << "ACCEPTED";
+            std::ostringstream expectspec;
+            if (excessive)
+                expectspec << "EXCESSIVE(" << exc_type << rexmit_reason << ")";
+            else
+                expectspec << "ACCEPTED";
 
-      LOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-              << " offset=" << offset
-              << " BUFr=" << avail_bufsize
-              << " avail=" << m_pRcvBuffer->getAvailBufSize()
-              << " buffer=(" << m_iRcvLastSkipAck
-              << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-              << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
-              << ") "
-              << " RSL=" << expectspec.str()
-              << " SN=" << rexmitstat[pktrexmitflag]
-              << " DLVTM=" << timebufspec.str()
-              << " FLAGS: "
-              << rpkt.MessageFlagStr());
+            LOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
+                    << " offset=" << offset
+                    << " BUFr=" << avail_bufsize
+                    << " avail=" << m_pRcvBuffer->getAvailBufSize()
+                    << " buffer=(" << m_iRcvLastSkipAck
+                    << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                    << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
+                    << ") "
+                    << " RSL=" << expectspec.str()
+                    << " SN=" << rexmitstat[pktrexmitflag]
+                    << " DLVTM=" << timebufspec.str()
+                    << " FLAGS: "
+                    << rpkt.MessageFlagStr());
 #endif
 
             // Decryption should have made the crypto flags EK_NOENC.

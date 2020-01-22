@@ -946,7 +946,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         //
         // Maybe the time should be simply checked once and the whole loop not
         // done when "it's not the time"?
-        steady_clock::time_point now = steady_clock::now();
+        const steady_clock::time_point now = steady_clock::now();
         if (now >= i->m_tsTTL)
         {
             HLOGC(mglog.Debug, log << "RID: socket @" << i->m_iID
