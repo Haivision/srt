@@ -97,7 +97,7 @@ inline struct tm SysLocalTime(time_t tt)
 
     // Ignore the error, state that if something
     // happened, you simply have a pre-cleared tms.
-	localtime_r(&tt, &tms);
+    localtime_r(&tt, &tms);
 #endif
 
     return tms;

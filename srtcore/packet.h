@@ -418,12 +418,9 @@ public:
    std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
    std::string Info();
 #else
-   std::string MessageFlagStr() { return ""; }
-   std::string Info() { return ""; }
-
+   std::string MessageFlagStr() { return std::string(); }
+   std::string Info() { return std::string(); }
 #endif
-
 };
-
 
 #endif

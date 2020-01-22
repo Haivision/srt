@@ -70,7 +70,7 @@ using namespace srt::sync;
 #if ENABLE_HEAVY_LOGGING
 static void PrintEpollEvent(ostream& os, int events);
 #endif
-// Use "inline namespace" in C++11
+
 namespace srt_logging
 {
     extern Logger dlog, mglog;
@@ -81,7 +81,6 @@ using namespace srt_logging;
 #if ENABLE_HEAVY_LOGGING
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
 #endif
-
 
 CEPoll::CEPoll():
 m_iIDSeed(0)
@@ -496,13 +495,13 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             {
                 ++it_next;
                 IF_HEAVY_LOGGING(++total_noticed);
-                if (readfds && ((it->events & UDT_EPOLL_IN) || (it->events & UDT_EPOLL_ERR)))
+                if (readfds && ((it->events & SRT_EPOLL_IN) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (readfds->insert(it->fd).second)
                         ++total;
                 }
 
-                if (writefds && ((it->events & UDT_EPOLL_OUT) || (it->events & UDT_EPOLL_ERR)))
+                if (writefds && ((it->events & SRT_EPOLL_OUT) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (writefds->insert(it->fd).second)
                         ++total;

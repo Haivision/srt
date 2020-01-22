@@ -268,7 +268,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   pthread_cond_signal(&m_GCStopCond);
+   CSync::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
@@ -406,13 +406,14 @@ SRTSOCKET CUDTUnited::newSocket()
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
    ns->m_pUDT->m_pCache = m_pCache;
 
-   // protect the m_Sockets structure.
-   CGuard cs(m_GlobControlLock);
    try
    {
       HLOGC(mglog.Debug, log << CONID(ns->m_SocketID)
          << "newSocket: mapping socket "
          << ns->m_SocketID);
+
+      // protect the m_Sockets structure.
+      CGuard cs(m_GlobControlLock);
       m_Sockets[ns->m_SocketID] = ns;
    }
    catch (...)
@@ -830,7 +831,8 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    // !!only one conection can be set up each time!!
    while (!accepted)
    {
-       CGuard cg(ls->m_AcceptLock);
+       CGuard accept_lock(ls->m_AcceptLock);
+       CSync accept_sync(ls->m_AcceptCond, accept_lock);
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -869,7 +871,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        }
 
        if (!accepted && (ls->m_Status == SRTS_LISTENING))
-           pthread_cond_wait(&(ls->m_AcceptCond), &ls->m_AcceptLock.ref());
+           accept_sync.wait();
 
        if (ls->m_pQueuedSockets->empty())
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_IN, false);
