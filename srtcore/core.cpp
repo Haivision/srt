@@ -1022,15 +1022,15 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     {
         int32_t event = 0;
         if (m_bBroken)
-            event |= UDT_EPOLL_ERR;
+            event |= SRT_EPOLL_ERR;
         else
         {
             enterCS(m_RecvLock);
             if (m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady())
-                event |= UDT_EPOLL_IN;
+                event |= SRT_EPOLL_IN;
             leaveCS(m_RecvLock);
             if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
-                event |= UDT_EPOLL_OUT;
+                event |= SRT_EPOLL_OUT;
         }
         *(int32_t *)optval = event;
         optlen             = sizeof(int32_t);
@@ -4281,7 +4281,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
 
     LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
@@ -4703,7 +4703,10 @@ void *CUDT::tsbpd(void *param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-    CGuard recv_lock(self->m_RecvLock);
+    CGuard recv_lock  (self->m_RecvLock);
+    CSync recvdata_cc (self->m_RecvDataCond, recv_lock);
+    CSync tsbpd_cc    (self->m_RcvTsbPdCond, recv_lock);
+
     self->m_bTsbPdAckWakeup = true;
     while (!self->m_bClosing)
     {
@@ -4794,12 +4797,12 @@ void *CUDT::tsbpd(void *param)
              */
             if (self->m_bSynRecving)
             {
-                pthread_cond_signal(&self->m_RecvDataCond);
+                recvdata_cc.signal_locked(recv_lock);
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
-            self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, UDT_EPOLL_IN, true);
+            self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
             CTimer::triggerEvent();
             tsbpdtime = steady_clock::time_point();
         }
@@ -4812,12 +4815,10 @@ void *CUDT::tsbpd(void *param)
              * Schedule wakeup when it will be.
              */
             self->m_bTsbPdAckWakeup = false;
-            THREAD_PAUSED();
             HLOGC(tslog.Debug,
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
-            SyncEvent::wait_for(&self->m_RcvTsbPdCond, &(self->m_RecvLock.ref()), timediff);
-            THREAD_RESUMED();
+            tsbpd_cc.wait_for(timediff);
         }
         else
         {
@@ -4834,12 +4835,9 @@ void *CUDT::tsbpd(void *param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdAckWakeup = true;
-            THREAD_PAUSED();
-            pthread_cond_wait(&self->m_RcvTsbPdCond, &(self->m_RecvLock.ref()));
-            THREAD_RESUMED();
+            tsbpd_cc.wait();
         }
     }
-    recv_lock.unlock();
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
@@ -5332,7 +5330,7 @@ bool CUDT::close()
      * it would remove the socket from the EPoll after close.
      */
     // trigger any pending IO events.
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     try
     {
@@ -5379,8 +5377,6 @@ bool CUDT::close()
             sendCtrl(UMSG_SHUTDOWN);
         }
 
-        m_pCryptoControl->close();
-
         // Store current connection information.
         CInfoBlock ib;
         ib.m_iIPversion = m_PeerAddr.family();
@@ -5391,6 +5387,9 @@ bool CUDT::close()
 
         m_bConnected = false;
     }
+
+    if (m_pCryptoControl)
+        m_pCryptoControl->close();
 
     if (m_bTsbPd && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
     {
@@ -5459,6 +5458,8 @@ int CUDT::receiveBuffer(char *data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+    CSync rcond  (m_RecvDataCond, recvguard);
+    CSync tscond (m_RcvTsbPdCond, recvguard);
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         if (!m_bSynRecving)
@@ -5473,7 +5474,7 @@ int CUDT::receiveBuffer(char *data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     // Do not block forever, check connection status each 1 sec.
-                    SyncEvent::wait_for(&m_RecvDataCond, &m_RecvLock.ref(), seconds_from(1));
+                    rcond.wait_for(seconds_from(1));
                 }
             }
             else
@@ -5481,7 +5482,7 @@ int CUDT::receiveBuffer(char *data, int len)
                 const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iRcvTimeOut);
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    SyncEvent::wait_for(&m_RecvDataCond, &m_RecvLock.ref(), milliseconds_from(m_iRcvTimeOut));
+                    rcond.wait_for(milliseconds_from(m_iRcvTimeOut));
                     if (steady_clock::now() >= exptime)
                         break;
                 }
@@ -5514,13 +5515,13 @@ int CUDT::receiveBuffer(char *data, int len)
     if (m_bTsbPd)
     {
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-        pthread_cond_signal(&m_RcvTsbPdCond);
+        tscond.signal_locked(recvguard);
     }
 
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     if ((res <= 0) && (m_iRcvTimeOut >= 0))
@@ -5717,12 +5718,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         {
             // wait here during a blocking sending
-            CGuard sendblock_lock(m_SendBlockLock);
+            CGuard sendblock_lock (m_SendBlockLock);
+            CSync sendcond        (m_SendBlockCond,  sendblock_lock);
 
             if (m_iSndTimeOut < 0)
             {
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
-                    pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock.ref());
+                    sendcond.wait();
             }
             else
             {
@@ -5730,7 +5732,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth && exptime > steady_clock::now())
                 {
-                    SyncEvent::wait_for(&m_SendBlockCond, &m_SendBlockLock.ref(), milliseconds_from(m_iSndTimeOut));
+                    sendcond.wait_for(milliseconds_from(m_iSndTimeOut));
                 }
             }
         }
@@ -5807,7 +5809,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
             // write is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
         }
     }
 
@@ -5889,7 +5891,8 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
-    CGuard recvguard(m_RecvLock);
+    CGuard recvguard (m_RecvLock);
+    CSync tscond     (m_RcvTsbPdCond,  recvguard);
 
     /* XXX DEBUG STUFF - enable when required
        char charbool[2] = {'0', '1'};
@@ -5911,12 +5914,12 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         /* Kick TsbPd thread to schedule next wakeup (if running) */
         if (m_bTsbPd)
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            tscond.signal_locked(recvguard);
 
         if (!m_pRcvBuffer->isRcvDataReady())
         {
             // read is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
         }
 
         if (res == 0)
@@ -5939,10 +5942,10 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
-                pthread_cond_signal(&m_RcvTsbPdCond);
+                tscond.signal_locked(recvguard);
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
         else
@@ -5951,10 +5954,10 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
             {
                 // Kick TsbPd thread to schedule next wakeup (if running)
                 if (m_bTsbPd)
-                    pthread_cond_signal(&m_RcvTsbPdCond);
+                    tscond.signal_locked(recvguard);
 
                 // Shut up EPoll if no more messages in non-blocking mode
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
 
                 // After signaling the tsbpd for ready data, report the bandwidth.
                 double bw SRT_ATR_UNUSED = Bps2Mbps(m_iBandwidth * m_iMaxSRTPayloadSize);
@@ -5971,6 +5974,8 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
     // Do not block forever, check connection status each 1 sec.
     const steady_clock::duration recv_timeout = m_iRcvTimeOut < 0 ? seconds_from(1) : milliseconds_from(m_iRcvTimeOut);
 
+    CSync recv_cond (m_RecvDataCond, recvguard);
+
     do
     {
         if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()))
@@ -5978,13 +5983,13 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
             {
-                HLOGP(tslog.Debug, "recvmsg: KICK tsbpd()");
-                pthread_cond_signal(&m_RcvTsbPdCond);
+                HLOGP(tslog.Debug, "receiveMessage: KICK tsbpd");
+                tscond.signal_locked(recvguard);
             }
 
             do
             {
-                if (SyncEvent::wait_for(&m_RecvDataCond, &m_RecvLock.ref(), recv_timeout) == ETIMEDOUT)
+                if (!recv_cond.wait_for(recv_timeout))
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
@@ -6028,11 +6033,11 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            tscond.signal_locked(recvguard);
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     // Unblock when required
@@ -6117,9 +6122,10 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
 
         {
             CGuard lock(m_SendBlockLock);
+            CSync sendcond (m_SendBlockCond,  lock);
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-                pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock.ref());
+                sendcond.wait();
         }
 
         if (m_bBroken || m_bClosing)
@@ -6153,7 +6159,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
             if (sndBuffersLeft() <= 0)
             {
                 // write is not available any more
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
             }
         }
 
@@ -6246,10 +6252,13 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_FILESYSTEM, MN_WRITEFAIL);
         }
 
-        m_RecvDataLock.lock();
-        while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
-            pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock.ref());
-        m_RecvDataLock.unlock();
+        {
+            CGuard gl   (m_RecvDataLock);
+            CSync rcond (m_RecvDataCond,  gl);
+
+            while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+                rcond.wait();
+        }
 
         if (!m_bConnected)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -6274,7 +6283,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     return size - torecv;
@@ -6626,20 +6635,13 @@ void CUDT::destroySynch()
 void CUDT::releaseSynch()
 {
     // wake up user calls
-    enterCS(m_SendBlockLock);
-    pthread_cond_signal(&m_SendBlockCond);
-    leaveCS(m_SendBlockLock);
+    CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
 
     enterCS(m_SendLock);
     leaveCS(m_SendLock);
 
-    enterCS(m_RecvDataLock);
-    pthread_cond_signal(&m_RecvDataCond);
-    leaveCS(m_RecvDataLock);
-
-    enterCS(m_RecvLock);
-    pthread_cond_signal(&m_RcvTsbPdCond);
-    leaveCS(m_RecvLock);
+    CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
+    CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
     enterCS(m_RecvDataLock);
     if (!pthread_equal(m_RcvTsbPdThread, pthread_t()))
@@ -6777,22 +6779,20 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             if (m_bTsbPd)
             {
                 /* Newly acknowledged data, signal TsbPD thread */
-                enterCS(m_RecvLock);
+                CGuard rcvlock (m_RecvLock);
+                CSync tscond (m_RcvTsbPdCond, rcvlock);
                 if (m_bTsbPdAckWakeup)
-                    pthread_cond_signal(&m_RcvTsbPdCond);
-                leaveCS(m_RecvLock);
+                    tscond.signal_locked(rcvlock);
             }
             else
             {
                 if (m_bSynRecving)
                 {
                     // signal a waiting "recv" call if there is any data available
-                    enterCS(m_RecvDataLock);
-                    pthread_cond_signal(&m_RecvDataCond);
-                    leaveCS(m_RecvDataLock);
+                    CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
                 }
                 // acknowledge any waiting epolls to read
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
                 CTimer::triggerEvent();
             }
             enterCS(m_RcvBufferLock);
@@ -7029,7 +7029,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         m_pSndBuffer->ackData(offset);
 
         // acknowledde any waiting epolls to write
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
     }
 
     // insert this socket to snd list if it is not on the list yet
@@ -7037,8 +7037,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
     if (m_bSynSending)
     {
-        CGuard lk(m_SendBlockLock);
-        pthread_cond_signal(&m_SendBlockCond);
+        CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
     }
 
     const steady_clock::time_point currtime = steady_clock::now();
@@ -7537,7 +7536,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // Signal the sender and recver if they are waiting for data.
         releaseSynch();
         // Unblock any call so they learn the connection_broken error
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
         CTimer::triggerEvent();
 
@@ -7973,14 +7972,13 @@ void CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(mglog.Debug, "processClose: lock-and-signal TSBPD");
-        CGuard rl(m_RecvLock);
-        pthread_cond_signal(&m_RcvTsbPdCond);
+        CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
     }
 
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
     CTimer::triggerEvent();
@@ -8408,8 +8406,8 @@ int CUDT::processData(CUnit *in_unit)
 
         if (m_bTsbPd)
         {
-            CGuard lock(m_RecvLock);
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
+            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 
@@ -8425,8 +8423,8 @@ int CUDT::processData(CUnit *in_unit)
 
         if (m_bTsbPd)
         {
-            CGuard lock(m_RecvLock);
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
+            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 
@@ -9039,7 +9037,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         else
         {
             // a new connection has been created, enable epoll for write
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         }
     }
     LOGC(mglog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -9173,7 +9171,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime)
         releaseSynch();
 
         // app can call any UDT API to learn the connection_broken error
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
         CTimer::triggerEvent();
 
@@ -9326,13 +9324,13 @@ void CUDT::addEPoll(const int eid)
     enterCS(m_RecvLock);
     if (m_pRcvBuffer->isRcvDataReady())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
     }
     leaveCS(m_RecvLock);
 
     if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
     }
 }
 
@@ -9342,7 +9340,7 @@ void CUDT::removeEPoll(const int eid)
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, UDT_EPOLL_IN | UDT_EPOLL_OUT, false);
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
 
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);

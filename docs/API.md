@@ -662,10 +662,13 @@ immediately upon experiencing a "gap" in sequences.
 - `0`: relative to input rate (see `SRTO_INPUTBW`) 
 - `>0`: absolute limit in B/s
 
-- *NOTE: This option has a default value of -1. Although in case when the stream
-rate is mostly constant it is recommended to use value 0 here and shape the
-bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
-
+- *NOTE: This option has a default value of -1, regardless of the mode. However
+for live streams it is typically recommended to set the value 0 here and rely
+on `SRTO_INPUTBW` and `SRTO_OHEADBW` options. However, if you want to do so,
+you should make sure that your stream has a fairly constant bitrate, or that
+changes are not abrupt, as high bitrate changes may work against the
+measurement. SRT cannot ensure that this is always the case for a live stream,
+therefore the default -1 remains even in live mode.*
 
 ---
 
@@ -1185,7 +1188,7 @@ based on MSS value. Receive buffer must not be greater than FC size.
 | `SRTO_UDP_SNDBUF`     |       | pre     | `int` | bytes  | 65536    | MSS..  |
 
 - UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
-on `SRTO_MSS` value. *SRT recommended value:* `64*1024`
+on `SRTO_MSS` value.
 
 ---
 
