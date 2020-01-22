@@ -7424,6 +7424,34 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                             << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
                 }
+                else
+                {
+                    // This should be treated as IPE, but this may happen in one situtation:
+                    // - redundancy second link (ISN was screwed up initially, but late towards last sent)
+                    // - initial DROPREQ was lost
+                    // This just causes repeating DROPREQ, as when the receiver continues sending
+                    // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
+                    //
+                    // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
+                    // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
+                    // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
+                    //   TSBPD wake up should it still wait for new packets to get ACK-ed)
+
+                    HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
+                            << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
+                            << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
+
+                    // This means that the loss touches upon a range that wasn't ever sent.
+                    // Normally this should never happen, but this might be a case when the
+                    // ISN FIX for redundant connection was missed.
+
+                    // In distinction to losslist, DROPREQ has always a range
+                    // always just one range, and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = {losslist_lo, losslist_hi};
+                    const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+
+                    sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                }
 
                 enterCS(m_StatsLock);
                 m_stats.traceSndLoss += num;
@@ -7630,6 +7658,14 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_DROPREQ: // 111 - Msg drop request
         enterCS(m_RecvLock);
         m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+        // When the drop request was received, it means that there are
+        // packets for which there will never be ACK sent; if the TSBPD thread
+        // is currently in the ACK-waiting state, it may never exit.
+        if (m_bTsbPd)
+        {
+            HLOGP(mglog.Debug, "DROPREQ: signal TSBPD");
+            pthread_cond_signal(&m_RcvTsbPdCond);
+        }
         leaveCS(m_RecvLock);
 
         {
@@ -7798,9 +7834,25 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
         const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
         if (offset < 0)
         {
-            LOGC(dlog.Error,
-                 log << "IPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo " << w_packet.m_iSeqNo
-                     << ", m_iSndLastDataAck " << m_iSndLastDataAck << ")=" << offset << ". Continue");
+            // XXX Likely that this will never be executed because if the upper
+            // sequence is not in the sender buffer, then most likely the loss 
+            // was completely ignored.
+            LOGC(dlog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
+                << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << m_iSndLastDataAck
+                << ")=" << offset << ". Continue");
+
+            // No matter whether this is right or not (maybe the attack case should be
+            // considered, and some LOSSREPORT flood prevention), send the drop request
+            // to the peer.
+            int32_t seqpair[2];
+            seqpair[0] = w_packet.m_iSeqNo;
+            seqpair[1] = m_iSndLastDataAck;
+
+            HLOGC(mglog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
+                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+
+            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
             continue;
         }
 
@@ -7813,7 +7865,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             int32_t seqpair[2];
             seqpair[0] = w_packet.m_iSeqNo;
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
-            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, 8);
+
+            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
             // only one msg drop request is necessary
             m_pSndLossList->remove(seqpair[1]);
@@ -8124,6 +8177,9 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
 int CUDT::processData(CUnit *in_unit)
 {
+    if (m_bClosing)
+        return -1;
+
     CPacket &packet = in_unit->m_Packet;
 
    // XXX This should be called (exclusively) here:
