@@ -7375,9 +7375,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                     // always just one range, and the data are <LO, HI>, with no range bit.
                     int32_t seqpair[2] = {losslist_lo, losslist_hi};
                     const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
+
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
-#endif
                 }
 
                 enterCS(m_StatsLock);
@@ -7751,9 +7750,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             HLOGC(mglog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
+
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-#endif
             continue;
         }
 
@@ -7767,9 +7765,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             seqpair[0] = w_packet.m_iSeqNo;
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
 
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-#endif
+
             // only one msg drop request is necessary
             m_pSndLossList->remove(seqpair[1]);
 
