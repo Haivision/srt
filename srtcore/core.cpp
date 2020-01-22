@@ -7374,7 +7374,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                     // In distinction to losslist, DROPREQ has always a range
                     // always just one range, and the data are <LO, HI>, with no range bit.
                     int32_t seqpair[2] = {losslist_lo, losslist_hi};
-                    int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+                    const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
 #ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
 #endif
