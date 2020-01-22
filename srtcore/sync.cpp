@@ -98,6 +98,128 @@ int64_t get_cpu_frequency()
 
 const int64_t s_cpu_frequency = get_cpu_frequency();
 
+CSync::CSync(pthread_cond_t& cond, CGuard& g)
+    : m_cond(&cond), m_mutex(g.mutex())
+{
+    // XXX it would be nice to check whether the owner is also current thread
+    // but this can't be done portable way.
+
+    // When constructed by this constructor, the user is expected
+    // to only call signal_locked() function. You should pass the same guard
+    // variable that you have used for construction as its argument.
+}
+
+CSync::CSync(pthread_cond_t& cond, Mutex& mutex, Nolock)
+    : m_cond(&cond)
+    , m_mutex(&mutex)
+{
+    // We expect that the mutex is NOT locked at this moment by the current thread,
+    // but it is perfectly ok, if the mutex is locked by another thread. We'll just wait.
+
+    // When constructed by this constructor, the user is expected
+    // to only call lock_signal() function.
+}
+
+void CSync::wait()
+{
+    THREAD_PAUSED();
+    pthread_cond_wait(&(*m_cond), &m_mutex->ref());
+    THREAD_RESUMED();
+}
+
+bool CSync::wait_until(const steady_clock::time_point& exptime)
+{
+    // This will work regardless as to which clock is in use. The time
+    // should be specified as steady_clock::time_point, so there's no
+    // question of the timer base.
+    steady_clock::time_point now = steady_clock::now();
+    if (now >= exptime)
+        return false; // timeout
+
+    THREAD_PAUSED();
+    bool signaled = SyncEvent::wait_for(m_cond, &m_mutex->ref(), exptime - now) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+/// Block the call until either @a timestamp time achieved
+/// or the conditional is signaled.
+/// @param [in] delay Maximum time to wait since the moment of the call
+/// @retval true Resumed due to getting a CV signal
+/// @retval false Resumed due to being past @a timestamp
+bool CSync::wait_for(const steady_clock::duration& delay)
+{
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
+    THREAD_PAUSED();
+    bool signaled = SyncEvent::wait_for(m_cond, &m_mutex->ref(), delay) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+void CSync::lock_signal()
+{
+    // EXPECTED: m_mutex is not locked.
+    lock_signal(*m_cond, *m_mutex);
+}
+
+void CSync::lock_signal(pthread_cond_t& cond, Mutex& mutex)
+{
+    // Not using CGuard here because it would be logged
+    // and this will result in unnecessary excessive logging.
+    mutex.lock();
+    pthread_cond_signal(&(cond));
+    mutex.unlock();
+}
+
+void CSync::lock_broadcast(pthread_cond_t& cond, Mutex& mutex)
+{
+    // Not using CGuard here because it would be logged
+    // and this will result in unnecessary excessive logging.
+    mutex.lock();
+    pthread_cond_broadcast(&(cond));
+    mutex.unlock();
+}
+
+void CSync::signal_locked(CGuard& lk SRT_ATR_UNUSED)
+{
+    // EXPECTED: lk.mutex() is LOCKED.
+    pthread_cond_signal(&(*m_cond));
+}
+
+// The signal_relaxed and broadcast_relaxed functions are to be used in case
+// when you don't care whether the associated mutex is locked or not (you
+// accept the case that a mutex isn't locked and the signal gets effectively
+// missed), or you somehow know that the mutex is locked, but you don't have
+// access to the associated CGuard object. This function, although it does
+// the same thing as signal_locked() and broadcast_locked(), is here for
+// the user to declare explicitly that the signal/broadcast is done without
+// being prematurely certain that the associated mutex is locked.
+//
+// It is then expected that whenever these functions are used, an extra
+// comment is provided to explain, why the use of the relaxed signaling is
+// correctly used.
+
+void CSync::signal_relaxed()
+{
+    signal_relaxed(*m_cond);
+}
+
+void CSync::signal_relaxed(pthread_cond_t& cond)
+{
+    pthread_cond_signal(&(cond));
+}
+
+void CSync::broadcast_relaxed(pthread_cond_t& cond)
+{
+    pthread_cond_broadcast(&(cond));
+}
+
 } // namespace sync
 } // namespace srt
 
@@ -152,6 +274,12 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
+    if (is_zero(timestamp))
+    {
+        // Use special string for 0
+        return "00:00:00.000000";
+    }
+
     const uint64_t total_us  = timestamp.us_since_epoch();
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
@@ -249,14 +377,26 @@ void srt::sync::UniqueLock::unlock()
     }
 }
 
+srt::sync::Mutex* srt::sync::UniqueLock::mutex()
+{
+    return &m_Mutex;
+}
+
+static timespec us_to_timespec(const uint64_t time_us)
+{
+    timespec timeout;
+    timeout.tv_sec         = time_us / 1000000;
+    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    return timeout;
+}
+
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
     timespec timeout;
     timeval now;
     gettimeofday(&now, 0);
-    const uint64_t time_us = now.tv_sec * uint64_t(1000000) + now.tv_usec + count_microseconds(rel_time);
-    timeout.tv_sec         = time_us / 1000000;
-    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
+    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }
@@ -266,10 +406,8 @@ int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex
 {
     timespec timeout;
     clock_gettime(CLOCK_MONOTONIC, &timeout);
-    const uint64_t time_us =
-        timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000) + count_microseconds(rel_time);
-    timeout.tv_sec = time_us / 1000000;
-    timeout.tv_nsec = (time_us % 1000000) * 1000;
+    const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
+    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
 
     return pthread_cond_timedwait(cond, mutex, &timeout);
 }

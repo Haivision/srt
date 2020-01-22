@@ -416,30 +416,11 @@ void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
-#if ENABLE_HEAVY_LOGGING
-    std::ostringstream spec;
-
-    if (packet.isControl())
-    {
-        spec << " type=CONTROL"
-             << " cmd=" << MessageTypeStr(packet.getType(), packet.getExtendedType())
-             << " arg=" << packet.header(SRT_PH_MSGNO);
-    }
-    else
-    {
-        spec << " type=DATA"
-             << " %" << packet.getSeqNo()
-             << " msgno=" << MSGNO_SEQ::unwrap(packet.m_iMsgNo)
-             << packet.MessageFlagStr()
-             << " !" << BufferStamp(packet.m_pcData, packet.getLength());
-    }
-
     LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
         << " pkt.ts=" << packet.m_iTimeStamp
-        << spec.str());
-#endif
+        << " " << packet.Info());
 
 #ifdef SRT_TEST_FAKE_LOSS
 

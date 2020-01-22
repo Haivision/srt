@@ -70,19 +70,19 @@ class CUDT;
 class CUDTSocket
 {
 public:
-   CUDTSocket():
-       m_Status(SRTS_INIT),
-       m_SocketID(0),
-       m_ListenSocket(0),
-       m_PeerID(0),
-       m_iISN(0),
-       m_pUDT(NULL),
-       m_pQueuedSockets(NULL),
-       m_pAcceptSockets(NULL),
-       m_AcceptCond(),
-       m_AcceptLock(),
-       m_uiBackLog(0),
-       m_iMuxID(-1)
+   CUDTSocket()
+       : m_Status(SRTS_INIT)
+       , m_SocketID(0)
+       , m_ListenSocket(0)
+       , m_PeerID(0)
+       , m_iISN(0)
+       , m_pUDT(NULL)
+       , m_pQueuedSockets(NULL)
+       , m_pAcceptSockets(NULL)
+       , m_AcceptCond()
+       , m_AcceptLock()
+       , m_uiBackLog(0)
+       , m_iMuxID(-1)
    {
        construct();
    }

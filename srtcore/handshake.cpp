@@ -177,7 +177,7 @@ string CHandShake::show()
 {
     ostringstream so;
 
-    so << "version=" << m_iVersion << " type=" << hex << m_iType << dec
+    so << "version=" << m_iVersion << " type=0x" << hex << m_iType << dec
         << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
         << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
         << " cookie=" << hex << m_iCookie << dec
@@ -192,9 +192,12 @@ string CHandShake::show()
     // CHandShake, not CUDT.
     if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        so << "EXT: ";
-        if (m_iType == 0) // no flags at all
-            so << "none";
+        const int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_iType);
+        so << "FLAGS: ";
+        if (flags == SrtHSRequest::SRT_MAGIC_CODE)
+            so << "MAGIC";
+        else if (m_iType == 0)
+            so << "NONE"; // no flags and no advertised pbkeylen
         else
             so << ExtensionFlagStr(m_iType);
     }
@@ -212,7 +215,7 @@ string CHandShake::ExtensionFlagStr(int32_t fl)
     if ( fl & HS_EXT_CONFIG )
         out << " config";
 
-    int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+    const int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
     if (kl != 0)
     {
         out << " AES-" << kl;
