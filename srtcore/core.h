@@ -718,7 +718,7 @@ private: // synchronization: mutexes and conditions
 
     srt::sync::Mutex m_RcvBufferLock;            // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
+    srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
     pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
     srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
