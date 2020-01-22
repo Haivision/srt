@@ -138,7 +138,7 @@ m_ClosedSockets()
    gettimeofday(&t, 0);
    srand((unsigned int)t.tv_usec);
 
-   double rand1_0 = double(rand())/RAND_MAX;
+   const double rand1_0 = double(rand())/RAND_MAX;
 
    m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
@@ -254,6 +254,8 @@ int CUDTUnited::cleanup()
 
 SRTSOCKET CUDTUnited::generateSocketID()
 {
+    CGuard guard(m_IDLock);
+
     int sockval = m_SocketIDGenerator - 1;
 
     // First problem: zero-value should be avoided by various reasons.
@@ -343,7 +345,9 @@ SRTSOCKET CUDTUnited::generateSocketID()
 
 SRTSOCKET CUDTUnited::newSocket()
 {
-
+   // XXX consider using some replacement of std::unique_ptr
+   // so that exceptions will clean up the object without the
+   // need for a dedicated code.
    CUDTSocket* ns = NULL;
 
    try
@@ -357,11 +361,15 @@ SRTSOCKET CUDTUnited::newSocket()
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
-    {
-        CGuard guard(m_IDLock);
-        ns->m_SocketID = generateSocketID();
-    }
-
+   try
+   {
+      ns->m_SocketID = generateSocketID();
+   }
+   catch (...)
+   {
+       delete ns;
+       throw;
+   }
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
@@ -467,7 +475,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
    try
    {
-       CGuard l_idlock(m_IDLock);
        ns->m_SocketID = generateSocketID();
    }
    catch (CUDTException& e)
