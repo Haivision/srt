@@ -76,6 +76,7 @@ public:
 
 public:
     static time_point now();
+    static time_point zero();
 };
 
 template <class _Clock>
@@ -147,6 +148,12 @@ public:
 private:
     uint64_t m_timestamp;
 };
+
+inline TimePoint<srt::sync::steady_clock> steady_clock::zero()
+{
+    return TimePoint<steady_clock>(0);
+}
+
 
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const;

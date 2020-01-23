@@ -378,6 +378,9 @@ const string& CUDTException::getErrorString() const
            m_strMsg += ": Invalid epoll ID";
            break;
 
+        case MN_EEMPTY:
+           m_strMsg += ": All sockets removed from epoll, waiting would deadlock";
+
         default:
            break;
         }

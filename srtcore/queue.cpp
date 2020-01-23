@@ -136,6 +136,8 @@ int CUnitQueue::init(int size, int mss, int version)
     return 0;
 }
 
+// XXX High common part detected with CUnitQueue:init.
+// Consider merging.
 int CUnitQueue::increase()
 {
     // adjust/correct m_iCount
@@ -607,18 +609,7 @@ void *CSndQueue::worker(void *param)
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
         }
 
-#if ENABLE_HEAVY_LOGGING
-        if (pkt.isControl())
-        {
-            HLOGC(mglog.Debug,
-                  log << self->CONID() << "chn:SENDING: " << MessageTypeStr(pkt.getType(), pkt.getExtendedType()));
-        }
-        else
-        {
-            HLOGC(dlog.Debug,
-                  log << self->CONID() << "chn:SENDING SIZE " << pkt.getLength() << " SEQ: " << pkt.getSeqNo());
-        }
-#endif
+        HLOGC(mglog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
@@ -1423,7 +1414,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // this socket registerred in the RendezvousQueue, which causes the packet unable
         // to be dispatched. Therefore simply treat every "out of band" packet (with socket
         // not belonging to the connection and not registered as rendezvous) as "possible
-        // attach" and ignore it. This also should better protect the rendezvous socket
+        // attack" and ignore it. This also should better protect the rendezvous socket
         // against a rogue connector.
         if (id == 0)
         {

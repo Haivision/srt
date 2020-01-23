@@ -358,28 +358,42 @@ CUDT::~CUDT()
 // API to accept both bool and int types for boolean options.
 // (it's not that C couldn't use <stdbool.h>, it's that people
 // often forget to use correct type).
-static bool bool_int_value(const void *optval, int optlen)
+static bool bool_int_value(const void* optval, int optlen)
 {
     if (optlen == sizeof(bool))
     {
-        return *(bool *)optval;
+        return *(bool*)optval;
     }
 
     if (optlen == sizeof(int))
     {
-        return 0 != *(int *)optval; // 0!= is a windows warning-killer int-to-bool conversion
+        return 0 != *(int*)optval; // 0!= is a windows warning-killer int-to-bool conversion
     }
     return false;
 }
 
-void CUDT::setOpt(SRT_SOCKOPT optName, const void *optval, int optlen)
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
+	SRTO_SNDSYN,
+	SRTO_RCVSYN,
+	SRTO_LINGER,
+	SRTO_SNDTIMEO,
+	SRTO_RCVTIMEO,
+	SRTO_MAXBW,
+	SRTO_INPUTBW,
+	SRTO_OHEADBW,
+	SRTO_SNDDROPDELAY,
+	SRTO_CONNTIMEO,
+    SRTO_LOSSMAXTTL
+};
+
+void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    CGuard cg(m_ConnectionLock);
-    CGuard sendguard(m_SendLock);
-    CGuard recvguard(m_RecvLock);
+    CGuard cg (m_ConnectionLock);
+    CGuard sendguard (m_SendLock);
+    CGuard recvguard (m_RecvLock);
 
     HLOGC(mglog.Debug,
           log << CONID() << "OPTION: #" << optName << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
@@ -4086,7 +4100,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             // For HSv5, make the cookie contest and basing on this decide, which party
             // should provide the HSREQ/KMREQ attachment.
 
-
            if (!createCrypter(hsd, false /* unidirectional */))
            {
                m_RejectReason = SRT_REJ_RESOURCE;
@@ -4801,7 +4814,7 @@ void *CUDT::tsbpd(void *param)
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq));
+            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1);
         }
         leaveCS(self->m_RcvBufferLock);
 
@@ -5543,6 +5556,10 @@ int CUDT::receiveBuffer(char *data, int len)
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
         tscond.signal_locked(recvguard);
     }
+    else
+    {
+        HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
+    }
 
     if (!m_pRcvBuffer->isRcvDataReady())
     {
@@ -5850,8 +5867,11 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     // seqno is INPUT-OUTPUT value:
     // - INPUT: the current sequence number to be placed for the next scheduled packet
     // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
-    m_pSndBuffer->addBuffer(data, size, w_mctrl.msgttl, w_mctrl.inorder, w_mctrl.srctime, (seqno), (w_mctrl.msgno));
-    m_iSndNextSeqNo = seqno;
+    // We need to supply to the output the value that was STAMPED ON THE PACKET,
+    // which is seqno. In the output we'll get the next sequence number.
+    m_pSndBuffer->addBuffer(data, size, (w_mctrl));
+    m_iSndNextSeqNo = w_mctrl.pktseq;
+    w_mctrl.pktseq = seqno;
 
     HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
         << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
@@ -5870,54 +5890,31 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
 #ifdef SRT_ENABLE_ECN
     if (bCongestion)
+    {
+        LOGC(dlog.Error, log << "sendmsg2: CONGESTION; reporting error");
         throw CUDTException(MJ_AGAIN, MN_CONGESTION, 0);
+    }
 #endif /* SRT_ENABLE_ECN */
+
+    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (END): success, size=" << size);
     return size;
 }
 
-int CUDT::recv(char *data, int len)
+int CUDT::recv(char* data, int len)
 {
-    if (!m_bConnected || !m_CongCtl.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-
-    if (len <= 0)
-    {
-        LOGC(dlog.Error, log << "Length of '" << len << "' supplied to srt_recv.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    if (m_bMessageAPI)
-    {
-        SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        return receiveMessage(data, len, (mctrl));
-    }
-
-    return receiveBuffer(data, len);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    return recvmsg2(data, len, (mctrl));
 }
 
-int CUDT::recvmsg(char *data, int len, uint64_t &srctime)
+int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 {
-    if (!m_bConnected || !m_CongCtl.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-
-    if (len <= 0)
-    {
-        LOGC(dlog.Error, log << "Length of '" << len << "' supplied to srt_recvmsg.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    if (m_bMessageAPI)
-    {
-        SRT_MSGCTRL mctrl = srt_msgctrl_default;
-        int         ret   = receiveMessage(data, len, (mctrl));
-        srctime           = mctrl.srctime;
-        return ret;
-    }
-
-    return receiveBuffer(data, len);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    int res = recvmsg2(data, len, (mctrl));
+    srctime = mctrl.srctime;
+    return res;
 }
 
-int CUDT::recvmsg2(char *data, int len, SRT_MSGCTRL& w_mctrl)
+int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -5991,11 +5988,15 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
             return res;
     }
 
+    int seqdistance = -1;
+
     if (!m_bSynRecving)
     {
         HLOGC(dlog.Debug, log << CONID() << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
-        int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl));
+        int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl), seqdistance);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
+
         if (res == 0)
         {
             // read is not available any more
@@ -6041,7 +6042,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
         return res;
     }
 
-    HLOGC(dlog.Debug, log << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size=" << len);
+    HLOGC(dlog.Debug, log << CONID() << "receiveMessage: BEGIN SYNC MODE. Going to extract payload size max=" << len);
 
     int  res     = 0;
     bool timeout = false;
@@ -6054,7 +6055,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
     {
         steady_clock::time_point tstime SRT_ATR_UNUSED;
         int32_t seqno;
-        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady((tstime), (seqno))))
+        if (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance)))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -6067,7 +6068,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
                 // of kicking TSBPD.
                 // bool spurious = (tstime != 0);
 
-                HLOGC(tslog.Debug, log << "receiveMessage: KICK tsbpd" << (is_zero(tstime) ? " (SPURIOUS!)" : ""));
+                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd" << (is_zero(tstime) ? " (SPURIOUS!)" : ""));
                 tscond.signal_locked(recvguard);
             }
 
@@ -6107,7 +6108,8 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " NMSG " << m_pRcvBuffer->getRcvMsgNum());
                 */
 
-        res = m_pRcvBuffer->readMsg(data, len, (w_mctrl));
+        res = m_pRcvBuffer->readMsg((data), len, (w_mctrl), seqdistance);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
         if (m_bBroken || m_bClosing)
         {
@@ -6755,7 +6757,7 @@ void CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
-void CUDT::ackDataUpTo(int32_t ack)
+int32_t CUDT::ackDataUpTo(int32_t ack)
 {
     int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
@@ -6770,12 +6772,27 @@ void CUDT::ackDataUpTo(int32_t ack)
     // were signed off for extraction.
     if (acksize > 0)
     {
-        m_pRcvBuffer->ackData(acksize);
+        int distance = m_pRcvBuffer->ackData(acksize);
+/*
+        XXX example code - inform the group up to which packet
+        data are received so that it can be also acknowledged
+        in all others and false lossreport prevened
+        if (m_parent->m_IncludedGroup)
+            m_parent->m_IncludedGroup->readyPackets(this, ack);
+*/
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
         CTimer::triggerEvent();
+
+        return CSeqNo::decseq(ack, distance);
     }
+
+    // If nothing was confirmed, then use the current buffer span
+    int distance = m_pRcvBuffer->getRcvDataSize();
+    if (distance > 0)
+        return CSeqNo::decseq(ack, distance);
+    return ack;
 }
 
 #if ENABLE_HEAVY_LOGGING
@@ -6989,7 +7006,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, in
             ctrlpkt.m_iID        = m_PeerID;
             setPacketTS(ctrlpkt, steady_clock::now());
             nbsent               = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-            DebugAck("sendCtrl: " + CONID(), local_prevack, ack);
+            DebugAck("sendCtrl(UMSG_ACK): " + CONID(), local_prevack, ack);
 
             m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
@@ -7174,7 +7191,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
-    const int32_t *ackdata       = (const int32_t *)ctrlpkt.m_pcData;
+    const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
     const bool isLiteAck = ctrlpkt.getLength() == (size_t)SEND_LITE_ACK;
@@ -8253,7 +8270,17 @@ int CUDT::processData(CUnit* in_unit)
         HLOGP(mglog.Debug, "Spawning TSBPD thread");
         int st = 0;
         {
+#if ENABLE_HEAVY_LOGGING
+            std::ostringstream tns1, tns2;
+            // Take the last 2 ciphers from the socket ID.
+            tns1 << m_SocketID;
+            std::string s = tns1.str();
+            tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+
+            ThreadName tn(tns2.str().c_str());
+#else
             ThreadName tn("SRT:TsbPd");
+#endif
             st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
         }
         if (st != 0)
@@ -8681,6 +8708,10 @@ int CUDT::processData(CUnit* in_unit)
         {
             HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
             CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "loss: socket is not TSBPD, not signaling");
         }
     }
 
@@ -9316,7 +9347,9 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         else
         {
             // a new connection has been created, enable epoll for write
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+           HLOGC(mglog.Debug, log << "processConnectRequest: @" << m_SocketID
+                   << " connected, setting epoll to connect:");
+           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
         }
     }
     LOGC(mglog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -9335,7 +9368,7 @@ void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
     }
 }
 
-void CUDT::checkACKTimer(const steady_clock::time_point &currtime)
+void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_decision[10])
 {
     if (currtime > m_tsNextACKTime  // ACK time has come
                                   // OR the number of sent packets since last ACK has reached
@@ -9353,6 +9386,8 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
+        strcpy(debug_decision, "ACK ");
+
     }
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
@@ -9365,10 +9400,11 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime)
         // send a "light" ACK
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++m_iLightACKCount;
+        strcpy(debug_decision, "LITE-ACK ");
     }
 }
 
-void CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
+void CUDT::checkNAKTimer(const steady_clock::time_point& currtime, char debug_decision[10])
 {
     // XXX The problem with working NAKREPORT with SRT_ARQ_ONREQ
     // is not that it would be inappropriate, but because it's not
@@ -9399,13 +9435,20 @@ void CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
             return; // wait for next NAK time
 
         sendCtrl(UMSG_LOSSREPORT);
+        strcpy(debug_decision, "NAKREPORT");
     }
 
     m_tsNextNAKTime = currtime + m_tdNAKInterval;
 }
 
-bool CUDT::checkExpTimer(const steady_clock::time_point& currtime)
+bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, const char* debug_decision ATR_UNUSED)
 {
+    // VERY HEAVY LOGGING
+#if ENABLE_HEAVY_LOGGING & 1
+    string decision = *debug_decision ? debug_decision : "NOTHING";
+    HLOGC(mglog.Debug, log << CONID() << "checkTimer: ACTIVITIES PERFORMED: " << decision);
+#endif
+
     // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
     // There's nothing in the original code that alters these values.
 
@@ -9571,14 +9614,21 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
+    char debug_decision[25] = "";
+    char* pdd = debug_decision;
+
     // Check if it is time to send ACK
-    checkACKTimer(currtime);
+    checkACKTimer(currtime, pdd);
+#if ENABLE_HEAVY_LOGGING
+    if (*pdd)
+        pdd += strlen(pdd);
+#endif
 
     // Check if it is time to send a loss report
-    checkNAKTimer(currtime);
+    checkNAKTimer(currtime, pdd);
 
     // Check if the connection is expired
-    if (checkExpTimer(currtime))
+    if (checkExpTimer(currtime, debug_decision))
         return;
 
     // Check if FAST or LATE packet retransmission is required

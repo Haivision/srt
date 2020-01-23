@@ -115,6 +115,22 @@ struct CEPollDesc
        }
 
        int edgeOnly() { return edge & watch; }
+
+       bool clear(int direction)
+       {
+           if (watch & direction)
+           {
+               watch &= ~direction;
+               edge &= ~direction;
+               state &= ~direction;
+
+               if (watch == 0)
+                   return true;
+               return false;
+           }
+
+           return false;
+       }
    };
 
    typedef std::map<SRTSOCKET, Wait> ewatch_t;
@@ -151,13 +167,13 @@ public:
    static const int32_t EF_NOCHECK_EMPTY = 1 << 0;
    static const int32_t EF_CHECK_REP = 1 << 1;
 
-   int32_t flags() { return m_Flags; }
-   bool flags(int32_t f) { return (m_Flags & f) != 0; }
+   int32_t flags() const { return m_Flags; }
+   bool flags(int32_t f) const { return (m_Flags & f) != 0; }
    void set_flags(int32_t flg) { m_Flags |= flg; }
    void clr_flags(int32_t flg) { m_Flags &= ~flg; }
 
    // Container accessors for ewatch_t.
-   bool watch_empty() { return m_USockWatchState.empty(); }
+   bool watch_empty() const { return m_USockWatchState.empty(); }
    Wait* watch_find(SRTSOCKET sock)
    {
        ewatch_t::iterator i = m_USockWatchState.find(sock);
@@ -169,6 +185,9 @@ public:
    // Container accessors for enotice_t.
    enotice_t::iterator enotice_begin() { return m_USockEventNotice.begin(); }
    enotice_t::iterator enotice_end() { return m_USockEventNotice.end(); }
+   enotice_t::const_iterator enotice_begin() const { return m_USockEventNotice.begin(); }
+   enotice_t::const_iterator enotice_end() const { return m_USockEventNotice.end(); }
+   bool enotice_empty() const { return m_USockEventNotice.empty(); }
 
    const int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
@@ -228,6 +247,12 @@ public:
        m_USockWatchState.erase(i);
    }
 
+   void clearAll()
+   {
+       m_USockEventNotice.clear();
+       m_USockWatchState.clear();
+   }
+
    void removeExistingNotices(Wait& wait)
    {
        m_USockEventNotice.erase(wait.notit);
@@ -285,6 +310,26 @@ public:
        }
        return false;
    }
+
+   SRTSOCKET clearEventSub(enotice_t::iterator i, int event)
+   {
+       // We need to remove the notice and subscription
+       // for this event. The 'i' iterator is safe to
+       // delete, even indirectly.
+
+       // This works merely like checkEdge, just it's predicted
+       // to get the notice cleared of reporting given event.
+       if (i->events & event)
+       {
+           // The notice has a readiness notice on this event.
+           // This means that there exists also a subscription.
+           Wait* w = i->parent;
+           if (w->clear(event))
+               return i->fd;
+       }
+
+       return SRT_INVALID_SOCK;
+   }
 };
 
 class CEPoll
@@ -301,7 +346,13 @@ public: // for CUDTUnited API
       /// create a new EPoll.
       /// @return new EPoll ID if success, otherwise an error number.
 
-   int create();
+   int create(CEPollDesc** ppd = 0);
+
+
+   /// delete all user sockets (SRT sockets) from an EPoll
+   /// @param [in] eid EPoll ID.
+   /// @return 0 
+   int clear_usocks(int eid);
 
       /// add a UDT socket to an EPoll.
       /// @param [in] eid EPoll ID.
@@ -359,6 +410,26 @@ public: // for CUDTUnited API
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
+   typedef std::map<SRTSOCKET, int> fmap_t;
+
+   int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
+
+   static int ready(const fmap_t& mp, SRTSOCKET sock)
+   {
+       fmap_t::const_iterator y = mp.find(sock);
+       if (y == mp.end())
+           return 0;
+       return y->second;
+   }
+
+   static bool isready(const fmap_t& mp, SRTSOCKET sock, SRT_EPOLL_OPT event)
+   {
+       return (ready(mp, sock) & event) != 0;
+   }
+
+   // Could be a template directly, but it's now hidden in the imp file.
+   void clear_ready_usocks(CEPollDesc& d, int direction);
+
       /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
       /// @param [in] eid EPoll ID.
       /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
@@ -394,6 +465,10 @@ private:
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
    srt::sync::Mutex m_EPollLock;
 };
+
+#if ENABLE_HEAVY_LOGGING
+std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
+#endif
 
 
 #endif
