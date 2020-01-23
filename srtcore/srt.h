@@ -783,6 +783,7 @@ SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int inst
 SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
 SRT_API int srt_epoll_create(void);
+SRT_API extern int srt_epoll_clear_usocks(int eid);
 SRT_API int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
 SRT_API int srt_epoll_remove_usock(int eid, SRTSOCKET u);
