@@ -928,7 +928,6 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
     // For a single socket, just do bind, then connect
-
     bind(s, source_addr);
     return connectIn(s, target_addr, 0);
 }
@@ -939,9 +938,9 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+    CUDTSocket* s = locateSocket(u);
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
     return connectIn(s, target_addr, forced_isn);
 }
