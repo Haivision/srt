@@ -1531,7 +1531,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (pthread_self() == m_WorkerThread)
+    if (pthread_equal(pthread_self(), m_WorkerThread))
     {
         LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
