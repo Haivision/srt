@@ -443,10 +443,10 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
    msgno_bitset = p->m_iMsgNoBitset;
 
    // TODO: FR #930. Use source time if it is provided.
-   srctime = m_pCurrBlock->m_tsOriginTime;
+   srctime = p->m_tsOriginTime;
    /*srctime =
-      m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
-      m_pCurrBlock->m_tsOriginTime;*/
+      p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
+      p->m_tsOriginTime;*/
 
    HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send [REXMIT]");
 
