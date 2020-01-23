@@ -914,16 +914,39 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    return u;
 }
 
+int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen)
+{
+    sockaddr_any source_addr(srcname, srclen);
+    if (source_addr.len == 0)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    sockaddr_any target_addr(tarname, tarlen);
+    if (target_addr.len == 0)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    CUDTSocket* s = locateSocket(u);
+    if (s == NULL)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    // For a single socket, just do bind, then connect
+    bind(s, source_addr);
+    return connectIn(s, target_addr, 0);
+}
+
 int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
-   sockaddr_any target_addr(name, namelen);
-   if (target_addr.len == 0)
-      throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    sockaddr_any target_addr(name, namelen);
+    if (target_addr.len == 0)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+    CUDTSocket* s = locateSocket(u);
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
+    return connectIn(s, target_addr, forced_isn);
+}
+
+int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
+{
    CGuard cg(s->m_ControlLock);
    // a socket can "connect" only if it is in the following states:
    // - OPENED: assume the socket binding parameters are configured
@@ -2172,6 +2195,32 @@ SRTSOCKET CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return INVALID_SOCK;
+   }
+}
+
+int CUDT::connect(
+    SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen)
+{
+   try
+   {
+      return s_UDTUnited.connect(u, name, namelen, tname, tnamelen);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "connect: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
    }
 }
 

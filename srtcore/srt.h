@@ -618,16 +618,26 @@ SRT_API       int srt_cleanup(void);
 //
 // Socket operations
 //
+// DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
+// and socket creation doesn't need any arguments. Use srt_create_socket().
 SRT_API SRTSOCKET srt_socket       (int af, int type, int protocol) SRT_ATR_DEPRECATED;
 SRT_API SRTSOCKET srt_create_socket();
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
+// Old name of srt_bind_acquire(), please don't use
+static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
+SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+                                    const struct sockaddr* remote_name, int remote_namelen);
+SRT_API       int srt_connect_bind (SRTSOCKET u,
+                                    const struct sockaddr* source, int source_len,
+                                    const struct sockaddr* target, int target_len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 SRT_API       int srt_close        (SRTSOCKET u);
@@ -637,7 +647,6 @@ SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
-
 
 // XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
