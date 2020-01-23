@@ -134,7 +134,7 @@ CSndBuffer::~CSndBuffer()
    }
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_msgno)
+void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_seqno, int32_t& w_msgno)
 {
     int size = len / m_iMSS;
     if ((len % m_iMSS) != 0)
@@ -156,6 +156,11 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         << size << " packets (" << len << " bytes) to send, msgno=" << m_iNextMsgNo
         << (inorder ? "" : " NOT") << " in order");
 
+    // The sequence number passed to this function is the sequence number
+    // that the very first packet from the packet series should get here.
+    // If there's more than one packet, this function must increase it by itself
+    // and then return the accordingly modified sequence number in the reference.
+
     Block* s = m_pLastBlock;
     w_msgno = m_iNextMsgNo;
     for (int i = 0; i < size; ++ i)
@@ -164,9 +169,12 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order, uint6
         if (pktlen > m_iMSS)
             pktlen = m_iMSS;
 
-        HLOGC(dlog.Debug, log << "addBuffer: spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+        HLOGC(dlog.Debug, log << "addBuffer: seq=" << w_seqno << " spreading from=" << (i*m_iMSS) << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
         memcpy((s->m_pcData), data + i * m_iMSS, pktlen);
         s->m_iLength = pktlen;
+
+        s->m_iSeqNo = w_seqno;
+        w_seqno = CSeqNo::incseq(w_seqno);
 
         s->m_iMsgNoBitset = m_iNextMsgNo | inorder;
         if (i == 0)
@@ -323,15 +331,17 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
    return total;
 }
 
-int CSndBuffer::readData(char** data, int32_t& msgno_bitset, steady_clock::time_point& srctime, int kflgs)
+int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
 {
    // No data to read
    if (m_pCurrBlock == m_pLastBlock)
       return 0;
 
    // Make the packet REFLECT the data stored in the buffer.
-   *data = m_pCurrBlock->m_pcData;
+   w_packet.m_pcData = m_pCurrBlock->m_pcData;
    int readlen = m_pCurrBlock->m_iLength;
+   w_packet.setLength(readlen);
+   w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
 
    // XXX This is probably done because the encryption should happen
    // just once, and so this sets the encryption flags to both msgno bitset
@@ -366,11 +376,11 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, steady_clock::time_
    {
        m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
    }
-   msgno_bitset = m_pCurrBlock->m_iMsgNoBitset;
+   w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
 
    // TODO: FR #930. Use source time if it is provided.
-   srctime = m_pCurrBlock->m_tsOriginTime;
-   /*srctime =
+   w_srctime = m_pCurrBlock->m_tsOriginTime;
+   /* *srctime =
       m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
       m_pCurrBlock->m_tsOriginTime;*/
 
@@ -381,8 +391,10 @@ int CSndBuffer::readData(char** data, int32_t& msgno_bitset, steady_clock::time_
    return readlen;
 }
 
-int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, steady_clock::time_point& srctime, int& msglen)
+int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
 {
+   int32_t& msgno_bitset = w_packet.m_iMsgNo;
+
    CGuard bufferguard(m_BufLock);
 
    Block* p = m_pFirstBlock;
@@ -409,7 +421,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
    if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
    {
       int32_t msgno = p->getMsgSeq();
-      msglen = 1;
+      w_msglen = 1;
       p = p->m_pNext;
       bool move = false;
       while (msgno == p->getMsgSeq())
@@ -419,10 +431,10 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
          p = p->m_pNext;
          if (move)
             m_pCurrBlock = p;
-         msglen++;
+         w_msglen++;
       }
 
-      HLOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << msglen << " messages to drop, up to " << msgno);
+      HLOGC(dlog.Debug, log << "CSndBuffer::readData: due to TTL exceeded, " << w_msglen << " messages to drop, up to " << msgno);
 
       // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
       // This means that in this case it should be written by the message sequence value only
@@ -431,8 +443,9 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
       return -1;
    }
 
-   *data = p->m_pcData;
+   w_packet.m_pcData = p->m_pcData;
    int readlen = p->m_iLength;
+   w_packet.setLength(readlen);
 
    // XXX Here the value predicted to be applied to PH_MSGNO field is extracted.
    // As this function is predicted to extract the data to send as a rexmited packet,
@@ -440,11 +453,11 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno_bitset, s
    // encrypted, and with all ENC flags already set. So, the first call to send
    // the packet originally (the other overload of this function) must set these
    // flags.
-   msgno_bitset = p->m_iMsgNoBitset;
+   w_packet.m_iMsgNo = p->m_iMsgNoBitset;
 
    // TODO: FR #930. Use source time if it is provided.
-   srctime = m_pCurrBlock->m_tsOriginTime;
-   /*srctime =
+   w_srctime = m_pCurrBlock->m_tsOriginTime;
+   /*w_srctime =
       m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
       m_pCurrBlock->m_tsOriginTime;*/
 
@@ -486,7 +499,7 @@ int CSndBuffer::getCurrBufSize() const
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
+    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. w_bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());

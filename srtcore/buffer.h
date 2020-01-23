@@ -94,7 +94,7 @@ public:
       /// @param [in] ttl time to live in milliseconds
       /// @param [in] order if the block should be delivered in order, for DGRAM only
 
-   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_msgno);
+   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_seqno, int32_t& w_msgno);
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.
@@ -110,18 +110,18 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(char** data, int32_t& msgno, srt::sync::steady_clock::time_point& origintime, int kflgs);
+   int readData(CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int kflgs);
 
 
       /// Find data position to pack a DATA packet for a retransmission.
       /// @param [out] data the pointer to the data position.
-      /// @param [in] offset offset from the last ACK point.
+      /// @param [in] offset offset from the last ACK point (backward sequence number difference)
       /// @param [out] msgno message number of the packet.
       /// @param [out] origintime origin time stamp of the message
       /// @param [out] msglen length of the message
       /// @return Actual length of data read.
 
-   int readData(char** data, const int offset, int32_t &msgno, srt::sync::steady_clock::time_point& origintime, int& msglen);
+   int readData(const int offset, CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int& w_msglen);
 
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
@@ -182,6 +182,7 @@ private:
       int m_iLength;                    // length of the block
 
       int32_t m_iMsgNoBitset;           // message number
+      int32_t m_iSeqNo;                       // sequence number for scheduling
       srt::sync::steady_clock::time_point m_tsOriginTime;            // original request time
       uint64_t m_ullSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)

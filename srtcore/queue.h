@@ -431,6 +431,10 @@ private:
    } m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
+
 private:
    CSndQueue(const CSndQueue&);
    CSndQueue& operator=(const CSndQueue&);
@@ -470,7 +474,10 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
+   // Needed for affinity check (debug only)
    pthread_t threadId() { return m_WorkerThread; }
+
+   void stopWorker();
 
    void setClosing()
    {
@@ -497,6 +504,9 @@ private:
    int m_iPayloadSize;                  // packet payload size
 
    volatile bool m_bClosing;            // closing the worker
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
 
 private:
    int setListener(CUDT* u);

@@ -650,6 +650,9 @@ public: // internal API
     // a different channel.
     void skipIncoming(int32_t seq);
 
+    // For SRT_tsbpdLoop
+    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    std::set<int>& pollset() { return m_sPollID; }
 
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
@@ -661,7 +664,13 @@ public: // internal API
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
+    // This is in public section so prospective overriding it can be
+    // done by directly assigning to a field.
+
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+    typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
+    CallbackHolder<packetArrival_cb> m_cbPacketArrival;
+
 private:
     /// initialize a UDT entity and bind to a local address.
 
@@ -887,6 +896,8 @@ private:
     static void* tsbpd(void* param);
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
+
+    static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
@@ -1121,6 +1132,8 @@ private: // Receiving related data
     uint32_t m_lPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
+
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
     pthread_cond_t m_RcvTsbPdCond;               // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
