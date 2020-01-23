@@ -241,8 +241,9 @@ private:
 typedef UniqueLock CGuard;
 
 
-inline void enterCS(Mutex &m) { m.lock(); }
-inline void leaveCS(Mutex &m) { m.unlock(); }
+inline void enterCS(Mutex& m) { m.lock(); }
+inline bool maybeEnterCS(Mutex& m) { return m.try_lock(); }
+inline void leaveCS(Mutex& m) { m.unlock(); }
 
 
 class InvertedLock
@@ -316,6 +317,7 @@ public:
     // Wait only for a given time delay (in microseconds). This function
     // extracts first current time using steady_clock::now().
     bool wait_for(const steady_clock::duration& delay);
+    bool wait_for_monotonic(const steady_clock::duration& delay);
 
     // Wait until the given time is achieved. This actually
     // refers to wait_for for the time remaining to achieve

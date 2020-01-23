@@ -99,7 +99,7 @@ written by
 extern "C" {
 #endif
 
-typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
+typedef int32_t SRTSOCKET;
 
 #ifdef _WIN32
    #ifndef __MINGW__
@@ -523,7 +523,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_UNSECURE,    // password required or unexpected
     SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
-    SRT_REJ_FILTER,       // incompatible packet filter
+    SRT_REJ_FILTER,      // incompatible packet filter
 
     SRT_REJ__SIZE,
 };

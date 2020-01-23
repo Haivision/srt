@@ -162,6 +162,26 @@ bool CSync::wait_for(const steady_clock::duration& delay)
     return signaled;
 }
 
+/// Block the call until either @a timestamp time achieved
+/// or the conditional is signaled.
+/// @param [in] delay Maximum time to wait since the moment of the call
+/// @retval true Resumed due to getting a CV signal
+/// @retval false Resumed due to being past @a timestamp
+bool CSync::wait_for_monotonic(const steady_clock::duration& delay)
+{
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
+    THREAD_PAUSED();
+    bool signaled = SyncEvent::wait_for_monotonic(m_cond, &m_mutex->ref(), delay) != ETIMEDOUT;
+    THREAD_RESUMED();
+
+    return signaled;
+}
+
+
 void CSync::lock_signal()
 {
     // EXPECTED: m_mutex is not locked.

@@ -342,7 +342,7 @@ private:
    {
       SRTSOCKET m_iID;        // UDT socket ID (self)
       CUDT* m_pUDT;           // UDT instance
-      sockaddr_any m_PeerAddr;		// UDT sonnection peer address
+      sockaddr_any m_PeerAddr;// UDT sonnection peer address
       srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
    };
    std::list<CRL> m_lRendezvousID;    // The sockets currently in rendezvous mode
@@ -429,6 +429,10 @@ private:
    } m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
+
 private:
    CSndQueue(const CSndQueue&);
    CSndQueue& operator=(const CSndQueue&);
@@ -468,6 +472,9 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
+
+   void stopWorker();
+
    void setClosing()
    {
        m_bClosing = true;
@@ -493,6 +500,9 @@ private:
    int m_iPayloadSize;                  // packet payload size
 
    volatile bool m_bClosing;            // closing the worker
+#if ENABLE_LOGGING
+   static int m_counter;
+#endif
 
 private:
    int setListener(CUDT* u);

@@ -55,7 +55,7 @@ modified by
 #include <cstring>
 
 #include "common.h"
-#include "core.h"
+#include "api.h"
 #include "netinet_any.h"
 #include "threadname.h"
 #include "logging.h"
@@ -492,6 +492,10 @@ CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
+#if ENABLE_LOGGING
+    int CSndQueue::m_counter = 0;
+#endif
+
 void CSndQueue::init(CChannel *c, CTimer *t)
 {
     m_pChannel                 = c;
@@ -501,7 +505,11 @@ void CSndQueue::init(CChannel *c, CTimer *t)
     m_pSndUList->m_pWindowCond = &m_WindowCond;
     m_pSndUList->m_pTimer      = m_pTimer;
 
-    ThreadName tn("SRT:SndQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    ThreadName tn(thrname.c_str());
+#endif
     if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
     {
         m_WorkerThread = pthread_t();
@@ -598,6 +606,8 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyPop++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
         }
+
+#if ENABLE_HEAVY_LOGGING
         if (pkt.isControl())
         {
             HLOGC(mglog.Debug,
@@ -608,6 +618,7 @@ void *CSndQueue::worker(void *param)
             HLOGC(dlog.Debug,
                   log << self->CONID() << "chn:SENDING SIZE " << pkt.getLength() << " SEQ: " << pkt.getSeqNo());
         }
+#endif
         self->m_pChannel->sendto(addr, pkt);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
@@ -1078,6 +1089,11 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
+#if ENABLE_LOGGING
+    int CRcvQueue::m_counter = 0;
+#endif
+
+
 void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *cc, CTimer *t)
 {
     m_iPayloadSize = payload;
@@ -1093,7 +1109,12 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *c
     m_pRcvUList        = new CRcvUList;
     m_pRendezvousQueue = new CRendezvousQueue;
 
-    ThreadName tn("SRT:RcvQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+    ThreadName tn(thrname.c_str());
+#endif
+
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
         m_WorkerThread = pthread_t();
@@ -1371,7 +1392,8 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     u->checkTimers();
     m_pRcvUList->update(u);
 
-    return CONN_CONTINUE;
+    //return CONN_CONTINUE;
+    return CONN_RUNNING;
 }
 
 // This function responds to the fact that a packet has come
@@ -1510,6 +1532,23 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     storePkt(id, unit->m_Packet.clone());
 
     return CONN_CONTINUE;
+}
+
+void CRcvQueue::stopWorker()
+{
+    // We use the decent way, so we say to the thread "please exit".
+    m_bClosing = true;
+
+    // Sanity check of the function's affinity.
+    if (pthread_self() == m_WorkerThread)
+    {
+        LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
+        return; // do nothing else, this would cause a hangup or crash.
+    }
+
+    HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
+    // And we trust the thread that it does.
+    pthread_join(m_WorkerThread, NULL);
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)

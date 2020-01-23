@@ -64,7 +64,6 @@ modified by
 #include "window.h"
 #include "packet.h"
 #include "channel.h"
-#include "api.h"
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
@@ -139,6 +138,8 @@ enum SeqPairItems
 
 // Extended SRT Congestion control class - only an incomplete definition required
 class CCryptoControl;
+class CUDTUnited;
+class CUDTSocket;
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -164,9 +165,9 @@ private: // constructor and desctructor
 
     void construct();
     void clearData();
-    CUDT();
-    CUDT(const CUDT& ancestor);
-    const CUDT& operator=(const CUDT&) {return *this;}
+    CUDT(CUDTSocket* parent);
+    CUDT(CUDTSocket* parent, const CUDT& ancestor);
+    const CUDT& operator=(const CUDT&) {return *this;} // = delete ?
     ~CUDT();
 
 public: //API
@@ -267,9 +268,10 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
 
-    bool isTsbPd() const { return m_bOPT_TsbPd; }
+    bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
     int RTT() const { return m_iRTT; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
+    int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
     int flowWindowSize() const { return m_iFlowWindowSize; }
     int32_t deliveryRate() const { return m_iDeliveryRate; }
@@ -560,6 +562,7 @@ private:
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
 private: // Identification
+    CUDTSocket* const m_parent; // temporary, until the CUDTSocket class is merged with CUDT
     SRTSOCKET m_SocketID;                        // UDT socket number
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
@@ -711,17 +714,32 @@ private: // Timers
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
     volatile int32_t m_iSndLastDataAck;          // The real last ACK that updates the sender buffer and loss list
-    volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that has been sent
-    int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs
+    volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that HAS BEEN SENT
+    volatile int32_t m_iSndNextSeqNo;            // The sequence number predicted to be placed at the currently scheduled packet
+
+    // Note important differences between Curr and Next fields:
+    // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
+    //   function only. This value represents the sequence number that has been stamped on a packet directly
+    //   before it is sent over the network.
+    // - m_iSndNextSeqNo: this is used by the user's thread and it's operated from CUDT::sendmsg2
+    //   function only. This value represents the sequence number that is PREDICTED to be stamped on the
+    //   first block out of the block series that will be scheduled for later sending over the network
+    //   out of the data passed in this function. For a special case when the length of the data is
+    //   short enough to be passed in one UDP packet (always the case for live mode), this value is
+    //   always increased by one in this call, otherwise it will be increased by the number of blocks
+    //   scheduled for sending.
+
+    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileCC, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     srt::sync::steady_clock::time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
     void setInitialSndSeq(int32_t isn)
     {
-        m_iLastDecSeq = isn - 1; // <-- purpose unknown; duplicate from FileSmoother?
+        // m_iLastDecSeq = isn - 1; <-- purpose unknown; duplicate from FileCC?
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = isn - 1;
+        m_iSndNextSeqNo = isn;
         m_iSndLastAck2 = isn;
     }
 

@@ -64,6 +64,8 @@ modified by
 #include "cache.h"
 #include "epoll.h"
 #include "handshake.h"
+#include "core.h"
+
 
 class CUDT;
 
@@ -123,6 +125,8 @@ public:
 
    srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
 
+   CUDT& core() { return *m_pUDT; }
+
    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
        return (id << 30) + isn;
@@ -176,9 +180,10 @@ public:
    int cleanup();
 
       /// Create a new UDT socket.
+      /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket();
+   SRTSOCKET newSocket(CUDTSocket** pps = NULL);
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;
