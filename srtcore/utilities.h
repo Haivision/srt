@@ -458,11 +458,13 @@ inline RefType* AddressOf(RefType& r)
 {
     return (RefType*)(&(unsigned char&)(r));
 }
+
 template <class T>
 struct explicit_t
 {
     T inobject;
     explicit_t(const T& uo): inobject(uo) {}
+
     operator T() const { return inobject; }
 
 private:

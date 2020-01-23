@@ -99,7 +99,7 @@ private:
    int m_iSize;                         // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
-   mutable srt::sync::CMutex m_ListLock; // used to synchronize list operation
+   mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
 
 private:
    CSndLossList(const CSndLossList&);

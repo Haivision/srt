@@ -303,7 +303,7 @@ public:
         return m_type == SRT_GTYPE_REDUNDANT;
     }
 
-    pthread_mutex_t* exp_groupLock() { return &m_GroupLock; }
+    srt::sync::Mutex* exp_groupLock() { return &m_GroupLock; }
     void addEPoll(int eid);
     void removeEPoll(int eid);
 
@@ -322,7 +322,7 @@ private:
     void getMemberStatus(std::vector<SRT_SOCKGROUPDATA>& w_gd, SRTSOCKET wasread, int result, bool again);
 
     class CUDTUnited* m_pGlobal;
-    pthread_mutex_t m_GroupLock;
+    srt::sync::Mutex m_GroupLock;
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
@@ -383,7 +383,7 @@ private:
     // Signal for the blocking user thread that the packet
     // is ready to deliver.
     pthread_cond_t m_RcvDataCond;
-    pthread_mutex_t m_RcvDataLock;
+    srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
 public:
 
@@ -651,7 +651,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
 
-    SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+    SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
@@ -1122,7 +1122,7 @@ private: // Receiving related data
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    srt::sync::CCondition m_RcvTsbPdCond;
+    pthread_cond_t m_RcvTsbPdCond;               // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1138,26 +1138,22 @@ private:
 
 
 private: // synchronization: mutexes and conditions
-    srt::sync::CMutex m_ConnectionLock;            // used to synchronize connection operation
+    srt::sync::Mutex m_ConnectionLock;           // used to synchronize connection operation
 
-    srt::sync::CCondition m_SendBlockCond;              // used to block "send" call
-    srt::sync::CMutex m_SendBlockLock;             // lock associated to m_SendBlockCond
+    pthread_cond_t m_SendBlockCond;              // used to block "send" call
+    srt::sync::Mutex m_SendBlockLock;            // lock associated to m_SendBlockCond
 
-    srt::sync::CMutex m_RcvBufferLock;             // Protects the state of the m_pRcvBuffer
-
+    srt::sync::Mutex m_RcvBufferLock;            // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    srt::sync::CMutex m_RecvAckLock;               // Protects the state changes while processing incomming ACK (UDT_EPOLL_OUT)
+    srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
+    pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
+    srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
 
-    srt::sync::CCondition m_RecvDataCond;               // used to block "recv" when there is no data
-    srt::sync::CMutex m_RecvDataLock;              // lock associated to m_RecvDataCond
-
-    srt::sync::CMutex m_SendLock;                  // used to synchronize "send" call
-    srt::sync::CMutex m_RecvLock;                  // used to synchronize "recv" call
-
-    srt::sync::CMutex m_RcvLossLock;               // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-
-    srt::sync::CMutex m_StatsLock;                 // used to synchronize access to trace statistics
+    srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
+    srt::sync::Mutex m_RecvLock;                 // used to synchronize "recv" call
+    srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
+    srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();

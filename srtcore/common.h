@@ -577,10 +577,6 @@ public:
       /// @retval WT_ERROR The function has exit due to an error
 
    static EWait waitForEvent();
-
-      /// sleep for a short interval. exact sleep time does not matter
-
-   static void sleep();
    
       /// Wait for condition with timeout 
       /// @param [in] cond Condition variable to wait for
@@ -593,13 +589,11 @@ private:
    srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
-   pthread_mutex_t m_TickLock;
+   srt::sync::Mutex m_TickLock;
 
    static pthread_cond_t m_EventCond;
-   static pthread_mutex_t m_EventLock;
+   static srt::sync::Mutex m_EventLock;
 };
-
-////////////////////////////////////////////////////////////////////////////////
 
 // UDT Sequence Number 0 - (2^31 - 1)
 
