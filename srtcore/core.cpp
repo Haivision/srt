@@ -6026,11 +6026,17 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
             do
             {
+                // `wait_for(recv_timeout)` wouldn't be correct here. Waiting should be
+                // only until the time that is now + timeout since the first moment
+                // when this started, or sliced-waiting for 1 second, if timtout is
+                // higher than this.
+                const steady_clock::time_point exptime = steady_clock::now() + recv_timeout;
+
                 HLOGC(tslog.Debug,
-                      log << CONID() << "receiveMessage: fall asleep for " << count_microseconds(recv_timeout) << "us lock=" << (&m_RecvLock)
+                      log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime) << " lock=" << (&m_RecvLock)
                           << " cond=" << (&m_RecvDataCond));
 
-                if (!recv_cond.wait_for(recv_timeout))
+                if (!recv_cond.wait_until(exptime))
                 {
                     if (!(m_iRcvTimeOut < 0))
                         timeout = true;
