@@ -6038,7 +6038,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
                 if (!recv_cond.wait_until(exptime))
                 {
-                    if (!(m_iRcvTimeOut < 0))
+                    if (m_iRcvTimeOut >= 0) // otherwise it's "no timeout set"
                         timeout = true;
                     HLOGP(tslog.Debug,
                           "receiveMessage: DATA COND: EXPIRED -- checking connection conditions and rolling again");
