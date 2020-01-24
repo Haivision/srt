@@ -332,7 +332,7 @@ Synopsis
                         int64_t msTimeOut,
                         SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
     int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
-    
+    int srt_epoll_clear_usocks(int eid);
 
 SRT Usage
 ---------
@@ -416,6 +416,9 @@ Every item reports a single socket with all events as flags.
 
 When the timeout is not -1, and no sockets are ready until the timeout time
 passes, this function returns 0. This behavior is different in `srt_epoll_wait`.
+
+The extra `srt_epoll_clear_usocks` function removes all subscriptions from
+the epoll container.
 
 The SRT EPoll system does not supports all features of Linux epoll. For
 example, it only supports level-triggered events for system sockets.
