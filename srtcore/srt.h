@@ -437,7 +437,7 @@ enum CodeMinor
     MN_BUSY            = 11,
     MN_XSIZE           = 12,
     MN_EIDINVAL        = 13,
-    MN_EEMPTY = 14,
+    MN_EEMPTY          = 14,
     // MJ_AGAIN
     MN_WRAVAIL         =  1,
     MN_RDAVAIL         =  2,

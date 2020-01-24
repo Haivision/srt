@@ -1268,6 +1268,22 @@ Note that when the `SRT_EPOLL_ERR` is set, the underlying socket error
 can't be retrieved with `srt_getlasterror()`. The socket will be automatically
 closed and its state can be verified with a call to `srt_getsockstate`.
 
+### srt_epoll_clear_usocks
+```
+int srt_epoll_clear_usocks(int eid);
+```
+
+This function removes all subscriptions from the `eid`, only user sockets
+(not system sockets).
+
+- Returns:
+  * 0 on success
+  * -1 in case of error
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
+
 ### srt_epoll_set
 ```
 int32_t srt_epoll_set(int eid, int32_t flags);

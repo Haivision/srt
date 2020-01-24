@@ -116,6 +116,12 @@ struct CEPollDesc
 
        int edgeOnly() { return edge & watch; }
 
+       /// Clear all flags for given direction from the notices
+       /// and subscriptions, and checks if this made the event list
+       /// for this watch completely empty.
+       /// @param direction event type that has to be cleared
+       /// @return true, if this cleared the last event (the caller
+       /// want to remove the subscription for this socket)
        bool clear(int direction)
        {
            if (watch & direction)
@@ -311,6 +317,17 @@ public:
        return false;
    }
 
+   /// This should work in a loop around the notice container of
+   /// the given eid container and clear out the notice for
+   /// particular event type. If this has cleared effectively the
+   /// last existing event, it should return the socket id
+   /// so that the caller knows to remove it also from subscribers.
+   ///
+   /// @param i iterator in the notice container
+   /// @param event event type to be cleared
+   /// @retval (socket) Socket to be removed from subscriptions
+   /// @retval SRT_INVALID_SOCK Nothing to be done (associated socket
+   ///         still has other subscriptions)
    SRTSOCKET clearEventSub(enotice_t::iterator i, int event)
    {
        // We need to remove the notice and subscription
