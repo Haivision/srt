@@ -468,10 +468,10 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
    w_packet.m_iMsgNo = p->m_iMsgNoBitset;
 
    // TODO: FR #930. Use source time if it is provided.
-   w_srctime = m_pCurrBlock->m_tsOriginTime;
+   w_srctime = p->m_tsOriginTime;
    /*w_srctime =
-      m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
-      m_pCurrBlock->m_tsOriginTime;*/
+      p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
+      p->m_tsOriginTime;*/
 
    HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: getting packet %"
            << p->m_iSeqNo << " as per %" << w_packet.m_iSeqNo
