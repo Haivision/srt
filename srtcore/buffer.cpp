@@ -2011,7 +2011,6 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 
 bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 {
-
     // empty buffer
     if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
     {

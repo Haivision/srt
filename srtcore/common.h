@@ -878,7 +878,6 @@ public:
     CircularBuffer(const CircularBuffer&);
 
 public:
-
     typedef Value value_type;
 
     CircularBuffer(int size)
@@ -921,7 +920,6 @@ public:
         {
             for (int i = m_xBegin; i < m_xEnd; ++i)
                 destr(m_aStorage[i]);
-
         }
 
         m_xBegin = 0;
@@ -1111,7 +1109,6 @@ private:
     }
 
 public:
-
     bool set(int position, const Value& newval, bool overwrite = true)
     {
         Value* pval = 0;

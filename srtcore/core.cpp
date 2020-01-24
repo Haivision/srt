@@ -9387,8 +9387,8 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_de
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
         strcpy(debug_decision, "ACK ");
-
     }
+
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
     // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
