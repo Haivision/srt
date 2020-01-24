@@ -692,10 +692,8 @@ endforeach()
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
-target_compile_definitions(srt_virtual PUBLIC -DHAICRYPT_DYNAMIC)
 if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
-	target_compile_definitions(srt_virtual PRIVATE -DHAICRYPT_EXPORTS)
 endif()
 
 if (srt_libspec_shared)
