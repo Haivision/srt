@@ -429,6 +429,15 @@ public: // for CUDTUnited API
 
    typedef std::map<SRTSOCKET, int> fmap_t;
 
+   /// Lightweit and more internal-reaching version of `uwait` for internal use only.
+   /// This function wait for sockets to be ready and reports them in `st` map.
+   ///
+   /// @param d the internal structure of the epoll container
+   /// @param st output container for the results: { socket_type, event }
+   /// @param msTimeOut timeout after which return with empty output is allowed
+   /// @param report_by_exception if true, errors will result in exception intead of returning -1
+   /// @retval -1 error occurred
+   /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
    static int ready(const fmap_t& mp, SRTSOCKET sock)
