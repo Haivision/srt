@@ -74,23 +74,44 @@ written by
 // for all lesser standard use compiler-specific attributes).
 #if defined(SRT_NO_DEPRECATED)
 
+// Unused: do not issue an unused variable warning
 #define SRT_ATR_UNUSED
+
+// Deprecated: function or symbol is deprecated
+// The *_PX version is the prefix attribute, which applies only
+// to functions (Microsoft compilers).
+
+// When deprecating a function, mark it:
+//
+// SRT_ATR_DEPRECATED_PX retval function(arguments) SRT_ATR_DEPRECATED;
+//
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_DEPRECATED_PX
+
+// Nodiscard: issue a warning if the return value was discarded.
 #define SRT_ATR_NODISCARD
 
 #elif defined(__cplusplus) && __cplusplus > 201406
 
 #define SRT_ATR_UNUSED [[maybe_unused]]
 #define SRT_ATR_DEPRECATED [[deprecated]]
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
-#elif defined( __GNUC__)
+#elif defined(__GNUC__)
 #define SRT_ATR_UNUSED __attribute__((unused))
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
 #define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(_MSC_VER)
+#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
+#define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
+#define SRT_ATR_DEPRECATED // no postfix-type modifier
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_UNUSED
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_NODISCARD
 #endif
@@ -100,6 +121,14 @@ extern "C" {
 #endif
 
 typedef int32_t SRTSOCKET;
+
+// The most significant bit 31 (sign bit actually) is left unused,
+// so that all people who check the value for < 0 instead of -1
+// still get what they want. The bit 30 is reserved for marking
+// the "socket group". Most of the API functions should work
+// transparently with the socket descriptor designating a single
+// socket or a socket group.
+static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
    #ifndef __MINGW__
@@ -188,6 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    // (some space left)
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
@@ -526,6 +556,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
+    SRT_REJ_GROUP,       // incompatible group
 
     SRT_REJ__SIZE,
 };
@@ -670,6 +701,14 @@ typedef struct CBytePerfMon SRT_TRACEBSTATS;
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;
 
+typedef enum SRT_GROUP_TYPE
+{
+    SRT_GTYPE_UNDEFINED,
+    SRT_GTYPE_BROADCAST,
+    // ...
+    SRT_GTYPE__END
+} SRT_GROUP_TYPE;
+
 // library initialization
 SRT_API       int srt_startup(void);
 SRT_API       int srt_cleanup(void);
@@ -679,12 +718,28 @@ SRT_API       int srt_cleanup(void);
 //
 // DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
 // and socket creation doesn't need any arguments. Use srt_create_socket().
-SRT_API SRTSOCKET srt_socket       (int af, int type, int protocol) SRT_ATR_DEPRECATED;
-SRT_API SRTSOCKET srt_create_socket();
+SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
+SRT_API       SRTSOCKET srt_create_socket();
+
+// Group management
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+
+SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
+SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
+SRT_API       int srt_exclude      (SRTSOCKET socket);
+SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
+SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
-static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
 static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
@@ -699,6 +754,13 @@ SRT_API       int srt_connect_bind (SRTSOCKET u,
                                     const struct sockaddr* target, int target_len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
+
+SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
+SRT_API int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source /*nullable*/, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize);
+
+
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
@@ -717,7 +779,13 @@ typedef struct SRT_MsgCtrl_
    uint64_t srctime;     // source timestamp (usec), 0: use internal time     
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata;
+   size_t grpdata_size;
 } SRT_MSGCTRL;
+
+static const int SRTF_ASYNC = 1,    // Don't wait until every operation completes
+                 SRTF_PARTIAL = 2,  // Accept that only part of the buffer can be sent
+                 SRTF_FULL = 4;
 
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.

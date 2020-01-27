@@ -112,6 +112,8 @@ CSndBuffer::CSndBuffer(int size, int mss)
    }
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
+
+   createMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
@@ -132,6 +134,8 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
+
+   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -172,7 +176,18 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // and then return the accordingly modified sequence number in the reference.
 
     Block* s = m_pLastBlock;
-    w_msgno = m_iNextMsgNo;
+
+    if (w_msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
+        w_msgno = m_iNextMsgNo;
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: OVERWRITTEN by msgno supplied by caller: msgno=" << w_msgno);
+        m_iNextMsgNo = w_msgno;
+    }
+
     for (int i = 0; i < size; ++ i)
     {
         int pktlen = len - i * m_iMSS;
@@ -182,7 +197,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(dlog.Debug, log << "addBuffer: %" << w_seqno << " #" << w_msgno
                 << " spreading from=" << (i*m_iMSS) << " size=" << pktlen
                 << " TO BUFFER:" << (void*)s->m_pcData);
-        memcpy((s->m_pcData), data + i * m_iMSS, pktlen);
+        memcpy(s->m_pcData, data + i * m_iMSS, pktlen);
         s->m_iLength = pktlen;
 
         s->m_iSeqNo = w_seqno;
@@ -468,10 +483,10 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
    w_packet.m_iMsgNo = p->m_iMsgNoBitset;
 
    // TODO: FR #930. Use source time if it is provided.
-   w_srctime = p->m_tsOriginTime;
+   w_srctime = m_pCurrBlock->m_tsOriginTime;
    /*w_srctime =
-      p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
-      p->m_tsOriginTime;*/
+      m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
+      m_pCurrBlock->m_tsOriginTime;*/
 
    HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: getting packet %"
            << p->m_iSeqNo << " as per %" << w_packet.m_iSeqNo
@@ -513,7 +528,7 @@ int CSndBuffer::getCurrBufSize() const
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
+    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. w_bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());
@@ -735,6 +750,8 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
+
+   createMutex(m_BytesCountLock, "BytesCount");
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -748,6 +765,8 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
+
+   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -761,7 +780,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
    *  acked (bytes>0, acked=true),
    *  removed (bytes<0, acked=n/a)
    */
-   CGuard cg(m_BytesCountLock);
+   CGuard cg (m_BytesCountLock);
 
    if (!acked) //adding new pkt in RcvBuffer
    {
@@ -927,8 +946,6 @@ int CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
-   CTimer::triggerEvent();
-
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
    // This should help determine the sequence number at first read-ready position.
@@ -953,6 +970,35 @@ void CRcvBuffer::skipData(int len)
       m_iMaxPos = 0;
 }
 
+size_t CRcvBuffer::dropData(int len)
+{
+    // This function does the same as skipData, although skipData
+    // should work in the condition of absence of data, so no need
+    // to force the units in the range to be freed. This function
+    // works in more general condition where we don't know if there
+    // are any data in the given range, but want to remove these
+    // "sequence positions" from the buffer, whether there are data
+    // at them or not.
+
+    size_t stats_bytes = 0;
+
+    int p = m_iStartPos;
+    int past_q = shift(p, len);
+    while (p != past_q)
+    {
+        if (m_pUnit[p] && m_pUnit[p]->m_iFlag == CUnit::GOOD)
+        {
+            stats_bytes += m_pUnit[p]->m_Packet.getLength();
+            freeUnitAt(p);
+        }
+
+        p = shiftFwd(p);
+    }
+
+    m_iStartPos = past_q;
+    return stats_bytes;
+}
+
 bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                                 bool&                     w_passack,
                                 int32_t&                  w_skipseqno,
@@ -965,7 +1011,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - w_passack: false (the report concerns a packet with an exactly next sequence)
     // - w_skipseqno == -1: no packets to skip towards the first RTP
-    // - w_curpktseq: that exactly packet that is reported (for debugging purposes)
+    // - w_curpktseq: sequence number for reported packet (for debug purposes)
     // - @return: whether the reported packet is ready to play
 
     /* Check the acknowledged packets */
@@ -991,9 +1037,9 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=<unchanged>, @return false
+    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=0, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
-    //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, w_curpktseq=PKT, @return LOCAL(PKT.TS) <= NOW
+    //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, ppkt=PKT, @return LOCAL(PKT.TS) <= NOW
 
     /* 
      * No acked packets ready but caller want to know next packet to wait for
@@ -1157,6 +1203,7 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
         }
         else
         {
+
             // This does:
             // 1. Get the TSBPD time of the unit. Stop and return false if this unit
             //    is not yet ready to play.
@@ -1654,9 +1701,49 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     return (m_tsTsbPdTimeBase + microseconds_from(carryover));
 }
 
+void CRcvBuffer::applyGroupTime(const steady_clock::time_point& timebase, bool wrp, uint32_t delay, const steady_clock::duration& udrift)
+{
+    // Same as setRcvTsbPdMode, but predicted to be used for group members.
+    // This synchronizes the time from the INTERNAL TIMEBASE of an existing
+    // socket's internal timebase. This is required because the initial time
+    // base stays always the same, whereas the internal timebase undergoes
+    // adjustment as the 32-bit timestamps in the sockets wrap. The socket
+    // newly added to the group must get EXACTLY the same internal timebase
+    // or otherwise the TsbPd time calculation will ship different results
+    // on different sockets.
+
+    m_bTsbPdMode = true;
+
+    m_tsTsbPdTimeBase = timebase;
+    m_bTsbPdWrapCheck = wrp;
+    m_tdTsbPdDelay = microseconds_from(delay);
+    m_DriftTracer.forceDrift(count_microseconds(udrift));
+}
+
+void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase, bool wrp, const steady_clock::duration& udrift)
+{
+    // This is only when a drift was updated on one of the group members.
+    HLOGC(dlog.Debug, log << "rcv-buffer: group synch uDRIFT: "
+            << m_DriftTracer.drift() << " -> " << FormatDuration(udrift)
+            << " TB: " << FormatTime(m_tsTsbPdTimeBase) << " -> "
+            << FormatTime(timebase));
+
+    m_tsTsbPdTimeBase = timebase;
+    m_bTsbPdWrapCheck = wrp;
+
+    m_DriftTracer.forceDrift(count_microseconds(udrift));
+}
+
+bool CRcvBuffer::getInternalTimeBase(steady_clock::time_point& w_timebase, steady_clock::duration& w_udrift)
+{
+    w_timebase = m_tsTsbPdTimeBase;
+    w_udrift = microseconds_from(m_DriftTracer.drift());
+    return m_bTsbPdWrapCheck;
+}
+
 steady_clock::time_point CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-    const steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
+    steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
 
     // Display only ingredients, not the result, as the result will
     // be displayed anyway in the next logs.
@@ -1747,15 +1834,16 @@ void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 }
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
-void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_lock)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_lock,
+        steady_clock::duration& w_udrift, steady_clock::time_point& w_newtimebase)
 {
     if (!m_bTsbPdMode) // Not checked unless in TSBPD mode
-        return;
+        return false;
     /*
      * TsbPD time drift correction
      * TsbPD time slowly drift over long period depleting decoder buffer or raising latency
      * Re-evaluate the time adjustment value using a receiver control packet (ACK-ACK).
-     * ACK-ACK timestamp_us is RTT/2 ago (in sender's time base)
+     * ACK-ACK timestamp is RTT/2 ago (in sender's time base)
      * Data packet have origin time stamp which is older when retransmitted so not suitable for this.
      *
      * Every TSBPD_DRIFT_MAX_SAMPLES packets, the average drift is calculated
@@ -1765,7 +1853,7 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_l
      */
 
     // Note important thing: this function is being called _EXCLUSIVELY_ in the handler
-    // of UMSG_ACKACK command reception. This means that the timestamp_us used here comes
+    // of UMSG_ACKACK command reception. This means that the timestamp used here comes
     // from the CONTROL domain, not DATA domain (timestamps from DATA domain may be
     // either schedule time or a time supplied by the application).
 
@@ -1788,18 +1876,23 @@ void CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_l
 #if ENABLE_HEAVY_LOGGING
         const steady_clock::time_point oldbase = m_tsTsbPdTimeBase;
 #endif
-        m_tsTsbPdTimeBase += microseconds_from(m_DriftTracer.overdrift());
+        steady_clock::duration overdrift = microseconds_from(m_DriftTracer.overdrift());
+        m_tsTsbPdTimeBase += overdrift;
 
-        HLOGC(dlog.Debug, log << "DRIFT=" << count_milliseconds(iDrift) << "ms AVG="
-                << (m_DriftTracer.drift()/1000.0) << "ms, TB: "
-                << FormatTime(oldbase) << " UPDATED TO: " << FormatTime(m_tsTsbPdTimeBase));
+        HLOGC(dlog.Debug, log << "DRIFT=" << FormatDuration(iDrift) << " AVG="
+                << (m_DriftTracer.drift()/1000.0) << "ms, TB: " << FormatTime(oldbase)
+                << " EXCESS: " << FormatDuration(overdrift)
+                << " UPDATED TO: " << FormatTime(m_tsTsbPdTimeBase));
     }
     else
     {
-        HLOGC(dlog.Debug, log << "DRIFT=" << count_milliseconds(iDrift) << "ms TB REMAINS: " << FormatTime(m_tsTsbPdTimeBase));
+        HLOGC(dlog.Debug, log << "DRIFT=" << FormatDuration(iDrift) << " TB REMAINS: " << FormatTime(m_tsTsbPdTimeBase));
     }
 
     leaveCS(mutex_to_lock);
+    w_udrift = iDrift;
+    w_newtimebase = m_tsTsbPdTimeBase;
+    return updated;
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
@@ -1974,9 +2067,9 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 {
     static steady_clock::time_point prev_now;
     static steady_clock::time_point prev_srctime;
-    const CPacket& pkt = m_pUnit[p]->m_Packet;
+    CPacket& pkt = m_pUnit[p]->m_Packet;
 
-    const int32_t seq = pkt.m_iSeqNo;
+    int32_t seq = pkt.m_iSeqNo;
 
     steady_clock::time_point nowtime = steady_clock::now();
     steady_clock::time_point srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
@@ -2011,6 +2104,7 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 
 bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 {
+
     // empty buffer
     if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
     {

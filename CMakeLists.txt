@@ -118,16 +118,31 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
+# Use application-defined group reader
+# (currently the only one implemented)
+add_definitions(-DSRT_ENABLE_APP_READER)
+
+# XXX EXPERIMENTAL: for testing, disable sending key drop packets to
+# simulate they were lost
+# add_definitions(-DSRT_TEST_DISABLE_KEY_CONTROL_PACKETS)
+
+set (DISPLAY_LOGGING DISABLED)
+
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
-	message(STATUS "LOGGING: DISABLED")
 else()
 	if (ENABLE_HEAVY_LOGGING)
-		message(STATUS "LOGGING: HEAVY")
+		set (DISPLAY_LOGGING HEAVY)
 	else()
-		message(STATUS "LOGGING: ENABLED")
+		set (DISPLAY_LOGGING ENABLED)
+	endif()
+
+	if (ENABLE_HAICRYPT_LOGGING)
+		list (APPEND DISPLAY_LOGGING HAICRYPT)
 	endif()
 endif()
+
+message(STATUS "LOGGING: ${DISPLAY_LOGGING}")
 
 if (USE_BUSY_WAITING)
 	message(STATUS "USE_BUSY_WAITING: ON")

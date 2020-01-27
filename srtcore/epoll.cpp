@@ -70,7 +70,7 @@ using namespace srt::sync;
 #if ENABLE_HEAVY_LOGGING
 static void PrintEpollEvent(ostream& os, int events);
 #endif
-
+// Use "inline namespace" in C++11
 namespace srt_logging
 {
     extern Logger dlog, mglog;
@@ -85,15 +85,17 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
+   createMutex(m_EPollLock, "EPoll");
 }
 
 CEPoll::~CEPoll()
 {
+   releaseMutex(m_EPollLock);
 }
 
 int CEPoll::create(CEPollDesc** pout)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg (m_EPollLock);
 
    if (++ m_iIDSeed >= 0x7FFFFFFF)
       m_iIDSeed = 0;
@@ -187,7 +189,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg (m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -255,7 +257,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg (m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -286,7 +288,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 // Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-    CGuard pg(m_EPollLock);
+    CGuard pg (m_EPollLock);
 
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
@@ -296,6 +298,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
+
     evts &= ~SRT_EPOLL_ET;
     if (evts)
     {
@@ -364,7 +367,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
 int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg (m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -429,7 +432,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::setflags(const int eid, int32_t flags)
 {
-    CGuard pg(m_EPollLock);
+    CGuard pg (m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -465,7 +468,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
     while (true)
     {
         {
-            CGuard pg(m_EPollLock);
+            CGuard pg (m_EPollLock);
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -474,7 +477,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
             if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
             {
                 // Empty EID is not allowed, report error.
-                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+                throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
             }
 
             if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
@@ -535,7 +538,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     while (true)
     {
         {
-            CGuard epollock(m_EPollLock);
+            CGuard epollock (m_EPollLock);
 
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
@@ -571,13 +574,13 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             {
                 ++it_next;
                 IF_HEAVY_LOGGING(++total_noticed);
-                if (readfds && ((it->events & SRT_EPOLL_IN) || (it->events & SRT_EPOLL_ERR)))
+                if (readfds && ((it->events & UDT_EPOLL_IN) || (it->events & UDT_EPOLL_ERR)))
                 {
                     if (readfds->insert(it->fd).second)
                         ++total;
                 }
 
-                if (writefds && ((it->events & SRT_EPOLL_OUT) || (it->events & SRT_EPOLL_ERR)))
+                if (writefds && ((it->events & UDT_EPOLL_OUT) || (it->events & UDT_EPOLL_ERR)))
                 {
                     if (writefds->insert(it->fd).second)
                         ++total;
@@ -798,7 +801,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
 int CEPoll::release(const int eid)
 {
-   CGuard pg(m_EPollLock);
+   CGuard pg (m_EPollLock);
 
    map<int, CEPollDesc>::iterator i = m_mPolls.find(eid);
    if (i == m_mPolls.end())

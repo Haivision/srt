@@ -120,7 +120,6 @@ public:
 
    int readData(CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int kflgs);
 
-
       /// Find data position to pack a DATA packet for a retransmission.
       /// @param [out] data the pointer to the data position.
       /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -367,7 +366,7 @@ public:
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return actuall size of data read.
 
-   int readMsg(char* data, int len, SRT_MSGCTRL& w_mctrl, int upto);
+   int readMsg(char* data, int len, SRT_MSGCTRL& mctrl, int upto);
       /// Query if data is ready to read (tsbpdtime <= now if TsbPD is active).
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       ///                        of next packet in recv buffer, ready or not.
@@ -401,7 +400,8 @@ public:
       /// @param [in] timestamp packet time stamp
       /// @param [ref] lock Mutex that should be locked for the operation
 
-   void addRcvTsbPdDriftSample(uint32_t timestamp, srt::sync::Mutex& lock);
+   bool addRcvTsbPdDriftSample(uint32_t timestamp, srt::sync::Mutex& mutex_to_lock,
+           duration& w_udrift, time_point& w_newtimebase);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    void printDriftHistogram(int64_t iDrift);
@@ -479,10 +479,18 @@ public:
       /// @return local delivery time (usec)
 
 public:
+
+   // @return Wrap check value
+   bool getInternalTimeBase(time_point& w_tb, duration& w_udrift);
+
+   void applyGroupTime(const time_point& timebase, bool wrapcheck, uint32_t delay, const duration& udrift);
+   void applyGroupDrift(const time_point& timebase, bool wrapcheck, const duration& udrift);
    time_point getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
    time_point debugGetDeliveryTime(int offset);
 
+   size_t dropData(int len);
+   
    // Required by PacketFilter facility to use as a storage
    // for provided packets
    CUnitQueue* getUnitQueue()
@@ -542,7 +550,7 @@ private:
                                         // up to which data are already retrieved;
                                         // in message reading mode it's unused and always 0)
 
-   srt::sync::Mutex m_BytesCountLock;   // used to protect counters operations
+   srt::sync::Mutex m_BytesCountLock;    // used to protect counters operations
    int m_iBytesCount;                   // Number of payload bytes in the buffer
    int m_iAckedPktsCount;               // Number of acknowledged pkts in the buffer
    int m_iAckedBytesCount;              // Number of acknowledged payload bytes in the buffer

@@ -335,6 +335,7 @@ public:
 class CEPoll
 {
 friend class CUDT;
+friend class CUDTGroup;
 friend class CRendezvousQueue;
 
 public:

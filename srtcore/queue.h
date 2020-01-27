@@ -218,7 +218,7 @@ private:
    srt::sync::Mutex m_ListLock;
 
    srt::sync::Mutex* m_pWindowLock;
-   pthread_cond_t* m_pWindowCond;
+   srt::sync::CCondition* m_pWindowCond;
 
    CTimer* m_pTimer;
 
@@ -401,6 +401,8 @@ public:
        m_bClosing = true;
    }
 
+   pthread_t threadId() { return m_WorkerThread; }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -412,7 +414,7 @@ private:
    CTimer* m_pTimer;                    // Timing facility
 
    srt::sync::Mutex m_WindowLock;
-   pthread_cond_t m_WindowCond;
+   srt::sync::CCondition m_WindowCond;
 
    volatile bool m_bClosing;            // closing the worker
 
@@ -472,6 +474,8 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
+   // Needed for affinity check (debug only)
+   pthread_t threadId() { return m_WorkerThread; }
 
    void stopWorker();
 
@@ -527,7 +531,7 @@ private:
 
    std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
    srt::sync::Mutex m_BufferLock;
-   pthread_cond_t m_BufferCond;
+   srt::sync::CCondition m_BufferCond;
 
 private:
    CRcvQueue(const CRcvQueue&);
