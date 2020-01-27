@@ -615,7 +615,6 @@ std::string CPacket::Info()
             {
                 SprintSpecialWord(os, array[i]);
                 os << " ";
-
             }
             os << "]";
         }

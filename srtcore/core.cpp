@@ -52,14 +52,10 @@ modified by
 
 #include "platform_sys.h"
 
-// For crash-asserts
-#if ENABLE_THREAD_LOGGING
-#include <stdexcept>
-#endif
-
 #include <cmath>
 #include <sstream>
 #include <algorithm>
+#include <iterator>
 #include "srt.h"
 #include "queue.h"
 #include "api.h"
@@ -3148,7 +3144,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_IncludedGroup)
     {
         // XXX Later probably needs to check if this group REQUIRES the group
-        // response. Currently this implements the redundancy group, and this
+        // response. Currently this implements the bonding-category group, and this
         // always requires that the listener respond with the group id, otherwise
         // it probably DID NOT UNDERSTAND THE GROUP, so the connection should be rejected.
         if (!have_group)
@@ -3897,7 +3893,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      */
     m_tsLastReqTime = now;
     m_bConnecting = true;
-
     m_pSndQueue->sendto(serv_addr, reqpkt);
 
     //
@@ -4826,7 +4821,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
-             m_SrtHsSide = hsd;
+                m_SrtHsSide = hsd;
             }
             m_tsLastReqTime = steady_clock::time_point();
             if (!createCrypter(hsd, bidirectional))
@@ -5544,13 +5539,13 @@ void* CUDT::tsbpd(void* param)
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
             self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
-         if (self->m_parent->m_IncludedGroup)
-         {
-             // The current "APP reader" needs to simply decide as to whether
-             // the next CUDTGroup::recv() call should return with no blocking or not.
-             // When the group is read-ready, it should update its pollers as it sees fit.
-             self->m_parent->m_IncludedGroup->updateReadState(self->m_SocketID, current_pkt_seq);
-         }
+            if (self->m_parent->m_IncludedGroup)
+            {
+                // The current "APP reader" needs to simply decide as to whether
+                // the next CUDTGroup::recv() call should return with no blocking or not.
+                // When the group is read-ready, it should update its pollers as it sees fit.
+                self->m_parent->m_IncludedGroup->updateReadState(self->m_SocketID, current_pkt_seq);
+            }
             CTimer::triggerEvent();
             tsbpdtime = steady_clock::time_point();
         }
@@ -5588,7 +5583,6 @@ void* CUDT::tsbpd(void* param)
 
         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
     }
-    // m_RecvLock will be unlocked in ~CGuard.
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
@@ -7735,13 +7729,13 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
                 }
                 // acknowledge any waiting epolls to read
                 s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
-             if (m_parent->m_IncludedGroup)
-             {
-                 // The current "APP reader" needs to simply decide as to whether
-                 // the next CUDTGroup::recv() call should return with no blocking or not.
-                 // When the group is read-ready, it should update its pollers as it sees fit.
-                 m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
-             }
+                if (m_parent->m_IncludedGroup)
+                {
+                    // The current "APP reader" needs to simply decide as to whether
+                    // the next CUDTGroup::recv() call should return with no blocking or not.
+                    // When the group is read-ready, it should update its pollers as it sees fit.
+                    m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
+                }
                 CTimer::triggerEvent();
             }
             enterCS(m_RcvBufferLock);
@@ -7762,7 +7756,6 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
           LOGC(mglog.Error, log << "sendCtrl(UMSG_ACK): IPE: curr %" << ack
                   << " <% last %" << m_iRcvLastAck);
             leaveCS(m_RcvBufferLock);
-
             break;
         }
 
@@ -7838,7 +7831,6 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
                     << " <=%  ACKACK %" << m_iRcvLastAckAck << " - NOT SENDING ACK");
         }
         leaveCS(m_RcvBufferLock);
-
         break;
     }
 
@@ -8345,10 +8337,9 @@ void CUDT::processCtrl(const CPacket& ctrlpkt)
                         // In distinction to losslist, DROPREQ has always a range
                         // always just one range, and the data are <LO, HI>, with no range bit.
                         int32_t seqpair[2] = {losslist_lo, losslist_hi};
-                        int32_t no_msgno = 0; // We don't know - this wasn't ever sent
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
+                        const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+
                         sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
-#endif
                     }
 
                     enterCS(m_StatsLock);
@@ -8496,7 +8487,7 @@ void CUDT::processCtrl(const CPacket& ctrlpkt)
                 }
                 else
                 {
-                 HLOGC(mglog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
+                    HLOGC(mglog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
                 }
             }
             else
@@ -8556,7 +8547,6 @@ void CUDT::processCtrl(const CPacket& ctrlpkt)
         {
             CGuard rlock(m_RecvLock);
             m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-
             // When the drop request was received, it means that there are
             // packets for which there will never be ACK sent; if the TSBPD thread
             // is currently in the ACK-waiting state, it may never exit.
@@ -8764,6 +8754,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             HLOGC(mglog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
             continue;
         }
@@ -8782,6 +8773,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+
             // only one msg drop request is necessary
             m_pSndLossList->remove(seqpair[1]);
 
@@ -8881,63 +8873,63 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
             if (payload)
             {
-             // A CHANGE. The sequence number is currently added to the packet
-             // when scheduling, not when extracting. This is a inter-migration form,
-             // so still override the value, but trace it.
-             m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
+                // A CHANGE. The sequence number is currently added to the packet
+                // when scheduling, not when extracting. This is a inter-migration form,
+                // so still override the value, but trace it.
+                m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
 
-             // Do this checking only for groups and only at the very first moment,
-             // when there's still nothing in the buffer. Otherwise there will be
-             // a serious data discrepancy between the agent and the peer.
-             // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
-             // if this is the very first packet to send.
-             if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
-             {
-                 int seqdiff = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
+                // Do this checking only for groups and only at the very first moment,
+                // when there's still nothing in the buffer. Otherwise there will be
+                // a serious data discrepancy between the agent and the peer.
+                // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
+                // if this is the very first packet to send.
+                if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
+                {
+                    int seqdiff = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
 
-                 HLOGC(mglog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
-                     << " from SCHEDULING sequence " << w_packet.m_iSeqNo
-                     << " DIFF: " << seqdiff << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                    HLOGC(mglog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
+                            << " from SCHEDULING sequence " << w_packet.m_iSeqNo
+                            << " DIFF: " << seqdiff << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
-                 // This is the very first packet to be sent; so there's nothing in
-                 // the sending buffer yet, and therefore we are in a situation as just
-                 // after connection. No packets in the buffer, no packets are sent,
-                 // no ACK to be awaited. We can screw up all the variables that are
-                 // initialized from ISN just after connection.
-                 //
-                 // Additionally send the drop request to the peer so that it
-                 // won't stupidly request the packets to be retransmitted.
-                 // Don't do it if the difference isn't positive or exceeds the threshold.
-                 if (seqdiff > 0)
-                 {
-                     int32_t seqpair[2];
-                     seqpair[0] = m_iSndCurrSeqNo;
-                     seqpair[1] = w_packet.m_iSeqNo;
-                     HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
-                             << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                             << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
+                    // This is the very first packet to be sent; so there's nothing in
+                    // the sending buffer yet, and therefore we are in a situation as just
+                    // after connection. No packets in the buffer, no packets are sent,
+                    // no ACK to be awaited. We can screw up all the variables that are
+                    // initialized from ISN just after connection.
+                    //
+                    // Additionally send the drop request to the peer so that it
+                    // won't stupidly request the packets to be retransmitted.
+                    // Don't do it if the difference isn't positive or exceeds the threshold.
+                    if (seqdiff > 0)
+                    {
+                        int32_t seqpair[2];
+                        seqpair[0] = m_iSndCurrSeqNo;
+                        seqpair[1] = w_packet.m_iSeqNo;
+                        HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
+                                << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                                << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
 #ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
-                     sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+                        sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 #endif
 
-                     // In case when this message is lost, the peer will still get the
-                     // UMSG_DROPREQ message when the agent realizes that the requested
-                     // packet are not present in the buffer (preadte the send buffer).
-                 }
-             }
-             else
-             {
-                HLOGC(mglog.Debug, log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
-                     << " over SCHEDULING sequence " << w_packet.m_iSeqNo
-                     << " DIFF: " << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
-                     << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                        // In case when this message is lost, the peer will still get the
+                        // UMSG_DROPREQ message when the agent realizes that the requested
+                        // packet are not present in the buffer (preadte the send buffer).
+                    }
+                }
+                else
+                {
+                    HLOGC(mglog.Debug, log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
+                            << " over SCHEDULING sequence " << w_packet.m_iSeqNo
+                            << " DIFF: " << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
+                            << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
-                HLOGC(mglog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_IncludedGroup ? "yes":"no")
-                    << " extraction-seq=" << m_iSndCurrSeqNo << " scheduling-seq=" << w_packet.m_iSeqNo << " ISN=" << m_iISN);
+                    HLOGC(mglog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_IncludedGroup ? "yes":"no")
+                            << " extraction-seq=" << m_iSndCurrSeqNo << " scheduling-seq=" << w_packet.m_iSeqNo << " ISN=" << m_iISN);
 
-                // Do this always when not in a group, 
-                w_packet.m_iSeqNo = m_iSndCurrSeqNo;
-             }
+                    // Do this always when not in a group, 
+                    w_packet.m_iSeqNo = m_iSndCurrSeqNo;
+                }
 
                 // every 16 (0xF) packets, a packet pair is sent
                 if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
@@ -9192,30 +9184,6 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     return true;
 }
 
-/* UNUSED ???
-#if ENABLE_HEAVY_LOGGING
-static std::string DisplayLossArray(const vector<int32_t>& a)
-{
-    std::ostringstream os;
-
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        int32_t seq = a[i];
-        if (IsSet(seq, LOSSDATA_SEQNO_RANGE_FIRST))
-            os << (seq & ~LOSSDATA_SEQNO_RANGE_FIRST) << "-";
-        else
-            os << seq << ",";
-    }
-
-    std::string out = os.str();
-    if (out[out.size()-1] != ',')
-        return out + "???";
-    return out.substr(0, out.size()-1);
-}
-#else
-inline static std::string DisplayLossArray(const vector<int32_t>&) { return std::string(); }
-#endif
-*/
 int CUDT::processData(CUnit* in_unit)
 {
     if (m_bClosing)
@@ -9442,7 +9410,7 @@ int CUDT::processData(CUnit* in_unit)
                 long bltime = CountIIR<uint64_t>(
                         uint64_t(m_stats.traceBelatedTime) * 1000,
                         count_microseconds(steady_clock::now() - tsbpdtime), 0.2);
-            
+
                 enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = double(bltime) / 1000.0;
                 m_stats.traceRcvBelated++;
@@ -10424,8 +10392,8 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_de
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
         strcpy(debug_decision, "ACK ");
-
     }
+
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
     // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
@@ -11230,6 +11198,7 @@ int fillValue(void* optval, int len, V value)
 
 static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 {
+    static const linger def_linger = {1, CUDT::DEF_LINGER_S };
     switch (optname)
     {
     default: return false;
@@ -11254,7 +11223,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
                           CUDT::DEF_BUFFER_SIZE * (CUDT::DEF_MSS - CPacket::UDP_HDR_SIZE));
                   break;
 
-    case SRTO_LINGER: RD(( (linger){1, CUDT::DEF_LINGER_S} ));
+    case SRTO_LINGER: RD(def_linger);
     case SRTO_UDP_SNDBUF:
     case SRTO_UDP_RCVBUF:  RD(CUDT::DEF_UDP_BUFFER_SIZE);
     case SRTO_RENDEZVOUS: RD(false);
@@ -11620,7 +11589,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (stat != -1)
             curseq = w_mc.pktseq;
 
-        sendstates.push_back( (Sendstate) {d, stat, erc});
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
         d->sndresult = stat;
         d->laststatus = d->ps->getStatus();
     }
@@ -11714,7 +11684,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         d->sndresult = stat;
         d->laststatus = d->ps->getStatus();
 
-        sendstates.push_back( (Sendstate) {d, stat, erc});
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
     }
 
     if (curseq != -1)
@@ -11969,7 +11940,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (stat != -1)
                     curseq = w_mc.pktseq;
 
-                sendstates.push_back( (Sendstate) {d, stat, erc});
+                const Sendstate cstate = {d, stat, erc};
+                sendstates.push_back(cstate);
                 d->sndresult = stat;
                 d->laststatus = d->ps->getStatus();
             }

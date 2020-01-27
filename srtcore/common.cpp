@@ -53,8 +53,6 @@ modified by
 #define SRT_IMPORT_TIME 1
 #include "platform_sys.h"
 
-// #undef ENABLE_THREAD_ASSERT 1
-
 #include <string>
 #include <sstream>
 #include <cmath>
@@ -70,7 +68,6 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
-using namespace std;
 using namespace srt::sync;
 
 

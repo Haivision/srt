@@ -70,7 +70,7 @@ using namespace srt::sync;
 #if ENABLE_HEAVY_LOGGING
 static void PrintEpollEvent(ostream& os, int events);
 #endif
-// Use "inline namespace" in C++11
+
 namespace srt_logging
 {
     extern Logger dlog, mglog;
@@ -298,7 +298,6 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
-
     evts &= ~SRT_EPOLL_ET;
     if (evts)
     {
@@ -574,13 +573,13 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             {
                 ++it_next;
                 IF_HEAVY_LOGGING(++total_noticed);
-                if (readfds && ((it->events & UDT_EPOLL_IN) || (it->events & UDT_EPOLL_ERR)))
+                if (readfds && ((it->events & SRT_EPOLL_IN) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (readfds->insert(it->fd).second)
                         ++total;
                 }
 
-                if (writefds && ((it->events & UDT_EPOLL_OUT) || (it->events & UDT_EPOLL_ERR)))
+                if (writefds && ((it->events & SRT_EPOLL_OUT) || (it->events & SRT_EPOLL_ERR)))
                 {
                     if (writefds->insert(it->fd).second)
                         ++total;

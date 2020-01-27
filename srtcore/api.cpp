@@ -290,7 +290,7 @@ int CUDTUnited::cleanup()
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
    // is set here above. Worst case secenario, this
-   // jointhread() call will block for 1 second.
+   // pthread_join() call will block for 1 second.
    CSync::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
@@ -475,180 +475,181 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
         CHandShake& w_hs, SRT_REJECT_REASON& w_error)
 {
-   CUDTSocket* ns = NULL;
+    CUDTSocket* ns = NULL;
 
-   w_error = SRT_REJ_IPE;
+    w_error = SRT_REJ_IPE;
 
-   // Can't manage this error through an exception because this is
-   // running in the listener loop.
-   CUDTSocket* ls = locateSocket(listen);
-   if (!ls)
-   {
-      LOGC(mglog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
-      return -1;
-   }
+    // Can't manage this error through an exception because this is
+    // running in the listener loop.
+    CUDTSocket* ls = locateSocket(listen);
+    if (!ls)
+    {
+        LOGC(mglog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
+        return -1;
+    }
 
-    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @" << listen << " contacted with backlog=" << ls->m_uiBackLog);
+    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @"
+            << listen << " contacted with backlog=" << ls->m_uiBackLog);
 
-   // if this connection has already been processed
-   if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
-   {
-      if (ns->m_pUDT->m_bBroken)
-      {
-         // last connection from the "peer" address has been broken
-         ns->m_Status = SRTS_CLOSED;
-         ns->m_tsClosureTimeStamp = steady_clock::now();
+    // if this connection has already been processed
+    if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
+    {
+        if (ns->m_pUDT->m_bBroken)
+        {
+            // last connection from the "peer" address has been broken
+            ns->m_Status = SRTS_CLOSED;
+            ns->m_tsClosureTimeStamp = steady_clock::now();
 
-         CGuard acceptcg(ls->m_AcceptLock);
-         ls->m_pQueuedSockets->erase(ns->m_SocketID);
-         ls->m_pAcceptSockets->erase(ns->m_SocketID);
-      }
-      else
-      {
-         // connection already exist, this is a repeated connection request
-        // respond with existing HS information
-         HLOGC(mglog.Debug, log
-               << "newConnection: located a WORKING peer @"
-               << w_hs.m_iID << " - ADAPTING.");
+            CGuard acceptcg(ls->m_AcceptLock);
+            ls->m_pQueuedSockets->erase(ns->m_SocketID);
+            ls->m_pAcceptSockets->erase(ns->m_SocketID);
+        }
+        else
+        {
+            // connection already exist, this is a repeated connection request
+            // respond with existing HS information
+            HLOGC(mglog.Debug, log
+                    << "newConnection: located a WORKING peer @"
+                    << w_hs.m_iID << " - ADAPTING.");
 
-         w_hs.m_iISN = ns->m_pUDT->m_iISN;
-         w_hs.m_iMSS = ns->m_pUDT->m_iMSS;
-         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
-         w_hs.m_iReqType = URQ_CONCLUSION;
-         w_hs.m_iID = ns->m_SocketID;
+            w_hs.m_iISN = ns->m_pUDT->m_iISN;
+            w_hs.m_iMSS = ns->m_pUDT->m_iMSS;
+            w_hs.m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
+            w_hs.m_iReqType = URQ_CONCLUSION;
+            w_hs.m_iID = ns->m_SocketID;
 
-         return 0;
+            return 0;
 
-         //except for this situation a new connection should be started
-      }
-   }
-   else
-   {
-       HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @"
-               << w_hs.m_iID << " - resuming with initial connection.");
-   }
+            //except for this situation a new connection should be started
+        }
+    }
+    else
+    {
+        HLOGC(mglog.Debug, log << "newConnection: NOT located any peer @"
+                << w_hs.m_iID << " - resuming with initial connection.");
+    }
 
-   // exceeding backlog, refuse the connection request
-   if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
-   {
-       w_error = SRT_REJ_BACKLOG;
-       LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
-       return -1;
-   }
+    // exceeding backlog, refuse the connection request
+    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
+    {
+        w_error = SRT_REJ_BACKLOG;
+        LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+        return -1;
+    }
 
-   try
-   {
-      ns = new CUDTSocket;
-      ns->m_pUDT = new CUDT(ns, *(ls->m_pUDT));
-      // No need to check the peer, this is the address from which the request has come.
-      ns->m_PeerAddr = peer;
-   }
-   catch (...)
-   {
-      w_error = SRT_REJ_RESOURCE;
-      delete ns;
-      LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
-      return -1;
-   }
+    try
+    {
+        ns = new CUDTSocket;
+        ns->m_pUDT = new CUDT(ns, *(ls->m_pUDT));
+        // No need to check the peer, this is the address from which the request has come.
+        ns->m_PeerAddr = peer;
+    }
+    catch (...)
+    {
+        w_error = SRT_REJ_RESOURCE;
+        delete ns;
+        LOGC(mglog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
+        return -1;
+    }
 
-   try
-   {
-       ns->m_SocketID = generateSocketID();
-   }
-   catch (const CUDTException& e)
-   {
-       LOGF(mglog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
-       // generateSocketID throws exception, which can be naturally handled
-       // when the call is derived from the API call, but here it's called
-       // internally in response to receiving a handshake. It must be handled
-       // here and turned into an erroneous return value.
-       delete ns;
-       return -1;
-   }
+    try
+    {
+        ns->m_SocketID = generateSocketID();
+    }
+    catch (const CUDTException& e)
+    {
+        LOGF(mglog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
+        // generateSocketID throws exception, which can be naturally handled
+        // when the call is derived from the API call, but here it's called
+        // internally in response to receiving a handshake. It must be handled
+        // here and turned into an erroneous return value.
+        delete ns;
+        return -1;
+    }
 
-   ns->m_ListenSocket = listen;
-   ns->m_pUDT->m_SocketID = ns->m_SocketID;
-   ns->m_PeerID = w_hs.m_iID;
-   ns->m_iISN = w_hs.m_iISN;
+    ns->m_ListenSocket = listen;
+    ns->m_pUDT->m_SocketID = ns->m_SocketID;
+    ns->m_PeerID = w_hs.m_iID;
+    ns->m_iISN = w_hs.m_iISN;
 
-   HLOGC(mglog.Debug, log << "newConnection: DATA: lsnid=" << listen
+    HLOGC(mglog.Debug, log << "newConnection: DATA: lsnid=" << listen
             << " id=" << ns->m_pUDT->m_SocketID
             << " peerid=" << ns->m_pUDT->m_PeerID
             << " ISN=" << ns->m_iISN);
 
-   int error = 0;
-   bool should_submit_to_accept = true;
+    int error = 0;
+    bool should_submit_to_accept = true;
 
-   // Set the error code for all prospective problems below.
-   // It won't be interpreted when result was successful.
-   w_error = SRT_REJ_RESOURCE;
+    // Set the error code for all prospective problems below.
+    // It won't be interpreted when result was successful.
+    w_error = SRT_REJ_RESOURCE;
 
-   // These can throw exception only when the memory allocation failed.
-   // CUDT::connect() translates exception into CUDTException.
-   // CUDT::open() may only throw original std::bad_alloc from new.
-   // This is only to make the library extra safe (when your machine lacks
-   // memory, it will continue to work, but fail to accept connection).
-   try
-   {
-       // This assignment must happen b4 the call to CUDT::connect() because
-       // this call causes sending the SRT Handshake through this socket.
-       // Without this mapping the socket cannot be found and therefore
-       // the SRT Handshake message would fail.
-       HLOGF(mglog.Debug,
-               "newConnection: incoming %s, mapping socket %d",
-               SockaddrToString(peer).c_str(), ns->m_SocketID);
-       {
-           CGuard cg(m_GlobControlLock);
-           m_Sockets[ns->m_SocketID] = ns;
-       }
+    // These can throw exception only when the memory allocation failed.
+    // CUDT::connect() translates exception into CUDTException.
+    // CUDT::open() may only throw original std::bad_alloc from new.
+    // This is only to make the library extra safe (when your machine lacks
+    // memory, it will continue to work, but fail to accept connection).
+    try
+    {
+        // This assignment must happen b4 the call to CUDT::connect() because
+        // this call causes sending the SRT Handshake through this socket.
+        // Without this mapping the socket cannot be found and therefore
+        // the SRT Handshake message would fail.
+        HLOGF(mglog.Debug,
+                "newConnection: incoming %s, mapping socket %d",
+                SockaddrToString(peer).c_str(), ns->m_SocketID);
+        {
+            CGuard cg(m_GlobControlLock);
+            m_Sockets[ns->m_SocketID] = ns;
+        }
 
-       // bind to the same addr of listening socket
-       ns->m_pUDT->open();
-       updateListenerMux(ns, ls);
-       if (ls->m_pUDT->m_cbAcceptHook)
-       {
-           if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), w_hs, hspkt))
-           {
-               error = 1;
-               goto ERR_ROLLBACK;
-           }
-       }
-       ns->m_pUDT->acceptAndRespond(peer, hspkt, (w_hs));
-   }
-   catch (...)
-   {
-       // Extract the error that was set in this new failed entity.
-       w_error = ns->m_pUDT->m_RejectReason;
-       error = 1;
-       goto ERR_ROLLBACK;
-   }
+        // bind to the same addr of listening socket
+        ns->m_pUDT->open();
+        updateListenerMux(ns, ls);
+        if (ls->m_pUDT->m_cbAcceptHook)
+        {
+            if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), w_hs, hspkt))
+            {
+                error = 1;
+                goto ERR_ROLLBACK;
+            }
+        }
+        ns->m_pUDT->acceptAndRespond(peer, hspkt, (w_hs));
+    }
+    catch (...)
+    {
+        // Extract the error that was set in this new failed entity.
+        w_error = ns->m_pUDT->m_RejectReason;
+        error = 1;
+        goto ERR_ROLLBACK;
+    }
 
-   ns->m_Status = SRTS_CONNECTED;
+    ns->m_Status = SRTS_CONNECTED;
 
-   // copy address information of local node
-   // Precisely, what happens here is:
-   // - Get the IP address and port from the system database
-   ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
-   // - OVERWRITE just the IP address itself by a value taken from piSelfIP
-   // (the family is used exactly as the one taken from what has been returned
-   // by getsockaddr)
-   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+    // copy address information of local node
+    // Precisely, what happens here is:
+    // - Get the IP address and port from the system database
+    ns->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
+    // (the family is used exactly as the one taken from what has been returned
+    // by getsockaddr)
+    CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
 
-   // protect the m_Sockets structure.
-   enterCS(m_GlobControlLock);
-   try
-   {
-       HLOGF(mglog.Debug, 
-               "newConnection: mapping peer %d to that socket (%d)\n",
-               ns->m_PeerID, ns->m_SocketID);
-       m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
-   }
-   catch (...)
-   {
-      LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
-      error = 2;
-   }
-   leaveCS(m_GlobControlLock);
+    // protect the m_Sockets structure.
+    enterCS(m_GlobControlLock);
+    try
+    {
+        HLOGF(mglog.Debug, 
+                "newConnection: mapping peer %d to that socket (%d)\n",
+                ns->m_PeerID, ns->m_SocketID);
+        m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
+    }
+    catch (...)
+    {
+        LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
+        error = 2;
+    }
+    leaveCS(m_GlobControlLock);
 
     if (ns->m_IncludedGroup)
     {
@@ -720,8 +721,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
 
         /* SETUP HERE IF NEEDED
-        ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
-        */
+           ns->m_pUDT->m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
+         */
     }
     else
     {
@@ -773,37 +774,37 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
 
 ERR_ROLLBACK:
-   // XXX the exact value of 'error' is ignored
-   if (error > 0)
-   {
+    // XXX the exact value of 'error' is ignored
+    if (error > 0)
+    {
 #if ENABLE_LOGGING
-       static const char* why [] = {
-           "UNKNOWN ERROR",
-           "CONNECTION REJECTED",
-           "IPE when mapping a socket",
-           "IPE when inserting a socket"
-       };
-       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+        static const char* why [] = {
+            "UNKNOWN ERROR",
+            "CONNECTION REJECTED",
+            "IPE when mapping a socket",
+            "IPE when inserting a socket"
+        };
+        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
 
-      SRTSOCKET id = ns->m_SocketID;
-      ns->makeClosed();
+        SRTSOCKET id = ns->m_SocketID;
+        ns->makeClosed();
 
-      // The mapped socket should be now unmapped to preserve the situation that
-      // was in the original UDT code.
-      // In SRT additionally the acceptAndRespond() function (it was called probably
-      // connect() in UDT code) may fail, in which case this socket should not be
-      // further processed and should be removed.
-      {
-          CGuard cg(m_GlobControlLock);
-          m_Sockets.erase(id);
-          m_ClosedSockets[id] = ns;
-      }
+        // The mapped socket should be now unmapped to preserve the situation that
+        // was in the original UDT code.
+        // In SRT additionally the acceptAndRespond() function (it was called probably
+        // connect() in UDT code) may fail, in which case this socket should not be
+        // further processed and should be removed.
+        {
+            CGuard cg(m_GlobControlLock);
+            m_Sockets.erase(id);
+            m_ClosedSockets[id] = ns;
+        }
 
-      return -1;
-   }
+        return -1;
+    }
 
-   return 1;
+    return 1;
 }
 
 // static forwarder
@@ -1098,7 +1099,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
     return connectIn(s, target_addr, -1);
 }
 
-int CUDTUnited::connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
+int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
     sockaddr_any target_addr(name, namelen);
     if (target_addr.len == 0)
@@ -2217,7 +2218,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    if (i == m_ClosedSockets.end())
       return;
 
-   CUDTSocket* s = i->second;
+   CUDTSocket* const s = i->second;
 
    // decrease multiplexer reference count, and remove it if necessary
    const int mid = s->m_iMuxID;

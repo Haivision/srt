@@ -946,6 +946,8 @@ int CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
+   CTimer::triggerEvent();
+
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
    // This should help determine the sequence number at first read-ready position.
@@ -1203,7 +1205,6 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
         }
         else
         {
-
             // This does:
             // 1. Get the TSBPD time of the unit. Stop and return false if this unit
             //    is not yet ready to play.
@@ -1743,7 +1744,7 @@ bool CRcvBuffer::getInternalTimeBase(steady_clock::time_point& w_timebase, stead
 
 steady_clock::time_point CRcvBuffer::getPktTsbPdTime(uint32_t timestamp)
 {
-    steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
+    const steady_clock::time_point time_base = getTsbPdTimeBase(timestamp);
 
     // Display only ingredients, not the result, as the result will
     // be displayed anyway in the next logs.
@@ -2067,9 +2068,9 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 {
     static steady_clock::time_point prev_now;
     static steady_clock::time_point prev_srctime;
-    CPacket& pkt = m_pUnit[p]->m_Packet;
+    const CPacket& pkt = m_pUnit[p]->m_Packet;
 
-    int32_t seq = pkt.m_iSeqNo;
+    const int32_t seq = pkt.m_iSeqNo;
 
     steady_clock::time_point nowtime = steady_clock::now();
     steady_clock::time_point srctime = getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp());
@@ -2104,7 +2105,6 @@ void CRcvBuffer::readMsgHeavyLogging(int p)
 
 bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 {
-
     // empty buffer
     if ((m_iStartPos == m_iLastAckPos) && (m_iMaxPos <= 0))
     {
