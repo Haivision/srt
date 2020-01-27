@@ -1273,8 +1273,8 @@ closed and its state can be verified with a call to `srt_getsockstate`.
 int srt_epoll_clear_usocks(int eid);
 ```
 
-This function removes all subscriptions from the `eid`, only user sockets
-(not system sockets).
+This function removes all SRT ("user") socket subscriptions from the epoll
+container identified by `eid`.
 
 - Returns:
   * 0 on success

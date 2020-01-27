@@ -130,9 +130,7 @@ struct CEPollDesc
                edge &= ~direction;
                state &= ~direction;
 
-               if (watch == 0)
-                   return true;
-               return false;
+               return watch == 0;
            }
 
            return false;
@@ -334,11 +332,11 @@ public:
        // for this event. The 'i' iterator is safe to
        // delete, even indirectly.
 
-       // This works merely like checkEdge, just it's predicted
-       // to get the notice cleared of reporting given event.
+       // This works merely like checkEdge, just on request to clear the
+       // identified event, if found.
        if (i->events & event)
        {
-           // The notice has a readiness notice on this event.
+           // The notice has a readiness flag on this event.
            // This means that there exists also a subscription.
            Wait* w = i->parent;
            if (w->clear(event))
@@ -360,9 +358,8 @@ public:
 
 public: // for CUDTUnited API
 
-      /// create a new EPoll.
-      /// @return new EPoll ID if success, otherwise an error number.
-
+   /// create a new EPoll.
+   /// @return new EPoll ID if success, otherwise an error number.
    int create(CEPollDesc** ppd = 0);
 
 
@@ -371,59 +368,59 @@ public: // for CUDTUnited API
    /// @return 0 
    int clear_usocks(int eid);
 
-      /// add a UDT socket to an EPoll.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] u UDT Socket ID.
-      /// @param [in] events events to watch.
-      /// @return 0 if success, otherwise an error number.
+   /// add a UDT socket to an EPoll.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] u UDT Socket ID.
+   /// @param [in] events events to watch.
+   /// @return 0 if success, otherwise an error number.
 
    int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL) { return update_usock(eid, u, events); }
 
-      /// add a system socket to an EPoll.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] s system Socket ID.
-      /// @param [in] events events to watch.
-      /// @return 0 if success, otherwise an error number.
+   /// add a system socket to an EPoll.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] s system Socket ID.
+   /// @param [in] events events to watch.
+   /// @return 0 if success, otherwise an error number.
 
    int add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
-      /// remove a UDT socket event from an EPoll; socket will be removed if no events to watch.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] u UDT socket ID.
-      /// @return 0 if success, otherwise an error number.
+   /// remove a UDT socket event from an EPoll; socket will be removed if no events to watch.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] u UDT socket ID.
+   /// @return 0 if success, otherwise an error number.
 
    int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null);}
 
-      /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] s system socket ID.
-      /// @return 0 if success, otherwise an error number.
+   /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] s system socket ID.
+   /// @return 0 if success, otherwise an error number.
 
    int remove_ssock(const int eid, const SYSSOCKET& s);
-      /// update a UDT socket events from an EPoll.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] u UDT socket ID.
-      /// @param [in] events events to watch.
-      /// @return 0 if success, otherwise an error number.
+   /// update a UDT socket events from an EPoll.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] u UDT socket ID.
+   /// @param [in] events events to watch.
+   /// @return 0 if success, otherwise an error number.
 
    int update_usock(const int eid, const SRTSOCKET& u, const int* events);
 
-      /// update a system socket events from an EPoll.
-      /// @param [in] eid EPoll ID.
-      /// @param [in] u UDT socket ID.
-      /// @param [in] events events to watch.
-      /// @return 0 if success, otherwise an error number.
+   /// update a system socket events from an EPoll.
+   /// @param [in] eid EPoll ID.
+   /// @param [in] u UDT socket ID.
+   /// @param [in] events events to watch.
+   /// @return 0 if success, otherwise an error number.
 
    int update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
-      /// wait for EPoll events or timeout.
-      /// @param [in] eid EPoll ID.
-      /// @param [out] readfds UDT sockets available for reading.
-      /// @param [out] writefds UDT sockets available for writing.
-      /// @param [in] msTimeOut timeout threshold, in milliseconds.
-      /// @param [out] lrfds system file descriptors for reading.
-      /// @param [out] lwfds system file descriptors for writing.
-      /// @return number of sockets available for IO.
+   /// wait for EPoll events or timeout.
+   /// @param [in] eid EPoll ID.
+   /// @param [out] readfds UDT sockets available for reading.
+   /// @param [out] writefds UDT sockets available for writing.
+   /// @param [in] msTimeOut timeout threshold, in milliseconds.
+   /// @param [out] lrfds system file descriptors for reading.
+   /// @param [out] lwfds system file descriptors for writing.
+   /// @return number of sockets available for IO.
 
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
@@ -440,6 +437,10 @@ public: // for CUDTUnited API
    /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
+   /// Reports which events are ready on the given socket.
+   /// @param mp socket event map retirned by `swait`
+   /// @param sock which socket to ask
+   /// @return event flags for given socket, or 0 if none
    static int ready(const fmap_t& mp, SRTSOCKET sock)
    {
        fmap_t::const_iterator y = mp.find(sock);
@@ -448,6 +449,11 @@ public: // for CUDTUnited API
        return y->second;
    }
 
+   /// Reports whether socket is ready for given event.
+   /// @param mp socket event map retirned by `swait`
+   /// @param sock which socket to ask
+   /// @param event which events it should be ready for
+   /// @return true if the given socket is ready for given event
    static bool isready(const fmap_t& mp, SRTSOCKET sock, SRT_EPOLL_OPT event)
    {
        return (ready(mp, sock) & event) != 0;
@@ -456,29 +462,29 @@ public: // for CUDTUnited API
    // Could be a template directly, but it's now hidden in the imp file.
    void clear_ready_usocks(CEPollDesc& d, int direction);
 
-      /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
-      /// @param [in] eid EPoll ID.
-      /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
-      /// @param [int] fdsSize of fds array
-      /// @param [in] msTimeOut timeout threshold, in milliseconds.
-      /// @return total of available events in the epoll system (can be greater than fdsSize)
+   /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
+   /// @param [in] eid EPoll ID.
+   /// @param [out] fdsSet array of user socket events (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR).
+   /// @param [int] fdsSize of fds array
+   /// @param [in] msTimeOut timeout threshold, in milliseconds.
+   /// @return total of available events in the epoll system (can be greater than fdsSize)
 
    int uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
- 
-      /// close and release an EPoll.
-      /// @param [in] eid EPoll ID.
-      /// @return 0 if success, otherwise an error number.
+
+   /// close and release an EPoll.
+   /// @param [in] eid EPoll ID.
+   /// @return 0 if success, otherwise an error number.
 
    int release(const int eid);
 
 public: // for CUDT to acknowledge IO status
 
-      /// Update events available for a UDT socket.
-      /// @param [in] uid UDT socket ID.
-      /// @param [in] eids EPoll IDs to be set
-      /// @param [in] events Combination of events to update
-      /// @param [in] enable true -> enable, otherwise disable
-      /// @return 0 if success, otherwise an error number
+   /// Update events available for a UDT socket.
+   /// @param [in] uid UDT socket ID.
+   /// @param [in] eids EPoll IDs to be set
+   /// @param [in] events Combination of events to update
+   /// @param [in] enable true -> enable, otherwise disable
+   /// @return 0 if success, otherwise an error number
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 

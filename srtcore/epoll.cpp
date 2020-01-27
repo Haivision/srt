@@ -787,10 +787,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
             return 0; // meaning "none is ready"
         }
 
-#if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-#else
         CTimer::waitForEvent();
-#endif
     }
 
     return 0;
