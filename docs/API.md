@@ -332,7 +332,7 @@ Synopsis
                         int64_t msTimeOut,
                         SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
     int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
-    
+    int srt_epoll_clear_usocks(int eid);
 
 SRT Usage
 ---------
@@ -350,6 +350,14 @@ atomically, the thread protection (against the epoll thread) being applied
 within each function but unprotected between the two calls. It is then possible
 to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
 epoll list.
+
+Event flags are of various categories: `IN`, `OUT` and `ERR` are events,
+which are level-triggered by default and become edge-triggered if combined
+with `SRT_EPOLL_ET` flag. The latter is only an edge-triggered flag, not
+an event. There's also an `SRT_EPOLL_UPDATE` flag, which is an edge-triggered
+only event, and it reports an event on the listener socket that handles socket
+group new connection for an already connected group - this is for internal use
+only and it's used in the internal code for socket groups.
 
 Once the subscriptions are made, you can call an SRT polling function
 (`srt_epoll_wait` or `srt_epoll_uwait`) that will block until an event
@@ -416,6 +424,9 @@ Every item reports a single socket with all events as flags.
 
 When the timeout is not -1, and no sockets are ready until the timeout time
 passes, this function returns 0. This behavior is different in `srt_epoll_wait`.
+
+The extra `srt_epoll_clear_usocks` function removes all subscriptions from
+the epoll container.
 
 The SRT EPoll system does not supports all features of Linux epoll. For
 example, it only supports level-triggered events for system sockets.

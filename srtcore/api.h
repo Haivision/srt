@@ -296,7 +296,7 @@ public:
        return NULL;
    }
 
-   CEPoll& epollmg() { return m_EPoll; }
+   CEPoll& epoll_ref() { return m_EPoll; }
 
 private:
 //   void init();

@@ -1098,18 +1098,29 @@ Possible epoll flags are the following:
    * `SRT_EPOLL_IN`: report readiness for reading or incoming connection on a listener socket
    * `SRT_EPOLL_OUT`: report readiness for writing or a successful connection
    * `SRT_EPOLL_ERR`: report errors on the socket
+   * `SRT_EPOLL_UPDATE`: group-listening socket gets a new connection established
    * `SRT_EPOLL_ET`: the event will be edge-triggered
 
-The readiness states reported in by default are **level-triggered**.
-If `SRT_EPOLL_ET` flag is specified, the reported states are
-**edge-triggered**. Note that at this time the edge-triggered mode
-is supported only for SRT sockets, not for system sockets.
+All flags except `SRT_EPOLL_ET` are event type flags (important for functions
+that expect only event types and not other flags).
+
+The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by
+default **level-triggered**. With `SRT_EPOLL_ET` flag they become
+**edge-triggered**. The `SRT_EPOLL_UPDATE` flag is always edge-triggered
+and it designates a special event that happens only for a listening
+socket that is set the `SRTO_GROUPCONNECT` flag. This event is predicted
+for internal use only and it is set ready for group connections in case
+when a new link has been established for the group that is already connected
+(that is, has at least one connection established).
+
+Note that at this time the edge-triggered mode is supported only for SRT
+sockets, not for system sockets.
 
 In the **edge-triggered** mode the function will only return socket states that
-have changed since the last call. All events reported in particular call of
-the waiting function will be cleared in the internal flags and will not be
-reported until the internal signaling logic clears this state and raises it
-again.
+have changed since the last call of the waiting function. All events reported
+in particular call of the waiting function will be cleared in the internal
+flags and will not be reported until the internal signaling logic clears this
+state and raises it again.
 
 In the **level-triggered** mode the function will always return the readiness
 state as long as it lasts, until the internal signaling logic clear it.
@@ -1267,6 +1278,22 @@ for details
 Note that when the `SRT_EPOLL_ERR` is set, the underlying socket error
 can't be retrieved with `srt_getlasterror()`. The socket will be automatically
 closed and its state can be verified with a call to `srt_getsockstate`.
+
+### srt_epoll_clear_usocks
+```
+int srt_epoll_clear_usocks(int eid);
+```
+
+This function removes all SRT ("user") socket subscriptions from the epoll
+container identified by `eid`.
+
+- Returns:
+  * 0 on success
+  * -1 in case of error
+
+- Errors:
+
+  * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
 ### srt_epoll_set
 ```
