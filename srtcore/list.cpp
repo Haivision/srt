@@ -114,25 +114,8 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
    {
       if (seqno1 == m_caSeq[loc].data1)
       {
-         m_iLastInsertPos = loc;
-
-         // first seqno is equivlent, compare the second
-         if (-1 == m_caSeq[loc].data2)
-         {
-            if (seqno2 != seqno1)
-            {
-               m_iLength += CSeqNo::seqlen(seqno1, seqno2) - 1;
-               m_caSeq[loc].data2 = seqno2;
-            }
-         }
-         else if (CSeqNo::seqcmp(seqno2, m_caSeq[loc].data2) > 0)
-         {
-            // new seq pair is longer than old pair, e.g., insert [3, 7] to [3, 5], becomes [3, 7]
-            m_iLength += CSeqNo::seqlen(m_caSeq[loc].data2, seqno2) - 1;
-            m_caSeq[loc].data2 = seqno2;
-         }
-         else
-            // Do nothing if it is already there
+         const bool updated = updateElement(loc, seqno1, seqno2);
+         if (!updated)
             return 0;
       }
       else
@@ -178,27 +161,10 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
          }
       }
    }
-   else
+   else // offset == 0, loc == m_iHead
    {
-      m_iLastInsertPos = m_iHead;
-
-      // insert to head node
-      if (seqno2 != seqno1)
-      {
-         if (-1 == m_caSeq[loc].data2)
-         {
-            m_iLength += CSeqNo::seqlen(seqno1, seqno2) - 1;
-            m_caSeq[loc].data2 = seqno2;
-         }
-         else if (CSeqNo::seqcmp(seqno2, m_caSeq[loc].data2) > 0)
-         {
-            m_iLength += CSeqNo::seqlen(m_caSeq[loc].data2, seqno2) - 1;
-            m_caSeq[loc].data2 = seqno2;
-         }
-         else 
-            return 0;
-      }
-      else
+      const bool updated = updateElement(m_iHead, seqno1, seqno2);
+      if (!updated)
          return 0;
    }
 
@@ -414,6 +380,30 @@ void CSndLossList::coalesce(int loc)
       m_caSeq[i].data2 = -1;
       m_caSeq[loc].next = m_caSeq[i].next;
    }
+}
+
+bool CSndLossList::updateElement(int pos, int32_t seqno1, int32_t seqno2)
+{
+   m_iLastInsertPos = pos;
+
+   if (seqno2 == -1 || seqno2 == seqno1)
+      return false;
+
+   if (m_caSeq[pos].data2 == -1)
+   {
+      m_iLength += CSeqNo::seqlen(seqno1, seqno2) - 1;
+      m_caSeq[pos].data2 = seqno2;
+      return true;
+   }
+
+   // seqno2 <= m_caSeq[pos].data2
+   if (CSeqNo::seqcmp(seqno2, m_caSeq[pos].data2) <= 0)
+      return false;
+
+   // seqno2 > m_caSeq[pos].data2
+   m_iLength += CSeqNo::seqlen(m_caSeq[pos].data2, seqno2) - 1;
+   m_caSeq[pos].data2 = seqno2;
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
