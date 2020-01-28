@@ -729,12 +729,10 @@ private: // Timers
     //   always increased by one in this call, otherwise it will be increased by the number of blocks
     //   scheduled for sending.
 
-    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileCC, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     srt::sync::steady_clock::time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
     void setInitialSndSeq(int32_t isn)
     {
-        // m_iLastDecSeq = isn - 1; <-- purpose unknown; duplicate from FileCC?
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;

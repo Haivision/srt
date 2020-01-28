@@ -5818,10 +5818,8 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // insert the user buffer into the sending list
 
     int32_t seqno = m_iSndNextSeqNo;
-#if ENABLE_HEAVY_LOGGING
-    int32_t orig_seqno = seqno;
-    steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime);
-#endif
+    IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
+    IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
 
     // Set this predicted next sequence to the control information.
     // It's the sequence of the FIRST (!) packet from all packets used to send
@@ -7548,10 +7546,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         m_tdSendInterval *= 1.125;
-        // XXX The use of this field hasn't been found; a field with the
-        // same name is found in FileSmoother (created after CUDTCC from UDT)
-        // and it's updated with the value of m_iSndCurrSeqNo upon necessity.
-        //m_iLastDecSeq   = m_iSndCurrSeqNo;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
