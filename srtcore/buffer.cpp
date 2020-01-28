@@ -808,9 +808,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
     int p = m_iStartPos;
     int lastack = m_iLastAckPos;
     int rs = len;
-#if ENABLE_HEAVY_LOGGING
-    char* begin = data;
-#endif
+    IF_HEAVY_LOGGING(char* begin = data);
 
     const steady_clock::time_point now = (m_bTsbPdMode ? steady_clock::now() : steady_clock::time_point());
 
@@ -933,7 +931,7 @@ int CRcvBuffer::ackData(int len)
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
    // This should help determine the sequence number at first read-ready position.
 
-   int dist = m_iLastAckPos - m_iStartPos;
+   const int dist = m_iLastAckPos - m_iStartPos;
    if (dist < 0)
        return dist + m_iSize;
    return dist;
@@ -1097,7 +1095,7 @@ steady_clock::time_point CRcvBuffer::debugGetDeliveryTime(int offset)
 
 bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto)
 {
-    bool havelimit = upto != -1;
+    const bool havelimit = upto != -1;
     int end = -1, past_end = -1;
     if (havelimit)
     {
@@ -1263,13 +1261,13 @@ bool CRcvBuffer::isRcvDataReady(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
     if (m_bTsbPdMode)
     {
-        CPacket* pkt = getRcvReadyPacket(seqdistance);
+        const CPacket* pkt = getRcvReadyPacket(seqdistance);
         if (!pkt)
         {
             HLOGC(dlog.Debug, log << "isRcvDataReady: packet NOT extracted.");
             return false;
         }
-    
+
         /* 
          * Acknowledged data is available,
          * Only say ready if time to deliver.
@@ -1334,9 +1332,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         HLOGC(dlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " IS NOT RECEIVED.");
         return 0;
     }
-#if ENABLE_HEAVY_LOGGING
-    int nskipped = 0;
-#endif
+    IF_HEAVY_LOGGING(int nskipped = 0);
 
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
@@ -1349,9 +1345,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
                     << " (" << nskipped << " empty cells skipped)");
             return &m_pUnit[i]->m_Packet;
         }
-#if ENABLE_HEAVY_LOGGING
-        ++nskipped;
-#endif
+        IF_HEAVY_LOGGING(++nskipped);
     }
 
     return 0;

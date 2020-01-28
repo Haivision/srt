@@ -746,7 +746,6 @@ private: // Timers
     time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
     void setInitialSndSeq(int32_t isn)
     {
-        // m_iLastDecSeq = isn - 1; <-- purpose unknown; duplicate from FileCC?
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
