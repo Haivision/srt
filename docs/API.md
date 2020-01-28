@@ -351,6 +351,14 @@ within each function but unprotected between the two calls. It is then possible
 to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
 epoll list.
 
+Event flags are of various categories: `IN`, `OUT` and `ERR` are events,
+which are level-triggered by default and become edge-triggered if combined
+with `SRT_EPOLL_ET` flag. The latter is only an edge-triggered flag, not
+an event. There's also an `SRT_EPOLL_UPDATE` flag, which is an edge-triggered
+only event, and it reports an event on the listener socket that handles socket
+group new connection for an already connected group - this is for internal use
+only and it's used in the internal code for socket groups.
+
 Once the subscriptions are made, you can call an SRT polling function
 (`srt_epoll_wait` or `srt_epoll_uwait`) that will block until an event
 is raised on any of the subscribed sockets. This function will exit as
