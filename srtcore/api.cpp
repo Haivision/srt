@@ -1407,6 +1407,11 @@ int CUDTUnited::epoll_create()
    return m_EPoll.create();
 }
 
+int CUDTUnited::epoll_clear_usocks(int eid)
+{
+    return m_EPoll.clear_usocks(eid);
+}
+
 int CUDTUnited::epoll_add_usock(
    const int eid, const SRTSOCKET u, const int* events)
 {
@@ -1475,17 +1480,6 @@ int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 int CUDTUnited::epoll_remove_ssock(const int eid, const SYSSOCKET s)
 {
    return m_EPoll.remove_ssock(eid, s);
-}
-
-int CUDTUnited::epoll_wait(
-   const int eid,
-   set<SRTSOCKET>* readfds,
-   set<SRTSOCKET>* writefds,
-   int64_t msTimeOut,
-   set<SYSSOCKET>* lrfds,
-   set<SYSSOCKET>* lwfds)
-{
-   return m_EPoll.wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
 }
 
 int CUDTUnited::epoll_uwait(
@@ -2646,6 +2640,26 @@ int CUDT::epoll_create()
    }
 }
 
+int CUDT::epoll_clear_usocks(int eid)
+{
+   try
+   {
+      return s_UDTUnited.epoll_clear_usocks(eid);
+   }
+   catch (CUDTException e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "epoll_clear_usocks: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
 int CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
 {
    try
@@ -2779,8 +2793,8 @@ int CUDT::epoll_wait(
 {
    try
    {
-      return s_UDTUnited.epoll_wait(
-         eid, readfds, writefds, msTimeOut, lrfds, lwfds);
+      return s_UDTUnited.epoll_ref().wait(
+              eid, readfds, writefds, msTimeOut, lrfds, lwfds);
    }
    catch (const CUDTException& e)
    {
@@ -3120,6 +3134,11 @@ int selectEx(
 int epoll_create()
 {
    return CUDT::epoll_create();
+}
+
+int epoll_clear_usocks(int eid)
+{
+    return CUDT::epoll_clear_usocks(eid);
 }
 
 int epoll_add_usock(int eid, SRTSOCKET u, const int* events)

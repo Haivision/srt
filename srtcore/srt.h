@@ -437,6 +437,7 @@ enum CodeMinor
     MN_BUSY            = 11,
     MN_XSIZE           = 12,
     MN_EIDINVAL        = 13,
+    MN_EEMPTY          = 14,
     // MJ_AGAIN
     MN_WRAVAIL         =  1,
     MN_RDAVAIL         =  2,
@@ -491,6 +492,7 @@ typedef enum SRT_ERRNO
     SRT_EDUPLISTEN      = MN(NOTSUP, BUSY),
     SRT_ELARGEMSG       = MN(NOTSUP, XSIZE),
     SRT_EINVPOLLID      = MN(NOTSUP, EIDINVAL),
+    SRT_EPOLLEMPTY      = MN(NOTSUP, EEMPTY),
 
     SRT_EASYNCFAIL      = MJ(AGAIN),
     SRT_EASYNCSND       = MN(AGAIN, WRAVAIL),
@@ -563,15 +565,72 @@ enum SRT_KM_STATE
 enum SRT_EPOLL_OPT
 {
    SRT_EPOLL_OPT_NONE = 0x0, // fallback
-   // this values are defined same as linux epoll.h
+
+   // Values intended to be the same as in `<sys/epoll.h>`.
    // so that if system values are used by mistake, they should have the same effect
+   // This applies to: IN, OUT, ERR and ET.
+
+   /// Ready for 'recv' operation:
+   ///
+   /// - For stream mode it means that at least 1 byte is available.
+   /// In this mode the buffer may extract only a part of the packet,
+   /// leaving next data possible for extraction later.
+   ///
+   /// - For message mode it means that there is at least one packet
+   /// available (this may change in future, as it is desired that
+   /// one full message should only wake up, not single packet of a
+   /// not yet extractable message).
+   ///
+   /// - For live mode it means that there's at least one packet
+   /// ready to play.
+   ///
+   /// - For listener sockets, this means that there is a new connection
+   /// waiting for pickup through the `srt_accept()` call, that is,
+   /// the next call to `srt_accept()` will succeed without blocking
+   /// (see an alias SRT_EPOLL_ACCEPT below).
    SRT_EPOLL_IN       = 0x1,
+
+   /// Ready for 'send' operation.
+   ///
+   /// - For stream mode it means that there's a free space in the
+   /// sender buffer for at least 1 byte of data. The next send
+   /// operation will only allow to send as much data as it is free
+   /// space in the buffer.
+   ///
+   /// - For message mode it means that there's a free space for at
+   /// least one UDP packet. The edge-triggered mode can be used to
+   /// pick up updates as the free space in the sender buffer grows.
+   ///
+   /// - For live mode it means that there's a free space for at least
+   /// one UDP packet. On the other hand, no readiness for OUT usually
+   /// means an extraordinary congestion on the link, meaning also that
+   /// you should immediately slow down the sending rate or you may get
+   /// a connection break soon.
+   ///
+   /// - For non-blocking sockets used with `srt_connect*` operation,
+   /// this flag simply means that the connection was established.
    SRT_EPOLL_OUT      = 0x4,
+
+   /// The socket has encountered an error in the last operation
+   /// and the next operation on that socket will end up with error.
+   /// You can retry the operation, but getting the error from it
+   /// is certain, so you may as well close the socket.
    SRT_EPOLL_ERR      = 0x8,
+
+   // To avoid confusion in the internal code, the following
+   // duplicates are introduced to improve clarity.
+   SRT_EPOLL_CONNECT = SRT_EPOLL_OUT,
+   SRT_EPOLL_ACCEPT = SRT_EPOLL_IN,
+
+   SRT_EPOLL_UPDATE = 0x10,
    SRT_EPOLL_ET       = 1u << 31
 };
 // These are actually flags - use a bit container:
 typedef int32_t SRT_EPOLL_T;
+
+// Define which epoll flags determine events. All others are special flags.
+#define SRT_EPOLL_EVENTTYPES (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_UPDATE | SRT_EPOLL_ERR)
+#define SRT_EPOLL_ETONLY (SRT_EPOLL_UPDATE)
 
 enum SRT_EPOLL_FLAGS
 {
@@ -724,6 +783,7 @@ SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int inst
 SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
 SRT_API int srt_epoll_create(void);
+SRT_API int srt_epoll_clear_usocks(int eid);
 SRT_API int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
 SRT_API int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
 SRT_API int srt_epoll_remove_usock(int eid, SRTSOCKET u);
@@ -733,10 +793,14 @@ SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
-typedef struct SRT_EPOLL_EVENT_
+typedef struct SRT_EPOLL_EVENT_STR
 {
     SRTSOCKET fd;
     int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
+#ifdef __cplusplus
+    SRT_EPOLL_EVENT_STR(SRTSOCKET s, int ev): fd(s), events(ev) {}
+    SRT_EPOLL_EVENT_STR() {} // NOTE: allows singular values, no init.
+#endif
 } SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 
