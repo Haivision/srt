@@ -4794,7 +4794,7 @@ void *CUDT::tsbpd(void *param)
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq));
+            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1);
         }
         leaveCS(self->m_RcvBufferLock);
 
@@ -5816,9 +5816,34 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     {
         CGuard recvAckLock(m_RecvAckLock);
         // insert the user buffer into the sending list
-        // This should be protected by a mutex. m_SendLock does this.
-        m_pSndBuffer->addBuffer(data, size, w_mctrl.msgttl, w_mctrl.inorder, w_mctrl.srctime, (w_mctrl.msgno));
-        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime: " << w_mctrl.srctime << "us DATA SIZE: " << size);
+
+        int32_t seqno = m_iSndNextSeqNo;
+        IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
+
+        // Set this predicted next sequence to the control information.
+        // It's the sequence of the FIRST (!) packet from all packets used to send
+        // this buffer. Values from this field will be monotonic only if you always
+        // have one packet per buffer (as it's in live mode).
+        w_mctrl.pktseq = seqno;
+
+        // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
+                << " STAMP: " << BufferStamp(data, size));
+
+        // seqno is INPUT-OUTPUT value:
+        // - INPUT: the current sequence number to be placed for the next scheduled packet
+        // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
+        // We need to supply to the output the value that was STAMPED ON THE PACKET,
+        // which is seqno. In the output we'll get the next sequence number.
+        m_pSndBuffer->addBuffer(data, size, (w_mctrl));
+        m_iSndNextSeqNo = w_mctrl.pktseq;
+        w_mctrl.pktseq = seqno;
+
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
+                << " STAMP: " << BufferStamp(data, size));
 
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
@@ -5954,11 +5979,15 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
             return res;
     }
 
+    const int seqdistance = -1;
+
     if (!m_bSynRecving)
     {
         HLOGC(dlog.Debug, log << CONID() << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
-        int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl));
+        int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl), seqdistance);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
+
         if (res == 0)
         {
             // read is not available any more
@@ -6060,7 +6089,8 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " NMSG " << m_pRcvBuffer->getRcvMsgNum());
                 */
 
-        res = m_pRcvBuffer->readMsg(data, len, (w_mctrl));
+        res = m_pRcvBuffer->readMsg((data), len, (w_mctrl), seqdistance);
+        HLOGC(dlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
         if (m_bBroken || m_bClosing)
         {
@@ -7516,10 +7546,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         m_tdSendInterval *= 1.125;
-        // XXX The use of this field hasn't been found; a field with the
-        // same name is found in FileSmoother (created after CUDTCC from UDT)
-        // and it's updated with the value of m_iSndCurrSeqNo upon necessity.
-        m_iLastDecSeq   = m_iSndCurrSeqNo;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
@@ -7864,7 +7890,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
         int msglen;
 
-        const int payload = m_pSndBuffer->readData(&(w_packet.m_pcData), offset, (w_packet.m_iMsgNo), (w_origintime), (msglen));
+        const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_origintime), (msglen));
         SRT_ASSERT(payload != 0);
         if (payload == -1)
         {
@@ -7971,7 +7997,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
             // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
             kflg    = m_pCryptoControl->getSndCryptoFlags();
-            payload = m_pSndBuffer->readData((&w_packet.m_pcData), (w_packet.m_iMsgNo), (origintime), kflg);
+            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
             if (payload)
             {
                 m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);

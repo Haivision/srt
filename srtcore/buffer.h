@@ -89,12 +89,20 @@ public:
 public:
 
       /// Insert a user buffer into the sending list.
+      /// For Message control data the following data are used:
+      /// INPUT:
+      /// - msgttl: timeout for scheduling the messsage for sending
+      /// - inorder: request to deliver the message in order of sending
+      /// - srctime: local time as a base for packet's timestamp (0 if unused)
+      /// - pktseq: sequence number to be stamped on the packet (0 if unused)
+      /// OUTPUT:
+      /// - srctime: local time that was used to stamp the packet
+      /// - pktseq: sequence number to be stamped on the next packet
+      /// - msgno: message number stamped on the packet
       /// @param [in] data pointer to the user data block.
       /// @param [in] len size of the block.
-      /// @param [in] ttl time to live in milliseconds
-      /// @param [in] order if the block should be delivered in order, for DGRAM only
-
-   void addBuffer(const char* data, int len, int ttl, bool order, uint64_t srctime, int32_t& w_msgno);
+      /// @param [inout] r_mctrl Message control data
+   void addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl);
 
       /// Read a block of data from file and insert it into the sending list.
       /// @param [in] ifs input file stream.
@@ -110,18 +118,18 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(char** data, int32_t& msgno, srt::sync::steady_clock::time_point& origintime, int kflgs);
+   int readData(CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int kflgs);
 
 
       /// Find data position to pack a DATA packet for a retransmission.
       /// @param [out] data the pointer to the data position.
-      /// @param [in] offset offset from the last ACK point.
+      /// @param [in] offset offset from the last ACK point (backward sequence number difference)
       /// @param [out] msgno message number of the packet.
       /// @param [out] origintime origin time stamp of the message
       /// @param [out] msglen length of the message
       /// @return Actual length of data read.
 
-   int readData(char** data, const int offset, int32_t &msgno, srt::sync::steady_clock::time_point& origintime, int& msglen);
+   int readData(const int offset, CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int& w_msglen);
 
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
@@ -182,6 +190,7 @@ private:
       int m_iLength;                    // length of the block
 
       int32_t m_iMsgNoBitset;           // message number
+      int32_t m_iSeqNo;                       // sequence number for scheduling
       srt::sync::steady_clock::time_point m_tsOriginTime;            // original request time
       uint64_t m_ullSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
@@ -245,6 +254,9 @@ private:
 
 class CRcvBuffer
 {
+    typedef srt::sync::steady_clock::time_point time_point;
+    typedef srt::sync::steady_clock::duration duration;
+
 public:
 
     // XXX There's currently no way to access the socket ID set for
@@ -288,7 +300,7 @@ public:
       /// @param [in] len number of units to be acknowledged.
       /// @return 1 if a user buffer is fulfilled, otherwise 0.
 
-   void ackData(int len);
+   int ackData(int len);
 
       /// Query how many buffer space left for data receiving.
       /// Actually only acknowledged packets, that are still in the buffer,
@@ -323,7 +335,7 @@ public:
       /// @param [in] now current time in us.
       /// @return none.
 
-   void updRcvAvgDataSize(const srt::sync::steady_clock::time_point& now);
+   void updRcvAvgDataSize(const time_point& now);
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
       /// Query the received average payload size.
@@ -355,8 +367,7 @@ public:
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       /// @return actuall size of data read.
 
-   int readMsg(char* data, int len, SRT_MSGCTRL& w_mctrl);
-
+   int readMsg(char* data, int len, SRT_MSGCTRL& w_mctrl, int upto);
       /// Query if data is ready to read (tsbpdtime <= now if TsbPD is active).
       /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
       ///                        of next packet in recv buffer, ready or not.
@@ -364,7 +375,8 @@ public:
       /// @return true if ready to play, false otherwise (tsbpdtime may be !0 in
       /// both cases).
 
-   bool isRcvDataReady(srt::sync::steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq);
+   bool isRcvDataReady(time_point& w_tsbpdtime, int32_t& w_curpktseq, int32_t seqdistance);
+
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
    void debugTraceJitter(uint64_t);
 #else
@@ -376,14 +388,14 @@ public:
    {
        return m_iLastAckPos != m_iStartPos;
    }
-   CPacket* getRcvReadyPacket();
+   CPacket* getRcvReadyPacket(int32_t seqdistance);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
       ///    @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
       ///    @param [in] delay aggreed TsbPD delay
       /// @return 0
 
-   int setRcvTsbPdMode(const srt::sync::steady_clock::time_point& timebase, const srt::sync::steady_clock::duration& delay);
+   int setRcvTsbPdMode(const time_point& timebase, const duration& delay);
 
       /// Add packet timestamp for drift caclculation and compensation
       /// @param [in] timestamp packet time stamp
@@ -407,7 +419,7 @@ public:
       ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
 
 
-   bool getRcvFirstMsg(srt::sync::steady_clock::time_point& w_tsbpdtime, bool& w_passack, int32_t& w_skipseqno, int32_t& w_curpktseq);
+   bool getRcvFirstMsg(time_point& w_tsbpdtime, bool& w_passack, int32_t& w_skipseqno, int32_t& w_curpktseq);
 
       /// Update the ACK point of the buffer.
       /// @param [in] len size of data to be skip & acknowledged.
@@ -451,7 +463,7 @@ private:
       /// @retval false tsbpdtime = 0: no packet ready to play
 
 
-   bool getRcvReadyMsg(srt::sync::steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq);
+   bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
 
 public:
 
@@ -460,16 +472,16 @@ public:
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
 
-   srt::sync::steady_clock::time_point getTsbPdTimeBase(uint32_t timestamp_us);
+   time_point getTsbPdTimeBase(uint32_t timestamp_us);
 
       /// Get packet local delivery time
       /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
       /// @return local delivery time (usec)
 
 public:
-   srt::sync::steady_clock::time_point getPktTsbPdTime(uint32_t timestamp);
+   time_point getPktTsbPdTime(uint32_t timestamp);
    int debugGetSize() const;
-   srt::sync::steady_clock::time_point debugGetDeliveryTime(int offset);
+   time_point debugGetDeliveryTime(int offset);
 
    // Required by PacketFilter facility to use as a storage
    // for provided packets
@@ -480,6 +492,9 @@ public:
 
 private:
 
+   int extractData(char *data, int len, int p, int q, bool passack);
+   bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
+   
    /// thread safe bytes counter of the Recv & Ack buffer
    /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
    /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.
@@ -534,8 +549,8 @@ private:
    int m_iAvgPayloadSz;                 // Average payload size for dropped bytes estimation
 
    bool m_bTsbPdMode;                   // true: apply TimeStamp-Based Rx Mode
-   srt::sync::steady_clock::duration m_tdTsbPdDelay;        // aggreed delay
-   srt::sync::steady_clock::time_point m_tsTsbPdTimeBase;   // localtime base for TsbPd mode
+   duration m_tdTsbPdDelay;        // aggreed delay
+   time_point m_tsTsbPdTimeBase;   // localtime base for TsbPd mode
    // Note: m_tsTsbPdTimeBase cumulates values from:
    // 1. Initial SRT_CMD_HSREQ packet returned value diff to current time:
    //    == (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception
@@ -559,7 +574,7 @@ private:
    //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-   srt::sync::steady_clock::time_point m_tsLastSamplingTime;
+   time_point m_tsLastSamplingTime;
    int m_TimespanMAvg;
    int m_iCountMAvg;
    int m_iBytesCountMAvg;
