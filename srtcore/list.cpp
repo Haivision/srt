@@ -95,20 +95,9 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
    CGuard listguard(m_ListLock);
 
-   if (0 == m_iLength)
+   if (m_iLength == 0)
    {
-      // insert data into an empty list
-
-      m_iHead = 0;
-      m_caSeq[m_iHead].data1 = seqno1;
-      if (seqno2 != seqno1)
-         m_caSeq[m_iHead].data2 = seqno2;
-
-      m_caSeq[m_iHead].next = -1;
-      m_iLastInsertPos = m_iHead;
-
-      m_iLength += CSeqNo::seqlen(seqno1, seqno2);
-
+      insertHead(0, seqno1, seqno2);
       return m_iLength;
    }
 
@@ -119,18 +108,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
    if (offset < 0)
    {
-      // Insert data prior to the head pointer
-
-      m_caSeq[loc].data1 = seqno1;
-      if (seqno2 != seqno1)
-         m_caSeq[loc].data2 = seqno2;
-
-      // new node becomes head
-      m_caSeq[loc].next = m_iHead;
-      m_iHead = loc;
-      m_iLastInsertPos = loc;
-
-      m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+      insertHead(loc, seqno1, seqno2);
    }
    else if (offset > 0)
    {
@@ -419,6 +397,20 @@ int32_t CSndLossList::popLostSeq()
    m_iLength --;
 
    return seqno;
+}
+
+void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)
+{
+   m_caSeq[pos].data1 = seqno1;
+   if (seqno2 != seqno1)
+      m_caSeq[pos].data2 = seqno2;
+
+   // new node becomes head
+   m_caSeq[pos].next = m_iHead;
+   m_iHead = pos;
+   m_iLastInsertPos = pos;
+
+   m_iLength += CSeqNo::seqlen(seqno1, seqno2);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
