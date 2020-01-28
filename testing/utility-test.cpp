@@ -27,9 +27,6 @@ void ShowDistance(int32_t s1, int32_t s2)
     cout << "seqoff -> " << CSeqNo::seqoff(s2, s1) << endl;
 }
 
-using namespace std;
-
-
 int main()
 {
     using namespace std;
