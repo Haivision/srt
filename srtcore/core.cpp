@@ -291,7 +291,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
-   m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
+    m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
 #ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
 #endif
@@ -373,16 +373,16 @@ static bool bool_int_value(const void* optval, int optlen)
 }
 
 extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
-	SRTO_SNDSYN,
-	SRTO_RCVSYN,
-	SRTO_LINGER,
-	SRTO_SNDTIMEO,
-	SRTO_RCVTIMEO,
-	SRTO_MAXBW,
-	SRTO_INPUTBW,
-	SRTO_OHEADBW,
-	SRTO_SNDDROPDELAY,
-	SRTO_CONNTIMEO,
+    SRTO_SNDSYN,
+    SRTO_RCVSYN,
+    SRTO_LINGER,
+    SRTO_SNDTIMEO,
+    SRTO_RCVTIMEO,
+    SRTO_MAXBW,
+    SRTO_INPUTBW,
+    SRTO_OHEADBW,
+    SRTO_SNDDROPDELAY,
+    SRTO_CONNTIMEO,
     SRTO_LOSSMAXTTL
 };
 
@@ -6771,13 +6771,6 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     if (acksize > 0)
     {
         int distance = m_pRcvBuffer->ackData(acksize);
-/*
-        XXX example code - inform the group up to which packet
-        data are received so that it can be also acknowledged
-        in all others and false lossreport prevened
-        if (m_parent->m_IncludedGroup)
-            m_parent->m_IncludedGroup->readyPackets(this, ack);
-*/
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().

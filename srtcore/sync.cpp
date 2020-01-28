@@ -150,11 +150,6 @@ bool CSync::wait_until(const steady_clock::time_point& exptime)
 /// @retval false Resumed due to being past @a timestamp
 bool CSync::wait_for(const steady_clock::duration& delay)
 {
-    // Note: this is implemented this way because the pthread API
-    // does not provide a possibility to wait relative time. When
-    // you implement it for different API that does provide relative
-    /// time waiting, you may want to implement it better way.
-
     THREAD_PAUSED();
     bool signaled = SyncEvent::wait_for(m_cond, &m_mutex->ref(), delay) != ETIMEDOUT;
     THREAD_RESUMED();
@@ -412,6 +407,11 @@ static timespec us_to_timespec(const uint64_t time_us)
 
 int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
 {
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
     timespec timeout;
     timeval now;
     gettimeofday(&now, 0);

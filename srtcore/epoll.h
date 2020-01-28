@@ -360,7 +360,6 @@ public: // for CUDTUnited API
 
    /// create a new EPoll.
    /// @return new EPoll ID if success, otherwise an error number.
-
    int create(CEPollDesc** ppd = 0);
 
 
