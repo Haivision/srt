@@ -111,6 +111,12 @@ private:
    /// @param loc - last changed location
    void coalesce(int loc);
 
+   /// Update existing element with the new range (increase only)
+   /// @param pos     position of the element being updated
+   /// @param seqno1  first seqnuence number in range
+   /// @param seqno2  last sequence number in range (-1 if no range)
+   bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
+
 private:
    CSndLossList(const CSndLossList&);
    CSndLossList& operator=(const CSndLossList&);
