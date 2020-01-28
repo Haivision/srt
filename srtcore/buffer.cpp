@@ -931,7 +931,7 @@ int CRcvBuffer::ackData(int len)
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
    // This should help determine the sequence number at first read-ready position.
 
-   int dist = m_iLastAckPos - m_iStartPos;
+   const int dist = m_iLastAckPos - m_iStartPos;
    if (dist < 0)
        return dist + m_iSize;
    return dist;
@@ -1261,13 +1261,13 @@ bool CRcvBuffer::isRcvDataReady(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
     if (m_bTsbPdMode)
     {
-        CPacket* pkt = getRcvReadyPacket(seqdistance);
+        const CPacket* pkt = getRcvReadyPacket(seqdistance);
         if (!pkt)
         {
             HLOGC(dlog.Debug, log << "isRcvDataReady: packet NOT extracted.");
             return false;
         }
-    
+
         /* 
          * Acknowledged data is available,
          * Only say ready if time to deliver.
