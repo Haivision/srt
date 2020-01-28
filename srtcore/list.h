@@ -96,10 +96,16 @@ private:
 
    int m_iHead;                         // first node
    int m_iLength;                       // loss length
-   int m_iSize;                         // size of the static array
+   const int m_iSize;                   // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
    mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
+
+private:
+
+   /// Inserts an element to the beginning and updates head pointer.
+   /// No lock.
+   void insertHead(int pos, int32_t seqno1, int32_t seqno2);
 
 private:
    CSndLossList(const CSndLossList&);
