@@ -5817,33 +5817,33 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         CGuard recvAckLock(m_RecvAckLock);
         // insert the user buffer into the sending list
 
-    int32_t seqno = m_iSndNextSeqNo;
-    IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
-    IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
+        int32_t seqno = m_iSndNextSeqNo;
+        IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
 
-    // Set this predicted next sequence to the control information.
-    // It's the sequence of the FIRST (!) packet from all packets used to send
-    // this buffer. Values from this field will be monotonic only if you always
-    // have one packet per buffer (as it's in live mode).
-    w_mctrl.pktseq = seqno;
+        // Set this predicted next sequence to the control information.
+        // It's the sequence of the FIRST (!) packet from all packets used to send
+        // this buffer. Values from this field will be monotonic only if you always
+        // have one packet per buffer (as it's in live mode).
+        w_mctrl.pktseq = seqno;
 
-    // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
-        << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
-        << " STAMP: " << BufferStamp(data, size));
+        // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
+                << " STAMP: " << BufferStamp(data, size));
 
-    // seqno is INPUT-OUTPUT value:
-    // - INPUT: the current sequence number to be placed for the next scheduled packet
-    // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
-    // We need to supply to the output the value that was STAMPED ON THE PACKET,
-    // which is seqno. In the output we'll get the next sequence number.
-    m_pSndBuffer->addBuffer(data, size, (w_mctrl));
-    m_iSndNextSeqNo = w_mctrl.pktseq;
-    w_mctrl.pktseq = seqno;
+        // seqno is INPUT-OUTPUT value:
+        // - INPUT: the current sequence number to be placed for the next scheduled packet
+        // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
+        // We need to supply to the output the value that was STAMPED ON THE PACKET,
+        // which is seqno. In the output we'll get the next sequence number.
+        m_pSndBuffer->addBuffer(data, size, (w_mctrl));
+        m_iSndNextSeqNo = w_mctrl.pktseq;
+        w_mctrl.pktseq = seqno;
 
-    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
-        << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
-        << " STAMP: " << BufferStamp(data, size));
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
+                << " STAMP: " << BufferStamp(data, size));
 
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
@@ -5979,7 +5979,7 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
             return res;
     }
 
-    int seqdistance = -1;
+    const int seqdistance = -1;
 
     if (!m_bSynRecving)
     {
