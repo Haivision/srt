@@ -236,7 +236,6 @@ public:
 
    iterator begin() { return iterator(m_caSeq, m_iHead); }
    iterator end() { return iterator(m_caSeq, -1); }
-
 };
 
 struct CRcvFreshLoss

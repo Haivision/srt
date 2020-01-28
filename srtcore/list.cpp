@@ -296,13 +296,16 @@ int32_t CSndLossList::popLostSeq()
    CGuard listguard(m_ListLock);
 
    if (0 == m_iLength)
-     return -1;
+   {
+      SRT_ASSERT(m_iHead == -1);
+      return -1;
+   }
 
    if (m_iLastInsertPos == m_iHead)
       m_iLastInsertPos = -1;
 
    // return the first loss seq. no.
-   int32_t seqno = m_caSeq[m_iHead].data1;
+   const int32_t seqno = m_caSeq[m_iHead].data1;
 
    // head moves to the next node
    if (-1 == m_caSeq[m_iHead].data2)
