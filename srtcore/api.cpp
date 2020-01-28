@@ -2749,7 +2749,7 @@ int CUDT::epoll_wait(
 {
    try
    {
-      return s_UDTUnited.epollmg().wait(
+      return s_UDTUnited.epoll_ref().wait(
               eid, readfds, writefds, msTimeOut, lrfds, lwfds);
    }
    catch (const CUDTException& e)
