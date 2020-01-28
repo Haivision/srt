@@ -21,37 +21,37 @@ struct Double
     Double(): d(0.0)
     {
         instance = ++sourceid;
-        cerr << "(Double/" << instance << ": empty costruction)\n";
+        IF_HEAVY_LOGGING(cerr << "(Double/" << instance << ": empty costruction)\n");
     }
 
     Double(double dd): d(dd)
     {
         instance = ++sourceid;
-        cerr << "(Double:/" << instance << " init construction:" << dd << ")\n";
+        IF_HEAVY_LOGGING(cerr << "(Double:/" << instance << " init construction:" << dd << ")\n");
     }
 
     Double(const Double& dd): d(dd.d)
     {
         instance = ++sourceid;
-        cerr << "(Double:/" << instance << " copy construction:" << dd.d << " object/" << dd.instance << ")\n";
+        IF_HEAVY_LOGGING(cerr << "(Double:/" << instance << " copy construction:" << dd.d << " object/" << dd.instance << ")\n");
     }
 
     operator double() { return d; }
 
     ~Double()
     {
-        cerr << "(Double:/" << instance << " destruction:" << d << ")\n";
+        IF_HEAVY_LOGGING(cerr << "(Double:/" << instance << " destruction:" << d << ")\n");
     }
 
     void operator=(double dd)
     {
-        cerr << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd << " value)\n";
+        IF_HEAVY_LOGGING(cerr << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd << " value)\n");
         d = dd;
     }
 
     void operator=(const Double& dd)
     {
-        cerr << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd.d << " object/" << dd.instance << ")\n";
+        IF_HEAVY_LOGGING(cerr << "(Double:/" << instance << " copy assignment:" << d << " -> " << dd.d << " object/" << dd.instance << ")\n");
         d = dd.d;
     }
 
@@ -107,36 +107,36 @@ TEST(CircularBuffer, Overall)
     buf.push(12.3);
     buf.push(13.4);
 
-    cerr << "After adding 3 elements: size=" << buf.size() << " capacity=" << buf.capacity() << ":\n";
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(cerr << "After adding 3 elements: size=" << buf.size() << " capacity=" << buf.capacity() << ":\n");
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     ASSERT_EQ(buf.size(), 3);
 
-    cerr << "Adding element at position 5:\n";
+    IF_HEAVY_LOGGING(cerr << "Adding element at position 5:\n");
     EXPECT_TRUE(buf.set(5, 15.5));
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     ASSERT_EQ(buf.size(), 6);
 
-    cerr << "Adding element at position 7 (should fail):\n";
+    IF_HEAVY_LOGGING(cerr << "Adding element at position 7 (should fail):\n");
     EXPECT_FALSE(buf.set(7, 10.0));
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     ASSERT_EQ(buf.size(), 6);
 
-    cerr << "Dropping first 2 elements:\n";
+    IF_HEAVY_LOGGING(cerr << "Dropping first 2 elements:\n");
     buf.drop(2);
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     ASSERT_EQ(buf.size(), 4);
 
-    cerr << "Adding again element at position 6 (should roll):\n";
+    IF_HEAVY_LOGGING(cerr << "Adding again element at position 6 (should roll):\n");
     buf.set(6, 22.1);
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
-    cerr << "Adding element at existing position 2 (overwrite):\n";
+    IF_HEAVY_LOGGING(cerr << "Adding element at existing position 2 (overwrite):\n");
     buf.set(2, 33.1);
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
-    cerr << "Adding element at existing position 3 (no overwrite):\n";
+    IF_HEAVY_LOGGING(cerr << "Adding element at existing position 3 (no overwrite):\n");
     buf.set(3, 44.4, false);
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
     Double output;
     // [0] = 13.4 (after dropping first 2 elements)
@@ -152,40 +152,40 @@ TEST(CircularBuffer, Overall)
     EXPECT_TRUE(buf.get(6, (output)));
     ASSERT_EQ(output, 22.1);
 
-    cerr << "Dropping first 4 positions:\n";
+    IF_HEAVY_LOGGING(cerr << "Dropping first 4 positions:\n");
     buf.drop(4);
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     EXPECT_TRUE(buf.get(2, (output))); // Was 6 before dropping
     ASSERT_EQ(output.d, 22.1);
 
-    cerr << "Pushing 1 aslong there is capacity:\n";
+    IF_HEAVY_LOGGING(cerr << "Pushing 1 aslong there is capacity:\n");
     int i = 0;
     while (buf.push(1) != -1)
     {
-        cerr << "Pushed, begin=" << buf.m_xBegin << " end=" << buf.m_xEnd << endl;
+        IF_HEAVY_LOGGING(cerr << "Pushed, begin=" << buf.m_xBegin << " end=" << buf.m_xEnd << endl);
         ++i;
     }
-    cerr << "Done " << i << " operations, buffer:\n";
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(cerr << "Done " << i << " operations, buffer:\n");
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
-    cerr << "Updating value at position 5:\n";
+    IF_HEAVY_LOGGING(cerr << "Updating value at position 5:\n");
     EXPECT_TRUE(buf.update(5, Add(3.33)));
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     EXPECT_TRUE(buf.get(5, (output)));
     ASSERT_EQ(output, 4.33);
 
     int offset = 9;
-    cerr << "Forced adding at position 9 with dropping (capacity: " << buf.capacity() << "):\n";
+    IF_HEAVY_LOGGING(cerr << "Forced adding at position 9 with dropping (capacity: " << buf.capacity() << "):\n");
     // State we already know it has failed. Calculate drop size.
     int dropshift = offset - (buf.capacity() - 1); // buf.capacity()-1 is the latest position
     offset -= dropshift;
-    cerr << "Need to drop: " << dropshift << " New offset:" << offset << endl;
+    IF_HEAVY_LOGGING(cerr << "Need to drop: " << dropshift << " New offset:" << offset << endl);
     ASSERT_GE(dropshift, 0);
     if (dropshift > 0)
     {
         buf.drop(dropshift);
-        cerr << "AFTER DROPPING:\n";
-        ShowCircularBuffer(buf);
+        IF_HEAVY_LOGGING(cerr << "AFTER DROPPING:\n");
+        IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
         EXPECT_TRUE(buf.set(offset, 99.1, true));
 
         // size() - 1 is the latest possible offset
@@ -193,12 +193,12 @@ TEST(CircularBuffer, Overall)
     }
     else
     {
-        cerr << "NEGATIVE DROP!\n";
+        IF_HEAVY_LOGGING(cerr << "NEGATIVE DROP!\n");
     }
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
     int size = buf.size();
 
-    cerr << "Dropping rest of the items (passing " << (size) << "):\n";
+    IF_HEAVY_LOGGING(cerr << "Dropping rest of the items (passing " << (size) << "):\n");
 
     // NOTE: 'drop' gets the POSITION as argument, but this position
     // is allowed to be past the last addressable position. When passing
@@ -206,8 +206,8 @@ TEST(CircularBuffer, Overall)
     buf.drop(size);
     EXPECT_TRUE(buf.empty());
 
-    ShowCircularBuffer(buf);
+    IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
-    cerr << "DONE.\n";
+    IF_HEAVY_LOGGING(cerr << "DONE.\n");
 }
 
