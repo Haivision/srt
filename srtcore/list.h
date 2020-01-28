@@ -107,6 +107,10 @@ private:
    /// No lock.
    void insertHead(int pos, int32_t seqno1, int32_t seqno2);
 
+   /// Check if it is possible to coalesce element at loc with further elements.
+   /// @param loc - last changed location
+   void coalesce(int loc);
+
 private:
    CSndLossList(const CSndLossList&);
    CSndLossList& operator=(const CSndLossList&);
