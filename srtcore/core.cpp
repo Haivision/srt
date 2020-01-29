@@ -2032,7 +2032,7 @@ bool CUDT::createSrtHandshake(
                 // Copy the key - do the endian inversion because another endian inversion
                 // will be done for every control message before sending, and this KM message
                 // is ALREADY in network order.
-                const uint32_t *keydata = reinterpret_cast<const uint32_t *>(m_pCryptoControl->getKmMsg_data(ki));
+                const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_pCryptoControl->getKmMsg_data(ki));
 
                 HLOGC(mglog.Debug,
                       log << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
@@ -2614,7 +2614,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
           log << "HS VERSION=" << hs.m_iVersion << " EXTENSIONS: " << CHandShake::ExtensionFlagStr(ext_flags));
 
     // Ok, now find the beginning of an int32_t array that follows the UDT handshake.
-    uint32_t *p    = reinterpret_cast<uint32_t *>(hspkt.m_pcData + CHandShake::m_iContentSize);
+    uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
     size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
@@ -6724,17 +6724,36 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 void CUDT::initSynch()
 {
-    pthread_cond_init(&m_SendBlockCond, NULL);
-    pthread_cond_init(&m_RecvDataCond, NULL);
+    createMutex(m_SendBlockLock, "SendBlock");
+    createCond(m_SendBlockCond, "SendBlock");
+    createMutex(m_RecvDataLock, "RecvData");
+    createCond(m_RecvDataCond, "RecvData");
+    createMutex(m_SendLock, "Send");
+    createMutex(m_RecvLock, "Recv");
+    createMutex(m_RcvLossLock, "RcvLoss");
+    createMutex(m_RecvAckLock, "RecvAck");
+    createMutex(m_RcvBufferLock, "RcvBuffer");
+    createMutex(m_ConnectionLock, "Connection");
+    createMutex(m_StatsLock, "Stats");
+
     memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
-    pthread_cond_init(&m_RcvTsbPdCond, NULL);
+    createCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
 void CUDT::destroySynch()
 {
-    pthread_cond_destroy(&m_SendBlockCond);
-    pthread_cond_destroy(&m_RecvDataCond);
-    pthread_cond_destroy(&m_RcvTsbPdCond);
+    releaseMutex(m_SendBlockLock);
+    releaseCond(m_SendBlockCond);
+    releaseMutex(m_RecvDataLock);
+    releaseCond(m_RecvDataCond);
+    releaseMutex(m_SendLock);
+    releaseMutex(m_RecvLock);
+    releaseMutex(m_RcvLossLock);
+    releaseMutex(m_RecvAckLock);
+    releaseMutex(m_RcvBufferLock);
+    releaseMutex(m_ConnectionLock);
+    releaseMutex(m_StatsLock);
+    releaseCond(m_RcvTsbPdCond);
 }
 
 void CUDT::releaseSynch()
@@ -6823,7 +6842,7 @@ static void DebugAck(string hdr, int prev, int ack)
 static inline void DebugAck(string, int, int) {}
 #endif
 
-void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, int size)
+void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
 {
     CPacket ctrlpkt;
     setPacketTS(ctrlpkt, steady_clock::now());

@@ -213,6 +213,8 @@ private:
     pthread_mutex_t m_mutex;
 };
 
+typedef pthread_cond_t CCondVar;
+
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
 class ScopedLock
 {
@@ -252,6 +254,12 @@ inline void enterCS(Mutex& m) { m.lock(); }
 inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
 
+inline void createMutex(Mutex& , const char* ) {}
+inline void releaseMutex(Mutex& ) {}
+
+void createCond(CCondVar& cond, const char* name);
+void createCond_monotonic(CCondVar& cond, const char* name);
+void releaseCond(CCondVar& cond);
 
 class InvertedLock
 {
@@ -264,6 +272,12 @@ class InvertedLock
         if (!m_pMutex)
             return;
 
+        leaveCS(*m_pMutex);
+    }
+
+    InvertedLock(Mutex& m)
+        : m_pMutex(&m)
+    {
         leaveCS(*m_pMutex);
     }
 

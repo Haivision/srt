@@ -83,7 +83,9 @@ extern LogConfig srt_logger_config;
 
 void CUDTSocket::construct()
 {
-    pthread_cond_init(&m_AcceptCond, NULL);
+    createMutex(m_AcceptLock, "Accept");
+    createCond(m_AcceptCond, "Accept");
+    createMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
@@ -95,7 +97,9 @@ CUDTSocket::~CUDTSocket()
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
 
-   pthread_cond_destroy(&m_AcceptCond);
+   releaseMutex(m_AcceptLock);
+   releaseCond(m_AcceptCond);
+   releaseMutex(m_ControlLock);
 }
 
 
@@ -182,6 +186,9 @@ m_ClosedSockets()
    m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
+   createMutex(m_GlobControlLock, "GlobControl");
+   createMutex(m_IDLock, "ID");
+   createMutex(m_InitLock, "Init");
 
    pthread_key_create(&m_TLSError, TLSDestroy);
 
@@ -239,14 +246,8 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-#if ENABLE_MONOTONIC_CLOCK
-   pthread_condattr_t  CondAttribs;
-   pthread_condattr_init(&CondAttribs);
-   pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-   pthread_cond_init(&m_GCStopCond, &CondAttribs);
-#else
-   pthread_cond_init(&m_GCStopCond, NULL);
-#endif
+   createMutex(m_GCStopLock, "GCStop");
+   createCond_monotonic(m_GCStopCond, "GCStop");
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);
@@ -283,7 +284,8 @@ int CUDTUnited::cleanup()
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
 #ifndef _WIN32
-   pthread_cond_destroy(&m_GCStopCond);
+   releaseMutex(m_GCStopLock);
+   releaseCond(m_GCStopCond);
 #endif
 
    m_bGCStatus = false;
@@ -618,6 +620,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
     }
     catch (...)
     {
+        LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
         error = 2;
     }
     leaveCS(m_GlobControlLock);
@@ -846,7 +849,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    while (!accepted)
    {
        CGuard accept_lock(ls->m_AcceptLock);
-       CSync accept_sync(ls->m_AcceptCond, accept_lock);
+       CSync  accept_sync(ls->m_AcceptCond, accept_lock);
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -998,7 +1001,7 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
     {
         // InvertedGuard unlocks in the constructor, then locks in the
         // destructor, no matter if an exception has fired.
-        InvertedLock l_unlocker( s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0 );
+        InvertedLock l_unlocker (s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0);
         s->m_pUDT->startConnect(target_addr, forced_isn);
     }
     catch (CUDTException& e) // Interceptor, just to change the state.
@@ -1675,29 +1678,29 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    if (s->m_pQueuedSockets)
    {
-      CGuard cg(s->m_AcceptLock);
+       CGuard cg(s->m_AcceptLock);
 
-      // if it is a listener, close all un-accepted sockets in its queue
-      // and remove them later
-      for (set<SRTSOCKET>::iterator q = s->m_pQueuedSockets->begin();
-         q != s->m_pQueuedSockets->end(); ++ q)
-      {
-         sockets_t::iterator si = m_Sockets.find(*q);
-         if (si == m_Sockets.end())
-         {
+       // if it is a listener, close all un-accepted sockets in its queue
+       // and remove them later
+       for (set<SRTSOCKET>::iterator q = s->m_pQueuedSockets->begin();
+               q != s->m_pQueuedSockets->end(); ++ q)
+       {
+           sockets_t::iterator si = m_Sockets.find(*q);
+           if (si == m_Sockets.end())
+           {
                // gone in the meantime
-            LOGC(mglog.Error, log << "removeSocket: IPE? socket @" << u
-                    << " being queued for listener socket @" << s->m_SocketID
-                    << " is GONE in the meantime ???");
-            continue;
-         }
+               LOGC(mglog.Error, log << "removeSocket: IPE? socket @" << u
+                       << " being queued for listener socket @" << s->m_SocketID
+                       << " is GONE in the meantime ???");
+               continue;
+           }
 
-         CUDTSocket* as = si->second;
+           CUDTSocket* as = si->second;
 
-         as->makeClosed();
-         m_ClosedSockets[*q] = as;
-         m_Sockets.erase(*q);
-      }
+           as->makeClosed();
+           m_ClosedSockets[*q] = as;
+           m_Sockets.erase(*q);
+       }
 
    }
 
