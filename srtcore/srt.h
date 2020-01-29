@@ -74,23 +74,44 @@ written by
 // for all lesser standard use compiler-specific attributes).
 #if defined(SRT_NO_DEPRECATED)
 
+// Unused: do not issue an unused variable warning
 #define SRT_ATR_UNUSED
+
+// Deprecated: function or symbol is deprecated
+// The *_PX version is the prefix attribute, which applies only
+// to functions (Microsoft compilers).
+
+// When deprecating a function, mark it:
+//
+// SRT_ATR_DEPRECATED_PX retval function(arguments) SRT_ATR_DEPRECATED;
+//
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_DEPRECATED_PX
+
+// Nodiscard: issue a warning if the return value was discarded.
 #define SRT_ATR_NODISCARD
 
 #elif defined(__cplusplus) && __cplusplus > 201406
 
 #define SRT_ATR_UNUSED [[maybe_unused]]
-#define SRT_ATR_DEPRECATED [[deprecated]]
+#define SRT_ATR_DEPRECATED
+#define SRT_ATR_DEPRECATED_PX [[deprecated]]
 #define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
-#elif defined( __GNUC__)
+#elif defined(__GNUC__)
 #define SRT_ATR_UNUSED __attribute__((unused))
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
 #define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(_MSC_VER)
+#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
+#define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
+#define SRT_ATR_DEPRECATED // no postfix-type modifier
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_UNUSED
+#define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_NODISCARD
 #endif
@@ -206,7 +227,7 @@ typedef enum SRT_SOCKOPT {
 #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
 #else
     // Older (pre-C++11) compilers use gcc deprecated applied to a typedef
-    typedef SRT_ATR_DEPRECATED SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED;
+    typedef SRT_ATR_DEPRECATED_PX SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED SRT_ATR_DEPRECATED;
 #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
@@ -445,8 +466,8 @@ enum CodeMinor
     MN_CONGESTION      =  4
 };
 
-static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
-static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
+SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
+SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
 
 // Stupid, but effective. This will be #undefined, so don't worry.
 #define MJ(major) (1000 * MJ_##major)
@@ -679,12 +700,12 @@ SRT_API       int srt_cleanup(void);
 //
 // DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
 // and socket creation doesn't need any arguments. Use srt_create_socket().
-SRT_API SRTSOCKET srt_socket       (int af, int type, int protocol) SRT_ATR_DEPRECATED;
-SRT_API SRTSOCKET srt_create_socket();
+SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
+SRT_API       SRTSOCKET srt_create_socket();
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
-static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
 static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);

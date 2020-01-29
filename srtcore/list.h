@@ -96,10 +96,26 @@ private:
 
    int m_iHead;                         // first node
    int m_iLength;                       // loss length
-   int m_iSize;                         // size of the static array
+   const int m_iSize;                   // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
    mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
+
+private:
+
+   /// Inserts an element to the beginning and updates head pointer.
+   /// No lock.
+   void insertHead(int pos, int32_t seqno1, int32_t seqno2);
+
+   /// Check if it is possible to coalesce element at loc with further elements.
+   /// @param loc - last changed location
+   void coalesce(int loc);
+
+   /// Update existing element with the new range (increase only)
+   /// @param pos     position of the element being updated
+   /// @param seqno1  first seqnuence number in range
+   /// @param seqno2  last sequence number in range (-1 if no range)
+   bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
 
 private:
    CSndLossList(const CSndLossList&);
@@ -220,7 +236,6 @@ public:
 
    iterator begin() { return iterator(m_caSeq, m_iHead); }
    iterator end() { return iterator(m_caSeq, -1); }
-
 };
 
 struct CRcvFreshLoss
