@@ -929,7 +929,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
 
     // For a single socket, just do bind, then connect
     bind(s, source_addr);
-    return connectIn(s, target_addr, 0);
+    return connectIn(s, target_addr, -1);
 }
 
 int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
@@ -2997,7 +2997,7 @@ SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen)
 
 int connect(SRTSOCKET u, const struct sockaddr* name, int namelen)
 {
-   return CUDT::connect(u, name, namelen, 0);
+   return CUDT::connect(u, name, namelen, -1);
 }
 
 int close(SRTSOCKET u)
