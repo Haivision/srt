@@ -6498,7 +6498,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
-    if (maybeEnterCS(m_ConnectionLock))
+    if (tryEnterCS(m_ConnectionLock))
     {
         if (m_pSndBuffer)
         {
@@ -6775,7 +6775,7 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     // were signed off for extraction.
     if (acksize > 0)
     {
-        int distance = m_pRcvBuffer->ackData(acksize);
+        const int distance = m_pRcvBuffer->ackData(acksize);
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
@@ -6785,7 +6785,7 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     }
 
     // If nothing was confirmed, then use the current buffer span
-    int distance = m_pRcvBuffer->getRcvDataSize();
+    const int distance = m_pRcvBuffer->getRcvDataSize();
     if (distance > 0)
         return CSeqNo::decseq(ack, distance);
     return ack;
@@ -8099,10 +8099,6 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 
     w_packet.m_iID = m_PeerID;
 
-   // Redundant. This is now properly set in both rexmit and normal
-   // cases just after setting the m_pcData field.
-   //w_packet.setLength(payload);
-
     /* Encrypt if 1st time this packet is sent and crypto is enabled */
     if (kflg)
     {
@@ -9359,8 +9355,9 @@ void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
     }
 }
 
-void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_decision[10])
+int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 {
+    int because_decision = 0;
     if (currtime > m_tsNextACKTime  // ACK time has come
                                   // OR the number of sent packets since last ACK has reached
                                   // the congctl-defined value of ACK Interval
@@ -9377,7 +9374,7 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_de
 
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
-        strcpy(debug_decision, "ACK ");
+        because_decision = BECAUSE_ACK;
     }
 
     // Or the transfer rate is so high that the number of packets
@@ -9391,11 +9388,13 @@ void CUDT::checkACKTimer(const steady_clock::time_point &currtime, char debug_de
         // send a "light" ACK
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++m_iLightACKCount;
-        strcpy(debug_decision, "LITE-ACK ");
+        because_decision = BECAUSE_LITEACK;
     }
+
+    return because_decision;
 }
 
-void CUDT::checkNAKTimer(const steady_clock::time_point& currtime, char debug_decision[10])
+int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
 {
     // XXX The problem with working NAKREPORT with SRT_ARQ_ONREQ
     // is not that it would be inappropriate, but because it's not
@@ -9409,7 +9408,7 @@ void CUDT::checkNAKTimer(const steady_clock::time_point& currtime, char debug_de
     // and for adding them properly the loss list container wasn't
     // prepared. This then requires some more effort to implement.
     if (!m_bRcvNakReport || m_PktFilterRexmitLevel != SRT_ARQ_ALWAYS)
-        return;
+        return 0;
 
     /*
      * m_bRcvNakReport enables NAK reports for SRT.
@@ -9419,24 +9418,44 @@ void CUDT::checkNAKTimer(const steady_clock::time_point& currtime, char debug_de
      */
     const int loss_len = m_pRcvLossList->getLossLength();
     SRT_ASSERT(loss_len >= 0);
+    int debug_decision = 0;
 
     if (loss_len > 0)
     {
         if (currtime <= m_tsNextNAKTime)
-            return; // wait for next NAK time
+            return 0; // wait for next NAK time
 
         sendCtrl(UMSG_LOSSREPORT);
-        strcpy(debug_decision, "NAKREPORT");
+        debug_decision = BECAUSE_NAKREPORT;
     }
 
     m_tsNextNAKTime = currtime + m_tdNAKInterval;
+    return debug_decision;
 }
 
-bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, const char* debug_decision ATR_UNUSED)
+bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int because_reason ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
 #if ENABLE_HEAVY_LOGGING & 1
-    string decision = *debug_decision ? debug_decision : "NOTHING";
+    static const char* const decisions [] = {
+        "ACK",
+        "LITE-ACK",
+        "NAKREPORT"
+    };
+
+    string decision = "NOTHING";
+    if (because_reason)
+    {
+        ostringstream decd;
+        decision = "";
+        for (int i = 0; i < LAST_BECAUSE_BIT; ++i)
+        {
+            int flag = 1 << i;
+            if (because_reason & flag)
+                decd << decisions[i] << " ";
+        }
+        decision = decd.str();
+    }
     HLOGC(mglog.Debug, log << CONID() << "checkTimer: ACTIVITIES PERFORMED: " << decision);
 #endif
 
@@ -9605,18 +9624,11 @@ void CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
-    char debug_decision[25] = "";
-    char* pdd = debug_decision;
-
     // Check if it is time to send ACK
-    checkACKTimer(currtime, pdd);
-#if ENABLE_HEAVY_LOGGING
-    if (*pdd)
-        pdd += strlen(pdd);
-#endif
+    int debug_decision = checkACKTimer(currtime);
 
     // Check if it is time to send a loss report
-    checkNAKTimer(currtime, pdd);
+    debug_decision |= checkNAKTimer(currtime);
 
     // Check if the connection is expired
     if (checkExpTimer(currtime, debug_decision))

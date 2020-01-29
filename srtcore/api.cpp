@@ -1637,14 +1637,14 @@ void CUDTUnited::checkBrokenSockets()
 
       // timeout 1 second to destroy a socket AND it has been removed from
       // RcvUList
-      steady_clock::time_point now = steady_clock::now();
-      steady_clock::duration closed_ago = now - j->second->m_tsClosureTimeStamp;
+      const steady_clock::time_point now = steady_clock::now();
+      const steady_clock::duration closed_ago = now - j->second->m_tsClosureTimeStamp;
       if ((closed_ago > seconds_from(1))
          && ((!j->second->m_pUDT->m_pRNode)
             || !j->second->m_pUDT->m_pRNode->m_bOnList))
       {
-          HLOGC(mglog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
-                  << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
+         HLOGC(mglog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                 << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
          // HLOGF(mglog.Debug, "will unref socket: %d\n", j->first);
          tbr.push_back(j->first);

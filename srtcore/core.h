@@ -741,7 +741,6 @@ private: // Timers
     //   always increased by one in this call, otherwise it will be increased by the number of blocks
     //   scheduled for sending.
 
-    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileCC, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
     void setInitialSndSeq(int32_t isn)
@@ -884,8 +883,7 @@ private: // Generation and processing of packets
     ///         The payload tells the size of the payload, packed in CPacket.
     ///         The timestamp is the full source/origin timestamp of the data.
     ///         If payload is <= 0, consider the timestamp value invalid.
-    std::pair<int, time_point>
-        packData(CPacket& packet);
+    std::pair<int, time_point> packData(CPacket& packet);
 
     int processData(CUnit* unit);
     void processClose();
@@ -970,9 +968,16 @@ public:
 private: // Timers functions
     void checkTimers();
     void considerLegacySrtHandshake(const time_point &timebase);
-    void checkACKTimer (const time_point& currtime, char debug_decision[10]);
-    void checkNAKTimer(const time_point& currtime, char debug_decision[10]);
-    bool checkExpTimer (const time_point& currtime, const char* debug_decision);  // returns true if the connection is expired
+
+    static const int BECAUSE_NO_REASON = 0, // NO BITS
+                     BECAUSE_ACK       = 1 << 0,
+                     BECAUSE_LITEACK   = 1 << 1,
+                     BECAUSE_NAKREPORT = 1 << 2,
+                     LAST_BECAUSE_BIT  =      3;
+
+    int checkACKTimer (const time_point& currtime);
+    int checkNAKTimer(const time_point& currtime);
+    bool checkExpTimer (const time_point& currtime, int because_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
 
 public: // For the use of CCryptoControl

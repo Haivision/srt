@@ -249,7 +249,7 @@ typedef UniqueLock CGuard;
 
 
 inline void enterCS(Mutex& m) { m.lock(); }
-inline bool maybeEnterCS(Mutex& m) { return m.try_lock(); }
+inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
 
 
