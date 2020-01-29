@@ -11,7 +11,7 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STL_CHRONO
+//#define USE_STDCXX_CHRONO
 //#define ENABLE_CXX17
 
 #include <cstdlib>
@@ -213,8 +213,6 @@ private:
     pthread_mutex_t m_mutex;
 };
 
-typedef pthread_cond_t CCondVar;
-
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
 class ScopedLock
 {
@@ -257,10 +255,6 @@ inline void leaveCS(Mutex& m) { m.unlock(); }
 inline void setupMutex(Mutex& , const char* ) {}
 inline void releaseMutex(Mutex& ) {}
 
-void setupCond(CCondVar& cond, const char* name);
-void setupCond_monotonic(CCondVar& cond, const char* name);
-void releaseCond(CCondVar& cond);
-
 class InvertedLock
 {
     Mutex *m_pMutex;
@@ -289,6 +283,77 @@ class InvertedLock
     }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CCondVar section
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CCondVar
+{
+public:
+    CCondVar();
+    ~CCondVar();
+
+public:
+    /// Causes the current thread to block until the condition variable is notified
+    /// or a spurious wakeup occurs.
+    ///
+    /// @param lock Corresponding mutex locked by UniqueLock
+    void wait(UniqueLock& lock);
+
+    /// Atomically releases lock, blocks the current executing thread, 
+    /// and adds it to the list of threads waiting on *this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously. When unblocked, regardless of the reason,
+    /// lock is reacquired and wait_for() exits.
+    ///
+    /// @returns false if the relative timeout specified by rel_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    ///
+    /// @note Calling this function if lock.mutex()
+    /// is not locked by the current thread is undefined behavior.
+    /// Calling this function if lock.mutex() is not the same mutex as the one
+    /// used by all other threads that are currently waiting on the same
+    /// condition variable is undefined behavior.
+    bool wait_for(UniqueLock& lock, const steady_clock::duration& rel_time);
+
+    /// Causes the current thread to block until the condition variable is notified,
+    /// a specific time is reached, or a spurious wakeup occurs.
+    ///
+    /// @param[in] lock  an object of type UniqueLock, which must be locked by the current thread 
+    /// @param[in] timeout_time an object of type time_point representing the time when to stop waiting 
+    ///
+    /// @returns false if the relative timeout specified by timeout_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    bool wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time);
+
+    /// Calling notify_one() unblocks one of the waiting threads,
+    /// if any threads are waiting on this CV.
+    void notify_one();
+
+    /// Unblocks all threads currently waiting for this CV.
+    void notify_all();
+
+private:
+#ifdef USE_STDCXX_CHRONO
+    condition_variable m_cv;
+    typedef condition_variable handle_t;
+#else
+    pthread_cond_t  m_cv;
+    typedef pthread_cond_t handle_t;
+#endif
+
+public:
+    handle_t& ref() { return m_cv; }
+};
+
+
+inline void setupCond(CCondVar& , const char* ) { }
+inline void setupCond_monotonic(CCondVar& , const char* ) { }
+inline void releaseCond(CCondVar&) { }
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Event (CV) section
@@ -308,27 +373,16 @@ inline void SleepFor(const steady_clock::duration& t)
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
 {
-    pthread_cond_t* m_cond;
-    Mutex* m_mutex;
+    CCondVar* m_cond;
+    CGuard* m_locker;
 
 public:
-    enum Nolock { NOLOCK };
 
     // Locked version: must be declared only after the declaration of CGuard,
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
-    CSync(pthread_cond_t& cond, CGuard& g);
-
-    // This is only for one-shot signaling. This doesn't need a CGuard
-    // variable, only the mutex itself. Only lock_signal() can be used.
-    CSync(pthread_cond_t& cond, Mutex& mutex, Nolock);
-
-    // An alternative method
-    static CSync nolock(pthread_cond_t& cond, Mutex& m)
-    {
-        return CSync(cond, m, NOLOCK);
-    }
+    CSync(CCondVar& cond, CGuard& g);
 
     // COPY CONSTRUCTOR: DEFAULT!
 
@@ -345,19 +399,14 @@ public:
     // given time.
     bool wait_until(const steady_clock::time_point& exptime);
 
-    // You can signal using two methods:
-    // - lock_signal: expect the mutex NOT locked, lock it, signal, then unlock.
-    // - signal: expect the mutex locked, so only issue a signal, but you must pass the CGuard that keeps the lock.
-    void lock_signal();
-
     // Static ad-hoc version
-    static void lock_signal(pthread_cond_t& cond, Mutex& m);
-    static void lock_broadcast(pthread_cond_t& cond, Mutex& m);
+    static void lock_signal(CCondVar& cond, Mutex& m);
+    static void lock_broadcast(CCondVar& cond, Mutex& m);
 
     void signal_locked(CGuard& lk);
     void signal_relaxed();
-    static void signal_relaxed(pthread_cond_t& cond);
-    static void broadcast_relaxed(pthread_cond_t& cond);
+    static void signal_relaxed(CCondVar& cond);
+    static void broadcast_relaxed(CCondVar& cond);
 };
 
 class SyncEvent

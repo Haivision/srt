@@ -470,7 +470,7 @@ CSndQueue::CSndQueue()
     , m_WindowCond()
     , m_bClosing(false)
 {
-    pthread_cond_init(&m_WindowCond, NULL);
+    setupCond(m_WindowCond, "Window");
 }
 
 CSndQueue::~CSndQueue()
@@ -489,7 +489,6 @@ CSndQueue::~CSndQueue()
         HLOGC(mglog.Debug, log << "SndQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
-    pthread_cond_destroy(&m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -1050,7 +1049,7 @@ CRcvQueue::CRcvQueue()
     , m_mBuffer()
     , m_BufferCond()
 {
-    pthread_cond_init(&m_BufferCond, NULL);
+    setupCond(m_BufferCond, "QueueBuffer");
 }
 
 CRcvQueue::~CRcvQueue()
@@ -1061,7 +1060,6 @@ CRcvQueue::~CRcvQueue()
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
-    pthread_cond_destroy(&m_BufferCond);
 
     delete m_pRcvUList;
     delete m_pHash;

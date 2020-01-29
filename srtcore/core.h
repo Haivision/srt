@@ -345,8 +345,8 @@ public: // internal API
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
-    SRTU_PROPERTY_RR(pthread_cond_t*, recvDataCond, &m_RecvDataCond);
-    SRTU_PROPERTY_RR(pthread_cond_t*, recvTsbPdCond, &m_RcvTsbPdCond);
+    SRTU_PROPERTY_RR(srt::sync::CCondVar*, recvDataCond, &m_RecvDataCond);
+    SRTU_PROPERTY_RR(srt::sync::CCondVar*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
