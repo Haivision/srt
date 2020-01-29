@@ -94,8 +94,8 @@ written by
 #elif defined(__cplusplus) && __cplusplus > 201406
 
 #define SRT_ATR_UNUSED [[maybe_unused]]
-#define SRT_ATR_DEPRECATED [[deprecated]]
-#define SRT_ATR_DEPRECATED_PX
+#define SRT_ATR_DEPRECATED
+#define SRT_ATR_DEPRECATED_PX [[deprecated]]
 #define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
@@ -236,7 +236,7 @@ typedef enum SRT_SOCKOPT {
 #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
 #else
     // Older (pre-C++11) compilers use gcc deprecated applied to a typedef
-    typedef SRT_ATR_DEPRECATED SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED;
+    typedef SRT_ATR_DEPRECATED_PX SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED SRT_ATR_DEPRECATED;
 #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
@@ -475,8 +475,8 @@ enum CodeMinor
     MN_CONGESTION      =  4
 };
 
-static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
-static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
+SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
+SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
 
 // Stupid, but effective. This will be #undefined, so don't worry.
 #define MJ(major) (1000 * MJ_##major)

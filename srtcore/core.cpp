@@ -298,7 +298,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
-   m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
+    m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
 #ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
 #endif
@@ -1357,7 +1357,7 @@ void CUDT::clearData()
     m_bPeerTsbPd         = false;
     m_iPeerTsbPdDelay_ms = 0;
 
-    // These both should be set to FALSE here.
+    // TSBPD as state should be set to FALSE here.
     // Only when the HSREQ handshake is exchanged,
     // should they be set to possibly true.
     m_bTsbPd = false;
@@ -3839,7 +3839,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_ConnReq.m_iID             = m_SocketID;
     CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
-    if (forced_isn == 0)
+    if (forced_isn == -1)
     {
         // Random Initial Sequence Number (normal mode)
         srand(count_microseconds(steady_clock::now()));
@@ -4821,7 +4821,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
-                m_SrtHsSide = hsd;
+                m_SrtHsSide   = hsd;
             }
             m_tsLastReqTime = steady_clock::time_point();
             if (!createCrypter(hsd, bidirectional))
@@ -5775,7 +5775,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket &hspkt, CHan
        {
            // This function will be called internally inside
            // synchronizeWithGroup(). This is just more complicated.
-           updateAfterSrtHandshake(m_ConnRes.m_iVersion);
+           updateAfterSrtHandshake(w_hs.m_iVersion);
        }
    }
 
@@ -6156,7 +6156,7 @@ bool CUDT::close()
     if (m_pCryptoControl)
         m_pCryptoControl->close();
 
-   if (isOPT_TsbPd() && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (isOPT_TsbPd() && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
     {
         HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
         void* retval;
@@ -6578,11 +6578,9 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         CGuard recvAckLock(m_RecvAckLock);
         // insert the user buffer into the sending list
 
-    int32_t seqno = m_iSndNextSeqNo;
-#if ENABLE_HEAVY_LOGGING
-    int32_t orig_seqno = seqno;
-    steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime);
-#endif
+        int32_t seqno = m_iSndNextSeqNo;
+        IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
 
     // Check if seqno has been set, in case when this is a group sender.
     // If the sequence is from the past towards the "next sequence",
@@ -6597,30 +6595,30 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         }
     }
 
-    // Set this predicted next sequence to the control information.
-    // It's the sequence of the FIRST (!) packet from all packets used to send
-    // this buffer. Values from this field will be monotonic only if you always
-    // have one packet per buffer (as it's in live mode).
-    w_mctrl.pktseq = seqno;
+        // Set this predicted next sequence to the control information.
+        // It's the sequence of the FIRST (!) packet from all packets used to send
+        // this buffer. Values from this field will be monotonic only if you always
+        // have one packet per buffer (as it's in live mode).
+        w_mctrl.pktseq = seqno;
 
     // Now seqno is the sequence to which it was scheduled
-    // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
-        << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
-        << " STAMP: " << BufferStamp(data, size));
+        // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
+                << " STAMP: " << BufferStamp(data, size));
 
-    // w_mctrl.seqno is INPUT-OUTPUT value:
-    // - INPUT: the current sequence number to be placed for the next scheduled packet
-    // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
-    // We need to supply to the output the value that was STAMPED ON THE PACKET,
-    // which is seqno. In the output we'll get the next sequence number.
-    m_pSndBuffer->addBuffer(data, size, (w_mctrl));
-    m_iSndNextSeqNo = w_mctrl.pktseq;
-    w_mctrl.pktseq = seqno;
+        // w_mctrl.seqno is INPUT-OUTPUT value:
+        // - INPUT: the current sequence number to be placed for the next scheduled packet
+        // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
+        // We need to supply to the output the value that was STAMPED ON THE PACKET,
+        // which is seqno. In the output we'll get the next sequence number.
+        m_pSndBuffer->addBuffer(data, size, (w_mctrl));
+        m_iSndNextSeqNo = w_mctrl.pktseq;
+        w_mctrl.pktseq = seqno;
 
-    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
-        << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
-        << " STAMP: " << BufferStamp(data, size));
+        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
+                << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
+                << " STAMP: " << BufferStamp(data, size));
 
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
@@ -6757,7 +6755,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             return res;
     }
 
-    int seqdistance = -1;
+    const int seqdistance = -1;
 
     if (!m_bSynRecving)
     {
@@ -8398,10 +8396,6 @@ void CUDT::processCtrl(const CPacket& ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         m_tdSendInterval *= 1.125;
-        // XXX The use of this field hasn't been found; a field with the
-        // same name is found in FileSmoother (created after CUDTCC from UDT)
-        // and it's updated with the value of m_iSndCurrSeqNo upon necessity.
-        //m_iLastDecSeq = m_iSndCurrSeqNo;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
@@ -8613,10 +8607,10 @@ void CUDT::processCtrl(const CPacket& ctrlpkt)
             // parties are HSv5.
             if (understood)
             {
-              if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
-              {
-                  updateAfterSrtHandshake(HS_VERSION_UDT4);
-              }
+                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+                {
+                    updateAfterSrtHandshake(HS_VERSION_UDT4);
+                }
             }
             else
             {
@@ -8686,7 +8680,7 @@ void CUDT::updateSrtSndSettings()
 
 void CUDT::updateAfterSrtHandshake(int hsv)
 {
-
+    HLOGC(mglog.Debug, log << "updateAfterSrtHandshake: HS version " << hsv);
     // This is blocked from being run in the "app reader" version because here
     // every socket does its TsbPd independently, just the sequence screwup is
     // done and the application reader sorts out packets by sequence numbers,
