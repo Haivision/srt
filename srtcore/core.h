@@ -420,7 +420,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-    void updateAfterSrtHandshake(int srt_cmd, int hsv);
+    void updateAfterSrtHandshake(int hsv);
 
     void updateSrtRcvSettings();
     void updateSrtSndSettings();

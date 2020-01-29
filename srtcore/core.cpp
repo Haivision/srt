@@ -1340,7 +1340,7 @@ void CUDT::clearData()
     m_bPeerTsbPd         = false;
     m_iPeerTsbPdDelay_ms = 0;
 
-    // These both should be set to FALSE here.
+    // TSBPD as state should be set to FALSE here.
     // Only when the HSREQ handshake is exchanged,
     // should they be set to possibly true.
     m_bTsbPd = false;
@@ -2360,7 +2360,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
     if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
     {
         // TimeStamp-based Packet Delivery feature enabled
-        if (!m_bTsbPd)
+        if (!isOPT_TsbPd())
         {
             LOGC(mglog.Warn, log << "HSREQ/rcv: Agent did not set rcv-TSBPD - ignoring proposed latency from peer");
 
@@ -2654,7 +2654,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSREQ, HS_VERSION_SRT1);
+                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
             }
             else if (cmd == SRT_CMD_HSRSP)
             {
@@ -2682,7 +2682,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSRSP, HS_VERSION_SRT1);
+                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
             }
             else if (cmd == SRT_CMD_NONE)
             {
@@ -3716,6 +3716,8 @@ EConnectStatus CUDT::processRendezvous(
                 return CONN_REJECT;
             }
 
+            updateAfterSrtHandshake(HS_VERSION_SRT1);
+
             // Pass on, inform about the shortened response-waiting period.
             HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
         }
@@ -3845,6 +3847,7 @@ EConnectStatus CUDT::processRendezvous(
             LOGC(mglog.Fatal, log << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
             m_ConnReq.m_extension = false;
         }
+        updateAfterSrtHandshake(HS_VERSION_SRT1);
     }
 
     HLOGC(mglog.Debug,
@@ -4165,7 +4168,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
-                m_SrtHsSide = hsd;
+                m_SrtHsSide   = hsd;
             }
 
             m_tsLastReqTime = steady_clock::time_point();
@@ -4244,6 +4247,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
+    updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     CInfoBlock ib;
     ib.m_iIPversion = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
@@ -5047,6 +5051,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
+    updateAfterSrtHandshake(w_hs.m_iVersion);
     SRT_REJECT_REASON rr = setupCC();
     // UNKNOWN used as a "no error" value
     if (rr != SRT_REJ_UNKNOWN)
@@ -7779,7 +7784,10 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             // parties are HSv5.
             if (understood)
             {
-                updateAfterSrtHandshake(ctrlpkt.getExtendedType(), HS_VERSION_UDT4);
+                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+                {
+                    updateAfterSrtHandshake(HS_VERSION_UDT4);
+                }
             }
             else
             {
@@ -7837,17 +7845,13 @@ void CUDT::updateSrtSndSettings()
     }
 }
 
-void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
+void CUDT::updateAfterSrtHandshake(int hsv)
 {
-
-    switch (srt_cmd)
-    {
-    case SRT_CMD_HSREQ:
-    case SRT_CMD_HSRSP:
-        break;
-    default:
-        return;
-    }
+    HLOGC(mglog.Debug, log << "updateAfterSrtHandshake: HS version " << hsv);
+    // This is blocked from being run in the "app reader" version because here
+    // every socket does its TsbPd independently, just the sequence screwup is
+    // done and the application reader sorts out packets by sequence numbers,
+    // but only when they are signed off by TsbPd.
 
     // The only possibility here is one of these two:
     // - Agent is RESPONDER and it receives HSREQ.
@@ -7869,7 +7873,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
         updateSrtRcvSettings();
         updateSrtSndSettings();
     }
-    else if (srt_cmd == SRT_CMD_HSRSP)
+    else if (m_SrtHsSide == HSD_INITIATOR)
     {
         // HSv4 INITIATOR is sender
         updateSrtSndSettings();
