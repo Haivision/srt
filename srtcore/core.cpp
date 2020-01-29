@@ -290,7 +290,7 @@ CUDT::CUDT(const CUDT &ancestor)
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
-   m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
+    m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
 #ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
 #endif
