@@ -21,6 +21,7 @@ srt_c_api.cpp
 window.cpp
 srt_compat.c
 sync.cpp
+sync_cxx11.cpp
 
 PUBLIC HEADERS
 srt.h
