@@ -290,6 +290,7 @@ CUDT::CUDT(const CUDT &ancestor)
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
+   m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
 #ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
 #endif
@@ -1324,7 +1325,10 @@ void CUDT::clearData()
     m_bPeerTsbPd         = false;
     m_iPeerTsbPdDelay_ms = 0;
 
-    m_bTsbPd         = m_bOPT_TsbPd; // Take the values from user-configurable options
+    // TSBPD as state should be set to FALSE here.
+    // Only when the HSREQ handshake is exchanged,
+    // should they be set to possibly true.
+    m_bTsbPd = false;
     m_iTsbPdDelay_ms = m_iOPT_TsbPdDelay;
     m_bTLPktDrop     = m_bOPT_TLPktDrop;
     m_bPeerTLPktDrop = false;
@@ -1467,7 +1471,6 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *srtdata, size_t /* srtlen - unused
             // HSv5 - this will be understood only since this version when this exists.
             srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
-            m_bTsbPd = true;
             // And in the reverse direction.
             srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
             srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
@@ -1512,7 +1515,7 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
 
     // If Agent doesn't set TSBPD, it will not set the TSBPD flag back to the Peer.
     // The peer doesn't have be disturbed by it anyway.
-    if (m_bTsbPd)
+    if (isOPT_TsbPd())
     {
         /*
          * We got and transposed peer start time (HandShake request timestamp),
@@ -2342,7 +2345,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
     if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
     {
         // TimeStamp-based Packet Delivery feature enabled
-        if (!m_bTsbPd)
+        if (!isOPT_TsbPd())
         {
             LOGC(mglog.Warn, log << "HSREQ/rcv: Agent did not set rcv-TSBPD - ignoring proposed latency from peer");
 
@@ -2375,11 +2378,12 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
                   log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms << " Peer:" << peer_decl_latency
                       << "  Selecting:" << maxdelay);
             m_iTsbPdDelay_ms = maxdelay;
+            m_bTsbPd = true;
         }
     }
     else
     {
-        std::string how_about_agent = m_bTsbPd ? "BUT AGENT DOES" : "and nor does Agent";
+        std::string how_about_agent = isOPT_TsbPd() ? "BUT AGENT DOES" : "and nor does Agent";
         HLOGC(mglog.Debug, log << "HSREQ/rcv: Peer DOES NOT USE latency for sending - " << how_about_agent);
     }
 
@@ -2405,7 +2409,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
     }
     else
     {
-        std::string how_about_agent = m_bTsbPd ? "BUT AGENT DOES" : "and nor does Agent";
+        std::string how_about_agent = isOPT_TsbPd() ? "BUT AGENT DOES" : "and nor does Agent";
         HLOGC(mglog.Debug, log << "HSREQ/rcv: Peer DOES NOT USE latency for receiving - " << how_about_agent);
     }
 
@@ -2499,13 +2503,14 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
         // PEER WILL SEND TSBPD == AGENT SHALL RECEIVE TSBPD.
         if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
         {
-            if (!m_bTsbPd)
+            if (!isOPT_TsbPd())
             {
                 LOGC(mglog.Warn,
                      log << "HSRSP/rcv: BUG? Peer (responder) declares sending latency, but Agent turned off TSBPD.");
             }
             else
             {
+                m_bTsbPd = true; // NOTE: in case of Group TSBPD receiving, this field will be SWITCHED TO m_bGroupTsbPd.
                 // Take this value as a good deal. In case when the Peer did not "correct" the latency
                 // because it has TSBPD turned off, just stay with the present value defined in options.
                 m_iTsbPdDelay_ms = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
@@ -2634,7 +2639,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSREQ, HS_VERSION_SRT1);
+                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
             }
             else if (cmd == SRT_CMD_HSRSP)
             {
@@ -2662,7 +2667,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false;
                 }
                 handshakeDone();
-                updateAfterSrtHandshake(SRT_CMD_HSRSP, HS_VERSION_SRT1);
+                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
             }
             else if (cmd == SRT_CMD_NONE)
             {
@@ -3696,6 +3701,8 @@ EConnectStatus CUDT::processRendezvous(
                 return CONN_REJECT;
             }
 
+            updateAfterSrtHandshake(HS_VERSION_SRT1);
+
             // Pass on, inform about the shortened response-waiting period.
             HLOGC(mglog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
         }
@@ -3825,6 +3832,7 @@ EConnectStatus CUDT::processRendezvous(
             LOGC(mglog.Fatal, log << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
             m_ConnReq.m_extension = false;
         }
+        updateAfterSrtHandshake(HS_VERSION_SRT1);
     }
 
     HLOGC(mglog.Debug,
@@ -4146,6 +4154,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
+                m_SrtHsSide = hsd;
             }
 
             m_tsLastReqTime = steady_clock::time_point();
@@ -4224,6 +4233,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
             return CONN_REJECT;
     }
 
+    updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     CInfoBlock ib;
     ib.m_iIPversion = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
@@ -5027,6 +5037,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
+    updateAfterSrtHandshake(w_hs.m_iVersion);
     SRT_REJECT_REASON rr = setupCC();
     // UNKNOWN used as a "no error" value
     if (rr != SRT_REJ_UNKNOWN)
@@ -5199,7 +5210,7 @@ void CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
     // Do a fast pre-check first - this simply declares that agent uses HSv5
     // and the legacy SRT Handshake is not to be done. Second check is whether
     // agent is sender (=initiator in HSv4).
-    if (!isTsbPd() || !m_bDataSender)
+    if (!isOPT_TsbPd() || !m_bDataSender)
         return;
 
     if (m_iSndHsRetryCnt <= 0)
@@ -5405,7 +5416,7 @@ bool CUDT::close()
     if (m_pCryptoControl)
         m_pCryptoControl->close();
 
-    if (m_bTsbPd && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (isOPT_TsbPd() && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
     {
         HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
         void *retval;
@@ -5440,7 +5451,13 @@ int CUDT::receiveBuffer(char *data, int len)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
-    CGuard recvguard(m_RecvLock);
+    if (isOPT_TsbPd())
+    {
+        LOGP(mglog.Error, "recv: This function is not intended to be used in Live mode with TSBPD.");
+        throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
+    }
+
+    CGuard recvguard (m_RecvLock);
 
     if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
     {
@@ -6269,7 +6286,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
-    if (m_bTsbPd)
+    if (isOPT_TsbPd())
     {
         LOGC(dlog.Error, log << "Reading from file is incompatible with TSBPD mode and would cause a deadlock\n");
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
@@ -6466,7 +6483,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->msRTT               = (double)m_iRTT / 1000.0;
     //>new
     perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
-    perf->msRcvTsbPdDelay = m_bTsbPd ? m_iTsbPdDelay_ms : 0;
+    perf->msRcvTsbPdDelay = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
     perf->byteMSS         = m_iMSS;
 
     perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
@@ -7755,7 +7772,10 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             // parties are HSv5.
             if (understood)
             {
-                updateAfterSrtHandshake(ctrlpkt.getExtendedType(), HS_VERSION_UDT4);
+              if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+              {
+                  updateAfterSrtHandshake(HS_VERSION_UDT4);
+              }
             }
             else
             {
@@ -7812,17 +7832,13 @@ void CUDT::updateSrtSndSettings()
     }
 }
 
-void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
+void CUDT::updateAfterSrtHandshake(int hsv)
 {
-
-    switch (srt_cmd)
-    {
-    case SRT_CMD_HSREQ:
-    case SRT_CMD_HSRSP:
-        break;
-    default:
-        return;
-    }
+    HLOGC(mglog.Debug, log << "updateAfterSrtHandshake: HS version " << hsv);
+    // This is blocked from being run in the "app reader" version because here
+    // every socket does its TsbPd independently, just the sequence screwup is
+    // done and the application reader sorts out packets by sequence numbers,
+    // but only when they are signed off by TsbPd.
 
     // The only possibility here is one of these two:
     // - Agent is RESPONDER and it receives HSREQ.
@@ -7844,7 +7860,7 @@ void CUDT::updateAfterSrtHandshake(int srt_cmd, int hsv)
         updateSrtRcvSettings();
         updateSrtSndSettings();
     }
-    else if (srt_cmd == SRT_CMD_HSRSP)
+    else if (m_SrtHsSide == HSD_INITIATOR)
     {
         // HSv4 INITIATOR is sender
         updateSrtSndSettings();
