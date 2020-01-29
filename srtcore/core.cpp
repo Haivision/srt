@@ -4154,7 +4154,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
-                m_SrtHsSide = hsd;
+                m_SrtHsSide   = hsd;
             }
 
             m_tsLastReqTime = steady_clock::time_point();
@@ -7772,10 +7772,10 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             // parties are HSv5.
             if (understood)
             {
-              if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
-              {
-                  updateAfterSrtHandshake(HS_VERSION_UDT4);
-              }
+                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+                {
+                    updateAfterSrtHandshake(HS_VERSION_UDT4);
+                }
             }
             else
             {
