@@ -98,13 +98,13 @@ int64_t get_cpu_frequency()
 
 const int64_t s_cpu_frequency = get_cpu_frequency();
 
-void createCond(CCondVar& cond, const char* name SRT_ATR_UNUSED)
+void setupCond(CCondVar& cond, const char* name SRT_ATR_UNUSED)
 {
     pthread_condattr_t* pattr = NULL;
     pthread_cond_init(&(cond), pattr);
 }
 
-void createCond_monotonic(CCondVar& cond, const char* name SRT_ATR_UNUSED)
+void setupCond_monotonic(CCondVar& cond, const char* name SRT_ATR_UNUSED)
 {
     pthread_condattr_t* pattr = NULL;
 #if ENABLE_MONOTONIC_CLOCK

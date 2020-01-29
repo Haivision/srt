@@ -6724,20 +6724,20 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 void CUDT::initSynch()
 {
-    createMutex(m_SendBlockLock, "SendBlock");
-    createCond(m_SendBlockCond, "SendBlock");
-    createMutex(m_RecvDataLock, "RecvData");
-    createCond(m_RecvDataCond, "RecvData");
-    createMutex(m_SendLock, "Send");
-    createMutex(m_RecvLock, "Recv");
-    createMutex(m_RcvLossLock, "RcvLoss");
-    createMutex(m_RecvAckLock, "RecvAck");
-    createMutex(m_RcvBufferLock, "RcvBuffer");
-    createMutex(m_ConnectionLock, "Connection");
-    createMutex(m_StatsLock, "Stats");
+    setupMutex(m_SendBlockLock, "SendBlock");
+    setupCond(m_SendBlockCond, "SendBlock");
+    setupMutex(m_RecvDataLock, "RecvData");
+    setupCond(m_RecvDataCond, "RecvData");
+    setupMutex(m_SendLock, "Send");
+    setupMutex(m_RecvLock, "Recv");
+    setupMutex(m_RcvLossLock, "RcvLoss");
+    setupMutex(m_RecvAckLock, "RecvAck");
+    setupMutex(m_RcvBufferLock, "RcvBuffer");
+    setupMutex(m_ConnectionLock, "Connection");
+    setupMutex(m_StatsLock, "Stats");
 
     memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
-    createCond(m_RcvTsbPdCond, "RcvTsbPd");
+    setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
 void CUDT::destroySynch()
