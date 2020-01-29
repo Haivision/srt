@@ -11,7 +11,7 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STL_CHRONO
+//#define USE_STDCXX_CHRONO
 //#define ENABLE_CXX17
 
 #include <cstdlib>
@@ -266,6 +266,76 @@ class InvertedLock
         enterCS(*m_pMutex);
     }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CCondVar section
+//
+////////////////////////////////////////////////////////////////////////////////
+
+template <bool IS_CLOCK_MONOTONIC = false>
+class CCondVar
+{
+public:
+    CCondVar();
+    ~CCondVar();
+
+public:
+    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
+    /// to avoud issues with static initialization of CV on windows.
+    void init();
+    void destroy();
+
+public:
+    /// Causes the current thread to block until the condition variable is notified
+    /// or a spurious wakeup occurs.
+    ///
+    /// @param lock Corresponding mutex locked by UniqueLock
+    void wait(UniqueLock& lock);
+
+    /// Atomically releases lock, blocks the current executing thread, 
+    /// and adds it to the list of threads waiting on *this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously. When unblocked, regardless of the reason,
+    /// lock is reacquired and wait_for() exits.
+    ///
+    /// @returns false if the relative timeout specified by rel_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    ///
+    /// @note Calling this function if lock.mutex()
+    /// is not locked by the current thread is undefined behavior.
+    /// Calling this function if lock.mutex() is not the same mutex as the one
+    /// used by all other threads that are currently waiting on the same
+    /// condition variable is undefined behavior.
+    bool wait_for(UniqueLock& lock, const steady_clock::duration& rel_time);
+
+    /// Causes the current thread to block until the condition variable is notified,
+    /// a specific time is reached, or a spurious wakeup occurs.
+    ///
+    /// @param[in] lock  an object of type UniqueLock, which must be locked by the current thread 
+    /// @param[in] timeout_time an object of type time_point representing the time when to stop waiting 
+    ///
+    /// @returns false if the relative timeout specified by timeout_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    bool wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time);
+
+    /// Calling notify_one() unblocks one of the waiting threads,
+    /// if any threads are waiting on this CV.
+    void notify_one();
+
+    /// Unblocks all threads currently waiting for this CV.
+    void notify_all();
+
+private:
+#ifdef USE_STDCXX_CHRONO
+    condition_variable m_cv;
+#else
+    pthread_cond_t  m_cv;
+#endif
+};
+
+typedef CCondVar<false> Condition;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
