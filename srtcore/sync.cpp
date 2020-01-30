@@ -268,8 +268,19 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef USE_STDCXX_CHRONO
 
+namespace srt
+{
+namespace sync
+{
+
+template<bool IS_CLOCK_MONOTONIC>
+CCondVar<IS_CLOCK_MONOTONIC>::CCondVar() {}
+
+template<bool IS_CLOCK_MONOTONIC>
+CCondVar<IS_CLOCK_MONOTONIC>::~CCondVar() {}
+
 template<>
-srt::sync::CCondVar<true>::CCondVar()
+void CCondVar<true>::init()
 {
     pthread_condattr_t* attr = NULL;
 #if ENABLE_MONOTONIC_CLOCK
@@ -278,14 +289,13 @@ srt::sync::CCondVar<true>::CCondVar()
     pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
     attr = &CondAttribs;
 #endif
-
     const int res = pthread_cond_init(&m_cv, attr);
     if (res != 0)
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }
 
 template<>
-srt::sync::CCondVar<false>::CCondVar()
+void CCondVar<false>::init()
 {
     const int res = pthread_cond_init(&m_cv, NULL);
     if (res != 0)
@@ -293,19 +303,19 @@ srt::sync::CCondVar<false>::CCondVar()
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::~CCondVar()
+void CCondVar<IS_CLOCK_MONOTONIC>::destroy()
 {
     pthread_cond_destroy(&m_cv);
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait(UniqueLock& lock)
+void CCondVar<IS_CLOCK_MONOTONIC>::wait(UniqueLock& lock)
 {
     pthread_cond_wait(&m_cv, &lock.mutex()->ref());
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool CCondVar<IS_CLOCK_MONOTONIC>::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
 #if ENABLE_MONOTONIC_CLOCK
     if (IS_CLOCK_MONOTONIC)
@@ -316,7 +326,7 @@ bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_for(UniqueLock& lock, const s
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+bool CCondVar<IS_CLOCK_MONOTONIC>::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
     // This will work regardless as to which clock is in use. The time
     // should be specified as steady_clock::time_point, so there's no
@@ -330,16 +340,19 @@ bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_until(UniqueLock& lock, const
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::notify_one()
+void CCondVar<IS_CLOCK_MONOTONIC>::notify_one()
 {
     pthread_cond_signal(&m_cv);
 }
 
 template<bool IS_CLOCK_MONOTONIC>
-void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::notify_all()
+void CCondVar<IS_CLOCK_MONOTONIC>::notify_all()
 {
     pthread_cond_broadcast(&m_cv);
 }
+
+}; // namespace sync
+}; // namespace srt
 
 // This function is needed to instantiate the CCondVar templates.
 // The function itself is not used.
@@ -347,7 +360,9 @@ void CondVarEnforcer()
 {
     using namespace srt::sync;
     CCondVar<true> cond1;
+    cond1.init();
     CCondVar<false> cond2;
+    cond2.init();
     cond1.notify_all();
     cond2.notify_all();
     cond1.notify_one();
@@ -358,6 +373,8 @@ void CondVarEnforcer()
     cond2.wait(lock);
     cond1.wait_until(lock, steady_clock::now());
     cond2.wait_until(lock, steady_clock::now());
+    cond1.destroy();
+    cond2.destroy();
 }
 
 #endif // ndef USE_STDCXX_CHRONO

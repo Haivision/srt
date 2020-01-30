@@ -298,6 +298,12 @@ public:
     ~CCondVar();
 
 public:
+    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
+    /// to avoud issues with static initialization of CV on windows.
+    void init();
+    void destroy();
+
+public:
     /// Causes the current thread to block until the condition variable is notified
     /// or a spurious wakeup occurs.
     ///
@@ -354,10 +360,10 @@ public:
 typedef CCondVar<false> Condition;
 
 template <bool clock>
-inline void setupCond(CCondVar<clock>& , const char* ) { }
+inline void setupCond(CCondVar<clock>& cond, const char* ) {cond.init();}
 
 template <bool clock>
-inline void releaseCond(CCondVar<clock>&) { }
+inline void releaseCond(CCondVar<clock>& cond) {cond.destroy();}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
