@@ -194,9 +194,23 @@ m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
     m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
+char* CPacket::getData()
+{
+    return (char*)m_PacketVector[PV_DATA].dataRef();
+}
+
 void CPacket::allocate(size_t alloc_buffer_size)
 {
+    if (m_data_owned)
+    {
+        if (getLength() == alloc_buffer_size)
+            return; // already allocated
+
+        // Would be nice to reallocate; for now just allocate again.
+        delete [] m_pcData;
+    }
     m_PacketVector[PV_DATA].set(new char[alloc_buffer_size], alloc_buffer_size);
+    setLength(alloc_buffer_size);
     m_data_owned = true;
 }
 
@@ -205,6 +219,20 @@ void CPacket::deallocate()
     if (m_data_owned)
         delete [] (char*)m_PacketVector[PV_DATA].data();
     m_PacketVector[PV_DATA].set(NULL, 0);
+}
+
+char* CPacket::release()
+{
+    // When not owned, release returns NULL.
+    char* buffer = NULL;
+    if (m_data_owned)
+    {
+        buffer = getData();
+        m_data_owned = false;
+    }
+
+    deallocate(); // won't delete because m_data_owned == false
+    return buffer;
 }
 
 CPacket::~CPacket()

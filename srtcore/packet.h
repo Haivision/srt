@@ -393,6 +393,10 @@ public:
    int32_t& m_iID;                      // alias: socket ID
    char*& m_pcData;                     // alias: data/control information
 
+   // Experimental: sometimes these references don't work!
+   char* getData();
+   char* release();
+
    //static const int m_iPktHdrSize;	// packet header size
    static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH__SIZE * sizeof(uint32_t)
 
