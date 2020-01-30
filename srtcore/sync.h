@@ -253,8 +253,6 @@ inline void enterCS(Mutex& m) { m.lock(); }
 inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
 
-inline void setupMutex(Mutex& , const char* ) {}
-inline void releaseMutex(Mutex& ) {}
 
 class InvertedLock
 {
@@ -283,6 +281,9 @@ class InvertedLock
         enterCS(*m_pMutex);
     }
 };
+
+inline void setupMutex(Mutex&, const char*) {}
+inline void releaseMutex(Mutex&) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -358,12 +359,13 @@ public:
 };
 
 typedef CCondVar<false> Condition;
+typedef CCondVar<true> ConditionMonotonic;
 
-template <bool clock>
-inline void setupCond(CCondVar<clock>& cond, const char* ) {cond.init();}
+template <bool IS_CLOCK_MONOTONIC>
+inline void setupCond(CCondVar<IS_CLOCK_MONOTONIC>& cv, const char*) { cv.init(); }
 
-template <bool clock>
-inline void releaseCond(CCondVar<clock>& cond) {cond.destroy();}
+template <bool IS_CLOCK_MONOTONIC>
+inline void releaseCond(CCondVar<IS_CLOCK_MONOTONIC>& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -390,7 +392,6 @@ class CSyncTpl
     CGuard* m_locker;
 
 public:
-
     // Locked version: must be declared only after the declaration of CGuard,
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
