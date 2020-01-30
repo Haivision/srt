@@ -247,7 +247,7 @@ int CUDTUnited::startup()
 
    m_bClosing = false;
    setupMutex(m_GCStopLock, "GCStop");
-   setupCond_monotonic(m_GCStopCond, "GCStop");
+   setupCond(m_GCStopCond, "GCStop");
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);
@@ -274,7 +274,7 @@ int CUDTUnited::cleanup()
    // after which the m_bClosing flag is cheched, which
    // is set here above. Worst case secenario, this
    // pthread_join() call will block for 1 second.
-   CSync::signal_relaxed(m_GCStopCond);
+   CSyncMono::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
@@ -284,7 +284,6 @@ int CUDTUnited::cleanup()
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
 #ifndef _WIN32
-   releaseMutex(m_GCStopLock);
    releaseCond(m_GCStopCond);
 #endif
 
@@ -1976,8 +1975,8 @@ void* CUDTUnited::garbageCollect(void* p)
 
    THREAD_STATE_INIT("SRT:GC");
 
-   CGuard gcguard(self->m_GCStopLock);
-   CSync  gcsync(self->m_GCStopCond, gcguard);
+   CGuard gcguard   (self->m_GCStopLock);
+   CSyncMono gcsync (self->m_GCStopCond, gcguard);
 
    while (!self->m_bClosing)
    {
@@ -1985,7 +1984,7 @@ void* CUDTUnited::garbageCollect(void* p)
        self->checkBrokenSockets();
 
        HLOGC(mglog.Debug, log << "GC: sleep 1 s");
-       gcsync.wait_for_monotonic(seconds_from(1));
+       gcsync.wait_for(seconds_from(1));
    }
 
    // remove all sockets and multiplexers

@@ -116,7 +116,7 @@ public:
    std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
    std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
 
-   srt::sync::CCondVar m_AcceptCond;              //< used to block "accept" call
+   srt::sync::Condition m_AcceptCond;              //< used to block "accept" call
    srt::sync::Mutex m_AcceptLock;             //< mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
@@ -281,7 +281,7 @@ private:
 private:
    volatile bool m_bClosing;
    srt::sync::Mutex m_GCStopLock;
-   srt::sync::CCondVar m_GCStopCond;
+   srt::sync::CCondVar<CLOCK_MONOTONIC> m_GCStopCond;
 
    srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application

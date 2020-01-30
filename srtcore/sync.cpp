@@ -98,134 +98,6 @@ int64_t get_cpu_frequency()
 
 const int64_t s_cpu_frequency = get_cpu_frequency();
 
-/*
-void setupCond_monotonic(CCondVar& cond, const char* name SRT_ATR_UNUSED)
-{
-    pthread_condattr_t* pattr = NULL;
-#if ENABLE_MONOTONIC_CLOCK
-    pthread_condattr_t  CondAttribs;
-    pthread_condattr_init(&CondAttribs);
-    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-    pattr = &CondAttribs;
-#endif
-    pthread_cond_init(&(cond), pattr);
-}
-*/
-
-
-CSync::CSync(CCondVar& cond, CGuard& g)
-    : m_cond(&cond), m_locker(&g)
-{
-    // XXX it would be nice to check whether the owner is also current thread
-    // but this can't be done portable way.
-
-    // When constructed by this constructor, the user is expected
-    // to only call signal_locked() function. You should pass the same guard
-    // variable that you have used for construction as its argument.
-}
-
-void CSync::wait()
-{
-    THREAD_PAUSED();
-    m_cond->wait(*m_locker);
-    THREAD_RESUMED();
-}
-
-bool CSync::wait_until(const steady_clock::time_point& exptime)
-{
-    // This will work regardless as to which clock is in use. The time
-    // should be specified as steady_clock::time_point, so there's no
-    // question of the timer base.
-    steady_clock::time_point now = steady_clock::now();
-    if (now >= exptime)
-        return false; // timeout
-
-    THREAD_PAUSED();
-    bool signaled = SyncEvent::wait_for(&m_cond->ref(), &m_locker->mutex()->ref(), exptime - now) != ETIMEDOUT;
-    THREAD_RESUMED();
-
-    return signaled;
-}
-
-/// Block the call until either @a timestamp time achieved
-/// or the conditional is signaled.
-/// @param [in] delay Maximum time to wait since the moment of the call
-/// @retval true Resumed due to getting a CV signal
-/// @retval false Resumed due to being past @a timestamp
-bool CSync::wait_for(const steady_clock::duration& delay)
-{
-    THREAD_PAUSED();
-    bool signaled = SyncEvent::wait_for(&m_cond->ref(), &m_locker->mutex()->ref(), delay) != ETIMEDOUT;
-    THREAD_RESUMED();
-
-    return signaled;
-}
-
-/// Block the call until either @a timestamp time achieved
-/// or the conditional is signaled.
-/// @param [in] delay Maximum time to wait since the moment of the call
-/// @retval true Resumed due to getting a CV signal
-/// @retval false Resumed due to being past @a timestamp
-bool CSync::wait_for_monotonic(const steady_clock::duration& delay)
-{
-    // Note: this is implemented this way because the pthread API
-    // does not provide a possibility to wait relative time. When
-    // you implement it for different API that does provide relative
-    /// time waiting, you may want to implement it better way.
-
-    THREAD_PAUSED();
-    bool signaled = SyncEvent::wait_for_monotonic(&m_cond->ref(), &m_locker->mutex()->ref(), delay) != ETIMEDOUT;
-    THREAD_RESUMED();
-
-    return signaled;
-}
-
-
-void CSync::lock_signal(CCondVar& cond, Mutex& mutex)
-{
-    CGuard lk(mutex); // XXX with thread logging, don't use CGuard directly!
-    cond.notify_one();
-}
-
-void CSync::lock_broadcast(CCondVar& cond, Mutex& mutex)
-{
-    CGuard lk(mutex); // XXX with thread logging, don't use CGuard directly!
-    cond.notify_all();
-}
-
-void CSync::signal_locked(CGuard& lk SRT_ATR_UNUSED)
-{
-    // EXPECTED: lk.mutex() is LOCKED.
-    m_cond->notify_one();
-}
-
-// The signal_relaxed and broadcast_relaxed functions are to be used in case
-// when you don't care whether the associated mutex is locked or not (you
-// accept the case that a mutex isn't locked and the signal gets effectively
-// missed), or you somehow know that the mutex is locked, but you don't have
-// access to the associated CGuard object. This function, although it does
-// the same thing as signal_locked() and broadcast_locked(), is here for
-// the user to declare explicitly that the signal/broadcast is done without
-// being prematurely certain that the associated mutex is locked.
-//
-// It is then expected that whenever these functions are used, an extra
-// comment is provided to explain, why the use of the relaxed signaling is
-// correctly used.
-
-void CSync::signal_relaxed()
-{
-    signal_relaxed(*m_cond);
-}
-
-void CSync::signal_relaxed(CCondVar& cond)
-{
-    cond.notify_one();
-}
-
-void CSync::broadcast_relaxed(CCondVar& cond)
-{
-    cond.notify_all();
-}
 
 } // namespace sync
 } // namespace srt
@@ -396,29 +268,55 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef USE_STDCXX_CHRONO
 
-srt::sync::CCondVar::CCondVar()
+template<>
+srt::sync::CCondVar<true>::CCondVar()
+{
+    pthread_condattr_t* attr = NULL;
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    attr = &CondAttribs;
+#endif
+
+    const int res = pthread_cond_init(&m_cv, attr);
+    if (res != 0)
+        throw std::runtime_error("pthread_cond_init monotonic failed");
+}
+
+template<>
+srt::sync::CCondVar<false>::CCondVar()
 {
     const int res = pthread_cond_init(&m_cv, NULL);
     if (res != 0)
         throw std::runtime_error("pthread_cond_init failed");
 }
 
-srt::sync::CCondVar::~CCondVar()
+template<bool IS_CLOCK_MONOTONIC>
+srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::~CCondVar()
 {
     pthread_cond_destroy(&m_cv);
 }
 
-void srt::sync::CCondVar::wait(UniqueLock& lock)
+template<bool IS_CLOCK_MONOTONIC>
+void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait(UniqueLock& lock)
 {
     pthread_cond_wait(&m_cv, &lock.mutex()->ref());
 }
 
-bool srt::sync::CCondVar::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+template<bool IS_CLOCK_MONOTONIC>
+bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+#if ENABLE_MONOTONIC_CLOCK
+    if (IS_CLOCK_MONOTONIC)
+        return (SyncEvent::wait_for_monotonic(&m_cv, &lock.mutex()->ref(), rel_time) != ETIMEDOUT);
+#endif
+
     return (SyncEvent::wait_for(&m_cv, &lock.mutex()->ref(), rel_time) != ETIMEDOUT);
 }
 
-bool srt::sync::CCondVar::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+template<bool IS_CLOCK_MONOTONIC>
+bool srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
     // This will work regardless as to which clock is in use. The time
     // should be specified as steady_clock::time_point, so there's no
@@ -428,17 +326,38 @@ bool srt::sync::CCondVar::wait_until(UniqueLock& lock, const steady_clock::time_
         return false; // timeout
 
     // wait_for() is used because it will be converted to pthread-frienly timeout_time inside.
-    return (SyncEvent::wait_for(&m_cv, &lock.mutex()->ref(), timeout_time - now) != ETIMEDOUT);
+    return wait_for(lock, timeout_time - now);
 }
 
-void srt::sync::CCondVar::notify_one()
+template<bool IS_CLOCK_MONOTONIC>
+void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::notify_one()
 {
     pthread_cond_signal(&m_cv);
 }
 
-void srt::sync::CCondVar::notify_all()
+template<bool IS_CLOCK_MONOTONIC>
+void srt::sync::CCondVar<IS_CLOCK_MONOTONIC>::notify_all()
 {
     pthread_cond_broadcast(&m_cv);
+}
+
+// This function is needed to instantiate the CCondVar templates.
+// The function itself is not used.
+void CondVarEnforcer()
+{
+    using namespace srt::sync;
+    CCondVar<true> cond1;
+    CCondVar<false> cond2;
+    cond1.notify_all();
+    cond2.notify_all();
+    cond1.notify_one();
+    cond2.notify_one();
+    Mutex m;
+    CGuard lock(m);
+    cond1.wait(lock);
+    cond2.wait(lock);
+    cond1.wait_until(lock, steady_clock::now());
+    cond2.wait_until(lock, steady_clock::now());
 }
 
 #endif // ndef USE_STDCXX_CHRONO
