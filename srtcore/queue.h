@@ -218,7 +218,7 @@ private:
    srt::sync::Mutex m_ListLock;
 
    srt::sync::Mutex* m_pWindowLock;
-   pthread_cond_t* m_pWindowCond;
+   srt::sync::Condition* m_pWindowCond;
 
    CTimer* m_pTimer;
 
@@ -412,7 +412,7 @@ private:
    CTimer* m_pTimer;                    // Timing facility
 
    srt::sync::Mutex m_WindowLock;
-   pthread_cond_t m_WindowCond;
+   srt::sync::Condition m_WindowCond;
 
    volatile bool m_bClosing;            // closing the worker
 
@@ -517,7 +517,7 @@ private:
 
    std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
    srt::sync::Mutex m_BufferLock;
-   pthread_cond_t m_BufferCond;
+   srt::sync::Condition m_BufferCond;
 
 private:
    CRcvQueue(const CRcvQueue&);

@@ -337,8 +337,8 @@ public: // internal API
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
-    SRTU_PROPERTY_RR(pthread_cond_t*, recvDataCond, &m_RecvDataCond);
-    SRTU_PROPERTY_RR(pthread_cond_t*, recvTsbPdCond, &m_RcvTsbPdCond);
+    SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
+    SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
@@ -790,7 +790,7 @@ private: // Receiving related data
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    pthread_cond_t m_RcvTsbPdCond;               // TSBPD signals if reading is ready
+    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -808,14 +808,14 @@ private:
 private: // synchronization: mutexes and conditions
     srt::sync::Mutex m_ConnectionLock;           // used to synchronize connection operation
 
-    pthread_cond_t m_SendBlockCond;              // used to block "send" call
+    srt::sync::Condition m_SendBlockCond;       // used to block "send" call
     srt::sync::Mutex m_SendBlockLock;            // lock associated to m_SendBlockCond
 
     srt::sync::Mutex m_RcvBufferLock;            // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
     srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
-    pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
+    srt::sync::Condition m_RecvDataCond;        // used to block "recv" when there is no data
     srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
