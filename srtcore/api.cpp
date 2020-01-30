@@ -2196,7 +2196,7 @@ int CUDT::connect(
    {
       return s_UDTUnited.connect(u, name, namelen, tname, tnamelen);
    }
-   catch (CUDTException e)
+   catch (const CUDTException& e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
@@ -2643,7 +2643,7 @@ int CUDT::epoll_clear_usocks(int eid)
    {
       return s_UDTUnited.epoll_clear_usocks(eid);
    }
-   catch (CUDTException e)
+   catch (const CUDTException& e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
