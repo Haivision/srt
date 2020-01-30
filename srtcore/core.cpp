@@ -5749,12 +5749,11 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         {
             // wait here during a blocking sending
             CGuard sendblock_lock (m_SendBlockLock);
-            CSync sendcond        (m_SendBlockCond,  sendblock_lock);
 
             if (m_iSndTimeOut < 0)
             {
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
-                    sendcond.wait();
+                    m_SendBlockCond.wait(sendblock_lock);
             }
             else
             {
@@ -5762,7 +5761,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
-                    if (!sendcond.wait_until(exptime))
+                    if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
                 }
             }
@@ -6221,10 +6220,9 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
 
         {
             CGuard lock(m_SendBlockLock);
-            CSync sendcond (m_SendBlockCond,  lock);
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-                sendcond.wait();
+                m_SendBlockCond.wait(lock);
         }
 
         if (m_bBroken || m_bClosing)
@@ -6719,17 +6717,36 @@ bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
 void CUDT::initSynch()
 {
-    pthread_cond_init(&m_SendBlockCond, NULL);
-    pthread_cond_init(&m_RecvDataCond, NULL);
+    setupMutex(m_SendBlockLock, "SendBlock");
+    setupCond(m_SendBlockCond, "SendBlock");
+    setupMutex(m_RecvDataLock, "RecvData");
+    setupCond(m_RecvDataCond, "RecvData");
+    setupMutex(m_SendLock, "Send");
+    setupMutex(m_RecvLock, "Recv");
+    setupMutex(m_RcvLossLock, "RcvLoss");
+    setupMutex(m_RecvAckLock, "RecvAck");
+    setupMutex(m_RcvBufferLock, "RcvBuffer");
+    setupMutex(m_ConnectionLock, "Connection");
+    setupMutex(m_StatsLock, "Stats");
+
     memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
-    pthread_cond_init(&m_RcvTsbPdCond, NULL);
+    setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
 void CUDT::destroySynch()
 {
-    pthread_cond_destroy(&m_SendBlockCond);
-    pthread_cond_destroy(&m_RecvDataCond);
-    pthread_cond_destroy(&m_RcvTsbPdCond);
+    releaseMutex(m_SendBlockLock);
+    releaseCond(m_SendBlockCond);
+    releaseMutex(m_RecvDataLock);
+    releaseCond(m_RecvDataCond);
+    releaseMutex(m_SendLock);
+    releaseMutex(m_RecvLock);
+    releaseMutex(m_RcvLossLock);
+    releaseMutex(m_RecvAckLock);
+    releaseMutex(m_RcvBufferLock);
+    releaseMutex(m_ConnectionLock);
+    releaseMutex(m_StatsLock);
+    releaseCond(m_RcvTsbPdCond);
 }
 
 void CUDT::releaseSynch()
@@ -7705,17 +7722,19 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
-        enterCS(m_RecvLock);
-        m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-        // When the drop request was received, it means that there are
-        // packets for which there will never be ACK sent; if the TSBPD thread
-        // is currently in the ACK-waiting state, it may never exit.
-        if (m_bTsbPd)
         {
-            HLOGP(mglog.Debug, "DROPREQ: signal TSBPD");
-            pthread_cond_signal(&m_RcvTsbPdCond);
+            CGuard rlock(m_RecvLock);
+            m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+            // When the drop request was received, it means that there are
+            // packets for which there will never be ACK sent; if the TSBPD thread
+            // is currently in the ACK-waiting state, it may never exit.
+            if (m_bTsbPd)
+            {
+                HLOGP(mglog.Debug, "DROPREQ: signal TSBPD");
+                CSync cc(m_RcvTsbPdCond, rlock);
+                cc.signal_locked(rlock);
+            }
         }
-        leaveCS(m_RecvLock);
 
         {
             int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;

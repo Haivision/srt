@@ -83,7 +83,9 @@ extern LogConfig srt_logger_config;
 
 void CUDTSocket::construct()
 {
-      pthread_cond_init(&m_AcceptCond, NULL);
+   setupMutex(m_AcceptLock, "Accept");
+   setupCond(m_AcceptCond, "Accept");
+   setupMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
@@ -95,7 +97,9 @@ CUDTSocket::~CUDTSocket()
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
 
-   pthread_cond_destroy(&m_AcceptCond);
+   releaseMutex(m_AcceptLock);
+   releaseCond(m_AcceptCond);
+   releaseMutex(m_ControlLock);
 }
 
 
@@ -239,14 +243,9 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-#if ENABLE_MONOTONIC_CLOCK
-   pthread_condattr_t  CondAttribs;
-   pthread_condattr_init(&CondAttribs);
-   pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-   pthread_cond_init(&m_GCStopCond, &CondAttribs);
-#else
-   pthread_cond_init(&m_GCStopCond, NULL);
-#endif
+
+   setupMutex(m_GCStopLock, "GCStop");
+   setupCond(m_GCStopCond, "GCStop");
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);
@@ -268,7 +267,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   CSync::signal_relaxed(m_GCStopCond);
+   CSyncMono::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
@@ -278,7 +277,7 @@ int CUDTUnited::cleanup()
    // tolerated with simply exit the application without cleanup,
    // counting on that the system will take care of it anyway.
 #ifndef _WIN32
-   pthread_cond_destroy(&m_GCStopCond);
+   releaseCond(m_GCStopCond);
 #endif
 
    m_bGCStatus = false;
@@ -1051,9 +1050,7 @@ int CUDTUnited::close(CUDTSocket* s)
       s->m_pUDT->notListening();
 
       // broadcast all "accept" waiting
-      enterCS(s->m_AcceptLock);
-      pthread_cond_broadcast(&(s->m_AcceptCond));
-      leaveCS(s->m_AcceptLock);
+      CSync::lock_broadcast(s->m_AcceptCond, s->m_AcceptLock);
    }
    else
    {
@@ -1969,7 +1966,7 @@ void* CUDTUnited::garbageCollect(void* p)
        self->checkBrokenSockets();
 
        HLOGC(mglog.Debug, log << "GC: sleep 1 s");
-       SyncEvent::wait_for_monotonic(&self->m_GCStopCond, &self->m_GCStopLock.ref(), seconds_from(1));
+       self->m_GCStopCond.wait_for(gcguard, seconds_from(1));
    }
 
    // remove all sockets and multiplexers
