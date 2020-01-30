@@ -348,14 +348,9 @@ public:
 private:
 #ifdef USE_STDCXX_CHRONO
     condition_variable m_cv;
-    typedef condition_variable handle_t;
 #else
     pthread_cond_t  m_cv;
-    typedef pthread_cond_t handle_t;
 #endif
-
-public:
-    handle_t& ref() { return m_cv; }
 };
 
 typedef CCondVar<false> Condition;

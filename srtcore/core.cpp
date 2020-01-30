@@ -5767,12 +5767,11 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         {
             // wait here during a blocking sending
             CGuard sendblock_lock (m_SendBlockLock);
-            CSync sendcond        (m_SendBlockCond,  sendblock_lock);
 
             if (m_iSndTimeOut < 0)
             {
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
-                    sendcond.wait();
+                    m_SendBlockCond.wait(sendblock_lock);
             }
             else
             {
@@ -5780,7 +5779,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
-                    if (!sendcond.wait_until(exptime))
+                    if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
                 }
             }
@@ -6226,10 +6225,9 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
 
         {
             CGuard lock(m_SendBlockLock);
-            CSync sendcond (m_SendBlockCond,  lock);
 
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-                sendcond.wait();
+                m_SendBlockCond.wait(lock);
         }
 
         if (m_bBroken || m_bClosing)
@@ -9376,7 +9374,7 @@ void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
 
 int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 {
-    int because_decision = 0;
+    int because_decision = BECAUSE_NO_REASON;
     if (currtime > m_tsNextACKTime  // ACK time has come
                                   // OR the number of sent packets since last ACK has reached
                                   // the congctl-defined value of ACK Interval
@@ -9427,7 +9425,7 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
     // and for adding them properly the loss list container wasn't
     // prepared. This then requires some more effort to implement.
     if (!m_bRcvNakReport || m_PktFilterRexmitLevel != SRT_ARQ_ALWAYS)
-        return 0;
+        return BECAUSE_NO_REASON;
 
     /*
      * m_bRcvNakReport enables NAK reports for SRT.
@@ -9437,12 +9435,12 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
      */
     const int loss_len = m_pRcvLossList->getLossLength();
     SRT_ASSERT(loss_len >= 0);
-    int debug_decision = 0;
+    int debug_decision = BECAUSE_NO_REASON;
 
     if (loss_len > 0)
     {
         if (currtime <= m_tsNextNAKTime)
-            return 0; // wait for next NAK time
+            return BECAUSE_NO_REASON; // wait for next NAK time
 
         sendCtrl(UMSG_LOSSREPORT);
         debug_decision = BECAUSE_NAKREPORT;

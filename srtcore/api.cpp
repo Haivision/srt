@@ -83,9 +83,9 @@ extern LogConfig srt_logger_config;
 
 void CUDTSocket::construct()
 {
-    setupMutex(m_AcceptLock, "Accept");
-    setupCond(m_AcceptCond, "Accept");
-    setupMutex(m_ControlLock, "Control");
+   setupMutex(m_AcceptLock, "Accept");
+   setupCond(m_AcceptCond, "Accept");
+   setupMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
@@ -246,6 +246,7 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
+
    setupMutex(m_GCStopLock, "GCStop");
    setupCond(m_GCStopCond, "GCStop");
    {
@@ -1975,8 +1976,7 @@ void* CUDTUnited::garbageCollect(void* p)
 
    THREAD_STATE_INIT("SRT:GC");
 
-   CGuard gcguard   (self->m_GCStopLock);
-   CSyncMono gcsync (self->m_GCStopCond, gcguard);
+   CGuard gcguard(self->m_GCStopLock);
 
    while (!self->m_bClosing)
    {
@@ -1984,7 +1984,7 @@ void* CUDTUnited::garbageCollect(void* p)
        self->checkBrokenSockets();
 
        HLOGC(mglog.Debug, log << "GC: sleep 1 s");
-       gcsync.wait_for(seconds_from(1));
+       self->m_GCStopCond.wait_for(gcguard, seconds_from(1));
    }
 
    // remove all sockets and multiplexers
@@ -2214,7 +2214,7 @@ int CUDT::connect(
    {
       return s_UDTUnited.connect(u, name, namelen, tname, tnamelen);
    }
-   catch (CUDTException e)
+   catch (const CUDTException& e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;
@@ -2604,7 +2604,7 @@ int CUDT::epoll_clear_usocks(int eid)
    {
       return s_UDTUnited.epoll_clear_usocks(eid);
    }
-   catch (CUDTException e)
+   catch (const CUDTException& e)
    {
       s_UDTUnited.setError(new CUDTException(e));
       return ERROR;

@@ -683,11 +683,9 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 
-    /*volatile*/ duration
-        m_tdSendInterval;                        // Inter-packet time, in CPU clock cycles
+    /*volatile*/ duration m_tdSendInterval;      // Inter-packet time, in CPU clock cycles
 
-    /*volatile*/ duration
-        m_tdSendTimeDiff;                        // aggregate difference in inter-packet sending time
+    /*volatile*/ duration m_tdSendTimeDiff;      // aggregate difference in inter-packet sending time
 
     volatile int m_iFlowWindowSize;              // Flow control window size
     volatile double m_dCongestionWindow;         // congestion window size
@@ -802,7 +800,7 @@ private: // Receiving related data
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
-    srt::sync::Condition m_RcvTsbPdCond;
+    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -966,15 +964,14 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
-    void checkTimers();
-    void considerLegacySrtHandshake(const time_point &timebase);
-
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,
                      BECAUSE_NAKREPORT = 1 << 2,
                      LAST_BECAUSE_BIT  =      3;
 
+    void checkTimers();
+    void considerLegacySrtHandshake(const time_point &timebase);
     int checkACKTimer (const time_point& currtime);
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int because_reason);  // returns true if the connection is expired

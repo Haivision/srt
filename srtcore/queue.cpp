@@ -489,6 +489,7 @@ CSndQueue::~CSndQueue()
         HLOGC(mglog.Debug, log << "SndQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
+    releaseCond(m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -1060,6 +1061,7 @@ CRcvQueue::~CRcvQueue()
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
+    releaseCond(m_BufferCond);
 
     delete m_pRcvUList;
     delete m_pHash;
