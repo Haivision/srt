@@ -261,13 +261,13 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
  */
 /*****************************************************************************/
 
-template <bool USE_MONOTONIC_CLOCK = false>
+template <bool TEST_MONOTONIC_CLOCK = false>
 void TestSyncWaitFor()
 {
     Mutex mutex;
     pthread_cond_t  cond;
 #if ENABLE_MONOTONIC_CLOCK
-    if (USE_MONOTONIC_CLOCK)
+    if (TEST_MONOTONIC_CLOCK)
     {
         pthread_condattr_t  CondAttribs;
         pthread_condattr_init(&CondAttribs);
@@ -286,7 +286,7 @@ void TestSyncWaitFor()
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
         const steady_clock::time_point start = steady_clock::now();
-        if (USE_MONOTONIC_CLOCK)
+        if (TEST_MONOTONIC_CLOCK)
             EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex.ref(), timeout) == 0);
         else
             EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex.ref(), timeout) == 0);

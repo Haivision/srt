@@ -136,6 +136,8 @@ int CUnitQueue::init(int size, int mss, int version)
     return 0;
 }
 
+// XXX High common part detected with CUnitQueue:init.
+// Consider merging.
 int CUnitQueue::increase()
 {
     // adjust/correct m_iCount
@@ -492,6 +494,10 @@ CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
+#if ENABLE_LOGGING
+    int CSndQueue::m_counter = 0;
+#endif
+
 void CSndQueue::init(CChannel *c, CTimer *t)
 {
     m_pChannel                 = c;
@@ -501,7 +507,11 @@ void CSndQueue::init(CChannel *c, CTimer *t)
     m_pSndUList->m_pWindowCond = &m_WindowCond;
     m_pSndUList->m_pTimer      = m_pTimer;
 
-    ThreadName tn("SRT:SndQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    ThreadName tn(thrname.c_str());
+#endif
     if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
     {
         m_WorkerThread = pthread_t();
@@ -598,16 +608,8 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyPop++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
         }
-        if (pkt.isControl())
-        {
-            HLOGC(mglog.Debug,
-                  log << self->CONID() << "chn:SENDING: " << MessageTypeStr(pkt.getType(), pkt.getExtendedType()));
-        }
-        else
-        {
-            HLOGC(dlog.Debug,
-                  log << self->CONID() << "chn:SENDING SIZE " << pkt.getLength() << " SEQ: " << pkt.getSeqNo());
-        }
+
+        HLOGC(mglog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
@@ -1078,6 +1080,11 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
+#if ENABLE_LOGGING
+    int CRcvQueue::m_counter = 0;
+#endif
+
+
 void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *cc, CTimer *t)
 {
     m_iPayloadSize = payload;
@@ -1093,7 +1100,12 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *c
     m_pRcvUList        = new CRcvUList;
     m_pRendezvousQueue = new CRendezvousQueue;
 
-    ThreadName tn("SRT:RcvQ:worker");
+#if ENABLE_LOGGING
+    ++m_counter;
+    std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+    ThreadName tn(thrname.c_str());
+#endif
+
     if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
     {
         m_WorkerThread = pthread_t();
@@ -1401,7 +1413,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         // this socket registerred in the RendezvousQueue, which causes the packet unable
         // to be dispatched. Therefore simply treat every "out of band" packet (with socket
         // not belonging to the connection and not registered as rendezvous) as "possible
-        // attach" and ignore it. This also should better protect the rendezvous socket
+        // attack" and ignore it. This also should better protect the rendezvous socket
         // against a rogue connector.
         if (id == 0)
         {

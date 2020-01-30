@@ -4088,7 +4088,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             // For HSv5, make the cookie contest and basing on this decide, which party
             // should provide the HSREQ/KMREQ attachment.
 
-
            if (!createCrypter(hsd, false /* unidirectional */))
            {
                m_RejectReason = SRT_REJ_RESOURCE;
@@ -4305,7 +4304,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
 
-    LOGC(mglog.Note, log << "Connection established to: " << SockaddrToString(m_PeerAddr));
+    LOGC(mglog.Note, log << CONID() << "Connection established to: " << SockaddrToString(m_PeerAddr));
 
     return CONN_ACCEPT;
 }
@@ -5547,6 +5546,10 @@ int CUDT::receiveBuffer(char *data, int len)
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
         tscond.signal_locked(recvguard);
     }
+    else
+    {
+        HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
+    }
 
     if (!m_pRcvBuffer->isRcvDataReady())
     {
@@ -5874,8 +5877,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
 #ifdef SRT_ENABLE_ECN
     if (bCongestion)
+    {
+        LOGC(dlog.Error, log << "sendmsg2: CONGESTION; reporting error");
         throw CUDTException(MJ_AGAIN, MN_CONGESTION, 0);
+    }
 #endif /* SRT_ENABLE_ECN */
+
+    HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (END): success, size=" << size);
     return size;
 }
 
@@ -7898,6 +7906,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
+        // XXX See comment at m_iSndLastDataAck field.
         const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
         if (offset < 0)
         {
@@ -7933,6 +7942,9 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             seqpair[0] = w_packet.m_iSeqNo;
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
 
+            HLOGC(mglog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
+                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
             // only one msg drop request is necessary
@@ -8261,7 +8273,17 @@ int CUDT::processData(CUnit *in_unit)
         HLOGP(mglog.Debug, "Spawning TSBPD thread");
         int st = 0;
         {
+#if ENABLE_HEAVY_LOGGING
+            std::ostringstream tns1, tns2;
+            // Take the last 2 ciphers from the socket ID.
+            tns1 << m_SocketID;
+            std::string s = tns1.str();
+            tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+
+            ThreadName tn(tns2.str().c_str());
+#else
             ThreadName tn("SRT:TsbPd");
+#endif
             st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
         }
         if (st != 0)
@@ -8291,7 +8313,7 @@ int CUDT::processData(CUnit *in_unit)
         if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
             rexmit_reason += "REQUEST";
         else
-            rexmit_reason += "ACK-TMOUT";
+            rexmit_reason += "NAKREPORT";
 #endif
     }
 
@@ -8690,6 +8712,10 @@ int CUDT::processData(CUnit *in_unit)
             HLOGC(mglog.Debug, log << "loss: signaling TSBPD cond");
             CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
         }
+        else
+        {
+            HLOGC(mglog.Debug, log << "loss: socket is not TSBPD, not signaling");
+        }
     }
 
     // Separately report loss records of those reported by a filter.
@@ -8974,7 +9000,7 @@ void CUDT::dropFromLossLists(int32_t from, int32_t to)
     CGuard lg(m_RcvLossLock);
     m_pRcvLossList->remove(from, to);
 
-    HLOGF(mglog.Debug, "TLPKTDROP seq %d-%d (%d packets)", from, to, CSeqNo::seqoff(from, to));
+    HLOGF(mglog.Debug, "%sTLPKTDROP seq %d-%d (%d packets)", CONID().c_str(), from, to, CSeqNo::seqoff(from, to));
 
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
@@ -9261,6 +9287,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         hs.store_to((packet.m_pcData), (size));
         packet.m_iID        = id;
         setPacketTS(packet, steady_clock::now());
+        HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (e): " << hs.show());
         m_pSndQueue->sendto(addr, packet);
     }
     else
@@ -9323,6 +9350,8 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         else
         {
             // a new connection has been created, enable epoll for write
+           HLOGC(mglog.Debug, log << "processConnectRequest: @" << m_SocketID
+                   << " connected, setting epoll to connect:");
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         }
     }

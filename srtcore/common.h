@@ -585,8 +585,6 @@ public:
       /// @retval 0 Wait was successfull
       /// @retval ETIMEDOUT The wait timed out
 
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
-
 private:
    srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
@@ -596,9 +594,6 @@ private:
    static pthread_cond_t m_EventCond;
    static srt::sync::Mutex m_EventLock;
 };
-
-
-////////////////////////////////////////////////////////////////////////////////
 
 // UDT Sequence Number 0 - (2^31 - 1)
 
