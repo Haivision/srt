@@ -118,19 +118,16 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
-set (DISPLAY_LOGGING DISABLED)
-
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
+	message(STATUS "LOGGING: DISABLED")
 else()
 	if (ENABLE_HEAVY_LOGGING)
-		set (DISPLAY_LOGGING HEAVY)
+		message(STATUS "LOGGING: HEAVY")
 	else()
-		set (DISPLAY_LOGGING ENABLED)
+		message(STATUS "LOGGING: ENABLED")
 	endif()
 endif()
-
-message(STATUS "LOGGING: ${DISPLAY_LOGGING}")
 
 if (USE_BUSY_WAITING)
 	message(STATUS "USE_BUSY_WAITING: ON")
