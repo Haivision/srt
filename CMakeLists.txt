@@ -128,10 +128,6 @@ else()
 	else()
 		set (DISPLAY_LOGGING ENABLED)
 	endif()
-
-	if (ENABLE_HAICRYPT_LOGGING)
-		list (APPEND DISPLAY_LOGGING HAICRYPT)
-	endif()
 endif()
 
 message(STATUS "LOGGING: ${DISPLAY_LOGGING}")

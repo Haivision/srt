@@ -2358,8 +2358,8 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
 
    try
    {
-      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
-      udt->setOpt(optname, optval, optlen);
+       CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
+       udt->setOpt(optname, optval, optlen);
        return 0;
    }
    catch (const CUDTException& e)
