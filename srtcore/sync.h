@@ -17,7 +17,6 @@
 #include <cstdlib>
 #include <pthread.h>
 #include "utilities.h"
-#include "udt.h" // for THREAD_* tracers
 
 namespace srt
 {
@@ -407,9 +406,7 @@ public:
     // Wait indefinitely, until getting a signal on CV.
     void wait()
     {
-        THREAD_PAUSED();
         m_cond->wait(*m_locker);
-        THREAD_RESUMED();
     }
 
     /// Block the call until either @a timestamp time achieved
@@ -419,10 +416,7 @@ public:
     /// @retval false Resumed due to being past @a timestamp
     bool wait_for(const steady_clock::duration& delay)
     {
-        THREAD_PAUSED();
-        bool signaled = m_cond->wait_for(*m_locker, delay);
-        THREAD_RESUMED();
-        return signaled;
+        return m_cond->wait_for(*m_locker, delay);
     }
 
     // Wait until the given time is achieved. This actually
