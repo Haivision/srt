@@ -1,9 +1,0 @@
-This will be bound to a submodule 'pthread-win32'. This will be added in future.
-
-Predicted .gitmodule entry:
-
-
-[submodule "submodules/pthread-win32"]
-        path = submodules/pthread-win32
-        url = https://github.com/GerHobbelt/pthread-win32.git
-
