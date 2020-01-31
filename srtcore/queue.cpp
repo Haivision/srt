@@ -136,7 +136,7 @@ int CUnitQueue::init(int size, int mss, int version)
     return 0;
 }
 
-// XXX High common part detected with CUnitQueue:init.
+// XXX Lots of common code with CUnitQueue:init.
 // Consider merging.
 int CUnitQueue::increase()
 {
@@ -509,7 +509,7 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
     ThreadName tn(thrname.c_str());
 #endif
     if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
