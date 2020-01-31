@@ -112,6 +112,8 @@ CSndBuffer::CSndBuffer(int size, int mss)
    }
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
+
+   createMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
@@ -132,6 +134,8 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
+
+   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -735,6 +739,8 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
+
+   createMutex(m_BytesCountLock, "BytesCount");
 }
 
 CRcvBuffer::~CRcvBuffer()
@@ -748,6 +754,8 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
+
+   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -761,7 +769,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
    *  acked (bytes>0, acked=true),
    *  removed (bytes<0, acked=n/a)
    */
-   CGuard cg(m_BytesCountLock);
+   CGuard cg (m_BytesCountLock);
 
    if (!acked) //adding new pkt in RcvBuffer
    {

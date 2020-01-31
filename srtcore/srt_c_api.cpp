@@ -141,7 +141,9 @@ extern const SRT_MSGCTRL srt_msgctrl_default = {
     PB_SUBSEQUENT,
     0,     // srctime: take "now" time
     -1,    // -1: no seq (0 is a valid seqno!)
-    0     // 0: no msg/control packet
+    0,     // 0: no msg/control packet
+    NULL,  // grpdata not supplied
+    0      // idem
 };
 
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)

@@ -98,7 +98,31 @@ int64_t get_cpu_frequency()
 
 const int64_t s_cpu_frequency = get_cpu_frequency();
 
-CSync::CSync(pthread_cond_t& cond, CGuard& g)
+void createCond(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+    pthread_condattr_t* pattr = NULL;
+    pthread_cond_init(&(cond), pattr);
+}
+
+void createCond_monotonic(CCondition& cond, const char* name SRT_ATR_UNUSED)
+{
+    pthread_condattr_t* pattr = NULL;
+#if ENABLE_MONOTONIC_CLOCK
+    pthread_condattr_t  CondAttribs;
+    pthread_condattr_init(&CondAttribs);
+    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    pattr = &CondAttribs;
+#endif
+    pthread_cond_init(&(cond), pattr);
+}
+
+
+void releaseCond(CCondition& cond)
+{
+    pthread_cond_destroy(&(cond));
+}
+
+CSync::CSync(CCondition& cond, CGuard& g)
     : m_cond(&cond), m_mutex(g.mutex())
 {
     // XXX it would be nice to check whether the owner is also current thread
@@ -109,7 +133,7 @@ CSync::CSync(pthread_cond_t& cond, CGuard& g)
     // variable that you have used for construction as its argument.
 }
 
-CSync::CSync(pthread_cond_t& cond, Mutex& mutex, Nolock)
+CSync::CSync(CCondition& cond, Mutex& mutex, Nolock)
     : m_cond(&cond)
     , m_mutex(&mutex)
 {
@@ -150,6 +174,11 @@ bool CSync::wait_until(const steady_clock::time_point& exptime)
 /// @retval false Resumed due to being past @a timestamp
 bool CSync::wait_for(const steady_clock::duration& delay)
 {
+    // Note: this is implemented this way because the pthread API
+    // does not provide a possibility to wait relative time. When
+    // you implement it for different API that does provide relative
+    /// time waiting, you may want to implement it better way.
+
     THREAD_PAUSED();
     bool signaled = SyncEvent::wait_for(m_cond, &m_mutex->ref(), delay) != ETIMEDOUT;
     THREAD_RESUMED();
@@ -183,7 +212,7 @@ void CSync::lock_signal()
     lock_signal(*m_cond, *m_mutex);
 }
 
-void CSync::lock_signal(pthread_cond_t& cond, Mutex& mutex)
+void CSync::lock_signal(CCondition& cond, Mutex& mutex)
 {
     // Not using CGuard here because it would be logged
     // and this will result in unnecessary excessive logging.
@@ -192,7 +221,7 @@ void CSync::lock_signal(pthread_cond_t& cond, Mutex& mutex)
     mutex.unlock();
 }
 
-void CSync::lock_broadcast(pthread_cond_t& cond, Mutex& mutex)
+void CSync::lock_broadcast(CCondition& cond, Mutex& mutex)
 {
     // Not using CGuard here because it would be logged
     // and this will result in unnecessary excessive logging.
@@ -225,12 +254,12 @@ void CSync::signal_relaxed()
     signal_relaxed(*m_cond);
 }
 
-void CSync::signal_relaxed(pthread_cond_t& cond)
+void CSync::signal_relaxed(CCondition& cond)
 {
     pthread_cond_signal(&(cond));
 }
 
-void CSync::broadcast_relaxed(pthread_cond_t& cond)
+void CSync::broadcast_relaxed(CCondition& cond)
 {
     pthread_cond_broadcast(&(cond));
 }

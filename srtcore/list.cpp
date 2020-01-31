@@ -84,11 +84,15 @@ m_ListLock()
       m_caSeq[i].data1 = -1;
       m_caSeq[i].data2 = -1;
    }
+
+   // sender list needs mutex protection
+   createMutex(m_ListLock, "LossList");
 }
 
 CSndLossList::~CSndLossList()
 {
     delete [] m_caSeq;
+    releaseMutex(m_ListLock);
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
