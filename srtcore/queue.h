@@ -401,6 +401,8 @@ public:
        m_bClosing = true;
    }
 
+   pthread_t threadId() { return m_WorkerThread; }
+
 private:
    static void* worker(void* param);
    pthread_t m_WorkerThread;
@@ -472,6 +474,8 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
+   // Needed for affinity check (debug only)
+   pthread_t threadId() { return m_WorkerThread; }
 
    void stopWorker();
 

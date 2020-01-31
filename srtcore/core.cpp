@@ -6969,7 +6969,7 @@ static void DebugAck(string hdr, int prev, int ack)
 static inline void DebugAck(string, int, int) {}
 #endif
 
-void CUDT::sendCtrl(UDTMessageType pkttype, const void *lparam, void *rparam, int size)
+void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
 {
     CPacket ctrlpkt;
     setPacketTS(ctrlpkt, steady_clock::now());
@@ -8038,7 +8038,9 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
-        // XXX See comment at m_iSndLastDataAck field.
+        // XXX See the note above the m_iSndLastDataAck declaration in core.h
+        // This is the place where the important sequence numbers for
+        // sender buffer are actually managed by this field here.
         const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
         if (offset < 0)
         {
@@ -8445,7 +8447,7 @@ int CUDT::processData(CUnit* in_unit)
         // Search the sequence in the loss record.
         rexmit_reason = " by ";
         if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
-            rexmit_reason += "REQUEST";
+            rexmit_reason += "BLIND";
         else
             rexmit_reason += "NAKREPORT";
 #endif

@@ -415,8 +415,7 @@ public:
     /// @retval false Resumed due to being past @a timestamp
     bool wait_for(const steady_clock::duration& delay)
     {
-        bool signaled = m_cond->wait_for(*m_locker, delay);
-        return signaled;
+        return m_cond->wait_for(*m_locker, delay);
     }
 
     // Wait until the given time is achieved. This actually
