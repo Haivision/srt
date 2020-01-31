@@ -10083,9 +10083,9 @@ CUDTGroup::CUDTGroup()
     , m_bClosing(false)
     , m_iLastSchedSeqNo(0)
 {
-    createMutex(m_GroupLock, "Group");
-    createMutex(m_RcvDataLock, "RcvData");
-    createCond(m_RcvDataCond, "RcvData");
+    setupMutex(m_GroupLock, "Group");
+    setupMutex(m_RcvDataLock, "RcvData");
+    setupCond(m_RcvDataCond, "RcvData");
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
 }

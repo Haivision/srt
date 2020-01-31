@@ -85,7 +85,7 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
-   createMutex(m_EPollLock, "EPoll");
+   setupMutex(m_EPollLock, "EPoll");
 }
 
 CEPoll::~CEPoll()

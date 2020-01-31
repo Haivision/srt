@@ -254,11 +254,11 @@ inline void enterCS(Mutex& m) { m.lock(); }
 inline bool maybeEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
 
-inline void createMutex(Mutex& , const char* ) {}
+inline void setupMutex(Mutex& , const char* ) {}
 inline void releaseMutex(Mutex& ) {}
 
-void createCond(CCondition& cond, const char* name);
-void createCond_monotonic(CCondition& cond, const char* name);
+void setupCond(CCondition& cond, const char* name);
+void setupCond_monotonic(CCondition& cond, const char* name);
 void releaseCond(CCondition& cond);
 
 class InvertedLock

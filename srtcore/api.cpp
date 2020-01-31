@@ -85,9 +85,9 @@ void CUDTSocket::construct()
 {
     m_IncludedGroup = NULL;
     m_IncludedIter = CUDTGroup::gli_NULL();
-    createMutex(m_AcceptLock, "Accept");
-    createCond(m_AcceptCond, "Accept");
-    createMutex(m_ControlLock, "Control");
+    setupMutex(m_AcceptLock, "Accept");
+    setupCond(m_AcceptCond, "Accept");
+    setupMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
@@ -188,9 +188,9 @@ m_ClosedSockets()
    m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
-   createMutex(m_GlobControlLock, "GlobControl");
-   createMutex(m_IDLock, "ID");
-   createMutex(m_InitLock, "Init");
+   setupMutex(m_GlobControlLock, "GlobControl");
+   setupMutex(m_IDLock, "ID");
+   setupMutex(m_InitLock, "Init");
 
    pthread_key_create(&m_TLSError, TLSDestroy);
 
@@ -252,8 +252,8 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-   createMutex(m_GCStopLock, "GCStop");
-   createCond_monotonic(m_GCStopCond, "GCStop");
+   setupMutex(m_GCStopLock, "GCStop");
+   setupCond_monotonic(m_GCStopCond, "GCStop");
    {
        ThreadName tn("SRT:GC");
        pthread_create(&m_GCThread, NULL, garbageCollect, this);

@@ -113,7 +113,7 @@ CSndBuffer::CSndBuffer(int size, int mss)
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
 
-   createMutex(m_BufLock, "Buf");
+   setupMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
@@ -740,7 +740,7 @@ m_iNotch(0)
    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 #endif
 
-   createMutex(m_BytesCountLock, "BytesCount");
+   setupMutex(m_BytesCountLock, "BytesCount");
 }
 
 CRcvBuffer::~CRcvBuffer()

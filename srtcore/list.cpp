@@ -86,7 +86,7 @@ m_ListLock()
    }
 
    // sender list needs mutex protection
-   createMutex(m_ListLock, "LossList");
+   setupMutex(m_ListLock, "LossList");
 }
 
 CSndLossList::~CSndLossList()
