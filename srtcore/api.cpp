@@ -3280,62 +3280,54 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 
 void setloglevel(LogLevel::type ll)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
-    srt_logger_config.unlock();
 }
 
 void addlogfa(LogFA fa)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
-    srt_logger_config.unlock();
 }
 
 void dellogfa(LogFA fa)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
-    srt_logger_config.unlock();
 }
 
 void resetlogfa(set<LogFA> fas)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
-    srt_logger_config.unlock();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
-    srt_logger_config.unlock();
 }
 
 void setlogstream(std::ostream& stream)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.log_stream = &stream;
-    srt_logger_config.unlock();
 }
 
 void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.loghandler_opaque = opaque;
     srt_logger_config.loghandler_fn = handler;
-    srt_logger_config.unlock();
 }
 
 void setlogflags(int flags)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.flags = flags;
-    srt_logger_config.unlock();
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
