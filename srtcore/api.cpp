@@ -992,7 +992,7 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
    // (CONNECTED vs. CONNECTING).
    s->m_Status = SRTS_CONNECTING;
 
-   /* 
+  /* 
    * In blocking mode, connect can block for up to 30 seconds for
    * rendez-vous mode. Holding the s->m_ControlLock prevent close
    * from cancelling the connect
@@ -2352,9 +2352,7 @@ int CUDT::getsockopt(
 int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
    if (!optval)
-   {
        return setError(MJ_NOTSUP, MN_INVAL, 0);
-   }
 
    try
    {

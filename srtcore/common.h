@@ -533,8 +533,7 @@ struct EventSlot
 
     ~EventSlot()
     {
-        if (slot)
-            delete slot;
+        delete slot;
     }
 };
 
