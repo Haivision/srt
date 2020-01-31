@@ -2144,11 +2144,11 @@ SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
     }
     catch (CUDTException& e)
     {
-        return setError(e);
+        return APIError(e);
     }
     catch (std::bad_alloc& e)
     {
-        return setError(MJ_SYSTEMRES, MN_MEMORY, 0);
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 }
 
@@ -2160,25 +2160,25 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
     int32_t gm = group & SRTGROUP_MASK;
 
     if ( sid != socket || gm == 0 )
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Find the socket and the group
     CUDTSocket* s = s_UDTUnited.locateSocket(socket);
     CUDTGroup* g = s_UDTUnited.locateGroup(group);
 
     if (!s || !g)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Check if the socket is already IN SOME GROUP.
     if (s->m_IncludedGroup)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     if (g->managed())
     {
         // This can be changed as long as the group is empty.
         if (!g->empty())
         {
-            return setError(MJ_NOTSUP, MN_INVAL, 0);
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
         }
         g->managed(false);
     }
@@ -2205,10 +2205,10 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(socket);
     if (!s)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     if (!s->m_IncludedGroup)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     CGuard grd (s->m_ControlLock);
     s->removeFromGroup();
@@ -2226,10 +2226,10 @@ SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(socket);
     if (!s)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     if (!s->m_IncludedGroup)
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     return s->m_IncludedGroup->id();
 }
@@ -2238,13 +2238,13 @@ int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psiz
 {
     if ( (groupid & SRTGROUP_MASK) == 0)
     {
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
     if (!g || !pdata || !psize)
     {
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     return g->getGroupData(pdata, psize);
