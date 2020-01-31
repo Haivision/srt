@@ -170,11 +170,9 @@ statically.
 
 **2. Compile and install Pthreads for Windows:**
 
-Compile and install Pthreads for Windows from this submodule:
+Compile and install `pthread-win32` for Windows from GitHub: [link](https://github.com/GerHobbelt/pthread-win32).
 
-  1. Using Visual Studio 2013, please open this file:  
-
-    pthread_lib.2013.vcxproj
+  1. Using Visual Studio 2013, open the project file `pthread_lib.2013.vcxproj`
   2. Select configuration: `Release` and `x64`.
   3. Make sure that the `pthread_lib` project will be built.
   4. After building, find the `pthread_lib.lib` file (directory is usually `bin\x64_MSVC2013.Release`).
