@@ -8311,7 +8311,7 @@ int CUDT::processData(CUnit *in_unit)
         // Search the sequence in the loss record.
         rexmit_reason = " by ";
         if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
-            rexmit_reason += "REQUEST";
+            rexmit_reason += "BLIND";
         else
             rexmit_reason += "NAKREPORT";
 #endif
