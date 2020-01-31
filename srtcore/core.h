@@ -221,10 +221,21 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-    static SRT_ATR_NODISCARD int setError(const CUDTException& e);
-    static SRT_ATR_NODISCARD int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
 public: // internal API
+
+    // This is public so that it can be used directly in API implementation functions.
+    struct APIError
+    {
+        APIError(const CUDTException&);
+        APIError(CodeMajor, CodeMinor, int = 0);
+
+        operator int()
+        {
+            return SRT_ERROR;
+        }
+    };
+
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
     static const int ERROR = -1;                      // socket api error returned value
 
