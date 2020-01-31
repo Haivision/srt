@@ -1383,7 +1383,6 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     u->checkTimers();
     m_pRcvUList->update(u);
 
-    //return CONN_CONTINUE;
     return CONN_RUNNING;
 }
 

@@ -636,6 +636,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    catch (...)
    {
+      LOGC(mglog.Error, log << "newConnection: error when mapping peer!");
       error = 2;
    }
    leaveCS(m_GlobControlLock);
@@ -1670,14 +1671,14 @@ void CUDTUnited::checkBrokenSockets()
 
       // timeout 1 second to destroy a socket AND it has been removed from
       // RcvUList
-      steady_clock::time_point now = steady_clock::now();
-      steady_clock::duration closed_ago = now - j->second->m_tsClosureTimeStamp;
+      const steady_clock::time_point now = steady_clock::now();
+      const steady_clock::duration closed_ago = now - j->second->m_tsClosureTimeStamp;
       if ((closed_ago > seconds_from(1))
          && ((!j->second->m_pUDT->m_pRNode)
             || !j->second->m_pUDT->m_pRNode->m_bOnList))
       {
-          HLOGC(mglog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
-                  << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
+         HLOGC(mglog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                 << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
          // HLOGF(mglog.Debug, "will unref socket: %d\n", j->first);
          tbr.push_back(j->first);
@@ -2515,21 +2516,19 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
 
    try
    {
-      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
-      udt->setOpt(optname, optval, optlen);
-      return 0;
+       CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
+       udt->setOpt(optname, optval, optlen);
+       return 0;
    }
    catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
+       return setError(e);
    }
    catch (const std::exception& ee)
    {
-      LOGC(mglog.Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
-         << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
-      return ERROR;
+       LOGC(mglog.Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
+               << typeid(ee).name() << ": " << ee.what());
+       return setError(MJ_UNKNOWN, MN_NONE, 0);
    }
 }
 
@@ -3441,62 +3440,54 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 
 void setloglevel(LogLevel::type ll)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
-    srt_logger_config.unlock();
 }
 
 void addlogfa(LogFA fa)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
-    srt_logger_config.unlock();
 }
 
 void dellogfa(LogFA fa)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
-    srt_logger_config.unlock();
 }
 
 void resetlogfa(set<LogFA> fas)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
-    srt_logger_config.unlock();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
-    srt_logger_config.unlock();
 }
 
 void setlogstream(std::ostream& stream)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.log_stream = &stream;
-    srt_logger_config.unlock();
 }
 
 void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.loghandler_opaque = opaque;
     srt_logger_config.loghandler_fn = handler;
-    srt_logger_config.unlock();
 }
 
 void setlogflags(int flags)
 {
-    srt_logger_config.lock();
+    CGuard gg(srt_logger_config.mutex);
     srt_logger_config.flags = flags;
-    srt_logger_config.unlock();
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)

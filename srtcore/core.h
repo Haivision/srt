@@ -613,8 +613,8 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-    static int setError(const CUDTException& e);
-    static int setError(CodeMajor mj, CodeMinor mn, int syserr);
+    static SRT_ATR_NODISCARD int setError(const CUDTException& e);
+    static SRT_ATR_NODISCARD int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -1138,7 +1138,6 @@ private: // Timers
     //   always increased by one in this call, otherwise it will be increased by the number of blocks
     //   scheduled for sending.
 
-    //int32_t m_iLastDecSeq;                       // Sequence number sent last decrease occurs (actually part of FileCC, formerly CUDTCC)
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
     void setInitialSndSeq(int32_t isn)
@@ -1364,11 +1363,17 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+    static const int BECAUSE_NO_REASON = 0, // NO BITS
+                     BECAUSE_ACK       = 1 << 0,
+                     BECAUSE_LITEACK   = 1 << 1,
+                     BECAUSE_NAKREPORT = 1 << 2,
+                     LAST_BECAUSE_BIT  =      3;
+
     void checkTimers();
     void considerLegacySrtHandshake(const time_point &timebase);
-    void checkACKTimer (const time_point& currtime, char debug_decision[10]);
-    void checkNAKTimer(const time_point& currtime, char debug_decision[10]);
-    bool checkExpTimer (const time_point& currtime, const char* debug_decision);  // returns true if the connection is expired
+    int checkACKTimer (const time_point& currtime);
+    int checkNAKTimer(const time_point& currtime);
+    bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
 
 public: // For the use of CCryptoControl

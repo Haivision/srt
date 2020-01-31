@@ -122,10 +122,6 @@ set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 # (currently the only one implemented)
 add_definitions(-DSRT_ENABLE_APP_READER)
 
-# XXX EXPERIMENTAL: for testing, disable sending key drop packets to
-# simulate they were lost
-# add_definitions(-DSRT_TEST_DISABLE_KEY_CONTROL_PACKETS)
-
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
 	message(STATUS "LOGGING: DISABLED")
