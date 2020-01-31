@@ -11,7 +11,7 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STL_CHRONO
+//#define USE_STDCXX_CHRONO
 //#define ENABLE_CXX17
 
 #include <cstdlib>
@@ -213,8 +213,6 @@ private:
     pthread_mutex_t m_mutex;
 };
 
-typedef pthread_cond_t CCondition;
-
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
 class ScopedLock
 {
@@ -254,13 +252,6 @@ inline void enterCS(Mutex& m) { m.lock(); }
 inline bool maybeEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
 
-inline void setupMutex(Mutex& , const char* ) {}
-inline void releaseMutex(Mutex& ) {}
-
-void setupCond(CCondition& cond, const char* name);
-void setupCond_monotonic(CCondition& cond, const char* name);
-void releaseCond(CCondition& cond);
-
 class InvertedLock
 {
     Mutex *m_pMutex;
@@ -289,6 +280,86 @@ class InvertedLock
     }
 };
 
+inline void setupMutex(Mutex&, const char*) {}
+inline void releaseMutex(Mutex&) {}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CCondVar section
+//
+////////////////////////////////////////////////////////////////////////////////
+
+template <bool IS_CLOCK_MONOTONIC = false>
+class CCondVar
+{
+public:
+    CCondVar();
+    ~CCondVar();
+
+public:
+    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
+    /// to avoud issues with static initialization of CV on windows.
+    void init();
+    void destroy();
+
+public:
+    /// Causes the current thread to block until the condition variable is notified
+    /// or a spurious wakeup occurs.
+    ///
+    /// @param lock Corresponding mutex locked by UniqueLock
+    void wait(UniqueLock& lock);
+
+    /// Atomically releases lock, blocks the current executing thread, 
+    /// and adds it to the list of threads waiting on *this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously. When unblocked, regardless of the reason,
+    /// lock is reacquired and wait_for() exits.
+    ///
+    /// @returns false if the relative timeout specified by rel_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    ///
+    /// @note Calling this function if lock.mutex()
+    /// is not locked by the current thread is undefined behavior.
+    /// Calling this function if lock.mutex() is not the same mutex as the one
+    /// used by all other threads that are currently waiting on the same
+    /// condition variable is undefined behavior.
+    bool wait_for(UniqueLock& lock, const steady_clock::duration& rel_time);
+
+    /// Causes the current thread to block until the condition variable is notified,
+    /// a specific time is reached, or a spurious wakeup occurs.
+    ///
+    /// @param[in] lock  an object of type UniqueLock, which must be locked by the current thread 
+    /// @param[in] timeout_time an object of type time_point representing the time when to stop waiting 
+    ///
+    /// @returns false if the relative timeout specified by timeout_time expired,
+    ///          true otherwise (signal or spurious wake up).
+    bool wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time);
+
+    /// Calling notify_one() unblocks one of the waiting threads,
+    /// if any threads are waiting on this CV.
+    void notify_one();
+
+    /// Unblocks all threads currently waiting for this CV.
+    void notify_all();
+
+private:
+#ifdef USE_STDCXX_CHRONO
+    condition_variable m_cv;
+#else
+    pthread_cond_t  m_cv;
+#endif
+};
+
+typedef CCondVar<false> Condition;
+typedef CCondVar<true> ConditionMonotonic;
+
+template <bool IS_CLOCK_MONOTONIC>
+inline void setupCond(CCondVar<IS_CLOCK_MONOTONIC>& cv, const char*) { cv.init(); }
+
+template <bool IS_CLOCK_MONOTONIC>
+inline void releaseCond(CCondVar<IS_CLOCK_MONOTONIC>& cv) { cv.destroy(); }
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Event (CV) section
@@ -306,59 +377,102 @@ inline void SleepFor(const steady_clock::duration& t)
 
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
-class CSync
+template <bool CLOCKFORM = false>
+class CSyncTpl
 {
-    pthread_cond_t* m_cond;
-    Mutex* m_mutex;
+    typedef CCondVar<CLOCKFORM> TCondition;
+    TCondition* m_cond;
+    CGuard* m_locker;
 
 public:
-    enum Nolock { NOLOCK };
-
     // Locked version: must be declared only after the declaration of CGuard,
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
-    CSync(pthread_cond_t& cond, CGuard& g);
-
-    // This is only for one-shot signaling. This doesn't need a CGuard
-    // variable, only the mutex itself. Only lock_signal() can be used.
-    CSync(pthread_cond_t& cond, Mutex& mutex, Nolock);
-
-    // An alternative method
-    static CSync nolock(pthread_cond_t& cond, Mutex& m)
+    CSyncTpl(TCondition& cond, CGuard& g)
+        : m_cond(&cond), m_locker(&g)
     {
-        return CSync(cond, m, NOLOCK);
+        // XXX it would be nice to check whether the owner is also current thread
+        // but this can't be done portable way.
+
+        // When constructed by this constructor, the user is expected
+        // to only call signal_locked() function. You should pass the same guard
+        // variable that you have used for construction as its argument.
     }
 
     // COPY CONSTRUCTOR: DEFAULT!
 
     // Wait indefinitely, until getting a signal on CV.
-    void wait();
+    void wait()
+    {
+        m_cond->wait(*m_locker);
+    }
 
-    // Wait only for a given time delay (in microseconds). This function
-    // extracts first current time using steady_clock::now().
-    bool wait_for(const steady_clock::duration& delay);
-    bool wait_for_monotonic(const steady_clock::duration& delay);
+    /// Block the call until either @a timestamp time achieved
+    /// or the conditional is signaled.
+    /// @param [in] delay Maximum time to wait since the moment of the call
+    /// @retval true Resumed due to getting a CV signal
+    /// @retval false Resumed due to being past @a timestamp
+    bool wait_for(const steady_clock::duration& delay)
+    {
+        bool signaled = m_cond->wait_for(*m_locker, delay);
+        return signaled;
+    }
 
     // Wait until the given time is achieved. This actually
     // refers to wait_for for the time remaining to achieve
     // given time.
-    bool wait_until(const steady_clock::time_point& exptime);
+    bool wait_until(const steady_clock::time_point& exptime)
+    {
+        // This will work regardless as to which clock is in use. The time
+        // should be specified as steady_clock::time_point, so there's no
+        // question of the timer base.
+        steady_clock::time_point now = steady_clock::now();
+        if (now >= exptime)
+            return false; // timeout
 
-    // You can signal using two methods:
-    // - lock_signal: expect the mutex NOT locked, lock it, signal, then unlock.
-    // - signal: expect the mutex locked, so only issue a signal, but you must pass the CGuard that keeps the lock.
-    void lock_signal();
+        return wait_for(exptime - now);
+    }
 
     // Static ad-hoc version
-    static void lock_signal(pthread_cond_t& cond, Mutex& m);
-    static void lock_broadcast(pthread_cond_t& cond, Mutex& m);
+    static void lock_signal(TCondition& cond, Mutex& m)
+    {
+        CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
+        cond.notify_one();
+    }
 
-    void signal_locked(CGuard& lk);
-    void signal_relaxed();
-    static void signal_relaxed(pthread_cond_t& cond);
-    static void broadcast_relaxed(pthread_cond_t& cond);
+    static void lock_broadcast(TCondition& cond, Mutex& m)
+    {
+        CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
+        cond.notify_all();
+    }
+
+    void signal_locked(CGuard& lk ATR_UNUSED)
+    {
+        // EXPECTED: lk.mutex() is LOCKED.
+        m_cond->notify_one();
+    }
+
+    // The signal_relaxed and broadcast_relaxed functions are to be used in case
+    // when you don't care whether the associated mutex is locked or not (you
+    // accept the case that a mutex isn't locked and the signal gets effectively
+    // missed), or you somehow know that the mutex is locked, but you don't have
+    // access to the associated CGuard object. This function, although it does
+    // the same thing as signal_locked() and broadcast_locked(), is here for
+    // the user to declare explicitly that the signal/broadcast is done without
+    // being prematurely certain that the associated mutex is locked.
+    //
+    // It is then expected that whenever these functions are used, an extra
+    // comment is provided to explain, why the use of the relaxed signaling is
+    // correctly used.
+
+    void signal_relaxed() { signal_relaxed(*m_cond); }
+    static void signal_relaxed(TCondition& cond) { cond.notify_one(); }
+    static void broadcast_relaxed(TCondition& cond) { cond.notify_all(); }
 };
+
+typedef CSyncTpl<false> CSync;
+typedef CSyncTpl<true> CSyncMono;
 
 class SyncEvent
 {
