@@ -2111,16 +2111,14 @@ SRTSOCKET CUDT::socket()
    }
 }
 
-int CUDT::setError(const CUDTException& e)
+CUDT::APIError::APIError(const CUDTException& e)
 {
-    s_UDTUnited.setError(new CUDTException(e));
-    return SRT_ERROR;
+    CUDT::s_UDTUnited.setError(new CUDTException(e));
 }
 
-int CUDT::setError(CodeMajor mj, CodeMinor mn, int syserr)
+CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 {
-    s_UDTUnited.setError(new CUDTException(mj, mn, syserr));
-    return SRT_ERROR;
+    CUDT::s_UDTUnited.setError(new CUDTException(mj, mn, syserr));
 }
 
 // This is an internal function; 'type' should be pre-checked if it has a correct value.
@@ -2263,28 +2261,28 @@ int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
            // too small for particular family, or that family is
            // not recognized (is none of AF_INET, AF_INET6).
            // This is a user error.
-           return setError(MJ_NOTSUP, MN_INVAL, 0);
+           return APIError(MJ_NOTSUP, MN_INVAL, 0);
        }
        CUDTSocket* s = s_UDTUnited.locateSocket(u);
        if (!s)
-           return setError(MJ_NOTSUP, MN_INVAL, 0);
+           return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
        return s_UDTUnited.bind(s, sa);
    }
    catch (const CUDTException& e)
    {
-       return setError(e);
+       return APIError(e);
    }
    catch (bad_alloc&)
    {
-       return setError(MJ_SYSTEMRES, MN_MEMORY, 0);
+       return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
    catch (const std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "bind: UNEXPECTED EXCEPTION: "
          << typeid(ee).name()
          << ": " << ee.what());
-      return setError(MJ_UNKNOWN, MN_NONE, 0);
+      return APIError(MJ_UNKNOWN, MN_NONE, 0);
    }
 }
 
@@ -2294,7 +2292,7 @@ int CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
     {
         CUDTSocket* s = s_UDTUnited.locateSocket(u);
         if (!s)
-            return setError(MJ_NOTSUP, MN_INVAL, 0);
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
         return s_UDTUnited.bind(s, udpsock);
     }
@@ -2402,8 +2400,7 @@ int CUDT::connect(
    }
    catch (const CUDTException &e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
+      return APIError(e);
    }
    catch (bad_alloc&)
    {
@@ -2486,7 +2483,7 @@ int CUDT::getsockopt(
 {
     if (!pw_optval || !pw_optlen)
     {
-        return setError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     try
@@ -2512,7 +2509,7 @@ int CUDT::getsockopt(
 int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
    if (!optval)
-       return setError(MJ_NOTSUP, MN_INVAL, 0);
+       return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
    try
    {
@@ -2522,13 +2519,13 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
    }
    catch (const CUDTException& e)
    {
-       return setError(e);
+       return APIError(e);
    }
    catch (const std::exception& ee)
    {
        LOGC(mglog.Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
                << typeid(ee).name() << ": " << ee.what());
-       return setError(MJ_UNKNOWN, MN_NONE, 0);
+       return APIError(MJ_UNKNOWN, MN_NONE, 0);
    }
 }
 
