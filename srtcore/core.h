@@ -221,8 +221,8 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-    static int setError(const CUDTException& e);
-    static int setError(CodeMajor mj, CodeMinor mn, int syserr);
+    static SRT_ATR_NODISCARD int setError(const CUDTException& e);
+    static SRT_ATR_NODISCARD int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
 public: // internal API
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
@@ -974,7 +974,7 @@ private: // Timers functions
     void considerLegacySrtHandshake(const time_point &timebase);
     int checkACKTimer (const time_point& currtime);
     int checkNAKTimer(const time_point& currtime);
-    bool checkExpTimer (const time_point& currtime, int because_reason);  // returns true if the connection is expired
+    bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
 
 public: // For the use of CCryptoControl

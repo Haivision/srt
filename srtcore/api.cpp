@@ -2364,15 +2364,13 @@ int CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, 
    }
    catch (const CUDTException& e)
    {
-       s_UDTUnited.setError(new CUDTException(e));
-       return ERROR;
+       return setError(e);
    }
    catch (const std::exception& ee)
    {
        LOGC(mglog.Fatal, log << "setsockopt: UNEXPECTED EXCEPTION: "
                << typeid(ee).name() << ": " << ee.what());
-       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
-       return ERROR;
+       return setError(MJ_UNKNOWN, MN_NONE, 0);
    }
 }
 

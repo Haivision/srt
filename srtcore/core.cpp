@@ -9452,7 +9452,7 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
     return debug_decision;
 }
 
-bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int because_reason ATR_UNUSED)
+bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
 #if ENABLE_HEAVY_LOGGING & 1
@@ -9463,14 +9463,14 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int because_r
     };
 
     string decision = "NOTHING";
-    if (because_reason)
+    if (check_reason)
     {
         ostringstream decd;
         decision = "";
         for (int i = 0; i < LAST_BECAUSE_BIT; ++i)
         {
             int flag = 1 << i;
-            if (because_reason & flag)
+            if (check_reason & flag)
                 decd << decisions[i] << " ";
         }
         decision = decd.str();
