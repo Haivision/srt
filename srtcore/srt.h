@@ -546,7 +546,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_UNSECURE,    // password required or unexpected
     SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
-    SRT_REJ_FILTER,       // incompatible packet filter
+    SRT_REJ_FILTER,      // incompatible packet filter
 
     SRT_REJ__SIZE,
 };

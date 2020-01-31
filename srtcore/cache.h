@@ -44,7 +44,7 @@ written by
 #include <list>
 #include <vector>
 
-#include "common.h"
+#include "sync.h"
 #include "netinet_any.h"
 #include "udt.h"
 

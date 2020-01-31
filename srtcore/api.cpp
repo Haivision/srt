@@ -267,6 +267,11 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
+   // NOTE: we can do relaxed signaling here because
+   // waiting on m_GCStopCond has a 1-second timeout,
+   // after which the m_bClosing flag is cheched, which
+   // is set here above. Worst case secenario, this
+   // pthread_join() call will block for 1 second.
    CSyncMono::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
@@ -1707,9 +1712,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    // delete this one
    m_ClosedSockets.erase(i);
 
-   HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT %" << u);
+   HLOGC(mglog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
    s->makeClosed();
-   HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET %" << u);
+   HLOGC(mglog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
 
    if (mid == -1)
@@ -1719,7 +1724,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())
    {
-      LOGC(mglog.Fatal, log << "IPE: For socket %" << u << " MUXER id=" << mid << " NOT FOUND!");
+      LOGC(mglog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
       return;
    }
 
@@ -1730,7 +1735,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    //    u, mx.m_iRefCount);
    if (0 == mx.m_iRefCount)
    {
-       HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket %"
+       HLOGC(mglog.Debug, log << "MUXER id=" << mid << " lost last socket @"
            << u << " - deleting muxer bound to port "
            << mx.m_pChannel->bindAddressAny().hport());
       // The channel has no access to the queues and
