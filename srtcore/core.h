@@ -857,7 +857,7 @@ private: // Common connection Congestion Control setup
 
     // for updateCC it's ok to discard the value. This returns false only if
     // the congctl isn't created, and this can be prevented from.
-    bool updateCC(ETransmissionEvent, EventVariant arg);
+    bool updateCC(ETransmissionEvent, const EventVariant arg);
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
