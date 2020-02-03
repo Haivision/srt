@@ -6602,7 +6602,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
-bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
+bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
     // because it involves the input buffer in CUDT. It would be
@@ -7443,8 +7443,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
-        int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
-        size_t   losslist_len = ctrlpkt.getLength() / 4;
+        const int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
+        const size_t   losslist_len = ctrlpkt.getLength() / 4;
 
         bool secure = true;
 
@@ -7462,8 +7462,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
                 {
                     // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-                    int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-                    int32_t losslist_hi = losslist[i + 1];
+                    const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                    const int32_t losslist_hi = losslist[i + 1];
                     // <lo, hi> specification means that the consecutive cell has been already interpreted.
                     ++i;
 
