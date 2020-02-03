@@ -92,7 +92,6 @@ m_ListLock()
 CSndLossList::~CSndLossList()
 {
     delete [] m_caSeq;
-    releaseMutex(m_ListLock);
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)

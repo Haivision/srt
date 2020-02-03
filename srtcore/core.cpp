@@ -251,6 +251,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_SndDropDelay     = 0;
     m_bOPT_StrictEncryption = true;
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
+    m_bOPT_GroupConnect = false;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -313,6 +314,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
+    m_bOPT_GroupConnect = ancestor.m_bOPT_GroupConnect;
     m_zOPT_ExpPayloadSize   = ancestor.m_zOPT_ExpPayloadSize;
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
@@ -856,6 +858,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         default:
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
+        break;
+
+
+   case SRTO_GROUPCONNECT:
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        m_bOPT_GroupConnect = bool_int_value(optval, optlen);
         break;
 
     case SRTO_KMREFRESHRATE:
@@ -5984,6 +5993,19 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
 
+        // Check if seqno has been set, in case when this is a group sender.
+        // If the sequence is from the past towards the "next sequence",
+        // simply return the size, pretending that it has been sent.
+        if (w_mctrl.pktseq != -1 && m_iSndNextSeqNo != -1)
+        {
+            if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+            {
+                HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
+                        << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
+                return size;
+            }
+        }
+
         // Set this predicted next sequence to the control information.
         // It's the sequence of the FIRST (!) packet from all packets used to send
         // this buffer. Values from this field will be monotonic only if you always
@@ -6047,6 +6069,15 @@ int CUDT::recvmsg(char* data, int len, uint64_t& srctime)
 
 int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
+    // Check if the socket is a member of a receiver group.
+    // If so, then reading by receiveMessage is disallowed.
+
+    if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
+    {
+        LOGP(mglog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
+        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
+    }
+
     if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
@@ -6062,11 +6093,23 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return receiveBuffer(data, len);
 }
 
-int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
+// int by_exception: accepts values of CUDTUnited::ErrorHandling:
+// - 0 - by return value
+// - 1 - by exception
+// - 2 - by abort (unused)
+int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_exception)
 {
     // Recvmsg isn't restricted to the congctl type, it's the most
     // basic method of passing the data. You can retrieve data as
     // they come in, however you need to match the size of the buffer.
+
+    // Note: if by_exception = ERH_RETURN, this would still break it
+    // by exception. The intention of by_exception isn't to prevent
+    // exceptions here, but to intercept the erroneous situation should
+    // it be handled by the caller in a less than general way. As this
+    // is only used internally, we state that the problem that would be
+    // handled by exception here should not happen, and in case if it does,
+    // it's a bug to fix, so the exception is nothing wrong.
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
@@ -6113,6 +6156,9 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
         {
             if (!m_bMessageAPI && m_bShutdown)
                 return 0;
+            // Forced to return error instead of throwing exception.
+            if (!by_exception)
+                return APIError(MJ_CONNECTION, MN_CONNLOST, 0);
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
         else
@@ -6131,7 +6177,6 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (res == 0)
         {
             // read is not available any more
-
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
             {
@@ -6145,6 +6190,9 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
             // Shut up EPoll if no more messages in non-blocking mode
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            // Forced to return 0 instead of throwing exception, in case of AGAIN/READ
+            if (!by_exception)
+                return 0;
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
 
@@ -6244,12 +6292,20 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         if (m_bBroken || m_bClosing)
         {
+            // Forced to return 0 instead of throwing exception.
+            if (!by_exception)
+                return APIError(MJ_CONNECTION, MN_CONNLOST, 0);
             if (!m_bMessageAPI && m_bShutdown)
                 return 0;
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
         else if (!m_bConnected)
+        {
+            // Forced to return -1 instead of throwing exception.
+            if (!by_exception)
+                return APIError(MJ_CONNECTION, MN_NOCONN, 0);
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+        }
     } while ((res == 0) && !timeout);
 
     if (!m_pRcvBuffer->isRcvDataReady())
@@ -6276,7 +6332,12 @@ int CUDT::receiveMessage(char *data, int len, SRT_MSGCTRL& w_mctrl)
     // LOGC(tslog.Debug, "RECVMSG/EXIT RES " << res << " RCVTIMEOUT");
 
     if ((res <= 0) && (m_iRcvTimeOut >= 0))
+    {
+        // Forced to return -1 instead of throwing exception.
+        if (!by_exception)
+            return APIError(MJ_AGAIN, MN_XMTIMEOUT, 0);
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+    }
 
     return res;
 }

@@ -217,6 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    // (some space left)
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
@@ -555,6 +556,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_MESSAGEAPI,  // streamapi/messageapi collision
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
+    SRT_REJ_GROUP,       // incompatible group
 
     SRT_REJ__SIZE,
 };
@@ -728,6 +730,12 @@ typedef struct SRT_SocketGroupData_
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
 } SRT_SOCKGROUPDATA;
 
+SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
+SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
+SRT_API       int srt_exclude      (SRTSOCKET socket);
+SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
+SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -746,6 +754,13 @@ SRT_API       int srt_connect_bind (SRTSOCKET u,
                                     const struct sockaddr* target, int target_len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
+
+SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
+SRT_API int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source /*nullable*/, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize);
+
+
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);

@@ -134,8 +134,6 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
-
-   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -176,7 +174,18 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // and then return the accordingly modified sequence number in the reference.
 
     Block* s = m_pLastBlock;
-    w_msgno = m_iNextMsgNo;
+
+    if (w_msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
+        w_msgno = m_iNextMsgNo;
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "addBuffer: OVERWRITTEN by msgno supplied by caller: msgno=" << w_msgno);
+        m_iNextMsgNo = w_msgno;
+    }
+
     for (int i = 0; i < size; ++ i)
     {
         int pktlen = len - i * m_iMSS;
@@ -754,8 +763,6 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
-
-   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
