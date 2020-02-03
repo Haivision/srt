@@ -622,7 +622,7 @@ public: // internal API
         APIError(const CUDTException&);
         APIError(CodeMajor, CodeMinor, int = 0);
 
-        operator int()
+        operator int() const
         {
             return SRT_ERROR;
         }

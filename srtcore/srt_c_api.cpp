@@ -111,7 +111,7 @@ int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
     fstream ifs(path, ios::binary | ios::in);
     if (!ifs)
     {
-        return CUDT::APIError(CUDTException(MJ_FILESYSTEM, MN_READFAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0);
     }
     int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
     ifs.close();
@@ -122,12 +122,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::APIError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
     fstream ofs(path, ios::binary | ios::out);
     if (!ofs)
     {
-        return CUDT::APIError(CUDTException(MJ_FILESYSTEM, MN_WRAVAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0);
     }
     int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
     ofs.close();
@@ -312,7 +312,7 @@ enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
     if (!hook)
-        return CUDT::APIError(CUDTException(MJ_NOTSUP, MN_INVAL));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
 }
