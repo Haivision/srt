@@ -10098,9 +10098,9 @@ CUDTGroup::CUDTGroup()
     , m_selfManaged(true)
     , m_type(SRT_GTYPE_UNDEFINED)
     , m_listener()
+    // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
-    , // This is "undefined"; will become defined when adding the first socket
-    m_bSynRecving(true)
+    , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
     , m_bTLPktDrop(true)
