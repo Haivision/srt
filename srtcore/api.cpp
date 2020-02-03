@@ -347,14 +347,11 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
         int startval = sockval;
         for (;;) // Roll until an unused value is found
         {
-            bool exists = false;
-            {
-                CGuard cg(m_GlobControlLock);
-                exists = for_group ?
-                    m_Groups.count(sockval | SRTGROUP_MASK)
-                 :
-                    m_Sockets.count(sockval);
-            }
+            enterCS(m_GlobControlLock);
+            const bool exists = for_group
+                ? m_Groups.count(sockval | SRTGROUP_MASK)
+                : m_Sockets.count(sockval);
+            leaveCS(m_GlobControlLock);
 
             if (exists)
             {
@@ -1546,7 +1543,7 @@ CUDTGroup* CUDTUnited::locateGroup(SRTSOCKET u, ErrorHandling erh)
 {
    CGuard cg (m_GlobControlLock);
 
-   groups_t::iterator i = m_Groups.find(u);
+   const groups_t::iterator i = m_Groups.find(u);
    if ( i == m_Groups.end() )
    {
        if (erh == ERH_THROW)
@@ -2123,10 +2120,10 @@ CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 
 // This is an internal function; 'type' should be pre-checked if it has a correct value.
 // This doesn't have argument of GroupType due to header file conflicts.
-CUDTGroup& CUDT::newGroup(int type)
+CUDTGroup& CUDT::newGroup(const int type)
 {
     CGuard guard (s_UDTUnited.m_IDLock);
-    SRTSOCKET id = s_UDTUnited.generateSocketID(true);
+    const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
     return s_UDTUnited.addGroup(id).id(id).type(SRT_GROUP_TYPE(type));
@@ -2142,14 +2139,16 @@ SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
     {
         return newGroup(gt).id();
     }
-    catch (CUDTException& e)
+    catch (const CUDTException& e)
     {
         return APIError(e);
     }
-    catch (std::bad_alloc& e)
+    catch (const std::bad_alloc& e)
     {
         return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
+
+    return SRT_INVALID_SOCK;
 }
 
 

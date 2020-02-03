@@ -389,9 +389,9 @@ public:
             );
 
 #if ENABLE_HEAVY_LOGGING
-    void debugGroup();
+    void debugGroup() const;
 #else
-    void debugGroup() {}
+    void debugGroup() const {}
 #endif
 private:
     // Check if there's at least one connected socket.
@@ -823,7 +823,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-    static CUDTGroup& newGroup(int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
+    static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], int hsreq_type_cmd);

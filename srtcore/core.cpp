@@ -10132,9 +10132,9 @@ CUDTGroup::~CUDTGroup()
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
-
     HLOGC(mglog.Debug, log << "GROUP $" << id() << " OPTION: #" << optName
             << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
+
     switch (optName)
     {
     case SRTO_RCVSYN:
@@ -10165,7 +10165,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     // Other options to be specifically interpreted by group may follow.
 
     default:
-        ;
+        break;
     }
 
     // All others must be simply stored for setting on a socket.
@@ -10745,7 +10745,7 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
         // be taken as a good deal and reading will be accepted.
         ready = true;
     }
-    else if ( (seqdiff = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo)) > 0 )
+    else if ((seqdiff = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo)) > 0)
     {
         // Case diff == 1: The very next. Surely read-ready.
 
@@ -10837,7 +10837,7 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
 
 string CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
-    static string states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
+    static const char* const states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
     if (int(st) < 5)
         return states[st];
     return string("UNKNOWN");
