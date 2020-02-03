@@ -64,7 +64,6 @@ modified by
 #include "window.h"
 #include "packet.h"
 #include "channel.h"
-#include "api.h"
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
@@ -129,6 +128,9 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
+static const size_t SRT_SOCKOPT_NPOST = 11;
+extern const SRT_SOCKOPT srt_post_opt_list [];
+
 // For HSv4 legacy handshake
 #define SRT_MAX_HSRETRY     10          /* Maximum SRT handshake retry */
 
@@ -139,6 +141,8 @@ enum SeqPairItems
 
 // Extended SRT Congestion control class - only an incomplete definition required
 class CCryptoControl;
+class CUDTUnited;
+class CUDTSocket;
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -167,9 +171,9 @@ private: // constructor and desctructor
 
     void construct();
     void clearData();
-    CUDT();
-    CUDT(const CUDT& ancestor);
-    const CUDT& operator=(const CUDT&) {return *this;}
+    CUDT(CUDTSocket* parent);
+    CUDT(CUDTSocket* parent, const CUDT& ancestor);
+    const CUDT& operator=(const CUDT&) {return *this;} // = delete ?
     ~CUDT();
 
 public: //API
@@ -217,10 +221,21 @@ public: //API
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
-    static int setError(const CUDTException& e);
-    static int setError(CodeMajor mj, CodeMinor mn, int syserr);
 
 public: // internal API
+
+    // This is public so that it can be used directly in API implementation functions.
+    struct APIError
+    {
+        APIError(const CUDTException&);
+        APIError(CodeMajor, CodeMinor, int = 0);
+
+        operator int() const
+        {
+            return SRT_ERROR;
+        }
+    };
+
     static const SRTSOCKET INVALID_SOCK = -1;         // invalid socket descriptor
     static const int ERROR = -1;                      // socket api error returned value
 
@@ -288,6 +303,7 @@ public: // internal API
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
+    int32_t peerISN() const { return m_iPeerISN; }
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
@@ -332,6 +348,9 @@ public: // internal API
     // a different channel.
     void skipIncoming(int32_t seq);
 
+    // For SRT_tsbpdLoop
+    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    std::set<int>& pollset() { return m_sPollID; }
 
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
@@ -566,6 +585,7 @@ private:
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
 private: // Identification
+    CUDTSocket* const m_parent; // temporary, until the CUDTSocket class is merged with CUDT
     SRTSOCKET m_SocketID;                        // UDT socket number
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
@@ -737,7 +757,8 @@ private: // Timers
         m_iSndLastAck = isn;
         m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
-        m_iSndCurrSeqNo = isn - 1;
+        m_iSndCurrSeqNo = CSeqNo::decseq(isn);
+        m_iSndNextSeqNo = isn;
         m_iSndLastAck2 = isn;
     }
 
@@ -749,7 +770,7 @@ private: // Timers
 #endif
         m_iRcvLastSkipAck = m_iRcvLastAck;
         m_iRcvLastAckAck = isn;
-        m_iRcvCurrSeqNo = isn - 1;
+        m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
     }
 
     int32_t m_iISN;                              // Initial Sequence Number
@@ -828,7 +849,6 @@ private: // synchronization: mutexes and conditions
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
-
     // This can fail only when it failed to create a congctl
     // which only may happen when the congctl list is extended 
     // with user-supplied congctl modules, not a case so far.
@@ -878,7 +898,7 @@ private: // Generation and processing of packets
     SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
-    void ackDataUpTo(int32_t seq);
+    int32_t ackDataUpTo(int32_t seq);
 
 
 private: // Trace
@@ -954,11 +974,17 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+    static const int BECAUSE_NO_REASON = 0, // NO BITS
+                     BECAUSE_ACK       = 1 << 0,
+                     BECAUSE_LITEACK   = 1 << 1,
+                     BECAUSE_NAKREPORT = 1 << 2,
+                     LAST_BECAUSE_BIT  =      3;
+
     void checkTimers();
     void considerLegacySrtHandshake(const time_point &timebase);
-    void checkACKTimer (const time_point& currtime);
-    void checkNAKTimer(const time_point& currtime);
-    bool checkExpTimer (const time_point& currtime);  // returns true if the connection is expired
+    int checkACKTimer (const time_point& currtime);
+    int checkNAKTimer(const time_point& currtime);
+    bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
 
 public: // For the use of CCryptoControl

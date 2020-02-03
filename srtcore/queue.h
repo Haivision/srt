@@ -477,6 +477,8 @@ public:
    // Needed for affinity check (debug only)
    pthread_t threadId() { return m_WorkerThread; }
 
+   void stopWorker();
+
    void setClosing()
    {
        m_bClosing = true;

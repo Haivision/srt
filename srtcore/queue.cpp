@@ -55,7 +55,7 @@ modified by
 #include <cstring>
 
 #include "common.h"
-#include "core.h"
+#include "api.h"
 #include "netinet_any.h"
 #include "threadname.h"
 #include "logging.h"
@@ -1383,7 +1383,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     u->checkTimers();
     m_pRcvUList->update(u);
 
-    return CONN_CONTINUE;
+    return CONN_RUNNING;
 }
 
 // This function responds to the fact that a packet has come
@@ -1522,6 +1522,23 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     storePkt(id, unit->m_Packet.clone());
 
     return CONN_CONTINUE;
+}
+
+void CRcvQueue::stopWorker()
+{
+    // We use the decent way, so we say to the thread "please exit".
+    m_bClosing = true;
+
+    // Sanity check of the function's affinity.
+    if (pthread_equal(pthread_self(), m_WorkerThread))
+    {
+        LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
+        return; // do nothing else, this would cause a hangup or crash.
+    }
+
+    HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
+    // And we trust the thread that it does.
+    pthread_join(m_WorkerThread, NULL);
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)

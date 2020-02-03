@@ -120,7 +120,7 @@ written by
 extern "C" {
 #endif
 
-typedef int SRTSOCKET; // SRTSOCKET is a typedef to int anyway, and it's not even in UDT namespace :)
+typedef int32_t SRTSOCKET;
 
 #ifdef _WIN32
    #ifndef __MINGW__

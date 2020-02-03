@@ -76,6 +76,7 @@ public:
 
 public:
     static time_point now();
+    static time_point zero();
 };
 
 template <class _Clock>
@@ -147,6 +148,12 @@ public:
 private:
     uint64_t m_timestamp;
 };
+
+inline TimePoint<srt::sync::steady_clock> steady_clock::zero()
+{
+    return TimePoint<steady_clock>(0);
+}
+
 
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const;
@@ -241,8 +248,9 @@ private:
 typedef UniqueLock CGuard;
 
 
-inline void enterCS(Mutex &m) { m.lock(); }
-inline void leaveCS(Mutex &m) { m.unlock(); }
+inline void enterCS(Mutex& m) { m.lock(); }
+inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
+inline void leaveCS(Mutex& m) { m.unlock(); }
 
 
 class InvertedLock
@@ -256,6 +264,12 @@ class InvertedLock
         if (!m_pMutex)
             return;
 
+        leaveCS(*m_pMutex);
+    }
+
+    InvertedLock(Mutex& m)
+        : m_pMutex(&m)
+    {
         leaveCS(*m_pMutex);
     }
 

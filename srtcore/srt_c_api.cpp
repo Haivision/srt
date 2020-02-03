@@ -106,12 +106,12 @@ int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
     fstream ifs(path, ios::binary | ios::in);
     if (!ifs)
     {
-        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_READFAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0);
     }
     int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
     ifs.close();
@@ -122,19 +122,27 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
     fstream ofs(path, ios::binary | ios::out);
     if (!ofs)
     {
-        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_WRAVAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0);
     }
     int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
     ofs.close();
     return ret;
 }
 
-extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0 };
+extern const SRT_MSGCTRL srt_msgctrl_default = {
+    0,     // no flags set
+    -1,    // -1 = infinity
+    false, // not in order (matters for msg mode only)
+    PB_SUBSEQUENT,
+    0,     // srctime: take "now" time
+    -1,    // -1: no seq (0 is a valid seqno!)
+    0     // 0: no msg/control packet
+};
 
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
@@ -187,6 +195,8 @@ SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::
 
 // event mechanism
 int srt_epoll_create() { return CUDT::epoll_create(); }
+
+int srt_epoll_clear_usocks(int eit) { return CUDT::epoll_clear_usocks(eit); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
@@ -300,7 +310,7 @@ enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
     if (!hook)
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
 }
