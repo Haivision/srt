@@ -29,7 +29,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 # Guides
 * [Why SRT Was Created](docs/why-srt-was-created.md)
 * [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
-* [Using the `srt-live-transmit` and `srt-file-transmit` Apps](docs/stransmit.md)
+* [Using the `srt-live-transmit` App](docs/srt-live-transmit.md)
 * [SRT Encryption](docs/encryption.md)
 * [API](docs/API.md)
 * [Reporting problems](docs/reporting.md)
@@ -170,11 +170,9 @@ statically.
 
 **2. Compile and install Pthreads for Windows:**
 
-Compile and install Pthreads for Windows from this submodule:
+Compile and install `pthread-win32` for Windows from GitHub: [link](https://github.com/GerHobbelt/pthread-win32).
 
-  1. Using Visual Studio 2013, please open this file:  
-
-    pthread_lib.2013.vcxproj
+  1. Using Visual Studio 2013, open the project file `pthread_lib.2013.vcxproj`
   2. Select configuration: `Release` and `x64`.
   3. Make sure that the `pthread_lib` project will be built.
   4. After building, find the `pthread_lib.lib` file (directory is usually `bin\x64_MSVC2013.Release`).

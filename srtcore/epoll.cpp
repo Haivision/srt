@@ -85,17 +85,16 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
-   createMutex(m_EPollLock, "EPoll");
+   setupMutex(m_EPollLock, "EPoll");
 }
 
 CEPoll::~CEPoll()
 {
-   releaseMutex(m_EPollLock);
 }
 
 int CEPoll::create(CEPollDesc** pout)
 {
-   CGuard pg (m_EPollLock);
+   CGuard pg(m_EPollLock);
 
    if (++ m_iIDSeed >= 0x7FFFFFFF)
       m_iIDSeed = 0;
@@ -189,7 +188,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg (m_EPollLock);
+   CGuard pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -257,7 +256,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
-   CGuard pg (m_EPollLock);
+   CGuard pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -288,7 +287,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 // Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-    CGuard pg (m_EPollLock);
+    CGuard pg(m_EPollLock);
 
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
@@ -366,7 +365,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
 int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg (m_EPollLock);
+   CGuard pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -431,7 +430,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::setflags(const int eid, int32_t flags)
 {
-    CGuard pg (m_EPollLock);
+    CGuard pg(m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -467,7 +466,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
     while (true)
     {
         {
-            CGuard pg (m_EPollLock);
+            CGuard pg(m_EPollLock);
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -537,7 +536,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     while (true)
     {
         {
-            CGuard epollock (m_EPollLock);
+            CGuard epollock(m_EPollLock);
 
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
@@ -789,10 +788,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
             return 0; // meaning "none is ready"
         }
 
-#if (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-#else
         CTimer::waitForEvent();
-#endif
     }
 
     return 0;
@@ -800,7 +796,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
 int CEPoll::release(const int eid)
 {
-   CGuard pg (m_EPollLock);
+   CGuard pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator i = m_mPolls.find(eid);
    if (i == m_mPolls.end())

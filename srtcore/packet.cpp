@@ -211,7 +211,6 @@ void CPacket::allocate(size_t alloc_buffer_size)
         delete [] m_pcData;
     }
     m_PacketVector[PV_DATA].set(new char[alloc_buffer_size], alloc_buffer_size);
-    setLength(alloc_buffer_size);
     m_data_owned = true;
 }
 

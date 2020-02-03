@@ -122,27 +122,16 @@ set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 # (currently the only one implemented)
 add_definitions(-DSRT_ENABLE_APP_READER)
 
-# XXX EXPERIMENTAL: for testing, disable sending key drop packets to
-# simulate they were lost
-# add_definitions(-DSRT_TEST_DISABLE_KEY_CONTROL_PACKETS)
-
-set (DISPLAY_LOGGING DISABLED)
-
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
+	message(STATUS "LOGGING: DISABLED")
 else()
 	if (ENABLE_HEAVY_LOGGING)
-		set (DISPLAY_LOGGING HEAVY)
+		message(STATUS "LOGGING: HEAVY")
 	else()
-		set (DISPLAY_LOGGING ENABLED)
-	endif()
-
-	if (ENABLE_HAICRYPT_LOGGING)
-		list (APPEND DISPLAY_LOGGING HAICRYPT)
+		message(STATUS "LOGGING: ENABLED")
 	endif()
 endif()
-
-message(STATUS "LOGGING: ${DISPLAY_LOGGING}")
 
 if (USE_BUSY_WAITING)
 	message(STATUS "USE_BUSY_WAITING: ON")

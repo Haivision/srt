@@ -119,14 +119,14 @@ public:
    std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
    std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
 
-   srt::sync::CCondition m_AcceptCond;              //< used to block "accept" call
-   srt::sync::Mutex m_AcceptLock;             //< mutex associated to m_AcceptCond
+   srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
+   srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
 
    int m_iMuxID;                             //< multiplexer ID
 
-   srt::sync::Mutex m_ControlLock;            //< lock this socket exclusively for control APIs: bind/listen/connect
+   srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
 
    CUDT& core() { return *m_pUDT; }
 
@@ -335,7 +335,7 @@ private:
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
-   srt::sync::Mutex m_MultiplexerLock;
+   srt::sync::Mutex            m_MultiplexerLock;
 
 private:
    CCache<CInfoBlock>* m_pCache;			// UDT network information cache
@@ -343,7 +343,9 @@ private:
 private:
    volatile bool m_bClosing;
    srt::sync::Mutex m_GCStopLock;
-   srt::sync::CCondition m_GCStopCond;
+   srt::sync::ConditionMonotonic m_GCStopCond;
+
+
 
    srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application

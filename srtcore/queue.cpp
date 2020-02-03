@@ -136,7 +136,7 @@ int CUnitQueue::init(int size, int mss, int version)
     return 0;
 }
 
-// XXX High common part detected with CUnitQueue:init.
+// XXX Lots of common code with CUnitQueue:init.
 // Consider merging.
 int CUnitQueue::increase()
 {
@@ -470,7 +470,7 @@ CSndQueue::CSndQueue()
     , m_WindowCond()
     , m_bClosing(false)
 {
-    pthread_cond_init(&m_WindowCond, NULL);
+    setupCond(m_WindowCond, "Window");
 }
 
 CSndQueue::~CSndQueue()
@@ -489,7 +489,7 @@ CSndQueue::~CSndQueue()
         HLOGC(mglog.Debug, log << "SndQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
-    pthread_cond_destroy(&m_WindowCond);
+    releaseCond(m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -509,7 +509,7 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
     ThreadName tn(thrname.c_str());
 #endif
     if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
@@ -1050,7 +1050,7 @@ CRcvQueue::CRcvQueue()
     , m_mBuffer()
     , m_BufferCond()
 {
-    pthread_cond_init(&m_BufferCond, NULL);
+    setupCond(m_BufferCond, "QueueBuffer");
 }
 
 CRcvQueue::~CRcvQueue()
@@ -1061,7 +1061,7 @@ CRcvQueue::~CRcvQueue()
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
         pthread_join(m_WorkerThread, NULL);
     }
-    pthread_cond_destroy(&m_BufferCond);
+    releaseCond(m_BufferCond);
 
     delete m_pRcvUList;
     delete m_pHash;
@@ -1383,7 +1383,6 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     u->checkTimers();
     m_pRcvUList->update(u);
 
-    //return CONN_CONTINUE;
     return CONN_RUNNING;
 }
 
