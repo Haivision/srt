@@ -8082,7 +8082,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     }
 
     // Normally packet.m_iTimeStamp field is set exactly here,
-    // usually as taken from m_StartTime and current time, unless live
+    // usually as taken from m_stats.tsStartTime and current time, unless live
     // mode in which case it is based on 'origintime' as set during scheduling.
     // In case when this is a filter control packet, the m_iTimeStamp field already
     // contains the exactly needed value, and it's a timestamp clip, not a real
