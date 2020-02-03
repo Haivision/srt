@@ -89,9 +89,9 @@ public:
 private:
    struct Seq
    {
-       int32_t data1;                  // sequence number starts
-       int32_t data2;                  // seqnence number ends
-       int next;                       // next node in the list
+       int32_t seqstart;                // sequence number starts
+       int32_t seqend;                  // seqnence number ends
+       int inext;                       // index of the next node in the list
    }* m_caSeq;
 
    int m_iHead;                         // first node
@@ -102,7 +102,6 @@ private:
    mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
 
 private:
-
    /// Inserts an element to the beginning and updates head pointer.
    /// No lock.
    void insertHead(int pos, int32_t seqno1, int32_t seqno2);
@@ -176,10 +175,10 @@ public:
 private:
    struct Seq
    {
-        int32_t data1;                  // sequence number starts
-        int32_t data2;                  // sequence number ends
-        int next;                       // next node in the list
-        int prior;                      // prior node in the list;
+        int32_t seqstart;               // sequence number starts
+        int32_t seqend;                 // sequence number ends
+        int inext;                      // index of the next node in the list
+        int iprior;                     // index of the previous node in the list
    }* m_caSeq;
 
    int m_iHead;                         // first node in the list
@@ -190,8 +189,8 @@ private:
 private:
    CRcvLossList(const CRcvLossList&);
    CRcvLossList& operator=(const CRcvLossList&);
-public:
 
+public:
    struct iterator
    {
        int32_t head;
@@ -204,7 +203,7 @@ public:
            if ( head == -1 )
                return *this; // should report error, but we can only throw exception, so simply ignore it.
 
-           return iterator(seq, seq[head].next);
+           return iterator(seq, seq[head].inext);
        }
 
        iterator& operator++()
@@ -230,7 +229,7 @@ public:
 
        std::pair<int32_t, int32_t> operator*()
        {
-           return std::make_pair(seq[head].data1, seq[head].data2);
+           return std::make_pair(seq[head].seqstart, seq[head].seqend);
        }
    };
 
