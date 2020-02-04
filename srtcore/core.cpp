@@ -6792,7 +6792,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
-bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
+bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
     // because it involves the input buffer in CUDT. It would be
@@ -7633,8 +7633,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
-        int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
-        size_t   losslist_len = ctrlpkt.getLength() / 4;
+        const int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
+        const size_t   losslist_len = ctrlpkt.getLength() / 4;
 
         bool secure = true;
 
@@ -7652,8 +7652,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
                 {
                     // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-                    int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-                    int32_t losslist_hi = losslist[i + 1];
+                    const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                    const int32_t losslist_hi = losslist[i + 1];
                     // <lo, hi> specification means that the consecutive cell has been already interpreted.
                     ++i;
 
@@ -8272,7 +8272,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     }
 
     // Normally packet.m_iTimeStamp field is set exactly here,
-    // usually as taken from m_StartTime and current time, unless live
+    // usually as taken from m_stats.tsStartTime and current time, unless live
     // mode in which case it is based on 'origintime' as set during scheduling.
     // In case when this is a filter control packet, the m_iTimeStamp field already
     // contains the exactly needed value, and it's a timestamp clip, not a real
@@ -10875,8 +10875,8 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         // aren't going to read from it - we have the packet already.
         ReadPos& a = i->second;
 
-        int seqdiff = CSeqNo::seqcmp(a.sequence, m_RcvBaseSeqNo);
-        if ( seqdiff == 1)
+        const int seqdiff = CSeqNo::seqcmp(a.sequence, m_RcvBaseSeqNo);
+        if (seqdiff == 1)
         {
             // The very next packet. Return it.
             m_RcvBaseSeqNo = a.sequence;
@@ -10896,11 +10896,13 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
     return out;
 }
 
-string CUDTGroup::StateStr(CUDTGroup::GroupState st)
+const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
     static const char* const states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
-    if (int(st) < 5)
+    static const size_t size = Size(states);
+    static const char* const unknown = "UNKNOWN";
+    if (size_t(st) < size)
         return states[st];
-    return string("UNKNOWN");
+    return unknown;
 }
 

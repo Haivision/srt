@@ -199,7 +199,7 @@ public:
     // be received). After a while when the current active link is confirmed broken, it turns
     // into broken state.
 
-    static std::string StateStr(GroupState);
+    static const char* StateStr(GroupState);
 
     struct SocketData
     {
@@ -1259,7 +1259,7 @@ private: // Common connection Congestion Control setup
 
     // for updateCC it's ok to discard the value. This returns false only if
     // the congctl isn't created, and this can be prevented from.
-    bool updateCC(ETransmissionEvent, EventVariant arg);
+    bool updateCC(ETransmissionEvent, const EventVariant arg);
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
