@@ -256,6 +256,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
     m_OPT_GroupConnect      = 0;
     m_HSGroupType           = SRT_GTYPE_UNDEFINED;
+    m_iOPT_RexmitAlgo       = 0;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -313,6 +314,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_bOPT_TLPktDrop        = ancestor.m_bOPT_TLPktDrop;
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
+    m_iOPT_RexmitAlgo       = ancestor.m_iOPT_RexmitAlgo;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
     m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
     m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
@@ -993,6 +995,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_uOPT_StabilityTimeout = val * 1000;
         }
 
+    case SRTO_RETRANSMISSION_ALGORITHM:
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+        m_iOPT_RexmitAlgo = cast_optval<int32_t>(optval, optlen);
         break;
 
     default:
@@ -8491,7 +8498,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
                 HLOGC(mglog.Debug, log << CONID() << "rcv LOSSREPORT: %"
                     << losslist[i] << " (1 packet)");
-                int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
 
                 enterCS(m_StatsLock);
                 m_stats.traceSndLoss += num;
@@ -8921,6 +8928,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     CGuard ackguard(m_RecvAckLock);
+    const steady_clock::time_point time_now = steady_clock::now();
+    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT - 4 * m_iRTTVar);
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
@@ -8950,6 +8959,19 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
             continue;
+        }
+
+        if (m_bPeerNakReport && m_iOPT_RexmitAlgo != 0)
+        {
+            const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
+            if (tsLastRexmit >= time_nak)
+            {
+                HLOGC(mglog.Debug, log << CONID() << "REXMIT: ignoring seqno "
+                    << w_packet.m_iSeqNo << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
+                    << " RTT=" << m_iRTT << " RTTVar=" << m_iRTTVar
+                    << " now=" << FormatTime(time_now));
+                continue;
+            }
         }
 
         int msglen;

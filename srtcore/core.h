@@ -1437,6 +1437,7 @@ private: // Identification
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
     uint32_t m_uOPT_StabilityTimeout;
+    int m_iOPT_RexmitAlgo;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
