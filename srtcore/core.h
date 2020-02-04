@@ -199,7 +199,7 @@ public:
     // be received). After a while when the current active link is confirmed broken, it turns
     // into broken state.
 
-    static std::string StateStr(GroupState);
+    static const char* StateStr(GroupState);
 
     struct SocketData
     {

@@ -10835,11 +10835,12 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
     return out;
 }
 
-string CUDTGroup::StateStr(CUDTGroup::GroupState st)
+const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
     static const char* const states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
+    static const char* const unknown = "UNKNOWN";
     if (int(st) < 5)
         return states[st];
-    return string("UNKNOWN");
+    return unknown;
 }
 
