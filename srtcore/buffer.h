@@ -149,7 +149,7 @@ public:
       /// @param [in] kflags Odd|Even crypto key flag
       /// @return Actual length of data read.
 
-   int readData(CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int kflgs);
+   int readData(CPacket& w_packet, time_point& w_origintime, int kflgs);
 
       /// Find data position to pack a DATA packet for a retransmission.
       /// @param [out] data the pointer to the data position.
@@ -159,7 +159,14 @@ public:
       /// @param [out] msglen length of the message
       /// @return Actual length of data read.
 
-   int readData(const int offset, CPacket& w_packet, srt::sync::steady_clock::time_point& w_origintime, int& w_msglen);
+   int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
+
+      /// Get the time of the last retransmission (if any) of the DATA packet.
+      /// @param [in] offset offset from the last ACK point (backward sequence number difference)
+      ///
+      /// @return Last time of the last retransmission event for the corresponding DATA packet.
+
+   time_point getPacketRexmitTime(const int offset);
 
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
@@ -173,9 +180,9 @@ public:
 
    int getCurrBufSize() const;
 
-   int dropLateData(int& bytes, int32_t& w_first_msgno, const srt::sync::steady_clock::time_point& too_late_time);
+   int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
 
-   void updAvgBufSize(const srt::sync::steady_clock::time_point& time);
+   void updAvgBufSize(const time_point& time);
    int getAvgBufSize(int& bytes, int& timespan);
    int getCurrBufSize(int& bytes, int& timespan);
 
@@ -223,7 +230,8 @@ private:
       int32_t m_iMsgNoBitset;           // message number
       int32_t m_iSeqNo;                 // sequence number for scheduling
       time_point m_tsOriginTime;        // original request time
-      int64_t m_llSourceTime_us;
+      time_point m_tsRexmitTime;        // packet retransmission time
+      uint64_t m_llSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block

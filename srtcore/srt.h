@@ -238,7 +238,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
    // (some space left)
-   SRTO_PACKETFILTER = 60          // Add and configure a packet filter
+   SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
+   SRTO_RETRANSMISSION_ALGORITHM = 61 // An option to select packet retransmission algorithm
 } SRT_SOCKOPT;
 
 
