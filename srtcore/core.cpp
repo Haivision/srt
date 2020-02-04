@@ -7513,6 +7513,150 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     leaveCS(m_StatsLock);
 }
 
+void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
+{
+    const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
+    const size_t   losslist_len = ctrlpkt.getLength() / 4;
+
+    bool secure = true;
+
+    // This variable is used in "normal" logs, so it may cause a warning
+    // when logging is forcefully off.
+    int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
+
+    // protect packet retransmission
+    {
+        CGuard ack_lock(m_RecvAckLock);
+
+        // decode loss list message and insert loss into the sender loss list
+        for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
+        {
+            if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
+            {
+                // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
+                const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                const int32_t losslist_hi = losslist[i + 1];
+                // <lo, hi> specification means that the consecutive cell has been already interpreted.
+                ++i;
+
+                HLOGF(mglog.Debug,
+                    "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...", CONID().c_str(),
+                    losslist_lo,
+                    losslist_hi,
+                    CSeqNo::seqoff(losslist_lo, losslist_hi) + 1);
+
+                if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
+                    (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
+                {
+                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
+                        << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
+                    // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
+                    secure = false;
+                    wrong_loss = losslist_hi;
+                    break;
+                }
+
+                int num = 0;
+                //   IF losslist_lo %>= m_iSndLastAck
+                if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
+                {
+                    HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
+                        << losslist_lo << " - " << losslist_hi << " to loss list");
+                    num = m_pSndLossList->insert(losslist_lo, losslist_hi);
+                }
+                // ELSE IF losslist_hi %>= m_iSndLastAck
+                else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                {
+                    // This should be theoretically impossible because this would mean
+                    // that the received packet loss report informs about the loss that predates
+                    // the ACK sequence.
+                    // However, this can happen if the packet reordering has caused the earlier sent
+                    // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
+                    // more important, so simply drop the part that predates ACK.
+                    HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
+                        << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
+                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                }
+                else
+                {
+                    // This should be treated as IPE, but this may happen in one situtation:
+                    // - redundancy second link (ISN was screwed up initially, but late towards last sent)
+                    // - initial DROPREQ was lost
+                    // This just causes repeating DROPREQ, as when the receiver continues sending
+                    // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
+                    //
+                    // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
+                    // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
+                    // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
+                    //   TSBPD wake up should it still wait for new packets to get ACK-ed)
+
+                    HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
+                        << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
+                        << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
+
+                    // This means that the loss touches upon a range that wasn't ever sent.
+                    // Normally this should never happen, but this might be a case when the
+                    // ISN FIX for redundant connection was missed.
+
+                    // In distinction to losslist, DROPREQ has always a range
+                    // always just one range, and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist_lo, losslist_hi };
+                    const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
+
+                    sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                }
+
+                enterCS(m_StatsLock);
+                m_stats.traceSndLoss += num;
+                m_stats.sndLossTotal += num;
+                leaveCS(m_StatsLock);
+            }
+            else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
+            {
+                if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                {
+                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                        << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
+                    // seq_a must not be greater than the most recent sent seq
+                    secure = false;
+                    wrong_loss = losslist[i];
+                    break;
+                }
+
+                HLOGC(mglog.Debug, log << CONID() << "rcv LOSSREPORT: %"
+                    << losslist[i] << " (1 packet)");
+                int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                enterCS(m_StatsLock);
+                m_stats.traceSndLoss += num;
+                m_stats.sndLossTotal += num;
+                leaveCS(m_StatsLock);
+            }
+        }
+    }
+
+    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
+
+    if (!secure)
+    {
+        LOGC(mglog.Warn,
+            log << CONID() << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo
+            << " vs loss %" << wrong_loss);
+        // this should not happen: attack or bug
+        m_bBroken = true;
+        m_iBrokenCounter = 0;
+        return;
+    }
+
+    // the lost packet (retransmission) should be sent out immediately
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+
+    enterCS(m_StatsLock);
+    ++m_stats.recvNAK;
+    ++m_stats.recvNAKTotal;
+    leaveCS(m_StatsLock);
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
@@ -7571,150 +7715,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     }
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
-    {
-        const int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
-        const size_t   losslist_len = ctrlpkt.getLength() / 4;
-
-        bool secure = true;
-
-        // This variable is used in "normal" logs, so it may cause a warning
-        // when logging is forcefully off.
-        int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
-
-        // protect packet retransmission
-        {
-            CGuard ack_lock (m_RecvAckLock);
-
-            // decode loss list message and insert loss into the sender loss list
-            for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
-            {
-                if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
-                {
-                    // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-                    const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-                    const int32_t losslist_hi = losslist[i + 1];
-                    // <lo, hi> specification means that the consecutive cell has been already interpreted.
-                    ++i;
-
-                    HLOGF(mglog.Debug,
-                            "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...", CONID().c_str(),
-                            losslist_lo,
-                            losslist_hi,
-                            CSeqNo::seqoff(losslist_lo, losslist_hi) + 1);
-
-                    if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
-                            (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
-                    {
-                        LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
-                                << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
-                        // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
-                        secure     = false;
-                        wrong_loss = losslist_hi;
-                        break;
-                    }
-
-                    int num = 0;
-                    //   IF losslist_lo %>= m_iSndLastAck
-                    if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
-                    {
-                        HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
-                                << losslist_lo << " - " << losslist_hi << " to loss list");
-                        num = m_pSndLossList->insert(losslist_lo, losslist_hi);
-                    }
-                    // ELSE IF losslist_hi %>= m_iSndLastAck
-                    else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
-                    {
-                        // This should be theoretically impossible because this would mean
-                        // that the received packet loss report informs about the loss that predates
-                        // the ACK sequence.
-                        // However, this can happen if the packet reordering has caused the earlier sent
-                        // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
-                        // more important, so simply drop the part that predates ACK.
-                        HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: adding "
-                                << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
-                        num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
-                    }
-                    else
-                    {
-                        // This should be treated as IPE, but this may happen in one situtation:
-                        // - redundancy second link (ISN was screwed up initially, but late towards last sent)
-                        // - initial DROPREQ was lost
-                        // This just causes repeating DROPREQ, as when the receiver continues sending
-                        // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
-                        //
-                        // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
-                        // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
-                        // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
-                        //   TSBPD wake up should it still wait for new packets to get ACK-ed)
-
-                        HLOGC(mglog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
-                                << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
-                                << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
-
-                        // This means that the loss touches upon a range that wasn't ever sent.
-                        // Normally this should never happen, but this might be a case when the
-                        // ISN FIX for redundant connection was missed.
-
-                        // In distinction to losslist, DROPREQ has always a range
-                        // always just one range, and the data are <LO, HI>, with no range bit.
-                        int32_t seqpair[2] = {losslist_lo, losslist_hi};
-                        const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
-
-                        sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
-                    }
-
-                    enterCS(m_StatsLock);
-                    m_stats.traceSndLoss += num;
-                    m_stats.sndLossTotal += num;
-                    leaveCS(m_StatsLock);
-                }
-                else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
-                {
-                    if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
-                    {
-                        LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
-                                << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
-                        // seq_a must not be greater than the most recent sent seq
-                        secure     = false;
-                        wrong_loss = losslist[i];
-                        break;
-                    }
-
-                    HLOGC(mglog.Debug, log << CONID() << "rcv LOSSREPORT: %"
-                            << losslist[i] << " (1 packet)");
-                    int num = m_pSndLossList->insert(losslist[i], losslist[i]);
-
-                    enterCS(m_StatsLock);
-                    m_stats.traceSndLoss += num;
-                    m_stats.sndLossTotal += num;
-                    leaveCS(m_StatsLock);
-                }
-            }
-        }
-
-        updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
-
-        if (!secure)
-        {
-            LOGC(mglog.Warn,
-                 log << CONID() << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo
-                     << " vs loss %" << wrong_loss);
-            // this should not happen: attack or bug
-            m_bBroken        = true;
-            m_iBrokenCounter = 0;
-            break;
-        }
-
-        // the lost packet (retransmission) should be sent out immediately
-        m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
-
-        enterCS(m_StatsLock);
-        ++m_stats.recvNAK;
-        ++m_stats.recvNAKTotal;
-        leaveCS(m_StatsLock);
-
+        processCtrlLossReport(ctrlpkt);
         break;
-    }
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
