@@ -90,6 +90,7 @@ m_iIDSeed(0)
 
 CEPoll::~CEPoll()
 {
+   releaseMutex(m_EPollLock);
 }
 
 int CEPoll::create(CEPollDesc** pout)

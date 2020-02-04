@@ -109,6 +109,9 @@ public:
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
+   CUDTGroup::gli_t m_IncludedIter;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
+   CUDTGroup* m_IncludedGroup;               //< Group this socket is a member of, or NULL if it isn't
+
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
@@ -141,6 +144,7 @@ public:
    // This function shall be called always wherever
    // you'd like to call cudtsocket->m_pUDT->close().
    void makeClosed();
+   void removeFromGroup();
 
    // Instrumentally used by select() and also required for non-blocking
    // mode check in groups
@@ -158,6 +162,7 @@ private:
 class CUDTUnited
 {
 friend class CUDT;
+friend class CUDTGroup;
 friend class CRendezvousQueue;
 
 public:
@@ -239,17 +244,86 @@ public:
 
    CUDTException* getError();
 
+   CUDTGroup& addGroup(SRTSOCKET id)
+   {
+       srt::sync::CGuard cg (m_GlobControlLock);
+       // This only ensures that the element exists.
+       // If the element was newly added, it will be NULL.
+       CUDTGroup*& g = m_Groups[id];
+       if (!g)
+       {
+           // This is a reference to the cell, so it will
+           // rewrite it into the map.
+           g = new CUDTGroup;
+       }
+
+       // Now we are sure that g is not NULL,
+       // and persistence of this object is in the map.
+       // The reference to the object can be safely returned here.
+       return *g;
+   }
+
+   void deleteGroup(CUDTGroup* g)
+   {
+       using srt_logging::mglog;
+
+       srt::sync::CGuard cg (m_GlobControlLock);
+
+       CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
+       if (pg)
+       {
+           // Everything ok, group was found, delete it, and its
+           // associated entry.
+           m_Groups.erase(g->m_GroupID);
+           if (g != pg) // sanity check -- only report
+           {
+               LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
+           }
+           delete pg; // still delete it
+           return;
+       }
+
+       LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+       delete g; // still delete it.
+       // Do not remove anything from the map - it's not found, anyway
+   }
+
+   CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
+   {
+       srt::sync::CGuard cg (m_GlobControlLock);
+
+       for (groups_t::iterator i = m_Groups.begin();
+               i != m_Groups.end(); ++i)
+       {
+           if (i->second->peerid() == peergroup)
+               return i->second;
+       }
+       return NULL;
+   }
 
    CEPoll& epoll_ref() { return m_EPoll; }
 
 private:
 //   void init();
 
-   SRTSOCKET generateSocketID();
+   /// Generates a new socket ID. This function starts from a randomly
+   /// generated value (at initialization time) and goes backward with
+   /// with next calls. The possible values come from the range without
+   /// the SRTGROUP_MASK bit, and the group bit is set when the ID is
+   /// generated for groups. It is also internally checked if the
+   /// newly generated ID isn't already used by an existing socket or group.
+   ///
+   /// @param group The socket id should be for socket group.
+   /// @return The new socket ID.
+   /// @throw CUDTException if after rolling over all possible ID values nothing can be returned
+   SRTSOCKET generateSocketID(bool group = false);
 
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
+   typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
+
    sockets_t m_Sockets;
+   groups_t m_Groups;
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
@@ -266,8 +340,11 @@ private:
    static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
 
 private:
+   friend struct FLookupSocketWithEvent;
+
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+   CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 

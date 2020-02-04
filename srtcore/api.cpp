@@ -83,6 +83,8 @@ extern LogConfig srt_logger_config;
 
 void CUDTSocket::construct()
 {
+   m_IncludedGroup = NULL;
+   m_IncludedIter = CUDTGroup::gli_NULL();
    setupMutex(m_AcceptLock, "Accept");
    setupCond(m_AcceptCond, "Accept");
    setupMutex(m_ControlLock, "Control");
@@ -205,6 +207,10 @@ CUDTUnited::~CUDTUnited()
         cleanup();
     }
 
+    releaseMutex(m_GlobControlLock);
+    releaseMutex(m_IDLock);
+    releaseMutex(m_InitLock);
+
     delete (CUDTException*)pthread_getspecific(m_TLSError);
     pthread_key_delete(m_TLSError);
 
@@ -298,7 +304,7 @@ int CUDTUnited::cleanup()
    return 0;
 }
 
-SRTSOCKET CUDTUnited::generateSocketID()
+SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
 {
     CGuard guard(m_IDLock);
 
@@ -341,11 +347,11 @@ SRTSOCKET CUDTUnited::generateSocketID()
         int startval = sockval;
         for (;;) // Roll until an unused value is found
         {
-            bool exists = false;
-            {
-                CGuard cg(m_GlobControlLock);
-                exists = m_Sockets.count(sockval);
-            }
+            enterCS(m_GlobControlLock);
+            const bool exists = for_group
+                ? m_Groups.count(sockval | SRTGROUP_MASK)
+                : m_Sockets.count(sockval);
+            leaveCS(m_GlobControlLock);
 
             if (exists)
             {
@@ -386,7 +392,14 @@ SRTSOCKET CUDTUnited::generateSocketID()
     // without the group bit set; only the returned value may have
     // the group bit set.
 
-    return m_SocketIDGenerator;
+    if (for_group)
+        sockval = m_SocketIDGenerator | SRTGROUP_MASK;
+    else
+        sockval = m_SocketIDGenerator;
+
+    LOGC(mglog.Debug, log << "generateSocketID: " << (for_group ? "(group)" : "") << ": @" << sockval);
+
+    return sockval;
 }
 
 SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
@@ -1512,7 +1525,7 @@ int CUDTUnited::epoll_release(const int eid)
 
 CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
-    CGuard cg(m_GlobControlLock);
+    CGuard cg (m_GlobControlLock);
 
     sockets_t::iterator i = m_Sockets.find(u);
 
@@ -1524,6 +1537,21 @@ CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
     }
 
     return i->second;
+}
+
+CUDTGroup* CUDTUnited::locateGroup(SRTSOCKET u, ErrorHandling erh)
+{
+   CGuard cg (m_GlobControlLock);
+
+   const groups_t::iterator i = m_Groups.find(u);
+   if ( i == m_Groups.end() )
+   {
+       if (erh == ERH_THROW)
+           throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+       return NULL;
+   }
+
+   return i->second;
 }
 
 CUDTSocket* CUDTUnited::locatePeer(
@@ -2088,6 +2116,137 @@ CUDT::APIError::APIError(const CUDTException& e)
 CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 {
     CUDT::s_UDTUnited.setError(new CUDTException(mj, mn, syserr));
+}
+
+// This is an internal function; 'type' should be pre-checked if it has a correct value.
+// This doesn't have argument of GroupType due to header file conflicts.
+CUDTGroup& CUDT::newGroup(const int type)
+{
+    CGuard guard (s_UDTUnited.m_IDLock);
+    const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
+
+    // Now map the group
+    return s_UDTUnited.addGroup(id).id(id).type(SRT_GROUP_TYPE(type));
+}
+
+SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
+{
+    // Doing the same lazy-startup as with srt_create_socket()
+    if (!s_UDTUnited.m_bGCStatus)
+        s_UDTUnited.startup();
+
+    try
+    {
+        return newGroup(gt).id();
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (const std::bad_alloc& e)
+    {
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
+
+    return SRT_INVALID_SOCK;
+}
+
+
+int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
+{
+    // Check if socket and group have been set correctly.
+    int32_t sid = socket & ~SRTGROUP_MASK;
+    int32_t gm = group & SRTGROUP_MASK;
+
+    if ( sid != socket || gm == 0 )
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    // Find the socket and the group
+    CUDTSocket* s = s_UDTUnited.locateSocket(socket);
+    CUDTGroup* g = s_UDTUnited.locateGroup(group);
+
+    if (!s || !g)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    // Check if the socket is already IN SOME GROUP.
+    if (s->m_IncludedGroup)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    if (g->managed())
+    {
+        // This can be changed as long as the group is empty.
+        if (!g->empty())
+        {
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+        g->managed(false);
+    }
+
+    CGuard cg (s->m_ControlLock);
+
+    // Check if the socket already is in the group
+    CUDTGroup::gli_t f = g->find(socket);
+    if (f != CUDTGroup::gli_NULL())
+    {
+        // XXX This is internal error. Report it, but continue
+        LOGC(mglog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
+        s->m_IncludedGroup = g;
+        s->m_IncludedIter = f;
+        return 0;
+    }
+    s->m_IncludedGroup = g;
+    s->m_IncludedIter = g->add(g->prepareData(s));
+
+    return 0;
+}
+
+int CUDT::removeSocketFromGroup(SRTSOCKET socket)
+{
+    CUDTSocket* s = s_UDTUnited.locateSocket(socket);
+    if (!s)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    if (!s->m_IncludedGroup)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    CGuard grd (s->m_ControlLock);
+    s->removeFromGroup();
+    return 0;
+}
+
+void CUDTSocket::removeFromGroup()
+{
+    m_IncludedGroup->remove(m_SocketID);
+    m_IncludedIter = CUDTGroup::gli_NULL();
+    m_IncludedGroup = NULL;
+}
+
+SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
+{
+    CUDTSocket* s = s_UDTUnited.locateSocket(socket);
+    if (!s)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    if (!s->m_IncludedGroup)
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+    return s->m_IncludedGroup->id();
+}
+
+int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
+{
+    if ( (groupid & SRTGROUP_MASK) == 0)
+    {
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
+    if (!g || !pdata || !psize)
+    {
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return g->getGroupData(pdata, psize);
 }
 
 int CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)

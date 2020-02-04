@@ -122,6 +122,14 @@ extern "C" {
 
 typedef int32_t SRTSOCKET;
 
+// The most significant bit 31 (sign bit actually) is left unused,
+// so that all people who check the value for < 0 instead of -1
+// still get what they want. The bit 30 is reserved for marking
+// the "socket group". Most of the API functions should work
+// transparently with the socket descriptor designating a single
+// socket or a socket group.
+static const int32_t SRTGROUP_MASK = (1 << 30);
+
 #ifdef _WIN32
    #ifndef __MINGW__
       typedef SOCKET SYSSOCKET;
@@ -691,6 +699,14 @@ typedef struct CBytePerfMon SRT_TRACEBSTATS;
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;
 
+typedef enum SRT_GROUP_TYPE
+{
+    SRT_GTYPE_UNDEFINED,
+    SRT_GTYPE_BROADCAST,
+    // ...
+    SRT_GTYPE__END
+} SRT_GROUP_TYPE;
+
 // library initialization
 SRT_API       int srt_startup(void);
 SRT_API       int srt_cleanup(void);
@@ -702,6 +718,16 @@ SRT_API       int srt_cleanup(void);
 // and socket creation doesn't need any arguments. Use srt_create_socket().
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API       SRTSOCKET srt_create_socket();
+
+// Group management
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -738,6 +764,8 @@ typedef struct SRT_MsgCtrl_
    uint64_t srctime;     // source timestamp (usec), 0: use internal time     
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata;
+   size_t grpdata_size;
 } SRT_MSGCTRL;
 
 // You are free to use either of these two methods to set SRT_MSGCTRL object

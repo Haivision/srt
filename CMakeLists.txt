@@ -118,6 +118,10 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
+# Use application-defined group reader
+# (currently the only one implemented)
+add_definitions(-DSRT_ENABLE_APP_READER)
+
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
 	message(STATUS "LOGGING: DISABLED")

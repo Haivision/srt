@@ -134,6 +134,8 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
+
+   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -752,6 +754,8 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
+
+   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
@@ -765,7 +769,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
    *  acked (bytes>0, acked=true),
    *  removed (bytes<0, acked=n/a)
    */
-   CGuard cg(m_BytesCountLock);
+   CGuard cg (m_BytesCountLock);
 
    if (!acked) //adding new pkt in RcvBuffer
    {
