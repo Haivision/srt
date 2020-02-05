@@ -783,10 +783,6 @@ typedef struct SRT_MsgCtrl_
    size_t grpdata_size;
 } SRT_MSGCTRL;
 
-static const int SRTF_ASYNC = 1,    // Don't wait until every operation completes
-                 SRTF_PARTIAL = 2,  // Accept that only part of the buffer can be sent
-                 SRTF_FULL = 4;
-
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.
 SRT_API void srt_msgctrl_init(SRT_MSGCTRL* mctrl);

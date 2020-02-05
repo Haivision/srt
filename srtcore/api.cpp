@@ -783,7 +783,6 @@ ERR_ROLLBACK:
        };
        LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
-
       SRTSOCKET id = ns->m_SocketID;
       ns->makeClosed();
 
@@ -1091,7 +1090,6 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const 
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
     // For a single socket, just do bind, then connect
-
     bind(s, source_addr);
     return connectIn(s, target_addr, -1);
 }
@@ -3172,12 +3170,12 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
 {
    try
    {
-       if (u & SRTGROUP_MASK)
-       {
-           return s_UDTUnited.locateGroup(u, CUDTUnited::ERH_THROW)->recv(buf, len, (w_m));
-       }
+      if (u & SRTGROUP_MASK)
+      {
+         return s_UDTUnited.locateGroup(u, CUDTUnited::ERH_THROW)->recv(buf, len, (w_m));
+      }
 
-       return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, (w_m));
+      return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
    {

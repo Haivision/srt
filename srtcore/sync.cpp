@@ -12,7 +12,6 @@
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
-#include "logging.h"
 #include "udt.h"
 #include "srt_compat.h"
 
@@ -27,11 +26,6 @@
 #elif defined(ENABLE_MONOTONIC_CLOCK)
 #define TIMING_USE_CLOCK_GETTIME
 #endif
-
-namespace srt_logging
-{
-extern Logger mglog; // For ThreadCheckAffinity
-}
 
 namespace srt
 {
