@@ -485,8 +485,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        return -1;
    }
 
-    HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @"
-            << listen << " contacted with backlog=" << ls->m_uiBackLog);
+   HLOGC(mglog.Debug, log << "newConnection: creating new socket after listener @"
+         << listen << " contacted with backlog=" << ls->m_uiBackLog);
 
    // if this connection has already been processed
    if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
