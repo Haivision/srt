@@ -53,7 +53,7 @@ On the listener side, you create a listening endpoint. Starting with creating
 a socket:
 
 ```
-int sock = srt_create_socket();
+SRTSOCKET sock = srt_create_socket();
 ```
 
 The listener needs to bind it first (note: simplified code):
@@ -63,14 +63,14 @@ sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
 srt_bind(sock, &sa, sizeof sa);
 srt_listen(sock, 5);
 sockaddr_in target;
-int connsock = srt_accept(sock, &target, sizeof target);
+SRTSOCKET connsock = srt_accept(sock, &target, sizeof target);
 ```
 
 The caller side can use default system selected address and simply connect to
 the target:
 
 ```
-int connsock = srt_create_socket();
+SRTSOCKET connsock = srt_create_socket();
 sockaddr_in sa = CreateAddrInet("target.address:5000");
 srt_connect(connsock, &sa, sizeof sa);
 ```
@@ -116,20 +116,20 @@ Things are different on listener side, however. For listening you are still
 using a listening socket:
 
 ```
-int lsock = srt_create_socket();
+SRTSOCKET sock = srt_create_socket();
 ```
 
 To handle group connections, you need to set `SRTO_GROUPCONNECT` option:
 
 ```
 int yes = 1;
-srt_setsockflag(lsock, SRTO_GROUPCONNECT, &yes, sizeof yes);
+srt_setsockflag(sock, SRTO_GROUPCONNECT, &yes, sizeof yes);
 
 sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
 srt_bind(sock, &sa, sizeof sa);
 srt_listen(sock, 5);
 sockaddr_in target;
-int conngrp = srt_accept(sock, &target, sizeof target);
+SRTSOCKET conngrp = srt_accept(sock, &target, sizeof target);
 ```
 
 Here the (mirror) group will be created automatically upon the first connection
