@@ -85,12 +85,11 @@ extern LogConfig srt_logger_config;
 
 void CUDTSocket::construct()
 {
-    m_IncludedGroup = NULL;
-    m_IncludedIter = CUDTGroup::gli_NULL();
-
-    setupMutex(m_AcceptLock, "Accept");
-    setupCond(m_AcceptCond, "Accept");
-    setupMutex(m_ControlLock, "Control");
+   m_IncludedGroup = NULL;
+   m_IncludedIter = CUDTGroup::gli_NULL();
+   setupMutex(m_AcceptLock, "Accept");
+   setupCond(m_AcceptCond, "Accept");
+   setupMutex(m_ControlLock, "Control");
 }
 
 CUDTSocket::~CUDTSocket()
