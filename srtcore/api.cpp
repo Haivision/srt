@@ -284,6 +284,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
+   HLOGC(mglog.Debug, log << "GarbageCollector: thread EXIT");
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
@@ -2229,7 +2230,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          sockets_t::iterator si = m_Sockets.find(*q);
          if (si == m_Sockets.end())
          {
-               // gone in the meantime
+            // gone in the meantime
             LOGC(mglog.Error, log << "removeSocket: IPE? socket @" << u
                     << " being queued for listener socket @" << s->m_SocketID
                     << " is GONE in the meantime ???");

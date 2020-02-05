@@ -388,11 +388,6 @@ public:
             size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
             );
 
-#if ENABLE_HEAVY_LOGGING
-    void debugGroup() const;
-#else
-    void debugGroup() const {}
-#endif
 private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
