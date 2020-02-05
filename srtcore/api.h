@@ -109,8 +109,8 @@ public:
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
-   CUDTGroup::gli_t m_IncludedIter;
-   CUDTGroup* m_IncludedGroup;
+   CUDTGroup::gli_t m_IncludedIter;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
+   CUDTGroup* m_IncludedGroup;               //< Group this socket is a member of, or NULL if it isn't
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
@@ -272,15 +272,21 @@ public:
 
        CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
        if (pg)
-           delete pg;
-       else
        {
-           LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
-           // still delete it.
-           delete g;
+           // Everything ok, group was found, delete it, and its
+           // associated entry.
+           m_Groups.erase(g->m_GroupID);
+           if (g != pg) // sanity check -- only report
+           {
+               LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
+           }
+           delete pg; // still delete it
+           return;
        }
 
-       m_Groups.erase(g->m_GroupID);
+       LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+       delete g; // still delete it.
+       // Do not remove anything from the map - it's not found, anyway
    }
 
    CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
@@ -301,6 +307,16 @@ public:
 private:
 //   void init();
 
+   /// Generates a new socket ID. This function starts from a randomly
+   /// generated value (at initialization time) and goes backward with
+   /// with next calls. The possible values come from the range without
+   /// the SRTGROUP_MASK bit, and the group bit is set when the ID is
+   /// generated for groups. It is also internally checked if the
+   /// newly generated ID isn't already used by an existing socket or group.
+   ///
+   /// @param group The socket id should be for socket group.
+   /// @return The new socket ID.
+   /// @throw CUDTException if after rolling over all possible ID values nothing can be returned
    SRTSOCKET generateSocketID(bool group = false);
 
 private:

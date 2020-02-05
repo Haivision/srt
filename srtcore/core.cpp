@@ -380,8 +380,6 @@ static bool bool_int_value(const void* optval, int optlen)
     return false;
 }
 
-
-
 extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_SNDSYN,
     SRTO_RCVSYN,
@@ -4587,8 +4585,9 @@ EConnectStatus CUDT::processRendezvous(
         setPacketTS(w_reqpkt, now);
         HLOGC(mglog.Debug,
               log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
-                  
+
         m_pSndQueue->sendto(serv_addr, w_reqpkt);
+
         return CONN_ACCEPT;
     }
 
@@ -4823,6 +4822,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 hsd           = HSD_INITIATOR;
                 m_SrtHsSide   = hsd;
             }
+
             m_tsLastReqTime = steady_clock::time_point();
             if (!createCrypter(hsd, bidirectional))
             {
@@ -5439,9 +5439,9 @@ void* CUDT::tsbpd(void* param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-    CGuard recv_gl    (self->m_RecvLock);
-    CSync recvdata_cc (self->m_RecvDataCond,  recv_gl);
-    CSync tsbpd_cc    (self->m_RcvTsbPdCond,  recv_gl);
+    CGuard recv_lock  (self->m_RecvLock);
+    CSync recvdata_cc (self->m_RecvDataCond, recv_lock);
+    CSync tsbpd_cc    (self->m_RcvTsbPdCond, recv_lock);
 
     self->m_bTsbPdAckWakeup = true;
     while (!self->m_bClosing)
@@ -5533,7 +5533,7 @@ void* CUDT::tsbpd(void* param)
              */
             if (self->m_bSynRecving)
             {
-                recvdata_cc.signal_locked(recv_gl);
+                recvdata_cc.signal_locked(recv_lock);
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -6581,18 +6581,18 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
 
-    // Check if seqno has been set, in case when this is a group sender.
-    // If the sequence is from the past towards the "next sequence",
-    // simply return the size, pretending that it has been sent.
-    if (w_mctrl.pktseq != -1 && m_iSndNextSeqNo != -1)
-    {
-        if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+        // Check if seqno has been set, in case when this is a group sender.
+        // If the sequence is from the past towards the "next sequence",
+        // simply return the size, pretending that it has been sent.
+        if (w_mctrl.pktseq != -1 && m_iSndNextSeqNo != -1)
         {
-            HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
-                    << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
-            return size;
+            if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+            {
+                HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
+                        << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
+                return size;
+            }
         }
-    }
 
         // Set this predicted next sequence to the control information.
         // It's the sequence of the FIRST (!) packet from all packets used to send
@@ -6600,7 +6600,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // have one packet per buffer (as it's in live mode).
         w_mctrl.pktseq = seqno;
 
-    // Now seqno is the sequence to which it was scheduled
+        // Now seqno is the sequence to which it was scheduled
         // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
         HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
@@ -6766,6 +6766,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
         if (res == 0)
         {
             // read is not available any more
+
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
             {
@@ -7074,7 +7075,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
     }
 
-    CGuard recvguard (m_RecvLock);
+    CGuard recvguard(m_RecvLock);
 
     // Well, actually as this works over a FILE (fstream), not just a stream,
     // the size can be measured anyway and predicted if setting the offset might
@@ -7177,7 +7178,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    CGuard statsguard (m_StatsLock);
+    CGuard statsguard(m_StatsLock);
 
     const steady_clock::time_point currtime = steady_clock::now();
 
@@ -7381,7 +7382,7 @@ void CUDT::bstats(CBytePerfMon* perf, bool clear, bool instantaneous)
     }
 }
 
-bool CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
+bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
     // because it involves the input buffer in CUDT. It would be
@@ -7542,7 +7543,6 @@ void CUDT::releaseSynch()
     leaveCS(m_SendLock);
 
     CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
-
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
     enterCS(m_RecvDataLock);
@@ -8248,8 +8248,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
-        int32_t* losslist     = (int32_t*)(ctrlpkt.m_pcData);
-        size_t   losslist_len = ctrlpkt.getLength() / 4;
+        const int32_t *losslist     = (int32_t *)(ctrlpkt.m_pcData);
+        const size_t   losslist_len = ctrlpkt.getLength() / 4;
 
         bool secure = true;
 
@@ -8267,8 +8267,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
                 {
                     // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
-                    int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
-                    int32_t losslist_hi = losslist[i + 1];
+                    const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
+                    const int32_t losslist_hi = losslist[i + 1];
                     // <lo, hi> specification means that the consecutive cell has been already interpreted.
                     ++i;
 
@@ -8952,7 +8952,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     }
 
     // Normally packet.m_iTimeStamp field is set exactly here,
-    // usually as taken from m_tsStartTime and current time, unless live
+    // usually as taken from m_stats.tsStartTime and current time, unless live
     // mode in which case it is based on 'origintime' as set during scheduling.
     // In case when this is a filter control packet, the m_iTimeStamp field already
     // contains the exactly needed value, and it's a timestamp clip, not a real
@@ -10959,9 +10959,9 @@ CUDTGroup::CUDTGroup()
     , m_selfManaged(true)
     , m_type(SRT_GTYPE_UNDEFINED)
     , m_listener()
+    // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
-    , // This is "undefined"; will become defined when adding the first socket
-    m_bSynRecving(true)
+    , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
     , m_bTLPktDrop(true)
@@ -10993,9 +10993,9 @@ CUDTGroup::~CUDTGroup()
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
-
     HLOGC(mglog.Debug, log << "GROUP $" << id() << " OPTION: #" << optName
             << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
+
     switch (optName)
     {
     case SRTO_RCVSYN:
@@ -11026,7 +11026,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     // Other options to be specifically interpreted by group may follow.
 
     default:
-        ;
+        break;
     }
 
     // All others must be simply stored for setting on a socket.
@@ -12193,7 +12193,7 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
         // be taken as a good deal and reading will be accepted.
         ready = true;
     }
-    else if ( (seqdiff = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo)) > 0 )
+    else if ((seqdiff = CSeqNo::seqcmp(sequence, m_RcvBaseSeqNo)) > 0)
     {
         // Case diff == 1: The very next. Surely read-ready.
 
@@ -12867,8 +12867,8 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         // aren't going to read from it - we have the packet already.
         ReadPos& a = i->second;
 
-        int seqdiff = CSeqNo::seqcmp(a.sequence, m_RcvBaseSeqNo);
-        if ( seqdiff == 1)
+        const int seqdiff = CSeqNo::seqcmp(a.sequence, m_RcvBaseSeqNo);
+        if (seqdiff == 1)
         {
             // The very next packet. Return it.
             m_RcvBaseSeqNo = a.sequence;
@@ -12888,12 +12888,14 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
     return out;
 }
 
-string CUDTGroup::StateStr(CUDTGroup::GroupState st)
+const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
 {
-    static string states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
-    if (int(st) < 5)
+    static const char* const states [] = { "PENDING", "IDLE", "RUNNING", "BROKEN" };
+    static const size_t size = Size(states);
+    static const char* const unknown = "UNKNOWN";
+    if (size_t(st) < size)
         return states[st];
-    return string("UNKNOWN");
+    return unknown;
 }
 
 void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady_clock::time_point newtimebase)

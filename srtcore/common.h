@@ -320,7 +320,7 @@ struct EventVariant
         int32_t ack;
         struct
         {
-            int32_t* ptr;
+            const int32_t* ptr;
             size_t len;
         } array;
         ECheckTimerStage stage;
@@ -354,7 +354,7 @@ struct EventVariant
 
 
     template <class T>
-    EventVariant(T arg)
+    EventVariant(const T arg)
     {
         *this = arg;
     }
@@ -364,25 +364,25 @@ struct EventVariant
         return u.array.ptr;
     }
 
-    size_t get_len()
+    size_t get_len() const
     {
         return u.array.len;
     }
 
-    void set(int32_t* ptr, size_t len)
+    void set(const int32_t* ptr, size_t len)
     {
         type = ARRAY;
         u.array.ptr = ptr;
         u.array.len = len;
     }
 
-    EventVariant(int32_t* ptr, size_t len)
+    EventVariant(const int32_t* ptr, size_t len)
     {
         set(ptr, len);
     }
 
     template<Type T>
-    typename VariantFor<T>::type get()
+    typename VariantFor<T>::type get() const
     {
         return u.*(VariantFor<T>::field());
     }

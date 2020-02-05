@@ -199,7 +199,7 @@ public:
     // be received). After a while when the current active link is confirmed broken, it turns
     // into broken state.
 
-    static std::string StateStr(GroupState);
+    static const char* StateStr(GroupState);
 
     struct SocketData
     {
@@ -700,9 +700,9 @@ public: // internal API
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
-    duration minNAKInterval() const { return m_tdMinNakInterval; }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
+    duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
     int minSndSize(int len = 0) const
@@ -835,7 +835,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-    static CUDTGroup& newGroup(int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
+    static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], int hsreq_type_cmd);
@@ -894,6 +894,7 @@ private:
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
+
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
@@ -1251,7 +1252,6 @@ private: // synchronization: mutexes and conditions
     srt::sync::Mutex m_SendBlockLock;            // lock associated to m_SendBlockCond
 
     srt::sync::Mutex m_RcvBufferLock;            // Protects the state of the m_pRcvBuffer
-
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
     srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
@@ -1276,7 +1276,7 @@ private: // Common connection Congestion Control setup
 
     // for updateCC it's ok to discard the value. This returns false only if
     // the congctl isn't created, and this can be prevented from.
-    bool updateCC(ETransmissionEvent, EventVariant arg);
+    bool updateCC(ETransmissionEvent, const EventVariant arg);
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.

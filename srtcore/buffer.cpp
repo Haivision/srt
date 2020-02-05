@@ -134,6 +134,8 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
+
+   releaseMutex(m_BufLock);
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -763,6 +765,8 @@ CRcvBuffer::~CRcvBuffer()
    }
 
    delete [] m_pUnit;
+
+   releaseMutex(m_BytesCountLock);
 }
 
 void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
