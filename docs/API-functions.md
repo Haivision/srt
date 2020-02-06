@@ -118,7 +118,7 @@ is decided at the call of `srt_conenct` or `srt_bind`.
 `SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading, as the
 message mode has nothing to do with UDP datagrams and it's rather similar to SCTP
 protocol). In SRT these two modes are available by setting `SRTO_TRANSTYPE` to
-`SRTT_FILE`, and the stream and message mode are set by `SRTO_MESSAGEAPI` option.
+`SRTT_FILE`, and the message mode is set by `SRTO_MESSAGEAPI` option.
 
 In SRT there are three modes (with the file and message modes from UDT
 reinstated in version 1.3.0): live, file and message, which should be set
