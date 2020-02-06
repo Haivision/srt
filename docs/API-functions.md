@@ -425,7 +425,7 @@ int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
 
 Connects a socket or a group to a remote party with a specified address and port.
 
-* `u`: can be an SRT socket or SRT group, both freshly connected and not yet
+* `u`: can be an SRT socket or SRT group, both freshly created and not yet
   used for any connection, except possibly `srt_bind` on the socket
 * `name`: specification of the remote address and port
 * `namelen`: size of the object passed by `name`
@@ -437,15 +437,16 @@ network interface or local outgoing port. If not, it behaves as if it was
 bound to `INADDR_ANY` (which binds on all interfaces) and port 0 (which
 makes the system assign the port automatically).
 2. When `u` is a group, then this call can be done multiple times, each time
-for another member connection, and a new SRT socket will be created
-automatically for every call of this function. Mind also that in blocking
-mode you might rather want to use `srt_connect_group`.
+for another member connection, and a new member SRT socket will be created
+automatically for every call of this function.
+3. If you want to connect a group to multiple links at once and use blocking
+mode, you might rather want to use `srt_connect_group`.
 
 - Returns:
 
   * `SRT_ERROR` (-1) in case of error
   * 0 in case when used for `u` socket
-  * Socket ID created for connectiom for `u` group
+  * Socket ID created for connection for `u` group
 
 - Errors:
 
@@ -531,7 +532,7 @@ int srt_include(SRTSOCKET socket, SRTSOCKET group);
 ```
 
 This function adds a socket to a group. This is only allowed for unmanaged
-groups. No such group is currently implemented.
+groups. No such group type is currently implemented.
 
 ### srt_exclude
 
@@ -539,7 +540,7 @@ groups. No such group is currently implemented.
 int srt_exclude(SRTSOCKET socket);
 ```
 This function removes a socket from a group to which it currently belongs.
-This is only allowed for unmanaged groups. No such group is currently
+This is only allowed for unmanaged groups. No such group type is currently
 implemented.
 
 ### srt_groupof
@@ -584,20 +585,21 @@ will not be filled and `SRT_ERROR` will be returned.
 ### srt_connect_group
 
 ```
-SRT_API       int srt_connect_group(SRTSOCKET group,
-                                    const struct sockaddr* source /*nullable*/, int sourcelen,
-                                    SRT_SOCKGROUPDATA name [], int arraysize);
+int srt_connect_group(SRTSOCKET group,
+                      const struct sockaddr* source /*nullable*/, int sourcelen,
+                      SRT_SOCKGROUPDATA name [], int arraysize);
 ```
 
 This function does almost the same as calling `srt_connect` (or
 `srt_connect_bind`, if `source` is not NULL) in a loop for every item specified
-in `name` array. The only difference is in the blocking mode handling: if the
-group has the (default) blocking mode set, then the call to `srt_connect` would
-block until the required connection is established (so in a loop it would block
-always on the first link). This function blocks until any of the connections in
-the list gets established (rest of the connections is continued in background).
+in `name` array. However if you did this in a blocking mode, the first call
+to `srt_connect` would block until the connection is established, whereas this
+function blocks until any of the specified connections is established. With
+non-blocking mode, there are no differences.
+
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
-difference.
+difference. Note, however, that in this function accepts only groups, not
+sockets.
 
 The elements of the `name` array need to be prepared with the use of the
 `srt_prepare_endpoint` function. Note that it is **NOT** required that every
