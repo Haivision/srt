@@ -594,8 +594,7 @@ This function does almost the same as calling `srt_connect` (or
 `srt_connect_bind`, if `source` is not NULL) in a loop for every item specified
 in `name` array. However if you did this in a blocking mode, the first call
 to `srt_connect` would block until the connection is established, whereas this
-function blocks until any of the specified connections is established. With
-non-blocking mode, there are no differences.
+function blocks until any of the specified connections is established. 
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
 difference. Note, however, that in this function accepts only groups, not
