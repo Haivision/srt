@@ -120,14 +120,6 @@ message mode has nothing to do with UDP datagrams and it's rather similar to SCT
 protocol). In SRT these two modes are available by setting `SRTO_TRANSTYPE` to
 `SRTT_FILE`, and the message mode is set by `SRTO_MESSAGEAPI` option.
 
-In SRT there are three modes (with the file and message modes from UDT
-reinstated in version 1.3.0): live, file and message, which should be set
-up using two socket options: `SRTO_TRANSTYPE` and `SRTO_MESSAGEAPI`:
-
-* live: default, `SRTO_TRANSTYPE` is `SRTT_LIVE` and `SRTO_MESSAGEAPI` only true
-* stream: when `SRTO_TRANSTYPE` is `SRTT_FILE` and `SRTO_MESSAGEAPI` false
-* message: like stream, but `SRTO_MESSAGEAPI` set to true
-
 
 ### srt_create_socket
 ```
