@@ -746,8 +746,6 @@ typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, c
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
-SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
-                                    const struct sockaddr* remote_name, int remote_namelen);
 SRT_API       int srt_connect_bind (SRTSOCKET u,
                                     const struct sockaddr* source, int source_len,
                                     const struct sockaddr* target, int target_len);
@@ -755,9 +753,9 @@ SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_na
                                     const struct sockaddr* remote_name, int remote_namelen);
 
 SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
-SRT_API int srt_connect_group(SRTSOCKET group,
-        const struct sockaddr* source /*nullable*/, int sourcelen,
-        SRT_SOCKGROUPDATA name [], int arraysize);
+SRT_API       int srt_connect_group(SRTSOCKET group,
+                                    const struct sockaddr* source /*nullable*/, int sourcelen,
+                                    SRT_SOCKGROUPDATA name [], int arraysize);
 
 
 SRT_API       int srt_close        (SRTSOCKET u);

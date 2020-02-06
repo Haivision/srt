@@ -516,6 +516,17 @@ being acknowledged)
 
 ---
 
+| OptName               | Since | Binding | Type   | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_GROUPCONNECT`   |       | pre     | `bool` |        | false    |        |
+
+- If true, the listener socket is allowed to accept group connections. Such a
+socket is still capable of accepting single socket connections as well. If false,
+the group connections on that listener socket are rejected. This option can only
+be set on a socket.
+
+---
+
 | OptName          | Since | Binding | Type      | Units   | Default  | Range  |
 | ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
 | `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t` | bytes/s | 0        | 0..    |
