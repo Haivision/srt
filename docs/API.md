@@ -1132,10 +1132,11 @@ immediately.
 - On a connected socket or group this applies to a sending function
 (`srt_send` and others) and a situation when there's no free space in
 the sender buffer, caused by inability to send all the scheduled data over
-the network.
+the network. Readiness for this operation can be tested by checking the
+`SRT_EPOLL_OUT` flag.
 
 - On a freshly created socket or group it will have no effect until the socket
-turns into connected state.
+turns into a connected state.
 
 - On a listener socket it will be derived by the accepted socket or group,
 but will have no effect on the listener socket itself.
