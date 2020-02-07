@@ -395,17 +395,35 @@ This option will override the default compiler autodetected by `cmake`.
 It is handled inside `cmake`. It sets the variables `CMAKE_C_COMPILER` and
 `CMAKE_CXX_COMPILER`. The values for the above `<c-compiler>` and
 `<c++-compiler>` are controlled by the `--with-compiler-type` option.
+When this option is not supplied, a system-default compiler will be
+used, that is:
+
+* On Mac OS (Darwin): clang
+* On other POSIX systems: gcc
+* On other systems: obtained from `CMAKE_C_COMPILER` variable
 
 Instead of `--with-compiler-prefix` you can use `--cmake-c-compiler`
 and `--cmake-c++-compiler` options. This can be thought of as a
 shortcut, useful when you have a long path to the compiler command.
 
+NOTE: The prefix is meant to simply precede the compiler type as pure
+prefix, so if your prefix is a full path to the compiler, it must include
+the terminal path separator character, as this can be also used as a
+prefix for a platform-specific cross compiler. For example, if the path
+to the C compiler is: `/opt/arm-tc/bin/arm-linux-gnu-gcc-7.4`, then
+you should specify `--with-compiler-prefix=/opt/arm-tc/bin/arm-linux-gnu-`
+and `--with-compiler-type=gcc-7.4`.
+
 **`--with-compiler-type=<name>`**
 
-Sets the compiler type to be used with `--with-compiler-prefix` as
-`<c-compiler>` and `<c++-compiler>` respectively:
+Sets the compiler type to be used as `<c-compiler>` and `<c++-compiler>`
+respectively:
 
 * gcc (default): gcc and g++
 * cc: cc and c++
 * others: use `<name>` as C compiler and `<name>++` as C++ compiler
+
+This should be the exact command used as a C compiler, possibly with
+version suffix, e.g. `clang-1.7.0`. If this option is used together
+with `--with-compiler-prefix`, its prefix will be added in front.
 
