@@ -6,10 +6,9 @@ SRT API Functions
   * [srt_cleanup](#srt_cleanup)
 - [**Creating and configuring sockets**](#Creating-and-configuring-sockets)
   * [srt_socket](#srt_socket)
-  * [srt_create_socket](#srt_create_socket)
   * [srt_bind](#srt_bind)
   * [srt_create_socket](#srt_create_socket)
-  * [srt_bind_acquire](#srt_bind_acquire)
+  * [srt_bind_peerof](#srt_bind-peerof)
   * [srt_getsockstate](#srt_getsockstate)
   * [srt_getsndbuffer](#srt_getsndbuffer)
   * [srt_close](#srt_close)
@@ -18,7 +17,6 @@ SRT API Functions
   * [srt_accept](#srt_accept)
   * [srt_listen_callback](#srt_listen_callback)
   * [srt_connect](#srt_connect)
-  * [srt_connect_bind](#srt_connect_bind)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
 - [**Options and properties**](#Options-and-properties)
@@ -106,29 +104,18 @@ Creating and configuring sockets
 SRTSOCKET srt_socket(int af, int type, int protocol);
 ```
 
-Old and deprecated version of `srt_create_socket`. All arguments are ignored.
+Creates an SRT socket:
 
-**NOTE** changes towards UDT version:
+* `af`: family (either `AF_INET` or `AF_INET6`)
+* `type`, `protocol`: ignored
 
-* In UDT (and SRT versions before 1.5.0) the `af` parameter was specifying the
-socket family (`AF_INET` or `AF_INET6`). This is now not required; this parameter
-is decided at the call of `srt_conenct` or `srt_bind`.
-
-* In UDT the `type` parameter was used to specify the file or message mode using
-`SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading, as the
-message mode has nothing to do with UDP datagrams and it's rather similar to SCTP
-protocol). In SRT these two modes are available by setting `SRTO_TRANSTYPE` to
-`SRTT_FILE`, and the message mode is set by `SRTO_MESSAGEAPI` option.
-
-
-### srt_create_socket
-```
-SRTSOCKET srt_create_socket();
-```
-
-Creates an SRT socket.
-
-Note that socket IDs have always the `SRTGROUP_MASK` bit clear.
+**NOTE:** The UDT library uses the `type` parameter to specify **file** or 
+**message mode** by specifying that `SOCK_STREAM` corresponds to a TCP-like file 
+transmission mode, and `SOCK_DGRAM` corresponds to an SCTP-like message 
+transmission mode. SRT still supports these modes. However, this is controlled 
+by the `SRTO_MESSAGEAPI` socket option when the transmission type is file 
+(`SRTO_TRANSTYPE` set to `SRTT_FILE`) and the only reasonable value for the 
+`type` parameter here is `SOCK_DGRAM`.
 
 - Returns:
 
@@ -142,6 +129,18 @@ Note that socket IDs have always the `SRTGROUP_MASK` bit clear.
 **NOTE:** This is probably a design flaw (**BUG?**). Usually underlying system 
 errors are reported by `SRT_ECONNSETUP`.
 
+### srt_create_socket
+```
+SRTSOCKET srt_create_socket();
+```
+
+Creates a socket in `AF_INET` family only.
+
+**NOTE:** In future the address family may be removed from initial socket 
+configuration, which will free the user from specifying it in `srt_socket`. 
+The `srt_create_socket` function will be used for all families. The family will 
+be specified only with the first `srt_bind` or `srt_connect`, and in this case 
+`SRT_EINVPARAM` will not be used (see [`srt_bind`](#srt_bind) below).
 
 ### srt_bind
 ```
@@ -166,9 +165,7 @@ the communication. It is allowed that multiple SRT sockets share one local
 outgoing port, as long as `SRTO_REUSEADDR` is set to *true* (default). Without
 this call the port will be automatically selected by the system.
 
-NOTE: This function cannot be called on socket group. If you have a need to
-have the group-member socket bound to the specified source address before
-connecting, use `srt_connect_bind` for that purpose.
+*See **NOTE** below under* [`srt_create_socket`](#srt_create_socket).
 
 - Returns:
 
@@ -178,13 +175,18 @@ connecting, use `srt_connect_bind` for that purpose.
 
   * `SRT_EINVSOCK`: Socket passed as `u` designates no valid socket
   * `SRT_EINVOP`: Socket already bound
+  * `SRT_EINVPARAM`: Address family in `name` is not one set for `srt_socket`
   * `SRT_ECONNSETUP`: Internal creation of a UDP socket failed 
   * `SRT_ESOCKFAIL`: Internal configuration of a UDP socket (`bind`, `setsockopt`) failed
 
-### srt_bind_acquire
+**NOTE**: `SRT_EINVPARAM` will not be the case in future, when the family is
+removed from the initial socket configuration, see
+[`srt_create_socket`](#srt_create_socket) above.
+
+### srt_bind_peerof
 
 ```
-int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock);
+int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
 ```
 
 A version of `srt_bind` that acquires a given UDP socket instead of creating one.
@@ -235,9 +237,8 @@ socket needs to be closed asynchronously.
 int srt_close(SRTSOCKET u);
 ```
 
-Closes the socket or group and frees all used resources. Note that underlying
-UDP sockets may be shared between sockets, so these are freed only with the
-last user closed.
+Closes the socket and frees all used resources. Note that underlying UDP sockets
+may be shared between sockets, so these are freed only with the last user closed.
 
 - Returns:
 
@@ -258,14 +259,6 @@ int srt_listen(SRTSOCKET u, int backlog);
 This sets up the listening state on a socket with a backlog setting that 
 defines how many sockets may be allowed to wait until they are accepted 
 (excessive connection requests are rejected in advance).
-
-Important optional things that may change the behavior of the listener
-socket and the `srt_accept` function:
-
-* `srt_listen_callback` installs a user function that will be called
-before `srt_accept` can happen
-* `SRTO_GROUPCONNECT` option allows the listener socket to accept group
-connections
 
 - Returns:
 
@@ -290,9 +283,8 @@ these sockets can be set up as a listener.
 SRTSOCKET srt_accept(SRTSOCKET lsn, struct sockaddr* addr, int* addrlen);
 ```
 
-Accepts a pending connection, then creates and returns a new socket or
-group ID that handles this connection. The group and socket can be
-distinguished by checking the `SRTGROUP_MASK` bit on the returned ID.
+Accepts a pending connection and creates a new socket to handle it. The
+socket that is connected to a remote party is returned.
 
 * `lsn`: the listener socket previously configured by `srt_listen`
 * `addr`: the IP address and port specification for the remote party
@@ -302,26 +294,11 @@ returned object
 **NOTE:** `addr` is allowed to be NULL, in which case it's understood that the
 application is not interested in the address from which the connection originated.
 Otherwise `addr` should specify an object into which the address will be written, 
-and `addrlen` must also specify a variable to contain the object size. Note also
-that in case of group connection only the first, initial connection that
-establishes the group connection is returned, together with its address. As
-member connections are added or broken within the group, you can obtain this
-information through `srt_group_data` or the data filled by `srt_sendmsg2` and
-`srt_recvmsg2`.
-
-If the pending connection is a group connection (initiated on the peer side
-by calling the connection function using a group ID, and permitted on the
-listener socket by `SRTO_GROUPCONNECT` flag), then the value returned is a
-group ID. This function then creates a new group, as well as a new socket for
-this very connection, that will be added to the group. Once the group is
-created this way, further connections within the same group, as well as sockets
-for them, will be created in the background. The `SRT_EPOLL_UPDATE` event is
-raised on the `lsn` socket when a new background connection is attached to the
-group, although it's usually for internal use only.
+and `addrlen` must also specify a variable to contain the object size.
 
 - Returns:
 
-  * On success, a valid SRT socket or group ID to be used for transmission
+  * A valid socket ID for the connection, on success
   * `SRT_ERROR` (-1) on failure 
 
 - Errors:
@@ -423,34 +400,29 @@ streamid or peeraddr.
 int srt_connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
 ```
 
-Connects a socket or a group to a remote party with a specified address and port.
+Connects a socket to a remote party with a specified address and port.
 
-* `u`: can be an SRT socket or SRT group, both freshly created and not yet
-  used for any connection, except possibly `srt_bind` on the socket
+* `u`: SRT socket. This must be a freshly created socket that has not yet been 
+used for anything except possibly `srt_bind`.
 * `name`: specification of the remote address and port
 * `namelen`: size of the object passed by `name`
 
 **NOTES:**
-1. The socket used here may be bound from upside (or binding and connection can
-be done in one function, `srt_connect_bind`) so that it uses a predefined
+1. See **NOTE** regarding family under [`srt_create_socket`](#srt_create_socket), 
+and `SRT_EINVPARAM` error under [`srt_bind`](#srt_bind) above.
+2. The socket used here may be bound from upside so that it uses a predefined
 network interface or local outgoing port. If not, it behaves as if it was
 bound to `INADDR_ANY` (which binds on all interfaces) and port 0 (which
 makes the system assign the port automatically).
-2. When `u` is a group, then this call can be done multiple times, each time
-for another member connection, and a new member SRT socket will be created
-automatically for every call of this function.
-3. If you want to connect a group to multiple links at once and use blocking
-mode, you might rather want to use `srt_connect_group`.
 
 - Returns:
 
-  * `SRT_ERROR` (-1) in case of error
-  * 0 in case when used for `u` socket
-  * Socket ID created for connection for `u` group
+  * `SRT_ERROR` (-1) in case of error, otherwise 0
 
 - Errors:
 
   * `SRT_EINVSOCK`: Socket `u` indicates no valid socket ID
+  * `SRT_EINVPARAM`: Address family in `name` is not one set for `srt_socket`
   * `SRT_ERDVUNBOUND`: Socket `u` has set `SRTO_RENDEZVOUS` to true, but `srt_bind`
 hasn't yet been called on it. The `srt_connect` function is also used to connect a
 rendezvous socket, but rendezvous sockets must be explicitly bound to a local
@@ -461,21 +433,6 @@ left without binding - the call to `srt_connect` will bind them automatically.
 
 In case when `SRT_ECONNREJ` error was reported, you can get the reason for
 a rejected connection from `srt_getrejectreason`.
-
-### srt_connect_bind
-
-```
-int srt_connect_bind(SRTSOCKET u,
-                     const struct sockaddr* source, int source_len,
-                     const struct sockaddr* target, int target_len);
-```
-
-This function does the same as first `srt_bind` then `srt_connect`, if called
-with `u` being a socket. If `u` is a group, then it will execute `srt_bind`
-first on the automatically created socket for the connection.
-
-The result is similar as with `srt_connect`. Errors may be those reported
-by `srt_bind` as well.
 
 ### srt_connect_debug
 
@@ -501,126 +458,6 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
 * `remote_name`: specifies the remote party's IP address and port
 
 **NOTE:** The port value shall be the same in `local_name` and `remote_name`.
-
-
-Socket group management
------------------------
-
-Group types are collected in an `SRT_GROUP_TYPE` type and they are currently:
-
-* `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once
-* `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
-* `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
-
-Functions to be used on groups:
-
-### srt_create_group
-
-```
-SRTSOCKET srt_create_group(SRT_GROUP_TYPE type);
-```
-
-Creates a new group of type `type`. This is typically called on the
-caller side to be next used for connecting to the listener peer side.
-The group ID is of the same domain as socket ID, with the exception that
-the `SRTGROUP_MASK` bit is set on it, unlike for socket ID.
-
-### srt_include
-
-```
-int srt_include(SRTSOCKET socket, SRTSOCKET group);
-```
-
-This function adds a socket to a group. This is only allowed for unmanaged
-groups. No such group type is currently implemented.
-
-### srt_exclude
-
-```
-int srt_exclude(SRTSOCKET socket);
-```
-This function removes a socket from a group to which it currently belongs.
-This is only allowed for unmanaged groups. No such group type is currently
-implemented.
-
-### srt_groupof
-
-```
-SRTSOCKET srt_groupof(SRTSOCKET socket);
-```
-
-Returns the group ID of the socket, or `SRT_INVALID_SOCK` if the socket
-doesn't exist or it's not a member of any group.
-
-### srt_group_data 
-
-```
-int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
-```
-
-* `socketgroup` an existing socket group ID
-* `output` points to an output array
-* `inoutlen` points to a variable set to array's size
-
-This function obtains the current member state of the group specified in
-`socketgroup`. The `output` should point to the array of enough size to get
-all the elements and `inoutlen` to a variable preset to the size of this array.
-The current number of members will be written back to `inoutlen`. If the size
-is enough for the current number of members, the `output` array will be
-filled with group data and the function will return 0. Otherwise the array
-will not be filled and `SRT_ERROR` will be returned.
-
-- Returns:
-
-   * 0, if successful
-   * -1, on error
-
-- Errors:
-
-   * `SRT_EINVPARAM` reported if `socketgroup` is not an existing group ID
-   * `SRT_SUCCESS` if the array was too small
-
-
-
-### srt_connect_group
-
-```
-int srt_connect_group(SRTSOCKET group,
-                      const struct sockaddr* source /*nullable*/, int sourcelen,
-                      SRT_SOCKGROUPDATA name [], int arraysize);
-```
-
-This function does almost the same as calling `srt_connect` (or
-`srt_connect_bind`, if `source` is not NULL) in a loop for every item specified
-in `name` array. However if you did this in a blocking mode, the first call
-to `srt_connect` would block until the connection is established, whereas this
-function blocks until any of the specified connections is established. 
-
-If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
-difference. Note, however, that in this function accepts only groups, not
-sockets.
-
-The elements of the `name` array need to be prepared with the use of the
-`srt_prepare_endpoint` function. Note that it is **NOT** required that every
-address you specify for it is of the same family.
-
-Return value and errors in this function are the same as in `srt_connect`,
-although this function reports success when at least one connection has
-succeeded. Which one and how many of them succeeded, can be checked with the
-`srt_group_data` function.
-
-
-### srt_prepare_endpoint
-
-```
-SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
-```
-
-This function turns the given address into `SRT_SOCKGROUPDATA` structure needed by
-`srt_connect_group` function.
-
-
-
 
 Options and properties
 ----------------------
@@ -668,10 +505,9 @@ int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, void* op
 int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 ```
 
-Gets the value of the given socket option (from a socket or a group). The first
-version (`srt_getsockopt`) respects the BSD socket API convention, although the
-"level" parameter is ignored.  The second version (`srt_getsockflag`) omits the
-"level" parameter completely.
+Gets the value of the given socket option. The first version (`srt_getsockopt`) 
+respects the BSD socket API convention, although the "level" parameter is ignored. 
+The second version (`srt_getsockflag`) omits the "level" parameter completely.
 
 Options correspond to various data types, so you need to know what data type is 
 assigned to a particular option, and to pass a variable of the appropriate data 
@@ -694,18 +530,13 @@ int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, const vo
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 ```
 
-Sets a value for a socket option in the socket or group. The first version
-(`srt_setsockopt`) respects the BSD socket API convention, although the "level"
-parameter is ignored. The second version (`srt_setsockflag`) omits the "level"
-parameter completely.
+Sets a value for a socket option. The first version (`srt_setsockopt`) respects 
+the BSD socket API convention, although the "level" parameter is ignored. 
+The second version (`srt_setsockflag`) omits the "level" parameter completely.
 
 Options correspond to various data types, so you need to know what data type is 
 assigned to a particular option, and to pass a variable of the appropriate data 
 type with the option value to be set.
-
-Please mind that some of the options can only be set on sockets or only on
-groups, although most of the options can be set on the groups so that they
-are then derived by the member sockets.
 
 - Returns:
 
