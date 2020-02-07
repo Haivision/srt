@@ -1529,16 +1529,15 @@ int CUDTUnited::close(const SRTSOCKET u)
         deleteGroup(g);
         return 0;
     }
-   CUDTSocket* s = locateSocket(u);
-   if (!s)
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+    CUDTSocket* s = locateSocket(u);
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-   return close(s);
+    return close(s);
 }
 
 int CUDTUnited::close(CUDTSocket* s)
 {
-
    HLOGC(mglog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
    CGuard socket_cg(s->m_ControlLock);
@@ -1582,7 +1581,14 @@ int CUDTUnited::close(CUDTSocket* s)
 
        // since "s" is located before m_GlobControlLock, locate it again in case
        // it became invalid
-       // XXX Seriously? Why not do all things necessary on s prior to deletion?
+       // XXX This is very weird; if we state that the CUDTSocket object
+       // could not be deleted between locks, then definitely it couldn't
+       // also change the pointer value. There's no other reason for getting
+       // this iterator but to obtain the 's' pointer, which is impossible to
+       // be different than previous 's' (m_Sockets is a map that stores pointers
+       // transparently). This iterator isn't even later used to delete the socket
+       // from the container, though it would be more efficient.
+       // FURTHER RESEARCH REQUIRED.
        sockets_t::iterator i = m_Sockets.find(u);
        if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
        {

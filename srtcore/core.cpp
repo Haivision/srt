@@ -861,7 +861,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
 
-   case SRTO_GROUPCONNECT:
+    case SRTO_GROUPCONNECT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_bOPT_GroupConnect = bool_int_value(optval, optlen);
