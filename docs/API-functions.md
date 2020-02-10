@@ -108,7 +108,7 @@ SRTSOCKET srt_socket(int af, int type, int protocol);
 
 Old and deprecated version of `srt_create_socket`. All arguments are ignored.
 
-**NOTE** changes towards UDT version:
+**NOTE** changes with respect to UDT version:
 
 * In UDT (and SRT versions before 1.5.0) the `af` parameter was specifying the
 socket family (`AF_INET` or `AF_INET6`). This is now not required; this parameter
@@ -116,8 +116,12 @@ is decided at the call of `srt_conenct` or `srt_bind`.
 
 * In UDT the `type` parameter was used to specify the file or message mode using
 `SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading, as the
-message mode has nothing to do with UDP datagrams and it's rather similar to SCTP
-protocol). In SRT these two modes are available by setting `SRTO_TRANSTYPE` to
+message mode has nothing to do with UDP datagrams and it's rather similar to the SCTP
+protocol). In SRT, set `SRTO_TRANSTYPE` to `SRTT_FILE` for file mode, which is
+stream mode (TCP-like) by default. Then set `SRTO_MESSAGEAPI` to true for the
+message mode (SCTP-like).
+
+ these two modes are available by setting `SRTO_TRANSTYPE` to
 `SRTT_FILE`, and the message mode is set by `SRTO_MESSAGEAPI` option.
 
 
@@ -128,7 +132,7 @@ SRTSOCKET srt_create_socket();
 
 Creates an SRT socket.
 
-Note that socket IDs have always the `SRTGROUP_MASK` bit clear.
+Note that socket IDs always have the `SRTGROUP_MASK` bit clear.
 
 - Returns:
 
@@ -166,7 +170,7 @@ the communication. It is allowed that multiple SRT sockets share one local
 outgoing port, as long as `SRTO_REUSEADDR` is set to *true* (default). Without
 this call the port will be automatically selected by the system.
 
-NOTE: This function cannot be called on socket group. If you have a need to
+NOTE: This function cannot be called on socket group. If you need to
 have the group-member socket bound to the specified source address before
 connecting, use `srt_connect_bind` for that purpose.
 
@@ -259,7 +263,7 @@ This sets up the listening state on a socket with a backlog setting that
 defines how many sockets may be allowed to wait until they are accepted 
 (excessive connection requests are rejected in advance).
 
-Important optional things that may change the behavior of the listener
+The following important options may change the behavior of the listener
 socket and the `srt_accept` function:
 
 * `srt_listen_callback` installs a user function that will be called
@@ -303,7 +307,7 @@ returned object
 application is not interested in the address from which the connection originated.
 Otherwise `addr` should specify an object into which the address will be written, 
 and `addrlen` must also specify a variable to contain the object size. Note also
-that in case of group connection only the first, initial connection that
+that in the case of group connection only the initial connection that
 establishes the group connection is returned, together with its address. As
 member connections are added or broken within the group, you can obtain this
 information through `srt_group_data` or the data filled by `srt_sendmsg2` and
@@ -440,7 +444,7 @@ makes the system assign the port automatically).
 for another member connection, and a new member SRT socket will be created
 automatically for every call of this function.
 3. If you want to connect a group to multiple links at once and use blocking
-mode, you might rather want to use `srt_connect_group`.
+mode, you might want to use `srt_connect_group` instead.
 
 - Returns:
 
@@ -506,7 +510,7 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
 Socket group management
 -----------------------
 
-Group types are collected in an `SRT_GROUP_TYPE` type and they are currently:
+The following group types are collected in an `SRT_GROUP_TYPE` enum:
 
 * `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once
 * `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
@@ -563,8 +567,8 @@ int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* ino
 * `inoutlen` points to a variable set to array's size
 
 This function obtains the current member state of the group specified in
-`socketgroup`. The `output` should point to the array of enough size to get
-all the elements and `inoutlen` to a variable preset to the size of this array.
+`socketgroup`. The `output` should point to an array large enough to hold
+all the elements, and `inoutlen` to a variable preset to the size of this array.
 The current number of members will be written back to `inoutlen`. If the size
 is enough for the current number of members, the `output` array will be
 filled with group data and the function will return 0. Otherwise the array
@@ -592,12 +596,12 @@ int srt_connect_group(SRTSOCKET group,
 
 This function does almost the same as calling `srt_connect` (or
 `srt_connect_bind`, if `source` is not NULL) in a loop for every item specified
-in `name` array. However if you did this in a blocking mode, the first call
+in `name` array. However if you did this in blocking mode, the first call
 to `srt_connect` would block until the connection is established, whereas this
 function blocks until any of the specified connections is established. 
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
-difference. Note, however, that in this function accepts only groups, not
+difference. Note, however, that this function accepts only groups, not
 sockets.
 
 The elements of the `name` array need to be prepared with the use of the
@@ -616,8 +620,8 @@ succeeded. Which one and how many of them succeeded, can be checked with the
 SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
 ```
 
-This function turns the given address into `SRT_SOCKGROUPDATA` structure needed by
-`srt_connect_group` function.
+This function turns the given address into the `SRT_SOCKGROUPDATA` structure needed by
+the `srt_connect_group` function.
 
 
 
@@ -703,7 +707,7 @@ Options correspond to various data types, so you need to know what data type is
 assigned to a particular option, and to pass a variable of the appropriate data 
 type with the option value to be set.
 
-Please mind that some of the options can only be set on sockets or only on
+Please note that some of the options can only be set on sockets or only on
 groups, although most of the options can be set on the groups so that they
 are then derived by the member sockets.
 

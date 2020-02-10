@@ -478,10 +478,10 @@ connected. On binding a socket setting this flag is effective only on this
 socket itself. Note though that there are some post-bound options that have
 important meaning when set prior to connecting.
 
-Note that usually options can be set either on a group or on a socket, and
-when set on a group, it will be remembered and then derived by every socket
-that will be automatically created and added to the group. This concerns every
-socket option, unless different rule for that case is declared explicitly.
+Note that options are usually set either on a group or on a socket. When set
+on a group, the options will persist. They will be derived by every socket
+automatically created and added to the group. This applies to every
+socket option, unless a different rule is declared explicitly for a specific case.
 
 This option list is sorted alphabetically. Note that some options can be
 either only a retrieved (GET) or specified (SET) value.
@@ -960,7 +960,7 @@ pre-1.3.0 version is available only as** `SRTO_LATENCY`.
 | --------------------- | ----- | ------- | ------ | ------ | ------- | ------ |
 | `SRTO_RCVSYN`         |       | pre     | `bool` | true   | true    | false  |
 
-- **[GET or SET]** - When true, sets blocking mode on reading function, when
+- **[GET or SET]** - When true, sets blocking mode on reading function when
 it's not ready to perform the operation. When false ("non-blocking mode"), the
 reading function will in this case report error `SRT_EASYNCRCV` and return
 immediately. Details depend on the tested entity:
@@ -971,8 +971,8 @@ reading. The readiness state for this operation can be tested by checking the
 `SRT_EPOLL_IN` flag on the aforementioned socket or group.
 
 - On a freshly created socket or group that is about to be connected to a peer
-listener this applies to `srt_connect` call (and derived), which in
-"non-blocking mode" always returns immediately. The connected state for that
+listener this applies to any `srt_connect` call (and derived), which in
+"non-blocking mode" always return immediately. The connected state for that
 socket or group can be tested by checking the `SRT_EPOLL_OUT` flag. NOTE
 that a socket that failed to connect doesn't change the `SRTS_CONNECTING`
 state and can be found out only by testing `SRT_EPOLL_ERR` flag.
@@ -1124,7 +1124,7 @@ must have a value greater than 1000 - `SRTO_PEERLATENCY`.
 | -------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
 | `SRTO_SNDSYN`        |       | post    | `bool` | true   | true     | false  |
 
-- **[GET or SET]** - When true, sets blocking mode on writing function, when
+- **[GET or SET]** - When true, sets blocking mode on writing function when
 it's not ready to perform the operation. When false ("non-blocking mode"), the
 writing function will in this case report error `SRT_EASYNCSND` and return
 immediately.
@@ -1136,7 +1136,7 @@ the network. Readiness for this operation can be tested by checking the
 `SRT_EPOLL_OUT` flag.
 
 - On a freshly created socket or group it will have no effect until the socket
-turns into a connected state.
+enters a connected state.
 
 - On a listener socket it will be derived by the accepted socket or group,
 but will have no effect on the listener socket itself.
