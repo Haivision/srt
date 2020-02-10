@@ -3073,7 +3073,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD__SIZE];
-                if ( bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
+                if (bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
@@ -3081,7 +3081,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
 
                 memcpy(groupdata, begin+1, bytelen);
-                if ( !interpretGroup(groupdata, hsreq_type_cmd) )
+                if (!interpretGroup(groupdata, hsreq_type_cmd))
                 {
                     // m_RejectReason handled inside interpretGroup().
                     return false;
@@ -3244,8 +3244,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
 {
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
-    //SRTSOCKET master_peerid = groupdata[GRPD_MASTERID];
-    //int32_t tdiff = groupdata[GRPD_MASTERTDIFF];
 
     if (!m_bOPT_GroupConnect)
     {
@@ -3262,7 +3260,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
         return false;
     }
 
-    if ( (grpid & SRTGROUP_MASK) == 0)
+    if ((grpid & SRTGROUP_MASK) == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "HS/GROUP: socket ID passed as a group ID is not a group ID");
@@ -3362,41 +3360,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             return false;
         }
     }
-
-    /*
-
-    // Synchronize the TSBPD PEER start time with the existing connection,
-    // if there exists the connection with given peer.
-    if (master_peerid != -1)
-    {
-        // Here "I am a peer", so this is the socket ID of local socket of a parallel connection.
-        // Check if it exists, if not, reject the connection.
-        CUDTSocket* master = s_UDTUnited.locateSocket(master_peerid, s_UDTUnited.ERH_RETURN);
-        if (!master)
-        {
-            LOGC(mglog.Error, log << "HS/GROUP: master parallel connection socket not found: $" << master_peerid);
-            return false;
-        }
-
-        // The value of the time difference is the difference between m_stats.tsStartTime of this
-        // socket's peer and the 'master_peerid' socket's peer. This time should be identical
-        // with the time difference in m_tsRcvPeerStartTime between master_peerid and *this.
-        //
-        // Note that this value should have been set before by interpreting HSREQ/HSRSP,
-        // so it's only being fixed here.
-
-        uint64_t new_start_time = master->core().m_tsRcvPeerStartTime + tdiff;
-        HLOGC(mglog.Debug, log << "HS/GROUP: master reported as $" << master_peerid
-            << " distant to slave: " << tdiff << "ms - setting peer start time: " << FormatTime(new_start_time)
-            << " (fixed by " << (m_tsRcvPeerStartTime - new_start_time) << "ms)");
-
-        m_tsRcvPeerStartTime = new_start_time;
-        // m_tsRcvPeerStartTime: this state has two indicators, one here, the other in the
-        // CRcvBuffer object. This one is the master indicator that is being set during
-        // the handshake, the below function synchronizes it to the CRcvBuffer object.
-        updateSrtRcvSettings();
-    }
-    */
 
     m_parent->m_IncludedGroup->debugGroup();
 
@@ -7573,13 +7536,13 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     if (acksize > 0)
     {
         const int distance = m_pRcvBuffer->ackData(acksize);
-/*
-        XXX example code - inform the group up to which packet
-        data are received so that it can be also acknowledged
-        in all others and false lossreport prevened
-        if (m_parent->m_IncludedGroup)
-            m_parent->m_IncludedGroup->readyPackets(this, ack);
-*/
+        /*
+           XXX example code - inform the group up to which packet
+           data are received so that it can be also acknowledged
+           in all others and false lossreport prevened
+           if (m_parent->m_IncludedGroup)
+           m_parent->m_IncludedGroup->readyPackets(this, ack);
+         */
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
@@ -7697,7 +7660,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         // IF ack %> m_iRcvLastAck
         if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
         {
-            int32_t first_seq = ackDataUpTo(ack);
+            const int32_t first_seq = ackDataUpTo(ack);
             leaveCS(m_RcvBufferLock);
             IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
@@ -8376,7 +8339,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
         steady_clock::duration udrift;
         steady_clock::time_point newtimebase;
-        bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+        const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
                 (udrift), (newtimebase));
         if (drift_updated && m_parent->m_IncludedGroup)
         {
@@ -8905,9 +8868,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                         HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
                                 << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                                 << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
                         sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-#endif
 
                         // In case when this message is lost, the peer will still get the
                         // UMSG_DROPREQ message when the agent realizes that the requested
@@ -9190,7 +9151,7 @@ int CUDT::processData(CUnit* in_unit)
     m_iEXPCount = 1;
     m_tsLastRspTime = steady_clock::now();
 
-    bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
+    const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
     if (need_tsbpd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
@@ -9528,7 +9489,6 @@ int CUDT::processData(CUnit* in_unit)
             if (adding_successful)
             {
                 // XXX move this code do CUDT::defaultPacketArrival and call it from here:
-
                 // srt_loss_seqs = CALLBACK_CALL(m_cbPacketArrival, rpkt);
 
                 HLOGC(dlog.Debug,
@@ -9789,9 +9749,7 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
         }
     }
 
-    int initial_loss_ttl = 0;
-    if ( self->m_bPeerRexmitFlag )
-        initial_loss_ttl = self->m_iReorderTolerance;
+    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
 
     int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
 
@@ -9801,8 +9759,8 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     // Loss detection.
     if (seqdiff > 1) // packet is later than the very subsequent packet
     {
-        int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
-        int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
+        const int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
+        const int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
 
         {
             // If loss found, insert them to the receiver loss list
