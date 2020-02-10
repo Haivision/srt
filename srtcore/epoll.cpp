@@ -476,7 +476,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
             if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
             {
                 // Empty EID is not allowed, report error.
-                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+                throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
             }
 
             if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
