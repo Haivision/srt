@@ -5502,8 +5502,9 @@ bool CUDT::close()
     // then remove itself from all epoll monitoring
     try
     {
+        int no_events = 0;
         for (set<int>::iterator i = m_sPollID.begin(); i != m_sPollID.end(); ++i)
-            s_UDTUnited.m_EPoll.remove_usock(*i, m_SocketID);
+            s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
     }
     catch (...)
     {
@@ -9816,13 +9817,17 @@ void CUDT::addEPoll(const int eid)
     }
 }
 
-void CUDT::removeEPoll(const int eid)
+void CUDT::removeEPollEvents(const int eid)
 {
     // clear IO events notifications;
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
+
+void CUDT::removeEPollID(const int eid)
+{
 
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
@@ -9881,13 +9886,17 @@ void CUDTGroup::addEPoll(int eid)
        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
 }
 
-void CUDTGroup::removeEPoll(const int eid)
+void CUDTGroup::removeEPollEvents(const int eid)
 {
    // clear IO events notifications;
    // since this happens after the epoll ID has been removed, they cannot be set again
    set<int> remove;
    remove.insert(eid);
    m_pGlobal->m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
+
+void CUDTGroup::removeEPollID(const int eid)
+{
 
    enterCS(m_pGlobal->m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);

@@ -1441,7 +1441,7 @@ int CUDTUnited::epoll_add_usock(
    int ret = -1;
    if (s)
    {
-      ret = m_EPoll.add_usock(eid, u, events);
+      ret = m_EPoll.update_usock(eid, u, events);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -1484,17 +1484,19 @@ int CUDTUnited::epoll_update_ssock(
 
 int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 {
-   int ret = m_EPoll.remove_usock(eid, u);
-
    CUDTSocket* s = locateSocket(u);
    if (s)
    {
-      s->m_pUDT->removeEPoll(eid);
+      s->m_pUDT->removeEPollEvents(eid);
    }
-   //else
-   //{
-   //   throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
-   //}
+
+   int no_events = 0;
+   int ret = m_EPoll.update_usock(eid, u, &no_events);
+
+   if (s)
+   {
+      s->m_pUDT->removeEPollID(eid);
+   }
 
    return ret;
 }
