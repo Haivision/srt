@@ -2035,7 +2035,8 @@ bool CUDT::createSrtHandshake(
     //
     // XXX Probably a condition should be checked here around the group type.
     // The time synchronization should be done only on any kind of parallel sending group.
-    // This is, for example, for redundancy group or bonding group, but not distribution group.
+    // Currently all groups are such groups (broadcast, backup, balancing), but it may
+    // need to be changed for some other types.
     while (have_group)
     {
         CGuard grd (m_parent->m_ControlLock);
@@ -2344,7 +2345,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
      * Also includes current packet transit time (rtt/2)
      */
     m_tsRcvPeerStartTime = steady_clock::now() - microseconds_from(ts);
-    // (in case of redundancy group, this value will be OVERWRITTEN
+    // (in case of bonding group, this value will be OVERWRITTEN
     // later in CUDT::interpretGroup).
 
     // Prepare the initial runtime values of latency basing on the option values.
@@ -9093,9 +9094,9 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
 bool CUDT::overrideSndSeqNo(int32_t seq)
 {
-    // This function is predicted to be called from the socket
+    // This function is intended to be called from the socket
     // group managmenet functions to synchronize the sequnece in
-    // all sockes in the redundancy group. THIS sequence given
+    // all sockes in the bonding group. THIS sequence given
     // here is the sequence TO BE STAMPED AT THE EXACTLY NEXT
     // sent payload. Therefore, screw up the ISN to exactly this
     // value, and the send sequence to the value one less - because
