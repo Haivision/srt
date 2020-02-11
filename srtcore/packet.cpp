@@ -163,6 +163,7 @@ modified by
 
 #include <cstring>
 #include "packet.h"
+#include "handshake.h"
 #include "logging.h"
 #include "handshake.h"
 
@@ -299,6 +300,11 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       break;
 
    case UMSG_KEEPALIVE: //0001 - Keep-alive
+      if (lparam)
+      {
+          // XXX EXPERIMENTAL. Pass the 32-bit integer here.
+          m_nHeader[SRT_PH_MSGNO] = *lparam;
+      }
       // control info field should be none
       // but "writev" does not allow this
       m_PacketVector[PV_DATA].set((void *)&__pad, 4);
