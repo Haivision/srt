@@ -867,7 +867,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
 
-   case SRTO_GROUPCONNECT:
+    case SRTO_GROUPCONNECT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_bOPT_GroupConnect = bool_int_value(optval, optlen);
@@ -2035,7 +2035,8 @@ bool CUDT::createSrtHandshake(
     //
     // XXX Probably a condition should be checked here around the group type.
     // The time synchronization should be done only on any kind of parallel sending group.
-    // This is, for example, for redundancy group or bonding group, but not distribution group.
+    // Currently all groups are such groups (broadcast, backup, balancing), but it may
+    // need to be changed for some other types.
     while (have_group)
     {
         CGuard grd (m_parent->m_ControlLock);
@@ -2344,7 +2345,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
      * Also includes current packet transit time (rtt/2)
      */
     m_tsRcvPeerStartTime = steady_clock::now() - microseconds_from(ts);
-    // (in case of redundancy group, this value will be OVERWRITTEN
+    // (in case of bonding group, this value will be OVERWRITTEN
     // later in CUDT::interpretGroup).
 
     // Prepare the initial runtime values of latency basing on the option values.
@@ -3073,7 +3074,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD__SIZE];
-                if ( bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
+                if (bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
@@ -3081,7 +3082,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
 
                 memcpy(groupdata, begin+1, bytelen);
-                if ( !interpretGroup(groupdata, hsreq_type_cmd) )
+                if (!interpretGroup(groupdata, hsreq_type_cmd))
                 {
                     // m_RejectReason handled inside interpretGroup().
                     return false;
@@ -3262,7 +3263,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
         return false;
     }
 
-    if ( (grpid & SRTGROUP_MASK) == 0)
+    if ((grpid & SRTGROUP_MASK) == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "HS/GROUP: socket ID passed as a group ID is not a group ID");
@@ -7573,13 +7574,13 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     if (acksize > 0)
     {
         const int distance = m_pRcvBuffer->ackData(acksize);
-/*
-        XXX example code - inform the group up to which packet
-        data are received so that it can be also acknowledged
-        in all others and false lossreport prevened
-        if (m_parent->m_IncludedGroup)
-            m_parent->m_IncludedGroup->readyPackets(this, ack);
-*/
+        /*
+           XXX example code - inform the group up to which packet
+           data are received so that it can be also acknowledged
+           in all others and false lossreport prevened
+           if (m_parent->m_IncludedGroup)
+           m_parent->m_IncludedGroup->readyPackets(this, ack);
+         */
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
@@ -7697,7 +7698,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         // IF ack %> m_iRcvLastAck
         if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
         {
-            int32_t first_seq = ackDataUpTo(ack);
+            const int32_t first_seq = ackDataUpTo(ack);
             leaveCS(m_RcvBufferLock);
             IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
@@ -8376,7 +8377,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
         steady_clock::duration udrift;
         steady_clock::time_point newtimebase;
-        bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+        const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
                 (udrift), (newtimebase));
         if (drift_updated && m_parent->m_IncludedGroup)
         {
@@ -9132,9 +9133,9 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
 bool CUDT::overrideSndSeqNo(int32_t seq)
 {
-    // This function is predicted to be called from the socket
+    // This function is intended to be called from the socket
     // group managmenet functions to synchronize the sequnece in
-    // all sockes in the redundancy group. THIS sequence given
+    // all sockes in the bonding group. THIS sequence given
     // here is the sequence TO BE STAMPED AT THE EXACTLY NEXT
     // sent payload. Therefore, screw up the ISN to exactly this
     // value, and the send sequence to the value one less - because
@@ -9190,7 +9191,7 @@ int CUDT::processData(CUnit* in_unit)
     m_iEXPCount = 1;
     m_tsLastRspTime = steady_clock::now();
 
-    bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
+    const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
     if (need_tsbpd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
@@ -9789,9 +9790,7 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
         }
     }
 
-    int initial_loss_ttl = 0;
-    if ( self->m_bPeerRexmitFlag )
-        initial_loss_ttl = self->m_iReorderTolerance;
+    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
 
     int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
 
@@ -9801,8 +9800,8 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     // Loss detection.
     if (seqdiff > 1) // packet is later than the very subsequent packet
     {
-        int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
-        int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
+        const int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
+        const int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
 
         {
             // If loss found, insert them to the receiver loss list

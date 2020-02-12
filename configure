@@ -194,6 +194,23 @@ if { $saveopt != "" } {
 	error "Extra unhandled argument: $saveopt"
 }
 
+# Save the original call into config-status.sh
+
+set ofd [open config-status.sh w]
+puts $ofd "#!/bin/bash"
+puts -nonewline $ofd "$argv0 "
+foreach a $argv {
+	set len 1
+	if {[catch {llength $a} len] || $len > 1 } {
+		puts -nonewline $ofd "'$a' "
+	} else {
+		puts -nonewline $ofd "$a "
+	}
+}
+puts $ofd ""
+close $ofd
+file attributes config-status.sh -permissions +x
+
 set cmakeopt ""
 
 resolve_disablers
