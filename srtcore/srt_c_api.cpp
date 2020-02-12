@@ -19,6 +19,7 @@ written by
 #include <fstream>
 #include "srt.h"
 #include "common.h"
+#include "packet.h"
 #include "core.h"
 #include "utilities.h"
 
@@ -30,9 +31,20 @@ extern "C" {
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
+// Socket creation.
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
+// Group management.
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
+int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
+int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
+SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
+int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
+// int srt_bind_multicast()
+
+// Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
 int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
@@ -44,6 +56,23 @@ int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* target, int target_len)
 {
     return CUDT::connect(u, source, source_len, target, target_len);
+}
+
+SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen)
+{
+    SRT_SOCKGROUPDATA data;
+    data.result = 0;
+    data.status = SRTS_INIT;
+    data.id = -1;
+    memcpy(&data.peeraddr, adr, namelen);
+    return data;
+}
+
+int srt_connect_group(SRTSOCKET group,
+        const struct sockaddr* source, int sourcelen,
+        SRT_SOCKGROUPDATA name [], int arraysize)
+{
+    return CUDT::connectLinks(group, source, sourcelen, name, arraysize);
 }
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,

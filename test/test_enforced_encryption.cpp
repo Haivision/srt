@@ -14,7 +14,18 @@
 #include <thread>
 
 #include "srt.h"
+#include "udt.h"
+#include "logging.h"
+#include "../apps/logsupport.cpp"
 
+namespace srt_logging
+{
+    const LogFA SRT_LOGFA_APP = 10;
+}
+using namespace srt_logging;
+extern LogConfig srt_logger_config;
+
+Logger applog(SRT_LOGFA_APP, srt_logger_config, "test-srt");
 
 
 enum PEER_TYPE
@@ -207,6 +218,18 @@ protected:
     {
         ASSERT_EQ(srt_startup(), 0);
 
+        // MODEL of how you can provide extra options for
+        // gtest appliaction.
+        srt_addlogfa(SRT_LOGFA_APP);
+
+        LogLevel::type ll = LogLevel::note;
+        const char* envsrt = getenv("SRT_LOGLEVEL");
+        if (envsrt)
+        {
+            ll = SrtParseLogLevel(envsrt);
+        }
+        UDT::setloglevel(ll);
+
         m_pollid = srt_epoll_create();
         ASSERT_GE(m_pollid, 0);
 
@@ -231,8 +254,17 @@ protected:
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
+
+        applog.Note() << "CLOSE: caller socket";
         ASSERT_NE(srt_close(m_caller_socket),   SRT_ERROR);
+        applog.Note() << "CLOSE: listener socket";
         ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+
+        // (this is blocked, as cleanup should take care of it anyway,
+        // but may be useful in future for testing).
+        //applog.Note() << "CLOSE: EID";
+        //srt_epoll_release(m_pollid);
+        applog.Note() << "CLEANUP";
         srt_cleanup();
     }
 
@@ -328,21 +360,30 @@ public:
         sa.sin_port = htons(5200);
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
         sockaddr* psa = (sockaddr*)&sa;
+
+        applog.Note() << "Binding listener socket.";
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
+        applog.Note() << "Connecting caller socket.";
         const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
         {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+            applog.Error() << "UNEXPECTED! srt_connect returned error: "
+                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")";
         }
 
+        applog.Note() << "Enter waiting.";
         const int epoll_res = WaitOnEpoll(expect);
+        applog.Note() << "Exit waiting. Starting thread";
 
         auto accepting_thread = std::thread([&] {
+
+            ThreadName::set("TEST:SUB");
+            applog.Note() << "THREAD for accept: ENTER";
+
             if (epoll_res == SRT_ERROR)
                 return;
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
@@ -374,10 +415,15 @@ public:
                     std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
+
+            applog.Note() << "THREAD for accept: EXIT";
         });
 
         if (is_blocking == false)
+        {
+            applog.Note() << "Joining: accept thread";
             accepting_thread.join();
+        }
 
         if (m_is_tracing)
         {
@@ -401,10 +447,16 @@ public:
         {
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
+
+            applog.Note() << "Will close LISTENER socket in 50ms";
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+
+            applog.Note() << "Joining: accept thread";
             accepting_thread.join();
         }
+
+        applog.Note() << "TEST DONE.";
     }
 
 

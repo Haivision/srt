@@ -389,11 +389,6 @@ public:
             size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
             );
 
-#if ENABLE_HEAVY_LOGGING
-    void debugGroup() const;
-#else
-    void debugGroup() const {}
-#endif
 private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
@@ -579,6 +574,8 @@ public: //API
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen);
+    static int connectLinks(SRTSOCKET grp, const sockaddr* source /*[[nullable]]*/, int namelen,
+            SRT_SOCKGROUPDATA links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -616,7 +613,6 @@ public: //API
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
 
 public: // internal API
-
     // This is public so that it can be used directly in API implementation functions.
     struct APIError
     {
@@ -745,6 +741,7 @@ public: // internal API
     CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
+    SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
@@ -886,7 +883,7 @@ private:
 
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
 
-    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m);
+    SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
@@ -1036,6 +1033,7 @@ private: // Identification
     bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
     int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
+    bool m_bOPT_GroupConnect;
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
 
