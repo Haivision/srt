@@ -114,15 +114,14 @@ Old and deprecated version of `srt_create_socket`. All arguments are ignored.
 socket family (`AF_INET` or `AF_INET6`). This is now not required; this parameter
 is decided at the call of `srt_conenct` or `srt_bind`.
 
-* In UDT the `type` parameter was used to specify the file or message mode using
-`SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading, as the
-message mode has nothing to do with UDP datagrams and it's rather similar to the SCTP
-protocol). In SRT, set `SRTO_TRANSTYPE` to `SRTT_FILE` for file mode, which is
-stream mode (TCP-like) by default. Then set `SRTO_MESSAGEAPI` to true for the
-message mode (SCTP-like).
-
- these two modes are available by setting `SRTO_TRANSTYPE` to
-`SRTT_FILE`, and the message mode is set by `SRTO_MESSAGEAPI` option.
+* In UDT the `type` parameter was used to specify the file or message mode
+using `SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading,
+as the message mode has nothing to do with UDP datagrams and it's rather
+similar to the SCTP protocol). In SRT these two modes are available by setting
+`SRTO_TRANSTYPE`. The default is `SRTT_LIVE`. If, however, you set
+`SRTO_TRANSTYPE` to `SRTT_FILE` for file mode, you can then leave the
+`SRTO_MESSAGEAPI option as false (default), which corresponds to "stream" mode
+(TCP-like), or set it to true, which corresponds to "message" mode (SCTP-like).
 
 
 ### srt_create_socket

@@ -983,8 +983,10 @@ this listener socket. This flag is also derived from the listener socket
 by the accepted socket or group, although the meaning of this flag is
 effectively different.
 
-- Note that this flag set on a group is for group only, as it concerns the
-exact receiving operation being done on a group.
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
+
 
 ---
 
@@ -996,8 +998,9 @@ exact receiving operation being done on a group.
 block (see `SRTO_RCVSYN` for details), so when this time is exceeded, it
 will behave as if in "non-blocking mode". The -1 value means no time limit.
 
-- Note that this flag set on a group is for group only, as it concerns the
-exact receiving operation being done on a group.
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
@@ -1141,8 +1144,9 @@ enters a connected state.
 - On a listener socket it will be derived by the accepted socket or group,
 but will have no effect on the listener socket itself.
 
-- Note that this flag set on a group is for group only, as it concerns the
-exact sending operation being done on a group.
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
@@ -1154,8 +1158,9 @@ exact sending operation being done on a group.
 block (see `SRTO_SNDSYN` for details), so when this time is exceeded, it
 will behave as if in "non-blocking mode". The -1 value means no time limit.
 
-- Note that this flag set on a group is for group only, as it concerns the
-exact sending operation being done on a group.
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
