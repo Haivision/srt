@@ -379,8 +379,8 @@ public:
         const int epoll_res = WaitOnEpoll(expect);
         applog.Note() << "Exit waiting. Starting thread";
 
-        auto accepting_thread = std::thread([&] {
-
+        auto accepting_thread = std::thread([&]
+        {
             ThreadName::set("TEST:SUB");
             applog.Note() << "THREAD for accept: ENTER";
 

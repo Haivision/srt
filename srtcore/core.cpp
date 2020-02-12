@@ -10658,7 +10658,6 @@ void CUDT::removeEPollEvents(const int eid)
 
 void CUDT::removeEPollID(const int eid)
 {
-
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
@@ -10727,7 +10726,6 @@ void CUDTGroup::removeEPollEvents(const int eid)
 
 void CUDTGroup::removeEPollID(const int eid)
 {
-
    enterCS(m_pGlobal->m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);
    leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
