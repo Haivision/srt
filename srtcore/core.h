@@ -389,6 +389,11 @@ public:
             size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
             );
 
+#if ENABLE_HEAVY_LOGGING
+    void debugGroup();
+#else
+    void debugGroup() {}
+#endif
 private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
@@ -514,6 +519,7 @@ public:
     // Live state synchronization
     bool getBufferTimeBase(CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
+    void synchronizeDrift(CUDT* cu, duration udrift, time_point newtimebase);
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
@@ -680,6 +686,8 @@ public: // internal API
     int RTT() const { return m_iRTT; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
+    bool overrideSndSeqNo(int32_t seq);
+
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
     int flowWindowSize() const { return m_iFlowWindowSize; }
     int32_t deliveryRate() const { return m_iDeliveryRate; }
@@ -752,7 +760,13 @@ public: // internal API
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
+    // This is in public section so prospective overriding it can be
+    // done by directly assigning to a field.
+
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
+    typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
+    CallbackHolder<packetArrival_cb> m_cbPacketArrival;
+
 private:
     /// initialize a UDT entity and bind to a local address.
 
@@ -886,6 +900,8 @@ private:
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
+    size_t dropMessage(int32_t seqtoskip);
+
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
     /// @param ifs [in] The input file stream.
     /// @param offset [in, out] From where to read and send data; output is the new offset when the call returns.
@@ -978,6 +994,9 @@ private:
     static void* tsbpd(void* param);
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
+
+    static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
+    static std::vector<int32_t> groupPacketArrival(void* vself, CPacket& pkt);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
@@ -1208,6 +1227,8 @@ private: // Receiving related data
     uint32_t m_lPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
+
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
     srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
