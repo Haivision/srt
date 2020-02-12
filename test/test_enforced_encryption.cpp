@@ -218,7 +218,7 @@ protected:
     {
         ASSERT_EQ(srt_startup(), 0);
 
-        // MODEL of how you can provide extra options for
+        // A MODEL of how you can provide extra options for
         // gtest appliaction.
         srt_addlogfa(SRT_LOGFA_APP);
 
