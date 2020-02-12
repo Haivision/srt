@@ -120,7 +120,7 @@ as the message mode has nothing to do with UDP datagrams and it's rather
 similar to the SCTP protocol). In SRT these two modes are available by setting
 `SRTO_TRANSTYPE`. The default is `SRTT_LIVE`. If, however, you set
 `SRTO_TRANSTYPE` to `SRTT_FILE` for file mode, you can then leave the
-`SRTO_MESSAGEAPI option as false (default), which corresponds to "stream" mode
+`SRTO_MESSAGEAPI` option as false (default), which corresponds to "stream" mode
 (TCP-like), or set it to true, which corresponds to "message" mode (SCTP-like).
 
 

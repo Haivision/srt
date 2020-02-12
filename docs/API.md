@@ -1145,7 +1145,7 @@ enters a connected state.
 but will have no effect on the listener socket itself.
 
 - Note that when this flag is set only on a group, it applies to a
-specific receiving operation being done on that group (i.e. it is not
+specific sending operation being done on that group (i.e. it is not
 derived from the socket of which the group is a member).
 
 ---
@@ -1159,7 +1159,7 @@ block (see `SRTO_SNDSYN` for details), so when this time is exceeded, it
 will behave as if in "non-blocking mode". The -1 value means no time limit.
 
 - Note that when this flag is set only on a group, it applies to a
-specific receiving operation being done on that group (i.e. it is not
+specific sending operation being done on that group (i.e. it is not
 derived from the socket of which the group is a member).
 
 ---
