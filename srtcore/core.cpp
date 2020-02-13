@@ -3245,8 +3245,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
 {
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
-    //SRTSOCKET master_peerid = groupdata[GRPD_MASTERID];
-    //int32_t tdiff = groupdata[GRPD_MASTERTDIFF];
 
     if (!m_bOPT_GroupConnect)
     {
@@ -3363,41 +3361,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             return false;
         }
     }
-
-    /*
-
-    // Synchronize the TSBPD PEER start time with the existing connection,
-    // if there exists the connection with given peer.
-    if (master_peerid != -1)
-    {
-        // Here "I am a peer", so this is the socket ID of local socket of a parallel connection.
-        // Check if it exists, if not, reject the connection.
-        CUDTSocket* master = s_UDTUnited.locateSocket(master_peerid, s_UDTUnited.ERH_RETURN);
-        if (!master)
-        {
-            LOGC(mglog.Error, log << "HS/GROUP: master parallel connection socket not found: $" << master_peerid);
-            return false;
-        }
-
-        // The value of the time difference is the difference between m_stats.tsStartTime of this
-        // socket's peer and the 'master_peerid' socket's peer. This time should be identical
-        // with the time difference in m_tsRcvPeerStartTime between master_peerid and *this.
-        //
-        // Note that this value should have been set before by interpreting HSREQ/HSRSP,
-        // so it's only being fixed here.
-
-        uint64_t new_start_time = master->core().m_tsRcvPeerStartTime + tdiff;
-        HLOGC(mglog.Debug, log << "HS/GROUP: master reported as $" << master_peerid
-            << " distant to slave: " << tdiff << "ms - setting peer start time: " << FormatTime(new_start_time)
-            << " (fixed by " << (m_tsRcvPeerStartTime - new_start_time) << "ms)");
-
-        m_tsRcvPeerStartTime = new_start_time;
-        // m_tsRcvPeerStartTime: this state has two indicators, one here, the other in the
-        // CRcvBuffer object. This one is the master indicator that is being set during
-        // the handshake, the below function synchronizes it to the CRcvBuffer object.
-        updateSrtRcvSettings();
-    }
-    */
 
     m_parent->m_IncludedGroup->debugGroup();
 
@@ -8906,9 +8869,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                         HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
                                 << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                                 << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
-#ifndef SRT_TEST_DISABLE_KEY_CONTROL_PACKETS
                         sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-#endif
 
                         // In case when this message is lost, the peer will still get the
                         // UMSG_DROPREQ message when the agent realizes that the requested
@@ -9529,7 +9490,6 @@ int CUDT::processData(CUnit* in_unit)
             if (adding_successful)
             {
                 // XXX move this code do CUDT::defaultPacketArrival and call it from here:
-
                 // srt_loss_seqs = CALLBACK_CALL(m_cbPacketArrival, rpkt);
 
                 HLOGC(dlog.Debug,

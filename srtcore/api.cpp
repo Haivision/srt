@@ -746,8 +746,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
       CTimer::triggerEvent();
 
-      CTimer::triggerEvent();
-
       // XXX the exact value of 'error' is ignored
       if (error > 0)
       {
