@@ -11447,13 +11447,6 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     CGuard guard (m_GroupLock);
 
-    // XXX G make a distinction here for an exact group type of managed sending.
-    // The below procedure implements only redundancy.
-    // For bonding there should be a different procedure that selects
-    // the current least burdened link (the link which's burden value has
-    // longest distance to its predicted usage percentage) and send only through
-    // this link.
-
     // This simply requires the payload to be sent through every socket in the group
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
@@ -11462,24 +11455,6 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             wipeme.push_back(d);
-
-            /*
-               This distinction is now blocked - it has led to blocking removal of
-               authentically broken sockets that just got only incorrect state update.
-               (XXX This problem has to be fixed either, but when epoll is rewritten it
-                will be fixed from the start anyway).
-
-            // Check if broken permanently
-            if (!d->ps || d->ps->getStatus() == SRTS_BROKEN)
-            {
-                HLOGC(dlog.Debug, log << "... permanently. Will delete it from group $" << id());
-                wipeme.push_back(d);
-            }
-            else
-            {
-                HLOGC(dlog.Debug, log << "... socket still " << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
-            }
-            */
             continue;
         }
 
