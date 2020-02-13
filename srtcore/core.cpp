@@ -6071,12 +6071,17 @@ bool CUDT::close()
             HLOGC(dlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
             s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
             HLOGC(dlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
-            // IMPORTANT: there's theoretically little time between setting ERR readiness
-            // and unsubscribing, however if there's an application waiting on this event,
-            // it should be informed before this below instruction locks and unlocks the
-            // epoll mutex.
-            removeEPollID(*i);
         }
+
+        // Not deleting elements from m_sPollID inside the loop because it invalidates
+        // the control iterator of the loop. Instead, all will be removed at once.
+
+        // IMPORTANT: there's theoretically little time between setting ERR readiness
+        // and unsubscribing, however if there's an application waiting on this event,
+        // it should be informed before this below instruction locks the epoll mutex.
+        enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+        m_sPollID.clear();
+        leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
     }
     catch (...)
     {
