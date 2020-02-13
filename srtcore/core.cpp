@@ -260,7 +260,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_bOPT_GroupConnect     = false;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
-    m_zUserPayloadSize      = SRT_LIVE_MAX_PLSIZE;
+    m_zUserPayloadSize      = calcMaxPayloadSize();
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports

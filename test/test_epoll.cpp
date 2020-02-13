@@ -717,7 +717,7 @@ protected:
             ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
         }
 
-        char buffer[1316];
+        char buffer[SRT_LIVE_MAX_PLSIZE];
         ASSERT_EQ(srt_recvmsg(acpsock, buffer, sizeof buffer), 1316);
 
         char pattern[4] = {1, 2, 3, 4};
