@@ -74,10 +74,8 @@ public:
         : SrtCongestionControlBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
-        m_zMaxPayloadSize = parent->OPT_PayloadSize();
-        if ( m_zMaxPayloadSize == 0 )
-            m_zMaxPayloadSize = parent->maxPayloadSize();
-        m_zSndAvgPayloadSize = m_zMaxPayloadSize;
+        m_zMaxPayloadSize = parent->maxPayloadSize();
+        m_zSndAvgPayloadSize = 0; // NOT 0 and not MAX
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
@@ -148,8 +146,13 @@ private:
         // Worst case scenario, the procedure running in CRcvQueue::worker
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
-        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
-        HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
+        size_t plen = packet.getLength();
+        if (m_zSndAvgPayloadSize == 0)
+            m_zSndAvgPayloadSize = plen;
+        else
+            m_zSndAvgPayloadSize = avg_iir<128>(m_zSndAvgPayloadSize, plen);
+
+        HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << plen << " -> " << m_zSndAvgPayloadSize);
     }
 
     void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
@@ -165,6 +168,9 @@ private:
 
     void updatePktSndPeriod()
     {
+        if (m_zSndAvgPayloadSize == 0)
+            return; // do not update - nothing was sent so far
+
         // packet = payload + header
         const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
