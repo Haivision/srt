@@ -74,8 +74,10 @@ public:
         : SrtCongestionControlBase(parent)
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
-        m_zMaxPayloadSize = parent->maxPayloadSize();
-        m_zSndAvgPayloadSize = 0; // NOT 0 and not MAX
+        m_zMaxPayloadSize = parent->userPayloadSize();
+        if ( m_zMaxPayloadSize == 0 )
+            m_zMaxPayloadSize = parent->maxPayloadSize();
+        m_zSndAvgPayloadSize = 0;
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator

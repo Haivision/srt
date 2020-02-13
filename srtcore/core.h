@@ -696,7 +696,8 @@ public: // internal API
 
     uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
+    size_t calcMaxPayloadSize() const;
+    size_t userPayloadSize() const { return m_zUserPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
@@ -1002,9 +1003,8 @@ private: // Identification
     CUDTSocket* const m_parent; // temporary, until the CUDTSocket class is merged with CUDT
     SRTSOCKET m_SocketID;                        // UDT socket number
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
-
-    int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
-    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
+    int m_iMaxSRTPayloadSize;                    // Maximum/regular payload size, in bytes (dependent on MSS)
+    size_t m_zUserPayloadSize;                   // Expected average payload size (user option)
 
     // Options
     int m_iMSS;                                  // Maximum Segment Size, in bytes

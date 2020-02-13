@@ -260,7 +260,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_bOPT_GroupConnect     = false;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
-    m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
+    m_zUserPayloadSize      = SRT_LIVE_MAX_PLSIZE;
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
@@ -321,7 +321,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
     m_bOPT_GroupConnect     = ancestor.m_bOPT_GroupConnect;
-    m_zOPT_ExpPayloadSize   = ancestor.m_zOPT_ExpPayloadSize;
+    m_zUserPayloadSize      = ancestor.m_zUserPayloadSize;
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
     m_iIpV6Only             = ancestor.m_iIpV6Only;
@@ -786,30 +786,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (m_OPT_PktFilterConfigString != "")
-        {
-            // This means that the filter might have been installed before,
-            // and the fix to the maximum payload size was already applied.
-            // This needs to be checked now.
-            SrtFilterConfig fc;
-            if (!ParseFilterConfig(m_OPT_PktFilterConfigString, fc))
-            {
-                // Break silently. This should not happen
-                LOGC(mglog.Error, log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
-            {
-                LOGC(mglog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
-                         << " required for packet filter header");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-        }
-
-        m_zOPT_ExpPayloadSize = *(int *)optval;
+        LOGC(mglog.Warn, log << "SRTO_PAYLOADSIZE: this option is deprecated and ignored; you can safely remove it.");
         break;
 
     case SRTO_TRANSTYPE:
@@ -835,7 +812,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_iOPT_SndDropDelay   = 0;
             m_bMessageAPI         = true;
             m_bRcvNakReport       = true;
-            m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
+            m_zUserPayloadSize    = calcMaxPayloadSize();
             m_Linger.l_onoff      = 0;
             m_Linger.l_linger     = 0;
             m_CongCtl.select("live");
@@ -855,7 +832,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_iOPT_SndDropDelay   = -1;
             m_bMessageAPI         = false;
             m_bRcvNakReport       = false;
-            m_zOPT_ExpPayloadSize = 0; // use maximum
+            m_zUserPayloadSize    = 0; // no limit check
             m_Linger.l_onoff      = 1;
             m_Linger.l_linger     = DEF_LINGER_S;
             m_CongCtl.select("file");
@@ -945,13 +922,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+            size_t efc_max_payload_size = calcMaxPayloadSize() - fc.extra_size;
+            if (m_zUserPayloadSize > efc_max_payload_size)
             {
-                LOGC(mglog.Warn,
-                     log << "Due to filter-required extra " << fc.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                         << efc_max_payload_size << " bytes");
-                m_zOPT_ExpPayloadSize = efc_max_payload_size;
+                m_zUserPayloadSize = efc_max_payload_size;
+                HLOGC(mglog.Debug, log << "SRTO_PACKETFILTER: fixed user max payload size: " << m_zUserPayloadSize);
             }
 
             m_OPT_PktFilterConfigString = arg;
@@ -1229,7 +1204,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = m_zOPT_ExpPayloadSize;
+        LOGC(mglog.Warn, log << "SRTO_PAYLOADSIZE: option deprecated and ignored.");
+        *(int *)optval = 0;
         break;
 
     case SRTO_ENFORCEDENCRYPTION:
@@ -1290,9 +1266,9 @@ std::string CUDT::getstreamid(SRTSOCKET u)
 void CUDT::clearData()
 {
     // Initial sequence number, loss, acknowledgement, etc.
-    int udpsize = m_iMSS - CPacket::UDP_HDR_SIZE;
-
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = calcMaxPayloadSize();
+    if (m_zUserPayloadSize != 0 && int(m_zUserPayloadSize) > m_iMaxSRTPayloadSize)
+        m_zUserPayloadSize = m_iMaxSRTPayloadSize;
 
     HLOGC(mglog.Debug, log << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
@@ -3229,13 +3205,11 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         m_OPT_PktFilterConfigString = confstr;
     }
 
-    size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
-    if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+    size_t efc_max_payload_size = calcMaxPayloadSize() - cfg.extra_size;
+    if (m_zUserPayloadSize > efc_max_payload_size)
     {
-        LOGC(mglog.Warn,
-             log << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                 << efc_max_payload_size << " bytes");
-        m_zOPT_ExpPayloadSize = efc_max_payload_size;
+        m_zUserPayloadSize = efc_max_payload_size;
+        HLOGC(mglog.Debug, log << "checkApplyFilterConfig: fixed user max payload size: " << m_zUserPayloadSize);
     }
 
     return true;
@@ -4802,13 +4776,18 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     return postConnect(response, false, eout, synchro);
 }
 
+size_t CUDT::calcMaxPayloadSize() const
+{
+    const int udpsize = m_iMSS - CPacket::UDP_HDR_SIZE;
+    return udpsize - CPacket::HDR_SIZE;
+}
+
 void CUDT::applyResponseSettings()
 {
     // Re-configure according to the negotiated values.
     m_iMSS               = m_ConnRes.m_iMSS;
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
-    int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = calcMaxPayloadSize();
     m_iPeerISN           = m_ConnRes.m_iISN;
 
     setInitialRcvSeq(m_iPeerISN);
@@ -5676,9 +5655,9 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
 
-    int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
-    HLOGC(mglog.Debug, log << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    m_iMaxSRTPayloadSize = calcMaxPayloadSize();
+    HLOGC(mglog.Debug, log << "acceptAndRespond: PAYLOAD SIZE user: " << m_zUserPayloadSize
+            << " max:" << m_iMaxSRTPayloadSize);
 
     // Prepare all structures
     if (!prepareConnectionObjects(w_hs, HSD_DRAW, 0))
@@ -5868,7 +5847,7 @@ SRT_REJECT_REASON CUDT::setupCC()
 
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
-        HLOGC(mglog.Debug, log << "filter: Configuring Corrector: " << m_OPT_PktFilterConfigString);
+        HLOGC(mglog.Debug, log << "filter: Configuring: " << m_OPT_PktFilterConfigString);
         if (!m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString))
         {
             return SRT_REJ_FILTER;
@@ -10874,7 +10853,7 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)
     {
-        int plsize = data.ps->m_pUDT->OPT_PayloadSize();
+        int plsize = data.ps->m_pUDT->m_zUserPayloadSize;
         HLOGC(mglog.Debug, log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
             << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
         if (plsize == 0)
@@ -11106,7 +11085,6 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_RCVLATENCY, m_iOPT_TsbPdDelay);
     IM(SRTO_PEERLATENCY, m_iOPT_PeerTsbPdDelay);
     IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
-    IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
     IM(SRTO_TLPKTDROP, m_bTLPktDrop);
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);

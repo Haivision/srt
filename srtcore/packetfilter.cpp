@@ -254,8 +254,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     init.socket_id = parent->socketID();
     init.snd_isn = parent->sndSeqNo();
     init.rcv_isn = parent->rcvSeqNo();
-    init.payload_size = parent->OPT_PayloadSize();
-
+    init.payload_size = parent->userPayloadSize();
 
     // Found a filter, so call the creation function
     m_filter = selector->second->Create(init, m_provided, confstr);
