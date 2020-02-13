@@ -303,7 +303,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       if (lparam)
       {
           // XXX EXPERIMENTAL. Pass the 32-bit integer here.
-         m_nHeader[SRT_PH_MSGNO] = *lparam;
+          m_nHeader[SRT_PH_MSGNO] = *lparam;
       }
       // control info field should be none
       // but "writev" does not allow this

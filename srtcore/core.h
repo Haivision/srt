@@ -619,7 +619,6 @@ public: //API
     static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
 
 public: // internal API
-
     // This is public so that it can be used directly in API implementation functions.
     struct APIError
     {
