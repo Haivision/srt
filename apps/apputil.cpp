@@ -131,10 +131,13 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
         // When closing angle bracket isn't found, fallback to ARG_ONE.
         size_t pos = helptext.find('>');
         if (pos == std::string::npos)
-            return OptionScheme::ARG_ONE;
+            return OptionScheme::ARG_ONE; // mistake, but acceptable
 
         if (pos >= 4 && helptext.substr(pos-4, 4) == "...>")
             return OptionScheme::ARG_VAR;
+
+        // We have < and > without ..., simply one argument
+        return OptionScheme::ARG_ONE;
     }
 
     if (helptext[0] == '[')
