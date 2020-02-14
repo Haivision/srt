@@ -123,7 +123,6 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
     if (helptext.empty())
         return OptionScheme::ARG_NONE;
 
-
     if (helptext[0] == '<')
     {
         // If the argument is <one-argument>, then it's ARG_NONE.
@@ -133,7 +132,7 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
         if (pos == std::string::npos)
             return OptionScheme::ARG_ONE; // mistake, but acceptable
 
-        if (pos >= 4 && helptext.substr(pos-4, 4) == "...>")
+        if (pos >= 4 && helptext.substr(pos-3, 4) == "...>")
             return OptionScheme::ARG_VAR;
 
         // We have < and > without ..., simply one argument
