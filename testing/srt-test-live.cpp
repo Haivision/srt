@@ -354,7 +354,7 @@ int main( int argc, char** argv )
         o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
         o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   ((optargs), " Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
         o_loglevel  ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=all> Enabled Functional Areas", "lfa", "logfa"),
