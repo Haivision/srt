@@ -133,7 +133,7 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
         if (pos == std::string::npos)
             return OptionScheme::ARG_ONE; // mistake, but acceptable
 
-        if (pos >= 4 && helptext.substr(pos-4, 4) == "...>")
+        if (pos >= 4 && helptext.substr(pos-3, 4) == "...>")
             return OptionScheme::ARG_VAR;
 
         // We have < and > without ..., simply one argument
