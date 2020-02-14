@@ -768,11 +768,11 @@ void SrtCommon::OpenGroupClient()
         sockaddr* psa = (sockaddr*)&sa;
         Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
         ++i;
-        SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(psa, namelen);
+        SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
         targets.push_back(gd);
     }
 
-    int fisock = srt_connect_group(m_sock, 0, namelen, targets.data(), targets.size());
+    int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");

@@ -440,7 +440,7 @@ public:
        return m_iStartPos == m_iLastAckPos;
    }
    bool full() const { return m_iStartPos == (m_iLastAckPos+1)%m_iSize; }
-   int capacity() const { return m_iSize; } // XXX WHY it was changed to m_iSize-1 ?
+   int capacity() const { return m_iSize; }
 
 
 private:
@@ -499,7 +499,6 @@ public:
    }
 
 private:
-
    int extractData(char *data, int len, int p, int q, bool passack);
    bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
    
