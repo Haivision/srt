@@ -168,6 +168,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
         // cout << "*D ARG: '" << a << "'\n";
         if (moreoptions && a[0] == '-')
         {
+            bool arg_specified = false;
             size_t seppos; // (see goto, it would jump over initialization)
             current_key = a+1;
             if ( current_key == "-" )
@@ -190,6 +191,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
                 // Old option specification.
                 extra_arg = current_key.substr(seppos + 1);
                 current_key = current_key.substr(0, 0 + seppos);
+                arg_specified = true; // Prevent eating args from option list
             }
 
             params[current_key].clear();
@@ -208,7 +210,11 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
                 if (s.names().count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if (s.type == OptionScheme::ARG_NONE)
+                    // If argument was specified using the old way, like
+                    // -v:0 or "-v 0", then consider the argument specified and
+                    // treat further arguments as either no-option arguments or
+                    // new options.
+                    if (s.type == OptionScheme::ARG_NONE || arg_specified)
                     {
                         // Anyway, consider it already processed.
                         break;
