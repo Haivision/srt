@@ -331,6 +331,7 @@ public:
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
 
     void close();
