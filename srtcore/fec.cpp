@@ -1335,13 +1335,13 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
             << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));
 
+    // Mark this packet received
+    MarkCellReceived(seqno);
+
     // If this is a single request (filled from row and m_number_cols == 1),
     // do not attempt recursive rebuilding
     if (tp == Group::SINGLE)
         return;
-
-    // Mark this packet received
-    MarkCellReceived(seqno);
 
     // This flips HORIZ/VERT
     Group::Type crosstype = Group::Type(!tp);
