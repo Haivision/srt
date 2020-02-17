@@ -2661,7 +2661,6 @@ CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 CUDTGroup& CUDT::newGroup(const int type)
 {
-    CGuard guard (s_UDTUnited.m_IDLock);
     const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
