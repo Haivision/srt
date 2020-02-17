@@ -540,7 +540,7 @@ where:
 
 * `id`: member socket ID
 * `status`: current connection status (see `srt_getsockstate`)
-* `result`: result of the operation (if this operation lately updated this structure)
+* `result`: result of the operation (if this operation recently updated this structure)
 * `srcaddr`: address to which `id` should be bound
 * `peeraddr`: address to which `id` should be connected
 
