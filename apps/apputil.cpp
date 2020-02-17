@@ -123,7 +123,6 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
     if (helptext.empty())
         return OptionScheme::ARG_NONE;
 
-
     if (helptext[0] == '<')
     {
         // If the argument is <one-argument>, then it's ARG_NONE.
