@@ -21,6 +21,16 @@ SRT API Functions
   * [srt_connect_bind](#srt_connect_bind)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
+- [**Socket group management**](#Socket-group-management)
+  * [SRT_GROUP_TYPE](#SRT_GROUP_TYPE)
+  * [SRT_SOCKGROUPDATA](#SRT_SOCKGROUPDATA)
+  * [srt_create_group](#srt_create_group)
+  * [srt_include](#srt_include)
+  * [srt_exclude](#srt_exclude)
+  * [srt_groupof](#srt_groupof)
+  * [srt_group_data](#srt_group_data)
+  * [srt_connect_group](#srt_connect_group)
+  * [srt_prepare_endpoint](#srt_prepare_endpoint)
 - [**Options and properties**](#Options-and-properties)
   * [srt_getpeername](#srt_getpeername)
   * [srt_getsockname](#srt_getsockname)
@@ -517,11 +527,15 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
 Socket group management
 -----------------------
 
+### SRT_GROUP_TYPE
+
 The following group types are collected in an `SRT_GROUP_TYPE` enum:
 
 * `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once
 * `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
 * `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
+
+### SRT_SOCKGROUPDATA
 
 The most important structure for the group members is `SRT_SOCKGROUPDATA`:
 
