@@ -91,13 +91,13 @@ int main(int argc, char** argv)
         printf("srt remote address #%zi\n", i);
 
         sa.sin_family = AF_INET;
-        sa.sin_port = htons(atoi(argv[B + 2*nmemb + 1]));
-        if (inet_pton(AF_INET, argv[B + 2*nmemb], &sa.sin_addr) != 1)
+        sa.sin_port = htons(atoi(argv[B + 2*i + 1]));
+        if (inet_pton(AF_INET, argv[B + 2*i], &sa.sin_addr) != 1)
         {
             return 1;
         }
 
-        grpdata[i] = srt_prepare_endpoint(/*NULL, */ (struct sockaddr*)&sa, sizeof sa);
+        grpdata[i] = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
     }
 
     printf("srt connect (group)\n");
@@ -105,7 +105,7 @@ int main(int argc, char** argv)
     // Note: this function unblocks at the moment when at least one connection
     // from the array is established (no matter which one); the others will
     // continue in background.
-    st = srt_connect_group(ss, /*-> */0, 0, /* <-*/grpdata, nmemb);
+    st = srt_connect_group(ss, grpdata, nmemb);
     if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
@@ -141,7 +141,7 @@ int main(int argc, char** argv)
         // Perform the group check. This can be used to recognize broken connections
         // and probably reestablish them by calling `srt_connect` for them. Here they
         // are only shown.
-        printf("Group status [%zi]:", mc.grpdata_size);
+        printf(" ++ Group status [%zi]:", mc.grpdata_size);
         if (!mc.grpdata)
         {
             printf(" (ERROR: array too small!)\n");

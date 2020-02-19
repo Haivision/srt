@@ -133,7 +133,7 @@ int main(int argc, char** argv)
             printf("Group status: [%zi] members > %zi, can't handle.\n", mc.grpdata_size, N);
         else
         {
-            printf("Group status [%zi]: ", mc.grpdata_size);
+            printf(" ++ Group status [%zi]: ", mc.grpdata_size);
             size_t z;
             for (z = 0; z < mc.grpdata_size; ++z)
             {
@@ -141,6 +141,7 @@ int main(int argc, char** argv)
                         mc.grpdata[z].status <= SRTS_CONNECTING ? "pending" :
                         mc.grpdata[z].status == SRTS_CONNECTED ? "connected" : "broken");
             }
+            printf("\n");
         }
     }
 
