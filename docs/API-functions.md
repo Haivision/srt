@@ -21,6 +21,16 @@ SRT API Functions
   * [srt_connect_bind](#srt_connect_bind)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
+- [**Socket group management**](#Socket-group-management)
+  * [SRT_GROUP_TYPE](#SRT_GROUP_TYPE)
+  * [SRT_SOCKGROUPDATA](#SRT_SOCKGROUPDATA)
+  * [srt_create_group](#srt_create_group)
+  * [srt_include](#srt_include)
+  * [srt_exclude](#srt_exclude)
+  * [srt_groupof](#srt_groupof)
+  * [srt_group_data](#srt_group_data)
+  * [srt_connect_group](#srt_connect_group)
+  * [srt_prepare_endpoint](#srt_prepare_endpoint)
 - [**Options and properties**](#Options-and-properties)
   * [srt_getpeername](#srt_getpeername)
   * [srt_getsockname](#srt_getsockname)
@@ -468,17 +478,25 @@ a rejected connection from `srt_getrejectreason`.
 ### srt_connect_bind
 
 ```
-int srt_connect_bind(SRTSOCKET u,
-                     const struct sockaddr* source, int source_len,
-                     const struct sockaddr* target, int target_len);
+int srt_connect_bind(SRTSOCKET u, const struct sockaddr* source,
+                     const struct sockaddr* target, int len);
 ```
 
 This function does the same as first `srt_bind` then `srt_connect`, if called
 with `u` being a socket. If `u` is a group, then it will execute `srt_bind`
 first on the automatically created socket for the connection.
 
+* `u`: Socket or group to connect
+* `source`: Address to bind `u` to
+* `target`: Address to connect
+* `len`: size of the original structure of `source` and `target`
+
 The result is similar as with `srt_connect`. Errors may be those reported
 by `srt_bind` as well.
+
+IMPORTANT: It's not allowed to bind and connect the same socket to two
+different families (that is, both `source` and `target` must be `AF_INET` or
+`AF_INET6`), although you may mix links over IPv4 and IPv6 in one group.
 
 ### srt_connect_debug
 
@@ -509,11 +527,36 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
 Socket group management
 -----------------------
 
+### SRT_GROUP_TYPE
+
 The following group types are collected in an `SRT_GROUP_TYPE` enum:
 
 * `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once
 * `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
 * `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
+
+### SRT_SOCKGROUPDATA
+
+The most important structure for the group members is `SRT_SOCKGROUPDATA`:
+
+```
+typedef struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    SRT_SOCKSTATUS status;
+    int result;
+    struct sockaddr_storage srcaddr;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+} SRT_SOCKGROUPDATA;
+```
+
+where:
+
+* `id`: member socket ID
+* `status`: current connection status (see `srt_getsockstate`)
+* `result`: result of the operation (if this operation recently updated this structure)
+* `srcaddr`: address to which `id` should be bound
+* `peeraddr`: address to which `id` should be connected
 
 Functions to be used on groups:
 
@@ -558,7 +601,7 @@ doesn't exist or it's not a member of any group.
 ### srt_group_data 
 
 ```
-int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA output[], size_t* inoutlen);
 ```
 
 * `socketgroup` an existing socket group ID
@@ -589,15 +632,15 @@ will not be filled and `SRT_ERROR` will be returned.
 
 ```
 int srt_connect_group(SRTSOCKET group,
-                      const struct sockaddr* source /*nullable*/, int sourcelen,
                       SRT_SOCKGROUPDATA name [], int arraysize);
 ```
 
-This function does almost the same as calling `srt_connect` (or
-`srt_connect_bind`, if `source` is not NULL) in a loop for every item specified
-in `name` array. However if you did this in blocking mode, the first call
-to `srt_connect` would block until the connection is established, whereas this
-function blocks until any of the specified connections is established. 
+This function does almost the same as calling `srt_connect` or `srt_connect_bind`
+(when the source was specified for `srt_prepare_endpoint`) in a loop for every
+item specified in `name` array. However if you did this in blocking mode, the
+first call to `srt_connect` would block until the connection is established,
+whereas this function blocks until any of the specified connections is
+established. 
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
 difference. Note, however, that this function accepts only groups, not
@@ -616,13 +659,22 @@ succeeded. Which one and how many of them succeeded, can be checked with the
 ### srt_prepare_endpoint
 
 ```
-SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
+SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
+                                       const struct sockaddr* adr, int namelen);
 ```
 
-This function turns the given address into the `SRT_SOCKGROUPDATA` structure needed by
-the `srt_connect_group` function.
+This function turns the given addresses into the `SRT_SOCKGROUPDATA` structure
+needed by the `srt_connect_group` function.
 
+* `src`: address to which the newly created socket should be bound
+* `adr`: address to which the newly created socket should connect
+* `namelen`: size of both `src` and `adr`
 
+The `src` parameter is optional and can be NULL, in which case the
+`srt_bind` will not be called on the newly created socket for that endpoint.
+The `adr` parameter is obligatory. Note though that this function has no
+possibility of reporting errors - these would be reported only by
+`srt_connect_group`.
 
 
 Options and properties
