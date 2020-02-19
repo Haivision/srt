@@ -416,7 +416,7 @@ void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
-    LOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
         << " pkt.ts=" << packet.m_iTimeStamp
