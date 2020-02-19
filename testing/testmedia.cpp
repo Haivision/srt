@@ -1806,7 +1806,6 @@ RETRY_READING:
     Error("No data extracted");
     return output; // Just a marker - this above function throws an exception
 }
-
 #endif
 
 bytevector SrtSource::Read(size_t chunk)
@@ -2487,7 +2486,6 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
         break;
-
     }
 
     if (ptr)
