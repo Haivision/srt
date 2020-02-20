@@ -23,6 +23,7 @@
 #include <sys/ioctl.h>
 #endif
 
+// SRT protected includes
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
@@ -39,6 +40,7 @@
 
 using namespace std;
 
+using srt_logging::SockStatusStr;
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -188,7 +190,7 @@ template <> struct File<Relay> { typedef FileRelay type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
-void SrtCommon::InitParameters(string host, map<string,string> par)
+void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
     if ( Verbose::on && !par.empty())
@@ -197,6 +199,64 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         for (map<string,string>::iterator i = par.begin(); i != par.end(); ++i)
         {
             Verb() << "\t" << i->first << " = '" << i->second << "'\n";
+        }
+    }
+
+    if (path != "")
+    {
+        // Special case handling of an unusual specification.
+
+        if (path.substr(0, 2) != "//")
+        {
+            Error("Path specification not supported for SRT (use // in front for special cases)");
+        }
+
+        path = path.substr(2);
+
+        if (path == "group")
+        {
+            // Group specified, check type.
+            m_group_type = par["type"];
+            if (m_group_type == "")
+            {
+                Error("With //group, the group 'type' must be specified.");
+            }
+
+            if (m_group_type != "broadcast")
+            {
+                Error("With //group, only type=broadcast is currently supported");
+            }
+
+            vector<string> nodes;
+            Split(par["nodes"], ',', back_inserter(nodes));
+
+            if (nodes.empty())
+            {
+                Error("With //group, 'nodes' must specify comma-separated host:port specs.");
+            }
+
+            // Check if correctly specified
+            for (string& hostport: nodes)
+            {
+                if (hostport == "")
+                    continue;
+                UriParser check(hostport, UriParser::EXPECT_HOST);
+                if (check.host() == "" || check.port() == "")
+                {
+                    Error("With //group, 'nodes' must specify comma-separated host:port specs.");
+                }
+
+                if (check.portno() <= 1024)
+                {
+                    Error("With //group, every node in 'nodes' must have port >1024");
+                }
+
+                Connection cc(check.host(), check.portno());
+                m_group_nodes.push_back(cc);
+            }
+
+            par.erase("type");
+            par.erase("nodes");
         }
     }
 
@@ -209,7 +269,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         // Use the following convention:
         // 1. Server for source, Client for target
         // 2. If host is empty, then always server.
-        if (host == "")
+        if (host == "" && m_group_nodes.empty())
             m_mode = "listener";
         //else if (!dir_output)
         //m_mode = "server";
@@ -221,6 +281,11 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_mode = "caller";
     else if (m_mode == "server")
         m_mode = "listener";
+
+    if (m_mode == "listener" && !m_group_nodes.empty())
+    {
+        Error("Multiple nodes (redundant links) only supported in CALLER (client) mode.");
+    }
 
     par.erase("mode");
 
@@ -357,7 +422,36 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
-    Verb() << " connected.";
+    if (m_sock & SRTGROUP_MASK)
+    {
+        m_listener_group = true;
+        // There might be added a poller, remove it.
+        // We need it work different way.
+
+#ifndef SRT_OLD_APP_READER
+
+        if (srt_epoll != -1)
+        {
+            Verb() << "(Group: erasing epoll " << srt_epoll << ") " << VerbNoEOL;
+            srt_epoll_release(srt_epoll);
+        }
+
+        // Don't add any sockets, they will have to be added
+        // anew every time again.
+        srt_epoll = srt_epoll_create();
+#endif
+
+        // Group data must have a size of at least 1
+        // otherwise the srt_group_data() call will fail
+        if (m_group_data.empty())
+            m_group_data.resize(1);
+
+        Verb() << " connected(group epoll " << srt_epoll <<").";
+    }
+    else
+    {
+        Verb() << " connected.";
+    }
     ::transmit_throw_on_interrupt = false;
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
@@ -367,21 +461,38 @@ void SrtCommon::AcceptNewClient()
         Error("ConfigurePost");
 }
 
-void SrtCommon::Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir)
+void SrtCommon::Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir)
 {
     m_direction = dir;
-    InitParameters(host, par);
+    InitParameters(host, path, par);
+
+    int backlog = 1;
+    if (m_mode == "listener" && par.count("groupconnect")
+            && true_names.count(par["groupconnect"]))
+    {
+        backlog = 10;
+    }
 
     Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking)"
-        << " on " << host << ":" << port;
+        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
+        << " backlog=" << backlog << ") on "
+        << host << ":" << port;
 
     try
     {
         if (m_mode == "caller")
-            OpenClient(host, port);
+        {
+            if (m_group_nodes.empty())
+            {
+                OpenClient(host, port);
+            }
+            else
+            {
+                OpenGroupClient(); // Source data are in the fields already.
+            }
+        }
         else if (m_mode == "listener")
-            OpenServer(m_adapter, port);
+            OpenServer(m_adapter, port, backlog);
         else if (m_mode == "rendezvous")
             OpenRendezvous(m_adapter, host, port);
         else
@@ -601,6 +712,188 @@ void SrtCommon::PrepareClient()
 
 }
 
+void SrtCommon::OpenGroupClient()
+{
+    SRT_GROUP_TYPE type = SRT_GTYPE_UNDEFINED;
+
+    // Resolve group type.
+    if (m_group_type == "broadcast")
+        type = SRT_GTYPE_BROADCAST;
+    // else if other types...
+    else
+    {
+        Error("With //group, type='" + m_group_type + "' undefined");
+    }
+
+    m_sock = srt_create_group(type);
+
+    int stat = ConfigurePre(m_sock);
+
+    if ( stat == SRT_ERROR )
+        Error("ConfigurePre");
+
+    if ( !m_blocking_mode )
+    {
+        // Note: here the GROUP is added to the poller.
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT);
+    }
+
+    // Don't check this. Should this fail, the above would already.
+
+    // XXX Now do it regardless whether it's blocking or non-blocking
+    // mode - reading from group is currently manually from every socket.
+    srt_epoll = srt_epoll_create();
+
+    // ConnectClient can't be used here, the code must
+    // be more-less repeated. In this case the situation
+    // that not all connections can be established is tolerated,
+    // the only case of error is when none of the connections
+    // can be established.
+
+    bool any_node = false;
+
+    Verb() << "REDUNDANT connections with " << m_group_nodes.size() << " nodes:";
+
+    if (m_group_data.empty())
+        m_group_data.resize(1);
+
+    vector<SRT_SOCKGROUPDATA> targets;
+    int namelen = sizeof (sockaddr_in);
+
+    Verb() << "Connecting to nodes:";
+    int i = 1;
+    for (Connection& c: m_group_nodes)
+    {
+        sockaddr_in sa = CreateAddrInet(c.host, c.port);
+        sockaddr* psa = (sockaddr*)&sa;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        ++i;
+        SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
+        targets.push_back(gd);
+    }
+
+    int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+    if (fisock == SRT_ERROR)
+    {
+        Error("srt_connect_group");
+    }
+
+    // Configuration change applied on a group should
+    // spread the setting on all sockets.
+    ConfigurePost(m_sock);
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        // As m_group_nodes is simply transformed into 'targets',
+        // one index can be used to index them all. You don't
+        // have to check if they have equal addresses because they
+        // are equal by definition.
+        if (targets[i].id != -1 && targets[i].status < SRTS_BROKEN)
+        {
+            m_group_nodes[i].socket = targets[i].id;
+        }
+    }
+
+    // Now check which sockets were successful, only those
+    // should be added to epoll.
+    size_t size = m_group_data.size();
+    stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    if (stat == -1 && size > m_group_data.size())
+    {
+        // Just too small buffer. Resize and continue.
+        m_group_data.resize(size);
+        stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    }
+
+    if (stat == -1)
+    {
+        Error("srt_group_data");
+    }
+    m_group_data.resize(size);
+
+    for (size_t i = 0; i < m_group_nodes.size(); ++i)
+    {
+        SRTSOCKET insock = m_group_nodes[i].socket;
+        if (insock == -1)
+        {
+            Verb() << "TARGET '" << SockaddrToString(targets[i].peeraddr) << "' connection failed.";
+            continue;
+        }
+
+        /*
+        if (!m_blocking_mode)
+        {
+            // EXPERIMENTAL version. Add all sockets to epoll
+            // in the direction used for this medium.
+            int modes = m_direction;
+            srt_epoll_add_usock(srt_epoll, insock, &modes);
+            Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
+        }
+        */
+
+        // Have socket, store it into the group socket array.
+        any_node = true;
+    }
+
+    stat = ConfigurePost(m_sock);
+    if (stat == -1)
+    {
+        // This kind of error must reject the whole operation.
+        // Usually you'll get this error on the first socket,
+        // and doing this on the others would result in the same.
+        Error("ConfigurePost");
+    }
+
+
+    Verb() << "Group connection report:";
+    for (auto& d: m_group_data)
+    {
+        // id, status, result, peeraddr
+        Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+    }
+
+    /*
+
+       XXX Temporarily disabled, until the nonblocking mode
+       is added to groups.
+
+    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
+    if ( !m_blocking_mode )
+    {
+        Verb() << "[ASYNC] " << VerbNoEOL;
+
+        // SPIN-WAITING version. Don't use it unless you know what you're doing.
+        // SpinWaitAsync();
+
+        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
+        int len = 2;
+        SRTSOCKET ready[2];
+        if ( srt_epoll_wait(srt_conn_epoll,
+                    NULL, NULL,
+                    ready, &len,
+                    -1, // Wait infinitely
+                    NULL, NULL,
+                    NULL, NULL) != -1 )
+        {
+            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+        }
+        else
+        {
+            Error("srt_epoll_wait");
+        }
+    }
+    */
+
+    if (!any_node)
+    {
+        Error("REDUNDANCY: all redundant connections failed");
+    }
+
+    // Prepare group data for monitoring the group status.
+    m_group_data.resize(m_group_nodes.size());
+}
+
 /*
    This may be used sometimes for testing, but it's nonportable.
    void SrtCommon::SpinWaitAsync()
@@ -756,9 +1049,86 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
-SrtSource::SrtSource(string host, int port, const map<string,string>& par)
+void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
-    Init(host, port, par, SRT_EPOLL_IN);
+    if (!grpdata)
+    {
+        // This happens when you passed too small array. Treat this as error and stop.
+        cerr << "ERROR: broadcast group update reports " << grpdata_size
+            << " existing sockets, but app registerred only " << m_group_nodes.size() << endl;
+        Error("Too many unpredicted sockets in the group");
+    }
+
+    // Clear the active flag in all nodes so that they are reactivated
+    // if they are in the group list, REGARDLESS OF THE STATUS. We need to
+    // see all connections that are in the nodes, but not in the group,
+    // and this one would have to be activated.
+    const SRT_SOCKGROUPDATA* gend = grpdata + grpdata_size;
+    for (auto& n: m_group_nodes)
+    {
+        bool active = (find_if(grpdata, gend,
+                    [&n] (const SRT_SOCKGROUPDATA& sg) { return sg.id == n.socket; }) != gend);
+        if (!active)
+            n.socket = SRT_INVALID_SOCK;
+    }
+
+    // Note: sockets are not necessarily in the same order. Find
+    // the socket by id.
+    for (size_t i = 0; i < grpdata_size; ++i)
+    {
+        const SRT_SOCKGROUPDATA& d = grpdata[i];
+        SRTSOCKET id = d.id;
+
+        SRT_SOCKSTATUS status = d.status;
+        int result = d.result;
+
+        if (result != -1 && status == SRTS_CONNECTED)
+        {
+            // Everything's ok. Don't do anything.
+            continue;
+        }
+        // id, status, result, peeraddr
+        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+
+        if (status >= SRTS_BROKEN)
+        {
+            Verb() << "NOTE: socket @" << id << " is pending for destruction, waiting for it.";
+        }
+    }
+
+    // This was only informative. Now we check all nodes if they
+    // are not active
+
+    int i = 1;
+    for (auto& n: m_group_nodes)
+    {
+        // Check which nodes are no longer active and activate them.
+        if (n.socket != SRT_INVALID_SOCK)
+            continue;
+
+        sockaddr_in sa = CreateAddrInet(n.host, n.port);
+        sockaddr* psa = (sockaddr*)&sa;
+        Verb() << "[" << i << "] RECONNECTING to node " << n.host << ":" << n.port << " ... " << VerbNoEOL;
+        ++i;
+
+        int insock = srt_connect(m_sock, psa, sizeof sa);
+        if (insock == SRT_ERROR)
+        {
+            // Whatever. Skip the node.
+            Verb() << "FAILED: ";
+        }
+        else
+        {
+            // Have socket, store it into the group socket array.
+            n.socket = insock;
+        }
+    }
+}
+
+SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
+{
+    Init(host, port, path, par, SRT_EPOLL_IN);
     ostringstream os;
     os << host << ":" << port;
     hostport_copy = os.str();
@@ -777,18 +1147,702 @@ static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
 }
 
 
+#ifdef SRT_OLD_APP_READER
+
+// NOTE: 'output' is expected to be EMPTY here.
+bool SrtSource::GroupCheckPacketAhead(bytevector& output)
+{
+    bool status = false;
+    vector<SRTSOCKET> past_ahead;
+
+    // This map no longer maps only ahead links.
+    // Here are all links, and whether ahead, it's defined by the sequence.
+    for (auto i = m_group_positions.begin(); i != m_group_positions.end(); ++i)
+    {
+        // i->first: socket ID
+        // i->second: ReadPos { sequence, packet }
+        // We are not interested with the socket ID because we
+        // aren't going to read from it - we have the packet already.
+        ReadPos& a = i->second;
+
+        int seqdiff = CSeqNo::seqcmp(a.sequence, m_group_seqno);
+        if ( seqdiff == 1)
+        {
+            // The very next packet. Return it.
+            m_group_seqno = a.sequence;
+            Verb() << " (SRT group: ahead delivery %" << a.sequence << " from @" << i->first << ")";
+            swap(output, a.packet);
+            status = true;
+        }
+        else if (seqdiff < 1 && !a.packet.empty())
+        {
+            Verb() << " (@" << i->first << " dropping collected ahead %" << a.sequence << ")";
+            a.packet.clear();
+        }
+        // In case when it's >1, keep it in ahead
+    }
+
+    return status;
+}
+
+static string DisplayEpollResults(const std::set<SRTSOCKET>& sockset, std::string prefix)
+{
+    typedef set<SRTSOCKET> fset_t;
+    ostringstream os;
+    os << prefix << " ";
+    for (fset_t::const_iterator i = sockset.begin(); i != sockset.end(); ++i)
+    {
+        os << "@" << *i << " ";
+    }
+
+    return os.str();
+}
+
+bytevector SrtSource::GroupRead(size_t chunk)
+{
+    // Read the current group status. m_sock is here the group id.
+    bytevector output;
+
+    // Later iteration over it might be less efficient than
+    // by vector, but we'll also often try to check a single id
+    // if it was ever seen broken, so that it's skipped.
+    set<SRTSOCKET> broken;
+
+RETRY_READING:
+
+    size_t size = m_group_data.size();
+    int stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    if (stat == -1 && size > m_group_data.size())
+    {
+        // Just too small buffer. Resize and continue.
+        m_group_data.resize(size);
+        stat = srt_group_data(m_sock, m_group_data.data(), &size);
+    }
+    else
+    {
+        // Downsize if needed.
+        m_group_data.resize(size);
+    }
+
+    if (stat == -1) // Also after the above fix
+    {
+        Error(UDT::getlasterror(), "FAILURE when reading group data");
+    }
+
+    if (size == 0)
+    {
+        Error("No sockets in the group - disconnected");
+    }
+
+    bool connected = false;
+    for (auto& d: m_group_data)
+    {
+        if (d.status == SRTS_CONNECTED)
+        {
+            connected = true;
+            break;
+        }
+    }
+    if (!connected)
+    {
+        Error("All sockets in the group disconnected");
+    }
+
+    if (Verbose::on)
+    {
+        for (auto& d: m_group_data)
+        {
+            if (d.status != SRTS_CONNECTED)
+                // id, status, result, peeraddr
+                Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+                    << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+        }
+    }
+
+    // Check first the ahead packets if you have any to deliver.
+    if (m_group_seqno != -1 && !m_group_positions.empty())
+    {
+        bytevector ahead_packet;
+
+        // This function also updates the group sequence pointer.
+        if (GroupCheckPacketAhead(ahead_packet))
+            return move(ahead_packet);
+    }
+
+    // LINK QUALIFICATION NAMES:
+    //
+    // HORSE: Correct link, which delivers the very next sequence.
+    // Not necessarily this link is currently active.
+    //
+    // KANGAROO: Got some packets dropped and the sequence number
+    // of the packet jumps over the very next sequence and delivers
+    // an ahead packet.
+    //
+    // ELEPHANT: Is not ready to read, while others are, or reading
+    // up to the current latest delivery sequence number does not
+    // reach this sequence and the link becomes non-readable earlier.
+
+    // The above condition has ruled out one kangaroo and turned it
+    // into a horse.
+
+    // Below there's a loop that will try to extract packets. Kangaroos
+    // will be among the polled ones because skipping them risks that
+    // the elephants will take over the reading. Links already known as
+    // elephants will be also polled in an attempt to revitalize the
+    // connection that experienced just a short living choking.
+    //
+    // After polling we attempt to read from every link that reported
+    // read-readiness and read at most up to the sequence equal to the
+    // current delivery sequence.
+
+    // Links that deliver a packet below that sequence will be retried
+    // until they deliver no more packets or deliver the packet of
+    // expected sequence. Links that don't have a record in m_group_positions
+    // and report readiness will be always read, at least to know what
+    // sequence they currently stand on.
+    //
+    // Links that are already known as kangaroos will be polled, but
+    // no reading attempt will be done. If after the reading series
+    // it will turn out that we have no more horses, the slowest kangaroo
+    // will be "advanced to a horse" (the ahead link with a sequence
+    // closest to the current delivery sequence will get its sequence
+    // set as current delivered and its recorded ahead packet returned
+    // as the read packet).
+
+    // If we find at least one horse, the packet read from that link
+    // will be delivered. All other link will be just ensured update
+    // up to this sequence number, or at worst all available packets
+    // will be read. In this case all kangaroos remain kangaroos,
+    // until the current delivery sequence m_group_seqno will be lifted
+    // to the sequence recorded for these links in m_group_positions,
+    // during the next time ahead check, after which they will become
+    // horses.
+
+    Verb() << "E(" << srt_epoll << ") " << VerbNoEOL;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        SRT_SOCKGROUPDATA& d = m_group_data[i];
+        if (d.status == SRTS_CONNECTING)
+        {
+            Verb() << "@" << d.id << "<pending> " << VerbNoEOL;
+            int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+            srt_epoll_add_usock(srt_epoll, d.id, &modes);
+            continue; // don't read over a failed or pending socket
+        }
+
+        if (d.status >= SRTS_BROKEN)
+        {
+            broken.insert(d.id);
+        }
+
+        if (broken.count(d.id))
+        {
+            Verb() << "@" << d.id << "<broken> " << VerbNoEOL;
+            continue;
+        }
+
+        if (d.status != SRTS_CONNECTED)
+        {
+            Verb() << "@" << d.id << "<idle:" << SockStatusStr(d.status) << "> " << VerbNoEOL;
+            // Sockets in this state are ignored. We are waiting until it
+            // achieves CONNECTING state, then it's added to write.
+            continue;
+        }
+
+        // Don't skip packets that are ahead because if we have a situation
+        // that all links are either "elephants" (do not report read readiness)
+        // and "kangaroos" (have already delivered an ahead packet) then
+        // omiting kangaroos will result in only elephants to be polled for
+        // reading. Elephants, due to the strict timing requirements and
+        // ensurance that TSBPD on every link will result in exactly the same
+        // delivery time for a packet of given sequence, having an elephant
+        // and kangaroo in one cage means that the elephant is simply a broken
+        // or half-broken link (the data are not delivered, but it will get
+        // repaired soon, enough for SRT to maintain the connection, but it
+        // will still drop packets that didn't arrive in time), in both cases
+        // it may potentially block the reading for an indefinite time, while
+        // simultaneously a kangaroo might be a link that got some packets
+        // dropped, but then it's still capable to deliver packets on time.
+
+        // Note also that about the fact that some links turn out to be
+        // elephants we'll learn only after we try to poll and read them.
+
+        // Note that d.id might be a socket that was previously being polled
+        // on write, when it's attempting to connect, but now it's connected.
+        // This will update the socket with the new event set.
+
+        int modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+        srt_epoll_add_usock(srt_epoll, d.id, &modes);
+        Verb() << "@" << d.id << "[READ] " << VerbNoEOL;
+    }
+
+    Verb() << "";
+
+    // Here we need to make an additional check.
+    // There might be a possibility that all sockets that
+    // were added to the reader group, are ahead. At least
+    // surely we don't have a situation that any link contains
+    // an ahead-read subsequent packet, because GroupCheckPacketAhead
+    // already handled that case.
+    //
+    // What we can have is that every link has:
+    // - no known seq position yet (is not registered in the position map yet)
+    // - the position equal to the latest delivered sequence
+    // - the ahead position
+
+    // Now the situation is that we don't have any packets
+    // waiting for delivery so we need to wait for any to report one.
+    // XXX We support blocking mode only at the moment.
+    // The non-blocking mode would need to simply check the readiness
+    // with only immediate report, and read-readiness would have to
+    // be done in background.
+
+    SrtPollState sready;
+
+    // Poll on this descriptor until reading is available, indefinitely.
+    if (UDT::epoll_swait(srt_epoll, sready, -1) == SRT_ERROR)
+    {
+        Error(UDT::getlasterror(), "UDT::epoll_swait(srt_epoll, group)");
+    }
+    if (Verbose::on)
+    {
+        Verb() << "RDY: {"
+            << DisplayEpollResults(sready.rd(), "[R]")
+            << DisplayEpollResults(sready.wr(), "[W]")
+            << DisplayEpollResults(sready.ex(), "[E]")
+            << "} " << VerbNoEOL;
+
+    }
+
+    LOGC(applog.Debug, log << "epoll_swait: "
+            << DisplayEpollResults(sready.rd(), "[R]")
+            << DisplayEpollResults(sready.wr(), "[W]")
+            << DisplayEpollResults(sready.ex(), "[E]"));
+
+    typedef set<SRTSOCKET> fset_t;
+
+    // Handle sockets of pending connection and with errors.
+    broken = sready.ex();
+
+    // We don't do anything about sockets that have been configured to
+    // poll on writing (that is, pending for connection). What we need
+    // is that the epoll_swait call exit on that fact. Probably if this
+    // was the only socket reported, no broken and no read-ready, this
+    // will later check on output if still empty, if so, repeat the whole
+    // function. This write-ready socket will be there already in the
+    // connected state and will be added to read-polling.
+
+    // Ok, now we need to have some extra qualifications:
+    // 1. If a socket has no registry yet, we read anyway, just
+    // to notify the current position. We read ONLY ONE PACKET this time,
+    // we'll worry later about adjusting it to the current group sequence
+    // position.
+    // 2. If a socket is already position ahead, DO NOT read from it, even
+    // if it is ready.
+
+    // The state of things whether we were able to extract the very next
+    // sequence will be simply defined by the fact that `output` is nonempty.
+
+    int32_t next_seq = m_group_seqno;
+
+    // If this set is empty, it won't roll even once, therefore output
+    // will be surely empty. This will be checked then same way as when
+    // reading from every socket resulted in error.
+    for (fset_t::const_iterator i = sready.rd().begin(); i != sready.rd().end(); ++i)
+    {
+        // Check if this socket is in aheads
+        // If so, don't read from it, wait until the ahead is flushed.
+
+        SRTSOCKET id = *i;
+        ReadPos* p = nullptr;
+        auto pe = m_group_positions.find(id);
+        if (pe != m_group_positions.end())
+        {
+            p = &pe->second;
+            // Possible results of comparison:
+            // x < 0: the sequence is in the past, the socket should be adjusted FIRST
+            // x = 0: the socket should be ready to get the exactly next packet
+            // x = 1: the case is already handled by GroupCheckPacketAhead.
+            // x > 1: AHEAD. DO NOT READ.
+            int seqdiff = CSeqNo::seqcmp(p->sequence, m_group_seqno);
+            if (seqdiff > 1)
+            {
+                Verb() << "EPOLL: @" << id << " %" << p->sequence << " AHEAD, not reading.";
+                continue;
+            }
+        }
+
+
+        // Read from this socket stubbornly, until:
+        // - reading is no longer possible (AGAIN)
+        // - the sequence difference is >= 1
+
+        int fi = 1; // marker for Verb to display flushing
+        for (;;)
+        {
+            bytevector data(chunk);
+            SRT_MSGCTRL mctrl = srt_msgctrl_default;
+            stat = srt_recvmsg2(id, data.data(), chunk, &mctrl);
+            if (stat == SRT_ERROR)
+            {
+                if (fi == 0)
+                {
+                    if (Verbose::on)
+                    {
+                        if (p)
+                        {
+                            int32_t pktseq = p->sequence;
+                            int seqdiff = CSeqNo::seqcmp(p->sequence, m_group_seqno);
+                            Verb() << ". %" << pktseq << " " << seqdiff << ")";
+                        }
+                        else
+                        {
+                            Verb() << ".)";
+                        }
+                    }
+                    fi = 1;
+                }
+                int err = srt_getlasterror(0);
+                if (err == SRT_EASYNCRCV)
+                {
+                    // Do not treat this as spurious, just stop reading.
+                    break;
+                }
+                Verb() << "Error @" << id << ": " << srt_getlasterror_str();
+                broken.insert(id);
+                break;
+            }
+
+            // NOTE: checks against m_group_seqno and decisions based on it
+            // must NOT be done if m_group_seqno is -1, which means that we
+            // are about to deliver the very first packet and we take its
+            // sequence number as a good deal.
+
+            // The order must be:
+            // - check discrepancy
+            // - record the sequence
+            // - check ordering.
+            // The second one must be done always, but failed discrepancy
+            // check should exclude the socket from any further checks.
+            // That's why the common check for m_group_seqno != -1 can't
+            // embrace everything below.
+
+            // We need to first qualify the sequence, just for a case
+            if (m_group_seqno != -1 && abs(m_group_seqno - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+            {
+                // This error should be returned if the link turns out
+                // to be the only one, or set to the group data.
+                // err = SRT_ESECFAIL;
+                if (fi == 0)
+                {
+                    Verb() << ".)";
+                    fi = 1;
+                }
+                Verb() << "Error @" << id << ": SEQUENCE DISCREPANCY: base=%" << m_group_seqno << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL";
+                broken.insert(id);
+                break;
+            }
+
+            // Rewrite it to the state for a case when next reading
+            // would not succeed. Do not insert the buffer here because
+            // this is only required when the sequence is ahead; for that
+            // it will be fixed later.
+            if (!p)
+            {
+                p = &(m_group_positions[id] = ReadPos { mctrl.pktseq, {} });
+            }
+            else
+            {
+                p->sequence = mctrl.pktseq;
+            }
+
+            if (m_group_seqno != -1)
+            {
+                // Now we can safely check it.
+                int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_group_seqno);
+
+                if (seqdiff <= 0)
+                {
+                    if (fi == 1)
+                    {
+                        Verb() << "(@" << id << " FLUSH:" << VerbNoEOL;
+                        fi = 0;
+                    }
+
+                    Verb() << "." << VerbNoEOL;
+
+                    // The sequence is recorded, the packet has to be discarded.
+                    // That's all.
+                    continue;
+                }
+
+                // Finish flush reporting if fallen into here
+                if (fi == 0)
+                {
+                    Verb() << ". %" << mctrl.pktseq << " " << (-seqdiff) << ")";
+                    fi = 1;
+                }
+
+                // Now we have only two possibilities:
+                // seqdiff == 1: The very next sequence, we want to read and return the packet.
+                // seqdiff > 1: The packet is ahead - record the ahead packet, but continue with the others.
+
+                if (seqdiff > 1)
+                {
+                    Verb() << "@" << id << " %" << mctrl.pktseq << " AHEAD";
+                    p->packet = move(data);
+                    break; // Don't read from that socket anymore.
+                }
+            }
+
+            // We have seqdiff = 1, or we simply have the very first packet
+            // which's sequence is taken as a good deal. Update the sequence
+            // and record output.
+
+            if (!output.empty())
+            {
+                Verb() << "@" << id << " %" << mctrl.pktseq << " REDUNDANT";
+                break;
+            }
+
+
+            Verb() << "@" << id << " %" << mctrl.pktseq << " DELIVERING";
+            output = move(data);
+
+            // Record, but do not update yet, until all sockets are handled.
+            next_seq = mctrl.pktseq;
+            break;
+        }
+    }
+
+    // ready_len is only the length of currently reported
+    // ready sockets, NOT NECESSARILY containing all sockets from the group.
+    if (broken.size() == size)
+    {
+        // All broken
+        Error("All sockets broken");
+    }
+
+    if (Verbose::on && !broken.empty())
+    {
+        Verb() << "BROKEN: " << Printable(broken) << " - removing";
+    }
+
+    // Now remove all broken sockets from aheads, if any.
+    // Even if they have already delivered a packet.
+    for (SRTSOCKET d: broken)
+    {
+        m_group_positions.erase(d);
+        srt_close(d);
+    }
+
+    // May be required to be re-read.
+    broken.clear();
+
+    if (!output.empty())
+    {
+        // We have extracted something, meaning that we have the sequence shift.
+        // Update it now and don't do anything else with the sockets.
+
+        // Sanity check
+        if (next_seq == -1)
+        {
+            Error("IPE: next_seq not set after output extracted!");
+        }
+        m_group_seqno = next_seq;
+        return output;
+    }
+
+    // Check if we have any sockets left :D
+
+    // Here we surely don't have any more HORSES,
+    // only ELEPHANTS and KANGAROOS. Qualify them and
+    // attempt to at least take advantage of KANGAROOS.
+
+    // In this position all links are either:
+    // - updated to the current position
+    // - updated to the newest possible possition available
+    // - not yet ready for extraction (not present in the group)
+
+    // If we haven't extracted the very next sequence position,
+    // it means that we might only have the ahead packets read,
+    // that is, the next sequence has been dropped by all links.
+
+    if (!m_group_positions.empty())
+    {
+        // This might notify both lingering links, which didn't
+        // deliver the required sequence yet, and links that have
+        // the sequence ahead. Review them, and if you find at
+        // least one packet behind, just wait for it to be ready.
+        // Use again the waiting function because we don't want
+        // the general waiting procedure to skip others.
+        set<SRTSOCKET> elephants;
+
+        // const because it's `typename decltype(m_group_positions)::value_type`
+        pair<const SRTSOCKET, ReadPos>* slowest_kangaroo = nullptr;
+
+        for (auto& sock_rp: m_group_positions)
+        {
+            // NOTE that m_group_seqno in this place wasn't updated
+            // because we haven't successfully extracted anything.
+            int seqdiff = CSeqNo::seqcmp(sock_rp.second.sequence, m_group_seqno);
+            if (seqdiff < 0)
+            {
+                elephants.insert(sock_rp.first);
+            }
+            // If seqdiff == 0, we have a socket ON TRACK.
+            else if (seqdiff > 0)
+            {
+                if (!slowest_kangaroo)
+                {
+                    slowest_kangaroo = &sock_rp;
+                }
+                else
+                {
+                    // Update to find the slowest kangaroo.
+                    int seqdiff = CSeqNo::seqcmp(slowest_kangaroo->second.sequence, sock_rp.second.sequence);
+                    if (seqdiff > 0)
+                    {
+                        slowest_kangaroo = &sock_rp;
+                    }
+                }
+            }
+        }
+
+        // Note that if no "slowest_kangaroo" was found, it means
+        // that we don't have kangaroos.
+        if (slowest_kangaroo)
+        {
+            // We have a slowest kangaroo. Elephants must be ignored.
+            // Best case, they will get revived, worst case they will be
+            // soon broken.
+            //
+            // As we already have the packet delivered by the slowest
+            // kangaroo, we can simply return it.
+
+            m_group_seqno = slowest_kangaroo->second.sequence;
+            Verb() << "@" << slowest_kangaroo->first << " %" << m_group_seqno << " KANGAROO->HORSE";
+            swap(output, slowest_kangaroo->second.packet);
+            return output;
+        }
+
+        // Here ALL LINKS ARE ELEPHANTS, stating that we still have any.
+        if (Verbose::on)
+        {
+            if (!elephants.empty())
+            {
+                // If we don't have kangaroos, then simply reattempt to
+                // poll all elephants again anyway (at worst they are all
+                // broken and we'll learn about it soon).
+                Verb() << "ALL LINKS ELEPHANTS. Re-polling.";
+            }
+            else
+            {
+                Verb() << "ONLY BROKEN WERE REPORTED. Re-polling.";
+            }
+        }
+        goto RETRY_READING;
+    }
+
+    // We have checked so far only links that were ready to poll.
+    // Links that are not ready should be re-checked.
+    // Links that were not ready at the entrance should be checked
+    // separately, and probably here is the best moment to do it.
+    // After we make sure that at least one link is ready, we can
+    // reattempt to read a packet from it.
+
+    // Ok, so first collect all sockets that are in
+    // connecting state, make a poll for connection.
+    srt_epoll_clear_usocks(srt_epoll);
+    bool have_connectors = false, have_ready = false;
+    for (auto& d: m_group_data)
+    {
+        if (d.status < SRTS_CONNECTED)
+        {
+            // Not sure anymore if IN or OUT signals the connect-readiness,
+            // but no matter. The signal will be cleared once it is used,
+            // while it will be always on when there's anything ready to read.
+            int modes = SRT_EPOLL_IN | SRT_EPOLL_OUT;
+            srt_epoll_add_usock(srt_epoll, d.id, &modes);
+            have_connectors = true;
+        }
+        else if (d.status == SRTS_CONNECTED)
+        {
+            have_ready = true;
+        }
+    }
+
+    if (have_ready || have_connectors)
+    {
+        Verb() << "(still have: " << (have_ready ? "+" : "-") << "ready, "
+            << (have_connectors ? "+" : "-") << "conenctors).";
+        goto RETRY_READING;
+    }
+
+    if (have_ready)
+    {
+        Verb() << "(connected in the meantime)";
+        // Some have connected in the meantime, don't
+        // waste time on the pending ones.
+        goto RETRY_READING;
+    }
+
+    if (have_connectors)
+    {
+        Verb() << "(waiting for pending connectors to connect)";
+        // Wait here for them to be connected.
+        vector<SRTSOCKET> sready;
+        sready.resize(m_group_data.size());
+        int ready_len = m_group_data.size();
+        if (srt_epoll_wait(srt_epoll, sready.data(), &ready_len, 0, 0, -1, 0, 0, 0, 0) == SRT_ERROR)
+        {
+            Error("All sockets in the group disconnected");
+        }
+
+        goto RETRY_READING;
+    }
+
+    Error("No data extracted");
+    return output; // Just a marker - this above function throws an exception
+}
+#endif
 
 bytevector SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
+    bool have_group = !m_group_nodes.empty();
+
     bytevector data(chunk);
+    // EXPERIMENTAL
+#ifdef SRT_OLD_APP_READER
+    if (have_group || m_listener_group)
+    {
+        data = GroupRead(chunk);
+    }
+
+    if (have_group)
+    {
+        // This is to be done for caller mode only
+        UpdateGroupStatus(m_group_data.data(), m_group_data.size());
+    }
+#else
+
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
     bool ready = true;
     int stat;
+
     do
     {
+        if (have_group)
+        {
+            mctrl.grpdata = m_group_data.data();
+            mctrl.grpdata_size = m_group_data.size();
+        }
+
         ::transmit_throw_on_interrupt = true;
-        stat = srt_recvmsg(m_sock, data.data(), chunk);
+        stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
         if (stat == SRT_ERROR)
         {
@@ -797,7 +1851,7 @@ bytevector SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                 {
-                    Verb() << "AGAIN: - waiting for data by epoll...";
+                    Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
                     SRTSOCKET sready[2];
@@ -816,6 +1870,13 @@ bytevector SrtSource::Read(size_t chunk)
         {
             throw ReadEOF(hostport_copy);
         }
+#if PLEASE_LOG
+        extern srt_logging::Logger applog;
+        LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
+                << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+#endif
+
+        Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
     }
     while (!ready);
 
@@ -826,19 +1887,32 @@ bytevector SrtSource::Read(size_t chunk)
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    if (have_group) // Means, group with caller mode
     {
-        PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
+    else
+    {
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        }
+    }
+    #endif
 
     ++counter;
 
     return data;
 }
 
-SrtTarget::SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
+SrtTarget::SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
 {
-    Init(host, port, par, SRT_EPOLL_OUT);
+    Init(host, port, path, par, SRT_EPOLL_OUT);
 }
 
 
@@ -875,7 +1949,20 @@ void SrtTarget::Write(const bytevector& data)
             Error("srt_epoll_wait");
     }
 
-    int stat = srt_sendmsg2(m_sock, data.data(), data.size(), nullptr);
+    SRT_MSGCTRL mctrl = srt_msgctrl_default;
+    bool have_group = !m_group_nodes.empty();
+    if (have_group || m_listener_group)
+    {
+        mctrl.grpdata = m_group_data.data();
+        mctrl.grpdata_size = m_group_data.size();
+    }
+
+    int stat = srt_sendmsg2(m_sock, data.data(), data.size(), &mctrl);
+
+    // For a socket group, the error is reported only
+    // if ALL links from the group have failed to perform
+    // the operation. If only one did, the result will be
+    // visible in the status array.
     if (stat == SRT_ERROR)
         Error("srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
@@ -883,22 +1970,38 @@ void SrtTarget::Write(const bytevector& data)
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-    if (transmit_stats_report && (need_stats_report || need_bw_report))
+    if (have_group)
     {
-        PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        // For listener group this is not necessary. The group information
+        // is updated in mctrl.
+        UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
+                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+        }
     }
+    else
+    {
+        if (transmit_stats_writer && (need_stats_report || need_bw_report))
+        {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
+        }
+    }
+
+    Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), data.size()) << ") " << VerbNoEOL;
 
     ++counter;
 }
 
-SrtRelay::SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par)
+SrtRelay::SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
 {
-    Init(host, port, par, SRT_EPOLL_IN | SRT_EPOLL_OUT);
+    Init(host, port, path, par, SRT_EPOLL_IN | SRT_EPOLL_OUT);
 }
 
 SrtModel::SrtModel(string host, int port, map<string,string> par)
 {
-    InitParameters(host, par);
+    InitParameters(host, "", par);
     if (m_mode == "caller")
         is_caller = true;
     else if (m_mode == "rendezvous")
@@ -988,8 +2091,8 @@ template <> struct Srt<Target> { typedef SrtTarget type; };
 template <> struct Srt<Relay> { typedef SrtRelay type; };
 
 template <class Iface>
-Iface* CreateSrt(const string& host, int port, const map<string,string>& par)
-{ return new typename Srt<Iface>::type (host, port, par); }
+Iface* CreateSrt(const string& host, int port, std::string path, const map<string,string>& par)
+{ return new typename Srt<Iface>::type (host, port, path, par); }
 
 bytevector ConsoleRead(size_t chunk)
 {
@@ -1370,7 +2473,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
 
     case UriParser::SRT:
-        ptr.reset( CreateSrt<Base>(u.host(), u.portno(), u.parameters()) );
+        ptr.reset( CreateSrt<Base>(u.host(), u.portno(), u.path(), u.parameters()) );
         break;
 
 
@@ -1383,7 +2486,6 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         }
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
         break;
-
     }
 
     if (ptr)
