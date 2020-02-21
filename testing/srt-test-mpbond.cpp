@@ -125,7 +125,6 @@ int main( int argc, char** argv )
         for (auto os: optargs)
             cout << OptionHelpItem(*os.pid) << endl;
         return 1;
-
     }
 
     bool skip_flushing = false; // non-configurable for now
@@ -318,7 +317,6 @@ int main( int argc, char** argv )
                 break;
             }
         }
-
     } catch (Source::ReadEOF&) {
         alarm(0);
 
@@ -339,7 +337,6 @@ int main( int argc, char** argv )
             }
         }
     } catch (std::exception& x) { // Catches TransmissionError and AlarmExit
-
         if (::mpbond_int_state)
         {
             Verror() << "Exit on interrupt.";
@@ -351,11 +348,8 @@ int main( int argc, char** argv )
         }
 
         return 255;
-
     } catch (...) {
-
         Verror() << "UNKNOWN type of EXCEPTION";
-
         return 1;
     }
 
