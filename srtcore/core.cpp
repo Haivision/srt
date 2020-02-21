@@ -10934,7 +10934,7 @@ CUDTGroup::CUDTGroup()
     , m_bOpened(false)
     , m_bConnected(false)
     , m_bClosing(false)
-    , m_iLastSchedSeqNo(0)
+    , m_iLastSchedSeqNo(-1)
 {
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
