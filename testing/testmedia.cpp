@@ -1835,7 +1835,7 @@ bytevector SrtSource::Read(size_t chunk)
 
     do
     {
-        if (have_group)
+        if (have_group || m_listener_group)
         {
             mctrl.grpdata = m_group_data.data();
             mctrl.grpdata_size = m_group_data.size();
