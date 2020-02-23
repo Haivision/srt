@@ -148,7 +148,11 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
                 i = m_caSeq[i].inext;
 
             // 3. Check if seqno1 overlaps with (seqbegin, seqend)
-            if ((-1 == m_caSeq[i].seqend) || (CSeqNo::seqcmp(m_caSeq[i].seqend, seqno1) < 0))
+            const int seqend = m_caSeq[i].seqend == -1
+                ? m_caSeq[i].seqstart
+                : m_caSeq[i].seqend;
+
+            if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
             {
                 // No overlap
                 insertAfter(loc, i, seqno1, seqno2);
@@ -158,11 +162,11 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
                 // TODO: Replace with updateElement(i, seqno1, seqno2).
                 // Some changes to updateElement(..) are required.
                 m_iLastInsertPos = i;
-                if (CSeqNo::seqcmp(m_caSeq[i].seqend, seqno2) >= 0)
+                if (CSeqNo::seqcmp(seqend, seqno2) >= 0)
                     return 0;
 
                 // overlap, coalesce with prior node, insert(3, 7) to [2, 5], ... becomes [2, 7]
-                m_iLength += CSeqNo::seqlen(m_caSeq[i].seqend, seqno2) - 1;
+                m_iLength += CSeqNo::seqlen(seqend, seqno2) - 1;
                 m_caSeq[i].seqend = seqno2;
 
                 loc = i;
