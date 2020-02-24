@@ -47,7 +47,7 @@ int main(int argc, char** argv)
     {
         fprintf(stderr, "srt_socket: %s\n", srt_getlasterror_str());
         globstatus = 1;
-		goto cleanup;
+        goto cleanup;
     }
     // Now that the socket is created, jump to 'end' on error.
 
@@ -60,7 +60,7 @@ int main(int argc, char** argv)
     {
         fprintf(stderr, "srt_bind: Can't resolve address: %s\n", argv[1]);
         globstatus = 1;
-		goto end;
+        goto end;
     }
     sa.sin_family = AF_INET;
     sa.sin_port = htons(atoi(argv[2]));
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
     {
         fprintf(stderr, "srt_bind: %s\n", srt_getlasterror_str());
         globstatus = 1;
-		goto end;
+        goto end;
     }
 
     printf("srt listen\n");
