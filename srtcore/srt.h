@@ -304,6 +304,23 @@ typedef enum SRT_TRANSTYPE
     SRTT_INVALID
 } SRT_TRANSTYPE;
 
+typedef enum SRT_GROUPCONNTYPE
+{
+    // Currently used bit flags:
+    // b01: allow group connections
+    // b10: disable single socket connections
+    // For API simplification, there are flags with logical meaning:
+
+    SRTGC_SINGLE = 0,   //< Default, allow single sockets, reject groups
+    SRTGC_GROUP = 1,    //< Allow both single sockets and groups
+    SRTGC_NOSINGLE = 2, //< Do not allow single socket connections (do not use)
+    SRTGC_GROUPONLY = 3 //< Allow groups, but not single sockets
+
+    // NOTE: SRTGC_NOSINGLE is provided just for completeness and having
+    // names for the flats, but it doesn't make any sense to set it, as
+    // it would make the listener reject any connection.
+} SRT_GROUPCONNTYPE;
+
 // These sizes should be used for Live mode. In Live mode you should not
 // exceed the size that fits in a single MTU.
 
