@@ -5510,7 +5510,7 @@ void *CUDT::tsbpd(void *param)
                 // When the group is read-ready, it should update its pollers as it sees fit.
                 self->m_parent->m_IncludedGroup->updateReadState(self->m_SocketID, current_pkt_seq);
             }
-            CTimer::triggerEvent();
+            g_Sync.notify_one();
             tsbpdtime = steady_clock::time_point();
         }
 
@@ -7547,7 +7547,7 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
-        CTimer::triggerEvent();
+        g_Sync.notify_one();
 
         return CSeqNo::decseq(ack, distance);
     }
@@ -7696,7 +7696,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
                     // When the group is read-ready, it should update its pollers as it sees fit.
                     m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
                 }
-                CTimer::triggerEvent();
+                g_Sync.notify_one();
             }
             enterCS(m_RcvBufferLock);
         }
@@ -8498,7 +8498,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // Unblock any call so they learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
-        CTimer::triggerEvent();
+        g_Sync.notify_one();
 
         break;
 
@@ -9057,7 +9057,7 @@ void CUDT::processClose()
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
-    CTimer::triggerEvent();
+    g_Sync.notify_one();
 }
 
 void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
@@ -10475,7 +10475,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // app can call any UDT API to learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
-        CTimer::triggerEvent();
+        g_Sync.notify_one();
 
         return true;
     }

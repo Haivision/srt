@@ -71,8 +71,6 @@ modified by
 using namespace srt::sync;
 
 
-Mutex CTimer::m_EventLock;
-pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
 
 CTimer::CTimer()
     : m_tsSchedTime()
@@ -179,32 +177,6 @@ void CTimer::tick()
 }
 
 
-void CTimer::triggerEvent()
-{
-    pthread_cond_signal(&m_EventCond);
-}
-
-CTimer::EWait CTimer::waitForEvent()
-{
-    timeval now;
-    timespec timeout;
-    gettimeofday(&now, 0);
-    if (now.tv_usec < 990000)
-    {
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-    }
-    else
-    {
-        timeout.tv_sec = now.tv_sec + 1;
-        timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-    }
-    enterCS(m_EventLock);
-    int reason = pthread_cond_timedwait(&m_EventCond, &m_EventLock.ref(), &timeout);
-    leaveCS(m_EventLock);
-
-    return reason == ETIMEDOUT ? WT_TIMEOUT : reason == 0 ? WT_EVENT : WT_ERROR;
-}
 
 CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),

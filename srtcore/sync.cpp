@@ -446,3 +446,65 @@ int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex
     return wait_for(cond, mutex, rel_time);
 }
 #endif
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CEvent class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+srt::sync::CEvent::CEvent()
+{
+    m_cond.init();
+}
+
+
+srt::sync::CEvent::~CEvent()
+{
+    m_cond.destroy();
+}
+
+
+bool srt::sync::CEvent::wait_until(const TimePoint<steady_clock>& tp)
+{
+    UniqueLock lock(m_lock);
+    return m_cond.wait_until(lock, tp);
+}
+
+void srt::sync::CEvent::notify_one()
+{
+    return m_cond.notify_one();
+}
+
+void srt::sync::CEvent::notify_all()
+{
+    return m_cond.notify_all();
+}
+
+bool srt::sync::CEvent::wait_for(const Duration<steady_clock>& rel_time)
+{
+    UniqueLock lock(m_lock);
+    return m_cond.wait_for(lock, rel_time);
+}
+
+bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>& rel_time)
+{
+    return m_cond.wait_for(lock, rel_time);
+}
+
+void srt::sync::CEvent::wait()
+{
+    UniqueLock lock(m_lock);
+    return wait(lock);
+}
+
+void srt::sync::CEvent::wait(UniqueLock& lock)
+{
+    return m_cond.wait(lock);
+}
+
+
+srt::sync::CEvent g_Sync;
+
+
