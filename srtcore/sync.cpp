@@ -520,3 +520,95 @@ void srt::sync::CEvent::wait(UniqueLock& lock)
 srt::sync::CEvent g_Sync;
 
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Timer
+//
+////////////////////////////////////////////////////////////////////////////////
+
+srt::sync::CTimer::CTimer()
+{
+}
+
+
+srt::sync::CTimer::~CTimer()
+{
+}
+
+
+bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
+{
+    // The class member m_sched_time can be used to interrupt the sleep.
+    // Refer to Timer::interrupt().
+    enterCS(m_event.mutex());
+    m_tsSchedTime = tp;
+    leaveCS(m_event.mutex());
+
+#if USE_BUSY_WAITING
+#if defined(_WIN32)
+    // 10 ms on Windows: bad accuracy of timers
+    const steady_clock::duration
+        td_threshold = milliseconds_from(10);
+#else
+    // 1 ms on non-Windows platforms
+    const steady_clock::duration
+        td_threshold = milliseconds_from(1);
+#endif
+#endif // USE_BUSY_WAITING
+
+    TimePoint<steady_clock> cur_tp = steady_clock::now();
+    
+    while (cur_tp < m_tsSchedTime)
+    {
+#if USE_BUSY_WAITING
+        steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
+        if (td_wait <= 2 * td_threshold)
+            break;
+
+        td_wait -= td_threshold;
+        m_event.lock_wait_for(td_wait);
+#else
+        m_event.lock_wait_until(m_tsSchedTime);
+#endif // USE_BUSY_WAITING
+
+        cur_tp = steady_clock::now();
+    }
+
+#if USE_BUSY_WAITING
+    while (cur_tp < m_tsSchedTime)
+    {
+#ifdef IA32
+        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+#elif IA64
+        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+#elif AMD64
+        __asm__ volatile ("nop; nop; nop; nop; nop;");
+#elif defined(_WIN32) && !defined(__MINGW__)
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+        __nop();
+#endif
+
+        cur_tp = steady_clock::now();
+    }
+#endif // USE_BUSY_WAITING
+
+    return cur_tp >= m_tsSchedTime;
+}
+
+
+void srt::sync::CTimer::interrupt()
+{
+    UniqueLock lck(m_event.mutex());
+    m_tsSchedTime = steady_clock::now();
+    m_event.notify_all();
+}
+
+
+void srt::sync::CTimer::tick()
+{
+    m_event.notify_one();
+}
+
