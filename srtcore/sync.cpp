@@ -274,10 +274,18 @@ namespace sync
 {
 
 template<>
-CCondVar<true>::CCondVar() {}
+CCondVar<true>::CCondVar()
+#ifdef _WIN32
+    : m_cv(PTHREAD_COND_INITIALIZER)
+#endif
+{}
 
 template<>
-CCondVar<false>::CCondVar() {}
+CCondVar<false>::CCondVar()
+#ifdef _WIN32
+    : m_cv(PTHREAD_COND_INITIALIZER)
+#endif
+{}
 
 template<>
 CCondVar<true>::~CCondVar() {}
@@ -456,13 +464,17 @@ int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex
 
 srt::sync::CEvent::CEvent()
 {
+#ifndef _WIN32
     m_cond.init();
+#endif
 }
 
 
 srt::sync::CEvent::~CEvent()
 {
+#ifndef _WIN32
     m_cond.destroy();
+#endif
 }
 
 
