@@ -950,6 +950,31 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    return 0;
 }
 
+SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut)
+{
+    CEPollDesc* ed = 0;
+    int eid = m_EPoll.create(&ed);
+
+    // Subscribe all of listeners for accept
+    int events = SRT_EPOLL_ACCEPT;
+
+    for (int i = 0; i < lsize; ++i)
+    {
+        m_EPoll.update_usock(eid, listeners[i], &events);
+    }
+
+    CEPoll::fmap_t st;
+    m_EPoll.swait(*ed, (st), msTimeOut, true);
+
+    if (st.empty())
+    {
+        // Sanity check
+        throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+    }
+
+    return st.begin()->first;
+}
+
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
    if (pw_addr && !pw_addrlen)
@@ -2874,6 +2899,31 @@ int CUDT::listen(SRTSOCKET u, int backlog)
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
+   }
+}
+
+SRTSOCKET CUDT::accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut)
+{
+   try
+   {
+      return s_UDTUnited.accept_bond(listeners, lsize, msTimeOut);
+   }
+   catch (const CUDTException& e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return INVALID_SOCK;
+   }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return INVALID_SOCK;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "accept_bond: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return INVALID_SOCK;
    }
 }
 
