@@ -972,7 +972,9 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
     }
 
-    return st.begin()->first;
+    SRTSOCKET ret = st.begin()->first;
+    m_EPoll.release(eid);
+    return ret;
 }
 
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
