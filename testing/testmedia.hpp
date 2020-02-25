@@ -95,8 +95,15 @@ public:
     void StealFrom(SrtCommon& src);
     void AcceptNewClient();
 
-    SRTSOCKET Socket() { return m_sock; }
-    SRTSOCKET Listener() { return m_bindsock; }
+    SRTSOCKET Socket() const { return m_sock; }
+    SRTSOCKET Listener() const { return m_bindsock; }
+
+    void Acquire(SRTSOCKET s)
+    {
+        m_sock = s;
+        if (s & SRTGROUP_MASK)
+            m_listener_group = true;
+    }
 
     virtual void Close();
 
