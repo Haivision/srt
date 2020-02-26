@@ -12663,7 +12663,9 @@ RETRY_READING:
             // This should never happen, but the only way to keep the code
             // safe an recoverable is to use the incremented sequence. By
             // leaving the sequence as is there's a risk of hangup.
-            m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
+            // Not doing it in case of -1 as it would make a valid %0.
+            if (m_RcvBaseSeqNo != -1)
+                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
         }
         else
         {
