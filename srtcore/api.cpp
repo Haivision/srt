@@ -696,13 +696,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
          // Listen on both first connected socket and continued sockets.
          // This might help with jump-over situations, and in regular continued
          // sockets the IN event won't be reported anyway.
-
-         // NOTE: As UPDATE is an edge-triggered only flag, you can't mix
-         // this with a level-trigger ACCEPT in one call.
-         int lmodes = SRT_EPOLL_ACCEPT;
-         srt_epoll_add_usock(g->m_RcvEID, ls->m_SocketID, &lmodes);
-         lmodes = SRT_EPOLL_UPDATE;
-         srt_epoll_add_usock(g->m_RcvEID, ls->m_SocketID, &lmodes);
+         int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
+         srt_epoll_add_usock(g->m_RcvEID, ls->m_SocketID, &listener_modes);
 
          // This listening should be done always when a first connected socket
          // appears as accepted off the listener. This is for the sake of swait() calls
