@@ -95,7 +95,7 @@ sockaddr_in CreateAddrInet(const string& name, unsigned short port)
         //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
         hostent* he = gethostbyname(name.c_str());
         if ( !he || he->h_addrtype != AF_INET )
-            throw invalid_argument("SrtSource: host not found: " + name);
+            throw invalid_argument("CreateAddrInet: host not found: " + name);
 
         sa.sin_addr = *(in_addr*)he->h_addr_list[0];
     }

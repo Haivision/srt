@@ -933,6 +933,10 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
+
+		srt_add_testprogram(srt-test-mpbond)
+		srt_make_application(srt-test-mpbond)
+
 	endif()
 
 endif()
