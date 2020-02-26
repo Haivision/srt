@@ -302,7 +302,7 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = 0;
+                m_iLastSchedSeqNo = -1;
                 setInitialRxSequence(-1);
             }
             s = true;
