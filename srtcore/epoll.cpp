@@ -299,26 +299,10 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
     evts &= ~SRT_EPOLL_ET;
+    int32_t et_evts = edgeTriggered ? evts : evts & SRT_EPOLL_ETONLY;
     if (evts)
     {
-        if (!edgeTriggered)
-        {
-            int et_events = evts & SRT_EPOLL_ETONLY;
-            int noet_events = evts & ~SRT_EPOLL_ETONLY;
-            // Check if both ET and other events are passed
-            if (noet_events && et_events)
-            {
-                LOGC(dlog.Error, log << "srt_epoll_update_usock: Mixing ET and non-ET events in one call. Use separate calls.");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL);
-            }
-
-            if (evts & SRT_EPOLL_ETONLY)
-            {
-                edgeTriggered = true;
-            }
-        }
-
-        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = d.addWatch(u, evts, edgeTriggered);
+        pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = d.addWatch(u, evts, et_evts);
         CEPollDesc::Wait& wait = iter_new.first->second;
         if (!iter_new.second)
         {

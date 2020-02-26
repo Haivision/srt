@@ -751,7 +751,9 @@ Iface* CreateConsole() { return new typename Console<Iface>::type (); }
 SocketOption udp_options [] {
     { "iptos", IPPROTO_IP, IP_TOS, SocketOption::PRE, SocketOption::INT, nullptr },
     // IP_TTL and IP_MULTICAST_TTL are handled separately by a common option, "ttl".
-    { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::PRE, SocketOption::INT, nullptr }
+    { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "sndbuf", SOL_SOCKET, SO_SNDBUF, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "rcvbuf", SOL_SOCKET, SO_RCVBUF, SocketOption::PRE, SocketOption::INT, nullptr}
 };
 
 static inline bool IsMulticast(in_addr adr)

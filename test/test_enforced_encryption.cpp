@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 #include <thread>
+#include <condition_variable> 
+#include <mutex>
 
 #include "srt.h"
 
@@ -340,11 +342,22 @@ public:
                 << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
         }
 
+        bool accept_ready = false;
+        std::mutex ready_to_accept_mtx;
+        std::condition_variable ready_to_accept;
+
         const int epoll_res = WaitOnEpoll(expect);
 
         auto accepting_thread = std::thread([&] {
+            ready_to_accept_mtx.lock();
+            accept_ready = true;
+            ready_to_accept.notify_one();
+            ready_to_accept_mtx.unlock();
+
             if (epoll_res == SRT_ERROR)
+            {
                 return;
+            }
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
@@ -399,6 +412,10 @@ public:
 
         if (is_blocking)
         {
+            // We need to ensure the accepting thread is up and running
+            std::unique_lock<std::mutex> lock(ready_to_accept_mtx);
+            ready_to_accept.wait(lock, [&accept_ready] { return accept_ready; });
+
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

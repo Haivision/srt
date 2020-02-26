@@ -84,6 +84,19 @@ TEST_F(CSndLossListTest, InsertPopTwoElems)
     CheckEmptyArray();
 }
 
+/// Insert 1 and 2 and pop() one by one
+TEST_F(CSndLossListTest, InsertPopTwoSerialElems)
+{
+    EXPECT_EQ(m_lossList->insert(1, 1), 1);
+    EXPECT_EQ(m_lossList->insert(2, 2), 1);
+
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+    EXPECT_EQ(m_lossList->popLostSeq(), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+    EXPECT_EQ(m_lossList->popLostSeq(), 2);
+    CheckEmptyArray();
+}
+
 /// Insert (1,2) and 4, then pop one by one
 TEST_F(CSndLossListTest, InsertPopRangeAndSingle)
 {
@@ -113,6 +126,24 @@ TEST_F(CSndLossListTest, InsertPopFourElems)
     EXPECT_EQ(m_lossList->popLostSeq(), 1);
     EXPECT_EQ(m_lossList->getLossLength(), 2);
     EXPECT_EQ(m_lossList->popLostSeq(), 2);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+    EXPECT_EQ(m_lossList->popLostSeq(), 4);
+    CheckEmptyArray();
+}
+
+/// Insert (1,2) and 4, then pop one by one
+TEST_F(CSndLossListTest, InsertCoalesce)
+{
+    EXPECT_EQ(m_lossList->insert(1, 2), 2);
+    EXPECT_EQ(m_lossList->insert(4, 4), 1);
+    EXPECT_EQ(m_lossList->insert(3, 3), 1);
+
+    EXPECT_EQ(m_lossList->getLossLength(), 4);
+    EXPECT_EQ(m_lossList->popLostSeq(), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 3);
+    EXPECT_EQ(m_lossList->popLostSeq(), 2);
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+    EXPECT_EQ(m_lossList->popLostSeq(), 3);
     EXPECT_EQ(m_lossList->getLossLength(), 1);
     EXPECT_EQ(m_lossList->popLostSeq(), 4);
     CheckEmptyArray();

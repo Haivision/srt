@@ -10927,10 +10927,13 @@ CUDTGroup::CUDTGroup()
     , m_bTsbPd(true)
     , m_bTLPktDrop(true)
     , m_iTsbPdDelay_us(0)
+    // m_*EID and m_*Epolld fields will be initialized
+    // in the constructor body.
     , m_iSndTimeOut(-1)
     , m_iRcvTimeOut(-1)
-    , m_tsStartTime(0)
-    , m_tsRcvPeerStartTime(0)
+    , m_tsStartTime()
+    , m_tsRcvPeerStartTime()
+    , m_RcvBaseSeqNo(-1)
     , m_bOpened(false)
     , m_bConnected(false)
     , m_bClosing(false)
@@ -12663,7 +12666,9 @@ RETRY_READING:
             // This should never happen, but the only way to keep the code
             // safe an recoverable is to use the incremented sequence. By
             // leaving the sequence as is there's a risk of hangup.
-            m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
+            // Not doing it in case of -1 as it would make a valid %0.
+            if (m_RcvBaseSeqNo != -1)
+                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
         }
         else
         {
