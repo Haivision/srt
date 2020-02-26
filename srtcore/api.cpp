@@ -955,12 +955,25 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64
     CEPollDesc* ed = 0;
     int eid = m_EPoll.create(&ed);
 
+    // Destroy it at return - this function can be interrupted
+    // by an exception.
+    struct AtReturn
+    {
+        int eid;
+        CUDTUnited* that;
+        AtReturn(CUDTUnited* t, int e): eid(e), that(t) {}
+        ~AtReturn()
+        {
+            that->m_EPoll.release(eid);
+        }
+    } l_ar(this, eid);
+
     // Subscribe all of listeners for accept
     int events = SRT_EPOLL_ACCEPT;
 
     for (int i = 0; i < lsize; ++i)
     {
-        m_EPoll.update_usock(eid, listeners[i], &events);
+        srt_epoll_add_usock(eid, listeners[i], &events);
     }
 
     CEPoll::fmap_t st;
@@ -972,9 +985,13 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
     }
 
-    SRTSOCKET ret = st.begin()->first;
-    m_EPoll.release(eid);
-    return ret;
+    // Theoretically we can have a situation that more than one
+    // listener is ready for accept. In this case simply get
+    // only the first found.
+    int lsn = st.begin()->first;
+    sockaddr_storage dummy;
+    int outlen = sizeof dummy;
+    return accept(lsn, ((sockaddr*)&dummy), (&outlen));
 }
 
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
