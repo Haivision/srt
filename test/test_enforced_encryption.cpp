@@ -390,6 +390,10 @@ public:
                     std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
             }
+            else
+            {
+                std::cerr << "ACCEPT ERROR: " << srt_getlasterror_str() << std::endl;
+            }
         });
 
         if (is_blocking == false)
@@ -413,11 +417,15 @@ public:
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
+        std::cerr << "STATE CHECK FINISHED\n";
+
         if (is_blocking)
         {
             // We need to ensure the accepting thread is up and running
             std::unique_lock<std::mutex> lock(ready_to_accept_mtx);
             ready_to_accept.wait(lock, [&accept_ready] { return accept_ready; });
+
+            std::cerr << "CV UNLOCKED, STARTING TEST\n";
 
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
@@ -531,7 +539,7 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = false;
+    const bool          m_is_tracing = true;
     static const char*  m_km_state[];
     static const char*  m_socket_state[];
 };
