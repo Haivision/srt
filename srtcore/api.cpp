@@ -664,7 +664,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       {
          if (gi->laststatus == SRTS_CONNECTED)
          {
-            HLOGC(mglog.Debug, log << "Found another connected socket in the group: $"
+            LOGC(mglog.Error, log << "Found another connected socket in the group: $"
                   << gi->id << " - socket will be NOT given up for accepting");
             should_submit_to_accept = false;
             break;
@@ -740,7 +740,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       }
       leaveCS(ls->m_AcceptLock);
 
-      HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
+      LOGC(mglog.Error, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
       // acknowledge users waiting for new connections on the listening socket
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, true);
 
@@ -1017,7 +1017,10 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            accept_sync.wait();
 
        if (ls->m_pQueuedSockets->empty())
+       {
+           LOGC(mglog.Error, log << "accept() nSRT_EPOLL_ACCEPT -> false");
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, false);
+       }
    }
 
    if (u == CUDT::INVALID_SOCK)
