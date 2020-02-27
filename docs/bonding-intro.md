@@ -194,50 +194,49 @@ SRT_SOCKGROUPDATA gdata [3] = {
 srt_connect_group(conngrp, gdata, 3);
 ```
 
-This does simply the same as `srt_connect`, but blocking rules are different:
+This does the same as `srt_connect`, but blocking rules are different:
 it blocks until at least one connection from the given list is established.
 Then it returns and allows the group to be used for transmission, while
-continuing with the other connections in background (note: some group types may
-require minimum conditions to be satisfied, like a minimum number of
-connections - just for the record).
+continuing with the other connections in the background. Note that some group 
+types may require certain conditions to be satisfied, like a minimum number of
+connections.
 
-If you use non-blocking mode, then `srt_connect_group` is simply the same as
+If you use non-blocking mode, then `srt_connect_group` behaves the same as
 running `srt_connect` in a loop for all required endpoints.
 
 Once the connection is ready, you use the `conngrp` id for transmission, exactly
 the same way as above for the sockets.
 
-There's one additional thing to be covered here, though - how much of interest
-should be in the application.
+There's one additional thing to be covered here: just how much 
+should the application be involved with socket groups?
 
 
 Controlling the member connections
 ==================================
 
-The object of type `SRT_MSGCTRL` is used to exchange some extra information
-with the `srt_sendmsg2` and `srt_recvmsg2`; in this case interesting are two
-fields:
+The object of type `SRT_MSGCTRL` is used to exchange some extra information with 
+`srt_sendmsg2` and `srt_recvmsg2`. Of particular interest in this case are two fields:
 
 * `grpdata`
 * `grpdata_size`
 
-They have to be set to the pointer and size of an existing `SRT_SOCKGROUPDATA`
+These fields have to be set to the pointer and size of an existing `SRT_SOCKGROUPDATA`
 type array, which will be filled by this call (you can also obtain it separately
 by the `srt_group_data` function). The array must have a maximum possible size
-to get information about every single member link, otherwise it will not fill
-it back and return the proper size in `grpdata_size`.
+to get information about every single member link. Otherwise it will not fill and 
+return the proper size in `grpdata_size`.
 
 The application should be interested here in two types of information:
 
-* The size of the filled array
-* The `status` field in every element
+* the size of the filled array
+* the `status` field in every element
 
 From the `status` field you can track every member connection as to whether its
 state is still `SRTS_CONNECTED`. If a connection is detected as broken after
 the call to a transmission function (`srt_sendmsg2/srt_recvmsg2`) then the
-connection will appear in these data only once and the last time with `status`
-equal to `SRTS_BROKEN` - in further calls it will not appear anymore, as well
-as it won't appear at all if you check the data through `srt_group_data`.
+connection will appear in these data only once, and with `status`
+equal to `SRTS_BROKEN`. It will not appear anymore in later calls, and it won't 
+appear at all if you check the data through `srt_group_data`.
 
 Example:
 
@@ -248,17 +247,17 @@ mc.grpdata = gdata;
 mc.grpdata_size = 3;
 ...
 srt_sendmsg2(conngrp, packetdata.data(), packetdata.size(), &mc);
-
 for (int i = 0; i < 3; ++i)
     if (mc.grpdata[i].status == SRTS_BROKEN)
         ReestablishConnection(mc.grpdata[i].id);
 ```
 
-In the above example it is using the socket ID in order to identify the
-item in the application's link table, then decide what to do with it. If
-it is decided to be revived, this function should call `srt_connect` on it.
-The link, however, might be only attempted to be establish, in which case
+In the above example the socket ID is used to identify the
+item in the application's link table, at which point a decision is made. If
+the connection is to be revived, this function should call `srt_connect` on it.
+
+There might be only an attempt to establish the link, in which case
 you'll get first the `SRTS_CONNECTING` status here, and then a failed socket
 will simply disappear. Therefore the function should also check how many
 items were returned in this array, match them with existing connections,
-and distill connections that are unexpectedly not established.
+and filter out connections that are unexpectedly not established.
