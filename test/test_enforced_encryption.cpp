@@ -293,6 +293,27 @@ public:
     template<typename TResult>
     const TestCase<TResult>& GetTestMatrix(TEST_CASE test_case) const;
 
+    std::string print_timestamp() const
+    {
+        using namespace std;
+        using namespace std::chrono;
+        std::ostringstream output;
+
+        const auto systime_now = system_clock::now();
+        const time_t time_now = system_clock::to_time_t(systime_now);
+        std::tm* tm_now = std::localtime(&time_now);
+        if (!tm_now)
+        {
+            return "ERROR";
+        }
+
+        output << std::put_time(tm_now, "%T.") << std::setfill('0') << std::setw(6);
+        const auto since_epoch = systime_now.time_since_epoch();
+        const seconds s = duration_cast<seconds>(since_epoch);
+        output << duration_cast<microseconds>(since_epoch - s).count();
+        return output.str();
+    }
+
 
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
@@ -361,9 +382,12 @@ public:
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
+
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
+            std::cout << "Calling accept at " << print_timestamp() << '\n';
             SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+            std::cout << "Accept returned result at " << print_timestamp() << '\n';
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -413,13 +437,17 @@ public:
         if (is_blocking)
         {
             // We need to ensure the accepting thread is up and running
+            std::cout << "Main thread waits on a CV " << print_timestamp() << '\n';
             std::unique_lock<std::mutex> lock(ready_to_accept_mtx);
             ready_to_accept.wait(lock, [&accept_ready] { return accept_ready; });
+            std::cout << "Main thread, notofication received at " << print_timestamp() << '\n';
 
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::cout << "Main thread slept for 50ms. Woke up at " << print_timestamp() << '\n';
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            std::cout << "Main thread closes listener at " << print_timestamp() << '\n';
             accepting_thread.join();
         }
     }
