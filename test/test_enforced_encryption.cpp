@@ -424,6 +424,92 @@ public:
         }
     }
 
+    void TestAcceptTime()
+    {
+        ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+
+        // Start testing
+        sockaddr_in sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(5200);
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+        sockaddr* psa = (sockaddr*)&sa;
+        ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
+        ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
+
+        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        EXPECT_EQ(connect_ret, 0);
+
+        if (connect_ret == SRT_ERROR)
+        {
+            std::cerr << "UNEXPECTED! srt_connect returned error: "
+                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        }
+
+        volatile bool thread_exited = false;
+
+        auto accepting_thread = std::thread([&] {
+
+            // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
+            // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
+            // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
+            sockaddr_in client_address;
+            int length = sizeof(sockaddr_in);
+            SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+
+            EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
+
+            if (accepted_socket != SRT_INVALID_SOCK)
+            {
+                // We have to wait some time for the socket to be able to process the HS responce from the caller.
+                // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
+                // due to KM mismatches
+                EXPECT_EQ(srt_getsockstate(accepted_socket), SRTS_CONNECTED);
+                if (m_is_tracing)
+                {
+                    std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
+                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                }
+            }
+
+            thread_exited = true;
+        });
+
+        if (m_is_tracing)
+        {
+            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
+            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
+            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
+            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
+            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
+            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+        }
+
+        // If a blocking call to srt_connect() returned error, then the state is not valid,
+        // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
+        EXPECT_EQ(srt_getsockstate(m_caller_socket), SRTS_CONNECTED);
+        EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
+
+        // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
+        // Just give it some time and close the socket.
+        int wait_us = 0;
+        while (!thread_exited)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            wait_us += 10;
+        }
+        ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+        accepting_thread.join();
+
+        std::cerr << "ACCEPT WAITING TIME: " << wait_us << "us\n";
+    }
+
 
 private:
     // put in any custom data members that you need
@@ -574,6 +660,11 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
 
     EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   false);
     EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), false);
+}
+
+TEST_F(TestEnforcedEncryption, CheckAcceptTime)
+{
+    TestAcceptTime();
 }
 
 
