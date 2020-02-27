@@ -16,6 +16,7 @@
 #include <mutex>
 
 #include "srt.h"
+#include "sync.h"
 
 
 
@@ -295,23 +296,8 @@ public:
 
     std::string print_timestamp() const
     {
-        using namespace std;
-        using namespace std::chrono;
-        std::ostringstream output;
-
-        const auto systime_now = system_clock::now();
-        const time_t time_now = system_clock::to_time_t(systime_now);
-        std::tm* tm_now = std::localtime(&time_now);
-        if (!tm_now)
-        {
-            return "ERROR";
-        }
-
-        output << std::put_time(tm_now, "%T.") << std::setfill('0') << std::setw(6);
-        const auto since_epoch = systime_now.time_since_epoch();
-        const seconds s = duration_cast<seconds>(since_epoch);
-        output << duration_cast<microseconds>(since_epoch - s).count();
-        return output.str();
+        const auto now = srt::sync::steady_clock::now();
+        return srt::sync::FormatTime(now);
     }
 
 
