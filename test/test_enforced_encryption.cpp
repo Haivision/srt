@@ -347,6 +347,7 @@ public:
         std::condition_variable ready_to_accept;
 
         const int epoll_res = WaitOnEpoll(expect);
+        volatile bool accept_finished = false;
 
         auto accepting_thread = std::thread([&] {
             ready_to_accept_mtx.lock();
@@ -364,6 +365,8 @@ public:
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
             SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+
+            accept_finished = true;
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -418,7 +421,13 @@ public:
 
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            int wait_ms = 0;
+            while (!accept_finished && wait_ms < 5000)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                wait_ms += 10;
+            }
+            std::cerr << "ACCEPT WAITING TIME: " << wait_ms << " (timeout: 50000) - CLOSING SOCKET\n";
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             accepting_thread.join();
         }
