@@ -201,6 +201,11 @@ int main( int argc, char** argv )
     Verb() << "] accept...";
 
     SRTSOCKET conngrp = srt_accept_bond(listeners.data(), listeners.size(), -1);
+    if (conngrp == SRT_INVALID_SOCK)
+    {
+        cerr << "ERROR: srt_accept_bond: " << srt_getlasterror_str() << endl;
+        return 1;
+    }
 
     auto s = new SrtSource;
     unique_ptr<Source> src;
