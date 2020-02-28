@@ -302,7 +302,7 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = 0;
+                m_iLastSchedSeqNo = -1;
                 setInitialRxSequence(-1);
             }
             s = true;
@@ -331,6 +331,7 @@ public:
     static gli_t gli_NULL() { return s_NoGroup.end(); }
 
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
 
     void close();
@@ -578,9 +579,8 @@ public: //API
     static int listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    static int connect(SRTSOCKET u, const sockaddr* name, int namelen, const sockaddr* tname, int tnamelen);
-    static int connectLinks(SRTSOCKET grp, const sockaddr* source /*[[nullable]]*/, int namelen,
-            SRT_SOCKGROUPDATA links [], int arraysize);
+    static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
+    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPDATA links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
