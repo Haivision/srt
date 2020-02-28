@@ -340,26 +340,8 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
-        EXPECT_EQ(connect_ret, expect.connect_ret);
-
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
-        {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
-        }
-
-        bool accept_ready = false;
-        std::mutex ready_to_accept_mtx;
-        std::condition_variable ready_to_accept;
-
-        const int epoll_res = WaitOnEpoll(expect);
-
         auto accepting_thread = std::thread([&] {
-            ready_to_accept_mtx.lock();
-            accept_ready = true;
-            ready_to_accept.notify_one();
-            ready_to_accept_mtx.unlock();
+            const int epoll_res = WaitOnEpoll(expect);
 
             if (epoll_res == SRT_ERROR)
             {
@@ -399,6 +381,15 @@ public:
             }
         });
 
+        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        EXPECT_EQ(connect_ret, expect.connect_ret);
+
+        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        {
+            std::cerr << "UNEXPECTED! srt_connect returned error: "
+                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        }
+
         if (is_blocking == false)
             accepting_thread.join();
 
@@ -422,12 +413,6 @@ public:
 
         if (is_blocking)
         {
-            // We need to ensure the accepting thread is up and running
-            std::cout << "Main thread waits on a CV " << print_timestamp() << '\n';
-            std::unique_lock<std::mutex> lock(ready_to_accept_mtx);
-            ready_to_accept.wait(lock, [&accept_ready] { return accept_ready; });
-            std::cout << "Main thread, notofication received at " << print_timestamp() << '\n';
-
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
