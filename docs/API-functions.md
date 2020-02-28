@@ -352,6 +352,62 @@ when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
 
+### srt_accept_bond
+
+```
+SRTSOCKET srt_accept_bond(const SRTSOCKET listeners[], int nlisteners, int msTimeOut);
+```
+
+Accepts a pending connection, like `srt_accept`, but pending on any of the
+listener sockets passed in the `listeners` array of `nlisteners` size.
+
+* `listeners`: array of listener sockets (all must be setup by `srt_listen`)
+* `nlisteners`: size of the `listeners` array
+* `msTimeOut`: timeout in [ms] or -1 to block forever
+
+This function is for blocking mode only - for non-blocking mode you should
+simply call `srt_accept` on the first listener socket that reports readiness,
+and this function is actually a friendly shortcut that uses waiting on epoll
+and `srt_accept` internally. This function supports an important use case for
+accepting a group connection, for which every member connection is expected to
+be established over a different listener socket.
+
+Note that there's no special set of settings required or rejected for this
+function. The group-member connections for the same group can be established
+over various different listener sockets always when all those listeners are
+hosted by the same application, as the group management is global for the
+application, so a connection reporting in for an already connected group
+gets discovered and the connection will be handled in the background,
+regardless to which listener socket the call was done - as long as the
+connection is accepted according to any additional conditions.
+
+This function has still nothing to do with the groups - you can use it in
+any case when you have one service that accepts connections to multiple
+endpoints. Note also that the settings as to whether listeners should
+accept or reject socket or group connections, should be applied to the
+listener sockets appropriately prior to calling this function.
+
+- Returns:
+
+  * On success, a valid SRT socket or group ID to be used for transmission
+  * `SRT_ERROR` (-1) on failure 
+
+- Errors:
+
+  * `SRT_EINVPARAM`: NULL specified as `listeners` or `nlisteners` < 1
+
+  * `SRT_EINVSOCK`: any socket in `listeners` designates no valid socket ID.
+Can also mean Internal Error when an error occurred while creating an
+accepted socket (**BUG?**)
+
+  * `SRT_ENOLISTEN`: any socket in `listeners` is not set up as a listener
+(`srt_listen` not called, or the listener socket has already been closed)
+
+  * `SRT_EASYNCRCV`: No connection reported on any listener socket as the
+timeout has been reached. This error is only reported when msTimeOut is
+not -1
+
+
 ### srt_listen_callback
 
 ```
