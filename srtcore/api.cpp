@@ -498,6 +498,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
          ns->m_tsClosureTimeStamp = steady_clock::now();
 
          CGuard acceptcg(ls->m_AcceptLock);
+         LOGC(mglog.Error, log << "newConnection: erasing socket " << ns->m_SocketID);
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
          ls->m_pAcceptSockets->erase(ns->m_SocketID);
       }
@@ -2580,6 +2581,7 @@ void* CUDTUnited::garbageCollect(void* p)
       }
 
       enterCS(ls->second->m_AcceptLock);
+      LOGC(mglog.Error, log << "GC: Erasing queued sockets");
       ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
       ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
       leaveCS(ls->second->m_AcceptLock);
