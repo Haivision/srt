@@ -976,9 +976,9 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    {
        CGuard accept_lock(ls->m_AcceptLock);
        CSync accept_sync(ls->m_AcceptCond, accept_lock);
-       LOGC(mglog.Error, log << "accept() lock acquired, status ", ls->m_Status,
-           " broken " << ls->m_pUDT->m_bBroken,
-           " ls->m_pQueuedSockets->size() " << ls->m_pQueuedSockets->size());
+       LOGC(mglog.Error, log << "accept() lock acquired, status " << ls->m_Status
+           << " broken " << ls->m_pUDT->m_bBroken
+           << " ls->m_pQueuedSockets->size() " << ls->m_pQueuedSockets->size());
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
