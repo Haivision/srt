@@ -294,13 +294,6 @@ public:
     template<typename TResult>
     const TestCase<TResult>& GetTestMatrix(TEST_CASE test_case) const;
 
-    std::string print_timestamp() const
-    {
-        const auto now = srt::sync::steady_clock::now();
-        return srt::sync::FormatTime(now);
-    }
-
-
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
@@ -350,12 +343,9 @@ public:
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
-
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            std::cout << "Calling accept at " << print_timestamp() << '\n';
             SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-            std::cout << "Accept returned result at " << print_timestamp() << '\n';
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -424,9 +414,7 @@ public:
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            std::cout << "Main thread slept for 50ms. Woke up at " << print_timestamp() << '\n';
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
-            std::cout << "Main thread closes listener at " << print_timestamp() << '\n';
             accepting_thread.join();
         }
     }

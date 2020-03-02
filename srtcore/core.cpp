@@ -8493,8 +8493,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         m_bBroken        = true;
         m_iBrokenCounter = 60;
 
-        LOGP(mglog.Error, "SHUTDOWN: received");
-
         // Signal the sender and recver if they are waiting for data.
         releaseSynch();
         // Unblock any call so they learn the connection_broken error

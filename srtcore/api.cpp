@@ -498,7 +498,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
          ns->m_tsClosureTimeStamp = steady_clock::now();
 
          CGuard acceptcg(ls->m_AcceptLock);
-         LOGC(mglog.Error, log << "newConnection: erasing socket " << ns->m_SocketID);
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
          ls->m_pAcceptSockets->erase(ns->m_SocketID);
       }
@@ -665,7 +664,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       {
          if (gi->laststatus == SRTS_CONNECTED)
          {
-            LOGC(mglog.Error, log << "Found another connected socket in the group: $"
+            HLOGC(mglog.Debug, log << "Found another connected socket in the group: $"
                   << gi->id << " - socket will be NOT given up for accepting");
             should_submit_to_accept = false;
             break;
@@ -741,7 +740,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       }
       leaveCS(ls->m_AcceptLock);
 
-      LOGC(mglog.Error, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
+      HLOGC(mglog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
       // acknowledge users waiting for new connections on the listening socket
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, true);
 
@@ -977,9 +976,6 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    {
        CGuard accept_lock(ls->m_AcceptLock);
        CSync accept_sync(ls->m_AcceptCond, accept_lock);
-       LOGC(mglog.Error, log << "accept() lock acquired, status " << ls->m_Status
-           << " broken " << ls->m_pUDT->m_bBroken
-           << " ls->m_pQueuedSockets->size() " << ls->m_pQueuedSockets->size());
 
        if ((ls->m_Status != SRTS_LISTENING) || ls->m_pUDT->m_bBroken)
        {
@@ -1021,10 +1017,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            accept_sync.wait();
 
        if (ls->m_pQueuedSockets->empty())
-       {
-           LOGC(mglog.Error, log << "accept() nSRT_EPOLL_ACCEPT -> false");
            m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, false);
-       }
    }
 
    if (u == CUDT::INVALID_SOCK)
@@ -2581,7 +2574,6 @@ void* CUDTUnited::garbageCollect(void* p)
       }
 
       enterCS(ls->second->m_AcceptLock);
-      LOGC(mglog.Error, log << "GC: Erasing queued sockets");
       ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
       ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
       leaveCS(ls->second->m_AcceptLock);
