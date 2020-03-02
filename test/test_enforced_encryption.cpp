@@ -154,7 +154,8 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  * In the cases B.2-B.4 the caller will reject the connection due to the enforced encryption check
  * of the HS response from the listener on the stage of the KM response check.
  * While the listener accepts the connection with the connected state. So the caller sends UMSG_SHUTDOWN
- * to notify the listener that he has closed the connection. The accepted socket gets the SRTS_BROKEN states.
+ * to notify the listener that it has closed the connection. The accepted socket gets the SRTS_BROKEN states.
+ * For these cases a special accept_ret = -2 is used, that allows the accepted socket to be broken or already closed.
  *
  * In the cases C.2-C.4 it is the listener who rejects the connection, so we don't have an accepted socket.
  */
