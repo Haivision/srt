@@ -1214,24 +1214,6 @@ sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
 
-**IMPORTANT**: There is an unobvious behavior when `SRTO_ENFORCEDENCRYPTION` is ыуе ещ TRUE
-on the caller and ещ FALSE on the listener. If peers have a mismatch in the passphrases set,
-for the listener side the connection will be established and broken right after.
-This is because the listener accepts the connection and considers itself connected,
-while it doesn't know yet that the caller will reject it.
-The result is a short-lived "spurious" connection report
-on the listener socket. If the application is fast enough to catch it, it will get
-the socket from `srt_accept`, only to learn soon afterwards that the
-connection is broken. Ideally, the connection should be removed from the
-listener backlog before the application can be aware of its existence. But
-this depends on how fast the connection is broken, which in turn depends
-on the network parameters - in particular, whether the `UMSG_SHUTDOWN`
-message sent by the caller is delivered (which takes one RTT in this case) or
-missed (from its creation up to the connection timeout, with default 5 seconds).
-It is therefore strongly recommended that you only set this flag to FALSE
-on the listener when you are able to ensure that it is also set to FALSE on the
-caller side.
-
 ---
 
 | OptName           | Since | Binding | Type            | Units | Default  | Range  |
