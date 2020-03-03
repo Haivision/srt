@@ -690,10 +690,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
         }
 
-#ifdef ENABLE_HEAVY_LOGGING
-        const bool wait_signaled =
-#endif
-        CGlobEvent::waitForEvent();
+        const bool wait_signaled ATR_UNUSED = CGlobEvent::waitForEvent();
         HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
             << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
