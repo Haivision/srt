@@ -411,7 +411,7 @@ private:
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
    CChannel* m_pChannel;                // The UDP channel for data sending
-   CTimer* m_pTimer;         // Timing facility
+   CTimer* m_pTimer;                    // Timing facility
 
    srt::sync::Mutex m_WindowLock;
    srt::sync::Condition m_WindowCond;
@@ -498,8 +498,8 @@ private:
 
    CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
    CHash* m_pHash;			// Hash table for UDT socket looking up
-   CChannel* m_pChannel;        // UDP channel for receving packets
-   CTimer* m_pTimer;	// shared timer with the snd queue
+   CChannel* m_pChannel;		// UDP channel for receving packets
+   CTimer* m_pTimer;			// shared timer with the snd queue
 
    int m_iPayloadSize;                  // packet payload size
 
@@ -543,7 +543,7 @@ struct CMultiplexer
    CSndQueue* m_pSndQueue;  // The sending queue
    CRcvQueue* m_pRcvQueue;  // The receiving queue
    CChannel* m_pChannel;    // The UDP channel for sending and receiving
-   CTimer* m_pTimer;  // The timer
+   CTimer* m_pTimer;        // The timer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)

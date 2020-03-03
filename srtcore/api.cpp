@@ -744,7 +744,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // acknowledge users waiting for new connections on the listening socket
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, true);
 
-      g_Sync.notify_one();
+      CGlobEvent::triggerEvent();
 
       // XXX the exact value of 'error' is ignored
       if (error > 0)
@@ -767,7 +767,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // acknowledge INTERNAL users waiting for new connections on the listening socket
       // that are reported when a new socket is connected within an already connected group.
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_UPDATE, true);
-      g_Sync.notify_one();
+      CGlobEvent::triggerEvent();
    }
 
 ERR_ROLLBACK:
@@ -1628,7 +1628,7 @@ int CUDTUnited::close(CUDTSocket* s)
        m_ClosedSockets[s->m_SocketID] = s;
        HLOGC(mglog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
-       g_Sync.notify_one();
+       CGlobEvent::triggerEvent();
    }
 
    HLOGC(mglog.Debug, log << "@" << u << ": GLOBAL: CLOSING DONE");
@@ -1680,7 +1680,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
            HLOGC(mglog.Debug, log << "@" << u << " GLOBAL CLOSING: ... still waiting for any update.");
            // How to handle a possible error here?
-           g_Sync.wait_for(milliseconds_from(10));
+           CGlobEvent::waitForEvent();
 
            // Continue waiting in case when an event happened or 1s waiting time passed for checkpoint.
        }
@@ -1851,7 +1851,7 @@ int CUDTUnited::select(
       if (0 < count)
          break;
 
-      g_Sync.wait_for(milliseconds_from(10));
+      CGlobEvent::waitForEvent();
    } while (timeo > steady_clock::now() - entertime);
 
    if (readfds)
@@ -1934,7 +1934,7 @@ int CUDTUnited::selectEx(
       if (count > 0)
          break;
 
-      g_Sync.wait_for(milliseconds_from(10));
+      CGlobEvent::waitForEvent();
    } while (timeo > steady_clock::now() - entertime);
 
    return count;

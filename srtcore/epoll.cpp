@@ -497,7 +497,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-        g_Sync.notify_one();
+        CGlobEvent::triggerEvent();
     }
 
     return 0;
@@ -693,7 +693,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 #ifdef ENABLE_HEAVY_LOGGING
         const bool wait_signaled =
 #endif
-        g_Sync.pause();
+        CGlobEvent::waitForEvent();
         HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
             << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
@@ -776,7 +776,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
             return 0; // meaning "none is ready"
         }
 
-        g_Sync.wait_for(milliseconds_from(10));
+        CGlobEvent::waitForEvent();
     }
 
     return 0;
