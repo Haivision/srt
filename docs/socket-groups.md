@@ -114,12 +114,12 @@ switch into the backup link connected with resending all non-ACK-ed packets
 might not be on time as required to play them. Your latency setting must be
 able to compensate not only usual loss-retransmission time, but also the
 time to realize that the link might be broken and time required for resending
-all unacknowledge packets, before the time to play comes from the received
+all unacknowledged packets, before the time to play comes for the received
 packets. If this time isn't met, packets will be dropped and your advantage
-of having the backup link will evaporate. According to the tests on the local
-network it turns out that the most sensible unstability timeout is about 50ms,
-while normally ACK timeout is 30ms, so extra 100ms latency tax seems to be an
-absolute minimum.
+of having the backup link might be impaired. According to the tests on the
+local network it turns out that the most sensible unstability timeout is about
+50ms, while normally ACK timeout is 30ms, so extra 100ms latency tax seems to
+be an absolute minimum.
 
 2. Bandwidth penalty. Note that in case when the Backup group activates
 another link, it must resend all packets that haven't been acknowledged,
@@ -131,12 +131,17 @@ exactly at the moment when packets were about to be acknowledged. The
 link switch always means a large burst of packets to be sent at that
 moment - so the mechanism needs large enough time to send them and to
 consider them for delivery. However, if your bandwidth limit is too strong,
-sending these packets will be dampered possibly too much to live up to
+sending these packets might be dampened possibly too much to live up to
 the required time to play. It is unknown as to what recommendations should
 be used for that case, although it is usually more required than to
 compensate a burst for retransmission and also the maximum burst size
 is dependent on the bitrate, in particular, how many packets would be
-collected between two acknowledgement events.
+collected between two acknowledgement events. It might be not that touch
+as it seems from this description, as it's about starting a transmission
+over an earlier not used link, so there's some chance that the link will
+withstand the initial high burst of packets, while then the bitrate will
+become stable - but still, some extra latency might be needed to compensate
+any quite probable packet loss that may occur during this process.
 
 
 
