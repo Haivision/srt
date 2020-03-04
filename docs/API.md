@@ -530,6 +530,27 @@ be set on a socket.
 
 ---
 
+| OptName               | Since | Binding | Type   | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_GROUPSTABTIMEO` |       | pre     | `int`  | ms     | 40       | 10+    |
+
+- This setting is used for groups of type `SRT_GTYPE_BACKUP` and it defines the
+stability timeout. This is a time that is expected to not be exceeded between
+two consecutive packets (of whatever type, but usually this is about control
+packets while the agent is a sender) retrieved from the peer on the currently
+active link (note that idle links exchange only keepalive messages once per 1s,
+so they do not count). This value should be set as small as possible, although
+note that 10ms is the time between two consecutive ACK messages, and various
+deviations from this value will happen, hence 40ms is considered most recommended
+value. Note that the higher this time is, the higher latency penalty you get.
+When this time is exceeded and the link is therefore considered unstable, one
+of the idle links gets activated, and then all packets unacknowledged so far
+are first sent.
+
+- This option can only be set on a group.
+
+---
+
 | OptName          | Since | Binding | Type      | Units   | Default  | Range  |
 | ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
 | `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t` | bytes/s | 0        | 0..    |
