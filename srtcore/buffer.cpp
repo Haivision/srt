@@ -416,6 +416,52 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
    return readlen;
 }
 
+int32_t CSndBuffer::getMsgNoAt(const int offset)
+{
+   CGuard bufferguard (m_BufLock);
+
+   Block* p = m_pFirstBlock;
+
+   if (p)
+   {
+       HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: FIRST MSG: size="
+               << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+               << " !" << BufferStamp(p->m_pcData, p->m_iLength));
+   }
+
+   if (offset >= m_iCount)
+   {
+       // Prevent accessing the last "marker" block
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, max offset=" << m_iCount);
+       return 0;
+   }
+
+   // XXX Suboptimal procedure to keep the blocks identifiable
+   // by sequence number. Consider using some circular buffer.
+   int i;
+   Block* ee SRT_ATR_UNUSED = 0;
+   for (i = 0; i < offset && p; ++ i)
+   {
+      ee = p;
+      p = p->m_pNext;
+   }
+
+   if (!p)
+   {
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, stopped at " << i
+               << " with #" << (ee ? ee->getMsgSeq() : -1));
+       return 0;
+   }
+
+   HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: offset="
+           << offset << " found, size=" << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+           << " !" << BufferStamp(p->m_pcData, p->m_iLength));
+
+   return p->getMsgSeq();
+}
+
 int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
 {
    int32_t& msgno_bitset = w_packet.m_iMsgNo;
@@ -588,17 +634,19 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
    return m_iCount;
 }
 
-int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_late_time)
+int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)
 {
    int dpkts = 0;
    int dbytes = 0;
    bool move = false;
+   int32_t msgno = 0;
 
    CGuard bufferguard (m_BufLock);
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++ i)
    {
       dpkts++;
       dbytes += m_pFirstBlock->m_iLength;
+      msgno = m_pFirstBlock->getMsgSeq();
 
       if (m_pFirstBlock == m_pCurrBlock)
           move = true;
@@ -612,7 +660,12 @@ int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_lat
    m_iCount -= dpkts;
 
    m_iBytesCount -= dbytes;
-   bytes = dbytes;
+   w_bytes = dbytes;
+
+   // We report the increased number towards the last ever seen
+   // by the loop, as this last one is the last received. So remained
+   // (even if "should remain") is the first after the last removed one.
+   w_first_msgno = ++MsgNo(msgno);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    updAvgBufSize(steady_clock::now());
