@@ -133,6 +133,8 @@ public:
       /// Update the ACK point and may release/unmap/return the user data according to the flag.
       /// @param [in] offset number of packets acknowledged.
 
+   int32_t getMsgNoAt(const int offset);
+
    void ackData(int offset);
 
       /// Read size of data still in the sending list.
@@ -140,7 +142,7 @@ public:
 
    int getCurrBufSize() const;
 
-   int dropLateData(int& bytes, const srt::sync::steady_clock::time_point& too_late_time);
+   int dropLateData(int& bytes, int32_t& w_first_msgno, const srt::sync::steady_clock::time_point& too_late_time);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    void updAvgBufSize(const srt::sync::steady_clock::time_point& time);

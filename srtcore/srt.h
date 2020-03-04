@@ -218,6 +218,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
+   SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    // (some space left)
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
@@ -705,6 +706,9 @@ typedef enum SRT_GROUP_TYPE
 {
     SRT_GTYPE_UNDEFINED,
     SRT_GTYPE_BROADCAST,
+    SRT_GTYPE_BACKUP,
+    SRT_GTYPE_BALANCING,
+    SRT_GTYPE_MULTICAST,
     // ...
     SRT_GTYPE__END
 } SRT_GROUP_TYPE;
@@ -729,6 +733,7 @@ typedef struct SRT_SocketGroupData_
     int result;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    int priority;
 } SRT_SOCKGROUPDATA;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
