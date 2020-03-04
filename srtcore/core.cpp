@@ -11682,7 +11682,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // as redundant links at the connecting stage and became
             // writable (connected) before this function had a chance
             // to check them.
-            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_CONNECT);
         }
     }
 
@@ -11754,6 +11754,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         if (is->stat == len)
         {
+            HLOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: SUCCESSFULLY sent " << len << " bytes");
             // Successful.
             successful.push_back(is->d);
             rstat = is->stat;
@@ -11769,7 +11770,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
 #if ENABLE_HEAVY_LOGGING
         string errmsg = cx.getErrorString();
-        HLOGC(dlog.Debug, log << "... sending FAILED (" << errmsg << "). Setting this socket broken status.");
+        LOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: FAILURE (result:" << is->stat << "): "
+                << errmsg << ". Setting this socket broken status.");
 #endif
         // Turn this link broken
         is->d->sndstate = GST_BROKEN;
@@ -12810,15 +12812,16 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         if (seqdiff == 1)
         {
             // The very next packet. Return it.
+            // XXX SETTING THIS ONE IS PROBABLY A BUG.
             m_RcvBaseSeqNo = a.sequence;
-            HLOGC(dlog.Debug, log << "group/recv: ahead delivery %"
+            HLOGC(dlog.Debug, log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %"
                     << a.sequence << "#" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
         {
             HLOGC(dlog.Debug, log << "group/recv: @" << i->first << " dropping collected ahead %"
-                    << a.sequence << "#" << a.mctrl.msgno << ")");
+                    << a.sequence << "#" << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
             a.packet.clear();
         }
         // In case when it's >1, keep it in ahead

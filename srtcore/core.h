@@ -522,13 +522,13 @@ public:
     void synchronizeDrift(CUDT* cu, duration udrift, time_point newtimebase);
 
     // Property accessors
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, bool, managed, m_selfManaged);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
-    SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET,      id,                   m_GroupID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET,      peerid,               m_PeerGroupID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, bool,           managed,              m_selfManaged);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type,                 m_type);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t,        currentSchedSequence, m_iLastSchedSeqNo);
+    SRTU_PROPERTY_RRW(                std::set<int>&, epollset,             m_sPollID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t,        latency,              m_iTsbPdDelay_us);
 };
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.

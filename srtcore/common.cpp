@@ -58,7 +58,6 @@ modified by
 #include <cmath>
 #include <iostream>
 #include <iomanip>
-#include "srt.h"
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
