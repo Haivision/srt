@@ -197,7 +197,6 @@ inline bool SocketOption::apply(int socket, std::string value) const
 }
 
 extern const std::map<std::string, int> enummap_transtype;
-extern const std::map<std::string, int> enummap_groupconnect;
 
 namespace {
 const SocketOption srt_options [] {
@@ -235,7 +234,7 @@ const SocketOption srt_options [] {
     { "enforcedencryption", 0, SRTO_ENFORCEDENCRYPTION, SocketOption::PRE, SocketOption::BOOL, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
-    { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::ENUM, &enummap_groupconnect}
+    { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr}
 };
 }
 

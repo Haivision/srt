@@ -257,7 +257,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_SndDropDelay     = 0;
     m_bOPT_StrictEncryption = true;
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
-    m_eOPT_GroupConnect     = SRTGC_SINGLE;
+    m_OPT_GroupConnect      = 0;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -320,7 +320,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
-    m_eOPT_GroupConnect     = ancestor.m_eOPT_GroupConnect; // NOTE: on single accept set back to SRTGC_SINGLE
+    m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
     m_zOPT_ExpPayloadSize   = ancestor.m_zOPT_ExpPayloadSize;
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
@@ -870,7 +870,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_GROUPCONNECT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_eOPT_GroupConnect = *(SRT_GROUPCONNTYPE*)optval;
+        m_OPT_GroupConnect = *(int*)optval;
         break;
 
     case SRTO_KMREFRESHRATE:
@@ -1233,8 +1233,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_GROUPCONNECT:
-        optlen         = sizeof (SRT_GROUPCONNTYPE);
-        *(SRT_GROUPCONNTYPE*)optval = m_eOPT_GroupConnect;
+        optlen         = sizeof (int);
+        *(int*)optval = m_OPT_GroupConnect;
         break;
 
     case SRTO_ENFORCEDENCRYPTION:
@@ -3251,10 +3251,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
 
-    if (!m_eOPT_GroupConnect)
+    if (m_OPT_GroupConnect == 0)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(mglog.Error, log << "HS/GROUP: this socket is not predicted for group connect.");
+        LOGC(mglog.Error, log << "HS/GROUP: this socket is not allowed for group connect.");
         return false;
     }
 
@@ -10847,7 +10847,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     }
 
     // Update the groupconnect flag
-    acore->m_eOPT_GroupConnect = have_group ? SRTGC_GROUP : SRTGC_SINGLE;
+    acore->m_OPT_GroupConnect = have_group ? 1 : 0;
 
     try
     {

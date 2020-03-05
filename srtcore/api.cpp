@@ -1039,14 +1039,15 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
       // and the already accepted socket has successfully joined
       // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
-      if (ls->m_pUDT->m_eOPT_GroupConnect & ~SRTGC_GROUP && s->m_IncludedGroup)
+      if (ls->m_pUDT->m_OPT_GroupConnect & 1 && s->m_IncludedGroup)
       {
           u = s->m_IncludedGroup->m_GroupID;
+          s->core().m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
       }
       else
       {
           // Set properly the SRTO_GROUPCONNECT flag
-          s->core().m_eOPT_GroupConnect = SRTGC_SINGLE;
+          s->core().m_OPT_GroupConnect = 0;
       }
 
       CGuard cg(s->m_ControlLock);
@@ -1253,8 +1254,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
             bind(ns, source_addr);
 
         // Set it the groupconnect option, as all in-group sockets should have.
-        // XXX probably it should set NOSINGLE option only in case of managed groups
-        ns->m_pUDT->m_eOPT_GroupConnect = SRTGC_GROUPONLY;
+        ns->m_pUDT->m_OPT_GroupConnect = 1;
 
         // Every group member will have always nonblocking
         // (this implies also non-blocking connect/accept).

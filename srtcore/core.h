@@ -1050,7 +1050,7 @@ private: // Identification
     bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
     int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    SRT_GROUPCONNTYPE m_eOPT_GroupConnect;
+    int m_OPT_GroupConnect;
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
 

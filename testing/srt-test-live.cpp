@@ -283,7 +283,7 @@ namespace srt_logging
 
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
-    SRT_GROUPCONNTYPE type;
+    int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
     Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";

@@ -22,13 +22,6 @@ extern const std::map<std::string, int> enummap_transtype = {
     { "file", SRTT_FILE }
 };
 
-extern const std::map<std::string, int> enummap_groupconnect = {
-    { "single", SRTGC_SINGLE },
-    { "group",  SRTGC_GROUP },
-    { "nosingle", SRTGC_NOSINGLE },
-    { "grouponly", SRTGC_GROUPONLY }
-};
-
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
 {
     vector<string> dummy;
