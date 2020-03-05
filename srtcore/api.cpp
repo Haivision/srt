@@ -785,11 +785,12 @@ ERR_ROLLBACK:
 #if ENABLE_LOGGING
        static const char* why [] = {
            "UNKNOWN ERROR",
-           "CONNECTION REJECTED",
+           "EXPLICIT REJECTION",
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
-       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: "
+               << why[error] << " - " << RequestTypeStr(URQFailure(w_error)));
 #endif
       SRTSOCKET id = ns->m_SocketID;
       ns->makeClosed();
