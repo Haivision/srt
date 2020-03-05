@@ -2668,6 +2668,82 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
     return SRT_CMD_NONE;
 }
 
+void CUDT::interpretRejectionMessage(const CHandShake& hs, const CPacket& hspkt)
+{
+    // This is simply part of the same procedure as done in interpretRejectionMessage(),
+    // it just extracts the contents of a prospective SRT_CMD_SID extension.
+    // If not present, do nothing.
+
+    // The just received handshake is parsed and stored in m_ConnRes.
+    // The extensions will have to be extracted from `hspkt` separately.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
+    if (!IsSet(ext_flags, CHandShake::HS_EXT_CONFIG) || hspkt.getLength() <= CHandShake::m_iContentSize)
+        return;
+
+    uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
+    size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+
+    // XXX Probably common parts with interpretRejectionMessage can be done for this loop
+
+    uint32_t *begin    = p;
+    uint32_t *next     = 0;
+    size_t    length   = size / sizeof(uint32_t);
+    size_t    blocklen = 0;
+
+    for (;;) // This is one shot loop, unless REPEATED by 'continue'.
+    {
+        int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
+
+        HLOGC(mglog.Debug,
+                log << "interpretRejectionMessage: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
+
+        const size_t bytelen = blocklen * sizeof(uint32_t);
+        if (cmd == SRT_CMD_SID)
+        {
+            if (!bytelen || bytelen > MAX_SID_LENGTH)
+            {
+                LOGC(mglog.Error,
+                        log << "interpretRejectionMessage: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
+                        << " - PROTOCOL ERROR, REJECTING");
+                return;
+            }
+            // Copied through a cleared array. This is because the length is aligned to 4
+            // where the padding is filled by zero bytes. For the case when the string is
+            // exactly of a 4-divisible length, we make a big array with maximum allowed size
+            // filled with zeros. Copying to this array should then copy either only the valid
+            // characters of the string (if the lenght is divisible by 4), or the string with
+            // padding zeros. In all these cases in the resulting array we should have all
+            // subsequent characters of the string plus at least one '\0' at the end. This will
+            // make it a perfect NUL-terminated string, to be used to initialize a string.
+            char target[MAX_SID_LENGTH + 1];
+            memset((target), 0, MAX_SID_LENGTH + 1);
+            memcpy((target), begin + 1, bytelen);
+
+            // Un-swap on big endian machines
+            ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
+
+            m_sStreamName = target;
+            HLOGC(mglog.Debug,
+                    log << "REJECTION MESSAGE SID [" << m_sStreamName << "] (bytelen=" << bytelen
+                    << " blocklen=" << blocklen << ")");
+        }
+        else if (cmd == SRT_CMD_NONE)
+        {
+            break;
+        }
+        else
+        {
+            // Found some block that is not interesting here. Skip this and get the next one.
+            HLOGC(mglog.Debug, log << "interpretRejectionMessage: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
+        }
+
+        if (!NextExtensionBlock((begin), next, (length)))
+            break;
+    }
+
+}
+
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
 bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                                  const CPacket&    hspkt,
@@ -2688,24 +2764,28 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
     if (hs.m_iVersion < HS_VERSION_SRT1)
-        return true; // do nothing
+        return false; // do nothing
 
-    // Anyway, check if the handshake contains any extra data.
-    if (hspkt.getLength() <= CHandShake::m_iContentSize)
-    {
-        m_RejectReason = SRT_REJ_ROGUE;
-        // This would mean that the handshake was at least HSv5, but somehow no extras were added.
-        // Dismiss it then, however this has to be logged.
-        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found (size=" << hspkt.getLength() << ")!");
-        return false;
-    }
+    // It's not necessary to check size to fit in the basic handshake,
+    // it's already done during handshake serialization.
 
-    // We still believe it should work, let's check the flags.
+    // Now check the obligatory HS flags. HSX is required, KMX and CONFIG optional.
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if (ext_flags == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension flags are set!");
+        return false;
+    }
+
+    // Anyway, check if the handshake contains any extra data.
+    // The size must enclose at least the obligatory HSREQ extension, plus the header
+    if (hspkt.getLength() < CHandShake::m_iContentSize + (SRT_HS__SIZE + 1) * sizeof(int32_t))
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        // This would mean that the handshake was at least HSv5, but somehow no extras were added.
+        // Dismiss it then, however this has to be logged.
+        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found (size=" << hspkt.getLength() << ")!");
         return false;
     }
 
@@ -4664,6 +4744,8 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
+        // Extract STREAMID extension, if present, and set it back on a socket.
+        interpretRejectionMessage(m_ConnRes, response);
         return CONN_REJECT;
     }
 

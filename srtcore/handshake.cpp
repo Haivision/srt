@@ -147,9 +147,9 @@ std::string RequestTypeStr(UDTRequestType rq)
         if (id < SRT_REJ__SIZE)
             rt << srt_rejectreason_name[id];
         else if (id < SRT_REJC_USER)
-            rt << " SERVER:" << (id - SRT_REJC_SERVER);
+            rt << "SERVER:" << (id - SRT_REJC_SERVER);
         else
-            rt << " USER:" << (id - SRT_REJC_USER);
+            rt << "USER:" << (id - SRT_REJC_USER);
 
         return rt.str();
     }

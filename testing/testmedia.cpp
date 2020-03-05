@@ -936,8 +936,9 @@ void SrtCommon::ConnectClient(string host, int port)
         extern srt_logging::Logger applog;
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
 #endif
+        string info = UDT::getstreamid(m_sock);
         srt_close(m_sock);
-        Error("srt_connect", reason);
+        Error("srt_connect", info, reason);
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -967,7 +968,7 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("ConfigurePost");
 }
 
-void SrtCommon::Error(string src, int reason)
+void SrtCommon::Error(string src, string streaminfo, int reason)
 {
     int errnov = 0;
     const int result = srt_getlasterror(&errnov);
@@ -982,11 +983,13 @@ void SrtCommon::Error(string src, int reason)
         if ( Verbose::on )
             Verb() << "FAILURE\n" << src << ": [" << result << "] "
                 << "Connection rejected: [" << int(reason) << "]: "
-                << srt_rejectreason_str(reason);
+                << srt_rejectreason_str(reason) << ": "
+                << streaminfo;
         else
             cerr << "\nERROR #" << result
                 << ": Connection rejected: [" << int(reason) << "]: "
-                << srt_rejectreason_str(reason);
+                << srt_rejectreason_str(reason) << ": "
+                << streaminfo;
     }
     else
     {
