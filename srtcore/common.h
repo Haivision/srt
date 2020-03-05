@@ -762,12 +762,10 @@ class RollNumber
     uint32_t number;
 
 public:
-
     static const size_t OVER = number_t::mask+1;
     static const size_t HALF = (OVER-MIN)/2;
 
 private:
-
     static int Diff(uint32_t left, uint32_t right)
     {
         // UNExpected order, diff is negative
@@ -795,7 +793,6 @@ private:
     }
 
 public:
-
     explicit RollNumber(uint32_t val): number(val)
     {
     }
@@ -906,7 +903,6 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-
     StatsLossRecords(): initseq(-1) {}
 
     // To check if this structure still keeps record of that sequence.
