@@ -86,6 +86,8 @@ public:
 
    int32_t popLostSeq();
 
+   void traceState() const;
+
 private:
    struct Seq
    {
@@ -105,6 +107,10 @@ private:
    /// Inserts an element to the beginning and updates head pointer.
    /// No lock.
    void insertHead(int pos, int32_t seqno1, int32_t seqno2);
+
+   /// Inserts an element after previous element.
+   /// No lock.
+   void insertAfter(int pos, int pos_after, int32_t seqno1, int32_t seqno2);
 
    /// Check if it is possible to coalesce element at loc with further elements.
    /// @param loc - last changed location

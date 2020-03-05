@@ -77,6 +77,7 @@ public:
        , m_SocketID(0)
        , m_ListenSocket(0)
        , m_PeerID(0)
+       , m_IncludedGroup()
        , m_iISN(0)
        , m_pUDT(NULL)
        , m_pQueuedSockets(NULL)

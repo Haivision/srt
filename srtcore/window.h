@@ -148,6 +148,8 @@ public:
         m_tsProbeTime(),
         m_Probe1Sequence(-1)
     {
+        srt::sync::setupMutex(m_lockPktWindow, "PktWindow");
+        srt::sync::setupMutex(m_lockProbeWindow, "ProbeWindow");
         CPktTimeWindowTools::initializeWindowArrays(m_aPktWindow, m_aProbeWindow, m_aBytesWindow, ASIZE, PSIZE);
     }
 

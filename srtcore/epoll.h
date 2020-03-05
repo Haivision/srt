@@ -86,29 +86,29 @@ struct CEPollDesc
    {
        /// Events the subscriber is interested with. Only those will be
        /// regarded when updating event flags.
-       int watch;
+       int32_t watch;
 
        /// Which events should be edge-triggered. When the event isn't
        /// mentioned in `watch`, this bit flag is disregarded. Otherwise
        /// it means that the event is to be waited for persistent state
        /// if this flag is not present here, and for edge trigger, if
        /// the flag is present here.
-       int edge;
+       int32_t edge;
 
        /// The current persistent state. This is usually duplicated in
        /// a dedicated state object in `m_USockEventNotice`, however the state
        /// here will stay forever as is, regardless of the edge/persistent
        /// subscription mode for the event.
-       int state;
+       int32_t state;
 
        /// The iterator to `m_USockEventNotice` container that contains the
        /// event notice object for this subscription, or the value from
        /// `nullNotice()` if there is no such object.
        enotice_t::iterator notit;
 
-       Wait(int sub, bool etr, enotice_t::iterator i)
+       Wait(explicit_t<int32_t> sub, explicit_t<int32_t> etr, enotice_t::iterator i)
            :watch(sub)
-           ,edge(etr ? sub : 0)
+           ,edge(etr)
            ,state(0)
            ,notit(i)
        {
@@ -122,7 +122,7 @@ struct CEPollDesc
        /// @param direction event type that has to be cleared
        /// @return true, if this cleared the last event (the caller
        /// want to remove the subscription for this socket)
-       bool clear(int direction)
+       bool clear(int32_t direction)
        {
            if (watch & direction)
            {
@@ -196,9 +196,9 @@ public:
    const int m_iLocalID;                           // local system epoll ID
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
-   std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, int32_t events, bool edgeTrg)
+   std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, explicit_t<int32_t> events, explicit_t<int32_t> et_events)
    {
-        return m_USockWatchState.insert(std::make_pair(sock, Wait(events, edgeTrg, nullNotice())));
+        return m_USockWatchState.insert(std::make_pair(sock, Wait(events, et_events, nullNotice())));
    }
 
    void addEventNotice(Wait& wait, SRTSOCKET sock, int events)
