@@ -13476,7 +13476,8 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
                 ++nunstable;
         }
 
-        sendstates.push_back( (Sendstate) {d, stat, erc});
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
         d->sndresult = stat;
         d->laststatus = d->ps->getStatus();
     }
@@ -13694,7 +13695,8 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
             d->sndresult = stat;
             d->laststatus = d->ps->getStatus();
 
-            sendstates.push_back( (Sendstate) {d, stat, erc});
+            const Sendstate cstate = {d, stat, erc};
+            sendstates.push_back(cstate);
 
             if (stat != -1)
             {
