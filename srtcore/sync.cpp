@@ -478,7 +478,7 @@ srt::sync::CEvent::~CEvent()
 }
 
 
-bool srt::sync::CEvent::wait_until(const TimePoint<steady_clock>& tp)
+bool srt::sync::CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_until(lock, tp);
@@ -494,7 +494,7 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::wait_for(const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::lock_wait_for(const Duration<steady_clock>& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);

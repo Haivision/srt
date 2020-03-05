@@ -508,12 +508,12 @@ public:
     Mutex& mutex() { return m_lock; }
 
 public:
-    /// wait_until causes the current thread to block until
+    /// Causes the current thread to block until
     /// a specific time is reached.
     ///
     /// @return true  if condition occured or spuriously woken up
     ///         false on timeout
-    bool wait_until(const steady_clock::time_point& tp);
+    bool lock_wait_until(const steady_clock::time_point& tp);
 
     /// Blocks the current executing thread,
     /// and adds it to the list of threads waiting on* this.
@@ -524,7 +524,7 @@ public:
     ///
     /// @return true  if condition occured or spuriously woken up
     ///         false on timeout
-    bool wait_for(const steady_clock::duration& rel_time);
+    bool lock_wait_for(const steady_clock::duration& rel_time);
 
     /// Atomically releases lock, blocks the current executing thread,
     /// and adds it to the list of threads waiting on* this.
@@ -634,7 +634,7 @@ public:
     /// Simply calls wait_for().
     static bool waitForEvent()
     {
-        return g_Sync.wait_for(milliseconds_from(10));
+        return g_Sync.lock_wait_for(milliseconds_from(10));
     }
 };
 
