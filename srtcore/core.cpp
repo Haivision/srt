@@ -9186,7 +9186,7 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     // Therefore it's not allowed that:
     // - the jump go backward: backward packets should be already there
     // - the jump go forward by a value larger than half the period: DISCREPANCY.
-    int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
+    const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
         LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
@@ -10700,7 +10700,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // We need to retransmit only when the data in the sender's buffer was already sent.
     // Otherwise it might still be sent regulary.
     bool retransmit = false;
-    int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
+    const int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
     // IF:
     // - LATEREXMIT
     // - flight window == 0

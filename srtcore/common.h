@@ -906,7 +906,6 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-
     StatsLossRecords(): initseq(-1) {}
 
     // To check if this structure still keeps record of that sequence.
