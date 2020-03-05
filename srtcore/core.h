@@ -600,8 +600,8 @@ private:
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     volatile int32_t m_iLastSchedMsgNo;
-public:
 
+public:
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
@@ -707,7 +707,6 @@ class CUDT
     typedef srt::sync::steady_clock::duration duration;
 
 private: // constructor and desctructor
-
     void construct();
     void clearData();
     CUDT(CUDTSocket* parent);

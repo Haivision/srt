@@ -767,7 +767,6 @@ public:
     static const size_t HALF = (OVER-MIN)/2;
 
 private:
-
     static int Diff(uint32_t left, uint32_t right)
     {
         // UNExpected order, diff is negative
@@ -795,7 +794,6 @@ private:
     }
 
 public:
-
     explicit RollNumber(uint32_t val): number(val)
     {
     }
