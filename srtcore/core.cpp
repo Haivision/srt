@@ -10074,25 +10074,13 @@ size_t CUDT::addHandshakeExtension(char* data, int cmd, size_t hs_size, std::str
 }
 
 
-// XXX This is quite a mystery, why this function has a return value
-// and what the purpose for it was. There's just one call of this
-// function in the whole code and in that call the return value is
-// ignored. Actually this call happens in the CRcvQueue::worker thread,
-// where it makes a response for incoming UDP packet that might be
-// a connection request. Should any error occur in this process, there
-// is no way to "report error" that happened here. Basing on that
-// these values in original UDT code were quite like the values
-// for m_iReqType, they have been changed to URQ_* symbols, which
-// may mean that the intent for the return value was to send this
-// value back as a control packet back to the connector.
-//
 // This function is run when the CRcvQueue object is reading packets
 // from the multiplexer (@c CRcvQueue::worker_RetrieveUnit) and the
 // target socket ID is 0.
 //
 // XXX Make this function return EConnectStatus enum type (extend if needed),
 // and this will be directly passed to the caller.
-SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
+int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 {
     // XXX ASSUMPTIONS:
     // [[using assert(packet.m_iID == 0)]]
@@ -10103,7 +10091,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_CLOSE;
         HLOGC(mglog.Debug, log << "processConnectRequest: ... NOT. Rejecting because closing.");
-        return SRT_REJECT_REASON(m_RejectReason);
+        return m_RejectReason;
     }
 
     /*
@@ -10115,7 +10103,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_CLOSE;
         HLOGC(mglog.Debug, log << "processConnectRequest: ... NOT. Rejecting because broken.");
-        return SRT_REJECT_REASON(m_RejectReason);
+        return m_RejectReason;
     }
     size_t exp_len =
         CHandShake::m_iContentSize; // When CHandShake::m_iContentSize is used in log, the file fails to link!
@@ -10132,7 +10120,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         HLOGC(mglog.Debug,
               log << "processConnectRequest: ... NOT. Wrong size: " << packet.getLength() << " (expected: " << exp_len
                   << ")");
-        return SRT_REJECT_REASON(m_RejectReason);
+        return m_RejectReason;
     }
 
     // Dunno why the original UDT4 code only MUCH LATER was checking if the packet was UMSG_HANDSHAKE.
@@ -10142,7 +10130,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "processConnectRequest: the packet received as handshake is not a handshake message");
-        return SRT_REJECT_REASON(m_RejectReason);
+        return m_RejectReason;
     }
 
     CHandShake hs;
@@ -10224,7 +10212,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
             HLOGC(mglog.Debug, log << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
-            return SRT_REJECT_REASON(m_RejectReason);
+            return m_RejectReason;
         }
 
         HLOGC(mglog.Debug, log << "processConnectRequest: ... correct (FIXED) cookie. Proceeding.");
@@ -10290,7 +10278,8 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     else
     {
         int error  = SRT_REJ_UNKNOWN;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        string streaminfo_msg;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error), (streaminfo_msg));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10337,11 +10326,19 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
             HLOGC(mglog.Debug,
                   log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
                       << RequestTypeStr(hs.m_iReqType));
+            bool has_message =! streaminfo_msg.empty();
+
+            if (has_message)
+            {
+                hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+            }
+
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
-            if (!m_sStreamName.empty())
+
+            if (has_message)
             {
-                addHandshakeExtension((packet.m_pcData), SRT_CMD_SID, size, m_sStreamName);
+                size = addHandshakeExtension((packet.m_pcData), SRT_CMD_SID, size, streaminfo_msg);
             }
             packet.setLength(size);
             packet.m_iID        = id;

@@ -1306,7 +1306,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    SRT_REJECT_REASON listener_ret  = SRT_REJ_UNKNOWN;
+    int listener_ret  = SRT_REJ_UNKNOWN;
     bool              have_listener = false;
     {
         CGuard cg(m_LSLock);

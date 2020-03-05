@@ -470,7 +470,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-        CHandShake& w_hs, int& w_error)
+        CHandShake& w_hs, int& w_error, string& w_streaminfo)
 {
    CUDTSocket* ns = NULL;
 
@@ -588,6 +588,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    // CUDT::open() may only throw original std::bad_alloc from new.
    // This is only to make the library extra safe (when your machine lacks
    // memory, it will continue to work, but fail to accept connection).
+
    try
    {
        // This assignment must happen b4 the call to CUDT::connect() because
@@ -610,6 +611,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
            if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), w_hs, hspkt))
            {
                w_error = ns->m_pUDT->m_RejectReason;
+
+               // Save the STREAMID contents in case when a user changed it
+               // in the listener callback
+               w_streaminfo = ns->m_pUDT->m_sStreamName;
                error = 1;
                goto ERR_ROLLBACK;
            }

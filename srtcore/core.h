@@ -1314,7 +1314,9 @@ private: // Generation and processing of packets
 
     int processData(CUnit* unit);
     void processClose();
-    SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
+
+    /// Returns: URQ code, possibly containing reject reason
+    int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     size_t addHandshakeExtension(char *data, int cmd, size_t hs_size, std::string contents);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);

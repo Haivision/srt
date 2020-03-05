@@ -251,11 +251,11 @@ inline UDTRequestType URQFailure(int reason)
     return UDTRequestType(URQ_FAILURE_TYPES + int(reason));
 }
 
-inline SRT_REJECT_REASON RejectReasonForURQ(UDTRequestType req)
+inline int RejectReasonForURQ(UDTRequestType req)
 {
     if (req < URQ_FAILURE_TYPES || req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
         return SRT_REJ_UNKNOWN;
-    return SRT_REJECT_REASON(req - URQ_FAILURE_TYPES);
+    return req - URQ_FAILURE_TYPES;
 }
 
 // DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).

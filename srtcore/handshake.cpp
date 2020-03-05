@@ -141,9 +141,17 @@ std::string RequestTypeStr(UDTRequestType rq)
 {
     if (rq >= URQ_FAILURE_TYPES)
     {
-        SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
-        int id = rej;
-        return std::string("ERROR:") + srt_rejectreason_name[id];
+        std::ostringstream rt;
+        rt << "ERROR:";
+        int id = RejectReasonForURQ(rq);
+        if (id < SRT_REJ__SIZE)
+            rt << srt_rejectreason_name[id];
+        else if (id < SRT_REJC_USER)
+            rt << " SERVER:" << (id - SRT_REJC_SERVER);
+        else
+            rt << " USER:" << (id - SRT_REJC_USER);
+
+        return rt.str();
     }
 
     switch ( rq )
