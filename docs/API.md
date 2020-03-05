@@ -534,18 +534,20 @@ be set on a socket.
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
 | `SRTO_GROUPSTABTIMEO` |       | pre     | `int`  | ms     | 40       | 10+    |
 
-- This setting is used for groups of type `SRT_GTYPE_BACKUP` and it defines the
-stability timeout. This is a time that is expected to not be exceeded between
-two consecutive packets (of whatever type, but usually this is about control
-packets while the agent is a sender) retrieved from the peer on the currently
-active link (note that idle links exchange only keepalive messages once per 1s,
-so they do not count). This value should be set as small as possible, although
-note that 10ms is the time between two consecutive ACK messages, and various
-deviations from this value will happen, hence 40ms is considered most recommended
-value. Note that the higher this time is, the higher latency penalty you get.
-When this time is exceeded and the link is therefore considered unstable, one
-of the idle links gets activated, and then all packets unacknowledged so far
-are first sent.
+- This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability 
+timeout, which is the maximum interval between two consecutive packets retrieved from 
+the peer on the currently active link.
+  
+- NOTE: The two packets can be of any type, but this setting usually refers to control
+packets while the agent is a sender. Idle links exchange only keepalive messages once 
+per second, so they do not count. 
+
+- The value of `SRTO_GROUPSTABTIMEO` should be set as small as possible. Keep
+in mind that the time between two consecutive ACK messages (default = 10 ms)
+will vary, hence 40ms is the recommended setting. Note that higher values
+increase the latency penalty. When this time is exceeded, and the link is
+therefore considered unstable, one of the idle links gets activated, at which
+point all packets unacknowledged so far are sent first.
 
 - This option can only be set on a group.
 
