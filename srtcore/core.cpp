@@ -1759,7 +1759,7 @@ bool CUDT::createSrtHandshake(
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
         // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
-        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == 0,
+        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == steady_clock::zero(),
         // it will return size 0, which will mess up with further extension procedures;
         // PREVENT THIS HERE.
         if (w_hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && is_zero(m_tsRcvPeerStartTime))
@@ -6330,9 +6330,8 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             }
             LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
-            HLOGC(dlog.Debug,
-                  log << "drop " << realack << "-" << m_iSndCurrSeqNo << " seqs,"
-                      << dpkts << " pkts," << dbytes << " bytes," << timespan_ms << " ms");
+            HLOGC(dlog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
+                    << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms");
         }
         w_bCongestion = true;
         leaveCS(m_RecvAckLock);
@@ -6567,7 +6566,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         // Now seqno is the sequence to which it was scheduled
         // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
 
@@ -6580,9 +6579,9 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         m_iSndNextSeqNo = w_mctrl.pktseq;
         w_mctrl.pktseq = seqno;
 
-        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
-                << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
-                << " STAMP: " << BufferStamp(data, size));
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING srctime:" << FormatTime(ts_srctime)
+              << " size=" << size << " #" << w_mctrl.msgno << " SCHED %" << orig_seqno
+              << "(>> %" << seqno << ") !" << BufferStamp(data, size));
 
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
@@ -7981,7 +7980,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             m_iFlowWindowSize -= CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
 
-            // TODO: m_ullLastRspAckTime_tk should be protected with m_RecvAckLock
+            // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
             // because the sendmsg2 may want to change it at the same time.
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
@@ -9114,7 +9113,10 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     // Both the scheduling and sending sequences should be fixed.
     // The new sequence normally should jump over several sequence numbers
     // towards what is currently in m_iSndCurrSeqNo.
-    int diff = CSeqNo::seqcmp(seq, m_iSndNextSeqNo);
+    // Therefore it's not allowed that:
+    // - the jump go backward: backward packets should be already there
+    // - the jump go forward by a value larger than half the period: DISCREPANCY.
+    const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
         LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
@@ -10349,7 +10351,7 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
-    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
+    // the time has come according to m_tsNextACKTime. In this case a "lite ACK"
     // is sent, which doesn't contain statistical data and nothing more
     // than just the ACK number. The "fat ACK" packets will be still sent
     // normally according to the timely rules.
@@ -10542,11 +10544,15 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // We need to retransmit only when the data in the sender's buffer was already sent.
     // Otherwise it might still be sent regulary.
     bool retransmit = false;
+    const int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
+    // IF:
+    // - LATEREXMIT
+    // - flight window == 0
     // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-    if (is_laterexmit && (CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && m_pSndLossList->getLossLength() == 0)
+    if (is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
         retransmit = true;
 
-    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
+    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, unsent_seqno) > 0))
         retransmit = true;
 
     if (retransmit)
@@ -10589,7 +10595,7 @@ void CUDT::checkTimers()
 
     // This is a very heavy log, unblock only for temporary debugging!
 #if 0
-    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_ullNextACKTime_tk)
+    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_tsNextACKTime)
         << " AckInterval=" << m_iACKInterval
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
@@ -11033,10 +11039,10 @@ static bool operator !=(const struct linger& l1, const struct linger& l2)
 template <class ValueType> static
 void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
 {
-    ValueType default_opt;
+    ValueType default_opt = ValueType();
     int default_opt_size = sizeof(ValueType);
     ValueType opt = field;
-    if (!getOptDefault(optname, &default_opt, (default_opt_size)) || default_opt != opt)
+    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
     {
         // Store the option when:
         // - no default for this option is found
@@ -11682,7 +11688,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // as redundant links at the connecting stage and became
             // writable (connected) before this function had a chance
             // to check them.
-            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_CONNECT);
         }
     }
 
@@ -11754,6 +11760,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         if (is->stat == len)
         {
+            HLOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: SUCCESSFULLY sent " << len << " bytes");
             // Successful.
             successful.push_back(is->d);
             rstat = is->stat;
@@ -11769,7 +11776,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
 #if ENABLE_HEAVY_LOGGING
         string errmsg = cx.getErrorString();
-        HLOGC(dlog.Debug, log << "... sending FAILED (" << errmsg << "). Setting this socket broken status.");
+        LOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: FAILURE (result:" << is->stat << "): "
+                << errmsg << ". Setting this socket broken status.");
 #endif
         // Turn this link broken
         is->d->sndstate = GST_BROKEN;
@@ -12810,15 +12818,16 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         if (seqdiff == 1)
         {
             // The very next packet. Return it.
+            // XXX SETTING THIS ONE IS PROBABLY A BUG.
             m_RcvBaseSeqNo = a.sequence;
-            HLOGC(dlog.Debug, log << "group/recv: ahead delivery %"
+            HLOGC(dlog.Debug, log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %"
                     << a.sequence << "#" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
         {
             HLOGC(dlog.Debug, log << "group/recv: @" << i->first << " dropping collected ahead %"
-                    << a.sequence << "#" << a.mctrl.msgno << ")");
+                    << a.sequence << "#" << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
             a.packet.clear();
         }
         // In case when it's >1, keep it in ahead
