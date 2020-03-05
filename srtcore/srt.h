@@ -561,6 +561,14 @@ enum SRT_REJECT_REASON
     SRT_REJ__SIZE,
 };
 
+// Reject category codes:
+
+#define SRT_REJC_VALUE(code) (1000 * (code/1000))
+#define SRT_REJC_SYSTEM 0     // Codes from above SRT_REJECT_REASON enum
+#define SRT_REJC_SERVER 1000  // Standard server error codes
+#define SRT_REJC_USER 2000    // User defined error codes
+
+
 // Logging API - specialization for SRT.
 
 // Define logging functional areas for log selection.
@@ -882,9 +890,10 @@ SRT_API void srt_setlogflags(int flags);
 
 SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
-SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+SRT_API int srt_getrejectreason(SRTSOCKET sock);
+SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
-const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
+const char* srt_rejectreason_str(int id);
 
 #ifdef __cplusplus
 }

@@ -2696,7 +2696,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         m_RejectReason = SRT_REJ_ROGUE;
         // This would mean that the handshake was at least HSv5, but somehow no extras were added.
         // Dismiss it then, however this has to be logged.
-        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found!");
+        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found (size=" << hspkt.getLength() << ")!");
         return false;
     }
 
@@ -10031,6 +10031,49 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
     }
 }
 
+// This function does the same as the fragment that prepares the handshake
+// in CUDT::createSrtHandshake. This should only copy one type of extension
+// with contents possible to be specified as a string. Many extensions have
+// specific ways of extracting the data into the extension, hence this is
+// not refactored into single functions.
+size_t CUDT::addHandshakeExtension(char* data, int cmd, size_t hs_size, std::string contents)
+{
+    size_t ra_size = hs_size / sizeof(int32_t);
+
+    // Now attach the SRT handshake for HSREQ
+    size_t    offset = ra_size;
+    uint32_t *p      = reinterpret_cast<uint32_t *>(data);
+    // NOTE: since this point, ra_size has a size in int32_t elements, NOT BYTES.
+
+    // The first 4-byte item is the CMD/LENGTH spec.
+    uint32_t *pcmdspec = p + offset; // Remember the location to be filled later, when we know the length
+    ++offset;
+
+    // Now prepare the string with 4-byte alignment. The string size is limited
+    // to half the payload size. Just a sanity check to not pack too much into
+    // the conclusion packet.
+    size_t size_limit = m_iMaxSRTPayloadSize / 2;
+
+    if (contents.size() >= size_limit)
+    {
+        contents = "#!::="; // size error
+    }
+
+    size_t wordsize         = (contents.size() + 3) / 4;
+    size_t aligned_bytesize = wordsize * 4;
+
+    memset((p + offset), 0, aligned_bytesize);
+    memcpy((p + offset), contents.data(), contents.size());
+    // Preswap to little endian (in place due to possible padding zeros)
+    HtoILA((uint32_t *)(p + offset), (uint32_t *)(p + offset), wordsize);
+
+    ra_size   = wordsize;
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+    return hs_size + sizeof (*pcmdspec) + aligned_bytesize;
+}
+
+
 // XXX This is quite a mystery, why this function has a return value
 // and what the purpose for it was. There's just one call of this
 // function in the whole code and in that call the return value is
@@ -10060,7 +10103,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_CLOSE;
         HLOGC(mglog.Debug, log << "processConnectRequest: ... NOT. Rejecting because closing.");
-        return m_RejectReason;
+        return SRT_REJECT_REASON(m_RejectReason);
     }
 
     /*
@@ -10072,7 +10115,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_CLOSE;
         HLOGC(mglog.Debug, log << "processConnectRequest: ... NOT. Rejecting because broken.");
-        return m_RejectReason;
+        return SRT_REJECT_REASON(m_RejectReason);
     }
     size_t exp_len =
         CHandShake::m_iContentSize; // When CHandShake::m_iContentSize is used in log, the file fails to link!
@@ -10089,7 +10132,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         HLOGC(mglog.Debug,
               log << "processConnectRequest: ... NOT. Wrong size: " << packet.getLength() << " (expected: " << exp_len
                   << ")");
-        return m_RejectReason;
+        return SRT_REJECT_REASON(m_RejectReason);
     }
 
     // Dunno why the original UDT4 code only MUCH LATER was checking if the packet was UMSG_HANDSHAKE.
@@ -10099,7 +10142,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "processConnectRequest: the packet received as handshake is not a handshake message");
-        return m_RejectReason;
+        return SRT_REJECT_REASON(m_RejectReason);
     }
 
     CHandShake hs;
@@ -10181,7 +10224,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
             HLOGC(mglog.Debug, log << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
-            return m_RejectReason;
+            return SRT_REJECT_REASON(m_RejectReason);
         }
 
         HLOGC(mglog.Debug, log << "processConnectRequest: ... correct (FIXED) cookie. Proceeding.");
@@ -10246,8 +10289,8 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     }
     else
     {
-        SRT_REJECT_REASON error  = SRT_REJ_UNKNOWN;
-        int               result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        int error  = SRT_REJ_UNKNOWN;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10296,6 +10339,11 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
                       << RequestTypeStr(hs.m_iReqType));
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
+            if (!m_sStreamName.empty())
+            {
+                addHandshakeExtension((packet.m_pcData), SRT_CMD_SID, size, m_sStreamName);
+            }
+            packet.setLength(size);
             packet.m_iID        = id;
             setPacketTS(packet, steady_clock::now());
             HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
@@ -10761,13 +10809,26 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
     return std::abs(timespan);
 }
 
-SRT_REJECT_REASON CUDT::rejectReason(SRTSOCKET u)
+int CUDT::rejectReason(SRTSOCKET u)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
     if (!s || !s->m_pUDT)
         return SRT_REJ_UNKNOWN;
 
     return s->m_pUDT->m_RejectReason;
+}
+
+int CUDT::rejectReason(SRTSOCKET u, int value)
+{
+    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    if (!s || !s->m_pUDT)
+        return -1;
+
+    if (value < SRT_REJC_SERVER)
+        return -1;
+
+    s->m_pUDT->m_RejectReason = value;
+    return 0;
 }
 
 bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)

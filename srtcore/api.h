@@ -197,7 +197,7 @@ public:
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-           CHandShake& w_hs, SRT_REJECT_REASON& w_error);
+           CHandShake& w_hs, int& w_error);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 

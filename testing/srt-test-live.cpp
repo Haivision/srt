@@ -330,6 +330,22 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const so
     return 0;
 }
 
+struct RejectData
+{
+    int code;
+    string streaminfo;
+} g_reject_data;
+
+extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    RejectData* data = (RejectData*)op;
+
+    srt_setrejectreason(acpsock, data->code);
+    UDT::setstreamid(acpsock, data->streaminfo);
+
+    return -1;
+}
+
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -364,6 +380,7 @@ int main( int argc, char** argv )
         o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
         o_help      ((optargs), " This help", "?",   "help", "-help")
             ;
@@ -513,13 +530,24 @@ int main( int argc, char** argv )
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
 
-    string hook = Option<OutString>(params, "", "hook");
+    string hook = Option<OutString>(params, "", o_hook);
     if (hook != "")
     {
-        if (hook == "user-password")
+        vector<string> hargs;
+        Split(hook, ':', back_inserter(hargs));
+
+        if (hargs[0] == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
             transmit_accept_hook_op = nullptr;
+        }
+        else if (hargs[0] == "reject")
+        {
+            hargs.resize(3); // make sure 3 elements exist, may be empty
+            g_reject_data.code = stoi(hargs[1]);
+            g_reject_data.streaminfo = hargs[2];
+            transmit_accept_hook_op = (void*)&g_reject_data;
+            transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
     }
 

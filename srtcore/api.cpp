@@ -470,7 +470,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-        CHandShake& w_hs, SRT_REJECT_REASON& w_error)
+        CHandShake& w_hs, int& w_error)
 {
    CUDTSocket* ns = NULL;
 
@@ -549,6 +549,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       return -1;
    }
 
+   ns->m_pUDT->m_RejectReason = SRT_REJ_UNKNOWN; // pre-set a universal value
+
    try
    {
        ns->m_SocketID = generateSocketID();
@@ -607,6 +609,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        {
            if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), w_hs, hspkt))
            {
+               w_error = ns->m_pUDT->m_RejectReason;
                error = 1;
                goto ERR_ROLLBACK;
            }
@@ -4089,9 +4092,14 @@ SRT_API std::string getstreamid(SRTSOCKET u)
     return CUDT::getstreamid(u);
 }
 
-SRT_REJECT_REASON getrejectreason(SRTSOCKET u)
+int getrejectreason(SRTSOCKET u)
 {
     return CUDT::rejectReason(u);
+}
+
+int setrejectreason(SRTSOCKET u, int value)
+{
+    return CUDT::rejectReason(u, value);
 }
 
 }  // namespace UDT
