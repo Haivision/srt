@@ -10818,8 +10818,8 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
                 if (!bytelen || bytelen > MAX_SID_LENGTH)
                 {
                     LOGC(mglog.Error,
-                            log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
-                            << " - PROTOCOL ERROR, REJECTING");
+                         log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
+                             << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // See comment at CUDT::interpretSrtHandshake().
