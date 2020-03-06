@@ -537,7 +537,7 @@ public:
     ///         false on timeout
     bool wait_for(UniqueLock& lk, const steady_clock::duration& rel_time);
 
-    void wait();
+    void lock_wait();
 
     void wait(UniqueLock& lk);
 

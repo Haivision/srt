@@ -505,7 +505,7 @@ bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>&
     return m_cond.wait_for(lock, rel_time);
 }
 
-void srt::sync::CEvent::wait()
+void srt::sync::CEvent::lock_wait()
 {
     UniqueLock lock(m_lock);
     return wait(lock);
