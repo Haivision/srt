@@ -1548,25 +1548,24 @@ void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
 /* Return acked data pkts, bytes, and timespan (ms) of the receive buffer */
-int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
+int CRcvBuffer::getRcvDataSize(int& w_bytes, int& w_timespan)
 {
-   timespan = 0;
-   if (m_bTsbPdMode)
-   {
-      // Get a valid startpos.
-      // Skip invalid entries in the beginning, if any.
-      int startpos = m_iStartPos;
-      for (; startpos != m_iLastAckPos; startpos = shiftFwd(startpos))
-      {
-         if ((NULL != m_pUnit[startpos]) && (CUnit::GOOD == m_pUnit[startpos]->m_iFlag))
-             break;
-      }
+    w_timespan = 0; // fallback
 
-      int endpos = m_iLastAckPos;
+    // Get a valid startpos.
+    // Skip invalid entries in the beginning, if any.
+    int startpos = m_iStartPos;
+    for (; startpos != m_iLastAckPos; startpos = shiftFwd(startpos))
+    {
+        if ((NULL != m_pUnit[startpos]) && (CUnit::GOOD == m_pUnit[startpos]->m_iFlag))
+            break;
+    }
 
-      if (m_iLastAckPos != startpos) 
-      {
-         /*
+    int endpos = m_iLastAckPos;
+
+    if (m_iLastAckPos != startpos) 
+    {
+        /*
          *     |<--- DataSpan ---->|<- m_iMaxPos ->|
          * +---+---+---+---+---+---+---+---+---+---+---+---
          * |   | 1 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 1 |   |     m_pUnits[]
@@ -1579,47 +1578,46 @@ int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
          * it means m_pUnits[m_iLastAckPos] is valid since a valid unit is needed to skip.
          * Favor m_pUnits[m_iLastAckPos] if valid over [m_iLastAckPos-1] to include the whole acked interval.
          */
-         if ((m_iMaxPos <= 0)
-                 || (!m_pUnit[m_iLastAckPos])
-                 || (m_pUnit[m_iLastAckPos]->m_iFlag != CUnit::GOOD))
-         {
+        if ((m_iMaxPos <= 0)
+                || (!m_pUnit[m_iLastAckPos])
+                || (m_pUnit[m_iLastAckPos]->m_iFlag != CUnit::GOOD))
+        {
             endpos = (m_iLastAckPos == 0 ? m_iSize - 1 : m_iLastAckPos - 1);
-         }
+        }
 
-         if ((NULL != m_pUnit[endpos]) && (NULL != m_pUnit[startpos]))
-         {
+        if ((NULL != m_pUnit[endpos]) && (NULL != m_pUnit[startpos]))
+        {
             const steady_clock::time_point startstamp = getPktTsbPdTime(m_pUnit[startpos]->m_Packet.getMsgTimeStamp());
             const steady_clock::time_point endstamp   = getPktTsbPdTime(m_pUnit[endpos]->m_Packet.getMsgTimeStamp());
             /* 
-            * There are sampling conditions where spantime is < 0 (big unsigned value).
-            * It has been observed after changing the SRT latency from 450 to 200 on the sender.
-            *
-            * Possible packet order corruption when dropping packet, 
-            * cause by bad thread protection when adding packet in queue
-            * was later discovered and fixed. Security below kept. 
-            *
-            * DateTime                 RecvRate LostRate DropRate AvailBw     RTT   RecvBufs PdDelay
-            * 2014-12-08T15:04:25-0500     4712      110        0   96509  33.710        393     450
-            * 2014-12-08T15:04:35-0500     4512       95        0  107771  33.493 1496542976     200
-            * 2014-12-08T15:04:40-0500     4213      106        3  107352  53.657    9499425     200
-            * 2014-12-08T15:04:45-0500     4575      104        0  102194  53.614      59666     200
-            * 2014-12-08T15:04:50-0500     4475      124        0  100543  53.526        505     200
-            */
+             * There are sampling conditions where spantime is < 0 (big unsigned value).
+             * It has been observed after changing the SRT latency from 450 to 200 on the sender.
+             *
+             * Possible packet order corruption when dropping packet, 
+             * cause by bad thread protection when adding packet in queue
+             * was later discovered and fixed. Security below kept. 
+             *
+             * DateTime                 RecvRate LostRate DropRate AvailBw     RTT   RecvBufs PdDelay
+             * 2014-12-08T15:04:25-0500     4712      110        0   96509  33.710        393     450
+             * 2014-12-08T15:04:35-0500     4512       95        0  107771  33.493 1496542976     200
+             * 2014-12-08T15:04:40-0500     4213      106        3  107352  53.657    9499425     200
+             * 2014-12-08T15:04:45-0500     4575      104        0  102194  53.614      59666     200
+             * 2014-12-08T15:04:50-0500     4475      124        0  100543  53.526        505     200
+             */
             if (endstamp > startstamp)
-                timespan = count_milliseconds(endstamp - startstamp);
-         }
-         /* 
+                w_timespan = count_milliseconds(endstamp - startstamp);
+        }
+        /* 
          * Timespan can be less then 1000 us (1 ms) if few packets. 
          * Also, if there is only one pkt in buffer, the time difference will be 0.
          * Therefore, always add 1 ms if not empty.
          */
-         if (0 < m_iAckedPktsCount)
-            timespan += 1;
-      }
-   }
-   HLOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms\n", m_iAckedPktsCount, m_iAckedBytesCount, timespan);
-   bytes = m_iAckedBytesCount;
-   return m_iAckedPktsCount;
+        if (m_iAckedPktsCount > 0)
+            w_timespan += 1;
+    }
+    HLOGF(dlog.Debug, "getRcvDataSize: %6d %6d %6d ms\n", m_iAckedPktsCount, m_iAckedBytesCount, w_timespan);
+    w_bytes = m_iAckedBytesCount;
+    return m_iAckedPktsCount;
 }
 
 int CRcvBuffer::getRcvAvgPayloadSize() const
