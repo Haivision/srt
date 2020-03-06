@@ -1214,19 +1214,22 @@ sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
 
-**IMPORTANT**: There is an unusual behavior in case when this flag is TRUE on
-the caller and FALSE on the listener. This is because the listener accepts the
-connection and considers itself connected, while it doesn't know yet that the
-caller will reject it. The result is a short-living "spurious" connection
-report on the listener socket. If the application is fast enough to catch it,
-it will get the socket from `srt_accept`, only to learn soon that the
-connection is broken, otherwise the connection could be removed from the
-listener backlog before the application can be aware of its existence. How fast
-the connection is broken, it depends on the network parameters, in particular,
-whether the `UMSG_SHUTDOWN` message sent by the caller is delivered (in this
-case the time of one RTT) or missed (then up to the connection timeout, default
-5 seconds). It is therefore strongly recommended to use this flag (that is,
-set to FALSE) only when you are able to ensure that this flag is also set FALSE
+**IMPORTANT**: There is unusual and unobvious behavior when this flag is TRUE
+on the caller and FALSE on the listener, and the passphrase was mismatched. On
+the listener side the connection will be established and broken right after,
+resulting in a short-lived "spurious" connection report on the listener socket.
+This way, a socket will be available for retrieval from an `srt_accept` call
+for a very short time, after which it will be removed from the listener backlog
+just as if no connection attempt was made at all. If the application is fast
+enough to react on an incoming connection, it will retrieve it, only to learn
+that it is already broken. This also makes possible a scenario where
+`SRT_EPOLL_IN` is reported on a listener socket, but then an `srt_accept` call
+reports an `SRT_EASYNCRCV` error. How fast the connection gets broken depends
+on the network parameters - in particular, whether the `UMSG_SHUTDOWN` message
+sent by the caller is delivered (which takes one RTT in this case) or missed
+during the interval from its creation up to the connection timeout (default = 5
+seconds). It is therefore strongly recommended that you only set this flag to
+FALSE on the listener when you are able to ensure that it is also set to FALSE
 on the caller side.
 
 ---
