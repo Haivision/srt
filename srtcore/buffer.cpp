@@ -514,7 +514,7 @@ void CSndBuffer::ackData(int offset)
    updAvgBufSize(steady_clock::now());
 #endif
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -942,7 +942,7 @@ int CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.

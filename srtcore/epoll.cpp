@@ -497,7 +497,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-        CTimer::waitForEvent();
+        CGlobEvent::waitForEvent();
     }
 
     return 0;
@@ -690,9 +690,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
         }
 
-        CTimer::EWait wt ATR_UNUSED = CTimer::waitForEvent();
+        const bool wait_signaled ATR_UNUSED = CGlobEvent::waitForEvent();
         HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
-            << (wt == CTimer::WT_TIMEOUT ? "CHECKPOINT" : wt == CTimer::WT_EVENT ? "TRIGGERED" : "ERROR"));
+            << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
 
     return 0;
@@ -773,7 +773,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
             return 0; // meaning "none is ready"
         }
 
-        CTimer::waitForEvent();
+        CGlobEvent::waitForEvent();
     }
 
     return 0;
