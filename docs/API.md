@@ -521,7 +521,7 @@ being acknowledged)
 
 | OptName               | Since | Binding | Type   | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
-| `SRTO_GROUPCONNECT`   |       | pre     | `int`  |        | 0        |        |
+| `SRTO_GROUPCONNECT`   |       | pre     | `int`  |        | 0        | 0...1  |
 
 - When this flag is set to 1 on a listener socket, it allows this socket to
 accept group connections. When set to the default 0, group connections will be
