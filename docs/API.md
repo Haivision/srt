@@ -530,7 +530,7 @@ group connections are allowed) `srt_accept` may return a socket **or** a group
 ID. A call to `srt_accept` on a listener socket that has group connections
 allowed must take this into consideration. It's up to the caller of this
 function to make this distinction and to take appropriate action depending on
-the type of the entity returned.
+the type of entity returned.
 
 - When this flag is set to 1 on an accepted socket that is passed to the
 listener callback handler, it means that this socket is created for a group
