@@ -744,7 +744,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // acknowledge users waiting for new connections on the listening socket
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, true);
 
-      CTimer::triggerEvent();
+      CGlobEvent::triggerEvent();
 
       // XXX the exact value of 'error' is ignored
       if (error > 0)
@@ -767,7 +767,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // acknowledge INTERNAL users waiting for new connections on the listening socket
       // that are reported when a new socket is connected within an already connected group.
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_UPDATE, true);
-      CTimer::triggerEvent();
+      CGlobEvent::triggerEvent();
    }
 
 ERR_ROLLBACK:
@@ -948,6 +948,50 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    s->m_Status = SRTS_LISTENING;
 
    return 0;
+}
+
+SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut)
+{
+    CEPollDesc* ed = 0;
+    int eid = m_EPoll.create(&ed);
+
+    // Destroy it at return - this function can be interrupted
+    // by an exception.
+    struct AtReturn
+    {
+        int eid;
+        CUDTUnited* that;
+        AtReturn(CUDTUnited* t, int e): eid(e), that(t) {}
+        ~AtReturn()
+        {
+            that->m_EPoll.release(eid);
+        }
+    } l_ar(this, eid);
+
+    // Subscribe all of listeners for accept
+    int events = SRT_EPOLL_ACCEPT;
+
+    for (int i = 0; i < lsize; ++i)
+    {
+        srt_epoll_add_usock(eid, listeners[i], &events);
+    }
+
+    CEPoll::fmap_t st;
+    m_EPoll.swait(*ed, (st), msTimeOut, true);
+
+    if (st.empty())
+    {
+        // Sanity check
+        throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
+    }
+
+    // Theoretically we can have a situation that more than one
+    // listener is ready for accept. In this case simply get
+    // only the first found.
+    int lsn = st.begin()->first;
+    sockaddr_storage dummy;
+    int outlen = sizeof dummy;
+    return accept(lsn, ((sockaddr*)&dummy), (&outlen));
 }
 
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
@@ -1634,7 +1678,7 @@ int CUDTUnited::close(CUDTSocket* s)
        m_ClosedSockets[s->m_SocketID] = s;
        HLOGC(mglog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
-       CTimer::triggerEvent();
+       CGlobEvent::triggerEvent();
    }
 
    HLOGC(mglog.Debug, log << "@" << u << ": GLOBAL: CLOSING DONE");
@@ -1685,13 +1729,8 @@ int CUDTUnited::close(CUDTSocket* s)
            }
 
            HLOGC(mglog.Debug, log << "@" << u << " GLOBAL CLOSING: ... still waiting for any update.");
-           CTimer::EWait wt = CTimer::waitForEvent();
-
-           if ( wt == CTimer::WT_ERROR )
-           {
-               HLOGC(mglog.Debug, log << "GLOBAL CLOSING: ... ERROR WHEN WAITING FOR EVENT. Exiting close() to prevent hangup.");
-               break;
-           }
+           // How to handle a possible error here?
+           CGlobEvent::waitForEvent();
 
            // Continue waiting in case when an event happened or 1s waiting time passed for checkpoint.
        }
@@ -1862,7 +1901,7 @@ int CUDTUnited::select(
       if (0 < count)
          break;
 
-      CTimer::waitForEvent();
+      CGlobEvent::waitForEvent();
    } while (timeo > steady_clock::now() - entertime);
 
    if (readfds)
@@ -1945,7 +1984,7 @@ int CUDTUnited::selectEx(
       if (count > 0)
          break;
 
-      CTimer::waitForEvent();
+      CGlobEvent::waitForEvent();
    } while (timeo > steady_clock::now() - entertime);
 
    return count;
@@ -2880,6 +2919,31 @@ int CUDT::listen(SRTSOCKET u, int backlog)
          << typeid(ee).name() << ": " << ee.what());
       s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return ERROR;
+   }
+}
+
+SRTSOCKET CUDT::accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut)
+{
+   try
+   {
+      return s_UDTUnited.accept_bond(listeners, lsize, msTimeOut);
+   }
+   catch (const CUDTException& e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return INVALID_SOCK;
+   }
+   catch (bad_alloc&)
+   {
+      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      return INVALID_SOCK;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "accept_bond: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return INVALID_SOCK;
    }
 }
 
