@@ -281,7 +281,17 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    int type;
+    int size = sizeof type;
+    srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+
+    return 0;
+}
+
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
@@ -325,7 +335,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const so
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
     return 0;
 }
@@ -519,6 +529,11 @@ int main( int argc, char** argv )
         if (hook == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
+        else if (hook == "groupcheck")
+        {
+            transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
     }
