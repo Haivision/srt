@@ -960,17 +960,17 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
         break;
 
-      // This option is meaningless for the socket itself.
-      // It's set here just for the sake of setting it on a listener
-      // socket so that it is then applied on the group when a
-      // group connection is configuired.
     case SRTO_GROUPSTABTIMEO:
         {
-            int tmo = *(int*)optval;
+            // This option is meaningless for the socket itself.
+            // It's set here just for the sake of setting it on a listener
+            // socket so that it is then applied on the group when a
+            // group connection is configuired.
+            const int tmo = *(int*)optval;
 
             // Search if you already have SRTO_PEERIDLETIMEO set
 
-            int idletmo = m_iOPT_PeerIdleTimeout;
+            const int idletmo = m_iOPT_PeerIdleTimeout;
 
             // Both are in milliseconds.
             // This option is RECORDED in microseconds, while
@@ -1441,6 +1441,8 @@ void CUDT::open()
     m_tsLastSndTime                        = currtime;
 
     m_iReXmitCount   = 1;
+    m_tsUnstableSince = steady_clock::zero();
+    m_tsTmpActiveTime = steady_clock::zero();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
