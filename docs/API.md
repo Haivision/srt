@@ -521,12 +521,22 @@ being acknowledged)
 
 | OptName               | Since | Binding | Type   | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
-| `SRTO_GROUPCONNECT`   |       | pre     | `bool` |        | false    |        |
+| `SRTO_GROUPCONNECT`   |       | pre     | `int`  |        | 0        |        |
 
-- If true, the listener socket is allowed to accept group connections. Such a
-socket is still capable of accepting single socket connections as well. If false,
-the group connections on that listener socket are rejected. This option can only
-be set on a socket.
+- When this flag is set to 1 on the listener socket, it allows this socket to
+accept group connections. With default 0, group connections will be rejected.
+Keep in mind that correct value of this flag must be connected with appropriate
+changes in the API. The call to `srt_accept` on a listener socket that has group
+connections allowed must predict a possibility that it will return a group ID,
+and it should handle it accordingly.
+
+- When this flag is set to 1 on an accepted socket that is passed to the
+listener callback handler, it means that this socket is created for a group
+connection and it will become a member of a group. Note that in this case this
+socket will not be the value returned by `srt_accept` call. Note also that in
+case of bonding groups and an additional connection to an already connected
+group will still call the listener callback handler, but the connection will
+not be available for handling to the `srt_accept` call.
 
 ---
 

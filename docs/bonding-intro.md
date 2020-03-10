@@ -122,8 +122,8 @@ SRTSOCKET sock = srt_create_socket();
 To handle group connections, you need to set `SRTO_GROUPCONNECT` option:
 
 ```
-int yes = 1;
-srt_setsockflag(sock, SRTO_GROUPCONNECT, &yes, sizeof yes);
+int allowgroup = 1;
+srt_setsockflag(sock, SRTO_GROUPCONNECT, &allowgroup, sizeof allowgroup);
 
 sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
 srt_bind(sock, &sa, sizeof sa);
