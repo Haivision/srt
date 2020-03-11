@@ -350,9 +350,13 @@ public:
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
+            {
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
+            }
             else if (expect.accept_ret != -2)
+            {
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
+            }
 
             if (accepted_socket != SRT_INVALID_SOCK)
             {

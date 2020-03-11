@@ -877,7 +877,6 @@ public:
                 number -= OVER - MIN;
         }
     }
-
     operator uint32_t() const { return number; }
 };
 
@@ -906,7 +905,6 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-
     StatsLossRecords(): initseq(-1) {}
 
     // To check if this structure still keeps record of that sequence.
