@@ -178,8 +178,6 @@ int main( int argc, char** argv )
     // Create listeners according to the parameters
     vector<SRTSOCKET> listeners;
 
-    int eid = srt_epoll_create();
-
     Verb() << "LISTENERS [ " << VerbNoEOL;
 
     for (size_t i = 0; i < args.size(); ++i)
@@ -189,17 +187,12 @@ int main( int argc, char** argv )
 
         SRTSOCKET s = srt_create_socket();
 
-        int yes = 1;
-        srt_setsockflag(s, SRTO_GROUPCONNECT, &yes, sizeof yes);
-
-        int no = 0;
-        srt_setsockflag(s, SRTO_RCVSYN, &no, sizeof no);
+        //SRT_GROUPCONNTYPE gcon = SRTGC_GROUPONLY;
+        int gcon = 1;
+        srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
 
         srt_bind(s, (sockaddr*)&sa, sizeof sa);
         srt_listen(s, 5);
-
-        int events = SRT_EPOLL_IN; // listener ready for accept
-        srt_epoll_add_usock(eid, s, &events);
 
         listeners.push_back(s);
         Verb() << u.host() << ":" << u.portno() << " " << VerbNoEOL;
@@ -207,52 +200,12 @@ int main( int argc, char** argv )
 
     Verb() << "] accept...";
 
-    // Good, now we are waiting for the first connection
-
-    vector<SRT_EPOLL_EVENT> readies (listeners.size());
-
-    int st = -1;
-    SRTSOCKET conngrp = -1;
-    for (;;)
+    SRTSOCKET conngrp = srt_accept_bond(listeners.data(), listeners.size(), -1);
+    if (conngrp == SRT_INVALID_SOCK)
     {
-        // Check for interrupt each 1s
-        st = srt_epoll_uwait(eid, readies.data(), readies.size(), 1000);
-        if (mpbond_int_state)
-        {
-            cerr << "INTERRUPTED.\n";
-            return 0;
-        }
-
-        if (!st)
-            continue;
-
-        // Check only one listener and accept connection
-        sockaddr_any sa(AF_INET);
-        int adrlen = sa.size();
-        conngrp = srt_accept(readies[0].fd, sa.get(), &adrlen);
-        if (st == -1)
-        {
-            Verb() << "srt_accept: " << srt_getlasterror_str() << " (continuing)";
-            continue;
-        }
-
-        if ((conngrp & SRTGROUP_MASK) == 0)
-        {
-            Verb() << "srt_accept: not a group connection - closing and rejecting";
-            srt_close(conngrp);
-            continue;
-        }
-
-        // Finally...
-        Verb() << "Got group connection: @" << conngrp << " -- spawning media";
-        break;
+        cerr << "ERROR: srt_accept_bond: " << srt_getlasterror_str() << endl;
+        return 1;
     }
-
-    // Good, the connection is established. Now engage the second medium
-    // Create first Source and Target pointers.
-
-    int yes = 1;
-    srt_setsockflag(conngrp, SRTO_RCVSYN, &yes, sizeof yes);
 
     auto s = new SrtSource;
     unique_ptr<Source> src;

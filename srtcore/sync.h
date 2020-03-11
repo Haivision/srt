@@ -490,6 +490,68 @@ public:
     static int wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
 };
 
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CEvent class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CEvent
+{
+public:
+    CEvent();
+
+    ~CEvent();
+
+public:
+    Mutex& mutex() { return m_lock; }
+
+public:
+    /// Causes the current thread to block until
+    /// a specific time is reached.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool lock_wait_until(const steady_clock::time_point& tp);
+
+    /// Blocks the current executing thread,
+    /// and adds it to the list of threads waiting on* this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously.
+    /// Uses internal mutex to lock.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool lock_wait_for(const steady_clock::duration& rel_time);
+
+    /// Atomically releases lock, blocks the current executing thread,
+    /// and adds it to the list of threads waiting on* this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously.
+    /// When unblocked, regardless of the reason, lock is reacquiredand wait_for() exits.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool wait_for(UniqueLock& lk, const steady_clock::duration& rel_time);
+
+    void lock_wait();
+
+    void wait(UniqueLock& lk);
+
+    void notify_one();
+
+    void notify_all();
+
+private:
+    Mutex              m_lock;
+    CCondVar<false>    m_cond;
+};
+
+
+
 /// Print steady clock timepoint in a human readable way.
 /// days HH:MM::SS.us [STD]
 /// Example: 1D 02:12:56.123456
@@ -540,6 +602,41 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
 {
     return FormatDuration<DUNIT_US>(dur);
 }
+
+}; // namespace sync
+}; // namespace srt
+
+
+extern srt::sync::CEvent g_Sync;
+
+namespace srt
+{
+namespace sync
+{
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CGlobEvent class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CGlobEvent
+{
+public:
+    /// Triggers the event and notifies waiting threads.
+    /// Simply calls notify_one().
+    static void inline triggerEvent()
+    {
+        return g_Sync.notify_one();
+    }
+
+    /// Waits for the event to be triggered with 10ms timeout.
+    /// Simply calls wait_for().
+    static bool waitForEvent()
+    {
+        return g_Sync.lock_wait_for(milliseconds_from(10));
+    }
+};
 
 }; // namespace sync
 }; // namespace srt
