@@ -1,6 +1,4 @@
-
-Abstract
-========
+# Abstract #
 
 The general concept of the socket groups means that a separate entity,
 parallel to a socket, is provided, and the operation done on a group
@@ -38,8 +36,7 @@ is still sent over the unicast link.
 Details for the group types:
 
 
-1. Broadcast
--------------
+## 1. Broadcast ##
 
 This is the simplest bonding group type. The payload sent for a group will be
 then sent over every single link in the group simultaneously. On the reception
@@ -56,8 +53,7 @@ links in the group, whereas only one link at a time delivers any useful data.
 Every next link in this group gives then another 100% overhead.
 
 
-2. Backup
----------
+## 2. Backup ##
 
 This solution is more complicated and more challenging for the settings,
 and in contradiction to Broadcast group, it costs some penalties.
@@ -144,9 +140,7 @@ become stable - but still, some extra latency might be needed to compensate
 any quite probable packet loss that may occur during this process.
 
 
-
-3. Balancing
-------------
+## 3. Balancing ##
 
 The idea of balancing means that there are multiple network links used for
 carrying out the same transmission, however a single input signal should
@@ -192,9 +186,7 @@ bitrte as it is represented by the share of the link in the sum of
 all maximum bandwidth values from every link.
 
 
-
-4. Multicast (NOT IMPLEMENTED - a concept)
-------------------------------------------
+## 4. Multicast (NOT IMPLEMENTED - a concept) ##
 
 This group - unlike all others - is not intended to send one signal
 between two network nodes over multiple links, but rather a method of
@@ -312,8 +304,7 @@ however all control packets will be still sent the same way as before,
 that is, over a direct connection.
 
 
-Socket groups in SRT
-====================
+# Socket groups in SRT #
 
 The general idea of groups is that there can be multiple sockets belonging
 to a group, and various operations, normally done on single sockets, can
@@ -362,8 +353,7 @@ the header look exactly the same way depite being intended to be received by
 various different network nodes.
 
 
-How to prepare connection for bonded links
-==========================================
+# How to prepare connection for bonded links #
 
 In the listener-caller setup, you have to take care of the side separately.
 
@@ -401,8 +391,7 @@ to you.
 On the caller the matter is a little bit more complicated.
 
 
-Connect bonded
-==============
+# Connect bonded #
 
 At first, please remember that the official function to create a socket is now
 `srt_create_socket` and it gets no arguments. All previous functions to create
@@ -484,8 +473,7 @@ the only way how you can define the outgoing port for a socket that belongs
 to a managed group).
 
 
-Maintaining link activity
-=========================
+# Maintaining link activity #
 
 A link can get broken, and the only thing that the library does about it is
 make you aware of it. The bonding group, as managed, will simply delete the
@@ -529,8 +517,7 @@ by `srt_sendmsg2` or `srt_recvmsg2`.
 
 
 
-Writing data to a bonded link
-=============================
+# Writing data to a bonded link #
 
 This is very simple. Call the sending function (recommended is `srt_sendmsg2`)
 to send the data, passing group ID in the place of socket ID. By recognizing
@@ -555,8 +542,7 @@ throughout the link and never go in the order of scheduling on one link.
 Therefore this group uses message numbers for ordering.
 
 
-Reading data from a bonded link
-===============================
+# Reading data from a bonded link #
 
 This is also simple from the user's perspective. Simply call the reading
 function, such as `srt_recvmsg2`, passing the group ID instead of socket
@@ -569,8 +555,7 @@ order and at the time to play, and the redundant payloads retrieved over
 different links simultaneously will be discarded.
 
 
-Checking the status
-===================
+# Checking the status #
 
 If you call `srt_sendmsg2` or `srt_recvmsg2`, you'll get the status of every
 socket in the group in a part of the `SRT_MSGCTRL` structure, where you should
@@ -640,8 +625,7 @@ And finally, a group can be closed. In this case, it internally closes first
 all sockets that are members of this group, then the group itself is deleted.
 
 
-Application support
-===================
+# Application support #
 
 Currently only the `srt-test-live` application is supporting a syntax for
 socket groups.
