@@ -737,6 +737,7 @@ class RollNumber
     uint32_t number;
 
 public:
+
     static const size_t OVER = number_t::mask+1;
     static const size_t HALF = (OVER-MIN)/2;
 
