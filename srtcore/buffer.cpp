@@ -167,7 +167,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     HLOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
         << size << " packets (" << len << " bytes) to send, msgno="
-        << (w_msgno ? w_msgno : m_iNextMsgNo)
+        << (w_msgno > 0 ? w_msgno : m_iNextMsgNo)
         << (inorder ? "" : " NOT") << " in order");
 
     // The sequence number passed to this function is the sequence number
@@ -247,9 +247,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
-    m_iNextMsgNo ++;
-    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
-        m_iNextMsgNo = 1;
+    m_iNextMsgNo = ++MsgNo(m_iNextMsgNo);
 }
 
 void CSndBuffer::setInputRateSmpPeriod(int period)
@@ -516,7 +514,7 @@ void CSndBuffer::ackData(int offset)
    updAvgBufSize(steady_clock::now());
 #endif
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -944,7 +942,7 @@ int CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
