@@ -604,6 +604,7 @@ typedef struct SRT_SocketGroupData_
     int result;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    int priority;
 } SRT_SOCKGROUPDATA;
 ```
 
@@ -614,6 +615,14 @@ where:
 * `result`: result of the operation (if this operation recently updated this structure)
 * `srcaddr`: address to which `id` should be bound
 * `peeraddr`: address to which `id` should be connected
+* `priority`: priority for backup group
+
+The priority is set to 0 by default by `srt_prepare_endpoint()` - you can set
+it to a different value afterwards. The default 0 value is the highest priority
+and greater values declare lower priorities. The priority for the backup
+groups determines which link is activated first when the currently active link is
+unstable, and which should keep transmitting when multiple active links are
+currently stable. This is not used by any other group types.
 
 Functions to be used on groups:
 
