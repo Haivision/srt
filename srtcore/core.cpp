@@ -13303,7 +13303,7 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
     }
 }
 
-bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_point& currtime,
+bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_point& currtime ATR_UNUSED,
         const int stat, const int erc, const int32_t lastseq, const int32_t pktseq,
         CUDT& w_u, int32_t& w_curseq, vector<gli_t>& w_parallel, int& w_final_stat,
         set<int>& w_sendable_pri, size_t& w_nsuccessful, size_t& w_nunstable)
@@ -14085,7 +14085,8 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     // CHECK: no sendable that exceeds unstable
     // This embraces the case when there are no sendable at all.
     bool need_activate = sendable.size() <= nunstable;
-    IF_HEAVY_LOGGING(string activate_reason = "BY NO REASON???");
+    string activate_reason;
+    IF_HEAVY_LOGGING(activate_reason = "BY NO REASON???");
     if (need_activate)
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: all " << sendable.size() << " links unstable - will activate an idle link");
