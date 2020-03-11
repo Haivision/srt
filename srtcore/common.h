@@ -562,36 +562,11 @@ public:
 
    void tick();
 
-public:
-
-      /// trigger an event such as new connection, close, new data, etc. for "select" call.
-
-   static void triggerEvent();
-
-   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
-
-      /// wait for an event to br triggered by "triggerEvent".
-      /// @retval WT_EVENT The event has happened
-      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
-      /// @retval WT_ERROR The function has exit due to an error
-
-   static EWait waitForEvent();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
 private:
    srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
 
    pthread_cond_t m_TickCond;
    srt::sync::Mutex m_TickLock;
-
-   static pthread_cond_t m_EventCond;
-   static srt::sync::Mutex m_EventLock;
 };
 
 // UDT Sequence Number 0 - (2^31 - 1)
@@ -1435,7 +1410,7 @@ inline int32_t SrtParseVersion(const char* v)
         return 0;
     }
 
-    return major*0x10000 + minor*0x100 + patch;
+    return SrtVersion(major, minor, patch);
 }
 
 inline std::string SrtVersionString(int version)

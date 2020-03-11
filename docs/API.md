@@ -521,12 +521,24 @@ being acknowledged)
 
 | OptName               | Since | Binding | Type   | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
-| `SRTO_GROUPCONNECT`   |       | pre     | `bool` |        | false    |        |
+| `SRTO_GROUPCONNECT`   |       | pre     | `int`  |        | 0        | 0...1  |
 
-- If true, the listener socket is allowed to accept group connections. Such a
-socket is still capable of accepting single socket connections as well. If false,
-the group connections on that listener socket are rejected. This option can only
-be set on a socket.
+- When this flag is set to 1 on a listener socket, it allows this socket to
+accept group connections. When set to the default 0, group connections will be
+rejected. Keep in mind that if the `SRTO_GROUPCONNECT` flag is set to 1 (i.e.
+group connections are allowed) `srt_accept` may return a socket **or** a group
+ID. A call to `srt_accept` on a listener socket that has group connections
+allowed must take this into consideration. It's up to the caller of this
+function to make this distinction and to take appropriate action depending on
+the type of entity returned.
+
+- When this flag is set to 1 on an accepted socket that is passed to the
+listener callback handler, it means that this socket is created for a group
+connection and it will become a member of a group. Note that in this case this
+socket will not be the value returned by `srt_accept` call. Note also that, in
+case of bonding groups, an additional connection to an already connected
+group will still call the listener callback handler, but that connection will
+not be available to the `srt_accept` call.
 
 ---
 
@@ -1213,6 +1225,24 @@ both parties of the connection, so there's no possible situation of a rogue
 sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
+
+**IMPORTANT**: There is unusual and unobvious behavior when this flag is TRUE
+on the caller and FALSE on the listener, and the passphrase was mismatched. On
+the listener side the connection will be established and broken right after,
+resulting in a short-lived "spurious" connection report on the listener socket.
+This way, a socket will be available for retrieval from an `srt_accept` call
+for a very short time, after which it will be removed from the listener backlog
+just as if no connection attempt was made at all. If the application is fast
+enough to react on an incoming connection, it will retrieve it, only to learn
+that it is already broken. This also makes possible a scenario where
+`SRT_EPOLL_IN` is reported on a listener socket, but then an `srt_accept` call
+reports an `SRT_EASYNCRCV` error. How fast the connection gets broken depends
+on the network parameters - in particular, whether the `UMSG_SHUTDOWN` message
+sent by the caller is delivered (which takes one RTT in this case) or missed
+during the interval from its creation up to the connection timeout (default = 5
+seconds). It is therefore strongly recommended that you only set this flag to
+FALSE on the listener when you are able to ensure that it is also set to FALSE
+on the caller side.
 
 ---
 

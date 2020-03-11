@@ -747,6 +747,7 @@ public: //API
     static int bind(SRTSOCKET u, UDPSOCKET udpsock);
     static int listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
+    static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
     static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPDATA links [], int arraysize);
@@ -1221,7 +1222,7 @@ private: // Identification
     bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
     int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    bool m_bOPT_GroupConnect;
+    int m_OPT_GroupConnect;
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
     uint32_t m_uOPT_StabilityTimeout;
