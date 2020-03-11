@@ -1,4 +1,4 @@
-# What are groups #
+# What are groups
 
 A Group is an entity that binds multiple sockets and it is required to
 establish a "bonded connection". Groups can be then used the same way as
@@ -24,9 +24,9 @@ To learn more about socket groups and their abilities, please read the
 [detailed document](socket-groups.md).
 
 
-# Lay-ground: using sockets for establishing a connection #
+# Lay-ground: using sockets for establishing a connection
 
-## Important changes ##
+## Important changes
 
 Note important changes SRT underwent since the first version from UDT:
 
@@ -43,7 +43,7 @@ or file mode. E.g. all 3 functions: `srt_send`, `srt_sendmsg` and
 your application needs.
 
 
-## Socket connection ##
+## Socket connection
 
 Let's review quickly what you do to establish a socket connection in the
 caller-listener arrangement.
@@ -96,7 +96,7 @@ packetdata.resize(size);
 ```
 
 
-# Group (bonded) connection #
+# Group (bonded) connection
 
 Except for several details, most of the API used for sockets can be used for
 groups. The groups also have the numeric identifiers, just like sockets, which
@@ -200,7 +200,7 @@ There's one additional thing to be covered here, though - how much of interest
 should be in the application.
 
 
-# Controlling the member connections #
+# Controlling the member connections
 
 The object of type `SRT_MSGCTRL` is used to exchange some extra information
 with the `srt_sendmsg2` and `srt_recvmsg2`; in this case interesting are two
