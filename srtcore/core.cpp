@@ -13301,7 +13301,6 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: socket in RUNNING state: @" << w_d->id << " - will send a payload");
     }
-
 }
 
 bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_point& currtime,
@@ -13631,7 +13630,6 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
 void CUDTGroup::sendBackup_CheckParallelLinks(const size_t nunstable, vector<gli_t>& w_parallel,
         int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx)
 {
-
     // In contradiction to redundancy sending, backup sending must check
     // the blocking state in total first. We need this information through
     // epoll because we didn't use all sockets to send the data hence the
