@@ -65,6 +65,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
+    data.priority = 0;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -230,7 +231,7 @@ void srt_clearlasterror()
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
 int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
 
-int srt_group_bstats(SRTSOCKET gu, SRT_GROUPBSTATS* perf, int clear) { return CUDT::groupbstats(gu, perf); }
+int srt_group_bstats(SRTSOCKET gu, SRT_GROUPBSTATS* perf, int clear) { return CUDT::groupbstats(gu, perf, clear); }
 
 SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
 

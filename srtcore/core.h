@@ -135,6 +135,8 @@ enum GroupDataItem
 {
     GRPD_GROUPID,
     GRPD_GROUPTYPE,
+    GRPD_PRIORITY,
+
 
     GRPD__SIZE
 };
@@ -216,6 +218,9 @@ public:
         bool ready_write;
         bool ready_error;
 
+        // Configuration
+        int priority;
+        
         CGroupMemberPerfMon stats;
     };
 
@@ -238,6 +243,16 @@ public:
             unsigned char* begin = (unsigned char*)val;
             std::copy(begin, begin+size, value.begin());
         }
+
+        struct OfType
+        {
+            SRT_SOCKOPT so;
+            OfType(SRT_SOCKOPT soso): so(soso) {}
+            bool operator()(ConfigItem& ci)
+            {
+                return ci.so == so;
+            }
+        };
     };
 
     typedef std::list<SocketData> group_t;
@@ -251,7 +266,7 @@ public:
     };
 
 
-    CUDTGroup();
+    CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
     static SocketData prepareData(CUDTSocket* s);
@@ -334,6 +349,30 @@ public:
 
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+
+private:
+    // For Backup, sending all previous packet
+    int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
+
+    // Support functions for sendBackup and sendBroadcast
+    bool send_CheckIdle(const gli_t d, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
+    void sendBackup_CheckIdleTime(gli_t w_d);
+    void sendBackup_CheckRunningStability(const gli_t d, const time_point currtime, size_t& w_nunstable);
+    bool sendBackup_CheckSendStatus(const gli_t d, const time_point& currtime, const int stat, const int erc, const int32_t lastseq,
+            const int32_t pktseq, CUDT& w_u, int32_t& w_curseq, std::vector<gli_t>& w_parallel,
+            int& w_final_stat, std::set<int>& w_sendable_pri, size_t& w_nsuccessful, size_t& w_nunstable);
+    void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
+    void sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers, const char *buf, const int len,
+            bool& w_none_succeeded, SRT_MSGCTRL& w_mc, int32_t& w_curseq, int32_t& w_final_stat,
+            CUDTException& w_cx, std::vector<Sendstate>& w_sendstates,
+            std::vector<gli_t>& w_parallel, std::vector<gli_t>& w_wipeme,
+            const std::string& activate_reason);
+    void send_CheckBrokenSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
+    void sendBackup_CheckParallelLinks(const size_t nunstable, std::vector<gli_t>& w_parallel,
+            int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx);
+
+public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
 
     void close();
@@ -396,6 +435,11 @@ public:
 #else
     void debugGroup() {}
 #endif
+
+    void ackMessage(int32_t msgno);
+    void handleKeepalive(gli_t);
+    void internalKeepalive(gli_t);
+
 private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
@@ -412,6 +456,113 @@ private:
     bool m_selfManaged;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
+
+public:
+
+    // XXX unused now 
+    struct BufferedMessageStorage
+    {
+        size_t blocksize;
+        size_t maxstorage;
+        std::vector<char*> storage;
+
+        BufferedMessageStorage(size_t blk, size_t max = 0):
+            blocksize(blk),
+            maxstorage(max),
+            storage()
+        {
+        }
+
+        char* get()
+        {
+            if (storage.empty())
+                return new char[blocksize];
+
+            // Get the element from the end
+            char* block = storage.back();
+            storage.pop_back();
+            return block;
+        }
+
+        void put(char* block)
+        {
+            if (storage.size() >= maxstorage)
+            {
+                // Simply delete
+                delete [] block;
+                return;
+            }
+
+            // Put the block into the spare buffer
+            storage.push_back(block);
+        }
+
+        ~BufferedMessageStorage()
+        {
+            for (size_t i = 0; i < storage.size(); ++i)
+                delete [] storage[i];
+        }
+    };
+
+    struct BufferedMessage
+    {
+        static BufferedMessageStorage storage;
+
+        SRT_MSGCTRL mc;
+        char* data;
+        size_t size;
+
+        BufferedMessage(): data(), size() {}
+        ~BufferedMessage()
+        {
+            if (data)
+                storage.put(data);
+        }
+
+        // NOTE: size 's' must be checked against SRT_LIVE_MAX_PLSIZE
+        // before calling
+        void copy(const char* buf, size_t s)
+        {
+            size = s;
+            data = storage.get();
+            memcpy(data, buf, s);
+        }
+
+        BufferedMessage(const BufferedMessage& foreign SRT_ATR_UNUSED):
+            data(), size()
+        {
+            // This is only to copy empty container.
+            // Any other use should not be done.
+//#if ENABLE_DEBUG
+//            if (foreign.data)
+//                abort();
+//#endif
+        }
+
+    private:
+        void swap_with(BufferedMessage& b)
+        {
+            std::swap(this->mc, b.mc);
+            std::swap(this->data, b.data);
+            std::swap(this->size, b.size);
+        }
+    };
+
+    typedef std::deque< BufferedMessage > senderBuffer_t;
+    //typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
+
+private:
+
+    // Fields required for SRT_GTYPE_BACKUP groups.
+    senderBuffer_t m_SenderBuffer;
+    int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer
+    volatile int32_t m_iSndAckedMsgNo;
+    uint32_t m_uOPT_StabilityTimeout;
+
+    // THIS function must be called only in a function for a group type
+    // that does use sender buffer.
+    int32_t addMessageToBuffer(const char* buf, size_t len, SRT_MSGCTRL& w_mc);
+
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
     int m_iAvgPayloadSize;
@@ -437,10 +588,12 @@ private:
 
     struct ReadPos
     {
-        int32_t sequence;
         std::vector<char> packet;
         SRT_MSGCTRL mctrl;
-        ReadPos(int32_t s): sequence(s), mctrl(srt_msgctrl_default) {}
+        ReadPos(int32_t s): mctrl(srt_msgctrl_default)
+        {
+            mctrl.pktseq = s;
+        }
     };
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
@@ -466,6 +619,8 @@ private:
     srt::sync::Condition m_RcvDataCond;
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+    volatile int32_t m_iLastSchedMsgNo;
+
 
     // Statistics
 
@@ -562,7 +717,6 @@ public:
         // provided that they are to be ued only for live mode.
         return m_iAvgPayloadSize == -1 ? SRT_LIVE_DEF_PLSIZE : m_iAvgPayloadSize;
     }
-
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
@@ -619,6 +773,8 @@ public:
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
     void synchronizeDrift(CUDT* cu, duration udrift, time_point newtimebase);
 
+    void updateLatestRcv(gli_t);
+
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET,      id,                   m_GroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET,      peerid,               m_PeerGroupID);
@@ -628,6 +784,7 @@ public:
     SRTU_PROPERTY_RRW(                std::set<int>&, epollset,             m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t,        latency,              m_iTsbPdDelay_us);
 };
+
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -654,7 +811,6 @@ class CUDT
     typedef srt::sync::steady_clock::duration duration;
 
 private: // constructor and desctructor
-
     void construct();
     void clearData();
     CUDT(CUDTSocket* parent);
@@ -936,7 +1092,7 @@ private:
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
-    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], int hsreq_type_cmd);
+    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
     SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
     void synchronizeWithGroup(CUDTGroup* grp);
 
@@ -944,6 +1100,8 @@ private:
 
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
+
+    void updateIdleLinkFrom(CUDT* source);
 
     void checkNeedDrop(bool& bCongestion);
 
@@ -1153,6 +1311,7 @@ private: // Identification
     int m_OPT_GroupConnect;
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
+    uint32_t m_uOPT_StabilityTimeout;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
@@ -1417,7 +1576,7 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
-
+    void handleKeepalive(const char* data, size_t lenghth);
 
 private: // Trace
     struct CoreStats
@@ -1492,6 +1651,9 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+    time_point m_tsTmpActiveTime;  // time since temporary activated, or 0 if not temporary activated
+    time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
+    
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

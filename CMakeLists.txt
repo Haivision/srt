@@ -864,6 +864,8 @@ endif()
 
 if (ENABLE_APPS)
 
+    message(STATUS "APPS: ENABLED")
+
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
 		SOURCES SOURCES_support
@@ -897,6 +899,7 @@ if (ENABLE_APPS)
 	endif()
 
 	if (ENABLE_TESTING)
+    	message(STATUS "DEVEL APPS (testing): ENABLED")
 
 		macro(srt_add_testprogram name)
 			# Variables in macros are not local. Clear them forcefully.
@@ -937,8 +940,13 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-mpbond)
 		srt_make_application(srt-test-mpbond)
 
+	else()
+    	message(STATUS "DEVEL APPS (testing): DISABLED")
 	endif()
 
+
+else()
+    message(STATUS "APPS: DISABLED")
 endif()
 
 if (ENABLE_EXAMPLES)

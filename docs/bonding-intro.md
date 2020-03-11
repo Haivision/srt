@@ -20,6 +20,9 @@ used.
 How the links are utilized within a group depends on the group type. The
 simplest type, broadcast, utilizes all links at once to send the same data.
 
+To learn more about socket groups and their abilities, please read the
+[detailed document](socket-groups.md).
+
 
 Reminder: Using sockets for establishing a connection
 =====================================================

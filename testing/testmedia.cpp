@@ -222,11 +222,6 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
-            if (m_group_type != "broadcast")
-            {
-                Error("With //group, only type=broadcast is currently supported");
-            }
-
             vector<string> nodes;
             Split(par["nodes"], ',', back_inserter(nodes));
 
@@ -252,6 +247,11 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 Connection cc(check.host(), check.portno());
+                if (check.parameters().count("pri"))
+                {
+                    cc.priority = stoi(check.queryValue("pri"));
+                }
+
                 m_group_nodes.push_back(cc);
             }
 
@@ -719,7 +719,8 @@ void SrtCommon::OpenGroupClient()
     // Resolve group type.
     if (m_group_type == "broadcast")
         type = SRT_GTYPE_BROADCAST;
-    // else if other types...
+    else if (m_group_type == "backup")
+        type = SRT_GTYPE_BACKUP;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
@@ -766,9 +767,12 @@ void SrtCommon::OpenGroupClient()
     {
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port
+            << "?pri=" << c.priority
+            << " ... " << VerbNoEOL;
         ++i;
         SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
+        gd.priority = c.priority;
         targets.push_back(gd);
     }
 
