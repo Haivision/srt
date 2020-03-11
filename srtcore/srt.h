@@ -415,6 +415,64 @@ struct CBytePerfMon
    //<
 };
 
+struct CGroupMemberPerfMon
+{
+    // This is a time since when this member link was established.
+    int64_t msTimeUsage;         // How long the member link is alive
+    int64_t msTimeActive;        // How long this link is active
+
+    // This is an average response time. Response time is the time
+    // counted between two received packets. On the sender side incoming
+    // packets are usually only UMSG_ACK, which are declared to be sent
+    // once per 10ms. This value allows to determine if the setting for
+    // SRTO_GROUPSTABTIMEO used by backup groups is accurate, and always
+    // above, but very close to the value of an average response time.
+    int msAvgResponseTime;   // short-time jumping average of response time
+
+    // This is the value of latency that has been adjusted in this particular
+    // link so that the calculated signoff TSBPD time will be exactly the same
+    // for the same relative timestamp in the packet regardless over which link
+    // it has arrived, and also after it has been adjusted by the drift tracer.
+    // Normally the effective latency is the set up latency + single transit time.
+    // But then the latency can be changed due to measured drift, as well as
+    // in the group connection the first connection gets the actual latency,
+    // while every next connection simply gets the start time adjusted so that
+    // start time is in synch in every link, at the cost of changed effective latency.
+    int msRcvTsbPdDelayAdjusted; // actual latency beside transport time after synchronization
+};
+
+struct CGroupPerfMon
+{
+    // global measurements
+    int64_t  msTimeStamp;                // time since the Group Start Time
+    int64_t  pktSentTotal;               // total number of sent data packets (single packet passed through send)
+    int64_t  pktRecvTotal;               // total number of received packets (packets delivered to the output)
+    int64_t  usSndDurationTotal;         // total time duration when the Group is sending data (idle time exclusive)
+    int      pktRcvDropTotal;            // number of too-late-to play missing packets (jump-over sequence in delivery)
+    uint64_t byteSentTotal;              // total number of sent data bytes (single packet passed through send)
+    uint64_t byteRecvTotal;              // total number of received bytes (packets delivered to the output)
+    uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
+
+    // local measurements
+    int64_t  pktSent;                    // number of sent data packets (only direct data)
+    int64_t  pktRecv;                    // number of received packets
+    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
+    int      pktRcvDrop;                 // number of too-late-to play missing packets
+    uint64_t byteSent;                   // number of sent data bytes (directly)
+    uint64_t byteRecv;                   // number of received (delivered) bytes
+    uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
+
+    double   mbpsSendRate;               // sending rate in Mb/s
+    double   mbpsRecvRate;               // receiving rate in Mb/s
+
+    // Group functioning data
+    int  numberConnected;
+    int  numberBreaks;
+
+    CGroupMemberPerfMon* members;
+    size_t               members_size;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Error codes - define outside the CUDTException class
@@ -697,6 +755,8 @@ inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
 
 
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
+typedef struct CGroupMemberPerfMon SRT_GMBSTATS;
+typedef struct CGroupPerfMon SRT_GROUPBSTATS;
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;

@@ -130,6 +130,7 @@ void CUDTSocket::makeClosed()
     {
         HLOGC(mglog.Debug, log << "@" << m_SocketID << " IS MEMBER OF $" << m_IncludedGroup->id() << " - REMOVING FROM GROUP");
         removeFromGroup();
+        m_IncludedGroup->notifyConnectionStats(false);
     }
 
     HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
@@ -1283,6 +1284,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
         }
         catch (CUDTException& e)
         {
+            // NOTE: Here the statistics for numberBreaks are not updated
+            // because a socket must be first notified in the numberConnected first,
+            // that is, this socket was never considered connected, so can't be counted as broken.
             LOGC(mglog.Error, log << "groupConnect: socket @" << sid << " in group " << pg->id() << " failed to connect");
             // We know it does belong to a group.
             // Remove it first because this involves a mutex, and we want
@@ -3591,6 +3595,28 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
    {
       CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
       udt->bstats(perf, clear, instantaneous);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      s_UDTUnited.setError(new CUDTException(e));
+      return ERROR;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::groupbstats(SRTSOCKET u, CGroupPerfMon* perf, bool clear)
+{
+   try
+   {
+      CUDTGroup* g = s_UDTUnited.locateGroup(u, s_UDTUnited.ERH_THROW);
+      g->bstats(perf, clear);
       return 0;
    }
    catch (const CUDTException& e)

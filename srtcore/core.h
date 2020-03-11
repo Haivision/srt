@@ -215,6 +215,8 @@ public:
         bool ready_read;
         bool ready_write;
         bool ready_error;
+
+        CGroupMemberPerfMon stats;
     };
 
     struct ConfigItem
@@ -412,6 +414,7 @@ private:
     CUDTSocket* m_listener; // A "group" can only have one listener.
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
+    int m_iAvgPayloadSize;
     bool m_bSynRecving;
     bool m_bSynSending;
     bool m_bTsbPd;
@@ -463,7 +466,102 @@ private:
     srt::sync::Condition m_RcvDataCond;
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+
+    // Statistics
+
+    struct Stats
+    {
+        // Stats state
+        time_point tsActivateTime;           // Time when this group sent or received the first data packet
+        time_point tsLastSampleTime;         // Time reset when clearing stats
+
+        // global measurements
+        int64_t  pktSentTotal;               // total number of sent data packets (single packet passed through send)
+        int64_t  pktRecvTotal;               // total number of received packets (packets delivered to the output)
+        int      pktRcvDropTotal;            // number of too-late-to play missing packets (jump-over sequence in delivery)
+
+        uint64_t byteSentTotal;              // total number of sent data bytes (single packet passed through send)
+        uint64_t byteRecvTotal;              // total number of received bytes (packets delivered to the output)
+        uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
+
+        // local measurements
+        int64_t  pktSent;                    // number of sent data packets (only direct data)
+        int64_t  pktRecv;                    // number of received packets
+        int      pktRcvDrop;                 // number of too-late-to play missing packets
+
+        uint64_t byteSent;                   // number of sent data bytes (directly)
+        uint64_t byteRecv;                   // number of received (delivered) bytes
+        uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
+
+        // Start time for sending will be reset:
+        // - on broadcast and balakcing: if all links have empty buffers
+        // - on backup: if all currently active links have empty buffers
+        //int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
+        //time_point tsSndDurationCounter;     // start time for measuring sending time
+        // XXX BLOCKED FOR NOW. Hard to say how to implement it. Groups have no access to socket internals.
+
+        // Group functioning data
+        int  numberConnected;
+        int  numberBreaks;
+
+        void init()
+        {
+            pktSentTotal = 0;
+            pktRecvTotal = 0;
+            tsActivateTime = srt::sync::steady_clock::zero();
+            pktRcvDropTotal = 0;
+            byteSentTotal = 0;
+            byteRecvTotal = 0;
+            byteRcvDropTotal = 0;
+
+            reset();
+        }
+
+        void reset()
+        {
+            pktSent = 0;
+            pktRecv = 0;
+            pktRcvDrop = 0;
+            byteSent = 0;
+            byteRecv = 0;
+            byteRcvDrop = 0;
+
+            numberConnected = 0;
+            numberBreaks = 0;
+
+            tsLastSampleTime = srt::sync::steady_clock::now();
+        }
+    } m_stats;
+
 public:
+    void bstats(CGroupPerfMon *perf, bool clear);
+
+    void notifyConnectionStats(bool connected)
+    {
+        if (connected)
+            m_stats.numberConnected++;
+        else
+            m_stats.numberBreaks++;
+    }
+
+    void updateAvgPayloadSize(int size)
+    {
+        if (m_iAvgPayloadSize == -1)
+            m_iAvgPayloadSize = size;
+        else
+            m_iAvgPayloadSize = avg_iir<4>(m_iAvgPayloadSize, size);
+    }
+
+    int avgRcvPacketSize()
+    {
+        // In case when no packet has been received yet, but already notified
+        // a dropped packet, its size will be SRT_LIVE_DEF_PLSIZE. It will be
+        // the value most matching in the typical uses, although no matter what
+        // value would be used here, each one would be wrong from some points
+        // of view. This one is simply the best choice for typical uses of groups
+        // provided that they are to be ued only for live mode.
+        return m_iAvgPayloadSize == -1 ? SRT_LIVE_DEF_PLSIZE : m_iAvgPayloadSize;
+    }
 
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
@@ -611,6 +709,7 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static int groupbstats(SRTSOCKET u, CGroupPerfMon* perf, bool clear = true);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);

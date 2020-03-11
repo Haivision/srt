@@ -3433,6 +3433,9 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     s->core().m_bSynSending = false;
 
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
+    // Note: addSocketToGroup is a function intended for non-managed groups, but
+    // there are no such groups currently defined. So addSocketToGroup is only added
+    // for formality.
 
     // Check if the socket already is in the group
     CUDTGroup::gli_t f = gp->find(m_SocketID);
@@ -3448,6 +3451,9 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 
     s->m_IncludedGroup = gp;
     s->m_IncludedIter = gp->add(gp->prepareData(s));
+
+    // We can consider the new connection now added.
+    gp->notifyConnectionStats(true);
 
     return gp->id();
 }
@@ -4986,6 +4992,8 @@ void CUDTGroup::setFreshConnected(CUDTSocket* sock)
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
     }
+
+    m_stats.numberConnected++;
 }
 
 void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t typefield)
@@ -10908,7 +10916,8 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         SRTS_INIT, GST_BROKEN, GST_BROKEN,
         -1, -1,
         sockaddr_any(), sockaddr_any(),
-        false, false, false
+        false, false, false,
+        { 0, 0, 0, 0 } // CGroupMemberPerfMon
     };
     return sd;
 }
@@ -10922,6 +10931,7 @@ CUDTGroup::CUDTGroup()
     , m_listener()
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
+    , m_iAvgPayloadSize(-1)
     , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
@@ -10944,6 +10954,8 @@ CUDTGroup::CUDTGroup()
     setupCond(m_RcvDataCond, "RcvData");
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
+
+    m_stats.init();
 }
 
 CUDTGroup::~CUDTGroup()
@@ -11928,9 +11940,18 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         throw CUDTException(major, minor, 0);
     }
 
+    // Now that at least one link has succeeded, update sending stats.
+    m_stats.pktSentTotal++;
+    m_stats.pktSent++;
+    m_stats.byteSentTotal += len;
+    m_stats.byteSent += len;
+
+    // Also stats: the first successful reading should make the link active
+    if (m_stats.tsActivateTime == steady_clock::zero())
+        m_stats.tsActivateTime = steady_clock::now();
+
     // Pity that the blocking mode only determines as to whether this function should
     // block or not, but the epoll flags must be updated regardless of the mode.
-
 
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.
@@ -12219,6 +12240,13 @@ RETRY_READING:
             fillGroupData((w_mc), pos->mctrl, (out_grpdata), out_grpdata_size);
             len = pos->packet.size();
             pos->packet.clear();
+
+            // Update stats as per delivery
+            m_stats.pktRecvTotal++;
+            m_stats.pktRecv++;
+            m_stats.byteRecvTotal += len;
+            m_stats.byteRecv += len;
+            updateAvgPayloadSize(len);
 
             // We predict to have only one packet ahead, others are pending to be reported by tsbpd.
             // This will be "re-enabled" if the later check puts any new packet into ahead.
@@ -12615,6 +12643,17 @@ RETRY_READING:
             output_size = stat;
             fillGroupData((w_mc), mctrl, (out_grpdata), out_grpdata_size);
 
+            // Update stats as per delivery
+            m_stats.pktRecvTotal++;
+            m_stats.pktRecv++;
+            m_stats.byteRecvTotal += output_size;
+            m_stats.byteRecv += output_size;
+            updateAvgPayloadSize(output_size);
+
+            // Also stats: the first successful reading should make the link active
+            if (m_stats.tsActivateTime == steady_clock::zero())
+                m_stats.tsActivateTime = steady_clock::now();
+
             // Record, but do not update yet, until all sockets are handled.
             next_seq = mctrl.pktseq;
             break;
@@ -12750,6 +12789,15 @@ RETRY_READING:
             // As we already have the packet delivered by the slowest
             // kangaroo, we can simply return it.
 
+            // Check how many were skipped and add them to the stats
+            int32_t jump = (CSeqNo(slowest_kangaroo->second.sequence) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            if (jump > 0)
+            {
+                m_stats.pktRcvDropTotal++;
+                m_stats.pktRcvDrop++;
+                m_stats.byteRcvDropTotal += avgRcvPacketSize();
+                m_stats.byteRcvDrop += avgRcvPacketSize();
+            }
             m_RcvBaseSeqNo = slowest_kangaroo->second.sequence;
             vector<char>& pkt = slowest_kangaroo->second.packet;
             if (size_t(len) < pkt.size())
@@ -12764,6 +12812,13 @@ RETRY_READING:
             fillGroupData((w_mc), slowest_kangaroo->second.mctrl, (out_grpdata), out_grpdata_size);
             len = pkt.size();
             pkt.clear();
+
+            // Update stats as per delivery
+            m_stats.pktRecvTotal++;
+            m_stats.pktRecv++;
+            m_stats.byteRecvTotal += len;
+            m_stats.byteRecv += len;
+            updateAvgPayloadSize(len);
 
             // It is unlikely to have a packet ahead because usually having one packet jumped-ahead
             // clears the possibility of having aheads at all.
@@ -12889,5 +12944,75 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
             continue;
 
         gi->ps->m_pUDT->m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
+    }
+}
+
+void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
+{
+    if (!m_bConnected)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    const steady_clock::time_point currtime = steady_clock::now();
+
+#define TAKE(field) perf-> field = m_stats. field
+
+    perf->msTimeStamp = count_milliseconds(currtime - m_tsStartTime);
+
+    TAKE(pktSent);
+    TAKE(pktRecv);
+
+    /* perf byte counters include all headers (SRT+UDP+IP) */
+    const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    perf->byteSent       = m_stats.byteSent + (m_stats.pktSent * PKT_HDR_SIZE);
+    perf->byteRecv       = m_stats.byteRecv + (m_stats.pktRecv * PKT_HDR_SIZE);
+
+    TAKE(pktRcvDrop);
+
+    perf->byteRcvDrop = m_stats.byteRcvDrop + (m_stats.pktRcvDrop * PKT_HDR_SIZE);
+
+    TAKE(pktSentTotal);
+    TAKE(pktRecvTotal);
+    TAKE(pktRcvDropTotal);
+
+    perf->byteSentTotal         = m_stats.byteSentTotal + (m_stats.pktSentTotal * PKT_HDR_SIZE);
+    perf->byteRecvTotal         = m_stats.byteRecvTotal + (m_stats.pktRecvTotal * PKT_HDR_SIZE);
+    perf->byteRcvDropTotal      = m_stats.byteRcvDropTotal + (m_stats.pktRcvDropTotal * PKT_HDR_SIZE);
+
+    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
+
+    perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
+    perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
+
+    steady_clock::time_point now = steady_clock::now();
+
+    if (perf->members && perf->members_size > 0)
+    {
+        CGuard gg (m_GroupLock);
+
+        // Fill the group member stats
+        CGroupMemberPerfMon* pp = perf->members;
+
+        // Fill in anyway, stopping at the first moment when the
+        // array for filling stats of a group member is not large
+        // enouth. This is because it's more costly to check the
+        // list's size than to perform too little operations.
+        for (gli_t d = m_Group.begin();
+                d != m_Group.end() && pp != perf->members + perf->members_size;
+                ++d, ++pp)
+        {
+            pp->msTimeUsage = count_milliseconds(now - d->ps->core().m_stats.tsStartTime);
+            //pp->msTimeActive = count_milliseconds(now - d->ps->core().m_tsActivationTime);
+            //pp->msAvgResponseTime = d->ps->core().m_dAvgResponseTime;
+            //pp->msRcvTsbPdDelayAdjusted ???
+        }
+
+        perf->members_size = m_Group.size();
+    }
+
+    if (clear)
+    {
+        m_stats.reset();
     }
 }
