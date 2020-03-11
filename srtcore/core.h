@@ -543,8 +543,6 @@ public:
             std::swap(this->data, b.data);
             std::swap(this->size, b.size);
         }
-
-        friend void srt_fwd_swap(CUDTGroup::BufferedMessage& a, CUDTGroup::BufferedMessage& b);
     };
 
     typedef std::deque< BufferedMessage > senderBuffer_t;
@@ -688,17 +686,6 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t,        latency,              m_iTsbPdDelay_us);
 };
 
-inline void srt_fwd_swap(CUDTGroup::BufferedMessage& a, CUDTGroup::BufferedMessage& b)
-{
-    a.swap_with(b);
-}
-
-namespace std
-{
-    template<>
-    inline void swap(CUDTGroup::BufferedMessage& a, CUDTGroup::BufferedMessage& b)
-    { ::srt_fwd_swap(a, b); }
-}
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
