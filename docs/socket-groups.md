@@ -132,7 +132,7 @@ the required time to play. It is unknown as to what recommendations should
 be used for that case, although it is usually more required than to
 compensate a burst for retransmission and also the maximum burst size
 is dependent on the bitrate, in particular, how many packets would be
-collected between two acknowledgement events. It might be not that touch
+collected between two acknowledgement events. It might be not that tough
 as it seems from this description, as it's about starting a transmission
 over an earlier not used link, so there's some chance that the link will
 withstand the initial high burst of packets, while then the bitrate will
