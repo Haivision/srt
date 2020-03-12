@@ -222,9 +222,17 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
-            if (m_group_type != "broadcast")
+            vector<string> parts;
+            Split(m_group_type, '/', back_inserter(parts));
+            if (parts.size() == 0 || parts.size() > 2)
             {
-                Error("With //group, only type=broadcast is currently supported");
+                Error("Invalid specification for 'type' parameter");
+            }
+
+            if (parts.size() == 2)
+            {
+                m_group_type = parts[0];
+                m_group_config = parts[1];
             }
 
             vector<string> nodes;
@@ -252,6 +260,11 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 Connection cc(check.host(), check.portno());
+                if (check.parameters().count("pri"))
+                {
+                    cc.priority = stoi(check.queryValue("pri"));
+                }
+
                 m_group_nodes.push_back(cc);
             }
 
@@ -719,15 +732,28 @@ void SrtCommon::OpenGroupClient()
     // Resolve group type.
     if (m_group_type == "broadcast")
         type = SRT_GTYPE_BROADCAST;
-    // else if other types...
+    else if (m_group_type == "backup")
+        type = SRT_GTYPE_BACKUP;
+    else if (m_group_type == "balancing")
+        type = SRT_GTYPE_BALANCING;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
     }
 
     m_sock = srt_create_group(type);
+    if (m_sock == -1)
+        Error("srt_create_group");
 
-    int stat = ConfigurePre(m_sock);
+    int stat = -1;
+    if (m_group_config != "")
+    {
+        stat = srt_group_configure(m_sock, m_group_config.c_str());
+        if (stat == SRT_ERROR)
+            Error("srt_group_configure");
+    }
+
+    stat = ConfigurePre(m_sock);
 
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
@@ -766,9 +792,12 @@ void SrtCommon::OpenGroupClient()
     {
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
-        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port
+            << "?pri=" << c.priority
+            << " ... " << VerbNoEOL;
         ++i;
         SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
+        gd.priority = c.priority;
         targets.push_back(gd);
     }
 

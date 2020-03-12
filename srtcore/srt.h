@@ -741,6 +741,7 @@ SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
 SRT_API       int srt_exclude      (SRTSOCKET socket);
 SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
