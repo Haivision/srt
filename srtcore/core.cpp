@@ -2670,12 +2670,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
 
 void CUDT::interpretRejectionMessage(const CHandShake& hs, const CPacket& hspkt)
 {
-    // This is simply part of the same procedure as done in interpretRejectionMessage(),
+    // This is simply part of the same procedure as done in interpretSrtHandshake(),
     // it just extracts the contents of a prospective SRT_CMD_SID extension.
     // If not present, do nothing.
-
-    // The just received handshake is parsed and stored in m_ConnRes.
-    // The extensions will have to be extracted from `hspkt` separately.
 
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if (!IsSet(ext_flags, CHandShake::HS_EXT_CONFIG) || hspkt.getLength() <= CHandShake::m_iContentSize)
@@ -2684,7 +2681,7 @@ void CUDT::interpretRejectionMessage(const CHandShake& hs, const CPacket& hspkt)
     uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
     size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
 
-    // XXX Probably common parts with interpretRejectionMessage can be done for this loop
+    // XXX Probably common parts with interpretSrtHandshake() can be done for this loop
 
     uint32_t *begin    = p;
     uint32_t *next     = 0;
@@ -2764,7 +2761,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
     if (hs.m_iVersion < HS_VERSION_SRT1)
-        return false; // do nothing
+        return true; // do nothing
 
     // It's not necessary to check size to fit in the basic handshake,
     // it's already done during handshake serialization.
@@ -10907,10 +10904,10 @@ int CUDT::rejectReason(SRTSOCKET u, int value)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
     if (!s || !s->m_pUDT)
-        return -1;
+        return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
     if (value < SRT_REJC_SERVER)
-        return -1;
+        return APIError(MJ_NOTSUP, MN_INVAL);
 
     s->m_pUDT->m_RejectReason = value;
     return 0;
