@@ -742,7 +742,6 @@ public:
     static const size_t HALF = (OVER-MIN)/2;
 
 private:
-
     static int Diff(uint32_t left, uint32_t right)
     {
         // UNExpected order, diff is negative
@@ -851,6 +850,7 @@ public:
                 number -= OVER - MIN;
         }
     }
+
     operator uint32_t() const { return number; }
 };
 

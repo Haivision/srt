@@ -457,7 +457,6 @@ private:
 
 public:
 
-    // XXX unused now 
     struct BufferedMessageStorage
     {
         size_t blocksize;
