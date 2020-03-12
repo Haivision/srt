@@ -770,7 +770,6 @@ private:
     }
 
 public:
-
     explicit RollNumber(uint32_t val): number(val)
     {
     }
