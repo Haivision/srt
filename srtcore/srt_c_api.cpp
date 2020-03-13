@@ -42,6 +42,10 @@ int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); 
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
 { return CUDT::getGroupData(socketgroup, output, inoutlen); }
+int srt_group_configure(SRTSOCKET socketgroup, const char* str)
+{
+    return CUDT::configureGroup(socketgroup, str);
+}
 // int srt_bind_multicast()
 
 // Binding and connection management
