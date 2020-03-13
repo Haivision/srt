@@ -1192,7 +1192,7 @@ steady_clock::time_point CRcvBuffer::debugGetDeliveryTime(int offset)
     return getPktTsbPdTime(u->m_Packet.getMsgTimeStamp());
 }
 
-int32_t CRcvBuffer::getTopMsgno()
+int32_t CRcvBuffer::getTopMsgno() const
 {
     if (m_iStartPos == m_iLastAckPos)
         return -1; // No message is waiting

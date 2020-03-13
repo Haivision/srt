@@ -8909,8 +8909,8 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         // If no loss, and no packetfilter control packet, pack a new packet.
 
         // check congestion/flow window limit
-        int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
-        int flightspan = getFlightSpan() + 1;
+        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        const int flightspan = getFlightSpan();
         if (cwnd >= flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
@@ -8934,7 +8934,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                 // if this is the very first packet to send.
                 if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
                 {
-                    int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
+                    const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
 
                     HLOGC(mglog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
                             << " from SCHEDULING sequence " << w_packet.m_iSeqNo
@@ -10725,9 +10725,9 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // - flight window == 0
     // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
     if ((is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
-    // OF:
+    // OR:
             // - FASTREXMIT
-            // - flight window > 0
+            // - flight window > 0 (getFlightSpan never returns negative values)
          || (is_fastrexmit && getFlightSpan() != 0))
     {
         retransmit = true;

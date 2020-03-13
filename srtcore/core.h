@@ -953,17 +953,17 @@ public: // internal API
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
-    uint32_t getFlightSpan()
+    int32_t getFlightSpan()
     {
         // This is a number of unacknowledged packets at this moment
         // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
         // however in a case when the sending stopped and all packets were
         // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
-        // Therefore in order to get the real distance, we need to:
-        // - increment m_iSndCurrSeqNo by 1, so that the all-ack results with 0 diff
-        // - result is decreased by 1 so that in the above situation result is -1
-        //   ("one sequence ahead").
-        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+        // Therefore we increase m_iSndCurrSeqNo by 1 forward and then
+        // get the distance towards the last ACK. This way this value may
+        // be only positive or 0.
+
+        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
     }
 
     int minSndSize(int len = 0) const
