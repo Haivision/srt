@@ -7285,7 +7285,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+    perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
     //>new
     perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
@@ -7705,7 +7705,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
         if (m_iRcvLastAckAck == ack)
         {
-            HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << " == last ACKACK (" << reason << ")");
+            HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
             break;
         }
 
@@ -8897,9 +8897,9 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         // If no loss, and no packetfilter control packet, pack a new packet.
 
         // check congestion/flow window limit
-        int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
-        int seqdiff = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
-        if (cwnd >= seqdiff)
+        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        const int flightspan = getFlightSpan() + 1;
+        if (cwnd >= flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
             // send buffer. This should be somehow avoided, the crypto flags should be set
@@ -8922,11 +8922,11 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                 // if this is the very first packet to send.
                 if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
                 {
-                    int seqdiff = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
+                    const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
 
                     HLOGC(mglog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
                             << " from SCHEDULING sequence " << w_packet.m_iSeqNo
-                            << " DIFF: " << seqdiff << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                            << " DIFF: " << packetspan << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
                     // This is the very first packet to be sent; so there's nothing in
                     // the sending buffer yet, and therefore we are in a situation as just
@@ -8937,14 +8937,14 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                     // Additionally send the drop request to the peer so that it
                     // won't stupidly request the packets to be retransmitted.
                     // Don't do it if the difference isn't positive or exceeds the threshold.
-                    if (seqdiff > 0)
+                    if (packetspan > 0)
                     {
                         int32_t seqpair[2];
                         seqpair[0] = m_iSndCurrSeqNo;
                         seqpair[1] = w_packet.m_iSeqNo;
                         HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
                                 << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                                << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
+                                << seqpair[0] << " - " << seqpair[1] << "(" << packetspan << " packets)");
                         sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
                         // In case when this message is lost, the peer will still get the
@@ -8982,7 +8982,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         else
         {
             HLOGC(dlog.Debug, log << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
-                << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << seqdiff);
+                << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
             return std::make_pair(0, enter_time);
@@ -10712,11 +10712,15 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // - LATEREXMIT
     // - flight window == 0
     // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-    if (is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
+    if ((is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
+    // OR:
+            // - FASTREXMIT
+            // - flight window > 0
+         || (is_fastrexmit && getFlightSpan() != 0))
+    {
         retransmit = true;
+    }
 
-    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, unsent_seqno) > 0))
-        retransmit = true;
 
     if (retransmit)
     {
@@ -11044,7 +11048,7 @@ void CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
 // GROUP
 
 
-std::list<CUDTGroup::SocketData> CUDTGroup::s_NoGroup;
+std::list<CUDTGroup::SocketData> CUDTGroup::GroupContainer::s_NoList;
 
 
 CUDTGroup::gli_t CUDTGroup::add(SocketData data)
@@ -11098,7 +11102,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         -1, -1,
         sockaddr_any(), sockaddr_any(),
         false, false, false,
-        0
+        0 // priority
     };
     return sd;
 }
@@ -11171,6 +11175,44 @@ CUDTGroup::~CUDTGroup()
     releaseMutex(m_RcvDataLock);
     releaseCond(m_RcvDataCond);
 }
+
+void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
+{
+    if (it == m_LastActiveLink)
+    {
+        if (m_List.empty())
+        {
+            LOGC(mglog.Error, log << "IPE: GroupContainer is empty and 'erase' is called on it.");
+            return; // this avoids any misunderstandings in iterator checks
+        }
+
+        gli_t bb = m_List.begin();
+        ++bb;
+        if (bb == m_List.end()) // means: m_List.size() == 1
+        {
+            // One element, this one being deleted, nothing to point to.
+            m_LastActiveLink = null();
+        }
+        else
+        {
+            // Set the link to the previous element IN THE RING.
+            // We have the position pointer.
+            // Reverse iterator is automatically decremented.
+            std::reverse_iterator<gli_t> rt (m_LastActiveLink);
+            if (rt == m_List.rend())
+                rt = m_List.rbegin();
+
+            m_LastActiveLink = rt.base();
+
+            // This operation is safe because we know that:
+            // - the size of the container is at least 2 (0 and 1 cases are handled above)
+            // - if m_LastActiveLink == m_List.begin(), `rt` is shifted to the opposite end.
+            --m_LastActiveLink;
+        }
+    }
+    m_List.erase(it);
+}
+
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
@@ -13525,7 +13567,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
     }
 }
 
-void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli_t>& w_wipeme)
+void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gli_t>& w_wipeme)
 {
     // If we have at least one stable link, then select a link that have the
     // highest priority and silence the rest.
@@ -13539,7 +13581,7 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
     //
     if (!pending.empty())
     {
-        HLOGC(dlog.Debug, log << "grp/sendBackup: found pending sockets, polling them.");
+        HLOGC(dlog.Debug, log << "grp/send*: found pending sockets, polling them.");
 
         // These sockets if they are in pending state, they should be added to m_SndEID
         // at the connecting stage.
@@ -13548,7 +13590,7 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
         if (m_SndEpolld->watch_empty())
         {
             // Sanity check - weird pending reported.
-            LOGC(dlog.Error, log << "grp/sendBackup: IPE: reported pending sockets, but EID is empty - wiping pending!");
+            LOGC(dlog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
             copy(pending.begin(), pending.end(), back_inserter(w_wipeme));
         }
         else
@@ -13558,7 +13600,7 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
                 m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
             }
 
-            HLOGC(dlog.Debug, log << "grp/sendBackup: RDY: " << DisplayEpollResults(sready));
+            HLOGC(dlog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to w_wipeme.
             for (vector<gli_t>::const_iterator i = pending.begin(); i != pending.end(); ++i)
@@ -13566,7 +13608,7 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
                 gli_t d = *i;
                 if (CEPoll::isready(sready, d->id, SRT_EPOLL_ERR))
                 {
-                    HLOGC(dlog.Debug, log << "grp/sendBackup: Socket @" << d->id << " reported FAILURE - moved to wiped.");
+                    HLOGC(dlog.Debug, log << "grp/send*: Socket @" << d->id << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to w_wipeme. Remove from eid.
                     w_wipeme.push_back(d);
                     m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
@@ -13582,7 +13624,10 @@ void CUDTGroup::send_CheckBrokenSockets(const vector<gli_t>& pending, vector<gli
             m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
         }
     }
+}
 
+void CUDTGroup::send_CloseBrokenSockets(vector<gli_t>& w_wipeme)
+{
     // Review the w_wipeme sockets.
     // The reason why 'w_wipeme' is kept separately to 'broken_sockets' is that
     // it might theoretically happen that ps becomes NULL while the item still exists.
@@ -14128,7 +14173,9 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
                 << (sendable.size() - nunstable) << " unstable=" << nunstable);
     }
 
-    send_CheckBrokenSockets(pending, (wipeme));
+    send_CheckPendingSockets(pending, (wipeme));
+
+    send_CloseBrokenSockets((wipeme));
 
     sendBackup_CheckParallelLinks(nunstable, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
 
@@ -14381,3 +14428,43 @@ void CUDTGroup::internalKeepalive(gli_t gli)
 }
 
 CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
+
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    /* TMP review stub case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;*/
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
+}
