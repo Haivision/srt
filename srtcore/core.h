@@ -343,7 +343,7 @@ public:
 
     void setFreshConnected(CUDTSocket* sock);
 
-    static gli_t gli_NULL() { return s_NoGroup.end(); }
+    static gli_t gli_NULL() { return GroupContainer::null(); }
 
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
@@ -366,7 +366,8 @@ private:
             CUDTException& w_cx, std::vector<Sendstate>& w_sendstates,
             std::vector<gli_t>& w_parallel, std::vector<gli_t>& w_wipeme,
             const std::string& activate_reason);
-    void send_CheckBrokenSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
+    void send_CheckPendingSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
+    void send_CloseBrokenSockets(std::vector<gli_t>& w_wipeme);
     void sendBackup_CheckParallelLinks(const size_t nunstable, std::vector<gli_t>& w_parallel,
             int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx);
 
@@ -418,6 +419,7 @@ public:
 
     void syncWithSocket(const CUDT& core);
     int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
+    int configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -449,8 +451,43 @@ private:
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
-    std::list<SocketData> m_Group;
-    static std::list<SocketData> s_NoGroup; // This is to have a predictable "null iterator".
+    struct GroupContainer
+    {
+        std::list<SocketData> m_List;
+        static std::list<SocketData> s_NoList; // This is to have a predictable "null iterator".
+
+        /// This field is used only by some types of groups that need
+        /// to keep track as to which link was lately used. Note that
+        /// by removal of a node from the m_List container, this link
+        /// must be appropriately reset.
+        gli_t m_LastActiveLink;
+
+        GroupContainer(): m_LastActiveLink(s_NoList.begin()) {}
+
+        //Property<gli_t> active = { m_LastActiveLink; }
+        SRTU_PROPERTY_RW(gli_t, active, m_LastActiveLink);
+
+        gli_t begin() { return m_List.begin(); }
+        gli_t end() { return m_List.end(); }
+        static gli_t null() { return s_NoList.begin(); }
+        bool empty() { return m_List.empty(); }
+        void push_back(const SocketData& data)
+        {
+            m_List.push_back(data);
+        }
+        void clear()
+        {
+            m_LastActiveLink = null();
+            m_List.clear();
+        }
+        size_t size()
+        {
+            return m_List.size();
+        }
+
+        void erase(gli_t it);
+    };
+    GroupContainer m_Group;
     bool m_selfManaged;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
@@ -728,6 +765,7 @@ public: //API
     static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    static int configureGroup(SRTSOCKET groupid, const char* str);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, UDPSOCKET udpsock);
@@ -858,6 +896,19 @@ public: // internal API
     int32_t peerISN() const { return m_iPeerISN; }
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
+
+    uint32_t getFlightSpan()
+    {
+        // This is a number of unacknowledged packets at this moment
+        // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
+        // however in a case when the sending stopped and all packets were
+        // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
+        // Therefore in order to get the real distance, we need to:
+        // - increment m_iSndCurrSeqNo by 1, so that the all-ack results with 0 diff
+        // - result is decreased by 1 so that in the above situation result is -1
+        //   ("one sequence ahead").
+        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+    }
 
     int minSndSize(int len = 0) const
     {
@@ -1050,9 +1101,7 @@ private:
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
-
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
-
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
@@ -1152,7 +1201,7 @@ private:
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
-    static std::vector<int32_t> groupPacketArrival(void* vself, CPacket& pkt);
+    static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
