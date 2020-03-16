@@ -290,7 +290,7 @@ int CUDTUnited::cleanup()
    // after which the m_bClosing flag is cheched, which
    // is set here above. Worst case secenario, this
    // pthread_join() call will block for 1 second.
-   CSyncMono::signal_relaxed(m_GCStopCond);
+   CSync::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
