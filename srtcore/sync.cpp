@@ -19,10 +19,9 @@
 #define TIMING_USE_QPC
 #include "win/wintime.h"
 #include <sys/timeb.h>
-#elif defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif defined(OSX) || (TARGET_OS_OSX == 1) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
 #define TIMING_USE_MACH_ABS_TIME
 #include <mach/mach_time.h>
-//#elif defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_TIMERS > 0
 #elif defined(ENABLE_MONOTONIC_CLOCK)
 #define TIMING_USE_CLOCK_GETTIME
 #endif
@@ -56,6 +55,11 @@ void rdtsc(uint64_t& x)
     QueryPerformanceCounter((LARGE_INTEGER*)&x);
 #elif defined(TIMING_USE_MACH_ABS_TIME)
     x = mach_absolute_time();
+#elif defined(TIMING_USE_CLOCK_GETTIME)
+    // get_cpu_frequency() returns 1 us accuracy in this case
+    timespec tm;
+    clock_gettime(CLOCK_MONOTONIC, &tm);
+    x = tm.tv_sec * uint64_t(1000000) + (tm.tv_nsec / 1000);
 #else
     // use system call to read time clock for other archs
     timeval t;
@@ -72,6 +76,9 @@ int64_t get_cpu_frequency()
     LARGE_INTEGER ccf; // in counts per second
     if (QueryPerformanceFrequency(&ccf))
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+
+#elif defined(TIMING_USE_CLOCK_GETTIME)
+    frequency = 1;
 
 #elif defined(TIMING_USE_MACH_ABS_TIME)
 
@@ -101,6 +108,26 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 } // namespace sync
 } // namespace srt
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Sync utilities section
+//
+////////////////////////////////////////////////////////////////////////////////
+
+static timespec us_to_timespec(const uint64_t time_us)
+{
+    timespec timeout;
+    timeout.tv_sec         = time_us / 1000000;
+    timeout.tv_nsec        = (time_us % 1000000) * 1000;
+    return timeout;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// TimePoint section
+//
+////////////////////////////////////////////////////////////////////////////////
 
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
@@ -263,7 +290,7 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CCondVar section (based on pthreads)
+// Condition section (based on pthreads)
 //
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef USE_STDCXX_CHRONO
@@ -273,28 +300,15 @@ namespace srt
 namespace sync
 {
 
-template<>
-CCondVar<true>::CCondVar()
+Condition::Condition()
 #ifdef _WIN32
     : m_cv(PTHREAD_COND_INITIALIZER)
 #endif
 {}
 
-template<>
-CCondVar<false>::CCondVar()
-#ifdef _WIN32
-    : m_cv(PTHREAD_COND_INITIALIZER)
-#endif
-{}
+Condition::~Condition() {}
 
-template<>
-CCondVar<true>::~CCondVar() {}
-
-template<>
-CCondVar<false>::~CCondVar() {}
-
-template<>
-void CCondVar<true>::init()
+void Condition::init()
 {
     pthread_condattr_t* attr = NULL;
 #if ENABLE_MONOTONIC_CLOCK
@@ -308,56 +322,32 @@ void CCondVar<true>::init()
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }
 
-template<>
-void CCondVar<false>::init()
-{
-    const int res = pthread_cond_init(&m_cv, NULL);
-    if (res != 0)
-        throw std::runtime_error("pthread_cond_init failed");
-}
-
-template<>
-void CCondVar<true>::destroy()
+void Condition::destroy()
 {
     pthread_cond_destroy(&m_cv);
 }
 
-template<>
-void CCondVar<false>::destroy()
-{
-    pthread_cond_destroy(&m_cv);
-}
-
-template<>
-void CCondVar<true>::wait(UniqueLock& lock)
+void Condition::wait(UniqueLock& lock)
 {
     pthread_cond_wait(&m_cv, &lock.mutex()->ref());
 }
 
-template<>
-void CCondVar<false>::wait(UniqueLock& lock)
+bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
-    pthread_cond_wait(&m_cv, &lock.mutex()->ref());
-}
-
-template<>
-bool CCondVar<true>::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
-{
+    timespec timeout;
 #if ENABLE_MONOTONIC_CLOCK
-    return (SyncEvent::wait_for_monotonic(&m_cv, &lock.mutex()->ref(), rel_time) != ETIMEDOUT);
+    clock_gettime(CLOCK_MONOTONIC, &timeout);
+    const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
+#else
+    timeval now;
+    gettimeofday(&now, 0);
+    const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
 #endif
-
-    return (SyncEvent::wait_for(&m_cv, &lock.mutex()->ref(), rel_time) != ETIMEDOUT);
+    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
+    return pthread_cond_timedwait(&m_cv, &lock.mutex()->ref(), &timeout) != ETIMEDOUT;
 }
 
-template<>
-bool CCondVar<false>::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
-{
-    return (SyncEvent::wait_for(&m_cv, &lock.mutex()->ref(), rel_time) != ETIMEDOUT);
-}
-
-template<>
-bool CCondVar<true>::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
     // This will work regardless as to which clock is in use. The time
     // should be specified as steady_clock::time_point, so there's no
@@ -370,40 +360,12 @@ bool CCondVar<true>::wait_until(UniqueLock& lock, const steady_clock::time_point
     return wait_for(lock, timeout_time - now);
 }
 
-template<>
-bool CCondVar<false>::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
-{
-    // This will work regardless as to which clock is in use. The time
-    // should be specified as steady_clock::time_point, so there's no
-    // question of the timer base.
-    const steady_clock::time_point now = steady_clock::now();
-    if (now >= timeout_time)
-        return false; // timeout
-
-    // wait_for() is used because it will be converted to pthread-frienly timeout_time inside.
-    return wait_for(lock, timeout_time - now);
-}
-
-template<>
-void CCondVar<true>::notify_one()
+void Condition::notify_one()
 {
     pthread_cond_signal(&m_cv);
 }
 
-template<>
-void CCondVar<false>::notify_one()
-{
-    pthread_cond_signal(&m_cv);
-}
-
-template<>
-void CCondVar<true>::notify_all()
-{
-    pthread_cond_broadcast(&m_cv);
-}
-
-template<>
-void CCondVar<false>::notify_all()
+void Condition::notify_all()
 {
     pthread_cond_broadcast(&m_cv);
 }
@@ -412,49 +374,6 @@ void CCondVar<false>::notify_all()
 }; // namespace srt
 
 #endif // ndef USE_STDCXX_CHRONO
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// SyncEvent section
-//
-////////////////////////////////////////////////////////////////////////////////
-
-static timespec us_to_timespec(const uint64_t time_us)
-{
-    timespec timeout;
-    timeout.tv_sec         = time_us / 1000000;
-    timeout.tv_nsec        = (time_us % 1000000) * 1000;
-    return timeout;
-}
-
-int srt::sync::SyncEvent::wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
-{
-    timespec timeout;
-    timeval now;
-    gettimeofday(&now, 0);
-    const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
-    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
-
-    return pthread_cond_timedwait(cond, mutex, &timeout);
-}
-
-#if ENABLE_MONOTONIC_CLOCK
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
-{
-    timespec timeout;
-    clock_gettime(CLOCK_MONOTONIC, &timeout);
-    const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
-    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
-
-    return pthread_cond_timedwait(cond, mutex, &timeout);
-}
-#else
-int srt::sync::SyncEvent::wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const Duration<steady_clock>& rel_time)
-{
-    return wait_for(cond, mutex, rel_time);
-}
-#endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -469,14 +388,12 @@ srt::sync::CEvent::CEvent()
 #endif
 }
 
-
 srt::sync::CEvent::~CEvent()
 {
 #ifndef _WIN32
     m_cond.destroy();
 #endif
 }
-
 
 bool srt::sync::CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
@@ -516,9 +433,7 @@ void srt::sync::CEvent::wait(UniqueLock& lock)
     return m_cond.wait(lock);
 }
 
-
 srt::sync::CEvent g_Sync;
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
