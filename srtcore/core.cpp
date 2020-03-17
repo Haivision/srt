@@ -15614,7 +15614,8 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
 
             total_flight += flight;
 
-            linkdata.push_back( (LinkCapableData){li, flight} );
+            LinkCapableData lcd = {li, flight};
+            linkdata.push_back(lcd);
         }
 
         if (linkdata.empty())
