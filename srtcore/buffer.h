@@ -482,7 +482,7 @@ public:
 
 public:
 
-   int32_t getTopMsgno();
+   int32_t getTopMsgno() const;
 
    // @return Wrap check value
    bool getInternalTimeBase(time_point& w_tb, duration& w_udrift);
