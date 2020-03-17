@@ -218,6 +218,9 @@ public:
         bool ready_write;
         bool ready_error;
 
+        // Balancing data
+        double load_factor;
+        double unit_load;
         // Configuration
         int priority;
     };
@@ -348,6 +351,7 @@ public:
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc);
 
 private:
     // For Backup, sending all previous packet
@@ -373,6 +377,7 @@ private:
 
 public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
+    int recvBalancing(char* buf, int len, SRT_MSGCTRL& w_mc);
 
     void close();
 
@@ -623,20 +628,26 @@ private:
     {
         std::vector<char> packet;
         SRT_MSGCTRL mctrl;
-        ReadPos(int32_t s): mctrl(srt_msgctrl_default)
+        ReadPos(int32_t s, SRT_GROUP_TYPE gt): mctrl(srt_msgctrl_default)
         {
-            mctrl.pktseq = s;
+            if (gt == SRT_GTYPE_BALANCING)
+                mctrl.msgno = s;
+            else
+                mctrl.pktseq = s;
         }
     };
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
     ReadPos* checkPacketAhead();
+    ReadPos* checkPacketAheadMsgno();
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to -1 so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
+    // Version used when using msgno synchronization.
+    volatile int32_t m_RcvBaseMsgNo;
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
@@ -653,6 +664,46 @@ private:
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     volatile int32_t m_iLastSchedMsgNo;
+    unsigned int m_uBalancingRoll;
+
+    /// This is initialized with some number that should be
+    /// decreased with every packet sent. Any decision and
+    /// analysis for a decision concerning balancing group behavior
+    /// should be taken only when this value is 0. During some
+    /// of the analysis steps this value may be reset to some
+    /// higer value so that for particular number of packets
+    /// no analysis is being done (this prevents taking measurement
+    /// data too early when the number of collected data was
+    /// too little and therefore any average is little reliable).
+    unsigned int m_RandomCredit;
+
+    struct BalancingLinkState
+    {
+        gli_t ilink; // previously used link
+        int status;  // 0 = normal first entry; -1 = repeated selection
+        int errorcode;
+    };
+    typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
+    CallbackHolder<selectLink_cb> m_cbSelectLink;
+
+    // Plain algorithm: simply distribute the load
+    // on all links equally.
+    gli_t linkSelect_plain(const BalancingLinkState&);
+    static gli_t linkSelect_plain_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_plain(st);
+    }
+
+    // Window algorihm: keep balance, but mind the sending cost
+    // for every link basing on the flight window size. Keep links
+    // balanced according to the cost of sending.
+    gli_t linkSelect_window(const BalancingLinkState&);
+    static gli_t linkSelect_window_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_window(st);
+    }
 
 public:
     // Required after the call on newGroup on the listener side.
@@ -678,7 +729,12 @@ public:
         // this is going to be past the ISN, at worst it will be caused
         // by TLPKTDROP.
         m_RcvBaseSeqNo = -1;
+        m_RcvBaseMsgNo = -1;
     }
+    int baseOffset(SRT_MSGCTRL& mctrl);
+    int baseOffset(ReadPos& pos);
+    bool seqDiscrepancy(SRT_MSGCTRL& mctrl);
+    bool msgDiscrepancy(SRT_MSGCTRL& mctrl);
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
@@ -897,17 +953,17 @@ public: // internal API
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
-    uint32_t getFlightSpan()
+    int32_t getFlightSpan()
     {
         // This is a number of unacknowledged packets at this moment
         // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
         // however in a case when the sending stopped and all packets were
         // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
-        // Therefore in order to get the real distance, we need to:
-        // - increment m_iSndCurrSeqNo by 1, so that the all-ack results with 0 diff
-        // - result is decreased by 1 so that in the above situation result is -1
-        //   ("one sequence ahead").
-        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+        // Therefore we increase m_iSndCurrSeqNo by 1 forward and then
+        // get the distance towards the last ACK. This way this value may
+        // be only positive or 0.
+
+        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
     }
 
     int minSndSize(int len = 0) const
@@ -1395,6 +1451,9 @@ private: // Timers
         m_iRcvLastAckAck = isn;
         m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
     }
+
+
+    volatile int m_iSndMinFlightSpan;            // updated with every ACK, number of packets in flight at ACK
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
