@@ -14681,7 +14681,6 @@ RETRY_READING:
                 // achieves CONNECTING state, then it's added to write.
                 // Or gets broken and closed in the next step.
                 continue;
-
             }
 
             still_alive = true;
@@ -14708,7 +14707,6 @@ RETRY_READING:
             read_ready.push_back(gi->id);
             HCLOG(ds << "@" << gi->id << "[READ] ");
         }
-
     }
 
     int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
@@ -14781,7 +14779,6 @@ RETRY_READING:
         // non-blocking mode.
         throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
     }
-
 
     // Handle sockets of pending connection and with errors.
 
