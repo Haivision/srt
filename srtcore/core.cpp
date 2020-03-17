@@ -14492,6 +14492,46 @@ void CUDTGroup::internalKeepalive(gli_t gli)
 
 CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
 
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
+}
+
 int CUDTGroup::baseOffset(SRT_MSGCTRL& mctrl)
 {
     return CSeqNo::seqoff(m_RcvBaseSeqNo, mctrl.pktseq);
@@ -15426,46 +15466,6 @@ int CUDTGroup::sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
     return stat;
-}
-
-int CUDTGroup::configure(const char* str)
-{
-    string config = str;
-    switch (type())
-    {
-    case SRT_GTYPE_BALANCING:
-        // config contains the algorithm name
-        if (config == "" || config == "plain")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
-            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
-        }
-        else if (config == "window")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
-            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
-        }
-        else
-        {
-            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
-                    << config << "'");
-            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        break;
-
-    default:
-        if (config == "")
-        {
-            // You can always call the config with empty string,
-            // it should set defaults or do nothing, if not supported.
-            return 0;
-        }
-        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return 0;
 }
 
 CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
