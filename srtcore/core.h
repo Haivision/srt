@@ -1391,6 +1391,7 @@ private: // Timers
     time_point m_tsLastAckTime;                 // Timestamp of last ACK
     duration m_tdMinNakInterval;                // NAK timeout lower bound; too small value can cause unnecessary retransmission
     duration m_tdMinExpInterval;                // timeout lower bound threshold: too small timeout can cause problem
+    duration m_tdAvgResponseTime;               // average response time (based on m_tsLastRspTime) for stats
 
     int m_iPktCount;                          // packet counter for ACK
     int m_iLightACKCount;                     // light ACK counter
@@ -1651,6 +1652,7 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+    time_point m_tsActivationTime; // for stats - time when IDLE -> RUNNING switch happened
     time_point m_tsTmpActiveTime;  // time since temporary activated, or 0 if not temporary activated
     time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
     

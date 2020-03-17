@@ -310,7 +310,12 @@ string OptionHelpItem(const OptionName& o)
 class SrtStatsJson : public SrtStatsWriter
 {
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    string WriteStats(int sid, const CBytePerfMon& mon) override
+    {
+        return WriteSockStats(sid, mon) + "\n";
+    }
+
+    string WriteSockStats(int sid, const CBytePerfMon& mon)
     { 
         std::ostringstream output;
         output << "{";
@@ -350,14 +355,80 @@ public:
         output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsRecvRate;
         output << "}";
-        output << "}" << endl;
+        output << "}";
         return output.str();
-    } 
+    }
+
+    string WriteStats(int sid, const SRT_SOCKGROUPDATA* gdata, const CGroupPerfMon& mon, const CBytePerfMon* sockmon) override
+    {
+        std::ostringstream output;
+        output << "{";
+        output << R"("sid":)" << sid << ",";
+        output << R"("time":)" << mon.msTimeStamp << ",";
+        output << R"("send":{)";
+        output << R"("packets":)" << mon.pktSent << ",";
+        output << R"("bytes":)" << mon.byteSent << ",";
+        output << R"("mbitRate":)" << mon.mbpsSendRate;
+        output << "},";
+        output << R"("recv": {)";
+        output << R"("packets":)" << mon.pktRecv << ",";
+        output << R"("packetsDropped":)" << mon.pktRcvDrop << ",";
+        output << R"("bytes":)" << mon.byteRecv << ",";
+        output << R"("bytesDropped":)" << mon.byteRcvDrop << ",";
+        output << R"("mbitRate":)" << mon.mbpsRecvRate;
+        output << "},";
+        output << R"("members": [)";
+        bool in = false;
+        for (size_t i = 0; i < mon.members_size; ++i)
+        {
+            if (in)
+            {
+                output << ", ";
+            }
+            else
+            {
+                in = true;
+            }
+
+            CGroupMemberPerfMon& gm = mon.members[i];
+            output << R"({"socket":)";
+            output << WriteSockStats(gdata[i].id, sockmon[i]) << ", ";
+            output << R"("member": {)";
+            output << R"("avgRspTime":)" << gm.msAvgResponseTime << ", ";
+            output << R"("adjLatency":)" << gm.msRcvTsbPdDelayAdjusted;
+            output << "}}";
+        }
+
+        output << "]}" << endl;
+        return output.str();
+    }
 
     string WriteBandwidth(double mbpsBandwidth) override 
     {
         std::ostringstream output;
         output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
+        return output.str();
+    }
+
+    string WriteBandwidth(const SRT_SOCKGROUPDATA* data, const CBytePerfMon* gs, size_t size) override
+    {
+        std::ostringstream output;
+        bool in = false;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (in)
+            {
+                output << ",\n";
+            }
+            else
+            {
+                in = true;
+            }
+
+            output << R"({ "sid":)" << data[i].id << ", "
+                << R"("bandwidth":)" << gs[i].mbpsBandwidth << "}";
+        }
+        output << endl;
         return output.str();
     }
 };
@@ -424,11 +495,21 @@ public:
         return output.str();
     }
 
+    string WriteStats(int , const SRT_SOCKGROUPDATA* , const CGroupPerfMon& , const CBytePerfMon* ) override
+    {
+        return "NOT IMPLEMENTED\n";
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override 
     {
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
+    }
+
+    std::string WriteBandwidth(const SRT_SOCKGROUPDATA* , const CBytePerfMon* , size_t ) override
+    {
+        return "NOT IMPLEMENTED";
     }
 };
 
@@ -454,11 +535,21 @@ public:
         return output.str();
     } 
 
+    string WriteStats(int , const SRT_SOCKGROUPDATA* , const CGroupPerfMon& , const CBytePerfMon* ) override
+    {
+        return "NOT IMPLEMENTED\n";
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override 
     {
         std::ostringstream output;
         output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
         return output.str();
+    }
+
+    std::string WriteBandwidth(const SRT_SOCKGROUPDATA* , const CBytePerfMon* , size_t ) override
+    {
+        return "NOT IMPLEMENTED";
     }
 };
 

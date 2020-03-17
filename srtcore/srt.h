@@ -457,12 +457,12 @@ struct CGroupPerfMon
     // local measurements
     int64_t  pktSent;                    // number of sent data packets (only direct data)
     int64_t  pktRecv;                    // number of received packets
-    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
     int      pktRcvDrop;                 // number of too-late-to play missing packets
     uint64_t byteSent;                   // number of sent data bytes (directly)
     uint64_t byteRecv;                   // number of received (delivered) bytes
     uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
 
+    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
     double   mbpsSendRate;               // sending rate in Mb/s
     double   mbpsRecvRate;               // receiving rate in Mb/s
 
@@ -905,6 +905,7 @@ SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 // permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
+SRT_API int srt_group_bstats(SRTSOCKET gu, SRT_GROUPBSTATS* perf, int clear);
 // Socket Status (for problem tracking)
 SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 

@@ -1138,6 +1138,26 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
     hostport_copy = os.str();
 }
 
+static void PrintGroupStats(SRTSOCKET group, SRT_SOCKGROUPDATA* grpdata, size_t size, bool bw,  bool stats)
+{
+    vector<CGroupMemberPerfMon> mem_perf(size);
+    vector<CBytePerfMon> sock_perf(size);
+    CGroupPerfMon grp_perf;
+    grp_perf.members = mem_perf.data();
+    grp_perf.members_size = size;
+
+    srt_group_bstats(group, &grp_perf, true);
+
+    for (size_t i = 0; i < size; ++i)
+        srt_bstats(grpdata[i].id, &sock_perf[i], true);
+
+    if (bw)
+        cout << transmit_stats_writer->WriteBandwidth(grpdata, sock_perf.data(), size);
+    if (stats)
+        cout << transmit_stats_writer->WriteStats(group, grpdata, grp_perf, sock_perf.data());
+
+}
+
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
 {
     CBytePerfMon perf;
@@ -1896,8 +1916,7 @@ bytevector SrtSource::Read(size_t chunk)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
-            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
-                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+            PrintGroupStats(m_sock, mctrl.grpdata, mctrl.grpdata_size, need_bw_report, need_stats_report);
         }
     }
     else
@@ -1981,8 +2000,7 @@ void SrtTarget::Write(const bytevector& data)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
-            for (size_t i = 0; i < mctrl.grpdata_size; ++i)
-                PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
+            PrintGroupStats(m_sock, mctrl.grpdata, mctrl.grpdata_size, need_bw_report, need_stats_report);
         }
     }
     else

@@ -59,6 +59,7 @@ public: // Assignment operators
     inline Duration operator+(const Duration& rhs) const { return Duration(m_duration + rhs.m_duration); }
     inline Duration operator-(const Duration& rhs) const { return Duration(m_duration - rhs.m_duration); }
     inline Duration operator*(const int& rhs) const { return Duration(m_duration * rhs); }
+    inline Duration operator/(const int& rhs) const { return Duration(m_duration / rhs); }
 
 private:
     // int64_t range is from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807

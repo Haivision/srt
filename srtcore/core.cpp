@@ -1446,6 +1446,7 @@ void CUDT::open()
     m_tsLastSndTime                        = currtime;
 
     m_iReXmitCount   = 1;
+    m_tsActivationTime = steady_clock::zero();
     m_tsUnstableSince = steady_clock::zero();
     m_tsTmpActiveTime = steady_clock::zero();
     m_iPktCount      = 0;
@@ -5953,6 +5954,13 @@ SRT_REJECT_REASON CUDT::setupCC()
 
     // Update timers
     const steady_clock::time_point currtime = steady_clock::now();
+
+    const steady_clock::duration response_time = currtime - m_tsLastReqTime;
+    if (m_tdAvgResponseTime == steady_clock::duration::zero())
+        m_tdAvgResponseTime = response_time;
+    else
+        m_tdAvgResponseTime = avg_iir<10>(m_tdAvgResponseTime, response_time);
+
     m_tsLastRspTime          = currtime;
     m_tsNextACKTime          = currtime + m_tdACKInterval;
     m_tsNextNAKTime          = currtime + m_tdNAKInterval;
@@ -9919,6 +9927,7 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
         {
             HLOGC(mglog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
             gi->rcvstate = CUDTGroup::GST_RUNNING;
+            gi->ps->core().m_tsActivationTime = steady_clock::now();
             return output;
         }
     }
@@ -11875,6 +11884,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (stat != -1)
         {
+            if (d->sndstate != GST_RUNNING)
+                d->ps->core().m_tsActivationTime = steady_clock::now();
+
             d->sndstate = GST_RUNNING;
 
             // Note: this will override the sequence number
@@ -13263,9 +13275,13 @@ void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
                 ++d, ++pp)
         {
             pp->msTimeUsage = count_milliseconds(now - d->ps->core().m_stats.tsStartTime);
-            //pp->msTimeActive = count_milliseconds(now - d->ps->core().m_tsActivationTime);
-            //pp->msAvgResponseTime = d->ps->core().m_dAvgResponseTime;
-            //pp->msRcvTsbPdDelayAdjusted ???
+            pp->msTimeActive = count_milliseconds(now - d->ps->core().m_tsActivationTime);
+            pp->msAvgResponseTime = count_milliseconds(d->ps->core().m_tdAvgResponseTime);
+
+            // XXX No idea so far how to measure it.
+            // This should be probably the value of the latency plus drift,
+            // but then, it's probably more worth to report as per socket stats.
+            // pp->msRcvTsbPdDelayAdjusted
         }
 
         perf->members_size = m_Group.size();
@@ -13605,6 +13621,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             {
                 steady_clock::time_point currtime = steady_clock::now();
                 d->ps->core().m_tsTmpActiveTime = currtime;
+                d->ps->core().m_tsActivationTime = currtime;
                 HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
                         << " LINK ACTIVATED (pri: " << d->priority << ").");
             }
@@ -13913,6 +13930,8 @@ RetryWaitBlocked:
             w_final_stat = stat;
             steady_clock::time_point currtime = steady_clock::now();
             d->ps->core().m_tsTmpActiveTime = currtime;
+            if (d->sndstate != GST_RUNNING)
+                d->ps->core().m_tsActivationTime = currtime;
             d->sndstate = GST_RUNNING;
             w_none_succeeded = false;
             HLOGC(dlog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
