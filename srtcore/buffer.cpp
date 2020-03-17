@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     Block* s = m_pLastBlock;
 
-    if (w_msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    if (w_msgno == -1) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
