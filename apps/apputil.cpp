@@ -365,6 +365,8 @@ public:
         output << "{";
         output << R"("sid":)" << sid << ",";
         output << R"("time":)" << mon.msTimeStamp << ",";
+        output << R"("nconnected":)" << mon.numberConnected << ",";
+        output << R"("nbroken":)" << mon.numberBreaks << ",";
         output << R"("send":{)";
         output << R"("packets":)" << mon.pktSent << ",";
         output << R"("bytes":)" << mon.byteSent << ",";
