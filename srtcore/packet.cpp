@@ -632,4 +632,5 @@ std::string CPacket::Info()
 
     return os.str();
 }
+
 #endif
