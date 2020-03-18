@@ -15516,6 +15516,24 @@ struct LinkCapableData
     int flight;
 };
 
+CUDTGroup::gli_t CUDTGroup::linkSelect_window_ReportLink(CUDTGroup::gli_t this_link)
+{
+
+    // When a link is used for sending, the load factor is
+    // increased by this link's unit load, which is calculated
+    // basing on how big share among all flight sizes this link has.
+    // The larger the flight window, the bigger the unit load.
+    // This unit load then defines how much "it costs" to send
+    // a packet over that link. The bigger this value is then,
+    // the less often will this link be selected among others.
+
+    this_link->load_factor += this_link->unit_load;
+
+    HLOGC(dlog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+            << " selected, upd load_factor=" << this_link->load_factor);
+    return this_link;
+}
+
 CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkState& state)
 {
     if (state.ilink == gli_NULL())
@@ -15587,7 +15605,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
             {
                 HLOGC(dlog.Debug, log << "linkSelect_window: ... load factor empty: SELECTING.");
                 this_link = li;
-                goto ReportLink;
+                return linkSelect_window_ReportLink(this_link);
             }
 
             ++number_links;
@@ -15607,7 +15625,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
                 // scenario, the probing will happen again in 16 packets).
                 m_RandomCredit = 16 * number_links;
 
-                goto ReportLink;
+                return linkSelect_window_ReportLink(this_link);
             }
             flight += 2; // prevent having 0 used for equations
 
@@ -15690,7 +15708,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
         }
 
         // The above loop certainly found something.
-        goto ReportLink;
+        return linkSelect_window_ReportLink(this_link);
     }
 
     HLOGC(dlog.Debug, log << "linkSelect_window: remaining credit: " << m_RandomCredit
@@ -15732,21 +15750,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
         // Check maybe next link...
     }
 
-ReportLink:
-
-    // When a link is used for sending, the load factor is
-    // increased by this link's unit load, which is calculated
-    // basing on how big share among all flight sizes this link has.
-    // The larger the flight window, the bigger the unit load.
-    // This unit load then defines how much "it costs" to send
-    // a packet over that link. The bigger this value is then,
-    // the less often will this link be selected among others.
-
-    this_link->load_factor += this_link->unit_load;
-
-    HLOGC(dlog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
-            << " selected, upd load_factor=" << this_link->load_factor);
-    return this_link;
+    return linkSelect_window_ReportLink(this_link);
 }
 
 

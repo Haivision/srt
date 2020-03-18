@@ -704,6 +704,7 @@ private:
         CUDTGroup* g = (CUDTGroup*)opaq;
         return g->linkSelect_window(st);
     }
+    CUDTGroup::gli_t linkSelect_window_ReportLink(CUDTGroup::gli_t this_link);
 
 public:
     // Required after the call on newGroup on the listener side.
