@@ -11719,7 +11719,6 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     case SRT_GTYPE_BALANCING:
         return sendBalancing(buf, len, (w_mc));
-        //return old_sendBalancing(buf, len, r_mc);
 
         /* to be implemented
     case SRT_GTYPE_MULTICAST:
@@ -15749,6 +15748,5 @@ ReportLink:
             << " selected, upd load_factor=" << this_link->load_factor);
     return this_link;
 }
-
 
 
