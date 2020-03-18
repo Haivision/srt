@@ -1481,7 +1481,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
                    although it's not necessary because destroyed
                    sockets are removed from eids in the end. The problem
                    is that there's some mistake in the implementation and
-                   those below cause misleading IPE message to be printed
+                   those below cause misleading IPE message to be printed.
+                   PR #1127 is intended to fix the misleading IPE report.
 
                 srt_epoll_remove_usock(eid, sid);
                 srt_epoll_remove_usock(g.m_SndEID, sid);

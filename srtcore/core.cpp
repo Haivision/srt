@@ -6440,6 +6440,15 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         return 0;
     }
 
+    if (w_mctrl.msgno != -1) // most unlikely, unless you use balancing groups
+    {
+        if (w_mctrl.msgno < 1 || w_mctrl.msgno > MSGNO_SEQ_MAX)
+        {
+            LOGC(dlog.Error, log << "INVALID forced msgno " << w_mctrl.msgno << ": can be -1 (trap) or <1..." << MSGNO_SEQ_MAX << ">");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
+    }
+
     int  msttl   = w_mctrl.msgttl;
     bool inorder = w_mctrl.inorder;
 
@@ -14492,6 +14501,46 @@ void CUDTGroup::internalKeepalive(gli_t gli)
 
 CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
 
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
+}
+
 int CUDTGroup::baseOffset(SRT_MSGCTRL& mctrl)
 {
     return CSeqNo::seqoff(m_RcvBaseSeqNo, mctrl.pktseq);
@@ -15431,46 +15480,6 @@ int CUDTGroup::sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc)
     return stat;
 }
 
-int CUDTGroup::configure(const char* str)
-{
-    string config = str;
-    switch (type())
-    {
-    case SRT_GTYPE_BALANCING:
-        // config contains the algorithm name
-        if (config == "" || config == "plain")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
-            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
-        }
-        else if (config == "window")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
-            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
-        }
-        else
-        {
-            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
-                    << config << "'");
-            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        break;
-
-    default:
-        if (config == "")
-        {
-            // You can always call the config with empty string,
-            // it should set defaults or do nothing, if not supported.
-            return 0;
-        }
-        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return 0;
-}
-
 CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
 {
     if (state.ilink == gli_NULL())
@@ -15519,6 +15528,23 @@ struct LinkCapableData
     CUDTGroup::gli_t link;
     int flight;
 };
+
+CUDTGroup::gli_t CUDTGroup::linkSelect_window_ReportLink(CUDTGroup::gli_t this_link)
+{
+    // When a link is used for sending, the load factor is
+    // increased by this link's unit load, which is calculated
+    // basing on how big share among all flight sizes this link has.
+    // The larger the flight window, the bigger the unit load.
+    // This unit load then defines how much "it costs" to send
+    // a packet over that link. The bigger this value is then,
+    // the less often will this link be selected among others.
+
+    this_link->load_factor += this_link->unit_load;
+
+    HLOGC(dlog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+            << " selected, upd load_factor=" << this_link->load_factor);
+    return this_link;
+}
 
 CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkState& state)
 {
@@ -15591,7 +15617,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
             {
                 HLOGC(dlog.Debug, log << "linkSelect_window: ... load factor empty: SELECTING.");
                 this_link = li;
-                goto ReportLink;
+                return linkSelect_window_ReportLink(this_link);
             }
 
             ++number_links;
@@ -15611,13 +15637,14 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
                 // scenario, the probing will happen again in 16 packets).
                 m_RandomCredit = 16 * number_links;
 
-                goto ReportLink;
+                return linkSelect_window_ReportLink(this_link);
             }
             flight += 2; // prevent having 0 used for equations
 
             total_flight += flight;
 
-            linkdata.push_back( (LinkCapableData){li, flight} );
+            LinkCapableData lcd = {li, flight};
+            linkdata.push_back(lcd);
         }
 
         if (linkdata.empty())
@@ -15693,7 +15720,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
         }
 
         // The above loop certainly found something.
-        goto ReportLink;
+        return linkSelect_window_ReportLink(this_link);
     }
 
     HLOGC(dlog.Debug, log << "linkSelect_window: remaining credit: " << m_RandomCredit
@@ -15735,22 +15762,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkStat
         // Check maybe next link...
     }
 
-ReportLink:
-
-    // When a link is used for sending, the load factor is
-    // increased by this link's unit load, which is calculated
-    // basing on how big share among all flight sizes this link has.
-    // The larger the flight window, the bigger the unit load.
-    // This unit load then defines how much "it costs" to send
-    // a packet over that link. The bigger this value is then,
-    // the less often will this link be selected among others.
-
-    this_link->load_factor += this_link->unit_load;
-
-    HLOGC(dlog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
-            << " selected, upd load_factor=" << this_link->load_factor);
-    return this_link;
+    return linkSelect_window_ReportLink(this_link);
 }
-
 
 
