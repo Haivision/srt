@@ -5,87 +5,188 @@ and track faulty behavior.
 Statistics are calculated independently on each side (receiver and sender),
 and are not exchanged between peers, unless explicitly stated.
 
+TODO: unless explicitly stated ???
+
 The following API functions can be used to retrieve statistics on an SRT socket.
 Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
 
 * `int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear)`
 * `int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
 
-# Total accumulated measurements
+
+
+# Summary Table
+
+TODO:
+
+- Data type (int, float) - ?
+
+- Absolute timestamp, but it's not a statistics
+
+- Explain the difference between accumulated, and other types of stats
+
+- go through empty and ??? cells
+
+  
+
+| Statistic               | Type of Statistic | Measured in       | Available for Sender | Available for Receiver | Data Type |
+| ----------------------- | ----------------- | ----------------- | -------------------- | ---------------------- | --------- |
+|                         |                   |                   |                      |                        |           |
+| msTimeStamp             | accumulated       | ms (milliseconds) | ✓                    | ✓                      | int64_t   |
+| pktSentTotal            | accumulated       | packets           | ✓                    | -                      | int64_t   |
+| pktRecvTotal            | accumulated       | packets           | -                    | ✓                      | int64_t   |
+| pktSndLossTotal         | accumulated       | packets           | ✓                    | -                      | int       |
+| pktRcvLossTotal         | accumulated       | packets           | -                    | ✓                      | int       |
+| pktRetransTotal         | accumulated       | packets           | ✓                    | -                      | int       |
+| pktSentACKTotal         | accumulated       | packets           |                      |                        | int       |
+| pktRecvACKTotal         | accumulated       | packets           |                      |                        | int       |
+| pktSentNAKTotal         | accumulated       | packets           |                      |                        | int       |
+| pktRecvNAKTotal         | accumulated       | packets           |                      |                        | int       |
+| usSndDurationTotal      | accumulated       | us (microseconds) | ✓                    | -                      | int64_t   |
+| pktSndDropTotal         | accumulated       | packets           | ✓                    | -                      | int       |
+| pktRcvDropTotal         | accumulated       | packets           | -                    | ✓                      | int       |
+| pktRcvUndecryptTotal    | accumulated       | packets           | -                    | ✓                      | int       |
+| pktSndFilterExtraTotal  | accumulated       | packets           | ✓                    | -                      | ???       |
+| pktRcvFilterExtraTotal  | accumulated       | packets           | -                    | ✓                      | ???       |
+| pktRcvFilterSupplyTotal | accumulated       | packets           | -                    | ✓                      | ???       |
+| pktRcvFilterLossTotal   | accumulated       | packets           | -                    | ✓                      | ???       |
+| byteSentTotal           | accumulated       | bytes             | ✓                    | -                      | uint64_t  |
+| byteRecvTotal           | accumulated       | bytes             | -                    | ✓                      | uint64_t  |
+| byteRcvLossTotal        | accumulated       | bytes             | -                    | ✓                      | uint64_t  |
+| byteRetransTotal        | accumulated       | bytes             | ✓                    | -                      | uint64_t  |
+| byteSndDropTotal        | accumulated       | bytes             | ✓                    | -                      | uint64_t  |
+| byteRcvDropTotal        | accumulated       | bytes             | -                    | ✓                      | uint64_t  |
+| byteRcvUndecryptTotal   | accumulated       | bytes             | -                    | ✓                      | uint64_t  |
+| pktSent                 | interval-based    | packets           | ✓                    | -                      | int64_t   |
+| pktRecv                 | interval-based    | packets           | -                    | ✓                      | int64_t   |
+| pktSndLoss              | interval-based    | packets           | ✓                    | -                      | int       |
+| pktRcvLoss              | interval-based    | packets           | -                    | ✓                      | int       |
+| pktRetrans              | interval-based    | packets           | ✓                    | -                      | int       |
+|                         |                   |                   |                      |                        |           |
+| pktSentACK              | interval-based    | packets           |                      |                        | int       |
+| pktRecvACK              | interval-based    | packets           |                      |                        | int       |
+| pktSentNAK              | interval-based    | packets           |                      |                        | int       |
+| pktRecvNAK              | interval-based    | packets           |                      |                        | int       |
+| pktSndFilterExtra       | interval-based    | packets           | ✓                    | -                      | ???       |
+| pktRcvFilterExtra       | interval-based    | packets           | -                    | ✓                      | ???       |
+| pktRcvFilterSupply      | interval-based    | packets           | -                    | ✓                      | ???       |
+| pktRcvFilterLoss        | interval-based    | packets           | -                    | ✓                      | ???       |
+| mbpsSendRate            | interval-based    | Mbps              | ✓                    | -                      | double    |
+| mbpsRecvRate            | interval-based    | Mbps              | -                    | ✓                      | double    |
+| usSndDuration           | interval-based    | us (microseconds) | ✓                    | -                      | int64_t   |
+| pktReorderDistance      | interval-based    |                   |                      |                        |           |
+| pktReorderTolerance     | interval-based    |                   |                      |                        |           |
+| pktRcvAvgBelatedTime    |                   |                   |                      |                        |           |
+| pktRcvBelated           |                   |                   |                      |                        |           |
+| pktSndDrop              | interval-based    | packets           | ✓                    | -                      | int       |
+| pktRcvDrop              | interval-based    | packets           | -                    | ✓                      | int       |
+| pktRcvUndecrypt         | interval-based    | packets           | -                    | ✓                      | int       |
+| byteSent                | interval-based    | bytes             | ✓                    | -                      | uint64_t  |
+| byteRecv                | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
+| byteRcvLoss             | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
+| byteRetrans             | interval-based    | bytes             | ✓                    | -                      | uint64_t  |
+| byteSndDrop             | interval-based    | bytes             | ✓                    | -                      | uint64_t  |
+| byteRcvDrop             | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
+| byteRcvUndecrypt        | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
+
+
+
+# Accumulated Statistics
+
+TODO: 
+
+- Header level?
 
 ## msTimeStamp
 
-Time elapsed since the SRT socket was started (after successful call to `srt_connect(...)` or `srt_bind(...)`), in milliseconds.
+The time elapsed since the SRT socket was started (after successful call to `srt_connect(...)` or `srt_bind(...)` function), in milliseconds. Available both for sender and receiver.
+
+TODO: was created?
 
 ## pktSentTotal
 
-The total number of sent data packets, including retransmitted packets. Applicable for data sender.
+The total number of sent data packets, including retransmitted packets. Available for sender.
 
 ## pktRecvTotal
 
-The total number of received packets, including received retransmitted packets. Applicable for data receiver.
+The total number of received packets, including retransmitted packets. Available for receiver.
 
 ## pktSndLossTotal
 
-The total number of data packets considered or reported lost (sender side). Does not correspond to packets detected as lost at receiving side. Applicable for data sender.
+The total number of data packets considered or reported as lost at the sender side. Does not correspond to the packets detected as lost at the receiver side. Available for sender.
 
 A packet is considered lost in two cases: 
-1. Sender receives a loss report from receiver.
-2. Sender initiates retransmission after not receiving ACK for a certain timeout. Refer to `FASTREXMIT` and `LATEREXMIT` algorithms.
+1. Sender receives a loss report from a receiver,
+2. Sender initiates retransmission after not receiving an ACK packet for a certain timeout. Refer to `FASTREXMIT` and `LATEREXMIT` algorithms.
 
 ## pktRcvLossTotal
 
-The total number of data packets detected lost on the receiver's side.
+TODO: Update the description.
 
-Includes packets that failed to be decrypted (only as of SRT version 1.4.0).
+The total number of data packets detected as lost at the receiver side. Available for receiver.
 
-If a packet was received out of order, the gap (sequence discontinuity) is also
-treated as lost packets, independent of the reorder tolerance value.
+If a packet is received out of order, the gap (sequence discontinuity) is also taken into account and the number of lost packets is increased by the discontinuity size independently of the reordering tolerance value.
 
-Loss detection is based on gaps in Sequence Numbers of SRT DATA packets. Detection
-of a packet loss is triggered by a newly received packet. An offset is calculated
-between sequence numbers of the newly arrived DATA packet and previously received
-DATA packet (the received packet with highest sequence number). Receiving older
-packets does not affect this value. The packets from that gap are considered lost,
-and that number is added to this `pktRcvLossTotal` measurement. In the case where
+Lost packets detection is based on the gaps in sequence numbers of the SRT DATA packets and is triggered by a newly received packet. An offset is calculated between sequence numbers of the newly arrived DATA packet and the previously received DATA packet (the packet with the highest sequence number). Receiving older packets does not affect this value. The packets from that gap are considered lost,
+and that number is added to the `pktRcvLossTotal` measurement. In the case where
 the offset is negative, the packet is considered late, meaning that it was either
 already acknowledged or dropped by TSBPD as too late to be delivered. Such late
 packets are ignored.
 
+TODO: This is wrong.
+
+Since SRT v1.4.0, includes packets that failed to be decrypted.
+
 ## pktRetransTotal
 
-The total number of retransmitted packets. Calculated on the sender's side only.
+The total number of retransmitted packets. Calculated at the sender side only.
 Not exchanged with the receiver.
+
+TODO: 
+
+- We can calculate retransmitted packets both at the sender side and at the receiver side which is stated in pktSentTotal and pktRecvTotal stats -> we should have this statistics available both for snd and rcv. The same for byteRetransTotal
+- Not exchanged with the receiver: what does it mean?
 
 ## pktSentACKTotal
 
-The total number of sent ACK packets. Applicable for data sender.
+The total number of sent ACK packets. Available for sender.
+
+TODO: 
+
+- abbreviation
+- possible mistake, see pktSentNAKTotal
 
 ## pktRecvACKTotal
 
-The total number of received ACK packets. Applicable for data receiver.
+The total number of received ACK packets. Available for receiver.
+
+TODO: Possible mistake, see pktSentNAKTotal.
 
 ## pktSentNAKTotal
 
-The total number of NAK (Not Acknowledged) packets sent. Essentially means LOSS 
-reports. Applicable for data sender.
+The total number of NAK packets received by the sender from the receiver. Essentially means LOSS reports. Available for sender.
+
+TODO: 
+
+- abbreviation
+- sent -> received - right? or if it's sent than it's receiver statistics. Correct in the table as well.
 
 ## pktRecvNAKTotal
 
-The total number of NAK (Not Acknowledged) packets received. Essentially means 
-LOSS reports. Applicable for data receiver.
+The total number of NAK packets sent back to the sender by the receiver. Essentially means LOSS reports. Available for receiver.
+
+TODO: received -> sent? Or if it's received, than it's sender statistics. Correct in the table as well.
 
 ## usSndDurationTotal
 
 The total accumulated time in microseconds, during which the SRT sender has some 
-data to transmit, including packets that were sent, but is waiting for acknowledgement.
-In other words, the total accumulated duration in microseconds when there was something 
-to deliver (non-empty senders' buffer).
-Applicable for data sender.
+data to transmit, including packets that have been sent, but not yet acknowledged. In other words, the total accumulated duration in microseconds when there was something to deliver (non-empty senders' buffer). Available for sender.
 
 ## pktSndDropTotal
 
-The number of "too late to send" packets dropped by sender (refer to `TLPKTDROP`).
+The total number of "too late to send" packets dropped by the sender (refer to `TLPKTDROP`). Available for sender.
+
+TODO: Update what's below
 
 The total delay before `TLPKTDROP` is triggered consists of the `SRTO_PEERLATENCY`, 
 plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms).
@@ -95,7 +196,12 @@ in the sender's buffer.
 
 ## pktRcvDropTotal
 
-The number of "too late to play" missing packets. Receiver only.
+TODO: 
+
+- missing?
+- Revise the text
+
+The total number of "too late to deliver" missing packets. Available for receiver.
 
 TSBPD and TLPacket drop socket option should be enabled.
 
@@ -107,140 +213,156 @@ packets are present in the receiver's buffer, and not dropped directly.
 
 ## pktRcvUndecryptTotal
 
-The number of packets that failed to be decrypted. Receiver side.
+The total number of packets that failed to be decrypted at the receiver side. Available for receiver.
+
+TODO: Is it correct that we include this number in the other statistics?
 
 ## pktSndFilterExtraTotal
 
-The number of control packets supplied by the packet filter (refer to
+The total number of control packets supplied by the packet filter (refer to
 [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Sender only.
 
-Introduced in v1.4.0.
+Introduced in SRT v1.4.0.
 
 ## pktRcvFilterExtraTotal
 
-The number of control packets received and not supplied back by the packet filter
+TODO: 
+
+- I do not understand the description, check the whole group.
+- for the whole group we should also mention that this statisitcs is available if FEC option is enabled
+
+The total number of control packets received and not supplied back by the packet filter
 (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
 
-Introduced in v1.4.0.
+Introduced in SRT v1.4.0.
 
 ## pktRcvFilterSupplyTotal
 
-The number of packets supplied by the packet filter excluding actually received packets
-(e.g. FEC rebuilt). Receiver only. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+The total number of packets supplied by the packet filter excluding actually received packets
+(e.g.,  FEC rebuilt, refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
 
-Introduced in v1.4.0.
+Introduced in SRT v1.4.0.
 
 ## pktRcvFilterLossTotal
 
-The number of lost packets, that were not covered by the packet filter. Receiver only.
-Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+The total number of lost packets that were not covered by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
 
-Introduced in v1.4.0.
+Introduced in SRT v1.4.0.
 
 ## byteSentTotal
 
-Same as `pktSentTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Sender side.
+Same as `pktSentTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
 
 ## byteRecvTotal
 
-Same as `pktRecvTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side.
+Same as `pktRecvTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
 
 ## byteRcvLossTotal
 
-Same as `pktRcvLossTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side.
+Same as `pktRcvLossTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
 
 ## byteRetransTotal
 
-Same as `pktRetransTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Sender side only.
+Same as `pktRetransTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
 
 ## byteSndDropTotal
 
-Same as `pktSndDropTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Sender side only.
+Same as `pktSndDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
 
 ## byteRcvDropTotal
 
-Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-Bytes for dropped packet payloads are estimated based on average packet size. \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side only. 
+Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the dropped packets' payloads are estimated based on the average packet size. Receiver side.
+
+TODO: Bytes for the dropped packets' payloads are estimated based on the average packet size. - What's about the other stats from this group?
 
 ## byteRcvUndecryptTotal
 
-Same as `pktRcvUndecryptTotal`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side.
+Same as `pktRcvUndecryptTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
 
-# Interval-based measurements
+# Interval-Based Statistics
+
+TODO: Update the description
 
 These values can be reset by calling `srt_bstats(..., int clear)` with `clear = 1`. \
 This is helpful to get statistical measurements within a certain period, e.g. 1 second.
 
 ## pktSent
 
-Same as `pktSentTotal`, but for a specified interval.
+Same as `pktSentTotal`, but for a specified interval. Available for sender.
 
 ## pktRecv
 
-Same as `pktRecvTotal`, but for a specified interval.
+Same as `pktRecvTotal`, but for a specified interval. Available for receiver.
 
 ## pktSndLoss
 
-Same as `pktSndLossTotal`, but for a specified interval.
+Same as `pktSndLossTotal`, but for a specified interval. Available for sender.
 
 ## pktRcvLoss
 
-Same as `pktRcvLossTotal`, but for a specified interval.
+Same as `pktRcvLossTotal`, but for a specified interval. Available for receiver.
 
 ## pktRetrans
 
-Same as `pktRetransTotal`, but for a specified interval.
+Same as `pktRetransTotal`, but for a specified interval. Available for sender.
 
 ## pktRcvRetrans
 
 Same as `pktRcvRetransTotal`, but for a specified interval.
 
+TODO: 
+
+- There is no `pktRcvRetransTotal` stats.
+- Which side
+- include in table
+
 ## pktSentACK
 
 Same as `pktSentACKTotal`, but for a specified interval.
+
+TODO: Update accordingly.
 
 ## pktRecvACK
 
 Same as `pktRecvACKTotal`, but for a specified interval.
 
+TODO: Update accordingly.
+
 ## pktSentNAK
 
 Same as `pktSentNAKTotal`, but for a specified interval.
+
+TODO: Update accordingly.
 
 ## pktRecvNAK
 
 Same as `pktRecvNAKTotal`, but for a specified interval.
 
+TODO: Update accordingly.
+
 ## pktSndFilterExtra
 
-Same as `pktSndFilterExtraTotal`, but for a specified interval.
+Same as `pktSndFilterExtraTotal`, but for a specified interval. Sender only.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterExtra
 
-Same as `pktRcvFilterExtraTotal`, but for a specified interval.
+Same as `pktRcvFilterExtraTotal`, but for a specified interval. Receiver only.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in SRT v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterSupply
 
-Same as `pktRcvFilterSupplyTotal`, but for a specified interval.
+Same as `pktRcvFilterSupplyTotal`, but for a specified interval. Receiver only.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in SRT v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## pktRcvFilterLoss
 
-Same as `pktRcvFilterLossTotal`, but for a specified interval.
+Same as `pktRcvFilterLossTotal`, but for a specified interval. Receiver only.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in SRT v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ## mbpsSendRate
 
@@ -252,9 +374,11 @@ Receiving rate in Mbps. Receiver side.
 
 ## usSndDuration
 
-Same as `usSndDurationTotal`, but measured on a specified interval.
+Same as `usSndDurationTotal`, but measured on a specified interval. Available for sender.
 
 ## pktReorderDistance
+
+TODO
 
 The distance in sequence numbers between the two original (not retransmitted) packets,
 that were received out of order. Receiver only.
@@ -262,6 +386,8 @@ that were received out of order. Receiver only.
 The traceable distance values are limited by the maximum reorder tolerance set by  `SRTO_LOSSMAXTTL`.
 
 ## pktReorderTolerance
+
+TODO
 
 Instant value of the packet reorder tolerance. Receiver side. Refer to [pktReorderDistance](#pktReorderDistance).
 
@@ -294,14 +420,16 @@ Missing packets with sequence numbers 8 and 9 will be reported lost with the nex
 The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
 The packet with sequence number 9 is reported lost.
 
-
-
 ## pktRcvAvgBelatedTime
+
+TODO: What's this?
 
 Accumulated difference between the current time and the time-to-play of a packet 
 that is received late.
 
 ## pktRcvBelated
+
+TODO: Revise this, which side, measured over the interval
 
 The number of packets received but IGNORED due to having arrived too late.
 
@@ -316,43 +444,43 @@ Retransmitted packets can also be considered late.
 
 ## pktSndDrop
 
-Same as `pktSndDropTotal`, but for a specified interval.
+Same as `pktSndDropTotal`, but for a specified interval. Available for sender.
 
 ## pktRcvDrop
 
-Same as `pktRcvDropTotal`, but for a specified interval.
+Same as `pktRcvDropTotal`, but for a specified interval. Available for receiver.
 
 ## pktRcvUndecrypt
 
-Same as `pktRcvUndecryptTotal`, but for a specified interval.
+Same as `pktRcvUndecryptTotal`, but for a specified interval. Available for receiver.
 
 ## byteSent
 
-Same as `byteSentTotal`, but for a specified interval.
+Same as `byteSentTotal`, but for a specified interval. Available for sender.
 
 ## byteRecv
 
-Same as `byteRecvTotal`, but for a specified interval.
+Same as `byteRecvTotal`, but for a specified interval. Available for receiver.
 
 ## byteRcvLoss
 
-Same as `byteRcvLossTotal`, but for a specified interval.
+Same as `byteRcvLossTotal`, but for a specified interval. Available for receiver.
 
 ## byteRetrans
 
-Same as `byteRetransTotal`, but for a specified interval.
+Same as `byteRetransTotal`, but for a specified interval. Available for sender.
 
 ## byteSndDrop
 
-Same as `byteSndDropTotal`, but for a specified interval.
+Same as `byteSndDropTotal`, but for a specified interval. Available for sender.
 
 ## byteRcvDrop
 
-Same as `byteRcvDropTotal`, but for a specified interval.
+Same as `byteRcvDropTotal`, but for a specified interval. Available for receiver.
 
 ## byteRcvUndecrypt
 
-Same as `byteRcvUndecryptTotal`, but for a specified interval.
+Same as `byteRcvUndecryptTotal`, but for a specified interval. Available for receiver.
 
 # Instant measurements
 
