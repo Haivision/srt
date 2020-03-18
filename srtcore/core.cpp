@@ -15518,7 +15518,6 @@ struct LinkCapableData
 
 CUDTGroup::gli_t CUDTGroup::linkSelect_window_ReportLink(CUDTGroup::gli_t this_link)
 {
-
     // When a link is used for sending, the load factor is
     // increased by this link's unit load, which is calculated
     // basing on how big share among all flight sizes this link has.
