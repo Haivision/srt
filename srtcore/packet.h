@@ -181,7 +181,7 @@ const int MSGNO_SEQ_MAX = MSGNO_SEQ::mask;
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
 
-typedef RollNumber<MSGNO_SEQ::size, 1> MsgNo;
+typedef RollNumber<MSGNO_SEQ::size-1, 1> MsgNo;
 
 
 // constexpr in C++11 !
