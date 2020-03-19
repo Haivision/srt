@@ -260,36 +260,18 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
  * SyncEvent tests
  */
 /*****************************************************************************/
-
-template <bool TEST_MONOTONIC_CLOCK = false>
-void TestSyncWaitFor()
+TEST(SyncEvent, WaitFor)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-#if ENABLE_MONOTONIC_CLOCK
-    if (TEST_MONOTONIC_CLOCK)
-    {
-        pthread_condattr_t  CondAttribs;
-        pthread_condattr_init(&CondAttribs);
-        pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-        pthread_cond_init(&cond, &CondAttribs);
-    }
-    else
-    {
-        pthread_cond_init(&cond, NULL);
-    }
-#else
-    pthread_cond_init(&cond, NULL);
-#endif
+    Condition  cond;
+    cond.init();
 
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
         const steady_clock::time_point start = steady_clock::now();
-        if (TEST_MONOTONIC_CLOCK)
-            EXPECT_FALSE(SyncEvent::wait_for_monotonic(&cond, &mutex.ref(), timeout) == 0);
-        else
-            EXPECT_FALSE(SyncEvent::wait_for(&cond, &mutex.ref(), timeout) == 0);
+        UniqueLock lock(mutex);
+        EXPECT_FALSE(cond.wait_for(lock, timeout));
         const steady_clock::time_point stop = steady_clock::now();
         if (tout_us < 1000)
         {
@@ -303,82 +285,69 @@ void TestSyncWaitFor()
         }
     }
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
-
-
-TEST(SyncEvent, WaitFor)
-{
-    TestSyncWaitFor();
-}
-
-#if ENABLE_MONOTONIC_CLOCK
-TEST(SyncEvent, WaitForMonotonic)
-{
-    TestSyncWaitFor<true>();
-}
-#endif
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-    pthread_cond_init(&cond, NULL);
+    Condition cond;
+    cond.init();
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        ScopedLock lock(*mutex);
-        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
+    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        UniqueLock lock(*mutex);
+        return cond->wait_for(lock, timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    cond.notify_one();
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
-    const int wait_for_res = wait_async_res.get();
-    EXPECT_TRUE(wait_for_res == 0);
+    const bool wait_for_res = wait_async_res.get();
+    EXPECT_TRUE(wait_for_res) << "Woken up by a notification";
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-    pthread_cond_init(&cond, NULL);
+    Condition cond;
+    cond.init();
 
-    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex) {
-        ScopedLock lock(*mutex);
-        return pthread_cond_wait(cond, &mutex->ref());
+    auto wait_async = [](Condition* cond, Mutex* mutex) {
+        UniqueLock lock(*mutex);
+        return cond->wait(lock);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    cond.notify_one();
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-    pthread_cond_init(&cond, NULL);
+    Condition cond;
+    cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        ScopedLock lock(*mutex);
-        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
+    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        UniqueLock lock(*mutex);
+        return cond->wait_for(lock, timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async1_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
     EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_signal(&cond);
+    cond.notify_one();
     // Now only one waiting thread should become ready
     const future_status status1 = wait_async1_res.wait_for(chrono::milliseconds(100));
     const future_status status2 = wait_async2_res.wait_for(chrono::milliseconds(100));
@@ -388,62 +357,62 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     EXPECT_EQ(status2, isready1 ? future_status::timeout : future_status::ready);
 
     // Expect one thread to be woken up by condition
-    EXPECT_TRUE(isready1 ? (wait_async1_res.get() == 0) : (wait_async2_res.get() == 0));
+    EXPECT_TRUE(isready1 ? wait_async1_res.get() : wait_async2_res.get());
     // Expect timeout on another thread
-    EXPECT_FALSE(isready1 ? (wait_async2_res.get() == 0) : (wait_async1_res.get() == 0));
+    EXPECT_FALSE(isready1 ? wait_async2_res.get() : wait_async1_res.get());
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-    pthread_cond_init(&cond, NULL);
+    Condition cond;
+    cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        ScopedLock lock(*mutex);
-        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
+    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        UniqueLock lock(*mutex);
+        return cond->wait_for(lock, timeout);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async1_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
     EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    pthread_cond_broadcast(&cond);
+    cond.notify_all();
     // Now only one waiting thread should become ready
     const future_status status1 = wait_async1_res.wait_for(chrono::milliseconds(100));
     const future_status status2 = wait_async2_res.wait_for(chrono::milliseconds(100));
     EXPECT_EQ(status1, future_status::ready);
     EXPECT_EQ(status2, future_status::ready);
     // Expect both threads to wake up by condition
-    EXPECT_TRUE(wait_async1_res.get() == 0);
-    EXPECT_TRUE(wait_async2_res.get() == 0);
+    EXPECT_TRUE(wait_async1_res.get());
+    EXPECT_TRUE(wait_async2_res.get());
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
     Mutex mutex;
-    pthread_cond_t  cond;
-    pthread_cond_init(&cond, NULL);
+    Condition cond;
+    cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](pthread_cond_t* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        ScopedLock lock(*mutex);
-        return SyncEvent::wait_for(cond, &mutex->ref(), timeout);
+    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+        UniqueLock lock(*mutex);
+        return cond->wait_for(lock, timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
     EXPECT_EQ(wait_async_res.wait_for(chrono::milliseconds(500)), future_status::timeout);
-    pthread_cond_broadcast(&cond);
+    cond.notify_all();
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(500)), future_status::ready);
-    const int wait_for_res = wait_async_res.get();
-    EXPECT_TRUE(wait_for_res == 0);
+    const bool wait_for_res = wait_async_res.get();
+    EXPECT_TRUE(wait_for_res) << "Woken up by condition";
 
-    pthread_cond_destroy(&cond);
+    cond.destroy();
 }
 
 /*****************************************************************************/

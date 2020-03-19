@@ -220,7 +220,7 @@ private:
    srt::sync::Mutex* m_pWindowLock;
    srt::sync::Condition* m_pWindowCond;
 
-   CTimer* m_pTimer;
+   srt::sync::CTimer* m_pTimer;
 
 private:
    CSndUList(const CSndUList&);
@@ -371,7 +371,7 @@ public:
       /// @param [in] c UDP channel to be associated to the queue
       /// @param [in] t Timer
 
-   void init(CChannel* c, CTimer* t);
+   void init(CChannel* c, srt::sync::CTimer* t);
 
       /// Send out a packet to a given address.
       /// @param [in] addr destination address
@@ -411,7 +411,7 @@ private:
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
    CChannel* m_pChannel;                // The UDP channel for data sending
-   CTimer* m_pTimer;                    // Timing facility
+   srt::sync::CTimer* m_pTimer;         // Timing facility
 
    srt::sync::Mutex m_WindowLock;
    srt::sync::Condition m_WindowCond;
@@ -465,7 +465,7 @@ public:
       /// @param [in] c UDP channel to be associated to the queue
       /// @param [in] t timer
 
-   void init(int size, int payload, int version, int hsize, CChannel* c, CTimer* t);
+   void init(int size, int payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
 
       /// Read a packet for a specific UDT socket id.
       /// @param [in] id Socket ID
@@ -494,16 +494,15 @@ private:
    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
 
 private:
-   CUnitQueue m_UnitQueue;		// The received packet queue
+   CUnitQueue m_UnitQueue;      // The received packet queue
+   CRcvUList* m_pRcvUList;      // List of UDT instances that will read packets from the queue
+   CHash* m_pHash;              // Hash table for UDT socket looking up
+   CChannel* m_pChannel;        // UDP channel for receving packets
+   srt::sync::CTimer* m_pTimer; // shared timer with the snd queue
 
-   CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
-   CHash* m_pHash;			// Hash table for UDT socket looking up
-   CChannel* m_pChannel;		// UDP channel for receving packets
-   CTimer* m_pTimer;			// shared timer with the snd queue
+   int m_iPayloadSize;          // packet payload size
 
-   int m_iPayloadSize;                  // packet payload size
-
-   volatile bool m_bClosing;            // closing the worker
+   volatile bool m_bClosing;    // closing the worker
 #if ENABLE_LOGGING
    static int m_counter;
 #endif
@@ -543,7 +542,7 @@ struct CMultiplexer
    CSndQueue* m_pSndQueue;  // The sending queue
    CRcvQueue* m_pRcvQueue;  // The receiving queue
    CChannel* m_pChannel;    // The UDP channel for sending and receiving
-   CTimer* m_pTimer;        // The timer
+   srt::sync::CTimer* m_pTimer;  // The timer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
