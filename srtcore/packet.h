@@ -174,13 +174,14 @@ typedef Bits<26, 0> MSGNO_SEQ_OLD;
 // The message should be extracted as PMASK_MSGNO_SEQ, if REXMIT is supported, and PMASK_MSGNO_SEQ_OLD otherwise.
 
 const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
+const int MSGNO_SEQ_MAX = MSGNO_SEQ::mask;
 
 #else
 // Old bit breakdown - no rexmit flag
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
 
-typedef RollNumber<MSGNO_SEQ::size, 1> MsgNo;
+typedef RollNumber<MSGNO_SEQ::size-1, 1> MsgNo;
 
 
 // constexpr in C++11 !
