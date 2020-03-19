@@ -13122,7 +13122,6 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             HLOGC(dlog.Debug, log << "group/recv: POSITIONS EMPTY - Re-polling.");
         }
-
     }
 }
 
@@ -15192,7 +15191,6 @@ int CUDTGroup::recvBalancing(char* buf, int len, SRT_MSGCTRL& w_mctrl)
         {
             HLOGC(dlog.Debug, log << "grp/recvBalancing: POSITIONS EMPTY - Re-polling.");
         }
-
     }
 }
 
