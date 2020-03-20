@@ -27,6 +27,8 @@ TODO:
 
 - go through empty and ??? cells
 
+- Add "in packets" in description for all the stats which are measured in packets
+
   
 
 | Statistic               | Type of Statistic | Measured in       | Available for Sender | Available for Receiver | Data Type |
@@ -88,6 +90,24 @@ TODO:
 | byteSndDrop             | interval-based    | bytes             | ✓                    | -                      | uint64_t  |
 | byteRcvDrop             | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
 | byteRcvUndecrypt        | interval-based    | bytes             | -                    | ✓                      | uint64_t  |
+| usPktSndPeriod          | instantaneous     | us (microseconds) | ✓                    | -                      |           |
+| pktFlowWindow           | instantaneous     | packets           | ✓                    | -                      |           |
+| pktCongestionWindow     | instantaneous     | packets           | ✓                    | -                      |           |
+| pktFlightSize           | instantaneous     | packets           | ✓                    | -                      |           |
+| msRTT                   | instantaneous     | ms (milliseconds) | ✓                    | ✓                      |           |
+| mbpsBandwidth           | instantaneous     | Mbps              | ✓                    | ✓                      |           |
+| byteAvailSndBuf         | instantaneous     | bytes             | ✓                    | -                      |           |
+| byteAvailRcvBuf         | instantaneous     | bytes             | -                    | ✓                      |           |
+| mbpsMaxBW               | instantaneous     | Mbps              | ✓                    | -                      |           |
+| byteMSS                 | instantaneous     | bytes             | ✓                    | ✓                      |           |
+| pktSndBuf               | instantaneous     | packets           | ✓                    | -                      |           |
+| byteSndBuf              | instantaneous     | bytes             | ✓                    | -                      |           |
+| msSndBuf                | instantaneous     | ms (milliseconds) | ✓                    | -                      |           |
+| msSndTsbPdDelay         | instantaneous     | ms (milliseconds) | ✓                    | -                      |           |
+| pktRcvBuf               | instantaneous     | packets           | -                    | ✓                      |           |
+| byteRcvBuf              | instantaneous     | bytes             | -                    | ✓                      |           |
+| msRcvBuf                | instantaneous     | ms (milliseconds) | -                    | ✓                      |           |
+| msRcvTsbPdDelay         | instantaneous     | ms (milliseconds) | -                    | ✓                      |           |
 
 
 
@@ -368,9 +388,13 @@ Introduced in SRT v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering
 
 Sending rate in Mbps. Sender side.
 
+TODO: How it is calculated?
+
 ## mbpsRecvRate
 
 Receiving rate in Mbps. Receiver side.
+
+TODO: How it is calculated?
 
 ## usSndDuration
 
@@ -482,226 +506,198 @@ Same as `byteRcvDropTotal`, but for a specified interval. Available for receiver
 
 Same as `byteRcvUndecryptTotal`, but for a specified interval. Available for receiver.
 
-# Instant measurements
+# Instantaneous Statistics
+
+TODO: 
+
+- Update description
+- Moving average? How is it used? Refer to the API.
 
 The measurements effective at the time retrieved.
 
 ## usPktSndPeriod
 
-Current minimum time interval between which consecutive packets are sent, in 
-microseconds. Sender only.
+TODO: 
 
-Note that several sockets sharing one outgoing port use the same sending queue.
-They may have different pacing of the outgoing packets, but all the packets will
-be placed in the same sending queue, which may affect the send timing.
+- How is this calculated? The minimum time during which period?
+- probing packets
+- rephrase - They may have different pacing of the outgoing packets, but all the packets will
+  be placed in the same sending queue, which may affect the send timing. - who may have sockets? which may affect?
 
-`usPktSndPeriod` is the minimum time (sending period) that must be kept
+The current minimum packet inter-sending time, in microseconds. Does not take into account the probing packet pairs. Available for sender.
+
+`usPktSndPeriod` is the minimum time (minimum sending period) that must be kept
 between two packets sent consecutively over the link used by an SRT socket.
 It is not the EXACT time interval between two consecutive packets. In the case where the time spent by an 
 application between sending two consecutive packets exceeds `usPktSndPeriod`, the next 
 packet will be sent faster, or even immediately, to preserve the average sending rate.
 
-**Note**: Does not apply to probing packets.
+Note that several SRT sockets sharing one outgoing port use the same sending queue.
+They may have different pacing of the outgoing packets, but all the packets will
+be placed in the same sending queue, which may affect the send timing.
 
 ## pktFlowWindow
 
-The maximum number of packets that can be "in flight". Sender only.
-See also [pktFlightSize](#pktFlightSize).
+TODO:
 
-The value retrieved on the sender side represents an estimation of the amount
-of free space in the buffer of the peer receiver.
-The actual amount of available space is periodically reported back by the receiver in ACK packets.
-When this value drops to zero, the next packet sent will be dropped by the receiver
-without processing. In **file mode** this may cause a slowdown of sending in
-order to wait until the receiver has more space available, after it
-eventually extracts the packets waiting in its receiver buffer; in **live
-mode** the receiver buffer contents should normally occupy not more than half
-of the buffer size (default 8192). If `pktFlowWindow` value is less than that
-and becomes even less in the next reports, it means that the receiver
-application on the peer side cannot process the incoming stream fast enough and
-this may lead to a dropped connection.
+- Rephrase this - The maximum number of packets that can be "in flight" state. - it does not reflect the idea
+- revise the whole paragraph
+
+The maximum number of packets that can be "in flight" state. See also [pktFlightSize](#pktFlightSize). Available for sender.
+
+The value retrieved on the sender side represents an estimation of the amount of free space left in the SRT receiver buffer. The actual amount of available space is periodically reported back by the receiver in ACK packets. When this value drops to zero, the next packet sent (??? Received) will be dropped by the receiver without processing. 
+
+In **file mode**, this may cause a slowdown of packets' sending in order to wait until the receiver has more space available, after it eventually extracts the packets waiting in its receiver buffer. In **live mode**, the receiver buffer contents should normally occupy not more than half of the buffer size (default 8192 - ??? Packets). If `pktFlowWindow` value is less than that and becomes even less in the next reports, it means that the receiver application on the peer side cannot process the incoming stream fast enough and this may lead to a dropped connection.
 
 
 ## pktCongestionWindow
 
-Congestion window size, in number of packets. Sender only.
+The current congestion window size, in packets. Sender only.
 
-Dynamically limits the maximum number of packets that can be in flight.
-Congestion control module dynamically changes the value.
+The congestion window dynamically limits the maximum number of packets that can be "in flight" state. During transmission, congestion control module dynamically changes the size of congestion window.
 
-In **file mode**  this value starts at 16 and is increased to the number of reported
-acknowledged packets. This value is also updated based on the delivery rate, reported by the receiver.
-It represents the maximum number of packets that can be safely
-sent without causing network congestion. The higher this value is, the faster the
-packets can be sent. In **live mode** this field is not used.
+In **file mode**, the size of congestion control window is equal to 16 packets at the very beginning and is increased during transmision to the number of reported acknowledged packets. This value is also updated based on the delivery rate reported by the receiver. It represents the maximum number of packets that can be safely sent without causing network congestion. The higher this value is, the faster the packets can be sent. In **live mode**, this field is not used.
 
 ## pktFlightSize
 
 The number of packets in flight. Sender only.
 
-`pktFlightSize <= pktFlowWindow` and `pktFlightSize <= pktCongestionWindow`
+The number of packets in flight is calculated as the difference between sequence numbers of the latest acknowledged packet (latest reported by an ACK message packet) and the latest sent packet at the moment statistic is being read. Note that `pktFlightSize <= pktFlowWindow` and `pktFlightSize <= pktCongestionWindow`.
 
-This is the distance 
-between the packet sequence number that was last reported by an ACK message and 
-the sequence number of the latest packet sent (at the moment when the statistics
-are being read).
-
-**NOTE:** ACKs are received periodically (at least every 10 ms). This value is most accurate just
-after receiving an ACK and becomes a little exaggerated over time until the
-next ACK arrives. This is because with a new packet sent,
-while the ACK number stays the same for a moment,
-the value of `pktFlightSize` increases.
-But the exact number of packets arrived since the last ACK report is unknown.
-A new statistic might be added which only reports the distance
-between the ACK sequence and the sent sequence at the moment when an ACK arrives,
-and isn't updated until the next ACK arrives. The difference between this value
-and `pktFlightSize` would then reveal the number of packets with an unknown state
-at that moment.
+**NOTE:** ACKs are received by the SRT sender periodically at least every 10 milliseconds. This statistic is most accurate just after receiving an ACK packet and becomes a little exaggerated over time until the next ACK packet arrives. This is because with a new packet sent, while the ACK number stays the same for a moment, the value of `pktFlightSize` increases. But the exact number of packets arrived since the last ACK report is unknown. A new statistic might be added to only report the distance between the ACK sequence number and the sent packet sequence number at the moment when an ACK arrives. This statistic will not be updated until the next ACK packet arrives. The difference between the suggested statistic and `pktFlightSize` would then reveal the number of packets with an unknown state at that moment.
 
 ## msRTT
 
-Calculated Round trip time (RTT), in milliseconds. Sender and Receiver. \
-The value is calculated by the receiver based on the incoming ACKACK control packets
-(used by sender to acknowledge ACKs from receiver).
+The estimation for the round-trip time (RTT), in milliseconds. Available both for sender and receiver.
 
-The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
-values, one from agent to peer, and one from peer to agent. Note that **the 
-measurement method is different than in TCP**. SRT measures only the "reverse
-RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
-message until receiving the sender's `UMSG_ACKACK` response message (with the
-same journal). This happens to be a little different from the "forward RTT"
-measured in TCP, which is the time between sending a data packet of a particular 
-sequence number and receiving `UMSG_ACK` with a sequence number that is later 
-by 1. Forward RTT isn't being measured or reported in SRT, although some
-research works have shown that these values, even though they should be the same,
-happen to differ; "reverse RTT" seems to be more optimistic.
+This value is calculated by the SRT receiver based on the incoming ACKACK control packets (sent back by the SRT sender to acknowledge incoming ACKs).
+
+TODO: peer to agent terminology, with the same journal
+
+The round-trip time (RTT) is the sum of two single-trip time (STT) values: one from agent to peer, the other from peer to agent. Note that the measurement method is different the method used in TCP. SRT measures only the "reverse RTT", that is, the time measured at the receiver between sending an ACK packet until receiving back the sender's ACKACK response message (with the same journal). This happens to be a little different from the "forward RTT" measured in TCP, which is the time between sending a data packet of a particular sequence number and receiving an ACK with a sequence number that is later by 1. Forward RTT isn't being measured or reported in SRT, although some research works have shown that these values, even though they should be the same, happen to differ; "reverse RTT" seems to be more optimistic.
 
 ## mbpsBandwidth
 
-Estimated bandwidth of the network link, in Mbps. Sender only.
+The estimation of the available bandwidth of the network link, in Mbps. Available both for sender and receiver.
 
-The bandwidth is estimated at the receiver.
-The estimation is based on the time between two probing DATA packets.
-Every 16th data packet is sent immediately after the previous data packet.
-By measuring the delay between probe packets on arrival,
-it is possible to estimate the maximum available transmission rate,
-which is interpreted as the bandwidth of the link.
-The receiver then sends back a running average calculation to the sender with an ACK message.
+At the protocol level, bandwidth and delivery rate estimations are calculated at the receiver side and used primarily as well as packet loss ratio and other protocol statistics for smoothed sending rate adjustments during the file transmition process (in congestion control module). This statistic is also available in live mode.
+
+TODO: 
+
+- What about stats on sender and rcv? smoothed average?
+- there is no receiving speed stats, see also mbpsRecvRate; make a note here
+
+The receiver records the inter-arrival time of each packet (time delta with the previous data packet) which is further used in the models to estimate bandwidth and receiving speed. The communication between receiver and sender happens by means of acknowledgment packets which are sent regularly (each 10 milliseconds) and contain some control information as well as bandwidth and delivery rate estimations. At the sender side, upon receiving a new value, a smoothed average is used to update the latest estimation mantained at the sender side.
+
+It is important to note that for bandwidth estimation only data probing packets are taken into account while all the data packets (both data and data probing) are used for receiving speed estimation. The idea behind packet pair techniques is to send the groups of back-to-back packets, i.e., probing packet pairs, to a server thus making it possible to measure the minimum interval in receiving the consecutive packets.
 
 ## byteAvailSndBuf
 
-The available space in the sender's buffer, in bytes. Sender only.
+The available space in the SRT sender buffer, in bytes. Sender only.
 
-This value decreases with data scheduled for sending by the application, and increases 
-with every ACK received from the receiver, after the packets are sent over 
-the UDP link.
+TODO: 
+
+- increases first, decreases second or good?
+- after the packets are sent over the UDP link - ?
+
+This value decreases with the data scheduled for sending by the application and increases with every ACK received from the SRT receiver after the packets are sent over the UDP link.
 
 ## byteAvailRcvBuf
 
-The available space in the receiver's buffer, in bytes. Receiver only.
+The available space in the SRT receiver buffer, in bytes. Receiver only.
 
-This value increases after the application extracts the data from the socket
-(uses one of `srt_recv*` functions) and decreases with every packet received
-from the sender over the UDP link.
+TODO: SRT socket?
+
+This value increases after the application extracts the data from the socket (uses one of the `srt_recv*` functions) and decreases with every packet received from the SRT sender over the UDP link.
 
 ## mbpsMaxBW
 
-Transmission bandwidth limit, in Mbps. Sender only.
-Usually this is the setting from 
-the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain 
-conditions a nonzero value might be be provided by a congestion 
-control module, although none of the built-in congestion control modules 
-currently use it.
+TODO: Revise
+
+The transmission bandwidth limit, in Mbps. Available for sender.
+
+Usually this is the setting from the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain conditions a nonzero value might be be provided by a congestion control module, although none of the built-in congestion control modules currently use it.
 
 Refer to `SRTO_MAXBW` and `SRTO_INPUTBW` in [API.md](API.md).
 
 ## byteMSS
 
-Maximum Segment Size (MSS), in bytes.
-Same as the value from the `SRTO_MSS` socket option.
-Should not exceed the size of the maximum transmission unit (MTU), in bytes. Sender and Receiver.
-The default size of the UDP packet used for transport,
-including all possible headers (Ethernet, IP and UDP), is 1500 bytes.
+The maximum segment size (MSS), in bytes. Available for both sender and receiver.
+
+Same as the value from the `SRTO_MSS` socket option. Should not exceed the size of the maximum transmission unit (MTU), in bytes. The default size of the UDP packet used for transport, including all possible headers (Ethernet, IP and UDP), is 1500 bytes.
 
 Refer to `SRTO_MSS` in [API.md](API.md).
 
 ## pktSndBuf
 
-The number of packets in the sender's buffer that are already 
-scheduled for sending or even possibly sent, but not yet acknowledged.
-Sender only.
+The number of packets in the SRT sender's buffer that are already scheduled for sending or even possibly sent, but not yet acknowledged. Available for sender.
 
-Once the receiver acknowledges the receipt of a packet, or the TL packet drop
-is triggered, the packet is removed from the sender's buffer.
-Until this happens, the packet is considered as unacknowledged.
+Once the SRT receiver acknowledges the receipt of a packet, or the Too-Late Packet Drop (TLPKTDROP) is triggered, the packet is removed from the sender's buffer. Until this happens, the packet is considered as unacknowledged.
 
-A moving average value is reported when the value is retrieved by calling
-`srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
-with `instantaneous=false`.
+TODO: ???
 
-The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
+A moving average value is reported when the value is retrieved by calling `srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)` with `instantaneous=false`. The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
 
 ## byteSndBuf
 
-Instantaneous (current) value of `pktSndBuf`, but expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Sender side.
+Same as `pktSndBuf`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ## msSndBuf
 
-The timespan (msec) of packets in the sender's buffer (unacknowledged packets). Sender only.
+The timespan of packets in the sender's buffer (unacknowledged packets), in milliseconds. Available for sender.
 
-A moving average value is reported when the value is retrieved by calling
-`srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
-with `instantaneous=false`.
-
-The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
+A moving average value is reported when the value is retrieved by calling `srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
+with `instantaneous=false`. The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
 
 ## msSndTsbPdDelay
 
-Timestamp-based Packet Delivery Delay value of the peer.
+The Timestamp Based Packet Delivery (TSBPD) delay value of the peer, in milliseconds. Available for sender.
+
+TODO: 
+
+- ???
+- seems to be only for sender
+
 If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
 returns the value of `SRTO_PEERLATENCY`, otherwise 0.
 The sender reports the TSBPD delay value of the receiver.
 The receiver reports the TSBPD delay of the sender.
 
+/// TsbpdDelay is the receiver's buffer delay (or receiver's buffer
+      latency, or SRT Latency).  This is the time, in milliseconds, that
+      SRT holds a packet from the moment it has been received till the
+      time it should be delivered to the upstream application
+
 ## pktRcvBuf
 
-The number of acknowledged packets in receiver's buffer. Receiver only.
+The number of acknowledged packets in the receiver's buffer. Receiver only.
 
-This measurement does not include received but not acknowledged packets, stored in the receiver's buffer.
+This statistic does not include received but not acknowledged packets stored in the receiver's buffer.
 
-A moving average value is reported when the value is retrieved by calling
-`srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
-with `instantaneous=false`.
-
-The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
+A moving average value is reported when the value is retrieved by calling `srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
+with `instantaneous=false`. The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
 
 ## byteRcvBuf
 
-Instantaneous (current) value of `pktRcvBuf`, expressed in bytes, including payload and all headers (SRT+UDP+IP). \
-20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT header. Receiver side.
+The instantaneous value of `pktRcvBuf`, expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 ## msRcvBuf
 
-The timespan (msec) of acknowledged packets in the receiver's buffer. Receiver side.
+The timespan of acknowledged packets in the receiver's buffer, in milliseconds. Available for receiver.
 
-If TSBPD mode is enabled (defualt for **live mode**),
-a packet can be acknowledged, but not yet ready to play.
-This range includes all packets regardless of whether 
-they are ready to play or not.
+If TSBPD mode is enabled (defualt for **live mode**), a packet can be acknowledged, but not yet ready to play.
+This range includes all packets regardless of whether they are ready to play or not.
 
-A moving average value is reported when the value is retrieved by calling
-`srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
-with `instantaneous=false`.
-
-The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
+A moving average value is reported when the value is retrieved by calling `srt_bstats(...)` or `srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
+with `instantaneous=false`. The current state is returned if `srt_bistats(...)` is called with `instantaneous=true`.
 
 Instantaneous value is only reported if TSBPD mode is enabled, otherwise 0 is reported (see #900).
 
 ## msRcvTsbPdDelay
 
-Timestamp-based Packet Delivery Delay value set on the socket via `SRTO_RCVLATENCY` or `SRTO_LATENCY`.
-The value is used to apply TSBPD delay for reading the received data on the socket. Receiver side.
+The Timestamp Based Packet Delivery (TSBPD) delay value set on the socket via `SRTO_RCVLATENCY` or `SRTO_LATENCY`, in milliseconds. Available for receiver.
+
+The value is used to apply TSBPD delay for reading the received data on the socket.
 
 If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
 
