@@ -542,6 +542,29 @@ not be available to the `srt_accept` call.
 
 ---
 
+| OptName               | Since | Binding | Type   | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_GROUPSTABTIMEO` |       | pre     | `int`  | ms     | 40       | 10+    |
+
+- This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability 
+timeout, which is the maximum interval between two consecutive packets retrieved from 
+the peer on the currently active link.
+  
+- NOTE: The two packets can be of any type, but this setting usually refers to control
+packets while the agent is a sender. Idle links exchange only keepalive messages once 
+per second, so they do not count. 
+
+- The value of `SRTO_GROUPSTABTIMEO` should be set as small as possible. Keep
+in mind that the time between two consecutive ACK messages (default = 10 ms)
+will vary, hence 40ms is the recommended setting. Note that higher values
+increase the latency penalty. When this time is exceeded, and the link is
+therefore considered unstable, one of the idle links gets activated, at which
+point all packets unacknowledged so far are sent first.
+
+- This option can only be set on a group.
+
+---
+
 | OptName          | Since | Binding | Type      | Units   | Default  | Range  |
 | ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
 | `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t` | bytes/s | 0        | 0..    |

@@ -589,7 +589,7 @@ void *CSndQueue::worker(void *param)
         THREAD_PAUSED();
         if (currtime < next_time)
         {
-            self->m_pTimer->sleepto(next_time);
+            self->m_pTimer->sleep_until(next_time);
 
 #if defined(HAI_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lSleepTo++;

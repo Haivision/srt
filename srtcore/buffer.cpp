@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     Block* s = m_pLastBlock;
 
-    if (w_msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    if (w_msgno == -1) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
@@ -247,7 +247,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
-    m_iNextMsgNo = ++MsgNo(m_iNextMsgNo);
+    int nextmsgno = ++MsgNo(m_iNextMsgNo);
+    HLOGC(mglog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
+    m_iNextMsgNo = nextmsgno;
 }
 
 void CSndBuffer::setInputRateSmpPeriod(int period)
@@ -1190,6 +1192,17 @@ steady_clock::time_point CRcvBuffer::debugGetDeliveryTime(int offset)
         return steady_clock::time_point();
 
     return getPktTsbPdTime(u->m_Packet.getMsgTimeStamp());
+}
+
+int32_t CRcvBuffer::getTopMsgno() const
+{
+    if (m_iStartPos == m_iLastAckPos)
+        return -1; // No message is waiting
+
+    if (!m_pUnit[m_iStartPos])
+        return -1; // pity
+
+    return m_pUnit[m_iStartPos]->m_Packet.getMsgSeq();
 }
 
 bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto)

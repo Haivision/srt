@@ -218,9 +218,11 @@ public:
         bool ready_write;
         bool ready_error;
 
+        // Balancing data
+        double load_factor;
+        double unit_load;
         // Configuration
         int priority;
-        
         CGroupMemberPerfMon stats;
     };
 
@@ -345,11 +347,12 @@ public:
 
     void setFreshConnected(CUDTSocket* sock);
 
-    static gli_t gli_NULL() { return s_NoGroup.end(); }
+    static gli_t gli_NULL() { return GroupContainer::null(); }
 
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc);
 
 private:
     // For Backup, sending all previous packet
@@ -368,12 +371,14 @@ private:
             CUDTException& w_cx, std::vector<Sendstate>& w_sendstates,
             std::vector<gli_t>& w_parallel, std::vector<gli_t>& w_wipeme,
             const std::string& activate_reason);
-    void send_CheckBrokenSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
+    void send_CheckPendingSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
+    void send_CloseBrokenSockets(std::vector<gli_t>& w_wipeme);
     void sendBackup_CheckParallelLinks(const size_t nunstable, std::vector<gli_t>& w_parallel,
             int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx);
 
 public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
+    int recvBalancing(char* buf, int len, SRT_MSGCTRL& w_mc);
 
     void close();
 
@@ -420,6 +425,7 @@ public:
 
     void syncWithSocket(const CUDT& core);
     int getGroupData(SRT_SOCKGROUPDATA *pdata, size_t *psize);
+    int configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -451,15 +457,49 @@ private:
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
-    std::list<SocketData> m_Group;
-    static std::list<SocketData> s_NoGroup; // This is to have a predictable "null iterator".
+    struct GroupContainer
+    {
+        std::list<SocketData> m_List;
+        static std::list<SocketData> s_NoList; // This is to have a predictable "null iterator".
+
+        /// This field is used only by some types of groups that need
+        /// to keep track as to which link was lately used. Note that
+        /// by removal of a node from the m_List container, this link
+        /// must be appropriately reset.
+        gli_t m_LastActiveLink;
+
+        GroupContainer(): m_LastActiveLink(s_NoList.begin()) {}
+
+        //Property<gli_t> active = { m_LastActiveLink; }
+        SRTU_PROPERTY_RW(gli_t, active, m_LastActiveLink);
+
+        gli_t begin() { return m_List.begin(); }
+        gli_t end() { return m_List.end(); }
+        static gli_t null() { return s_NoList.begin(); }
+        bool empty() { return m_List.empty(); }
+        void push_back(const SocketData& data)
+        {
+            m_List.push_back(data);
+        }
+        void clear()
+        {
+            m_LastActiveLink = null();
+            m_List.clear();
+        }
+        size_t size()
+        {
+            return m_List.size();
+        }
+
+        void erase(gli_t it);
+    };
+    GroupContainer m_Group;
     bool m_selfManaged;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
 
 public:
 
-    // XXX unused now 
     struct BufferedMessageStorage
     {
         size_t blocksize;
@@ -590,20 +630,26 @@ private:
     {
         std::vector<char> packet;
         SRT_MSGCTRL mctrl;
-        ReadPos(int32_t s): mctrl(srt_msgctrl_default)
+        ReadPos(int32_t s, SRT_GROUP_TYPE gt): mctrl(srt_msgctrl_default)
         {
-            mctrl.pktseq = s;
+            if (gt == SRT_GTYPE_BALANCING)
+                mctrl.msgno = s;
+            else
+                mctrl.pktseq = s;
         }
     };
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
     ReadPos* checkPacketAhead();
+    ReadPos* checkPacketAheadMsgno();
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to -1 so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
+    // Version used when using msgno synchronization.
+    volatile int32_t m_RcvBaseMsgNo;
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
@@ -620,7 +666,47 @@ private:
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     volatile int32_t m_iLastSchedMsgNo;
+    unsigned int m_uBalancingRoll;
 
+    /// This is initialized with some number that should be
+    /// decreased with every packet sent. Any decision and
+    /// analysis for a decision concerning balancing group behavior
+    /// should be taken only when this value is 0. During some
+    /// of the analysis steps this value may be reset to some
+    /// higer value so that for particular number of packets
+    /// no analysis is being done (this prevents taking measurement
+    /// data too early when the number of collected data was
+    /// too little and therefore any average is little reliable).
+    unsigned int m_RandomCredit;
+
+    struct BalancingLinkState
+    {
+        gli_t ilink; // previously used link
+        int status;  // 0 = normal first entry; -1 = repeated selection
+        int errorcode;
+    };
+    typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
+    CallbackHolder<selectLink_cb> m_cbSelectLink;
+
+    // Plain algorithm: simply distribute the load
+    // on all links equally.
+    gli_t linkSelect_plain(const BalancingLinkState&);
+    static gli_t linkSelect_plain_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_plain(st);
+    }
+
+    // Window algorihm: keep balance, but mind the sending cost
+    // for every link basing on the flight window size. Keep links
+    // balanced according to the cost of sending.
+    gli_t linkSelect_window(const BalancingLinkState&);
+    static gli_t linkSelect_window_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_window(st);
+    }
+    CUDTGroup::gli_t linkSelect_window_ReportLink(CUDTGroup::gli_t this_link);
 
     // Statistics
 
@@ -717,6 +803,8 @@ public:
         // provided that they are to be ued only for live mode.
         return m_iAvgPayloadSize == -1 ? SRT_LIVE_DEF_PLSIZE : m_iAvgPayloadSize;
     }
+
+public:
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
@@ -740,7 +828,12 @@ public:
         // this is going to be past the ISN, at worst it will be caused
         // by TLPKTDROP.
         m_RcvBaseSeqNo = -1;
+        m_RcvBaseMsgNo = -1;
     }
+    int baseOffset(SRT_MSGCTRL& mctrl);
+    int baseOffset(ReadPos& pos);
+    bool seqDiscrepancy(SRT_MSGCTRL& mctrl);
+    bool msgDiscrepancy(SRT_MSGCTRL& mctrl);
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
@@ -827,6 +920,7 @@ public: //API
     static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    static int configureGroup(SRTSOCKET groupid, const char* str);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, UDPSOCKET udpsock);
@@ -958,6 +1052,19 @@ public: // internal API
     int32_t peerISN() const { return m_iPeerISN; }
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
+
+    int32_t getFlightSpan() const
+    {
+        // This is a number of unacknowledged packets at this moment
+        // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
+        // however in a case when the sending stopped and all packets were
+        // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
+        // Therefore we increase m_iSndCurrSeqNo by 1 forward and then
+        // get the distance towards the last ACK. This way this value may
+        // be only positive or 0.
+
+        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
+    }
 
     int minSndSize(int len = 0) const
     {
@@ -1150,9 +1257,7 @@ private:
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, uint64_t& srctime);
-
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
-
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
@@ -1252,7 +1357,7 @@ private:
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
-    static std::vector<int32_t> groupPacketArrival(void* vself, CPacket& pkt);
+    static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
     static CUDTUnited s_UDTUnited;               // UDT global management base
 
@@ -1447,6 +1552,9 @@ private: // Timers
         m_iRcvLastAckAck = isn;
         m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
     }
+
+
+    volatile int m_iSndMinFlightSpan;            // updated with every ACK, number of packets in flight at ACK
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode

@@ -538,37 +538,6 @@ struct EventSlot
 };
 
 
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
-
-class CTimer
-{
-public:
-   CTimer();
-   ~CTimer();
-
-public:
-
-      /// Seelp until CC "nexttime_tk".
-      /// @param [in] nexttime_tk next time the caller is waken up.
-
-   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
-
-      /// Stop the sleep() or sleepto() methods.
-
-   void interrupt();
-
-      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
-
-   void tick();
-
-private:
-   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
-
-   pthread_cond_t m_TickCond;
-   srt::sync::Mutex m_TickLock;
-};
-
 // UDT Sequence Number 0 - (2^31 - 1)
 
 // seqcmp: compare two seq#, considering the wraping
@@ -742,7 +711,6 @@ public:
     static const size_t HALF = (OVER-MIN)/2;
 
 private:
-
     static int Diff(uint32_t left, uint32_t right)
     {
         // UNExpected order, diff is negative
@@ -770,7 +738,6 @@ private:
     }
 
 public:
-
     explicit RollNumber(uint32_t val): number(val)
     {
     }
@@ -852,6 +819,7 @@ public:
                 number -= OVER - MIN;
         }
     }
+
     operator uint32_t() const { return number; }
 };
 

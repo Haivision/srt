@@ -291,7 +291,7 @@ int CUDTUnited::cleanup()
    // after which the m_bClosing flag is cheched, which
    // is set here above. Worst case secenario, this
    // pthread_join() call will block for 1 second.
-   CSyncMono::signal_relaxed(m_GCStopCond);
+   CSync::signal_relaxed(m_GCStopCond);
    pthread_join(m_GCThread, NULL);
 
    // XXX There's some weird bug here causing this
@@ -1295,6 +1295,11 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
 
         int isn = g.currentSchedSequence();
 
+        // Don't synchronize ISN in case of balancing groups. Every link
+        // may send their own payloads independently.
+        if (g.type() == SRT_GTYPE_BALANCING)
+            isn = -1;
+
         // We got it. Bind the socket, if the source address was set
         if (!source_addr.empty())
             bind(ns, source_addr);
@@ -1475,9 +1480,18 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
                 // Remove from spawned and try again
                 spawned.erase(sid);
                 broken.push_back(sid);
+
+                /* XXX This is theoretically cleaner,
+                   although it's not necessary because destroyed
+                   sockets are removed from eids in the end. The problem
+                   is that there's some mistake in the implementation and
+                   those below cause misleading IPE message to be printed.
+                   PR #1127 is intended to fix the misleading IPE report.
+
                 srt_epoll_remove_usock(eid, sid);
                 srt_epoll_remove_usock(g.m_SndEID, sid);
                 srt_epoll_remove_usock(g.m_RcvEID, sid);
+                */
 
                 continue;
             }
@@ -2819,6 +2833,22 @@ SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     return s->m_IncludedGroup->id();
+}
+
+int CUDT::configureGroup(SRTSOCKET groupid, const char* str)
+{
+    if ( (groupid & SRTGROUP_MASK) == 0)
+    {
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
+    if (!g)
+    {
+        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return g->configure(str);
 }
 
 int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
