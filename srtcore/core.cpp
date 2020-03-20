@@ -8906,7 +8906,11 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             // together with encrypting, and the packet should be sent as is, when rexmitting.
             // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
             // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
-            kflg    = m_pCryptoControl->getSndCryptoFlags();
+            if(m_pCryptoControl)            
+            {
+                kflg = m_pCryptoControl->getSndCryptoFlags();
+            }
+            
             payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
             if (payload)
             {
