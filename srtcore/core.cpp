@@ -4090,6 +4090,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         {
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
+            m_RejectReason = SRT_REJ_TIMEOUT;
             break;
         }
     }
