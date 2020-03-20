@@ -26,8 +26,7 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
         for (int i = 0; i < num_samples; i++)
         {
             steady_clock::time_point currtime = steady_clock::now();
-
-            timer.sleepto(currtime + microseconds_from(interval_us));
+            timer.sleep_until(currtime + microseconds_from(interval_us));
 
             steady_clock::time_point new_time = steady_clock::now();
             sleeps_us[i] = count_microseconds(new_time - currtime);

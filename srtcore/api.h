@@ -361,9 +361,7 @@ private:
 private:
    volatile bool m_bClosing;
    srt::sync::Mutex m_GCStopLock;
-   srt::sync::ConditionMonotonic m_GCStopCond;
-
-
+   srt::sync::Condition m_GCStopCond;
 
    srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
