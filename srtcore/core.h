@@ -897,7 +897,7 @@ public: // internal API
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
-    uint32_t getFlightSpan()
+    int32_t getFlightSpan()
     {
         // This is a number of unacknowledged packets at this moment
         // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
