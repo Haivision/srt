@@ -645,7 +645,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.";
+        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -675,7 +675,7 @@ int main( int argc, char** argv )
 
         if (remain <= final_delay)
         {
-            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
+            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exiting\n";
             return 0;
         }
 

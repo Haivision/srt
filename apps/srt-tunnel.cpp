@@ -358,7 +358,7 @@ void Engine::Worker()
         }
         catch (Medium::ReadEOF&)
         {
-            Verb() << "EOF. Exitting engine.";
+            Verb() << "EOF. Exiting engine.";
             break;
         }
         catch (Medium::TransmissionError& er)
@@ -906,7 +906,7 @@ private:
                 // the one critical section - make sure no other thread
                 // is accessing it at the same time and also make join all
                 // threads that might have been accessing it. After
-                // exitting as true (meaning that it was decommissioned
+                // exiting as true (meaning that it was decommissioned
                 // as expected) it can be safely deleted.
                 if ((*i)->decommission_if_dead(main_running))
                 {
@@ -1078,7 +1078,7 @@ int main( int argc, char** argv )
             std::unique_ptr<Medium> accepted = main_listener->Accept();
             if (!g_tunnels.main_running)
             {
-                Verb() << "Service stopped. Exitting.";
+                Verb() << "Service stopped. Exiting.";
                 break;
             }
             Verb() << "Connection accepted. Connecting to the relay...";
