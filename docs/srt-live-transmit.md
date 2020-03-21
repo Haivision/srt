@@ -217,7 +217,7 @@ specified in the URI:
     -   The *host* part specifies the remote host to contact.
     -   The *port* part specifies **both local and remote port**. Note that the local port is this way both listening port and outgoing port.
     -   The **adapter** parameter can be used to specify the adapter.
-    -   The **port** parameter is not used.
+    -   The **port** parameter can be used to specify the local port to bind to.
 
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
 
