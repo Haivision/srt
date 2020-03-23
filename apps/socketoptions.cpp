@@ -22,24 +22,20 @@ extern const std::map<std::string, int> enummap_transtype = {
     { "file", SRTT_FILE }
 };
 
-SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
+
+const char* const SocketOption::mode_names[3] = {
+    "listener", "caller", "rendezvous"
+};
+
+SocketOption::Mode SrtInterpretMode(string modestr, string host, string adapter)
 {
-    vector<string> dummy;
-    vector<string>& fails = failures ? *failures : dummy;
+    SocketOption::Mode mode = SocketOption::FAILURE;
 
-    SocketOption::Mode mode;
-    string modestr = "default";
-
-    if ( options.count("mode") )
-    {
-        modestr = options["mode"];
-    }
-
-    if ( modestr == "client" || modestr == "caller" )
+    if (modestr == "client" || modestr == "caller")
     {
         mode = SocketOption::CALLER;
     }
-    else if ( modestr == "server" || modestr == "listener" )
+    else if (modestr == "server" || modestr == "listener")
     {
         mode = SocketOption::LISTENER;
     }
@@ -47,7 +43,7 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     {
         mode = SocketOption::RENDEZVOUS;
     }
-    else if ( modestr == "default" )
+    else if (modestr == "default")
     {
         // Use the following convention:
         // 1. Server for source, Client for target
@@ -59,7 +55,7 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
         else
         {
             // Host is given, so check also "adapter"
-            if ( options.count("adapter") )
+            if (adapter != "")
                 mode = SocketOption::RENDEZVOUS;
             else
                 mode = SocketOption::CALLER;
@@ -68,6 +64,31 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     else
     {
         mode = SocketOption::FAILURE;
+    }
+
+    return mode;
+}
+
+SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
+{
+    vector<string> dummy;
+    vector<string>& fails = failures ? *failures : dummy;
+
+    string modestr = "default", adapter;
+
+    if (options.count("mode"))
+    {
+        modestr = options["mode"];
+    }
+
+    if (options.count("adapter"))
+    {
+        adapter = options["adapter"];
+    }
+
+    SocketOption::Mode mode = SrtInterpretMode(modestr, host, adapter);
+    if (mode == SocketOption::FAILURE)
+    {
         fails.push_back("mode");
     }
 
