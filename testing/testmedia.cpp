@@ -222,6 +222,11 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
+            if (m_group_type != "broadcast")
+            {
+                Error("With //group, only type=broadcast is currently supported");
+            }
+
             vector<string> nodes;
             Split(par["nodes"], ',', back_inserter(nodes));
 
@@ -1810,6 +1815,7 @@ RETRY_READING:
     Error("No data extracted");
     return output; // Just a marker - this above function throws an exception
 }
+
 #endif
 
 bytevector SrtSource::Read(size_t chunk)
