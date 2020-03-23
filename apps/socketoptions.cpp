@@ -43,6 +43,10 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     {
         mode = SocketOption::LISTENER;
     }
+    else if (modestr == "rendezvous")
+    {
+        mode = SocketOption::RENDEZVOUS;
+    }
     else if ( modestr == "default" )
     {
         // Use the following convention:
