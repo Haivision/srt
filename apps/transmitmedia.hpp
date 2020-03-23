@@ -49,7 +49,7 @@ protected:
 
 public:
     void InitParameters(string host, map<string,string> par);
-    void PrepareListener(string host, int port, int backlog);
+    void PrepareListener(string host, string port, int backlog);
     void StealFrom(SrtCommon& src);
     bool AcceptNewClient();
 
@@ -61,22 +61,22 @@ public:
 protected:
 
     void Error(string src);
-    void Init(string host, int port, map<string,string> par, bool dir_output);
+    void Init(string host, string port, map<string,string> par, bool dir_output);
 
     virtual int ConfigurePost(SRTSOCKET sock);
     virtual int ConfigurePre(SRTSOCKET sock);
 
-    void OpenClient(string host, int port);
+    void OpenClient(string host, string port);
     void PrepareClient();
-    void SetupAdapter(const std::string& host, int port);
-    void ConnectClient(string host, int port);
+    void SetupAdapter(const std::string& host, const std::string& port);
+    void ConnectClient(string host, string port);
 
-    void OpenServer(string host, int port)
+    void OpenServer(string host, string port)
     {
         PrepareListener(host, port, 1);
     }
 
-    void OpenRendezvous(string adapter, string host, int port);
+    void OpenRendezvous(string adapter, string host, string port);
 
     virtual ~SrtCommon();
 };
@@ -87,7 +87,7 @@ class SrtSource: public Source, public SrtCommon
     std::string hostport_copy;
 public:
 
-    SrtSource(std::string host, int port, const std::map<std::string,std::string>& par);
+    SrtSource(std::string host, std::string port, const std::map<std::string,std::string>& par);
     SrtSource()
     {
         // Do nothing - create just to prepare for use
@@ -126,7 +126,7 @@ class SrtTarget: public Target, public SrtCommon
 {
 public:
 
-    SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
+    SrtTarget(std::string host, std::string port, const std::map<std::string,std::string>& par)
     {
         Init(host, port, par, true);
     }
@@ -179,10 +179,10 @@ class SrtModel: public SrtCommon
 public:
     bool is_caller = false;
     string m_host;
-    int m_port = 0;
+    string m_port;
 
 
-    SrtModel(string host, int port, map<string,string> par);
+    SrtModel(string host, string port, map<string,string> par);
     void Establish(std::string& name);
 
     void Close()

@@ -77,29 +77,85 @@ int inet_pton(int af, const char * src, void * dst)
 }
 #endif // _WIN32 && !HAVE_INET_PTON
 
-sockaddr_in CreateAddrInet(const string& name, unsigned short port)
+#define NI_MAXNUMERICHOST 64
+
+sockaddr_any CreateAddrInet(const string& name, const string& port)
 {
-    sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(port);
+    int error = 0;
+    const char *description;
+    struct addrinfo *destination;
+    struct addrinfo hints;
+    size_t length;
+    char ni[NI_MAXNUMERICHOST];
+    sockaddr_any sa;
+    sa.reset();
+    // sa.sin6_family = AF_INET6;
+    // sa.sin6_port = htons(port);
 
     if ( name != "" )
     {
-        if ( inet_pton(AF_INET, name.c_str(), &sa.sin_addr) == 1 )
-            return sa;
+        memset (&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;    // Allow IPv4 or IPv6
+        hints.ai_socktype = SOCK_DGRAM; // Datagram socket
+        hints.ai_flags = 0;
+        hints.ai_protocol = 0;          // Any protocol
 
-        // XXX RACY!!! Use getaddrinfo() instead. Check portability.
-        // Windows/Linux declare it.
-        // See:
-        //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-        hostent* he = gethostbyname(name.c_str());
-        if ( !he || he->h_addrtype != AF_INET )
-            throw invalid_argument("CreateAddrInet: host not found: " + name);
+        error = getaddrinfo(name.c_str(), port.c_str(), &hints, &destination);
+        if (error < 0)
+        {
+            description = gai_strerror(error);
+            throw ("CreateAddrInet: get address info " + name + " " + description);
+        }
 
-        sa.sin_addr = *(in_addr*)he->h_addr_list[0];
+        length = destination->ai_addrlen ;
+        if (length <= sizeof sa.sin6)
+        {
+            memcpy(&sa.sin6, destination->ai_addr, destination->ai_addrlen);
+        }
+
+        if (length == 0 || length > sizeof sa.sin6)
+        {
+            freeaddrinfo(destination);
+            throw ("CreateAddrInet: address length = " + length);
+        }
+
+        error = getnameinfo(&sa.sa, length, ni, sizeof ni, NULL, 0, NI_NUMERICHOST);
+        if (error)
+        {
+            description = gai_strerror(error);
+            cout << "getnameinfo() returned " << description << endl;
+            throw ("CreateAddrInet: name info");
+            freeaddrinfo(destination) ;
+        }
+
+        switch (destination->ai_family)
+        {
+            case AF_INET:
+            {
+                cout << "IPv4: " << destination->ai_canonname << endl ;
+                break;
+            }
+
+            case AF_INET6:
+            {
+                if (IN6_IS_ADDR_MULTICAST (&sa.sin6.sin6_addr))
+                {
+                    cout << "IPv6 Multicast " << ni << " " << endl;
+                }
+                else
+                {
+                    cout << "IPv6 Unicast " << ni << " " << endl;
+                }
+                break;
+            }
+
+            default:
+            {
+                throw ("CreateAddrInet: protocol family " + destination->ai_family);
+            }
+        }
+        freeaddrinfo (destination) ;
     }
-
     return sa;
 }
 

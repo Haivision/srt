@@ -184,7 +184,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     m_options = par;
 }
 
-void SrtCommon::PrepareListener(string host, int port, int backlog)
+void SrtCommon::PrepareListener(string host, string port, int backlog)
 {
     m_bindsock = srt_create_socket();
     if ( m_bindsock == SRT_ERROR )
@@ -194,7 +194,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
-    sockaddr_in sa = CreateAddrInet(host, port);
+    sockaddr_any sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Binding a server on " << host << ":" << port << " ...";
 
@@ -260,7 +260,7 @@ bool SrtCommon::AcceptNewClient()
     return true;
 }
 
-void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_output)
+void SrtCommon::Init(string host, string port, map<string,string> par, bool dir_output)
 {
     m_output_direction = dir_output;
     InitParameters(host, par);
@@ -364,22 +364,22 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
-void SrtCommon::SetupAdapter(const string& host, int port)
+void SrtCommon::SetupAdapter(const string& host, const string& port)
 {
-    sockaddr_in localsa = CreateAddrInet(host, port);
+    sockaddr_any localsa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&localsa;
     int stat = srt_bind(m_sock, psa, sizeof localsa);
     if ( stat == SRT_ERROR )
         Error("srt_bind");
 }
 
-void SrtCommon::OpenClient(string host, int port)
+void SrtCommon::OpenClient(string host, string port)
 {
     PrepareClient();
 
     if ( m_outgoing_port )
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter("", to_string(m_outgoing_port));
     }
 
     ConnectClient(host, port);
@@ -397,10 +397,10 @@ void SrtCommon::PrepareClient()
 }
 
 
-void SrtCommon::ConnectClient(string host, int port)
+void SrtCommon::ConnectClient(string host, string port)
 {
 
-    sockaddr_in sa = CreateAddrInet(host, port);
+    sockaddr_any sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
 
     Verb() << "Connecting to " << host << ":" << port;
@@ -427,7 +427,7 @@ void SrtCommon::Error(string src)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
-void SrtCommon::OpenRendezvous(string adapter, string host, int port)
+void SrtCommon::OpenRendezvous(string adapter, string host, string port)
 {
     m_sock = srt_create_socket();
     if ( m_sock == SRT_ERROR )
@@ -440,7 +440,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
-    sockaddr_in localsa = CreateAddrInet(adapter, port);
+    sockaddr_any localsa = CreateAddrInet(adapter, port);
     sockaddr* plsa = (sockaddr*)&localsa;
 
     Verb() << "Binding a server on " << adapter << ":" << port;
@@ -452,7 +452,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
         Error("srt_bind");
     }
 
-    sockaddr_in sa = CreateAddrInet(host, port);
+    sockaddr_any sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Connecting to " << host << ":" << port;
 
@@ -492,7 +492,7 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
-SrtSource::SrtSource(string host, int port, const map<string,string>& par)
+SrtSource::SrtSource(string host, string port, const map<string,string>& par)
 {
     Init(host, port, par, false);
 
@@ -586,7 +586,7 @@ int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
 }
 
 
-SrtModel::SrtModel(string host, int port, map<string,string> par)
+SrtModel::SrtModel(string host, string port, map<string,string> par)
 {
     InitParameters(host, par);
     if (m_mode == "caller")
@@ -627,7 +627,7 @@ void SrtModel::Establish(std::string& w_name)
         if (m_outgoing_port)
         {
             Verb() << "Setting outgoing port: " << m_outgoing_port;
-            SetupAdapter("", m_outgoing_port);
+            SetupAdapter("", to_string(m_outgoing_port));
         }
 
         ConnectClient(m_host, m_port);
@@ -636,7 +636,7 @@ void SrtModel::Establish(std::string& w_name)
         {
             // Must rely on a randomly selected one. Extract the port
             // so that it will be reused next time.
-            sockaddr_any s(AF_INET);
+            sockaddr_any s(AF_INET6);
             int namelen = s.size();
             if ( srt_getsockname(Socket(), s.get(), &namelen) == SRT_ERROR )
             {
@@ -671,7 +671,7 @@ template <> struct Srt<Source> { typedef SrtSource type; };
 template <> struct Srt<Target> { typedef SrtTarget type; };
 
 template <class Iface>
-Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
+Iface* CreateSrt(const string& host, const string& port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
 
 class ConsoleSource: public Source
 {
@@ -756,11 +756,9 @@ SocketOption udp_options [] {
     { "rcvbuf", SOL_SOCKET, SO_RCVBUF, SocketOption::PRE, SocketOption::INT, nullptr}
 };
 
-static inline bool IsMulticast(in_addr adr)
+static inline bool IsMulticast(in6_addr *addr)
 {
-    unsigned char* abytes = (unsigned char*)&adr.s_addr;
-    unsigned char c = abytes[0];
-    return c >= 224 && c <= 239;
+    return IN6_IS_ADDR_MULTICAST(addr);
 }
 
 
@@ -768,13 +766,13 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_in sadr;
+    sockaddr_any saddr;
     string adapter;
     map<string, string> m_options;
 
-    void Setup(string host, int port, map<string,string> attr)
+    void Setup(string host, string port, map<string,string> attr)
     {
-        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        m_sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == -1)
             Error(SysError(), "UdpCommon::Setup: socket");
 
@@ -792,28 +790,28 @@ protected:
             Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
         }
 
-        sadr = CreateAddrInet(host, port);
+        saddr = CreateAddrInet(host, port);
 
         bool is_multicast = false;
 
         if ( attr.count("multicast") )
         {
-            if (!IsMulticast(sadr.sin_addr))
+            if (!IsMulticast(&saddr.sin6.sin6_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (IsMulticast(sadr.sin_addr))
+        else if (IsMulticast(&saddr.sin6.sin6_addr))
         {
             is_multicast = true;
         }
 
         if (is_multicast)
         {
-            ip_mreq_source mreq_ssm;
-            ip_mreq mreq;
-            sockaddr_in maddr;
+            group_source_req mreq_ssm;
+            ipv6_mreq mreq;
+            sockaddr_any maddr;
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -821,10 +819,10 @@ protected:
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
             if ( adapter == "" )
             {
-                Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin_family = AF_INET;
-                maddr.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin_port = htons(port); // necessary for temporary use
+                Verb() << "Multicast: home address: in6addr_any:" << port;
+                maddr.sin6.sin6_family = AF_INET6;
+                maddr.sin6.sin6_addr = in6addr_any;
+                // maddr.sin6.sin6_port = htons(port)); // necessary for temporary use
             }
             else
             {
@@ -834,25 +832,29 @@ protected:
 
             if (attr.count("source"))
             {
-#ifdef IP_ADD_SOURCE_MEMBERSHIP
+#ifdef IPV6_JOIN_GROUP
                 /* this is an ssm.  we need to use the right struct and opt */
-                opt_name = IP_ADD_SOURCE_MEMBERSHIP;
-                mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
+                opt_name = IPV6_JOIN_GROUP;
+                /*
+                mreq_ssm.gsr_source = saddr.sin6_addr.;
                 mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
+                 */
 #else
                 throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
 #endif
             }
             else
             {
+                /*
                 opt_name = IP_ADD_MEMBERSHIP;
                 mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
                 mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
                 mreq_arg_ptr = &mreq;
+                 */
             }
 
 #ifdef _WIN32
@@ -951,10 +953,10 @@ class UdpSource: public Source, public UdpCommon
     bool eof = true;
 public:
 
-    UdpSource(string host, int port, const map<string,string>& attr)
+    UdpSource(string host, string port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, (sockaddr*)&saddr, sizeof saddr);
         if ( stat == -1 )
             Error(SysError(), "Binding address for UDP");
         eof = false;
@@ -965,8 +967,8 @@ public:
         if (data.size() < chunk)
             data.resize(chunk);
 
-        sockaddr_in sa;
-        socklen_t si = sizeof(sockaddr_in);
+        sockaddr_any sa;
+        socklen_t si = sizeof(sockaddr_in6);
         int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, (sockaddr*)&sa, &si);
         if (stat < 1)
         {
@@ -992,13 +994,13 @@ public:
 class UdpTarget: public Target, public UdpCommon
 {
 public:
-    UdpTarget(string host, int port, const map<string,string>& attr )
+    UdpTarget(string host, string port, const map<string,string>& attr )
     {
         Setup(host, port, attr);
         if (adapter != "")
         {
-            sockaddr_in maddr = CreateAddrInet(adapter, 0);
-            in_addr addr = maddr.sin_addr;
+            sockaddr_any maddr = CreateAddrInet(adapter, 0);
+            in6_addr addr = maddr.sin6.sin6_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
             if (res == -1)
@@ -1011,7 +1013,7 @@ public:
 
     int Write(const char* data, size_t len, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&sadr, sizeof sadr);
+        int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&saddr, sizeof saddr);
         if ( stat == -1 )
         {
             if ((false))
@@ -1032,7 +1034,7 @@ template <> struct Udp<Source> { typedef UdpSource type; };
 template <> struct Udp<Target> { typedef UdpTarget type; };
 
 template <class Iface>
-Iface* CreateUdp(const string& host, int port, const map<string,string>& par) { return new typename Udp<Iface>::type (host, port, par); }
+Iface* CreateUdp(const string& host, const string& port, const map<string,string>& par) { return new typename Udp<Iface>::type (host, port, par); }
 
 template<class Base>
 inline bool IsOutput() { return false; }
@@ -1079,7 +1081,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
             cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
-        ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
+        ptr.reset( CreateSrt<Base>(u.host(), u.port(), u.parameters()) );
         break;
 
 
@@ -1090,7 +1092,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
             cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
-        ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
+        ptr.reset( CreateUdp<Base>(u.host(), u.port(), u.parameters()) );
         break;
 
     }

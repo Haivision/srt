@@ -183,7 +183,7 @@ int main( int argc, char** argv )
     for (size_t i = 0; i < args.size(); ++i)
     {
         UriParser u(args[i], UriParser::EXPECT_HOST);
-        sockaddr_in sa = CreateAddrInet(u.host(), u.portno());
+        sockaddr_in6 sa = CreateAddrInet(u.host(), u.port());
 
         SRTSOCKET s = srt_create_socket();
 

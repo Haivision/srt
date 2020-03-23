@@ -54,6 +54,7 @@ inline void SysCleanupNetwork()
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <netinet_any.h>
 
 // Nothing needs to be done on POSIX; this is a Windows problem.
 inline bool SysInitializeNetwork() {return true;}
@@ -69,7 +70,7 @@ inline int SysError() { return ::GetLastError(); }
 inline int SysError() { return errno; }
 #endif
 
-sockaddr_in CreateAddrInet(const std::string& name, unsigned short port);
+sockaddr_any CreateAddrInet(const std::string& name, const std::string& port);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
 

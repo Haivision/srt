@@ -358,7 +358,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
     }
 
-    sockaddr_in sa = CreateAddrInet(host, port);
+    sockaddr_in6 sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Binding a server on " << host << ":" << port << " ...";
     stat = srt_bind(m_bindsock, psa, sizeof sa);
@@ -409,7 +409,7 @@ void SrtCommon::StealFrom(SrtCommon& src)
 
 void SrtCommon::AcceptNewClient()
 {
-    sockaddr_in scl;
+    sockaddr_in6 scl;
     int sclen = sizeof scl;
 
     Verb() << " accept..." << VerbNoEOL;
@@ -676,7 +676,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
-    sockaddr_in localsa = CreateAddrInet(host, port);
+    sockaddr_in6 localsa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&localsa;
     int stat = srt_bind(m_sock, psa, sizeof localsa);
     if (stat == SRT_ERROR)
@@ -765,7 +765,7 @@ void SrtCommon::OpenGroupClient()
     int i = 1;
     for (Connection& c: m_group_nodes)
     {
-        sockaddr_in sa = CreateAddrInet(c.host, c.port);
+        sockaddr_in6 sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
         Verb() << "\t[" << i << "] " << c.host << ":" << c.port
             << "?pri=" << c.priority
@@ -929,7 +929,7 @@ void SrtCommon::OpenGroupClient()
 void SrtCommon::ConnectClient(string host, int port)
 {
 
-    sockaddr_in sa = CreateAddrInet(host, port);
+    sockaddr_in6 sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
     int stat = srt_connect(m_sock, psa, sizeof sa);
@@ -1008,7 +1008,7 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    sockaddr_in localsa = CreateAddrInet(adapter, port);
+    sockaddr_in6 localsa = CreateAddrInet(adapter, port);
     sockaddr* plsa = (sockaddr*)&localsa;
     Verb() << "Binding a server on " << adapter << ":" << port << " ...";
     int stat = srt_bind(m_sock, plsa, sizeof localsa);
@@ -1111,7 +1111,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         if (n.socket != SRT_INVALID_SOCK)
             continue;
 
-        sockaddr_in sa = CreateAddrInet(n.host, n.port);
+        sockaddr_in6 sa = CreateAddrInet(n.host, n.port);
         sockaddr* psa = (sockaddr*)&sa;
         Verb() << "[" << i << "] RECONNECTING to node " << n.host << ":" << n.port << " ... " << VerbNoEOL;
         ++i;
@@ -2172,11 +2172,9 @@ SocketOption udp_options [] {
     { "mcloop", IPPROTO_IP, IP_MULTICAST_LOOP, SocketOption::PRE, SocketOption::INT, nullptr }
 };
 
-static inline bool IsMulticast(in_addr adr)
+static inline bool IsMulticast(in6_addr *addr)
 {
-    unsigned char* abytes = (unsigned char*)&adr.s_addr;
-    unsigned char c = abytes[0];
-    return c >= 224 && c <= 239;
+    return IN6_IS_ADDR_MULTICAST(addr);
 }
 
 
@@ -2184,32 +2182,32 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_in sadr;
+    sockaddr_in6 saddr;
     string adapter;
     map<string, string> m_options;
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        m_sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == -1)
             Error(SysError(), "UdpCommon::Setup: socket");
 
         int yes = 1;
         ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
 
-        sadr = CreateAddrInet(host, port);
+        saddr = CreateAddrInet(host, port);
 
         bool is_multicast = false;
 
         if (attr.count("multicast"))
         {
-            if (!IsMulticast(sadr.sin_addr))
+            if (!IsMulticast(&saddr.sin6_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (IsMulticast(sadr.sin_addr))
+        else if (IsMulticast(&saddr.sin6_addr))
         {
             is_multicast = true;
         }
@@ -2218,7 +2216,7 @@ protected:
         {
             ip_mreq_source mreq_ssm;
             ip_mreq mreq;
-            sockaddr_in maddr;
+            sockaddr_in6 maddr;
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -2227,9 +2225,9 @@ protected:
             if (adapter == "")
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin_family = AF_INET;
-                maddr.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin_port = htons(port); // necessary for temporary use
+                maddr.sin6_family = AF_INET;
+                maddr.sin6_addr = in6addr_any;
+                maddr.sin6_port = htons(port); // necessary for temporary use
             }
             else
             {
@@ -2240,20 +2238,24 @@ protected:
             if (attr.count("source"))
             {
                 /* this is an ssm.  we need to use the right struct and opt */
+                /*
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
                 mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
                 mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
+                 */
             }
             else
             {
+                /*
                 opt_name = IP_ADD_MEMBERSHIP;
                 mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
                 mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
                 mreq_arg_ptr = &mreq;
+                 */
             }
 
 #ifdef _WIN32
@@ -2358,7 +2360,7 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, (sockaddr*)&saddr, sizeof saddr);
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
@@ -2367,7 +2369,7 @@ public:
     bytevector Read(size_t chunk) override
     {
         bytevector data(chunk);
-        sockaddr_in sa;
+        sockaddr_in6 sa;
         socklen_t si = sizeof(sockaddr_in);
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
         if (stat == -1)
@@ -2398,8 +2400,8 @@ public:
         Setup(host, port, attr);
         if (adapter != "")
         {
-            sockaddr_in maddr = CreateAddrInet(adapter, 0);
-            in_addr addr = maddr.sin_addr;
+            sockaddr_in6 maddr = CreateAddrInet(adapter, 0);
+            in6_addr addr = maddr.sin6_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
             if (res == -1)
@@ -2412,7 +2414,7 @@ public:
 
     void Write(const bytevector& data) override
     {
-        int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
+        int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&saddr, sizeof saddr);
         if (stat == -1)
             Error(SysError(), "UDP Write/sendto");
     }
