@@ -54,7 +54,7 @@ int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udps
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
-int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, -1); }
+int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
 int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* source,
@@ -178,12 +178,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 
 extern const SRT_MSGCTRL srt_msgctrl_default = {
     0,     // no flags set
-    -1,    // -1 = infinity
+    SRT_MSGTTL_INF,
     false, // not in order (matters for msg mode only)
     PB_SUBSEQUENT,
     0,     // srctime: take "now" time
-    -1,    // -1: no seq (0 is a valid seqno!)
-    -1,    // -1: unset (0 is control, numbers start from 1)
+    SRT_SEQNO_NONE,
+    SRT_MSGNO_NONE,
     NULL,  // grpdata not supplied
     0      // idem
 };
