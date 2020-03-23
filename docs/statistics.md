@@ -27,8 +27,7 @@ TODO:
 
 - Data type (int, float) - ?
 - Absolute timestamp, but it's not a statistics
-- go through empty and ??? cells in the table
-- Add "in packets" in description for all the stats which are measured in packets
+- go through empty cells in the table
 
 | Statistic               | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
 | ----------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
@@ -46,10 +45,10 @@ TODO:
 | pktSndDropTotal         | accumulated       | packets             | ✓                    | -                      | int       |
 | pktRcvDropTotal         | accumulated       | packets             | -                    | ✓                      | int       |
 | pktRcvUndecryptTotal    | accumulated       | packets             | -                    | ✓                      | int       |
-| pktSndFilterExtraTotal  | accumulated       | packets             | ✓                    | -                      | ???       |
-| pktRcvFilterExtraTotal  | accumulated       | packets             | -                    | ✓                      | ???       |
-| pktRcvFilterSupplyTotal | accumulated       | packets             | -                    | ✓                      | ???       |
-| pktRcvFilterLossTotal   | accumulated       | packets             | -                    | ✓                      | ???       |
+| pktSndFilterExtraTotal  | accumulated       | packets             | ✓                    | -                      | int       |
+| pktRcvFilterExtraTotal  | accumulated       | packets             | -                    | ✓                      | int       |
+| pktRcvFilterSupplyTotal | accumulated       | packets             | -                    | ✓                      | int       |
+| pktRcvFilterLossTotal   | accumulated       | packets             | -                    | ✓                      | int       |
 | byteSentTotal           | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
 | byteRecvTotal           | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | byteRcvLossTotal        | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
@@ -62,22 +61,22 @@ TODO:
 | pktSndLoss              | interval-based    | packets             | ✓                    | -                      | int       |
 | pktRcvLoss              | interval-based    | packets             | -                    | ✓                      | int       |
 | pktRetrans              | interval-based    | packets             | ✓                    | -                      | int       |
-| pktRcvRetrans           |                   |                     |                      |                        |           |
+| pktRcvRetrans           |                   |                     |                      |                        | int       |
 | pktSentACK              | interval-based    | packets             |                      |                        | int       |
 | pktRecvACK              | interval-based    | packets             |                      |                        | int       |
 | pktSentNAK              | interval-based    | packets             |                      |                        | int       |
 | pktRecvNAK              | interval-based    | packets             |                      |                        | int       |
-| pktSndFilterExtra       | interval-based    | packets             | ✓                    | -                      | ???       |
-| pktRcvFilterExtra       | interval-based    | packets             | -                    | ✓                      | ???       |
-| pktRcvFilterSupply      | interval-based    | packets             | -                    | ✓                      | ???       |
-| pktRcvFilterLoss        | interval-based    | packets             | -                    | ✓                      | ???       |
+| pktSndFilterExtra       | interval-based    | packets             | ✓                    | -                      | int       |
+| pktRcvFilterExtra       | interval-based    | packets             | -                    | ✓                      | int       |
+| pktRcvFilterSupply      | interval-based    | packets             | -                    | ✓                      | int       |
+| pktRcvFilterLoss        | interval-based    | packets             | -                    | ✓                      | int       |
 | mbpsSendRate            | interval-based    | Mbps                | ✓                    | -                      | double    |
 | mbpsRecvRate            | interval-based    | Mbps                | -                    | ✓                      | double    |
 | usSndDuration           | interval-based    | us (microseconds)   | ✓                    | -                      | int64_t   |
-| pktReorderDistance      | interval-based    | packets             | -                    | ✓                      |           |
-| pktReorderTolerance     | interval-based    |                     |                      |                        |           |
-| pktRcvAvgBelatedTime    |                   |                     |                      |                        |           |
-| pktRcvBelated           |                   |                     |                      |                        |           |
+| pktReorderDistance      | interval-based    | packets             | -                    | ✓                      | int       |
+| pktReorderTolerance     | interval-based    |                     |                      |                        | int       |
+| pktRcvAvgBelatedTime    |                   |                     |                      |                        | double    |
+| pktRcvBelated           |                   |                     |                      |                        | int64_t   |
 | pktSndDrop              | interval-based    | packets             | ✓                    | -                      | int       |
 | pktRcvDrop              | interval-based    | packets             | -                    | ✓                      | int       |
 | pktRcvUndecrypt         | interval-based    | packets             | -                    | ✓                      | int       |
@@ -88,24 +87,24 @@ TODO:
 | byteSndDrop             | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
 | byteRcvDrop             | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | byteRcvUndecrypt        | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| usPktSndPeriod          | instantaneous     | us (microseconds)   | ✓                    | -                      |           |
-| pktFlowWindow           | instantaneous     | packets             | ✓                    | -                      |           |
-| pktCongestionWindow     | instantaneous     | packets             | ✓                    | -                      |           |
-| pktFlightSize           | instantaneous     | packets             | ✓                    | -                      |           |
-| msRTT                   | instantaneous     | ms (milliseconds)   | ✓                    | ✓                      |           |
-| mbpsBandwidth           | instantaneous     | Mbps                | ✓                    | ✓                      |           |
-| byteAvailSndBuf         | instantaneous     | bytes               | ✓                    | -                      |           |
-| byteAvailRcvBuf         | instantaneous     | bytes               | -                    | ✓                      |           |
-| mbpsMaxBW               | instantaneous     | Mbps                | ✓                    | -                      |           |
-| byteMSS                 | instantaneous     | bytes               | ✓                    | ✓                      |           |
-| pktSndBuf               | instantaneous     | packets             | ✓                    | -                      |           |
-| byteSndBuf              | instantaneous     | bytes               | ✓                    | -                      |           |
-| msSndBuf                | instantaneous     | ms (milliseconds)   | ✓                    | -                      |           |
-| msSndTsbPdDelay         | instantaneous     | ms (milliseconds)   | ✓                    | -                      |           |
-| pktRcvBuf               | instantaneous     | packets             | -                    | ✓                      |           |
-| byteRcvBuf              | instantaneous     | bytes               | -                    | ✓                      |           |
-| msRcvBuf                | instantaneous     | ms (milliseconds)   | -                    | ✓                      |           |
-| msRcvTsbPdDelay         | instantaneous     | ms (milliseconds)   | -                    | ✓                      |           |
+| usPktSndPeriod          | instantaneous     | us (microseconds)   | ✓                    | -                      | double    |
+| pktFlowWindow           | instantaneous     | packets             | ✓                    | -                      | int       |
+| pktCongestionWindow     | instantaneous     | packets             | ✓                    | -                      | int       |
+| pktFlightSize           | instantaneous     | packets             | ✓                    | -                      | int       |
+| msRTT                   | instantaneous     | ms (milliseconds)   | ✓                    | ✓                      | double    |
+| mbpsBandwidth           | instantaneous     | Mbps                | ✓                    | ✓                      | double    |
+| byteAvailSndBuf         | instantaneous     | bytes               | ✓                    | -                      | int       |
+| byteAvailRcvBuf         | instantaneous     | bytes               | -                    | ✓                      | int       |
+| mbpsMaxBW               | instantaneous     | Mbps                | ✓                    | -                      | double    |
+| byteMSS                 | instantaneous     | bytes               | ✓                    | ✓                      | int       |
+| pktSndBuf               | instantaneous     | packets             | ✓                    | -                      | int       |
+| byteSndBuf              | instantaneous     | bytes               | ✓                    | -                      | int       |
+| msSndBuf                | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int       |
+| msSndTsbPdDelay         | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int       |
+| pktRcvBuf               | instantaneous     | packets             | -                    | ✓                      | int       |
+| byteRcvBuf              | instantaneous     | bytes               | -                    | ✓                      | int       |
+| msRcvBuf                | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int       |
+| msRcvTsbPdDelay         | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int       |
 
 
 # Detailed Description
