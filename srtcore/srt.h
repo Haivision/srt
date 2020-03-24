@@ -219,8 +219,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
-   // (some space left)
-   SRTO_PACKETFILTER = 60          // Add and configure a packet filter
+   SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
+   // (some space left, 59)
+   SRTO_PACKETFILTER = 60    // Add and configure a packet filter
 } SRT_SOCKOPT;
 
 

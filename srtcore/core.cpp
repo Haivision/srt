@@ -52,6 +52,11 @@ modified by
 
 #include "platform_sys.h"
 
+// Linux specific
+#ifdef SRT_ENABLE_BINDTODEVICE
+#include <linux/if.h>
+#endif
+
 #include <cmath>
 #include <sstream>
 #include <algorithm>
@@ -561,6 +566,28 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iIpToS = *(int *)optval;
         break;
 #endif
+
+    case SRTO_BINDTODEVICE:
+#ifdef SRT_ENABLE_BINDTODEVICE
+        {
+            string val;
+            if (optlen == -1)
+                val = (const char *)optval;
+            else
+                val.assign((const char *)optval, optlen);
+            if (val.size() >= IFNAMSIZ)
+            {
+                LOGC(mglog.Error, log << "SRTO_BINDTODEVICE: device name too long (max: IFNAMSIZ=" << IFNAMSIZ << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_BindToDevice = val;
+        }
+#else
+        LOGC(mglog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
+        break;
 
     case SRTO_INPUTBW:
         m_llInputBW = *(int64_t *)optval;

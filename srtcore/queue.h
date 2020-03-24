@@ -549,6 +549,7 @@ struct CMultiplexer
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
+   std::string m_BindToDevice;
 #endif
    int m_iMSS;          // Maximum Segment Size
    int m_iRefCount;     // number of UDT instances that are associated with this multiplexer

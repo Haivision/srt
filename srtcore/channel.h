@@ -161,6 +161,10 @@ public:
    int getIpToS() const;
 #endif
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+   void setBind(const std::string& name);
+#endif
+
    int ioctlQuery(int type) const;
    int sockoptQuery(int level, int option) const;
 
@@ -176,6 +180,9 @@ private:
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
+#endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+   std::string m_BindToDevice;
 #endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size

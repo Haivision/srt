@@ -1236,6 +1236,9 @@ private: // Identification
     int m_iIpTTL;
     int m_iIpToS;
 #endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+    std::string m_BindToDevice;
+#endif
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
     // created later and takes values from these.

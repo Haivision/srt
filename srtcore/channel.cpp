@@ -252,6 +252,21 @@ void CChannel::setUDPSockOpt()
       }
 #endif
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+      if (m_BindToDevice != "")
+      {
+          if (m_BindAddr.family() != AF_INET)
+          {
+              LOGC(mglog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, m_BindToDevice.c_str(), m_BindToDevice.size()))
+          {
+              throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+      }
+#endif
 
 #ifdef UNIX
    // Set non-blocking I/O
@@ -369,7 +384,13 @@ void CChannel::setIpToS(int tos)
 {
    m_iIpToS = tos;
 }
+#endif
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+void CChannel::setBind(const string& name)
+{
+    m_BindToDevice = name;
+}
 #endif
 
 int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const

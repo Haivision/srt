@@ -2420,6 +2420,9 @@ void CUDTUnited::updateMux(
                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
 #endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+                  && (i->second.m_BindToDevice == s->m_pUDT->m_BindToDevice)
+#endif
                   && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
                   &&  i->second.m_bReusable)
           {
@@ -2446,6 +2449,9 @@ void CUDTUnited::updateMux(
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
 #endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+   m.m_BindToDevice = s->m_pUDT->m_BindToDevice;
+#endif
    m.m_iRefCount = 1;
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
@@ -2455,6 +2461,9 @@ void CUDTUnited::updateMux(
 #ifdef SRT_ENABLE_IPOPTS
    m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
    m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
+#endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+   m.m_pChannel->setBind(m.m_BindToDevice);
 #endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
