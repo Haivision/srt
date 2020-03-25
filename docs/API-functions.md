@@ -605,8 +605,6 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
   * `SRT_ECONNREJ`: Connection has been rejected
 
-**NOTE:** The port value shall be the same in `local_name` and `remote_name`.
-
 IMPORTANT: It's not allowed to perform a rendezvous connection to two
 different families (that is, both `local_name` and `remote_name` must be `AF_INET` or
 `AF_INET6`).
