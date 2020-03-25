@@ -21,7 +21,7 @@ The table below provides the summary on the SRT statistics: name, type, unit of 
 
 There are three types of statistics:
 
-- Accumulated that means the statistic is accumulated since time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., `pktSentTotal`, etc.,
+- Accumulated that means the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., `pktSentTotal`, etc.,
 - Interval-based that means the statistic is accumulated during the specified time interval, e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds, since the time an SRT socket has been created, e.g., `pktSent` , etc.. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
 - Instantaneous that means the statistic is obtained at the moment `srt_bstats()` function is called.
 
@@ -43,10 +43,11 @@ TODO:
 | pktSndLossTotal         | accumulated       | packets             | ✓                    | -                      | int       |
 | pktRcvLossTotal         | accumulated       | packets             | -                    | ✓                      | int       |
 | pktRetransTotal         | accumulated       | packets             | ✓                    | -                      | int       |
-| pktSentACKTotal         | accumulated       | packets             |                      |                        | int       |
-| pktRecvACKTotal         | accumulated       | packets             |                      |                        | int       |
-| pktSentNAKTotal         | accumulated       | packets             |                      |                        | int       |
-| pktRecvNAKTotal         | accumulated       | packets             |                      |                        | int       |
+| pktRcvRetransTotal      | accumulated       | packets             | -                    | ✓                      | int       |
+| pktSentACKTotal         | accumulated       | packets             | -                    | ✓                      | int       |
+| pktRecvACKTotal         | accumulated       | packets             | ✓                    | -                      | int       |
+| pktSentNAKTotal         | accumulated       | packets             | -                    | ✓                      | int       |
+| pktRecvNAKTotal         | accumulated       | packets             | ✓                    | -                      | int       |
 | usSndDurationTotal      | accumulated       | us (microseconds)   | ✓                    | -                      | int64_t   |
 | pktSndDropTotal         | accumulated       | packets             | ✓                    | -                      | int       |
 | pktRcvDropTotal         | accumulated       | packets             | -                    | ✓                      | int       |
@@ -139,174 +140,137 @@ A packet is considered lost in two cases:
 
 ### pktRcvLossTotal
 
-TODO: 
+The total number of SRT DATA packets detected as presently missing (either reordered or lost) at the receiver side. Available for receiver.
 
-- Update the description.
-- Think whether we are going to split lost and reordered packets here and provide user a formula how to get lost only packets if not
+The detection of presently missing packets is triggered by a newly received DATA packet with the sequence number `s`. If `s` is greater than the sequence number `next_exp` of the next expected packet (`s > next_exp`), the newly arrived packet `s` is considered in-order and there is a sequence discontinuity of size `s - next_exp` associated with this packet. The presence of sequence discontinuity means that some packets of the original sequence have not yet arrived (presently missing), either reordered or lost. Once the sequence discontinuity is detected, its size `s - next_exp` is added to `pktRcvLossTotal` statistic. Refer to [RFC 4737 - Packet Reordering Metrics](https://tools.ietf.org/html/rfc4737) for details.
 
-The total number of data packets detected as lost at the receiver side. Available for receiver.
+If the packet `s` is received out of order (`s < next_exp`), the statistic is not affected.
 
-If a packet is received out of order, the gap (sequence discontinuity) is also taken into account and the number of lost packets is increased by the discontinuity size independently of the reordering tolerance value.
+Note that only original (not retransmitted) SRT DATA packets are taken into account. Refer to [pktRcvRetransTotal](#pktRcvRetransTotal) for the formula of obtaining the total number of lost retransmitted packets.
 
-Lost packets detection is based on the gaps in sequence numbers of the SRT DATA packets and is triggered by a newly received packet. An offset is calculated between sequence numbers of the newly arrived DATA packet and the previously received DATA packet (the packet with the highest sequence number). Receiving older packets does not affect this value. The packets from that gap are considered lost,
-and that number is added to the `pktRcvLossTotal` measurement. In the case where
-the offset is negative, the packet is considered late, meaning that it was either
-already acknowledged or dropped by TSBPD as too late to be delivered. Such late
-packets are ignored.
-
-TODO: 
-
-- This is wrong -> ticket, correct this and make separate statistic. Decrypted statistic should include wrongly encrypted packets. Here we should save the comment regarding the version 1.4.0-1.4.1 and include the comment that since version 1.5.0 we do not take this into account.
-- Calculate loss for FEC -> ticket (low priority), there is something already
-- We have already pktRcvUndecryptTotal
-
-Since SRT v1.4.0, includes packets that failed to be decrypted.
+In SRT v1.4.0, v1.4.1, `pktRcvLossTotal` statistics includes packets that failed to be decrypted. To receive the number of presently missing packets, substract [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) from the current one. This is going to be fixed within SRT v.1.5.0.
 
 ### pktRetransTotal
 
-The total number of retransmitted packets. Available for sender.
+The total number of retransmitted packets sent by the SRT sender. Available for sender.
 
-TODO: 
+This statistics is not interchangeable with the receiver `pktRcvRetransTotal` statistic.
 
-- We can calculate retransmitted packets both at the sender side and at the receiver side which is stated in pktSentTotal and pktRecvTotal stats -> we should have this statistics available both for snd and rcv. The same for byteRetransTotal -> rename this to pktSentRetransTotal plus add new statistics pktRecvRetransTotal, be careful this is API change. So, think how we can use two names pktRetransTotal and pktSentRetransTotal, until pktRetransTotal can be deprecated. And here we should put special comment. Create ticket for this.
-- Not exchanged with the receiver: what does it mean?
+### pktRcvRetransTotal
+
+The total number of retransmitted packets registered at the receiver side. Available for receiver.
+
+This statistics is not interchangeable with the sender `pktRetransTotal` statistic.
+
+Note that the total number of lost retransmitted packets can be calculated as the total number of retransmitted packets sent by receiver minus the total number of retransmitted packets registered at the receiver side:  `pktRetransTotal - pktRcvRetransTotal`.
+
+Not yet implemented.
 
 ### pktSentACKTotal
 
-The total number of sent ACK packets. Available for sender.
-
-TODO: 
-
-- possible mistake, see pktSentNAKTotal -> receiver side? -> Maxim should check (Available for sender. -> receiver)
+The total number of sent ACK (Acknowledgement) control packets. Available for receiver.
 
 ### pktRecvACKTotal
 
-The total number of received ACK packets. Available for receiver.
-
-TODO: Possible mistake, see pktSentNAKTotal. -> Maxim to check
+The total number of received ACK (Acknowledgement) control packets. Available for sender.
 
 ### pktSentNAKTotal
 
-The total number of NAK packets received by the sender from the receiver. Essentially means LOSS reports. Available for sender.
-
-TODO: 
-
-- abbreviation
-- sent -> received - right? or if it's sent than it's receiver statistics. Correct in the table as well. -> Maxim should check
+The total number of sent NAK (Negative Acknowledgement) control packets. Available for receiver.
 
 ### pktRecvNAKTotal
 
-The total number of NAK packets sent back to the sender by the receiver. Essentially means LOSS reports. Available for receiver.
-
-TODO: received -> sent? Or if it's received, than it's sender statistics. Correct in the table as well. -> Maxim to check
+The total number of received NAK (Negative Acknowledgement) control packets. Available for sender.
 
 ### usSndDurationTotal
 
-The total accumulated time in microseconds, during which the SRT sender has some 
-data to transmit, including packets that have been sent, but not yet acknowledged. In other words, the total accumulated duration in microseconds when there was something to deliver (non-empty senders' buffer). Available for sender.
+The total accumulated time in microseconds, during which the SRT sender has some data to transmit, including packets that have been sent, but not yet acknowledged. In other words, the total accumulated duration in microseconds when there was something to deliver (non-empty senders' buffer). Available for sender.
 
 ### pktSndDropTotal
 
 The total number of "too late to send" packets dropped by the sender (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for sender.
 
-TODO: Update what's below -> Maxim to check -> issue on Github - update RFC and here put the link
-
-The total delay before `TLPKTDROP` is triggered consists of the `SRTO_PEERLATENCY`, 
-plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms).
-The delay used is the timespan between the very first packet and the latest packet 
-in the sender's buffer.
+The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PEERLATENCY`, plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms). The delay used is the timespan between the very first packet and the latest packet in the sender's buffer.
 
 ### pktRcvDropTotal
 
-TODO: 
-
-- missing?
-- Revise the text
-- create ticket -> rename back SRTO_TSBPDDELAY -> Maxim to create
-
 The total number of "too late to deliver" missing packets. Available for receiver.
 
-Missing packets here means lost or not yet received out-of-order packets. The receiver drops only those packets that are missing by the time there is at least one packet ready to be delivered to the upstream application.
+Missing packets means lost or not yet received out-of-order packets. The receiver drops only those packets that are missing by the time there is at least one packet ready to be delivered to the upstream application.
 
-Also includes packets that failed to be decrypted (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)). These 
-packets are present in the receiver's buffer and not dropped at the moment the decryption has failed. 
+Also includes packets that failed to be decrypted (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)). These packets are present in the receiver's buffer and not dropped at the moment the decryption has failed.
 
-Note that `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options should be enabled (refer to API.md - link!!!!).
+ `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options should be enabled (refer to in [API.md](API.md)).
 
 ### pktRcvUndecryptTotal
 
 The total number of packets that failed to be decrypted at the receiver side. Available for receiver.
 
-TODO: Is it correct that we include this number in the other statistics?
-
 ### pktSndFilterExtraTotal
 
-TODO: 
-
-- Packet filter control packets are SRT DATA packets. -> put this for all related stats
-- put this in FEC docs
-
-The total number of packet filter control packets supplied by the packet filter (refer to
-[SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Sender only.
+The total number of packet filter control packets supplied by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for sender.
 
 Packet filter control packets are SRT DATA packets.
 
-Introduced in SRT v1.4.0.
+`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterExtraTotal
 
-TODO: 
-
-- I do not understand the description, check the whole group.
-- for the whole group we should also mention that this statisitcs is available if FEC option is enabled
-
 The total number of packet filter control packets received and not supplied back by the packet filter
-(refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
+(refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Introduced in SRT v1.4.0.
+Packet filter control packets are SRT DATA packets.
+
+For FEC, this is the total number of received FEC control packets.
+
+`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterSupplyTotal
 
 The total number of packets supplied by the packet filter excluding actually received packets
-(e.g., FEC rebuilt packets, refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
+(e.g., FEC rebuilt packets, refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Introduced in SRT v1.4.0.
+Packet filter control packets are SRT DATA packets.
+
+`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterLossTotal
 
-The total number of lost packets that were not covered by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Receiver only.
+The total number of lost packets that were not covered by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Introduced in SRT v1.4.0.
+Packet filter control packets are SRT DATA packets.
+
+`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### byteSentTotal
 
-Same as `pktSentTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
+Same as `pktSentTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteRecvTotal
 
-Same as `pktRecvTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
+Same as `pktRecvTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 ### byteRcvLossTotal
 
-Same as `pktRcvLossTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
+Same as `pktRcvLossTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 ### byteRetransTotal
 
-Same as `pktRetransTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
+Same as `pktRetransTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteSndDropTotal
 
-Same as `pktSndDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Sender side.
+Same as `pktSndDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteRcvDropTotal
 
-Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the dropped packets' payloads are estimated based on the average packet size. Receiver side.
+Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the dropped packets' payloads are estimated based on the average packet size. Available for receiver.
 
 TODO: Bytes for the dropped packets' payloads are estimated based on the average packet size. - What's about the other stats from this group? -> applicable for byteRcvLossTotal (as of now it has lost and out-of-order and undecrypted, but we do not size for lost and potentially out of order)
 
 ### byteRcvUndecryptTotal
 
-Same as `pktRcvUndecryptTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Receiver side.
+Same as `pktRcvUndecryptTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 
 ## Interval-Based Statistics
