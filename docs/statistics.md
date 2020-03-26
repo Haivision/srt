@@ -4,10 +4,6 @@ SRT provides a powerful set of statistical data on a socket. This data can be us
 
 Statistics are calculated independently on each side (receiver and sender) and are not exchanged between peers unless explicitly stated.
 
-TODO: unless explicitly stated ??? -> check this on msRTT, mbpsBandwidth
-
-TODO: ticket -> srt_socket_stats or srt_stats, make ticket
-
 The following API functions can be used to retrieve statistics on an SRT socket:
 
 * `int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear)`
@@ -17,7 +13,7 @@ Refer to the documentation of the [API functions](API-functions.md) for usage in
 
 # Summary Table
 
-The table below provides the summary on the SRT statistics: name, type, unit of measurement, the side it's calculated (sender or receiver), and data type. See section ["Detailed Description"](TODO: link) for detailed description.
+The table below provides the summary on the SRT statistics: name, type, unit of measurement, the side it's calculated (sender or receiver), and data type. See section ["Detailed Description"](#Detailed Description) for detailed description of each statistic.
 
 There are three types of statistics:
 
@@ -25,37 +21,27 @@ There are three types of statistics:
 - Interval-based that means the statistic is accumulated during the specified time interval, e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds, since the time an SRT socket has been created, e.g., `pktSent` , etc.. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
 - Instantaneous that means the statistic is obtained at the moment `srt_bstats()` function is called.
 
-TODO:
-
-- Data type (int, float) - ?
-- Absolute timestamp, but it's not a statistics -> make ticket for srt-live-transmit
-- go through empty cells in the table
-- API functions - change "moving average"
-- Delete Type of Statistic column -> make line
-- int -> int32_t
-- Make the same for all decsr - available for sender/receiver.
-
 | Statistic               | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
 | ----------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
 | msTimeStamp             | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
 | pktSentTotal            | accumulated       | packets             | ✓                    | -                      | int64_t   |
 | pktRecvTotal            | accumulated       | packets             | -                    | ✓                      | int64_t   |
-| pktSndLossTotal         | accumulated       | packets             | ✓                    | -                      | int       |
-| pktRcvLossTotal         | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRetransTotal         | accumulated       | packets             | ✓                    | -                      | int       |
-| pktRcvRetransTotal      | accumulated       | packets             | -                    | ✓                      | int       |
-| pktSentACKTotal         | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRecvACKTotal         | accumulated       | packets             | ✓                    | -                      | int       |
-| pktSentNAKTotal         | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRecvNAKTotal         | accumulated       | packets             | ✓                    | -                      | int       |
+| pktSndLossTotal         | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| pktRcvLossTotal         | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRetransTotal         | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| pktRcvRetransTotal      | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktSentACKTotal         | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRecvACKTotal         | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| pktSentNAKTotal         | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRecvNAKTotal         | accumulated       | packets             | ✓                    | -                      | int32_t   |
 | usSndDurationTotal      | accumulated       | us (microseconds)   | ✓                    | -                      | int64_t   |
-| pktSndDropTotal         | accumulated       | packets             | ✓                    | -                      | int       |
-| pktRcvDropTotal         | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRcvUndecryptTotal    | accumulated       | packets             | -                    | ✓                      | int       |
-| pktSndFilterExtraTotal  | accumulated       | packets             | ✓                    | -                      | int       |
-| pktRcvFilterExtraTotal  | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRcvFilterSupplyTotal | accumulated       | packets             | -                    | ✓                      | int       |
-| pktRcvFilterLossTotal   | accumulated       | packets             | -                    | ✓                      | int       |
+| pktSndDropTotal         | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| pktRcvDropTotal         | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRcvUndecryptTotal    | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktSndFilterExtraTotal  | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| pktRcvFilterExtraTotal  | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRcvFilterSupplyTotal | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| pktRcvFilterLossTotal   | accumulated       | packets             | -                    | ✓                      | int32_t   |
 | byteSentTotal           | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
 | byteRecvTotal           | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | byteRcvLossTotal        | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
@@ -65,28 +51,28 @@ TODO:
 | byteRcvUndecryptTotal   | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | pktSent                 | interval-based    | packets             | ✓                    | -                      | int64_t   |
 | pktRecv                 | interval-based    | packets             | -                    | ✓                      | int64_t   |
-| pktSndLoss              | interval-based    | packets             | ✓                    | -                      | int       |
-| pktRcvLoss              | interval-based    | packets             | -                    | ✓                      | int       |
-| pktRetrans              | interval-based    | packets             | ✓                    | -                      | int       |
-| pktRcvRetrans           |                   |                     |                      |                        | int       |
-| pktSentACK              | interval-based    | packets             |                      |                        | int       |
-| pktRecvACK              | interval-based    | packets             |                      |                        | int       |
-| pktSentNAK              | interval-based    | packets             |                      |                        | int       |
-| pktRecvNAK              | interval-based    | packets             |                      |                        | int       |
-| pktSndFilterExtra       | interval-based    | packets             | ✓                    | -                      | int       |
-| pktRcvFilterExtra       | interval-based    | packets             | -                    | ✓                      | int       |
-| pktRcvFilterSupply      | interval-based    | packets             | -                    | ✓                      | int       |
-| pktRcvFilterLoss        | interval-based    | packets             | -                    | ✓                      | int       |
+| pktSndLoss              | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| pktRcvLoss              | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| pktRetrans              | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| pktRcvRetrans           |                   |                     |                      |                        | int32_t   |
+| pktSentACK              | interval-based    | packets             |                      |                        | int32_t   |
+| pktRecvACK              | interval-based    | packets             |                      |                        | int32_t   |
+| pktSentNAK              | interval-based    | packets             |                      |                        | int32_t   |
+| pktRecvNAK              | interval-based    | packets             |                      |                        | int32_t   |
+| pktSndFilterExtra       | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| pktRcvFilterExtra       | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| pktRcvFilterSupply      | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| pktRcvFilterLoss        | interval-based    | packets             | -                    | ✓                      | int32_t   |
 | mbpsSendRate            | interval-based    | Mbps                | ✓                    | -                      | double    |
 | mbpsRecvRate            | interval-based    | Mbps                | -                    | ✓                      | double    |
 | usSndDuration           | interval-based    | us (microseconds)   | ✓                    | -                      | int64_t   |
-| pktReorderDistance      | interval-based    | packets             | -                    | ✓                      | int       |
-| pktReorderTolerance     | interval-based    |                     |                      |                        | int       |
+| pktReorderDistance      | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| pktReorderTolerance     | interval-based    |                     |                      |                        | int32_t   |
 | pktRcvAvgBelatedTime    |                   |                     |                      |                        | double    |
 | pktRcvBelated           |                   |                     |                      |                        | int64_t   |
-| pktSndDrop              | interval-based    | packets             | ✓                    | -                      | int       |
-| pktRcvDrop              | interval-based    | packets             | -                    | ✓                      | int       |
-| pktRcvUndecrypt         | interval-based    | packets             | -                    | ✓                      | int       |
+| pktSndDrop              | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| pktRcvDrop              | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| pktRcvUndecrypt         | interval-based    | packets             | -                    | ✓                      | int32_t   |
 | byteSent                | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
 | byteRecv                | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | byteRcvLoss             | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
@@ -95,23 +81,23 @@ TODO:
 | byteRcvDrop             | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | byteRcvUndecrypt        | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | usPktSndPeriod          | instantaneous     | us (microseconds)   | ✓                    | -                      | double    |
-| pktFlowWindow           | instantaneous     | packets             | ✓                    | -                      | int       |
-| pktCongestionWindow     | instantaneous     | packets             | ✓                    | -                      | int       |
-| pktFlightSize           | instantaneous     | packets             | ✓                    | -                      | int       |
+| pktFlowWindow           | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| pktCongestionWindow     | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| pktFlightSize           | instantaneous     | packets             | ✓                    | -                      | int32_t   |
 | msRTT                   | instantaneous     | ms (milliseconds)   | ✓                    | ✓                      | double    |
 | mbpsBandwidth           | instantaneous     | Mbps                | ✓                    | ✓                      | double    |
-| byteAvailSndBuf         | instantaneous     | bytes               | ✓                    | -                      | int       |
-| byteAvailRcvBuf         | instantaneous     | bytes               | -                    | ✓                      | int       |
+| byteAvailSndBuf         | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
+| byteAvailRcvBuf         | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
 | mbpsMaxBW               | instantaneous     | Mbps                | ✓                    | -                      | double    |
-| byteMSS                 | instantaneous     | bytes               | ✓                    | ✓                      | int       |
-| pktSndBuf               | instantaneous     | packets             | ✓                    | -                      | int       |
-| byteSndBuf              | instantaneous     | bytes               | ✓                    | -                      | int       |
-| msSndBuf                | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int       |
-| msSndTsbPdDelay         | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int       |
-| pktRcvBuf               | instantaneous     | packets             | -                    | ✓                      | int       |
-| byteRcvBuf              | instantaneous     | bytes               | -                    | ✓                      | int       |
-| msRcvBuf                | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int       |
-| msRcvTsbPdDelay         | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int       |
+| byteMSS                 | instantaneous     | bytes               | ✓                    | ✓                      | int32_t   |
+| pktSndBuf               | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| byteSndBuf              | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
+| msSndBuf                | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
+| msSndTsbPdDelay         | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
+| pktRcvBuf               | instantaneous     | packets             | -                    | ✓                      | int32_t   |
+| byteRcvBuf              | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
+| msRcvBuf                | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
+| msRcvTsbPdDelay         | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
 
 
 # Detailed Description
@@ -154,17 +140,17 @@ In SRT v1.4.0, v1.4.1, `pktRcvLossTotal` statistics includes packets that failed
 
 The total number of retransmitted packets sent by the SRT sender. Available for sender.
 
-This statistics is not interchangeable with the receiver `pktRcvRetransTotal` statistic.
+This statistics is not interchangeable with the receiver [pktRcvRetransTotal](#pktRcvRetransTotal) statistic.
 
 ### pktRcvRetransTotal
 
 The total number of retransmitted packets registered at the receiver side. Available for receiver.
 
-This statistics is not interchangeable with the sender `pktRetransTotal` statistic.
+This statistics is not interchangeable with the sender [pktRetransTotal](#pktRetransTotal) statistic.
 
 Note that the total number of lost retransmitted packets can be calculated as the total number of retransmitted packets sent by receiver minus the total number of retransmitted packets registered at the receiver side:  `pktRetransTotal - pktRcvRetransTotal`.
 
-Not yet implemented.
+This is going to be implemented in SRT v1.5.0, see issue [#1208](https://github.com/Haivision/srt/issues/1208).
 
 ### pktSentACKTotal
 
@@ -244,33 +230,31 @@ Packet filter control packets are SRT DATA packets.
 
 ### byteSentTotal
 
-Same as `pktSentTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
+Same as [pktSentTotal](#pktSentTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteRecvTotal
 
-Same as `pktRecvTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+Same as [pktRecvTotal](#pktRecvTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 ### byteRcvLossTotal
 
-Same as `pktRcvLossTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+Same as [pktRcvLossTotal](#pktRcvLossTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the presently missing (either reordered or lost) packets' payloads are estimated based on the average packet size. Available for receiver.
 
 ### byteRetransTotal
 
-Same as `pktRetransTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
+Same as [pktRetransTotal](#pktRetransTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteSndDropTotal
 
-Same as `pktSndDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
+Same as [pktSndDropTotal](#pktSndDropTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
 
 ### byteRcvDropTotal
 
-Same as `pktRcvDropTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the dropped packets' payloads are estimated based on the average packet size. Available for receiver.
-
-TODO: Bytes for the dropped packets' payloads are estimated based on the average packet size. - What's about the other stats from this group? -> applicable for byteRcvLossTotal (as of now it has lost and out-of-order and undecrypted, but we do not size for lost and potentially out of order)
+Same as [pktRcvDropTotal](#pktRcvDropTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Bytes for the dropped packets' payloads are estimated based on the average packet size. Available for receiver.
 
 ### byteRcvUndecryptTotal
 
-Same as `pktRcvUndecryptTotal`, but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+Same as [pktRcvUndecryptTotal](#pktRcvUndecryptTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 
 ## Interval-Based Statistics
