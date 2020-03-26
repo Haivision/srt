@@ -1006,7 +1006,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
-	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS})
+	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test-srt
