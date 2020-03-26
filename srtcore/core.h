@@ -320,8 +320,8 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = -1;
-                setInitialRxSequence(-1);
+                m_iLastSchedSeqNo = SRT_SEQNO_NONE;
+                setInitialRxSequence(SRT_SEQNO_NONE);
             }
             s = true;
         }
@@ -642,7 +642,7 @@ private:
     ReadPos* checkPacketAheadMsgno();
 
     // This is the sequence number of a packet that has been previously
-    // delivered. Initially it should be set to -1 so that the sequence read
+    // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
@@ -729,7 +729,7 @@ public:
         // The first provided one will be taken as a good deal; even if
         // this is going to be past the ISN, at worst it will be caused
         // by TLPKTDROP.
-        m_RcvBaseSeqNo = -1;
+        m_RcvBaseSeqNo = SRT_SEQNO_NONE;
         m_RcvBaseMsgNo = -1;
     }
     int baseOffset(SRT_MSGCTRL& mctrl);
@@ -839,7 +839,7 @@ public: //API
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
-    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
+    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = SRT_MSGTTL_INF, bool inorder = false, uint64_t srctime = 0);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
     static int sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& mctrl);
     static int recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_mctrl);
@@ -1131,7 +1131,7 @@ private:
 
     SRT_ATR_NODISCARD int send(const char* data, int len)
     {
-        return sendmsg(data, len, -1, false, 0);
+        return sendmsg(data, len, SRT_MSGTTL_INF, false, 0);
     }
 
     /// Request UDT to receive data to a memory block "data" with size of "len".
