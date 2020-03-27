@@ -332,6 +332,7 @@ struct CBytePerfMon
    int      pktRecvACKTotal;            // total number of received ACK packets
    int      pktSentNAKTotal;            // total number of sent NAK packets
    int      pktRecvNAKTotal;            // total number of received NAK packets
+   int      pktRcvReorderTotal;         // total number of packets received in different order than sent
    int64_t  usSndDurationTotal;         // total time duration when UDT is sending data (idle time exclusive)
    //>new
    int      pktSndDropTotal;            // number of too-late-to-send dropped packets
@@ -369,6 +370,7 @@ struct CBytePerfMon
    int      pktSndDrop;                 // number of too-late-to-send dropped packets
    int      pktRcvDrop;                 // number of too-late-to play missing packets
    int      pktRcvUndecrypt;            // number of undecrypted packets
+   int      pktRcvReorder;              // number of packets received in different order than sent
    uint64_t byteSent;                   // number of sent data bytes, including retransmissions
    uint64_t byteRecv;                   // number of received bytes
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT

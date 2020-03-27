@@ -148,9 +148,113 @@ const size_t GRPD_FIELD_SIZE = sizeof(int32_t);
 // For HSv4 legacy handshake
 #define SRT_MAX_HSRETRY     10          /* Maximum SRT handshake retry */
 
-enum SeqPairItems
+struct StatsLossRecord
 {
-    SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
+    std::deque< std::pair<int32_t, int32_t> > record;
+    int capacity;
+    int forgotten_lost;
+
+    StatsLossRecord(): capacity(16), forgotten_lost(0)
+    {
+    }
+
+    void add(int32_t lo, int32_t hi)
+    {
+        record.push_back(std::make_pair(lo, hi));
+        if (record.size() > size_t(capacity))
+        {
+            forgotten_lost += CSeqNo::seqoff(record.front().first, record.front().second);
+            record.pop_front();
+        }
+    }
+
+    // Function called at the time of acknowledging.
+    // This dismisses all collected missing packets and
+    // treats them all as lost. Possible very late reordered
+    // packets past that sequence might be mistakenly treated as lost.
+    int dismiss(int32_t upto)
+    {
+        int count_loss = 0;
+        size_t i = 0;
+        for (; i < record.size(); ++i)
+        {
+            // If the end-range is earlier than upto,
+            // dismiss this anyway.
+            if (CSeqNo::seqcmp(upto, record[i].second) >= 0)
+            {
+                count_loss += CSeqNo::seqlen(record[i].first, record[i].second);
+                continue;
+            }
+
+            if (CSeqNo::seqcmp(upto, record[i].first) < 0)
+            {
+                break; // None of these - nor any following.
+            }
+
+            // This record should be removed only partially.
+            // So, shift the start range to required value that
+            // should stay, and keep this record.
+            count_loss += CSeqNo::seqlen(record[i].first, upto);
+            record[i].first = CSeqNo::incseq(upto);
+            break;
+        }
+
+        record.erase(record.begin(), record.begin() + i);
+        count_loss += forgotten_lost;
+        forgotten_lost = 0;
+        return count_loss;
+    }
+
+    // This function declares given sequence as not lost.
+    // It removes it simply from the loss record so that
+    // dismissal will not count it anymore.
+    void unlose(int32_t seq)
+    {
+        if (record.empty())
+            return;
+
+        // Prematurely check against the end to avoid looping
+        if (CSeqNo::seqcmp(seq, record.back().second) > 0)
+            return;
+
+        // Find the record
+        for (size_t i = 0; i < record.size(); ++i)
+        {
+            if (CSeqNo::seqcmp(seq, record[i].first) < 0)
+                break; // Previous record was before it, or not found at all
+
+            if (CSeqNo::seqcmp(seq, record[i].second) > 0)
+                continue; // Not this block, but maybe next
+
+            // Found this record. Slice, or split in two.
+            if (seq == record[i].first)
+            {
+                if (seq == record[i].second) // one-seq record
+                {
+                    record.erase(record.begin()+i);
+                    return;
+                }
+
+                record[i].first = CSeqNo::incseq(record[i].first);
+                return;
+            }
+
+            if (seq == record[i].second)
+            {
+                record[i].second = CSeqNo::decseq(record[i].second);
+                return;
+            }
+
+            // It's in the middle, so this needs splitting.
+            int32_t new_begin = CSeqNo::incseq(seq);
+            int32_t new_end = CSeqNo::decseq(seq);
+            int32_t old_begin = record[i].first;
+            record[i].first = new_begin;
+            record.insert(record.begin()+i, std::make_pair(old_begin, new_end));
+            return;
+        }
+    }
+
 };
 
 // Extended SRT Congestion control class - only an incomplete definition required
@@ -1407,6 +1511,7 @@ private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
     std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+    StatsLossRecord m_StatsLoss;
     int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
     int m_iMaxReorderTolerance;                  //< Maximum allowed value for dynamic reorder tolerance
     int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
@@ -1542,6 +1647,7 @@ private: // Trace
         int recvNAKTotal;                   // total number of received NAK packets
         int sndDropTotal;
         int rcvDropTotal;
+        int rcvReorderTotal;
         uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
         uint64_t bytesRecvTotal;            // total number of received bytes
         uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
@@ -1571,6 +1677,7 @@ private: // Trace
         int traceSndDrop;
         int traceRcvDrop;
         int traceRcvRetrans;
+        int traceRcvReorder;
         int traceReorderDistance;
         double traceBelatedTime;
         int64_t traceRcvBelated;

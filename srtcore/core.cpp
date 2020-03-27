@@ -1358,6 +1358,8 @@ void CUDT::clearData()
         m_stats.traceSndDrop = 0;
         m_stats.rcvDropTotal = 0;
         m_stats.traceRcvDrop = 0;
+        m_stats.traceRcvReorder = 0;
+        m_stats.rcvReorderTotal = 0;
 
         m_stats.m_rcvUndecryptTotal = 0;
         m_stats.traceRcvUndecrypt   = 0;
@@ -5655,6 +5657,19 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
         }
     }
 
+    // This capacity is only a special protection against container swelling.
+    // It can be potentially changed any time and it's only the maximum capacity
+    // over which oldest records will be removed forcefully.
+    //
+    // Setting to half the size of the buffer because the biggest capacity
+    // can be achieved when every 2nd packet is lost and every record contains
+    // a loss information of one sequence. Every case of wider range of loss
+    // sequence will make it even smaller. The only change that it makes for
+    // the overflow-deleted records is that they can no longer be potentially
+    // treated as reorderd and will be treated as definitely lost. Of course,
+    // the ACK dismissal should still remove them way before then.
+    m_StatsLoss.capacity = m_iRcvBufSize/2;
+
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
@@ -7238,6 +7253,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->pktSndDrop  = m_stats.traceSndDrop;
     perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
+    perf->pktRcvReorder = m_stats.traceRcvReorder;
     perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
     perf->byteRcvDrop =
         m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
@@ -7253,6 +7269,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRecvACKTotal    = m_stats.recvACKTotal;
     perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
     perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
+    perf->pktRcvReorderTotal = m_stats.rcvReorderTotal;
     perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
 
     perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
@@ -7379,6 +7396,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     {
         m_stats.traceSndDrop           = 0;
         m_stats.traceRcvDrop           = 0;
+        m_stats.traceRcvReorder        = 0;
         m_stats.traceSndBytesDrop      = 0;
         m_stats.traceRcvBytesDrop      = 0;
         m_stats.traceRcvUndecrypt      = 0;
@@ -8028,6 +8046,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     }
 
     const steady_clock::time_point currtime = steady_clock::now();
+
     // record total time used for sending
     enterCS(m_StatsLock);
     m_stats.sndDuration += count_microseconds(currtime - m_stats.sndDurationCounter);
@@ -9373,22 +9392,25 @@ int CUDT::processData(CUnit* in_unit)
        // >1 - jump over a packet loss (loss = seqdiff-1)
         if (diff > 1)
         {
-            CGuard lg(m_StatsLock);
-            int    loss = diff - 1; // loss is all that is above diff == 1
-            m_stats.traceRcvLoss += loss;
-            m_stats.rcvLossTotal += loss;
-            uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
-            m_stats.traceRcvBytesLoss += lossbytes;
-            m_stats.rcvBytesLossTotal += lossbytes;
-            HLOGC(mglog.Debug,
-                  log << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "
-                      << CSeqNo::decseq(packet.m_iSeqNo) << "]");
+            int32_t loss_lo = CSeqNo::incseq(m_iRcvCurrPhySeqNo);
+            int32_t loss_hi = CSeqNo::decseq(packet.m_iSeqNo);
+            m_StatsLoss.add(loss_lo, loss_hi);
+            HLOGC(mglog.Debug, log << "MISSING: n=" << (CSeqNo::seqlen(m_iRcvCurrPhySeqNo, packet.m_iSeqNo)-1)
+                    << " %(" << loss_lo << "-" << loss_hi << ")");
         }
 
         if (diff > 0)
         {
             // Record if it was further than latest
             m_iRcvCurrPhySeqNo = packet.m_iSeqNo;
+        }
+        else if (pktrexmitflag == 0)
+        {
+            // Old, "not retransmitted" packet, that is, reordered
+            m_StatsLoss.unlose(packet.m_iSeqNo);
+            CGuard statslock(m_StatsLock);
+            m_stats.rcvReorderTotal++;
+            m_stats.traceRcvReorder++;
         }
     }
 
@@ -10524,6 +10546,21 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
         sendCtrl(UMSG_ACK, NULL, NULL, SEND_LITE_ACK);
         ++m_iLightACKCount;
         because_decision = BECAUSE_LITEACK;
+    }
+
+    if (because_decision != BECAUSE_NO_REASON)
+    {
+        // m_iRcvCurrSeqNo is the sequence number used to send ACK
+        int loss = m_StatsLoss.dismiss(m_iRcvCurrSeqNo);
+        if (loss)
+        {
+            CGuard lock(m_StatsLock);
+            m_stats.traceRcvLoss += loss;
+            m_stats.rcvLossTotal += loss;
+            uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+            m_stats.traceRcvBytesLoss += lossbytes;
+            m_stats.rcvBytesLossTotal += lossbytes;
+        }
     }
 
     return because_decision;
