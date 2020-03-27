@@ -7,6 +7,7 @@
 #define SRT_TEST_CIRCULAR_BUFFER
 #include "api.h"
 #include "common.h"
+#include "core.h"
 
 using namespace std;
 
@@ -209,5 +210,112 @@ TEST(CircularBuffer, Overall)
     IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
 
     IF_HEAVY_LOGGING(cerr << "DONE.\n");
+}
+
+std::string DisplaySLR(const StatsLossRecord& rec, int32_t peg = 0)
+{
+    if (rec.record.empty())
+        return "(empty)";
+    std::ostringstream os;
+
+    if (peg)
+    {
+        os.flags(os.flags() | std::ios::showpos);
+    }
+    for (size_t i = 0; i < rec.record.size(); ++i)
+    {
+        if (rec.record[i].first == rec.record[i].second)
+        {
+            os << (rec.record[i].first-peg) << " ";
+        }
+        else
+        {
+            os << "<" << (rec.record[i].first-peg) << ", " << (rec.record[i].second-peg) << "> ";
+        }
+    }
+
+    return os.str();
+}
+
+
+TEST(StatsLossRecord, Overall)
+{
+    StatsLossRecord stats;
+    stats.capacity = 1000;
+
+    int32_t peg = 11223344;
+
+    stats.add(peg-10, peg+10);
+    stats.add(peg+100, peg+100);
+    stats.add(peg+102, peg+120);
+
+    ASSERT_EQ(stats.record.size(), 3);
+    EXPECT_EQ(stats.record.front().second, peg+10);
+    EXPECT_EQ(stats.record.back().first, peg+102);
+
+    IF_HEAVY_LOGGING(cout << "Adding base=" << peg << ": -10 +10 ; +100 +100 ; +102 +120\n");
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    stats.unlose(peg-20);
+    stats.unlose(peg+150);
+    stats.unlose(peg+99);
+    stats.unlose(peg+101);
+    stats.unlose(peg+11);
+
+    IF_HEAVY_LOGGING(cout << "Unlose nonexistent: -20, +150, +99, +101, +11\n");
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    // The container should be unchanged
+    ASSERT_EQ(stats.record.size(), 3);
+    EXPECT_EQ(stats.record.front().second, peg+10);
+    EXPECT_EQ(stats.record.back().first, peg+102);
+
+    stats.unlose(peg+10);
+    stats.unlose(peg+102);
+    IF_HEAVY_LOGGING(cout << "Unlose edges: +10, +102\n");
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    // The container should lose single seqs
+    EXPECT_EQ(stats.record.front().second, peg+9);
+    EXPECT_EQ(stats.record.back().first, peg+103);
+
+    IF_HEAVY_LOGGING(cout << "Unlose 1-seq full +100:\n");
+    stats.unlose(peg+100);
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    // The middle record should be deleted as a whole.
+    EXPECT_EQ(stats.record.size(), 2);
+
+    IF_HEAVY_LOGGING(cout << "Unlose middle: +8, +110:\n");
+    stats.unlose(peg+8);
+    stats.unlose(peg+110);
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    // First and second record should be split in two.
+    EXPECT_EQ(stats.record.size(), 4);
+    // And the second record should contain a single packet
+    EXPECT_EQ(stats.record[1].first, stats.record[1].second);
+
+    IF_HEAVY_LOGGING(cout << "Unlose new-single +9:\n");
+    stats.unlose(peg+9);
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    EXPECT_EQ(stats.record.size(), 3);
+
+    int dismiss_size = stats.dismiss(peg+100);
+    IF_HEAVY_LOGGING(cout << "Dismissing up to 100: - " << dismiss_size << " lost packets\n");
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+    int expected_size = 1 + 10 + 7;
+    EXPECT_EQ(dismiss_size, expected_size);
+
+    dismiss_size = stats.dismiss(peg+150);
+    IF_HEAVY_LOGGING(cout << "Dismissing up to 150: - " << dismiss_size << " lost packets\n");
+    IF_HEAVY_LOGGING(cout << DisplaySLR(stats, peg) << endl);
+
+    expected_size = 1 + (109-103) + 1 + (120 - 111);
+    EXPECT_EQ(dismiss_size, expected_size);
+
+    IF_HEAVY_LOGGING(cout << "Done.\n");
+
 }
 
