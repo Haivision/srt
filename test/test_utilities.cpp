@@ -316,6 +316,5 @@ TEST(StatsLossRecord, Overall)
     EXPECT_EQ(dismiss_size, expected_size);
 
     IF_HEAVY_LOGGING(cout << "Done.\n");
-
 }
 
