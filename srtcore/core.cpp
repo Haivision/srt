@@ -12468,12 +12468,18 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     CGuard gl (m_GroupLock);
-
-    size_t size = *psize;
+    
+    SRT_ASSERT(psize != NULL);
+    const size_t size = *psize;
     // Rewrite correct size
     *psize = m_Group.size();
 
-    if (m_Group.size() > size || !pdata)
+    if (!pdata)
+    {
+        return 0;
+    }
+
+    if (m_Group.size() > size)
     {
         // Not enough space to retrieve the data.
         return CUDT::APIError(MJ_NOTSUP, MN_XSIZE);

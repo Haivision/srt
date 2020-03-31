@@ -2856,17 +2856,18 @@ int CUDT::configureGroup(SRTSOCKET groupid, const char* str)
 
 int CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
-    if ( (groupid & SRTGROUP_MASK) == 0)
+    if ((groupid & SRTGROUP_MASK) == 0 || !psize)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     CUDTGroup* g = s_UDTUnited.locateGroup(groupid, s_UDTUnited.ERH_RETURN);
-    if (!g || !pdata || !psize)
+    if (!g)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+    // To get only the size of the group pdata=NULL can be used
     return g->getGroupData(pdata, psize);
 }
 
