@@ -11425,9 +11425,15 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
     IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
     IM(SRTO_TLPKTDROP, m_bTLPktDrop);
+    IM(SRTO_STREAMID, m_sStreamName);
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);
+    IM(SRTO_MINVERSION, m_lMinimumPeerSrtVersion);
+    IM(SRTO_ENFORCEDENCRYPTION, m_bOPT_StrictEncryption);
+    IM(SRTO_IPV6ONLY, m_iIpV6Only);
+    IM(SRTO_PEERIDLETIMEO, m_iOPT_PeerIdleTimeout);
     IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
+    IM(SRTO_PACKETFILTER, m_OPT_PktFilterConfigString);
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
@@ -12319,16 +12325,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
 int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
+    if (!psize)
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+
     CGuard gl (m_GroupLock);
 
     size_t size = *psize;
     // Rewrite correct size
     *psize = m_Group.size();
 
-    if (m_Group.size() > size)
+    if (m_Group.size() > size || !pdata)
     {
         // Not enough space to retrieve the data.
-        return SRT_ERROR;
+        return CUDT::APIError(MJ_NOTSUP, MN_XSIZE);
     }
 
     size_t i = 0;
