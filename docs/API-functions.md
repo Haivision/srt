@@ -733,7 +733,7 @@ and providing `socketgroup` and `inoutlen`.
 
    * `SRT_EINVPARAM` reported if `socketgroup` is not an existing group ID
 
-Note that is if the array was too small for all group members,
+Note that if the array was too small for all group members,
 no error code is set, but `-1` is returned.
 
 
