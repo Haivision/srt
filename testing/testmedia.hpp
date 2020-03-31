@@ -52,7 +52,7 @@ protected:
     {
         string host;
         int port;
-        int priority = 0;
+        int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
 
         Connection(string h, int p): host(h), port(p) {}

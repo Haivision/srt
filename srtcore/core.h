@@ -219,10 +219,10 @@ public:
         bool ready_error;
 
         // Balancing data
-        double load_factor;
-        double unit_load;
+        double load_factor;// Current load on this link (cunulates unit_load values)
+        double unit_load;  // Cost of sending, fixed or calc'd b.on network stats
         // Configuration
-        int priority;
+        int weight;
     };
 
     struct ConfigItem
@@ -686,13 +686,16 @@ private:
     typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
     CallbackHolder<selectLink_cb> m_cbSelectLink;
 
+    CUDTGroup::gli_t linkSelect_UpdateAndReport(CUDTGroup::gli_t this_link);
+    CUDTGroup::gli_t linkSelect_plain(const CUDTGroup::BalancingLinkState& state);
+
     // Plain algorithm: simply distribute the load
     // on all links equally.
-    gli_t linkSelect_plain(const BalancingLinkState&);
-    static gli_t linkSelect_plain_fw(void* opaq, const BalancingLinkState& st)
+    gli_t linkSelect_fixed(const BalancingLinkState&);
+    static gli_t linkSelect_fixed_fw(void* opaq, const BalancingLinkState& st)
     {
         CUDTGroup* g = (CUDTGroup*)opaq;
-        return g->linkSelect_plain(st);
+        return g->linkSelect_fixed(st);
     }
 
     // Window algorihm: keep balance, but mind the sending cost
@@ -704,7 +707,6 @@ private:
         CUDTGroup* g = (CUDTGroup*)opaq;
         return g->linkSelect_window(st);
     }
-    CUDTGroup::gli_t linkSelect_window_ReportLink(CUDTGroup::gli_t this_link);
 
 public:
     // Required after the call on newGroup on the listener side.

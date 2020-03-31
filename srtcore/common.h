@@ -69,6 +69,7 @@ modified by
 #include "utilities.h"
 #include "sync.h"
 #include "netinet_any.h"
+#include "packetfilter_api.h"
 
 // System-independent errno
 #ifndef _WIN32
@@ -1391,5 +1392,7 @@ inline std::string SrtVersionString(int version)
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
+
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
 
 #endif
