@@ -15761,6 +15761,9 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
             continue;
         }
 
+        if (this_link == gli_NULL())
+            this_link = li;
+
         // Don't count this link if its weight == 0.
         if (li->weight != 0)
         {
@@ -15772,6 +15775,9 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
             equi_links.push_back(li);
         }
     }
+
+    if (state.ilink == gli_NULL())
+        return this_link; // either first found or gli_NULL().
 
     int avg_weight = total_weight/total_links;
     if (avg_weight == 0)
