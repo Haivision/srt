@@ -3847,7 +3847,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_ConnReq.m_iID             = m_SocketID;
     CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
-    if (forced_isn == -1)
+    if (forced_isn == SRT_SEQNO_NONE)
     {
         // Random Initial Sequence Number (normal mode)
         srand(count_microseconds(steady_clock::now()));
@@ -5468,7 +5468,7 @@ void *CUDT::tsbpd(void *param)
 
         if (self->m_bTLPktDrop)
         {
-            int32_t skiptoseqno = -1;
+            int32_t skiptoseqno = SRT_SEQNO_NONE;
             bool    passack     = true; // Get next packet to wait for even if not acked
 
             rxready = self->m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
@@ -5490,10 +5490,10 @@ void *CUDT::tsbpd(void *param)
                 /* Packet ready to play according to time stamp but... */
                 int seqlen = CSeqNo::seqoff(self->m_iRcvLastSkipAck, skiptoseqno);
 
-                if (skiptoseqno != -1 && seqlen > 0)
+                if (skiptoseqno != SRT_SEQNO_NONE && seqlen > 0)
                 {
                     /*
-                     * skiptoseqno != -1,
+                     * skiptoseqno != SRT_SEQNO_NONE,
                      * packet ready to play but preceeded by missing packets (hole).
                      */
 
@@ -5536,7 +5536,7 @@ void *CUDT::tsbpd(void *param)
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1);
+            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1 /*get first ready*/);
         }
         leaveCS(self->m_RcvBufferLock);
 
@@ -6207,7 +6207,7 @@ bool CUDT::close()
 
 int CUDT::receiveBuffer(char *data, int len)
 {
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (isOPT_TsbPd())
@@ -6608,7 +6608,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
-        if (w_mctrl.pktseq != -1 && m_iSndNextSeqNo != -1)
+        if (w_mctrl.pktseq != SRT_SEQNO_NONE && m_iSndNextSeqNo != SRT_SEQNO_NONE)
         {
             if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
             {
@@ -6723,7 +6723,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     // is only used internally, we state that the problem that would be
     // handled by exception here should not happen, and in case if it does,
     // it's a bug to fix, so the exception is nothing wrong.
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard (m_RecvLock);
@@ -6965,7 +6965,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (size <= 0 && size != -1)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
@@ -7089,7 +7089,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     if (size <= 0)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (isOPT_TsbPd())
@@ -9363,7 +9363,7 @@ int CUDT::processData(CUnit* in_unit)
     // to the filter and before the filter could recover the packet before anyone
     // notices :)
 
-    if (packet.getMsgSeq() != 0) // disregard filter-control packets, their seq may mean nothing
+    if (packet.getMsgSeq() != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
     {
         int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
        // Difference between these two sequence numbers is expected to be:
@@ -11114,8 +11114,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_selfManaged(true)
     , m_type(gtype)
     , m_listener()
-    , m_iSndOldestMsgNo(-1)
-    , m_iSndAckedMsgNo(-1)
+    , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
+    , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
     , m_uOPT_StabilityTimeout(4*CUDT::COMM_SYN_INTERVAL_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
@@ -11130,12 +11130,12 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iRcvTimeOut(-1)
     , m_tsStartTime()
     , m_tsRcvPeerStartTime()
-    , m_RcvBaseSeqNo(-1)
+    , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
     , m_bClosing(false)
-    , m_iLastSchedSeqNo(-1)
-    , m_iLastSchedMsgNo(-1)
+    , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
+    , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
@@ -11469,7 +11469,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDSYN: RD(true);
     case SRTO_RCVSYN: RD(true);
-    case SRTO_ISN: RD(-1);
+    case SRTO_ISN: RD(SRT_SEQNO_NONE);
     case SRTO_FC: RD(CUDT::DEF_FLIGHT_SIZE);
 
     case SRTO_SNDBUF:
@@ -11723,7 +11723,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     vector<gli_t> idlers;
     vector<gli_t> pending;
 
-    int32_t curseq = -1;
+    int32_t curseq = SRT_SEQNO_NONE;
 
     int rstat = -1;
 
@@ -11874,7 +11874,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         int erc = 0;
         gli_t d = *i;
         int lastseq = d->ps->core().schedSeqNo();
-        if (curseq != -1 && curseq != lastseq)
+        if (curseq != SRT_SEQNO_NONE && curseq != lastseq)
         {
             HLOGC(mglog.Debug, log << "grp/sendBroadcast: socket @" << d->id
                 << ": override snd sequence %" << lastseq
@@ -11922,7 +11922,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         sendstates.push_back(cstate);
     }
 
-    if (curseq != -1)
+    if (curseq != SRT_SEQNO_NONE)
     {
         HLOGC(dlog.Debug, log << "grp/sendBroadcast: updating current scheduling sequence %" << curseq);
         m_iLastSchedSeqNo = curseq;
@@ -12427,7 +12427,7 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
     CGuard lg (m_GroupLock);
     int seqdiff = 0;
 
-    if (m_RcvBaseSeqNo == -1)
+    if (m_RcvBaseSeqNo == SRT_SEQNO_NONE)
     {
         // One socket reported readiness, while no reading operation
         // has ever been done. Whatever the sequence number is, it will
@@ -12506,7 +12506,7 @@ RETRY_READING:
     }
 
     // Check first the ahead packets if you have any to deliver.
-    if (m_RcvBaseSeqNo != -1 && !m_Positions.empty())
+    if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && !m_Positions.empty())
     {
         // This function also updates the group sequence pointer.
         ReadPos* pos = checkPacketAhead();
@@ -12844,9 +12844,9 @@ RETRY_READING:
             }
 
             // NOTE: checks against m_RcvBaseSeqNo and decisions based on it
-            // must NOT be done if m_RcvBaseSeqNo is -1, which means that we
-            // are about to deliver the very first packet and we take its
-            // sequence number as a good deal.
+            // must NOT be done if m_RcvBaseSeqNo is SRT_SEQNO_NONE, which
+            // means that we are about to deliver the very first packet and we
+            // take its sequence number as a good deal.
 
             // The order must be:
             // - check discrepancy
@@ -12854,11 +12854,11 @@ RETRY_READING:
             // - check ordering.
             // The second one must be done always, but failed discrepancy
             // check should exclude the socket from any further checks.
-            // That's why the common check for m_RcvBaseSeqNo != -1 can't
+            // That's why the common check for m_RcvBaseSeqNo != SRT_SEQNO_NONE can't
             // embrace everything below.
 
             // We need to first qualify the sequence, just for a case
-            if (m_RcvBaseSeqNo != -1 && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
             {
                 // This error should be returned if the link turns out
                 // to be the only one, or set to the group data.
@@ -12875,7 +12875,7 @@ RETRY_READING:
             // it will be fixed later.
             p->mctrl.pktseq = mctrl.pktseq;
 
-            if (m_RcvBaseSeqNo != -1)
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
                 // Now we can safely check it.
                 int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo);
@@ -12961,15 +12961,15 @@ RETRY_READING:
         // Update it now and don't do anything else with the sockets.
 
         // Sanity check
-        if (next_seq == -1)
+        if (next_seq == SRT_SEQNO_NONE)
         {
             LOGP(dlog.Error, "IPE: next_seq not set after output extracted!");
 
             // This should never happen, but the only way to keep the code
             // safe an recoverable is to use the incremented sequence. By
             // leaving the sequence as is there's a risk of hangup.
-            // Not doing it in case of -1 as it would make a valid %0.
-            if (m_RcvBaseSeqNo != -1)
+            // Not doing it in case of SRT_SEQNO_NONE as it would make a valid %0.
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
                 m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
         }
         else
@@ -13354,7 +13354,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
 
     if (stat != -1)
     {
-        if (w_curseq == -1)
+        if (w_curseq == SRT_SEQNO_NONE)
         {
             w_curseq = pktseq;
         }
@@ -13406,9 +13406,9 @@ void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_
 {
     // This is required to rewrite into currentSchedSequence() property
     // as this value will be used as ISN when a new link is connected.
-    int32_t oldest_buffer_seq = -1;
+    int32_t oldest_buffer_seq = SRT_SEQNO_NONE;
 
-    if (w_curseq != -1)
+    if (w_curseq != SRT_SEQNO_NONE)
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: successfully sent over running link, ADDING TO BUFFER.");
 
@@ -13440,15 +13440,15 @@ void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_
             oldest_buffer_seq = addMessageToBuffer(buf, len, (w_mc));
         }
 
-        // Note that if buffer is empty and w_curseq is (still) -1,
+        // Note that if buffer is empty and w_curseq is (still) SRT_SEQNO_NONE,
         // it will have to try to send first in order to extract the data.
 
-        // Note that if w_curseq is still -1 at this point, it means
+        // Note that if w_curseq is still SRT_SEQNO_NONE at this point, it means
         // that we have the case of the very first packet sending.
         // Otherwise there would be something in the buffer already.
     }
 
-    if (oldest_buffer_seq != -1)
+    if (oldest_buffer_seq != SRT_SEQNO_NONE)
         m_iLastSchedSeqNo = oldest_buffer_seq;
 }
 
@@ -13475,7 +13475,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
 
         try
         {
-            if (w_curseq == -1)
+            if (w_curseq == SRT_SEQNO_NONE)
             {
                 // This marks the fact that the given here packet
                 // could not be sent over any link. This includes the
@@ -14005,7 +14005,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     }
 #endif
 
-    int32_t curseq = -1;
+    int32_t curseq = SRT_SEQNO_NONE;
     size_t nsuccessful = 0;
 
     // Collect priorities from sendable links, added only after sending is successful.
@@ -14248,7 +14248,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
 
 int32_t CUDTGroup::addMessageToBuffer(const char *buf, size_t len, SRT_MSGCTRL& w_mc)
 {
-    if (m_iSndAckedMsgNo == -1)
+    if (m_iSndAckedMsgNo == SRT_MSGNO_NONE)
     {
         // Very first packet, just set the msgno.
         m_iSndAckedMsgNo = w_mc.msgno;
@@ -14370,7 +14370,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
 void CUDTGroup::ackMessage(int32_t msgno)
 {
     // The message id could not be identified, skip.
-    if (msgno == 0)
+    if (msgno == SRT_MSGNO_CONTROL)
     {
         HLOGC(mglog.Debug, log << "ackMessage: msgno not found in ACK-ed sequence");
         return;

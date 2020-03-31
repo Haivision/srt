@@ -303,7 +303,7 @@ void SourceMedium::Runner()
         bytevector input = med->Read(g_chunksize);
         if (input.empty() && med->End())
         {
-            Verb() << VerbLock << "Exitting SourceMedium: " << this;
+            Verb() << VerbLock << "Exiting SourceMedium: " << this;
             return;
         }
         applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
@@ -366,7 +366,7 @@ void TargetMedium::Runner()
             {
                 if (!running)
                 {
-                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exitting.";
+                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exiting.";
                     return;
                 }
 

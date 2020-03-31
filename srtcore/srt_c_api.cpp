@@ -54,7 +54,7 @@ int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udps
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
-int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, -1); }
+int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
 int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* source,
@@ -98,13 +98,13 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
     // Just as a safety precaution, check the structs.
     if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
             || local_name->sa_family != remote_name->sa_family)
-        return SRT_EINVPARAM;
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     sockaddr_in* local_sin = (sockaddr_in*)local_name;
     sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
 
     if (local_sin->sin_port != remote_sin->sin_port)
-        return SRT_EINVPARAM;
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     int st = srt_bind(u, local_name, local_namelen);
     if ( st != 0 )
@@ -178,12 +178,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 
 extern const SRT_MSGCTRL srt_msgctrl_default = {
     0,     // no flags set
-    -1,    // -1 = infinity
+    SRT_MSGTTL_INF,
     false, // not in order (matters for msg mode only)
     PB_SUBSEQUENT,
     0,     // srctime: take "now" time
-    -1,    // -1: no seq (0 is a valid seqno!)
-    -1,    // -1: unset (0 is control, numbers start from 1)
+    SRT_SEQNO_NONE,
+    SRT_MSGNO_NONE,
     NULL,  // grpdata not supplied
     0      // idem
 };
