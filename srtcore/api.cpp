@@ -245,7 +245,7 @@ int CUDTUnited::startup()
    CGuard gcinit(m_InitLock);
 
    if (m_iInstanceCount++ > 0)
-      return 0;
+      return 1;
 
    // Global initialization code
 #ifdef _WIN32
@@ -259,19 +259,15 @@ int CUDTUnited::startup()
 
    PacketFilter::globalInit();
 
-   //init CTimer::EventLock
-
    if (m_bGCStatus)
-      return true;
+      return 1;
 
    m_bClosing = false;
 
    setupMutex(m_GCStopLock, "GCStop");
    setupCond(m_GCStopCond, "GCStop");
-   {
-       ThreadName tn("SRT:GC");
-       pthread_create(&m_GCThread, NULL, garbageCollect, this);
-   }
+   if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
+      return -1;
 
    m_bGCStatus = true;
 
@@ -296,7 +292,7 @@ int CUDTUnited::cleanup()
    // is set here above. Worst case secenario, this
    // pthread_join() call will block for 1 second.
    CSync::signal_relaxed(m_GCStopCond);
-   pthread_join(m_GCThread, NULL);
+   m_GCThread.join();
 
    // XXX There's some weird bug here causing this
    // to hangup on Windows. This might be either something
