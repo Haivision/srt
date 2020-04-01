@@ -703,7 +703,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     // matrix dismissal FIRST before this packet is going to be handled.
     CheckLargeDrop(rpkt.getSeqNo());
 
-    if (rpkt.getMsgSeq() == 0)
+    if (rpkt.getMsgSeq() == SRT_MSGNO_CONTROL)
     {
         // Interpret the first byte of the contents.
         const char* payload = rpkt.data();
