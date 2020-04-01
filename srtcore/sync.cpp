@@ -527,3 +527,13 @@ void srt::sync::CTimer::tick()
     m_event.notify_one();
 }
 
+
+void srt::sync::CGlobEvent::triggerEvent()
+{
+    return g_Sync.notify_one();
+}
+
+bool srt::sync::CGlobEvent::waitForEvent()
+{
+    return g_Sync.lock_wait_for(milliseconds_from(10));
+}
