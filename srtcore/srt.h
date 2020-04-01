@@ -853,10 +853,10 @@ SRT_API        int  srt_getlasterror(int* errno_loc);
 SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
-// performance track
-// perfmon with Byte counters for better bitrate estimation.
+// Performance tracking
+// Performance monitor with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
-// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+// Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)

@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     Block* s = m_pLastBlock;
 
-    if (w_msgno == -1) // DEFAULT-UNCHANGED msgno supplied
+    if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
@@ -336,7 +336,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
       // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
 
       s->m_iLength = pktlen;
-      s->m_iTTL = -1;
+      s->m_iTTL = SRT_MSGTTL_INF;
       s = s->m_pNext;
 
       total += pktlen;
