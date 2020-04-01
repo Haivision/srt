@@ -102,7 +102,7 @@ be called from the C++ global destructor, if not called by the application, alth
 relying on this behavior is stronly discouraged.
 
 - Returns:
- 
+
   * 0 (A possibility to return other values is reserved for future use)
 
 **IMPORTANT**: Note that the startup/cleanup calls have an instance counter.
@@ -865,7 +865,7 @@ are then derived by the member sockets.
   * `SRT_EINVSOCK`: Socket `u` indicates no valid socket ID
   * `SRT_EINVOP`: Option `opt` indicates no valid option
   * Various other errors that may result from problems when setting a specific 
-  option (see option description for details).
+    option (see option description for details).
 
 ### srt_getversion
 
@@ -1464,7 +1464,7 @@ level-triggered, you can do two separate subscriptions for the same socket.
 
 
 - Returns:
- 
+
   * 0 if successful, otherwise -1
 
 - Errors:
@@ -1489,7 +1489,7 @@ The `_usock` suffix refers to a user socket (SRT socket).
 The `_ssock` suffix refers to a system socket.
 
 - Returns:
- 
+
   * 0 if successful, otherwise -1
 
 - Errors:
