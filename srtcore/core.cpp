@@ -6175,12 +6175,11 @@ bool CUDT::close()
     if (m_pCryptoControl)
         m_pCryptoControl->close();
 
-    if (isOPT_TsbPd() && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (isOPT_TsbPd() && m_RcvTsbPdThread.joinable())
     {
         HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        void *retval;
-        int ret SRT_ATR_UNUSED = pthread_join(m_RcvTsbPdThread, &retval);
-        HLOGC(mglog.Debug, log << "... " << (ret == 0 ? "SUCCEEDED" : "FAILED"));
+        m_RcvTsbPdThread.join();
+        HLOGC(mglog.Debug, log << "... returned from TSBPD join");
     }
 
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
@@ -7536,8 +7535,6 @@ void CUDT::initSynch()
     setupMutex(m_RcvBufferLock, "RcvBuffer");
     setupMutex(m_ConnectionLock, "Connection");
     setupMutex(m_StatsLock, "Stats");
-
-    memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
     setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
@@ -7569,10 +7566,9 @@ void CUDT::releaseSynch()
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
     enterCS(m_RecvDataLock);
-    if (!pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (m_RcvTsbPdThread.joinable())
     {
-        pthread_join(m_RcvTsbPdThread, NULL);
-        m_RcvTsbPdThread = pthread_t();
+        m_RcvTsbPdThread.join();
     }
     leaveCS(m_RecvDataLock);
 
@@ -9234,29 +9230,23 @@ int CUDT::processData(CUnit* in_unit)
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (need_tsbpd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (need_tsbpd && !m_RcvTsbPdThread.joinable())
     {
         HLOGP(mglog.Debug, "Spawning Socket TSBPD thread");
-        int st = 0;
-        {
 #if ENABLE_HEAVY_LOGGING
-            std::ostringstream tns1, tns2;
-            // Take the last 2 ciphers from the socket ID.
-            tns1 << m_SocketID;
-            std::string s = tns1.str();
-            tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+        std::ostringstream tns1, tns2;
+        // Take the last 2 ciphers from the socket ID.
+        tns1 << m_SocketID;
+        std::string s = tns1.str();
+        tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
 
-            ThreadName tn(tns2.str().c_str());
+        ThreadName tn(tns2.str().c_str());
+        const char* thname = tns2.str().c_str();
 #else
-            ThreadName tn("SRT:TsbPd");
+        const char* thname = "SRT:TsbPd";
 #endif
-            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
-        }
-        if (st != 0)
-        {
-            LOGC(mglog.Error, log << "processData: PROBLEM SPAWNING TSBPD thread: " << st);
+        if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
             return -1;
-        }
     }
     // NOTE: In case of group TSBPD, this facility will be started
     // in different place. Group TSBPD is a concept implementation - not done here.
