@@ -11125,7 +11125,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         false, false, false,
         0.0, // load factor: no load in the beginning
         1.0, // unit load: how much one packet would increase the load
-        0 // priority
+        0 // weight
     };
     return sd;
 }
