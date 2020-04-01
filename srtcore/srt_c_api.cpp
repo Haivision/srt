@@ -69,7 +69,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
-    data.priority = 0;
+    data.weight = 0;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else

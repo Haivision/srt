@@ -52,7 +52,7 @@ protected:
     {
         string host;
         int port;
-        int priority = 0;
+        int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
 
         Connection(string h, int p): host(h), port(p) {}
@@ -69,6 +69,7 @@ protected:
     map<string, string> m_options; // All other options, as provided in the URI
     vector<Connection> m_group_nodes;
     string m_group_type;
+    string m_group_config;
     vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;

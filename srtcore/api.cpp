@@ -1284,7 +1284,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
         CUDTGroup::gli_t f = g.add(g.prepareData(ns));
         ns->m_IncludedIter = f;
         ns->m_IncludedGroup = &g;
-        f->priority = targets[tii].priority;
+        f->weight = targets[tii].weight;
 
         // XXX This should be reenabled later, this should
         // be probably still in use to exchange information about
