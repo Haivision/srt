@@ -13,19 +13,19 @@ Refer to the documentation of the [API functions](API-functions.md) for usage in
 
 # Summary Table
 
-The table below provides the summary on the SRT statistics: name, type, unit of measurement, the side it's calculated (sender or receiver), and data type. See section ["Detailed Description"](#Detailed%20Description) for detailed description of each statistic.
+The table below provides a summary of SRT statistics: name, type, unit of measurement, data type, and whether it is calculated by the sender or receiver. See the section [Detailed Description](#detailed-description) for a detailed description of each statistic.
 
 There are three types of statistics:
 
-- Accumulated that means the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., [pktSentTotal](#pktSentTotal), etc.,
-- Interval-based that means the statistic is accumulated during the specified time interval, e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds, since the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc.. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
-- Instantaneous that means the statistic is obtained at the moment `srt_bstats()` function is called.
+- **Accumulated:** the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., [pktSentTotal](#pktSentTotal), etc.,
+- **Interval-based:** the statistic is accumulated during a specified time interval (e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds) from the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
+- **Instantaneous:** the statistic is obtained at the moment the `srt_bstats()` function is called, e.g., [msRTT](#msRTT), etc.
 
 
 | Statistic                                           | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
 | --------------------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
 | [msTimeStamp](#msTimeStamp)                         | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
-| [pktSentTotal](#msTimeStamp)                        | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktSentTotal](#pktSentTotal)                       | accumulated       | packets             | ✓                    | -                      | int64_t   |
 | [pktRecvTotal](#pktRecvTotal)                       | accumulated       | packets             | -                    | ✓                      | int64_t   |
 | [pktSndLossTotal](#pktSndLossTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
 | [pktRcvLossTotal](#pktRcvLossTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
@@ -107,7 +107,7 @@ There are three types of statistics:
 
 ### msTimeStamp
 
-The time elapsed since the SRT socket has been created (after successful call to `srt_connect(...)` or `srt_bind(...)` function), in milliseconds. Available both for sender and receiver.
+The time elapsed, in milliseconds, since the SRT socket has been created (after successful call to `srt_connect(...)` or `srt_bind(...)` function). Available both for sender and receiver.
 
 ### pktSentTotal
 
@@ -133,21 +133,21 @@ The detection of presently missing packets is triggered by a newly received DATA
 
 If the packet `s` is received out of order (`s < next_exp`), the statistic is not affected.
 
-Note that only original (not retransmitted) SRT DATA packets are taken into account. Refer to [pktRcvRetransTotal](#pktRcvRetransTotal) for the formula of obtaining the total number of lost retransmitted packets.
+Note that only original (not retransmitted) SRT DATA packets are taken into account. Refer to [pktRcvRetransTotal](#pktRcvRetransTotal) for the formula for obtaining the total number of lost retransmitted packets.
 
-In SRT v1.4.0, v1.4.1, `pktRcvLossTotal` statistics includes packets that failed to be decrypted. To receive the number of presently missing packets, substract [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) from the current one. This is going to be fixed within SRT v.1.5.0.
+In SRT v1.4.0, v1.4.1, the `pktRcvLossTotal` statistic includes packets that failed to be decrypted. To receive the number of presently missing packets, substract [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) from the current one. This is going to be fixed in SRT v.1.5.0.
 
 ### pktRetransTotal
 
 The total number of retransmitted packets sent by the SRT sender. Available for sender.
 
-This statistics is not interchangeable with the receiver [pktRcvRetransTotal](#pktRcvRetransTotal) statistic.
+This statistic is not interchangeable with the receiver [pktRcvRetransTotal](#pktRcvRetransTotal) statistic.
 
 ### pktRcvRetransTotal
 
 The total number of retransmitted packets registered at the receiver side. Available for receiver.
 
-This statistics is not interchangeable with the sender [pktRetransTotal](#pktRetransTotal) statistic.
+This statistic is not interchangeable with the sender [pktRetransTotal](#pktRetransTotal) statistic.
 
 Note that the total number of lost retransmitted packets can be calculated as the total number of retransmitted packets sent by receiver minus the total number of retransmitted packets registered at the receiver side:  `pktRetransTotal - pktRcvRetransTotal`.
 
@@ -199,27 +199,27 @@ The total number of packet filter control packets supplied by the packet filter 
 
 Packet filter control packets are SRT DATA packets.
 
-`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
+The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterExtraTotal
 
-The total number of packet filter control packets received and not supplied back by the packet filter
+The total number of packet filter control packets received but not returned by the packet filter
 (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
 Packet filter control packets are SRT DATA packets.
 
 For FEC, this is the total number of received FEC control packets.
 
-`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
+The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterSupplyTotal
 
 The total number of packets supplied by the packet filter excluding actually received packets
-(e.g., FEC rebuilt packets, refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+(e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
 Packet filter control packets are SRT DATA packets.
 
-`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
+The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### pktRcvFilterLossTotal
 
@@ -227,7 +227,7 @@ The total number of lost packets that were not covered by the packet filter (ref
 
 Packet filter control packets are SRT DATA packets.
 
-`SRTO_PACKETFILTER` socket option should be enabled (refer to in [API.md](API.md)). Introduced in SRT v1.4.0.
+The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
 
 ### byteSentTotal
 
