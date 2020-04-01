@@ -247,9 +247,9 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 Connection cc(check.host(), check.portno());
-                if (check.parameters().count("pri"))
+                if (check.parameters().count("weight"))
                 {
-                    cc.priority = stoi(check.queryValue("pri"));
+                    cc.weight = stoi(check.queryValue("weight"));
                 }
 
                 m_group_nodes.push_back(cc);
@@ -768,11 +768,11 @@ void SrtCommon::OpenGroupClient()
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
         Verb() << "\t[" << i << "] " << c.host << ":" << c.port
-            << "?pri=" << c.priority
+            << "?weight=" << c.weight
             << " ... " << VerbNoEOL;
         ++i;
         SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
-        gd.priority = c.priority;
+        gd.weight = c.weight;
         targets.push_back(gd);
     }
 
@@ -1810,6 +1810,7 @@ RETRY_READING:
     Error("No data extracted");
     return output; // Just a marker - this above function throws an exception
 }
+
 #endif
 
 bytevector SrtSource::Read(size_t chunk)
