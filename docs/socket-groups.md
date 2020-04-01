@@ -56,14 +56,19 @@ Every next link in this group gives then another 100% overhead.
 ## 2. Backup
 
 This solution is more complicated and more challenging for the settings,
-and in contradiction to Broadcast group, it costs some penalties.
+and in contradiction to Broadcast group, it costs some penalties. It has
+also advantages: the overhead for redundancy, which in case of broadcast
+groups is 100% per every next link, in this case it is tried to be kept at
+negligible minimum.
 
-In this group, only one link out of member links is used for transmission
-in a normal situation. Other links may start being used when there's happening
-an event of "disturbance" on a link, which makes it considered "unstable". This
-term is introduced beside "broken" because SRT normally uses 5 seconds to be
-sure that the link is broken, and this is way too much to be used as a latency
-penalty, if you still want to have a relatively low latency.
+In this group, in a normal situation, only one link out of member links is used
+for transmission, while others are just kept alive (the keepalive message
+is sent over them usually once per 1 second). Other links may start being used
+when there's happening an event of "disturbance" on a link, which makes it
+considered "unstable". This term is introduced beside "broken" because SRT
+normally uses 5 seconds to be sure that the link is broken, and this is way too
+much to be used as a latency penalty, if you still want to have a relatively
+low latency.
 
 Because of that there's a configurable timeout (with `SRTO_GROUPSTABTIMEO`
 option), which is the maximum time distance between two consecutive responses
@@ -90,14 +95,31 @@ sending for a short time. This state should last at most as long as it takes
 for SRT to determie the link broken - either by getting the link broken by
 itself, or by closing the link when it's remaining unstable too long time.
 
-This mode allows also to set link priorities - the lower, the more preferred.
-This priority decides mainly, which link is "best" and which is selected to
-take over transmission over a broken link before others, as well as which
-links should remain active should multiple links be stable at a time.
-If you don't specify priorities, the second connected link need not
-take over sending, although as this is resolved through sorting, then
-whichever link out of those with the same priority would take over when
-all links are stable is undefined.
+The overhead here may then come from two sources:
+- the keepalive control packets for inactive links (negligible)
+- sending data over an unstable link for the resolution time
+
+This means that the overhead is usually varrying, depending on how often
+it happens that a link becomes unstable. It is then very important that
+you tweak the value of stability timeout properly and cautiosly. If this
+time is too small, your link might be too often too eagerly qualified as
+unstable and with every case of unstable link it costs you temporary
+overhead. Note that a single activation of a backup link costs you even
+more than 100% overhead for the short time (up to 5 seconds), as usually some
+packets that have been already sent over this unstable link, but weren't
+acknowledged yet, will be sent again over the newly activated link. As
+this is usually tolerable minimum overhead if it was due to a broken link,
+you may experience link switching much more often and uselessly, if your
+stability timeout is too small.
+
+This mode allows also to set link priorities, through the `weight`
+parameter - the lower, the more preferred. This priority decides mainly, which
+link is "best" and which is selected to take over transmission over a broken
+link before others, as well as which links should remain active should multiple
+links be stable at a time.  If you don't specify priorities, the second
+connected link need not take over sending, although as this is resolved through
+sorting, then whichever link out of those with the same priority would take
+over when all links are stable is undefined.
 
 Note that this group has an advantage over Broadcast in that it allows you
 to implement link redundancy with a very little overhead, as it keeps the
@@ -153,14 +175,39 @@ protection, the mechanism should quickly detect a link as broken so
 that packets lost on the broken link can be resent over the others,
 but no such mechanism has been provided for balancing group.
 
+Please also keep in mind that there's a rule for all groups - one member
+link established is enough for a group to be connection established. This
+might be not always wanted in case of balancing groups, so your application
+might need to do additional check and monitor how many links and which
+ones are currently active. For example, if you need 3 links to balance
+the load and having only 2 of them would be too little to withstand the
+whole transmission, you should wait with connecting until all 3 links
+are established. Important thing here is also that one of the links might
+be at some moment not possible to be established, or one of the links
+can get broken during transmission.
+
 As there could be various ways as to how to implement balancing
 algorithm, there's a framework provided to implement various methods,
 and two algorithms are currently provided:
 
-1. `plain` (default). This is a simple round-robin - next link selected
-to send the next packet is the oldest used so far.
+1. `fixed`. In this algorithm you specify the share that is given to
+particular link manually through the `weight` parameter. The weight
+value in case of this algorithm in balancing groups defines how much of
+a share is given to this link. Important here is that you can easily
+think of the weight values as a percentage of load burden for particular
+link - however in reality the share of the load is calculated as a
+percentage that particular link's weight comprises among the sum of all
+weight values. Additionally, a value of 0 is special and is translated
+into a weight that would make it equal to an average of all weights.
+Be careful here with the non-established and broken links. For example,
+if you have 3 links with weight 10, 20 and 30, it results in a load
+balance of 16.6%, 33.3% and 50% respectively. However if the second link
+gets broken, there are then 2 links with 10 and 30, which results in
+load balance of 25% and 75% respectively. Keep in mind that it's up
+to the application to keep the minimum links allowed and break the
+group link that is unable to withstand the load.
 
-2. `window`. This algorithm is performing cyclic measurement of the
+2. `window` (default). This algorithm is performing cyclic measurement of the
 minimum flight window and this way determines the "cost of sending"
 of a packet over particular link. The link is then "paid" for sending
 a packet appropriate "price", which is collected in the link's "pocket".
@@ -168,22 +215,7 @@ To send the next packet the link with lowest state of the "pocket" is
 selected. The "cost of sending" measurement is being repeated once per
 a time with a distance of 16 packets on each link.
 
-There are possible also other methods and algorithms, like:
-
-a) Explicit share definition. You declare, how much bandwidth you expect
-the links to withstand as a percentage of the signal's bitrate. This
-shall not exceed 100%. This is merely like the above Window algorithm,
-but the "cost of sending" is defined by this percentage.
-
-b) Bandwidth measurement. This relies on the fact that the current
-sending on particular link should use only some percentage of its
-overall possible bandwidth. This requires a reliable way of measuring
-the bandwidth, which is currently not good enough yet. This needs to
-use a similar method as in "window" algorithm, that is, start with
-equal round-robin and then perform actively a measurement and update
-the cost of sending by assigning so much of a share of the signal
-bitrte as it is represented by the share of the link in the sum of
-all maximum bandwidth values from every link.
+There are possible also other methods and algorithms in the future.
 
 
 ## 4. Multicast (NOT IMPLEMENTED - a concept)
