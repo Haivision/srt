@@ -385,6 +385,7 @@ struct CBytePerfMon
    int      pktFlowWindow;              // flow window size, in number of packets
    int      pktCongestionWindow;        // congestion window size, in number of packets
    int      pktFlightSize;              // number of packets on flight
+   int      pktMinFlightSize;           // number of packets in flight at ACK time
    double   msRTT;                      // RTT, in milliseconds
    double   mbpsBandwidth;              // estimated bandwidth, in Mb/s
    int      byteAvailSndBuf;            // available UDT sender buffer size
