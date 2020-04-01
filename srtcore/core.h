@@ -208,14 +208,14 @@ struct StatsLossRecord
     // This function declares given sequence as not lost.
     // It removes it simply from the loss record so that
     // dismissal will not count it anymore.
-    void unlose(int32_t seq)
+    bool unlose(int32_t seq)
     {
         if (record.empty())
-            return;
+            return false;
 
         // Prematurely check against the end to avoid looping
         if (CSeqNo::seqcmp(seq, record.back().second) > 0)
-            return;
+            return false;
 
         // Find the record
         for (size_t i = 0; i < record.size(); ++i)
@@ -232,17 +232,17 @@ struct StatsLossRecord
                 if (seq == record[i].second) // one-seq record
                 {
                     record.erase(record.begin()+i);
-                    return;
+                    return true;
                 }
 
                 record[i].first = CSeqNo::incseq(record[i].first);
-                return;
+                return true;
             }
 
             if (seq == record[i].second)
             {
                 record[i].second = CSeqNo::decseq(record[i].second);
-                return;
+                return true;
             }
 
             // It's in the middle, so this needs splitting.
@@ -251,8 +251,10 @@ struct StatsLossRecord
             int32_t old_begin = record[i].first;
             record[i].first = new_begin;
             record.insert(record.begin()+i, std::make_pair(old_begin, new_end));
-            return;
+            return true;
         }
+
+        return false; // record not found
     }
 
 };

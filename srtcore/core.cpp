@@ -9407,10 +9407,15 @@ int CUDT::processData(CUnit* in_unit)
         else if (pktrexmitflag == 0)
         {
             // Old, "not retransmitted" packet, that is, reordered
-            m_StatsLoss.unlose(packet.m_iSeqNo);
-            CGuard statslock(m_StatsLock);
-            m_stats.rcvReorderTotal++;
-            m_stats.traceRcvReorder++;
+            if (m_StatsLoss.unlose(packet.m_iSeqNo))
+            {
+                // Count it only if this belated packet was notified as lost
+                // (This avoids counting phantom packets as reordered)
+                HLOGC(mglog.Debug, log << "UNLOST %" << packet.m_iSeqNo);
+                CGuard statslock(m_StatsLock);
+                m_stats.rcvReorderTotal++;
+                m_stats.traceRcvReorder++;
+            }
         }
     }
 
