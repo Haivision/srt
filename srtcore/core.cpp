@@ -11125,7 +11125,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         false, false, false,
         0.0, // load factor: no load in the beginning
         1.0, // unit load: how much one packet would increase the load
-        0 // weight
+        0 // priority
     };
     return sd;
 }
@@ -15814,7 +15814,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
     // Sanity check
     if (linkorder.empty())
     {
-        LOGC(dlog.Error, log << "linkSelect_window: IPE: no links???");
+        LOGC(dlog.Error, log << "linkSelect_fixed: IPE: no links???");
         return gli_NULL();
     }
 
@@ -15824,7 +15824,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
     double least_load = this_link->load_factor;
     double biggest_unit_load = 0;
 
-    HLOGC(dlog.Debug, log << "linkSelect_window: total_weight= " << total_weight
+    HLOGC(dlog.Debug, log << "linkSelect_fixed: total_weight= " << total_weight
             << " avg=" << avg_weight
             << " - updating link load factors:");
     // Now that linkdata list is ready, update the link span values
@@ -15832,6 +15832,10 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
     for (vector<gli_t>::iterator i = linkorder.begin(); i != linkorder.end(); ++i)
     {
         gli_t li = *i;
+        if (li->sndstate != GST_RUNNING)
+        {
+            continue;
+        }
 
         // Here update the unit load basing on the percentage
         // of the link's weight.
@@ -15848,22 +15852,35 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
         // deviation = (average - link_weight) / average
         // unit_load = 1 + deviation;
         //
-        // Here `deviation` should have a value between -1 and 1.
-        // By adding 1 we get the range between 0 and 2, with 1
-        // being at average.
+        // The rule for unit_load is such that a sum of all unit_loads
+        // from all active links must be equal to the number of links.
+        // 
+        // Also, the declared weight is the number of packets sent through
+        // particular link when there's been sent overall the number of
+        // packets equal to the sum of all weights.
         //
-        // Example: we have three links with weights: 10, 20, 30
-        // Sum: 60
+        // Example 1
+        //
+        // We have three links with weights: 10, 20, 30
+        //
         // Average: 60/3 = 20
         // deviation[10] = (20-10)/20 = 1/2   -> unit_load = 1.5
         // deviation[20] = (20-20)/20 = 0     -> unit_load = 1
         // deviation[30] = (20-30)/20 = -1/2  -> unit_load = 0.5
         //
+        // Example 2
+        //
+        // We have two links with weights: 80, 20
+        //
+        // Average: 100/2 = 50
+        // deviation[20] = (50-20)/50 = 3/5   -> unit_load = 1 + 0.6 = 1.6
+        // deviation[80] = (50-80)/50 = -3/5  -> unit_load = 1 - 0.6 = 0.4
+
         double average = avg_weight;
         double deviation = (average - li->weight) / average;
         li->unit_load = 1 + deviation;
 
-        HLOGC(dlog.Debug, log << "linkSelect_window: ... #" << distance(m_Group.begin(), li)
+        HLOGC(dlog.Debug, log << "linkSelect_fixed: ... #" << distance(m_Group.begin(), li)
                 << " weight=" << li->weight << " deviation=" << (100*deviation) << "% unit-load="
                 << li->unit_load << " current-load:" << li->load_factor);
 
@@ -15872,13 +15889,13 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
 
         if (li->load_factor < least_load)
         {
-            HLOGC(dlog.Debug, log << "linkSelect_window: ... this link has currently smallest load");
+            HLOGC(dlog.Debug, log << "linkSelect_fixed: ... this link has currently smallest load");
             this_link = li;
             least_load = li->load_factor;
         }
     }
 
-    HLOGC(dlog.Debug, log << "linkSelect_window: selecting link #" << distance(m_Group.begin(), this_link));
+    HLOGC(dlog.Debug, log << "linkSelect_fixed: selecting link #" << distance(m_Group.begin(), this_link));
     // Now that a link is selected and all load factors updated,
     // do a CUTOFF by the value of at least one size of unit load.
 
@@ -15892,7 +15909,7 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
         {
             i->link->load_factor -= biggest_unit_load;
         }
-        HLOGC(dlog.Debug, log << "linkSelect_window: cutting off value of " << biggest_unit_load
+        HLOGC(dlog.Debug, log << "linkSelect_fixed: cutting off value of " << biggest_unit_load
                 << " from all load factors");
     }
 
