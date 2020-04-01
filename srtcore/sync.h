@@ -603,17 +603,6 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
     return FormatDuration<DUNIT_US>(dur);
 }
 
-}; // namespace sync
-}; // namespace srt
-
-
-extern srt::sync::CEvent g_Sync;
-
-namespace srt
-{
-namespace sync
-{
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CGlobEvent class
@@ -625,17 +614,11 @@ class CGlobEvent
 public:
     /// Triggers the event and notifies waiting threads.
     /// Simply calls notify_one().
-    static void inline triggerEvent()
-    {
-        return g_Sync.notify_one();
-    }
+    static void triggerEvent();
 
     /// Waits for the event to be triggered with 10ms timeout.
     /// Simply calls wait_for().
-    static bool waitForEvent()
-    {
-        return g_Sync.lock_wait_for(milliseconds_from(10));
-    }
+    static bool waitForEvent();
 };
 
 }; // namespace sync
