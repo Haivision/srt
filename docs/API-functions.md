@@ -548,8 +548,21 @@ first on the automatically created socket for the connection.
 * `target`: Address to connect
 * `len`: size of the original structure of `source` and `target`
 
-The result is similar as with `srt_connect`. Errors may be those reported
-by `srt_bind` as well.
+- Returns:
+
+  * `SRT_ERROR` (-1) in case of error
+  * 0 in case when used for `u` socket
+  * Socket ID created for connection for `u` group
+
+- Errors:
+
+  * `SRT_EINVSOCK`: Socket passed as `u` designates no valid socket
+  * `SRT_EINVOP`: Socket already bound
+  * `SRT_ECONNSETUP`: Internal creation of a UDP socket failed
+  * `SRT_ESOCKFAIL`: Internal configuration of a UDP socket (`bind`, `setsockopt`) failed
+  * `SRT_ERDVUNBOUND`: Internal error (`srt_connect` should not report it after `srt_bind` was called)
+  * `SRT_ECONNSOCK`: Socket `u` is already connected
+  * `SRT_ECONNREJ`: Connection has been rejected
 
 IMPORTANT: It's not allowed to bind and connect the same socket to two
 different families (that is, both `source` and `target` must be `AF_INET` or
@@ -578,8 +591,23 @@ setting the `SRTO_RENDEZVOUS` option to true, and doing `srt_connect`.
 * `local_name`: specifies the local network interface and port to bind
 * `remote_name`: specifies the remote party's IP address and port
 
-**NOTE:** The port value shall be the same in `local_name` and `remote_name`.
+- Returns:
 
+  * `SRT_ERROR` (-1) in case of error, otherwise 0
+
+- Errors:
+
+  * `SRT_EINVSOCK`: Socket passed as `u` designates no valid socket
+  * `SRT_EINVOP`: Socket already bound
+  * `SRT_ECONNSETUP`: Internal creation of a UDP socket failed
+  * `SRT_ESOCKFAIL`: Internal configuration of a UDP socket (`bind`, `setsockopt`) failed
+  * `SRT_ERDVUNBOUND`: Internal error (`srt_connect` should not report it after `srt_bind` was called)
+  * `SRT_ECONNSOCK`: Socket `u` is already connected
+  * `SRT_ECONNREJ`: Connection has been rejected
+
+IMPORTANT: It's not allowed to perform a rendezvous connection to two
+different families (that is, both `local_name` and `remote_name` must be `AF_INET` or
+`AF_INET6`).
 
 Socket group management
 -----------------------
@@ -1308,10 +1336,10 @@ would be 0x7FFFFFE0, the "distance" is 0x20.
 
 ### srt_bstats, srt_bistats
 ```
-// perfmon with Byte counters for better bitrate estimation.
+// Performance monitor with Byte counters for better bitrate estimation.
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 
-// perfmon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+// Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 ```
 

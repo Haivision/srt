@@ -786,6 +786,19 @@ typedef struct SRT_MsgCtrl_
    size_t grpdata_size;
 } SRT_MSGCTRL;
 
+// Trap representation for sequence and message numbers
+// This value means that this is "unset", and it's never
+// a result of an operation made on this number.
+static const int32_t SRT_SEQNO_NONE = -1;    // -1: no seq (0 is a valid seqno!)
+static const int32_t SRT_MSGNO_NONE = -1;    // -1: unset
+static const int32_t SRT_MSGNO_CONTROL = 0;  //  0: control (used by packet filter)
+
+static const int SRT_MSGTTL_INF = -1; // unlimited TTL specification for message TTL
+
+// XXX Might be useful also other special uses of -1:
+// - -1 as infinity for srt_epoll_wait
+// - -1 as a trap index value used in list.cpp
+
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.
 SRT_API void srt_msgctrl_init(SRT_MSGCTRL* mctrl);
@@ -840,10 +853,10 @@ SRT_API        int  srt_getlasterror(int* errno_loc);
 SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
-// performance track
-// perfmon with Byte counters for better bitrate estimation.
+// Performance tracking
+// Performance monitor with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
-// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+// Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
