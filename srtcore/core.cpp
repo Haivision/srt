@@ -14879,7 +14879,6 @@ int CUDTGroup::recvBalancing(char* buf, int len, SRT_MSGCTRL& w_mctrl)
                     // achieves CONNECTING state, then it's added to write.
                     // Or gets broken and closed in the next step.
                     continue;
-
                 }
 
                 still_alive = true;
@@ -14906,7 +14905,6 @@ int CUDTGroup::recvBalancing(char* buf, int len, SRT_MSGCTRL& w_mctrl)
                 read_ready.push_back(gi->id);
                 HCLOG(ds << "@" << gi->id << "[READ] ");
             }
-
         }
 
         int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;

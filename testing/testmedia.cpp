@@ -2451,7 +2451,6 @@ public:
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
         }
-
     }
 
     void Write(const bytevector& data) override
