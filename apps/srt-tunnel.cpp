@@ -241,13 +241,13 @@ public:
         // If this thread is already stopped, don't stop.
         if (thr.joinable())
         {
-            applog.Debug("Engine::Stop: Closing media:");
+            LOGP(applog.Debug, "Engine::Stop: Closing media:");
             // Close both media as a hanged up reading thread
             // will block joining.
             media[0]->Close();
             media[1]->Close();
 
-            applog.Debug("Engine::Stop: media closed, joining engine thread:");
+            LOGP(applog.Debug, "Engine::Stop: media closed, joining engine thread:");
             if (thr.get_id() == std::this_thread::get_id())
             {
                 // If this is this thread which called this, no need
@@ -255,12 +255,12 @@ public:
                 // You must, however, detach yourself, or otherwise the thr's
                 // destructor would kill the program.
                 thr.detach();
-                applog.Debug("DETACHED.");
+                LOGP(applog.Debug, "DETACHED.");
             }
             else
             {
                 thr.join();
-                applog.Debug("Joined.");
+                LOGP(applog.Debug, "Joined.");
             }
         }
     }
@@ -689,7 +689,7 @@ unique_ptr<Medium> TcpMedium::Accept()
     socklen_t size = sizeof re;
     int st2 = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &re, &size);
 
-    applog.Debug("Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
+    LOGP(applog.Debug, "Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
             ", read-back value: ", st2 == -1 ? int64_t(-1) : (int64_t(re.tv_sec)*1000000 + re.tv_usec)/1000, "ms");
 
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
@@ -764,7 +764,7 @@ int SrtMedium::ReadInternal(char* w_buffer, int size)
 int TcpMedium::ReadInternal(char* w_buffer, int size)
 {
     int st = -1;
-    applog.Debug("TcpMedium:recv @", m_socket, " - begin");
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - begin");
     do
     {
         st = ::recv(m_socket, (w_buffer), size, 0);
@@ -774,19 +774,19 @@ int TcpMedium::ReadInternal(char* w_buffer, int size)
             {
                 if (!m_broken)
                 {
-                    applog.Debug("TcpMedium: read:AGAIN, repeating");
+                    LOGP(applog.Debug, "TcpMedium: read:AGAIN, repeating");
                     continue;
                 }
-                applog.Debug("TcpMedium: read:AGAIN, not repeating - already broken");
+                LOGP(applog.Debug, "TcpMedium: read:AGAIN, not repeating - already broken");
             }
             else
             {
-                applog.Debug("TcpMedium: read:ERROR: ", errno);
+                LOGP(applog.Debug, "TcpMedium: read:ERROR: ", errno);
             }
         }
         break;
     } while (true);
-    applog.Debug("TcpMedium:recv @", m_socket, " - result: ", st);
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - result: ", st);
     return st;
 }
 
