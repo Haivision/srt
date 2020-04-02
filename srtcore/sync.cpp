@@ -70,21 +70,21 @@ void rdtsc(uint64_t& x)
 
 int64_t get_cpu_frequency()
 {
-    int64_t frequency = 1; // 1 tick per microsecond.
+    int64_t frequency = 1000000; // 1000000 tick per second.
 
 #if defined(TIMING_USE_QPC)
     LARGE_INTEGER ccf; // in counts per second
     if (QueryPerformanceFrequency(&ccf))
-        frequency = ccf.QuadPart / 1000000; // counts per microsecond
+        frequency = ccf.QuadPart; //fix: div 1000000 will loss-of-precision
 
 #elif defined(TIMING_USE_CLOCK_GETTIME)
-    frequency = 1;
+    frequency = 1000000;
 
 #elif defined(TIMING_USE_MACH_ABS_TIME)
 
     mach_timebase_info_data_t info;
     mach_timebase_info(&info);
-    frequency = info.denom * int64_t(1000) / info.numer;
+    frequency = info.denom * int64_t(1000000000) / info.numer;
 
 #elif defined(IA32) || defined(IA64) || defined(AMD64)
     uint64_t t1, t2;
@@ -97,7 +97,7 @@ int64_t get_cpu_frequency()
     rdtsc(t2);
 
     // CPU clocks per microsecond
-    frequency = int64_t(t2 - t1) / 100000;
+    frequency = int64_t(t2 - t1) * 10;
 #endif
 
     return frequency;
@@ -132,7 +132,7 @@ static timespec us_to_timespec(const uint64_t time_us)
 template <>
 uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
 {
-    return m_timestamp / s_cpu_frequency;
+    return m_timestamp * 1000000 / s_cpu_frequency;
 }
 
 template <>
@@ -150,32 +150,32 @@ srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
 
 int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency;
+    return t.count() * 1000000 / s_cpu_frequency;
 }
 
 int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency / 1000;
+    return t.count() * 1000 / s_cpu_frequency;
 }
 
 int64_t srt::sync::count_seconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency / 1000000;
+    return t.count() / s_cpu_frequency;
 }
 
 srt::sync::steady_clock::duration srt::sync::microseconds_from(int64_t t_us)
 {
-    return steady_clock::duration(t_us * s_cpu_frequency);
+    return steady_clock::duration(t_us * s_cpu_frequency / 1000000);
 }
 
 srt::sync::steady_clock::duration srt::sync::milliseconds_from(int64_t t_ms)
 {
-    return steady_clock::duration((1000 * t_ms) * s_cpu_frequency);
+    return steady_clock::duration(t_ms * s_cpu_frequency / 1000);
 }
 
 srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 {
-    return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
+    return steady_clock::duration(t_s * s_cpu_frequency);
 }
 
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
