@@ -443,7 +443,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
 
-    Verb() << "Binding a server on " << adapter << ":" << port;
+    Verb() << "Binding a server on " << adapter << ":" << outport;
 
     stat = srt_bind(m_sock, plsa, sizeof localsa);
     if ( stat == SRT_ERROR )

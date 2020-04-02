@@ -1015,7 +1015,7 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
 
     sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
-    Verb() << "Binding a server on " << adapter << ":" << port << " ...";
+    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
     int stat = srt_bind(m_sock, plsa, sizeof localsa);
     if (stat == SRT_ERROR)
     {
