@@ -1001,7 +1001,6 @@ private:
             }
         }
     }
-
 };
 
 void Tunnel::Stop()
