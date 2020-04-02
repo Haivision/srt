@@ -15540,8 +15540,9 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_UpdateAndReport(CUDTGroup::gli_t this_lin
 
     this_link->load_factor += this_link->unit_load;
 
-    HLOGC(dlog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
-            << " selected, upd load_factor=" << this_link->load_factor);
+    HLOGC(dlog.Debug, log << "linkSelect(any): link #" << distance(m_Group.begin(), this_link)
+            << " selected, upd load_factor=" << this_link->load_factor
+            << " from unit-load=" << this_link->unit_load);
     return this_link;
 }
 
@@ -15734,7 +15735,6 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
 {
     gli_t this_link = gli_NULL();
 
-    vector<LinkCapableData> linkdata;
     int total_weight = 0;
     int total_links = 0;
 
@@ -15775,9 +15775,13 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
     if (state.ilink == gli_NULL())
         return this_link; // either first found or gli_NULL().
 
-    int avg_weight = total_weight/total_links;
-    if (avg_weight == 0)
-        avg_weight = 1; // Fix for a case when some1 set weight 1 on 1 link and 0 on other 2.
+    int avg_weight = 1;
+    if (total_links) // Fix for a case when weight wasn't set on any link
+    {
+        int avg = total_weight/total_links;
+        if (avg) // Fix for a case when some1 set weight 1 on 1 link and 0 on other 2.
+            avg_weight = avg;
+    }
 
     for (vector<gli_t>::iterator i = equi_links.begin(); i != equi_links.end(); ++i)
     {
@@ -15904,13 +15908,24 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_fixed(const CUDTGroup::BalancingLinkState
     // result in a cutoff.
     if (biggest_unit_load > 0 && least_load > 2 * biggest_unit_load)
     {
-        for (vector<LinkCapableData>::iterator i = linkdata.begin();
-                i != linkdata.end(); ++i)
+        for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
         {
-            i->link->load_factor -= biggest_unit_load;
+            if (i->sndstate != GST_RUNNING)
+            {
+                continue;
+            }
+            i->load_factor -= biggest_unit_load;
+            if (i->load_factor < 0)
+                i->load_factor = 0;
+            HLOGC(dlog.Debug, log << "linkSelect_fixed: cutting off value of " << biggest_unit_load
+                    << " from load-factor:" << i->load_factor);
         }
-        HLOGC(dlog.Debug, log << "linkSelect_fixed: cutting off value of " << biggest_unit_load
-                << " from all load factors");
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "linkSelect_fixed: not cutting off yet, biggest_unit_load="
+                << biggest_unit_load << " (exp >0) && least_load=" << least_load << " (exp > 2 * "
+                << biggest_unit_load << ")");
     }
 
     // The above loop certainly found something.
