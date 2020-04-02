@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     Block* s = m_pLastBlock;
 
-    if (w_msgno == -1) // DEFAULT-UNCHANGED msgno supplied
+    if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
@@ -336,7 +336,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
       // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
 
       s->m_iLength = pktlen;
-      s->m_iTTL = -1;
+      s->m_iTTL = SRT_MSGTTL_INF;
       s = s->m_pNext;
 
       total += pktlen;
@@ -434,7 +434,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
        // Prevent accessing the last "marker" block
        LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
                << offset << " not found, max offset=" << m_iCount);
-       return 0;
+       return SRT_MSGNO_CONTROL;
    }
 
    // XXX Suboptimal procedure to keep the blocks identifiable
@@ -451,8 +451,8 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
    {
        LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
                << offset << " not found, stopped at " << i
-               << " with #" << (ee ? ee->getMsgSeq() : -1));
-       return 0;
+               << " with #" << (ee ? ee->getMsgSeq() : SRT_MSGNO_NONE));
+       return SRT_MSGNO_CONTROL;
    }
 
    HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: offset="
@@ -1055,13 +1055,13 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                                 int32_t&                  w_skipseqno,
                                 int32_t&                  w_curpktseq)
 {
-    w_skipseqno = -1;
+    w_skipseqno = SRT_SEQNO_NONE;
     w_passack = false;
     // tsbpdtime will be retrieved by the below call
     // Returned values:
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - w_passack: false (the report concerns a packet with an exactly next sequence)
-    // - w_skipseqno == -1: no packets to skip towards the first RTP
+    // - w_skipseqno == SRT_SEQNO_NONE: no packets to skip towards the first RTP
     // - w_curpktseq: that exactly packet that is reported (for debugging purposes)
     // - @return: whether the reported packet is ready to play
 
@@ -1088,7 +1088,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=<unchanged>, @return false
+    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=SRT_SEQNO_NONE, w_curpktseq=<unchanged>, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
     //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, w_curpktseq=PKT, @return LOCAL(PKT.TS) <= NOW
 
@@ -1195,10 +1195,10 @@ steady_clock::time_point CRcvBuffer::debugGetDeliveryTime(int offset)
 int32_t CRcvBuffer::getTopMsgno() const
 {
     if (m_iStartPos == m_iLastAckPos)
-        return -1; // No message is waiting
+        return SRT_MSGNO_NONE; // No message is waiting
 
     if (!m_pUnit[m_iStartPos])
-        return -1; // pity
+        return SRT_MSGNO_NONE; // pity
 
     return m_pUnit[m_iStartPos]->m_Packet.getMsgSeq();
 }
@@ -1467,7 +1467,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
 void CRcvBuffer::reportBufferStats() const
 {
     int nmissing = 0;
-    int32_t low_seq= -1, high_seq = -1;
+    int32_t low_seq = SRT_SEQNO_NONE, high_seq = SRT_SEQNO_NONE;
     int32_t low_ts = 0, high_ts = 0;
 
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
@@ -1509,7 +1509,7 @@ void CRcvBuffer::reportBufferStats() const
 
     int32_t timespan = upper_time - lower_time;
     int seqspan = 0;
-    if (low_seq != -1 && high_seq != -1)
+    if (low_seq != SRT_SEQNO_NONE && high_seq != SRT_SEQNO_NONE)
     {
         seqspan = CSeqNo::seqoff(low_seq, high_seq);
     }
