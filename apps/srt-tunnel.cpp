@@ -684,10 +684,10 @@ unique_ptr<Medium> TcpMedium::Accept()
 
     // Configure 1s timeout
     timeval timeout_1s { 1, 0 };
-    int st = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
+    int st = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
     timeval re;
     socklen_t size = sizeof re;
-    int st2 = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &re, &size);
+    int st2 = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&re, &size);
 
     LOGP(applog.Debug, "Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
             ", read-back value: ", st2 == -1 ? int64_t(-1) : (int64_t(re.tv_sec)*1000000 + re.tv_usec)/1000, "ms");
@@ -739,7 +739,7 @@ void TcpMedium::Connect()
 
     // Configure 1s timeout
     timeval timeout_1s { 1, 0 };
-    setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
+    setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
 }
 
 int SrtMedium::ReadInternal(char* w_buffer, int size)
