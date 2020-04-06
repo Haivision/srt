@@ -94,8 +94,8 @@ and remains ready to take over if there is a necessity.
 
 b) Unstable links continue to be used no matter that it may mean parallel
 sending for a short time. This state should last at most as long as it takes
-for SRT to determie the link broken - either by getting the link broken by
-itself, or by closing the link when it's remaining unstable too long time.
+for SRT to determine the link broken - either by breaking the link by
+itself, or by closing the link when it has been unstable too long.
 
 The overhead here may then come from two sources:
 - the keepalive control packets for inactive links (negligible)
@@ -759,5 +759,4 @@ when this link is back online.
 The stability timeout can be configured through `groupstabtimeo` option.
 Note that with increased stability timeout, the necessary latency penalty
 grows as well.
-
 
