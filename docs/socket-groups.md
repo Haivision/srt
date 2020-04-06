@@ -25,7 +25,7 @@ path.
 
 2. Dispatch groups.
 
-This category contains currently only one Multicast type (**CONCEPT!**).
+This category contains currently only one Multicast type (__CONCEPT!__)
 
 Multicast group has a behavior dependent on the connection side and it is
 predicted to be only used in case when the listener side is a stream sender
@@ -55,20 +55,22 @@ Every next link in this group gives then another 100% overhead.
 
 ## 2. Backup
 
-This solution is more complicated and more challenging for the settings,
-and in contradiction to Broadcast group, it costs some penalties. It has
-also advantages: the overhead for redundancy, which in case of broadcast
-groups is 100% per every next link, in this case it is tried to be kept at
-negligible minimum.
+The functioning of this group type is more complicated and more challenging
+for the user as it comes to using proper settings. Unlike Broadcast group type,
+there are some penalties, but there are also advantages. Whereas the overhead
+for redundancy in the case of broadcast groups is 100% per every next redundant
+link, this is usually kept at a negligible minimum for backup groups.
 
-In this group, in a normal situation, only one link out of member links is used
-for transmission, while others are just kept alive (the keepalive message
-is sent over them usually once per 1 second). Other links may start being used
-when there's happening an event of "disturbance" on a link, which makes it
-considered "unstable". This term is introduced beside "broken" because SRT
-normally uses 5 seconds to be sure that the link is broken, and this is way too
-much to be used as a latency penalty, if you still want to have a relatively
-low latency.
+Under normal circumstances, only one of the member links in this group is used
+for transmission, while the others are just kept alive (a keepalive message is
+sent over these links usually once per 1 second). Other links may start being
+used when a "disturbance" event occurs on a link, whereupon the link is
+considered to be "unstable". There is a distinction to be made here between
+"unstable" and "broken". SRT normally waits 5 seconds to be sure that a link is
+broken, which is too much of a penalty if you want to have a relatively low
+latency. SRT can react more quickly to an "unstable" link condition, as this
+reaction must happen much faster than the latency time elapses, otherwise the
+latency could not be kept up to.
 
 Because of that there's a configurable timeout (with `SRTO_GROUPSTABTIMEO`
 option), which is the maximum time distance between two consecutive responses
@@ -116,7 +118,7 @@ This mode allows also to set link priorities, through the `weight`
 parameter - the lower, the more preferred. This priority decides mainly, which
 link is "best" and which is selected to take over transmission over a broken
 link before others, as well as which links should remain active should multiple
-links be stable at a time.  If you don't specify priorities, the second
+links be stable at a time. If you don't specify priorities, the second
 connected link need not take over sending, although as this is resolved through
 sorting, then whichever link out of those with the same priority would take
 over when all links are stable is undefined.
@@ -181,10 +183,12 @@ might be not always wanted in case of balancing groups, so your application
 might need to do additional check and monitor how many links and which
 ones are currently active. For example, if you need 3 links to balance
 the load and having only 2 of them would be too little to withstand the
-whole transmission, you should wait with connecting until all 3 links
+whole transmission, you should wait with transmitting until all 3 links
 are established. Important thing here is also that one of the links might
 be at some moment not possible to be established, or one of the links
-can get broken during transmission.
+can get broken during transmission - you might want to close the
+connection even if the group connection doesn't break by itself, but
+you don't have enough bandwidth coverage from existing links.
 
 As there could be various ways as to how to implement balancing
 algorithm, there's a framework provided to implement various methods,

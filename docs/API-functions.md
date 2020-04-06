@@ -657,13 +657,13 @@ priority for the backup groups determines which link is activated first when
 the currently active link is unstable, and which should keep transmitting when
 multiple active links are currently stable.
 
-2. Balancing groups with "fixed" algorighm: in this case it defines the
+2. Balancing groups with "fixed" algorithm: in this case it defines the
 desired link load share. You can think of it as a percentage of link load,
 but indeed a load percentage is defined as this weight value divided by a sum
 of all weight values from all member links. Note however that the sum is
 calculated out of all links that have been successfully connected. The
 default 0 is also a special value that defines an "equalized" load share
-(its set to the arithmetic average of the weights from all links).
+(it's set to the arithmetic average of the weights from all links).
 
 Functions to be used on groups:
 
