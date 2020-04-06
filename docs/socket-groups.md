@@ -33,6 +33,32 @@ with possibly multiple callers being stream receivers. It utilizes the UDP
 multicast feature in order to send payloads, while the control communication
 is still sent over the unicast link.
 
+From the application point of view it is important to remember several rules
+concerning groups:
+
+1. A group is connected when at least one member link is connected.
+2. Disconnected links are removed from the group and are not reconnected.
+3. The application may try to connect a new link at any time. This can also
+succeed or fail, and only a successfully connected link becomes a member of
+the group.
+
+In other words, links in socket groups are never "defined" - they can only be
+"established". When they get broken, they are simply removed from the group.
+It's up to the application to re-establish them. 
+
+The group members can be also in appropriate states. The freshly created member
+that is in the process of connecting is in "pending" state. When the connection
+succeeds, it's in "idle" state. Then, when it's used for transmission, it's in
+"active" state. If an operation on the link fails at any stage, it is removed
+from the group.
+
+In Broadcast and Balancing group types, the "idle" links are activated once
+they are found ready for sending as well as they report readiness for reading -
+"idle" is only a temporary state between being freshly connected and being used
+for transmission. In Backup groups it is possible for a link to turn from
+"active" back to "idle" state.
+
+
 Details for the group types:
 
 
@@ -174,6 +200,20 @@ able to withstand the bitrate of the signal. In order to utilize a
 protection, the mechanism should quickly detect a link as broken so
 that packets lost on the broken link can be resent over the others,
 but no such mechanism has been provided for balancing group.
+
+Please also keep in mind that the group is considered connected when
+it contains at least one connected member link. This means also that the
+group becomes ready for transmission after connecting the first link,
+as well as it remains ready even if some member links get broken.
+
+If the application wants to make sure that a transmission is balanced between
+links (where only together can they maintain the bandwidth capacity required
+for a signal), it must make sure that all "required" links are established by
+monitoring the group data. For example, if you need a minimum of 3 links to
+balance the load, you should delay starting the transmission until all 3 links
+are established (that is, all of them report "idle" state), and also stop it in
+case when a broken link caused that the others do not cover the required
+capacity.
 
 Please also keep in mind that there's a rule for all groups - one member
 link established is enough for a group to be connection established. This
