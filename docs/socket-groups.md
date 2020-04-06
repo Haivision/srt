@@ -101,18 +101,16 @@ The overhead here may then come from two sources:
 - the keepalive control packets for inactive links (negligible)
 - sending data over an unstable link for the resolution time
 
-This means that the overhead is usually varrying, depending on how often
-it happens that a link becomes unstable. It is then very important that
-you tweak the value of stability timeout properly and cautiosly. If this
-time is too small, your link might be too often too eagerly qualified as
-unstable and with every case of unstable link it costs you temporary
-overhead. Note that a single activation of a backup link costs you even
-more than 100% overhead for the short time (up to 5 seconds), as usually some
-packets that have been already sent over this unstable link, but weren't
-acknowledged yet, will be sent again over the newly activated link. As
-this is usually tolerable minimum overhead if it was due to a broken link,
-you may experience link switching much more often and uselessly, if your
-stability timeout is too small.
+This means that the overhead is usually varying, depending on how often 
+a link becomes unstable. It is then very important that you tweak the value 
+of the stability timeout properly and cautiously. If this value is too small, 
+your link might be too eagerly qualified as unstable, costing temporary 
+overhead. Note that a single activation of a backup link costs more than 
+100% overhead for up to 5 seconds, since any packets already sent over 
+this unstable link (but not acknowledged) will be sent again over the newly 
+activated link. This is usually a tolerable minimum overhead when due to a 
+broken link. But you may experience unnecessary link switching much more 
+often if your stability timeout is too small.
 
 This mode allows also to set link priorities, through the `weight`
 parameter - the lower, the more preferred. This priority decides mainly, which
@@ -759,4 +757,3 @@ when this link is back online.
 The stability timeout can be configured through `groupstabtimeo` option.
 Note that with increased stability timeout, the necessary latency penalty
 grows as well.
-
