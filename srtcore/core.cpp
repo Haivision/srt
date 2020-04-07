@@ -2114,8 +2114,8 @@ bool CUDT::createSrtHandshake(
         }
         // (this function will not fill the variables with anything, if no master is found)
 
-        int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->weight };
-        memcpy(p+offset, storedata, sizeof storedata);
+        const int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->weight };
+        memcpy((p+offset), storedata, sizeof storedata);
 
         ra_size = Size(storedata);
         *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);

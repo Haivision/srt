@@ -247,7 +247,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
-    int nextmsgno = ++MsgNo(m_iNextMsgNo);
+    const int nextmsgno = ++MsgNo(m_iNextMsgNo);
     HLOGC(mglog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
     m_iNextMsgNo = nextmsgno;
 }
