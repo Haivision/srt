@@ -81,11 +81,13 @@ Every next link in this group gives then another 100% overhead.
 
 ## 2. Backup
 
-The functioning of this group type is more complicated and more challenging
-for the user as it comes to using proper settings. Unlike Broadcast group type,
-there are some penalties, but there are also advantages. Whereas the overhead
-for redundancy in the case of broadcast groups is 100% per every next redundant
-link, this is usually kept at a negligible minimum for backup groups.
+The configuration of Backup groups is somewhat more complicated than with the
+other group types. In particular, it may be challenging to arrive at the
+optimal settings for a given set of network conditions and desired latency.
+Unlike Broadcast group type, there are some penalties, but there are also
+advantages. Whereas the overhead for redundancy in the case of broadcast groups
+is 100% per every next redundant link, this is usually kept at a negligible
+minimum for backup groups.
 
 Under normal circumstances, only one of the member links in this group is used
 for transmission, while the others are just kept alive (a keepalive message is
@@ -239,8 +241,8 @@ a share is given to this link. Important here is that you can easily
 think of the weight values as a percentage of load burden for particular
 link - however in reality the share of the load is calculated as a
 percentage that particular link's weight comprises among the sum of all
-weight values. Additionally, a value of 0 is special and is translated
-into a weight that would make it equal to an average of all weights.
+weight values. Additionally, a value of 0 is special and it is translated
+into the arithmetic average of all non-zero weighted links.
 Be careful here with the non-established and broken links. For example,
 if you have 3 links with weight 10, 20 and 30, it results in a load
 balance of 16.6%, 33.3% and 50% respectively. However if the second link
@@ -257,7 +259,8 @@ To send the next packet the link with lowest state of the "pocket" is
 selected. The "cost of sending" measurement is being repeated once per
 a time with a distance of 16 packets on each link.
 
-There are possible also other methods and algorithms in the future.
+The framework makes it easier to add also other balancing algorithms
+in the future.
 
 
 ## 4. Multicast (NOT IMPLEMENTED - a concept)
