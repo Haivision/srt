@@ -285,16 +285,15 @@ inline void releaseMutex(Mutex&) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CCondVar section
+// Condition section
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-template <bool IS_CLOCK_MONOTONIC = false>
-class CCondVar
+class Condition
 {
 public:
-    CCondVar();
-    ~CCondVar();
+    Condition();
+    ~Condition();
 
 public:
     /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
@@ -351,14 +350,8 @@ private:
 #endif
 };
 
-typedef CCondVar<false> Condition;
-typedef CCondVar<true> ConditionMonotonic;
-
-template <bool IS_CLOCK_MONOTONIC>
-inline void setupCond(CCondVar<IS_CLOCK_MONOTONIC>& cv, const char*) { cv.init(); }
-
-template <bool IS_CLOCK_MONOTONIC>
-inline void releaseCond(CCondVar<IS_CLOCK_MONOTONIC>& cv) { cv.destroy(); }
+inline void setupCond(Condition& cv, const char*) { cv.init(); }
+inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -377,11 +370,9 @@ inline void SleepFor(const steady_clock::duration& t)
 
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
-template <bool CLOCKFORM = false>
-class CSyncTpl
+class CSync
 {
-    typedef CCondVar<CLOCKFORM> TCondition;
-    TCondition* m_cond;
+    Condition* m_cond;
     CGuard* m_locker;
 
 public:
@@ -389,7 +380,7 @@ public:
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the CGuard variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
-    CSyncTpl(TCondition& cond, CGuard& g)
+    CSync(Condition& cond, CGuard& g)
         : m_cond(&cond), m_locker(&g)
     {
         // XXX it would be nice to check whether the owner is also current thread
@@ -434,13 +425,13 @@ public:
     }
 
     // Static ad-hoc version
-    static void lock_signal(TCondition& cond, Mutex& m)
+    static void lock_signal(Condition& cond, Mutex& m)
     {
         CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
         cond.notify_one();
     }
 
-    static void lock_broadcast(TCondition& cond, Mutex& m)
+    static void lock_broadcast(Condition& cond, Mutex& m)
     {
         CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
         cond.notify_all();
@@ -466,16 +457,44 @@ public:
     // correctly used.
 
     void signal_relaxed() { signal_relaxed(*m_cond); }
-    static void signal_relaxed(TCondition& cond) { cond.notify_one(); }
-    static void broadcast_relaxed(TCondition& cond) { cond.notify_all(); }
+    static void signal_relaxed(Condition& cond) { cond.notify_one(); }
+    static void broadcast_relaxed(Condition& cond) { cond.notify_all(); }
 };
 
-typedef CSyncTpl<false> CSync;
-typedef CSyncTpl<true> CSyncMono;
+////////////////////////////////////////////////////////////////////////////////
+//
+// CEvent class
+//
+////////////////////////////////////////////////////////////////////////////////
 
-class SyncEvent
+class CEvent
 {
 public:
+    CEvent();
+    ~CEvent();
+
+public:
+    Mutex& mutex() { return m_lock; }
+
+public:
+    /// Causes the current thread to block until
+    /// a specific time is reached.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool lock_wait_until(const steady_clock::time_point& tp);
+
+    /// Blocks the current executing thread,
+    /// and adds it to the list of threads waiting on* this.
+    /// The thread will be unblocked when notify_all() or notify_one() is executed,
+    /// or when the relative timeout rel_time expires.
+    /// It may also be unblocked spuriously.
+    /// Uses internal mutex to lock.
+    ///
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool lock_wait_for(const steady_clock::duration& rel_time);
+
     /// Atomically releases lock, blocks the current executing thread,
     /// and adds it to the list of threads waiting on* this.
     /// The thread will be unblocked when notify_all() or notify_one() is executed,
@@ -483,12 +502,55 @@ public:
     /// It may also be unblocked spuriously.
     /// When unblocked, regardless of the reason, lock is reacquiredand wait_for() exits.
     ///
-    /// @return result of pthread_cond_wait(...) function call
-    ///
-    static int wait_for(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
+    /// @return true  if condition occured or spuriously woken up
+    ///         false on timeout
+    bool wait_for(UniqueLock& lk, const steady_clock::duration& rel_time);
 
-    static int wait_for_monotonic(pthread_cond_t* cond, pthread_mutex_t* mutex, const steady_clock::duration& rel_time);
+    void lock_wait();
+
+    void wait(UniqueLock& lk);
+
+    void notify_one();
+
+    void notify_all();
+
+private:
+    Mutex      m_lock;
+    Condition  m_cond;
 };
+
+
+class CTimer
+{
+public:
+    CTimer();
+    ~CTimer();
+
+public:
+    /// Causes the current thread to block until
+    /// the specified time is reached.
+    /// Sleep can be interrupted by calling interrupt()
+    /// or woken up to recheck the scheduled time by tick()
+    /// @param tp target time to sleep until
+    ///
+    /// @return true  if the specified time was reached
+    ///         false should never happen
+    bool sleep_until(steady_clock::time_point tp);
+
+    /// Resets target wait time and interrupts waiting
+    /// in sleep_until(..)
+    void interrupt();
+
+    /// Wakes up waiting thread (sleep_until(..)) without
+    /// changing the target waiting time to force a recheck
+    /// of the current time in comparisson to the target time.
+    void tick();
+
+private:
+    CEvent m_event;
+    steady_clock::time_point m_tsSchedTime;
+};
+
 
 /// Print steady clock timepoint in a human readable way.
 /// days HH:MM::SS.us [STD]
@@ -540,6 +602,41 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
 {
     return FormatDuration<DUNIT_US>(dur);
 }
+
+}; // namespace sync
+}; // namespace srt
+
+
+extern srt::sync::CEvent g_Sync;
+
+namespace srt
+{
+namespace sync
+{
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CGlobEvent class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CGlobEvent
+{
+public:
+    /// Triggers the event and notifies waiting threads.
+    /// Simply calls notify_one().
+    static void inline triggerEvent()
+    {
+        return g_Sync.notify_one();
+    }
+
+    /// Waits for the event to be triggered with 10ms timeout.
+    /// Simply calls wait_for().
+    static bool waitForEvent()
+    {
+        return g_Sync.lock_wait_for(milliseconds_from(10));
+    }
+};
 
 }; // namespace sync
 }; // namespace srt

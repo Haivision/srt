@@ -95,7 +95,7 @@ sockaddr_in CreateAddrInet(const string& name, unsigned short port)
         //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
         hostent* he = gethostbyname(name.c_str());
         if ( !he || he->h_addrtype != AF_INET )
-            throw invalid_argument("SrtSource: host not found: " + name);
+            throw invalid_argument("CreateAddrInet: host not found: " + name);
 
         sa.sin_addr = *(in_addr*)he->h_addr_list[0];
     }
@@ -123,7 +123,6 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
     if (helptext.empty())
         return OptionScheme::ARG_NONE;
 
-
     if (helptext[0] == '<')
     {
         // If the argument is <one-argument>, then it's ARG_NONE.
@@ -131,10 +130,13 @@ OptionScheme::Args OptionName::DetermineTypeFromHelpText(const std::string& help
         // When closing angle bracket isn't found, fallback to ARG_ONE.
         size_t pos = helptext.find('>');
         if (pos == std::string::npos)
-            return OptionScheme::ARG_ONE;
+            return OptionScheme::ARG_ONE; // mistake, but acceptable
 
-        if (pos >= 4 && helptext.substr(pos-4, 4) == "...>")
+        if (pos >= 4 && helptext.substr(pos-3, 4) == "...>")
             return OptionScheme::ARG_VAR;
+
+        // We have < and > without ..., simply one argument
+        return OptionScheme::ARG_ONE;
     }
 
     if (helptext[0] == '[')
@@ -165,6 +167,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
         // cout << "*D ARG: '" << a << "'\n";
         if (moreoptions && a[0] == '-')
         {
+            bool arg_specified = false;
             size_t seppos; // (see goto, it would jump over initialization)
             current_key = a+1;
             if ( current_key == "-" )
@@ -187,6 +190,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
                 // Old option specification.
                 extra_arg = current_key.substr(seppos + 1);
                 current_key = current_key.substr(0, 0 + seppos);
+                arg_specified = true; // Prevent eating args from option list
             }
 
             params[current_key].clear();
@@ -205,7 +209,11 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
                 if (s.names().count(current_key))
                 {
                     // cout << "*D found '" << current_key << "' in scheme type=" << int(s.type) << endl;
-                    if (s.type == OptionScheme::ARG_NONE)
+                    // If argument was specified using the old way, like
+                    // -v:0 or "-v 0", then consider the argument specified and
+                    // treat further arguments as either no-option arguments or
+                    // new options.
+                    if (s.type == OptionScheme::ARG_NONE || arg_specified)
                     {
                         // Anyway, consider it already processed.
                         break;

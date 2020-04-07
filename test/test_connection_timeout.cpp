@@ -153,9 +153,9 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         // Check the actual timeout
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
-        // Confidence interval border : +/-50 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 50);
-        EXPECT_GE(delta_ms, connection_timeout_ms - 50);
+        // Confidence interval border : +/-80 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 80);
+        EXPECT_GE(delta_ms, connection_timeout_ms - 80);
         cerr << "Timeout was: " << delta_ms << "\n";
 
         EXPECT_EQ(rlen, 1);

@@ -183,6 +183,97 @@ struct BandwidthGuard
     }
 };
 
+bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_outspec)
+{
+    // This function prints error messages by itself then returns false.
+    // Otherwise nothing is printed and true is returned.
+    // r_outspec is for a case when a redundancy specification should be translated.
+
+    if (spec.empty())
+    {
+        cerr << prefix << ": Specification is empty\n";
+        return false;
+    }
+
+    if (spec.size() == 1)
+    {
+        // Then, whatever.
+        w_outspec = spec[0];
+        return true;
+    }
+
+    // We have multiple items specified, check each one
+    // it SRT, if so, craft the redundancy URI spec,
+    // otherwise reject
+    vector<string> adrs;
+    map<string,string> uriparam;
+    bool first = true;
+    bool allow_raw_spec = false;
+    for (auto uris: spec)
+    {
+        UriParser uri(uris, UriParser::EXPECT_HOST);
+        if (!allow_raw_spec && uri.type() != UriParser::SRT)
+        {
+            cerr << ": Multiple media must be all with SRT scheme, or srt://* as first.\n";
+            return false;
+        }
+
+        if (uri.host() == "*")
+        {
+            allow_raw_spec = true;
+            first = false;
+            uriparam = uri.parameters();
+
+            // This does not specify the address, only options and URI.
+            continue;
+        }
+
+        string aspec = uri.host() + ":" + uri.port();
+        if (aspec[0] == ':' || aspec[aspec.size()-1] == ':')
+        {
+            cerr << "Empty host or port in the address specification: " << uris << endl;
+            return false;
+        }
+
+        if (allow_raw_spec && !uri.parameters().empty())
+        {
+            bool cont = false;
+            // Extract attributes if any and pass them there.
+            for (UriParser::query_it i = uri.parameters().begin();
+                    i != uri.parameters().end(); ++i)
+            {
+                aspec += cont ? "&" : "?";
+                cont = false;
+                aspec += i->first + "=" + i->second;
+            }
+        }
+
+        adrs.push_back(aspec);
+        if (first)
+        {
+            uriparam = uri.parameters();
+            first = false;
+        }
+    }
+
+    w_outspec = "srt:////group?";
+    if (map_getp(uriparam, "type") == nullptr)
+        uriparam["type"] = "redundancy";
+
+    for (auto& name_value: uriparam)
+    {
+        string name, value; tie(name, value) = name_value;
+        w_outspec += name + "=" + value + "&";
+    }
+    w_outspec += "nodes=";
+    for (string& a: adrs)
+        w_outspec += a + ",";
+
+    Verb() << "NOTE: " << prefix << " specification set as: " << (w_outspec);
+
+    return true;
+}
+
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 namespace srt_logging
@@ -190,7 +281,17 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    int type;
+    int size = sizeof type;
+    srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+
+    return 0;
+}
+
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
@@ -234,9 +335,40 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const so
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
     return 0;
+}
+
+void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
+{
+    std::ostringstream son, soff;
+
+    for (auto& s: speclist)
+    {
+        string name;
+        bool on = true;
+        if (s[0] == '+')
+            name = s.substr(1);
+        else if (s[0] == '~')
+        {
+            name = s.substr(1);
+            on = false;
+        }
+        else
+            name = s;
+
+        if (on)
+            son << "," << name;
+        else
+            soff << "," << name;
+    }
+
+    const string& sons = son.str();
+    const string& soffs = soff.str();
+
+    w_on = sons.empty() ? string() : sons.substr(1);
+    w_off = soffs.empty() ? string() : soffs.substr(1);
 }
 
 int main( int argc, char** argv )
@@ -263,17 +395,18 @@ int main( int argc, char** argv )
         o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
         o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   ((optargs), " Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
-        o_loglevel  ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
-        o_logfa     ((optargs), "<FA=all> Enabled Functional Areas", "lfa", "logfa"),
+        o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
+        o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
         o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
         o_stats     ((optargs), "<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
         o_statspf   ((optargs), "<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
         o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
-        o_help      ((optargs), " This help", "?",   "help", "-help")
+        o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+        o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
     options_t params = ProcessOptions(argv, argc, optargs);
@@ -283,57 +416,54 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
+    vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+    vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
-        if (args.size() < 2)
+        if ( !groupspec.empty() )
         {
-            cerr << "ERROR: source and target URI must be specified.\n\n";
-            need_help = true;
+            // Check if you have something before -g and after -g.
+            if (args.empty())
+            {
+                // Then all items are sources, but the last one is a single target.
+                if (groupspec.size() < 3)
+                {
+                    cerr << "ERROR: Redundancy group: with nothing preceding -g, use -g <SRC-URI1> <SRC-URI2>... <TAR-URI> (at least 3 args)\n";
+                    need_help = true;
+                }
+                else
+                {
+                    copy(groupspec.begin(), groupspec.end()-1, back_inserter(source_items));
+                    target_items.push_back(*(groupspec.end()-1));
+                }
+            }
+            else
+            {
+                // Something before g, something after g. This time -g can accept also one argument.
+                copy(args.begin(), args.end(), back_inserter(source_items));
+                copy(groupspec.begin(), groupspec.end(), back_inserter(target_items));
+            }
         }
         else
         {
-            source_spec = args[0];
-            target_spec = args[1];
+            if (args.size() < 2)
+            {
+                cerr << "ERROR: source and target URI must be specified.\n\n";
+                need_help = true;
+            }
+            else
+            {
+                source_items.push_back(args[0]);
+                target_items.push_back(args[1]);
+            }
         }
     }
 
-    if (need_help)
-    {
-        cerr << "Usage:\n";
-        cerr << "     " << argv[0] << " [options] <input> <output>\n";
-        cerr << "*** (Position of [options] is unrestricted.)\n";
-        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
-        cerr << "where:\n";
-        cerr << "    <input> and <output> is specified by an URI.\n";
-        cerr << "SUPPORTED URI SCHEMES:\n";
-        cerr << "    srt: use SRT connection\n";
-        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
-        cerr << "    file (default if scheme not specified) specified as:\n";
-        cerr << "       - empty host/port and absolute file path in the URI\n";
-        cerr << "       - only a filename, also as a relative path\n";
-        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
-        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
-        for (auto os: optargs)
-            cout << OptionHelpItem(*os.pid) << endl;
-        return 1;
-    }
-
-    int timeout = Option<OutNumber>(params, "30", o_timeout);
-    size_t chunk = Option<OutNumber>(params, "0", o_chunk);
-    if ( chunk == 0 )
-    {
-        chunk = SRT_LIVE_DEF_PLSIZE;
-    }
-    else
-    {
-        transmit_chunk_size = chunk;
-    }
-    
-    size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
-    transmit_bw_report = Option<OutNumber>(params, "0", o_report);
+    // Check verbose option before extracting the argument so that Verb()s
+    // can be displayed also when they report something about option parsing.
     string verbose_val = Option<OutString>(params, "no", o_verbose);
 
     int verbch = 1; // default cerr
@@ -363,10 +493,81 @@ int main( int argc, char** argv )
         }
     }
 
+
+    if (!need_help)
+    {
+        // Redundancy is then simply recognized by the fact that there are
+        // multiple specified inputs or outputs, for SRT caller only. Check
+        // every URI in advance.
+        if (!CheckMediaSpec("INPUT", source_items, (source_spec)))
+            need_help = true;
+        if (!CheckMediaSpec("OUTPUT", target_items, (target_spec)))
+            need_help = true;
+    }
+
+    if (need_help)
+    {
+        string helpspec = Option<OutString>(params, o_help);
+        if (helpspec == "logging")
+        {
+            cerr << "Logging options:\n";
+            cerr << "    -ll <LEVEL>   - specify minimum log level\n";
+            cerr << "    -lfa <area...> - specify functional areas\n";
+            cerr << "Where:\n\n";
+            cerr << "    <LEVEL>: fatal error note warning debug\n\n";
+            cerr << "This turns on logs that are at the given log name and all on the left.\n";
+            cerr << "(Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in hierarchy.)\n\n";
+            cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
+            cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
+            cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
+            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            return 1;
+        }
+
+        // Unrecognized helpspec is same as no helpspec, that is, general help.
+        cerr << "Usage:\n";
+        cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
+        cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
+        cerr << "*** (Position of [options] is unrestricted.)\n";
+        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+        cerr << "where:\n";
+        cerr << "    (1) Exactly one input and one output URI spec is required,\n";
+        cerr << "    (2) Multiple SRT inputs or output as redundant links are allowed.\n";
+        cerr << "        `URI1 URI2 -g URI3` uses 1, 2 input and 3 output\n";
+        cerr << "        `-g URI1 URI2 URI3` like above\n";
+        cerr << "        `URI1 -g URI2 URI3` uses 1 input and 2, 3 output\n";
+        cerr << "SUPPORTED URI SCHEMES:\n";
+        cerr << "    srt: use SRT connection\n";
+        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
+        cerr << "    file (default if scheme not specified) specified as:\n";
+        cerr << "       - empty host/port and absolute file path in the URI\n";
+        cerr << "       - only a filename, also as a relative path\n";
+        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
+        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
+        for (auto os: optargs)
+            cout << OptionHelpItem(*os.pid) << endl;
+        return 1;
+    }
+
+    int timeout = Option<OutNumber>(params, "30", o_timeout);
+    size_t chunk = Option<OutNumber>(params, "0", o_chunk);
+    if ( chunk == 0 )
+    {
+        chunk = SRT_LIVE_DEF_PLSIZE;
+    }
+    else
+    {
+        transmit_chunk_size = chunk;
+    }
+    
+    size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
+    transmit_bw_report = Option<OutNumber>(params, "0", o_report);
     bool crashonx = OptionPresent(params, o_crash);
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    string logfa = Option<OutString>(params, "general", o_logfa);
+    vector<string> logfa = Option<OutList>(params, o_logfa);
     string logfile = Option<OutString>(params, "", o_logfile);
     transmit_stats_report = Option<OutNumber>(params, "0", o_stats);
 
@@ -379,6 +580,11 @@ int main( int argc, char** argv )
         if (hook == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
+            transmit_accept_hook_op = nullptr;
+        }
+        else if (hook == "groupcheck")
+        {
+            transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
     }
@@ -396,9 +602,40 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
-        srt_addlogfa(*i);
+    string logfa_on, logfa_off;
+    ParseLogFASpec(logfa, (logfa_on), (logfa_off));
+
+    set<srt_logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
+    set<srt_logging::LogFA> fason = SrtParseLogFA(logfa_on);
+
+    auto fa_del = [fasoff]() {
+        for (set<srt_logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+            srt_dellogfa(*i);
+    };
+
+    auto fa_add = [fason]() {
+        for (set<srt_logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+            srt_addlogfa(*i);
+    };
+
+    if (logfa_off == "all")
+    {
+        // If the spec is:
+        //     -lfa ~all control app
+        // then we first delete all, then enable given ones
+        fa_del();
+        fa_add();
+    }
+    else
+    {
+        // Otherwise we first add all those that have to be added,
+        // then delete those unwanted. This embraces both
+        //   -lfa control app ~cc
+        // and
+        //   -lfa all ~cc
+        fa_add();
+        fa_del();
+    }
 
 
     UDT::addlogfa(SRT_LOGFA_APP);
@@ -490,7 +727,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.";
+        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -508,7 +745,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << args[0] << "' --> '" << args[1] << "'";
+    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -520,7 +757,7 @@ int main( int argc, char** argv )
 
         if (remain <= final_delay)
         {
-            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
+            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exiting\n";
             return 0;
         }
 

@@ -218,6 +218,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
+   SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    // (some space left)
    SRTO_PACKETFILTER = 60          // Add and configure a packet filter
 } SRT_SOCKOPT;
@@ -705,6 +706,9 @@ typedef enum SRT_GROUP_TYPE
 {
     SRT_GTYPE_UNDEFINED,
     SRT_GTYPE_BROADCAST,
+    SRT_GTYPE_BACKUP,
+    SRT_GTYPE_BALANCING,
+    SRT_GTYPE_MULTICAST,
     // ...
     SRT_GTYPE__END
 } SRT_GROUP_TYPE;
@@ -727,7 +731,9 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     SRT_SOCKSTATUS status;
     int result;
+    struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    int priority;
 } SRT_SOCKGROUPDATA;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -735,6 +741,7 @@ SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
 SRT_API       int srt_exclude      (SRTSOCKET socket);
 SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
@@ -743,20 +750,18 @@ SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET s
 static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
+SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
-SRT_API       int srt_connect_bind (SRTSOCKET u,
-                                    const struct sockaddr* source, int source_len,
-                                    const struct sockaddr* target, int target_len);
+SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
+                                    const struct sockaddr* target, int len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 
-SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* adr, int namelen);
-SRT_API       int srt_connect_group(SRTSOCKET group,
-                                    const struct sockaddr* source /*nullable*/, int sourcelen,
-                                    SRT_SOCKGROUPDATA name [], int arraysize);
+SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
+SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPDATA name [], int arraysize);
 
 
 SRT_API       int srt_close        (SRTSOCKET u);
@@ -780,6 +785,19 @@ typedef struct SRT_MsgCtrl_
    SRT_SOCKGROUPDATA* grpdata;
    size_t grpdata_size;
 } SRT_MSGCTRL;
+
+// Trap representation for sequence and message numbers
+// This value means that this is "unset", and it's never
+// a result of an operation made on this number.
+static const int32_t SRT_SEQNO_NONE = -1;    // -1: no seq (0 is a valid seqno!)
+static const int32_t SRT_MSGNO_NONE = -1;    // -1: unset
+static const int32_t SRT_MSGNO_CONTROL = 0;  //  0: control (used by packet filter)
+
+static const int SRT_MSGTTL_INF = -1; // unlimited TTL specification for message TTL
+
+// XXX Might be useful also other special uses of -1:
+// - -1 as infinity for srt_epoll_wait
+// - -1 as a trap index value used in list.cpp
 
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.
@@ -835,10 +853,10 @@ SRT_API        int  srt_getlasterror(int* errno_loc);
 SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
-// performance track
-// perfmon with Byte counters for better bitrate estimation.
+// Performance tracking
+// Performance monitor with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
-// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+// Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
@@ -887,6 +905,8 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
 SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
+
+SRT_API uint32_t srt_getversion();
 
 #ifdef __cplusplus
 }

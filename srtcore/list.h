@@ -86,6 +86,8 @@ public:
 
    int32_t popLostSeq();
 
+   void traceState() const;
+
 private:
    struct Seq
    {
@@ -106,6 +108,10 @@ private:
    /// No lock.
    void insertHead(int pos, int32_t seqno1, int32_t seqno2);
 
+   /// Inserts an element after previous element.
+   /// No lock.
+   void insertAfter(int pos, int pos_after, int32_t seqno1, int32_t seqno2);
+
    /// Check if it is possible to coalesce element at loc with further elements.
    /// @param loc - last changed location
    void coalesce(int loc);
@@ -113,7 +119,7 @@ private:
    /// Update existing element with the new range (increase only)
    /// @param pos     position of the element being updated
    /// @param seqno1  first seqnuence number in range
-   /// @param seqno2  last sequence number in range (-1 if no range)
+   /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
    bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
 
 private:
@@ -163,7 +169,7 @@ public:
       /// Read the first (smallest) seq. no. in the list.
       /// @return the sequence number or -1 if the list is empty.
 
-   int getFirstLostSeq() const;
+   int32_t getFirstLostSeq() const;
 
       /// Get a encoded loss array for NAK report.
       /// @param [out] array the result list of seq. no. to be included in NAK.

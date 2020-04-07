@@ -864,6 +864,8 @@ endif()
 
 if (ENABLE_APPS)
 
+	message(STATUS "APPS: ENABLED")
+
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
 		SOURCES SOURCES_support
@@ -897,6 +899,7 @@ if (ENABLE_APPS)
 	endif()
 
 	if (ENABLE_TESTING)
+		message(STATUS "DEVEL APPS (testing): ENABLED")
 
 		macro(srt_add_testprogram name)
 			# Variables in macros are not local. Clear them forcefully.
@@ -933,8 +936,17 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
+
+		srt_add_testprogram(srt-test-mpbond)
+		srt_make_application(srt-test-mpbond)
+
+	else()
+		message(STATUS "DEVEL APPS (testing): DISABLED")
 	endif()
 
+
+else()
+	message(STATUS "APPS: DISABLED")
 endif()
 
 if (ENABLE_EXAMPLES)
@@ -959,6 +971,12 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
+
+	srt_add_example(test-c-client-bonding.c)
+	srt_make_application(test-c-client-bonding)
+
+	srt_add_example(test-c-server-bonding.c)
+	srt_make_application(test-c-server-bonding)
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
@@ -988,7 +1006,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
-	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS})
+	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test-srt

@@ -257,7 +257,8 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_SndDropDelay     = 0;
     m_bOPT_StrictEncryption = true;
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
-    m_bOPT_GroupConnect     = false;
+    m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
+    m_OPT_GroupConnect      = 0;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -320,7 +321,8 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
-    m_bOPT_GroupConnect     = ancestor.m_bOPT_GroupConnect;
+    m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
+    m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
     m_zOPT_ExpPayloadSize   = ancestor.m_zOPT_ExpPayloadSize;
     m_bTLPktDrop            = ancestor.m_bTLPktDrop;
     m_bMessageAPI           = ancestor.m_bMessageAPI;
@@ -870,7 +872,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_GROUPCONNECT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bOPT_GroupConnect = bool_int_value(optval, optlen);
+        m_OPT_GroupConnect = *(int*)optval;
         break;
 
     case SRTO_KMREFRESHRATE:
@@ -956,6 +958,34 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
             m_OPT_PktFilterConfigString = arg;
         }
+        break;
+
+    case SRTO_GROUPSTABTIMEO:
+        {
+            // This option is meaningless for the socket itself.
+            // It's set here just for the sake of setting it on a listener
+            // socket so that it is then applied on the group when a
+            // group connection is configuired.
+            const int tmo = *(int*)optval;
+
+            // Search if you already have SRTO_PEERIDLETIMEO set
+
+            const int idletmo = m_iOPT_PeerIdleTimeout;
+
+            // Both are in milliseconds.
+            // This option is RECORDED in microseconds, while
+            // idletmp is recorded in milliseconds, only translated to
+            // microseconds directly before use.
+            if (tmo >= idletmo)
+            {
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                        << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_uOPT_StabilityTimeout = tmo * 1000;
+        }
+
         break;
 
     default:
@@ -1232,6 +1262,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int *)optval = m_zOPT_ExpPayloadSize;
         break;
 
+    case SRTO_GROUPCONNECT:
+        optlen         = sizeof (int);
+        *(int*)optval = m_OPT_GroupConnect;
+        break;
+
     case SRTO_ENFORCEDENCRYPTION:
         optlen             = sizeof(int32_t); // also with TSBPDMODE and SENDER
         *(int32_t *)optval = m_bOPT_StrictEncryption;
@@ -1411,6 +1446,8 @@ void CUDT::open()
     m_tsLastSndTime                        = currtime;
 
     m_iReXmitCount   = 1;
+    m_tsUnstableSince = steady_clock::zero();
+    m_tsTmpActiveTime = steady_clock::zero();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -1759,7 +1796,7 @@ bool CUDT::createSrtHandshake(
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
         // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
-        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == 0,
+        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == steady_clock::zero(),
         // it will return size 0, which will mess up with further extension procedures;
         // PREVENT THIS HERE.
         if (w_hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && is_zero(m_tsRcvPeerStartTime))
@@ -2074,7 +2111,7 @@ bool CUDT::createSrtHandshake(
         }
         // (this function will not fill the variables with anything, if no master is found)
 
-        int32_t storedata [GRPD__SIZE] = { id, tp, /*master_peerid, master_tdiff*/ };
+        int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->priority };
         memcpy(p+offset, storedata, sizeof storedata);
 
         ra_size = Size(storedata);
@@ -3073,16 +3110,17 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 //   a mirror group for that group ID).
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
-                int32_t groupdata[GRPD__SIZE];
-                if (bytelen < GRPD__SIZE * GRPD_FIELD_SIZE)
+                int32_t groupdata[GRPD__SIZE] = {};
+                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
                     return false;
                 }
+                size_t groupdata_size = bytelen / GRPD_FIELD_SIZE;
 
                 memcpy(groupdata, begin+1, bytelen);
-                if (!interpretGroup(groupdata, hsreq_type_cmd))
+                if (!interpretGroup(groupdata, groupdata_size, hsreq_type_cmd) )
                 {
                     // m_RejectReason handled inside interpretGroup().
                     return false;
@@ -3241,15 +3279,21 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     return true;
 }
 
-bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_UNUSED)
+bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
+    // We are granted these two fields do exist
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
 
-    if (!m_bOPT_GroupConnect)
+    // Optional in this version
+    int link_priority = 0;
+    if (data_size > GRPD_PRIORITY)
+        link_priority = groupdata[GRPD_PRIORITY];
+
+    if (m_OPT_GroupConnect == 0)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(mglog.Error, log << "HS/GROUP: this socket is not predicted for group connect.");
+        LOGC(mglog.Error, log << "HS/GROUP: this socket is not allowed for group connect.");
         return false;
     }
 
@@ -3360,6 +3404,8 @@ bool CUDT::interpretGroup(const int32_t groupdata[], int hsreq_type_cmd SRT_ATR_
             LOGC(mglog.Fatal, log << "IPE: socket not in group after adding to it");
             return false;
         }
+
+        m_parent->m_IncludedIter->priority = link_priority;
     }
 
     m_parent->m_IncludedGroup->debugGroup();
@@ -3801,7 +3847,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_ConnReq.m_iID             = m_SocketID;
     CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
-    if (forced_isn == -1)
+    if (forced_isn == SRT_SEQNO_NONE)
     {
         // Random Initial Sequence Number (normal mode)
         srand(count_microseconds(steady_clock::now()));
@@ -5422,7 +5468,7 @@ void *CUDT::tsbpd(void *param)
 
         if (self->m_bTLPktDrop)
         {
-            int32_t skiptoseqno = -1;
+            int32_t skiptoseqno = SRT_SEQNO_NONE;
             bool    passack     = true; // Get next packet to wait for even if not acked
 
             rxready = self->m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
@@ -5444,10 +5490,10 @@ void *CUDT::tsbpd(void *param)
                 /* Packet ready to play according to time stamp but... */
                 int seqlen = CSeqNo::seqoff(self->m_iRcvLastSkipAck, skiptoseqno);
 
-                if (skiptoseqno != -1 && seqlen > 0)
+                if (skiptoseqno != SRT_SEQNO_NONE && seqlen > 0)
                 {
                     /*
-                     * skiptoseqno != -1,
+                     * skiptoseqno != SRT_SEQNO_NONE,
                      * packet ready to play but preceeded by missing packets (hole).
                      */
 
@@ -5455,6 +5501,14 @@ void *CUDT::tsbpd(void *param)
                     self->m_pRcvBuffer->skipData(seqlen);
 
                     self->m_iRcvLastSkipAck = skiptoseqno;
+                    if (self->m_parent->m_IncludedGroup)
+                    {
+                        // A group may need to update the parallelly used idle links,
+                        // should it have any. Pass the current socket position in order
+                        // to skip it from the group loop.
+                        // NOTE: SELF LOCKING.
+                        self->m_parent->m_IncludedGroup->updateLatestRcv(self->m_parent->m_IncludedIter);
+                    }
 
 #if ENABLE_LOGGING
                     int64_t timediff_us = 0;
@@ -5482,7 +5536,7 @@ void *CUDT::tsbpd(void *param)
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1);
+            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1 /*get first ready*/);
         }
         leaveCS(self->m_RcvBufferLock);
 
@@ -5510,7 +5564,7 @@ void *CUDT::tsbpd(void *param)
                 // When the group is read-ready, it should update its pollers as it sees fit.
                 self->m_parent->m_IncludedGroup->updateReadState(self->m_SocketID, current_pkt_seq);
             }
-            CTimer::triggerEvent();
+            CGlobEvent::triggerEvent();
             tsbpdtime = steady_clock::time_point();
         }
 
@@ -6054,7 +6108,7 @@ bool CUDT::close()
 
     /*
      * update_events below useless
-     * removing usock for EPolls right after (remove_usocks) clears it (in other HAI patch).
+     * removing usock for EPolls right after (update_usocks) clears it (in other HAI patch).
      *
      * What is in EPoll shall be the responsibility of the application, if it want local close event,
      * it would remove the socket from the EPoll after close.
@@ -6169,7 +6223,7 @@ bool CUDT::close()
 
 int CUDT::receiveBuffer(char *data, int len)
 {
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (isOPT_TsbPd())
@@ -6318,7 +6372,8 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
         // protect packet retransmission
         enterCS(m_RecvAckLock);
         int dbytes;
-        int dpkts = m_pSndBuffer->dropLateData(dbytes, steady_clock::now() - milliseconds_from(threshold_ms));
+        int32_t first_msgno;
+        int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), steady_clock::now() - milliseconds_from(threshold_ms));
         if (dpkts > 0)
         {
             enterCS(m_StatsLock);
@@ -6346,9 +6401,13 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             }
             LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
-            HLOGC(dlog.Debug,
-                  log << "drop " << realack << "-" << m_iSndCurrSeqNo << " seqs,"
-                      << dpkts << " pkts," << dbytes << " bytes," << timespan_ms << " ms");
+            HLOGC(dlog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
+                    << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms, FIRST #" << first_msgno);
+
+            if (m_parent->m_IncludedGroup)
+            {
+                m_parent->m_IncludedGroup->ackMessage(first_msgno);
+            }
         }
         w_bCongestion = true;
         leaveCS(m_RecvAckLock);
@@ -6565,7 +6624,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
-        if (w_mctrl.pktseq != -1 && m_iSndNextSeqNo != -1)
+        if (w_mctrl.pktseq != SRT_SEQNO_NONE && m_iSndNextSeqNo != SRT_SEQNO_NONE)
         {
             if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
             {
@@ -6583,7 +6642,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         // Now seqno is the sequence to which it was scheduled
         // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
 
@@ -6596,9 +6655,9 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         m_iSndNextSeqNo = w_mctrl.pktseq;
         w_mctrl.pktseq = seqno;
 
-        HLOGC(dlog.Debug, log << CONID() << "sock:SENDING srctime:" << FormatTime(ts_srctime)
-                << " DATA SIZE: " << size << " sched-SEQUENCE: " << orig_seqno << "(>>" << seqno << ")"
-                << " STAMP: " << BufferStamp(data, size));
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING srctime:" << FormatTime(ts_srctime)
+              << " size=" << size << " #" << w_mctrl.msgno << " SCHED %" << orig_seqno
+              << "(>> %" << seqno << ") !" << BufferStamp(data, size));
 
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
@@ -6680,7 +6739,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     // is only used internally, we state that the problem that would be
     // handled by exception here should not happen, and in case if it does,
     // it's a bug to fix, so the exception is nothing wrong.
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
 
     CGuard recvguard (m_RecvLock);
@@ -6922,7 +6981,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (size <= 0 && size != -1)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
@@ -7046,7 +7105,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     if (size <= 0)
         return 0;
 
-    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, -1, false))
+    if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_RECV, 0, size, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
     if (isOPT_TsbPd())
@@ -7242,7 +7301,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+    perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
     //>new
     perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
@@ -7546,6 +7605,13 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
 
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
+    if (m_parent->m_IncludedGroup)
+    {
+        // A group may need to update the parallelly used idle links,
+        // should it have any. Pass the current socket position in order
+        // to skip it from the group loop.
+        m_parent->m_IncludedGroup->updateLatestRcv(m_parent->m_IncludedIter);
+    }
 
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
@@ -7563,7 +7629,7 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
 
         // Signal threads waiting in CTimer::waitForEvent(),
         // which are select(), selectEx() and epoll_wait().
-        CTimer::triggerEvent();
+        CGlobEvent::triggerEvent();
 
         return CSeqNo::decseq(ack, distance);
     }
@@ -7655,7 +7721,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
         if (m_iRcvLastAckAck == ack)
         {
-            HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << " == last ACKACK (" << reason << ")");
+            HLOGC(mglog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
             break;
         }
 
@@ -7712,7 +7778,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
                     // When the group is read-ready, it should update its pollers as it sees fit.
                     m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
                 }
-                CTimer::triggerEvent();
+                CGlobEvent::triggerEvent();
             }
             enterCS(m_RcvBufferLock);
         }
@@ -7949,6 +8015,16 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
+        if (m_parent->m_IncludedGroup)
+        {
+            // Get offset-1 because 'offset' points actually to past-the-end
+            // of the sender buffer. We have already checked that offset is
+            // at least 1.
+            int32_t msgno = m_pSndBuffer->getMsgNoAt(offset-1);
+            HLOGC(dlog.Debug, log << "ACK: acking group sender buffer for #" << msgno);
+            m_parent->m_IncludedGroup->ackMessage(msgno);
+        }
+
         // remove any loss that predates 'ack' (not to be considered loss anymore)
         m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
 
@@ -7997,7 +8073,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             m_iFlowWindowSize -= CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
 
-            // TODO: m_ullLastRspAckTime_tk should be protected with m_RecvAckLock
+            // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
             // because the sendmsg2 may want to change it at the same time.
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
@@ -8385,8 +8461,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
-        // The only purpose of keep-alive packet is to tell that the peer is still alive
-        // nothing needs to be done.
+
+        handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
 
         break;
 
@@ -8514,7 +8590,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // Unblock any call so they learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
-        CTimer::triggerEvent();
+        CGlobEvent::triggerEvent();
 
         break;
 
@@ -8837,9 +8913,9 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         // If no loss, and no packetfilter control packet, pack a new packet.
 
         // check congestion/flow window limit
-        int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
-        int seqdiff = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
-        if (cwnd >= seqdiff)
+        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        const int flightspan = getFlightSpan();
+        if (cwnd >= flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
             // send buffer. This should be somehow avoided, the crypto flags should be set
@@ -8862,11 +8938,11 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                 // if this is the very first packet to send.
                 if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
                 {
-                    int seqdiff = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
+                    const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
 
                     HLOGC(mglog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
                             << " from SCHEDULING sequence " << w_packet.m_iSeqNo
-                            << " DIFF: " << seqdiff << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                            << " DIFF: " << packetspan << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
                     // This is the very first packet to be sent; so there's nothing in
                     // the sending buffer yet, and therefore we are in a situation as just
@@ -8877,14 +8953,14 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                     // Additionally send the drop request to the peer so that it
                     // won't stupidly request the packets to be retransmitted.
                     // Don't do it if the difference isn't positive or exceeds the threshold.
-                    if (seqdiff > 0)
+                    if (packetspan > 0)
                     {
                         int32_t seqpair[2];
                         seqpair[0] = m_iSndCurrSeqNo;
                         seqpair[1] = w_packet.m_iSeqNo;
                         HLOGC(mglog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
                                 << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                                << seqpair[0] << " - " << seqpair[1] << "(" << seqdiff << " packets)");
+                                << seqpair[0] << " - " << seqpair[1] << "(" << packetspan << " packets)");
                         sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
                         // In case when this message is lost, the peer will still get the
@@ -8922,7 +8998,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         else
         {
             HLOGC(dlog.Debug, log << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
-                << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << seqdiff);
+                << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
             return std::make_pair(0, enter_time);
@@ -9073,7 +9149,7 @@ void CUDT::processClose()
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(mglog.Debug, "processClose: triggering timer event to spread the bad news");
-    CTimer::triggerEvent();
+    CGlobEvent::triggerEvent();
 }
 
 void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
@@ -9130,7 +9206,10 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     // Both the scheduling and sending sequences should be fixed.
     // The new sequence normally should jump over several sequence numbers
     // towards what is currently in m_iSndCurrSeqNo.
-    int diff = CSeqNo::seqcmp(seq, m_iSndNextSeqNo);
+    // Therefore it's not allowed that:
+    // - the jump go backward: backward packets should be already there
+    // - the jump go forward by a value larger than half the period: DISCREPANCY.
+    const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
         LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
@@ -9300,7 +9379,7 @@ int CUDT::processData(CUnit* in_unit)
     // to the filter and before the filter could recover the packet before anyone
     // notices :)
 
-    if (packet.getMsgSeq() != 0) // disregard filter-control packets, their seq may mean nothing
+    if (packet.getMsgSeq() != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
     {
         int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
        // Difference between these two sequence numbers is expected to be:
@@ -9743,6 +9822,92 @@ int CUDT::processData(CUnit* in_unit)
     return 0;
 }
 
+void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
+{
+    // Currently only Backup groups use connected idle links.
+    if (m_type != SRT_GTYPE_BACKUP)
+        return;
+
+    HLOGC(mglog.Debug, log << "updateLatestRcv: BACKUP group, updating from active link @"
+            << current->id << " with %" << current->ps->m_pUDT->m_iRcvLastSkipAck);
+
+    CUDT* source = current->ps->m_pUDT;
+    vector<CUDT*> targets;
+
+    CGuard lg (m_GroupLock);
+
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        // Skip the socket that has reported packet reception
+        if (gi == current)
+        {
+            HLOGC(mglog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
+            continue;
+        }
+
+        // Don't update the state if the link is:
+        // - PENDING - because it's not in the connected state, wait for it.
+        // - RUNNING - because in this case it should have its own line of sequences
+        // - BROKEN - because it doesn't make sense anymore, about to be removed
+        if (gi->rcvstate != GST_IDLE)
+        {
+            HLOGC(mglog.Debug, log << "grp: NOT updating rcv-seq on @" << gi->id << " - link state:"
+                    << srt_log_grp_state[gi->rcvstate]);
+            continue;
+        }
+
+        // Sanity check
+        if (!gi->ps->m_pUDT->m_bConnected)
+        {
+            HLOGC(mglog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
+            continue;
+        }
+
+        targets.push_back(gi->ps->m_pUDT);
+    }
+
+    lg.unlock();
+
+    // Do this on the unlocked group because this
+    // operation will need receiver lock, so it might
+    // risk a deadlock.
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        targets[i]->updateIdleLinkFrom(source);
+    }
+}
+
+void CUDT::updateIdleLinkFrom(CUDT* source)
+{
+    CGuard lg (m_RecvLock);
+
+    if (!m_pRcvBuffer->empty())
+    {
+        HLOGC(dlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID << ": receiver buffer not empty");
+        return;
+    }
+
+    // XXX Try to optimize this. Note that here happens:
+    // - decseq just to have a value to compare directly
+    // - seqcmp with that value
+    // - if passed, in setInitialRcvSeq there's the same decseq again
+    int32_t new_last_rcv = CSeqNo::decseq(source->m_iRcvLastSkipAck);
+
+    // if (new_last_rcv <% m_iRcvCurrSeqNo)
+    if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) < 0)
+    {
+        // Reject the change because that would shift the reception pointer backwards.
+        HLOGC(dlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID
+                << ": backward setting rejected: %" << m_iRcvCurrSeqNo
+                << " -> %" << new_last_rcv);
+        return;
+    }
+
+    HLOGC(dlog.Debug, log << "grp: updating rcv-seq in @" << m_SocketID
+            << " from @" << source->m_SocketID << ": %" << source->m_iRcvLastSkipAck);
+    setInitialRcvSeq(source->m_iRcvLastSkipAck);
+}
 
 // XXX This function is currently unused. It should be fixed and put into use.
 // See the blocked call in CUDT::processData().
@@ -10365,7 +10530,7 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 
     // Or the transfer rate is so high that the number of packets
     // have reached the value of SelfClockInterval * LightACKCount before
-    // the time has come according to m_ullNextACKTime_tk. In this case a "lite ACK"
+    // the time has come according to m_tsNextACKTime. In this case a "lite ACK"
     // is sent, which doesn't contain statistical data and nothing more
     // than just the ACK number. The "fat ACK" packets will be still sent
     // normally according to the timely rules.
@@ -10491,7 +10656,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // app can call any UDT API to learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
-        CTimer::triggerEvent();
+        CGlobEvent::triggerEvent();
 
         return true;
     }
@@ -10558,12 +10723,20 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // We need to retransmit only when the data in the sender's buffer was already sent.
     // Otherwise it might still be sent regulary.
     bool retransmit = false;
+    const int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
+    // IF:
+    // - LATEREXMIT
+    // - flight window == 0
     // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-    if (is_laterexmit && (CSeqNo::incseq(m_iSndCurrSeqNo) != m_iSndLastAck) && m_pSndLossList->getLossLength() == 0)
+    if ((is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
+    // OR:
+            // - FASTREXMIT
+            // - flight window > 0
+         || (is_fastrexmit && getFlightSpan() != 0))
+    {
         retransmit = true;
+    }
 
-    if (is_fastrexmit && (CSeqNo::seqoff(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0))
-        retransmit = true;
 
     if (retransmit)
     {
@@ -10605,7 +10778,7 @@ void CUDT::checkTimers()
 
     // This is a very heavy log, unblock only for temporary debugging!
 #if 0
-    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_ullNextACKTime_tk)
+    HLOGC(mglog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_tsNextACKTime)
         << " AckInterval=" << m_iACKInterval
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
@@ -10626,6 +10799,11 @@ void CUDT::checkTimers()
     if (currtime > m_tsLastSndTime + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
     {
         sendCtrl(UMSG_KEEPALIVE);
+        if (m_parent->m_IncludedGroup)
+        {
+            // Pass socket ID because it's about changing group socket data
+            m_parent->m_IncludedGroup->internalKeepalive(m_parent->m_IncludedIter);
+        }
         HLOGP(mglog.Debug, "KEEPALIVE");
     }
 }
@@ -10807,6 +10985,8 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
 
+    bool have_group = false;
+
     // This tests if there are any extensions.
     if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
     {
@@ -10836,27 +11016,27 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
                 // Un-swap on big endian machines
                 ItoHLA(((uint32_t *)target), (uint32_t *)target, blocklen);
-
-                // Nothing more expected from connection block.
-                break;
+            }
+            else if (cmd == SRT_CMD_GROUP)
+            {
+                have_group = true;
             }
             else if (cmd == SRT_CMD_NONE)
             {
                 // End of blocks
                 break;
             }
-            else
-            {
-                // Any other kind of message extracted. Search on.
-                length -= (next - begin);
-                begin = next;
-                if (begin)
-                    continue;
-            }
 
-            break;
+            // Any other kind of message extracted. Search on.
+            length -= (next - begin);
+            begin = next;
+            if (!begin)
+                break;
         }
     }
+
+    // Update the groupconnect flag
+    acore->m_OPT_GroupConnect = have_group ? 1 : 0;
 
     try
     {
@@ -10873,11 +11053,24 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     return true;
 }
 
+void CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
+{
+    // Here can be handled some protocol definition
+    // for extra data sent through keepalive.
+
+    if (m_parent->m_IncludedGroup)
+    {
+        // Whether anything is to be done with this socket
+        // about the fact that keepalive arrived, let the
+        // group handle it
+        m_parent->m_IncludedGroup->handleKeepalive(m_parent->m_IncludedIter);
+    }
+}
 
 // GROUP
 
 
-std::list<CUDTGroup::SocketData> CUDTGroup::s_NoGroup;
+std::list<CUDTGroup::SocketData> CUDTGroup::GroupContainer::s_NoList;
 
 
 CUDTGroup::gli_t CUDTGroup::add(SocketData data)
@@ -10930,18 +11123,22 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         SRTS_INIT, GST_BROKEN, GST_BROKEN,
         -1, -1,
         sockaddr_any(), sockaddr_any(),
-        false, false, false
+        false, false, false,
+        0 // priority
     };
     return sd;
 }
 
-CUDTGroup::CUDTGroup()
+CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_pGlobal(&CUDT::s_UDTUnited)
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
     , m_selfManaged(true)
-    , m_type(SRT_GTYPE_UNDEFINED)
+    , m_type(gtype)
     , m_listener()
+    , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
+    , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
+    , m_uOPT_StabilityTimeout(4*CUDT::COMM_SYN_INTERVAL_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
@@ -10949,20 +11146,47 @@ CUDTGroup::CUDTGroup()
     , m_bTsbPd(true)
     , m_bTLPktDrop(true)
     , m_iTsbPdDelay_us(0)
+    // m_*EID and m_*Epolld fields will be initialized
+    // in the constructor body.
     , m_iSndTimeOut(-1)
     , m_iRcvTimeOut(-1)
-    , m_tsStartTime(0)
-    , m_tsRcvPeerStartTime(0)
+    , m_tsStartTime()
+    , m_tsRcvPeerStartTime()
+    , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
     , m_bClosing(false)
-    , m_iLastSchedSeqNo(0)
+    , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
+    , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
     setupCond(m_RcvDataCond, "RcvData");
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
+
+    // Configure according to type
+    switch (gtype)
+    {
+    case SRT_GTYPE_BROADCAST:
+        m_selfManaged = true;
+        break;
+
+    case SRT_GTYPE_BACKUP:
+        m_selfManaged = true;
+        break;
+
+    case SRT_GTYPE_BALANCING:
+        m_selfManaged = true;
+        break;
+
+    case SRT_GTYPE_MULTICAST:
+        m_selfManaged = false;
+        break;
+
+    default:
+        break;
+    }
 }
 
 CUDTGroup::~CUDTGroup()
@@ -10973,6 +11197,44 @@ CUDTGroup::~CUDTGroup()
     releaseMutex(m_RcvDataLock);
     releaseCond(m_RcvDataCond);
 }
+
+void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
+{
+    if (it == m_LastActiveLink)
+    {
+        if (m_List.empty())
+        {
+            LOGC(mglog.Error, log << "IPE: GroupContainer is empty and 'erase' is called on it.");
+            return; // this avoids any misunderstandings in iterator checks
+        }
+
+        gli_t bb = m_List.begin();
+        ++bb;
+        if (bb == m_List.end()) // means: m_List.size() == 1
+        {
+            // One element, this one being deleted, nothing to point to.
+            m_LastActiveLink = null();
+        }
+        else
+        {
+            // Set the link to the previous element IN THE RING.
+            // We have the position pointer.
+            // Reverse iterator is automatically decremented.
+            std::reverse_iterator<gli_t> rt (m_LastActiveLink);
+            if (rt == m_List.rend())
+                rt = m_List.rbegin();
+
+            m_LastActiveLink = rt.base();
+
+            // This operation is safe because we know that:
+            // - the size of the container is at least 2 (0 and 1 cases are handled above)
+            // - if m_LastActiveLink == m_List.begin(), `rt` is shifted to the opposite end.
+            --m_LastActiveLink;
+        }
+    }
+    m_List.erase(it);
+}
+
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
@@ -10997,6 +11259,30 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = *(int*)optval;
         break;
 
+    case SRTO_GROUPSTABTIMEO:
+        {
+            int tmo = *(int *)optval;
+
+            // Search if you already have SRTO_PEERIDLETIMEO set
+            int idletmo = CUDT::COMM_RESPONSE_TIMEOUT_MS;
+            vector<ConfigItem>::iterator f = find_if(m_config.begin(), m_config.end(),
+                    ConfigItem::OfType(SRTO_PEERIDLETIMEO));
+            if (f != m_config.end())
+            {
+                f->get(idletmo); // worst case, it will leave it unchanged.
+            }
+
+            if (tmo >= idletmo)
+            {
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                        << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_uOPT_StabilityTimeout = tmo * 1000;
+        }
+
+        break;
 
         // XXX Currently no socket groups allow any other
         // congestion control mode other than live.
@@ -11052,10 +11338,10 @@ static bool operator !=(const struct linger& l1, const struct linger& l2)
 template <class ValueType> static
 void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
 {
-    ValueType default_opt;
+    ValueType default_opt = ValueType();
     int default_opt_size = sizeof(ValueType);
     ValueType opt = field;
-    if (!getOptDefault(optname, &default_opt, (default_opt_size)) || default_opt != opt)
+    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
     {
         // Store the option when:
         // - no default for this option is found
@@ -11132,6 +11418,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_TLPKTDROP, m_bTLPktDrop);
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);
+    IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
@@ -11204,7 +11491,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDSYN: RD(true);
     case SRTO_RCVSYN: RD(true);
-    case SRTO_ISN: RD(-1);
+    case SRTO_ISN: RD(SRT_SEQNO_NONE);
     case SRTO_FC: RD(CUDT::DEF_FLIGHT_SIZE);
 
     case SRTO_SNDBUF:
@@ -11424,13 +11711,13 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
         LOGC(dlog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
-        /* to be implemented
     case SRT_GTYPE_BROADCAST:
         return sendBroadcast(buf, len, (w_mc));
 
     case SRT_GTYPE_BACKUP:
         return sendBackup(buf, len, (w_mc));
 
+        /* to be implemented
 
     case SRT_GTYPE_BALANCING:
         return sendBalancing(buf, len, (w_mc));
@@ -11439,6 +11726,587 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
         return sendMulticast(buf, len, (w_mc));
         */
     }
+}
+
+int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
+{
+    // Avoid stupid errors in the beginning.
+    if (len <= 0)
+    {
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    // NOTE: This is a "vector of list iterators". Every element here
+    // is an iterator to another container.
+    // Note that "list" is THE ONLY container in standard C++ library,
+    // for which NO ITERATORS ARE INVALIDATED after a node at particular
+    // iterator has been removed, except for that iterator itself.
+    vector<gli_t> wipeme;
+    vector<gli_t> idlers;
+    vector<gli_t> pending;
+
+    int32_t curseq = SRT_SEQNO_NONE;
+
+    int rstat = -1;
+
+    int stat = 0;
+    SRT_ATR_UNUSED CUDTException cx (MJ_SUCCESS, MN_NONE, 0);
+
+    vector<gli_t> sendable;
+
+    CGuard guard (m_GroupLock);
+
+    // This simply requires the payload to be sent through every socket in the group
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        // Check socket sndstate before sending
+        if (d->sndstate == GST_BROKEN)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
+            wipeme.push_back(d);
+            continue;
+        }
+
+        if (d->sndstate == GST_IDLE)
+        {
+            SRT_SOCKSTATUS st = SRTS_NONEXIST;
+            if (d->ps)
+                st = d->ps->getStatus();
+            // If the socket is already broken, move it to broken.
+            if (int(st) >= int(SRTS_BROKEN))
+            {
+                HLOGC(dlog.Debug, log << "CUDTGroup::send.$" << id() << ": @" << d->id << " became "
+                        << SockStatusStr(st) << ", WILL BE CLOSED.");
+                wipeme.push_back(d);
+                continue;
+            }
+
+            if (st != SRTS_CONNECTED)
+            {
+                HLOGC(dlog.Debug, log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
+                pending.push_back(d);
+                continue;
+            }
+
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in IDLE state: @" << d->id << " - will activate it");
+            // This is idle, we'll take care of them next time
+            // Might be that:
+            // - this socket is idle, while some NEXT socket is running
+            // - we need at least one running socket to work BEFORE activating the idle one.
+            // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
+            //   and all others will be activated using the ISN from the first one.
+            idlers.push_back(d);
+            continue;
+        }
+
+        if (d->sndstate == GST_RUNNING)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in RUNNING state: @" << d->id << " - will send a payload");
+            sendable.push_back(d);
+            continue;
+        }
+
+        HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket @" << d->id << " not ready, state: "
+                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
+
+        pending.push_back(d);
+    }
+
+    vector<Sendstate> sendstates;
+
+    for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+    {
+        gli_t d = *snd;
+        int erc = 0; // success
+        // Remaining sndstate is GST_RUNNING. Send a payload through it.
+        try
+        {
+            // This must be wrapped in try-catch because on error it throws an exception.
+            // Possible return values are only 0, in case when len was passed 0, or a positive
+            // >0 value that defines the size of the data that it has sent, that is, in case
+            // of Live mode, equal to 'len'.
+
+            CUDTSocket* ps = d->ps;
+
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedLock ug(m_GroupLock);
+            stat = ps->core().sendmsg2(buf, len, (w_mc));
+        }
+        catch (CUDTException& e)
+        {
+            cx = e;
+            stat = -1;
+            erc = e.getErrorCode();
+        }
+
+        if (stat != -1)
+        {
+            curseq = w_mc.pktseq;
+        }
+
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
+        d->sndresult = stat;
+        d->laststatus = d->ps->getStatus();
+    }
+
+    // Ok, we have attempted to send a payload over all links
+    // that are currently in the RUNNING state. We know that at
+    // least one is successful if we have non-default curseq value.
+
+    // Here we need to activate all links that are found as IDLE.
+    // Some portion of logical exclusions:
+    //
+    // - sockets that were broken in the beginning are already wiped out
+    // - broken sockets are checked first, so they can't be simultaneously idle
+    // - idle sockets can't get broken because there's no operation done on them
+    // - running sockets are the only one that could change sndstate here
+    // - running sockets can either remain running or turn to broken
+    // In short: Running and Broken sockets can't become idle,
+    // although Running sockets can become Broken.
+
+    // There's no certainty here as to whether at least one link was
+    // running and it has successfully performed the operation.
+    // Might have even happened that we had 2 running links that
+    // got broken and 3 other links so far in idle sndstate that just connected
+    // at that very moment. In this case we have 3 idle links to activate,
+    // but there is no sequence base to overwrite their ISN with. If this
+    // happens, then the first link that should be activated goes with
+    // whatever ISN it has, whereas every next idle link should use that
+    // exactly ISN.
+    //
+    // If it has additionally happened that the first link got broken at
+    // that very moment of sending, the second one has a chance to succeed
+    // and therefore take over the leading role in setting the ISN. If the
+    // second one fails, too, then the only remaining idle link will simply
+    // go with its own original sequence.
+    //
+    // On the opposite side the reader should know that the link is inactive
+    // so the first received payload activates it. Activation of an idle link
+    // means that the very first packet arriving is TAKEN AS A GOOD DEAL, that is,
+    // no LOSSREPORT is sent even if the sequence looks like a "jumped over".
+    // Only for activated links is the LOSSREPORT sent upon seqhole detection.
+
+    // Now we can go to the idle links and attempt to send the payload
+    // also over them.
+
+    // { sendBroadcast_ActivateIdlers
+    for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+    {
+        int erc = 0;
+        gli_t d = *i;
+        int lastseq = d->ps->core().schedSeqNo();
+        if (curseq != SRT_SEQNO_NONE && curseq != lastseq)
+        {
+            HLOGC(mglog.Debug, log << "grp/sendBroadcast: socket @" << d->id
+                << ": override snd sequence %" << lastseq
+                << " with %" << curseq << " (diff by "
+                << CSeqNo::seqcmp(curseq, lastseq) << "); SENDING PAYLOAD: " << BufferStamp(buf, len));
+            d->ps->core().overrideSndSeqNo(curseq);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "grp/sendBroadcast: socket @" << d->id
+                << ": sequence remains with original value: %" << lastseq
+                << "; SENDING PAYLOAD " << BufferStamp(buf, len));
+        }
+
+        // Now send and check the status
+        // The link could have got broken
+
+        try
+        {
+            InvertedLock ug (m_GroupLock);
+            stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+        }
+        catch (CUDTException& e)
+        {
+            cx = e;
+            stat = -1;
+            erc = e.getErrorCode();
+        }
+
+        if (stat != -1)
+        {
+            d->sndstate = GST_RUNNING;
+
+            // Note: this will override the sequence number
+            // for all next iterations in this loop.
+            curseq = w_mc.pktseq;
+            HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL %" << curseq
+                    << " MEMBER STATUS: RUNNING");
+        }
+
+        d->sndresult = stat;
+        d->laststatus = d->ps->getStatus();
+
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
+    }
+
+    if (curseq != SRT_SEQNO_NONE)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBroadcast: updating current scheduling sequence %" << curseq);
+        m_iLastSchedSeqNo = curseq;
+    }
+
+    // }
+
+    // { send_CheckBrokenSockets()
+
+    if (!pending.empty())
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
+
+        // These sockets if they are in pending state, they should be added to m_SndEID
+        // at the connecting stage.
+        CEPoll::fmap_t sready;
+
+        if (m_SndEpolld->watch_empty())
+        {
+            // Sanity check - weird pending reported.
+            LOGC(dlog.Error, log << "grp/sendBroadcast: IPE: reported pending sockets, but EID is empty - wiping pending!");
+            copy(pending.begin(), pending.end(), back_inserter(wipeme));
+        }
+        else
+        {
+            {
+                InvertedLock ug(m_GroupLock);
+                m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+            }
+
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
+
+            // sockets in EX: should be moved to wipeme.
+            for (vector<gli_t>::iterator i = pending.begin(); i != pending.end(); ++i)
+            {
+                gli_t d = *i;
+                if (CEPoll::isready(sready, d->id, SRT_EPOLL_ERR))
+                {
+                    HLOGC(dlog.Debug, log << "grp/sendBroadcast: Socket @" << d->id << " reported FAILURE - moved to wiped.");
+                    // Failed socket. Move d to wipeme. Remove from eid.
+                    wipeme.push_back(d);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
+                }
+            }
+
+            // After that, all sockets that have been reported
+            // as ready to write should be removed from EID. This
+            // will also remove those sockets that have been added
+            // as redundant links at the connecting stage and became
+            // writable (connected) before this function had a chance
+            // to check them.
+            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_CONNECT);
+        }
+    }
+
+    // Review the wipeme sockets.
+    // The reason why 'wipeme' is kept separately to 'broken_sockets' is that
+    // it might theoretically happen that ps becomes NULL while the item still exists.
+    vector<CUDTSocket*> broken_sockets;
+
+    // delete all sockets that were broken at the entrance
+    for (vector<gli_t>::iterator i = wipeme.begin(); i != wipeme.end(); ++i)
+    {
+        gli_t d = *i;
+        CUDTSocket* ps = d->ps;
+        if (!ps)
+        {
+            LOGC(dlog.Error, log << "grp/sendBroadcast: IPE: socket NULL at id=" << d->id << " - removing from group list");
+            // Closing such socket is useless, it simply won't be found in the map and
+            // the internal facilities won't know what to do with it anyway.
+            // Simply delete the entry.
+            m_Group.erase(d);
+            continue;
+        }
+        broken_sockets.push_back(ps);
+    }
+
+    if (!broken_sockets.empty()) // Prevent unlock-lock cycle if no broken sockets found
+    {
+        // Lift the group lock for a while, to avoid possible deadlocks.
+        InvertedLock ug(m_GroupLock);
+
+        for (vector<CUDTSocket*>::iterator x = broken_sockets.begin(); x != broken_sockets.end(); ++x)
+        {
+            CUDTSocket* ps = *x;
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: BROKEN SOCKET @" << ps->m_SocketID << " - CLOSING AND REMOVING.");
+
+            // NOTE: This does inside: ps->removeFromGroup().
+            // After this call, 'd' is no longer valid and *i is singular.
+            CUDT::s_UDTUnited.close(ps);
+        }
+    }
+
+    HLOGC(dlog.Debug, log << "grp/sendBroadcast: - wiped " << wipeme.size() << " broken sockets");
+
+    // We'll need you again.
+    wipeme.clear();
+    broken_sockets.clear();
+
+    // }
+
+    // { sendBroadcast_CheckBlockedLinks()
+
+    // Alright, we've made an attempt to send a packet over every link.
+    // Every operation was done through a non-blocking attempt, so
+    // links where sending was blocked have SRT_EASYNCSND error.
+    // Links that were successful, have the len value in state.
+
+    // First thing then, find out if at least one link was successful.
+    // This might even be one of the idlers only, this doesn't matter.
+    // If there were any running links successful, they have set the sequence.
+    // If there were only some reactivated idlers successful, the first
+    // idler has defined the sequence.
+
+    vector<gli_t> successful, blocked;
+
+    // This iteration of the state will simply
+    // qualify the remaining sockets into three categories:
+    //
+    // - successful (we only need to know if at least one did)
+    // - blocked - if none succeeded, but some blocked, POLL & RETRY.
+    // - wipeme - sending failed by any other reason than blocking, remove.
+
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        if (is->stat == len)
+        {
+            HLOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: SUCCESSFULLY sent " << len << " bytes");
+            // Successful.
+            successful.push_back(is->d);
+            rstat = is->stat;
+            continue;
+        }
+
+        // Remaining are only failed. Check if again.
+        if (is->code == SRT_EASYNCSND)
+        {
+            blocked.push_back(is->d);
+            continue;
+        }
+
+#if ENABLE_HEAVY_LOGGING
+        string errmsg = cx.getErrorString();
+        LOGC(dlog.Debug, log << "SEND STATE link [" << (is - sendstates.begin()) << "]: FAILURE (result:" << is->stat << "): "
+                << errmsg << ". Setting this socket broken status.");
+#endif
+        // Turn this link broken
+        is->d->sndstate = GST_BROKEN;
+    }
+
+    // Good, now let's realize the situation.
+    // First, check the most optimistic scenario: at least one link succeeded.
+
+    bool was_blocked = false;
+    bool none_succeeded = false;
+
+    if (!successful.empty())
+    {
+        // Good. All blocked links are now qualified as broken.
+        // You had your chance, but I can't leave you here,
+        // there will be no further chance to reattempt sending.
+        for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
+        {
+            (*b)->sndstate = GST_BROKEN;
+        }
+        blocked.clear();
+    }
+    else
+    {
+        none_succeeded = true;
+        was_blocked = !blocked.empty();
+    }
+
+    int ercode = 0;
+
+    if (was_blocked)
+    {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        if (!m_bSynSending)
+        {
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+        }
+
+        HLOGC(dlog.Debug, log << "grp/sendBroadcast: all blocked, trying to common-block on epoll...");
+
+        // XXX TO BE REMOVED. Sockets should be subscribed in m_SndEID at connecting time
+        // (both srt_connect and srt_accept).
+
+        // None was successful, but some were blocked. It means that we
+        // haven't sent the payload over any link so far, so we still have
+        // a chance to retry.
+        int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+        for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
+        {
+            HLOGC(dlog.Debug, log << "Will block on blocked socket @" << (*b)->id << " as only blocked socket remained");
+            srt_epoll_add_usock(m_SndEID, (*b)->id, &modes);
+        }
+
+        int len = blocked.size();
+
+        int blst = 0;
+        CEPoll::fmap_t sready;
+
+        {
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedLock ug(m_GroupLock);
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: blocking on any of blocked sockets to allow sending");
+
+            // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
+            blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+
+            // NOTE EXCEPTIONS:
+            // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
+            // - XTIMEOUT: will be propagated as this what should be reported to API
+            // This is the only reason why here the errors are allowed to be handled
+            // by exceptions.
+        }
+
+        if (blst == -1)
+        {
+            int rno;
+            ercode = srt_getlasterror(&rno);
+        }
+        else
+        {
+            sendable.clear();
+            sendstates.clear();
+            // Extract gli's from the whole group that have id found in the array.
+            for (gli_t dd = m_Group.begin(); dd != m_Group.end(); ++dd)
+            {
+                int rdev = CEPoll::ready(sready, dd->id);
+                if (rdev & SRT_EPOLL_ERR)
+                {
+                    dd->sndstate = GST_BROKEN;
+                }
+                else if (rdev & SRT_EPOLL_OUT)
+                    sendable.push_back(dd);
+            }
+
+            for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+            {
+                gli_t d = *snd;
+                int erc = 0; // success
+                // Remaining sndstate is GST_RUNNING. Send a payload through it.
+                try
+                {
+                    // This must be wrapped in try-catch because on error it throws an exception.
+                    // Possible return values are only 0, in case when len was passed 0, or a positive
+                    // >0 value that defines the size of the data that it has sent, that is, in case
+                    // of Live mode, equal to 'len'.
+                    stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                }
+                catch (CUDTException& e)
+                {
+                    cx = e;
+                    stat = -1;
+                    erc = e.getErrorCode();
+                }
+                if (stat != -1)
+                    curseq = w_mc.pktseq;
+
+                const Sendstate cstate = {d, stat, erc};
+                sendstates.push_back(cstate);
+                d->sndresult = stat;
+                d->laststatus = d->ps->getStatus();
+            }
+
+            // This time only check if any were successful.
+            // All others are wipeme.
+            for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+            {
+                if (is->stat == len)
+                {
+                    // Successful.
+                    successful.push_back(is->d);
+                    rstat = is->stat;
+                    was_blocked = false;
+                    none_succeeded = false;
+                    continue;
+                }
+#if ENABLE_HEAVY_LOGGING
+                string errmsg = cx.getErrorString();
+                HLOGC(dlog.Debug, log << "... (repeat-waited) sending FAILED (" << errmsg << "). Setting this socket broken status.");
+#endif
+                // Turn this link broken
+                is->d->sndstate = GST_BROKEN;
+            }
+        }
+    }
+
+    // }
+
+    if (none_succeeded)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        // Reparse error code, if set.
+        // It might be set, if the last operation was failed.
+        // If any operation succeeded, this will not be executed anyway.
+        CodeMajor major = CodeMajor(ercode ? ercode/1000 : MJ_CONNECTION);
+        CodeMinor minor = CodeMinor(ercode ? ercode%1000 : MN_CONNLOST);
+
+        throw CUDTException(major, minor, 0);
+    }
+
+    // Pity that the blocking mode only determines as to whether this function should
+    // block or not, but the epoll flags must be updated regardless of the mode.
+
+
+    // Now fill in the socket table. Check if the size is enough, if not,
+    // then set the pointer to NULL and set the correct size.
+
+    // Note that list::size() is linear time, however this shouldn't matter,
+    // as with the increased number of links in the redundancy group the
+    // impossibility of using that many of them grows exponentally.
+    size_t grpsize = m_Group.size();
+
+    if (w_mc.grpdata_size < grpsize)
+    {
+        w_mc.grpdata = NULL;
+    }
+
+    size_t i = 0;
+
+    bool ready_again = false;
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
+    {
+        if (w_mc.grpdata)
+        {
+            // Enough space to fill
+            w_mc.grpdata[i].id = d->id;
+            w_mc.grpdata[i].status = d->laststatus;
+
+            if (d->sndstate == GST_RUNNING)
+                w_mc.grpdata[i].result = rstat; // The same result for all sockets, if running
+            else if (d->sndstate == GST_IDLE)
+                w_mc.grpdata[i].result = 0;
+            else
+                w_mc.grpdata[i].result = -1;
+
+            memcpy((&w_mc.grpdata[i].peeraddr), &d->peer, d->peer.size());
+        }
+
+        // We perform this loop anyway because we still need to check if any
+        // socket is writable. Note that the group lock will hold any write ready
+        // updates that are performed just after a single socket update for the
+        // group, so if any socket is actually ready at the moment when this
+        // is performed, and this one will result in none-write-ready, this will
+        // be fixed just after returning from this function.
+
+        ready_again = ready_again | d->ps->writeReady();
+    }
+    w_mc.grpdata_size = i;
+
+    if (!ready_again)
+    {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+    }
+
+    return rstat;
 }
 
 int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
@@ -11582,7 +12450,7 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
     CGuard lg (m_GroupLock);
     int seqdiff = 0;
 
-    if (m_RcvBaseSeqNo == -1)
+    if (m_RcvBaseSeqNo == SRT_SEQNO_NONE)
     {
         // One socket reported readiness, while no reading operation
         // has ever been done. Whatever the sequence number is, it will
@@ -11638,9 +12506,614 @@ void CUDTGroup::updateWriteState()
 // by getting the sequence number.
 int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 {
-    //// TEMPORARY STUB.
-    LOGC(dlog.Error, log << "CUDTGroup::recv: not implemented for type #" << m_type);
-    throw CUDTException(MJ_SETUP, MN_INVAL, 0);
+    typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
+    // Later iteration over it might be less efficient than
+    // by vector, but we'll also often try to check a single id
+    // if it was ever seen broken, so that it's skipped.
+    set<CUDTSocket*> broken;
+
+    // Remember them now because they will be overwritten.
+    SRT_SOCKGROUPDATA* out_grpdata = (w_mc.grpdata);
+    size_t out_grpdata_size = w_mc.grpdata_size;
+
+    size_t output_size = 0;
+
+RETRY_READING:
+
+    {
+        if (!m_bOpened || !m_bConnected)
+        {
+            LOGC(dlog.Error, log << boolalpha << "group/recv: ERROR opened=" << m_bOpened << " connected=" << m_bConnected);
+            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+        }
+    }
+
+    // Check first the ahead packets if you have any to deliver.
+    if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && !m_Positions.empty())
+    {
+        // This function also updates the group sequence pointer.
+        ReadPos* pos = checkPacketAhead();
+        if (pos)
+        {
+            if (size_t(len) < pos->packet.size())
+                throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+
+            HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet %" << pos->mctrl.pktseq << " #" << pos->mctrl.msgno
+                    << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
+            memcpy(buf, &pos->packet[0], pos->packet.size());
+            fillGroupData((w_mc), pos->mctrl, (out_grpdata), out_grpdata_size);
+            len = pos->packet.size();
+            pos->packet.clear();
+
+            // We predict to have only one packet ahead, others are pending to be reported by tsbpd.
+            // This will be "re-enabled" if the later check puts any new packet into ahead.
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+
+            return len;
+        }
+    }
+
+    // LINK QUALIFICATION NAMES:
+    //
+    // HORSE: Correct link, which delivers the very next sequence.
+    // Not necessarily this link is currently active.
+    //
+    // KANGAROO: Got some packets dropped and the sequence number
+    // of the packet jumps over the very next sequence and delivers
+    // an ahead packet.
+    //
+    // ELEPHANT: Is not ready to read, while others are, or reading
+    // up to the current latest delivery sequence number does not
+    // reach this sequence and the link becomes non-readable earlier.
+
+    // The above condition has ruled out one kangaroo and turned it
+    // into a horse.
+
+    // Below there's a loop that will try to extract packets. Kangaroos
+    // will be among the polled ones because skipping them risks that
+    // the elephants will take over the reading. Links already known as
+    // elephants will be also polled in an attempt to revitalize the
+    // connection that experienced just a short living choking.
+    //
+    // After polling we attempt to read from every link that reported
+    // read-readiness and read at most up to the sequence equal to the
+    // current delivery sequence.
+
+    // Links that deliver a packet below that sequence will be retried
+    // until they deliver no more packets or deliver the packet of
+    // expected sequence. Links that don't have a record in m_Positions
+    // and report readiness will be always read, at least to know what
+    // sequence they currently stand on.
+    //
+    // Links that are already known as kangaroos will be polled, but
+    // no reading attempt will be done. If after the reading series
+    // it will turn out that we have no more horses, the slowest kangaroo
+    // will be "upgraded to a horse" (the ahead link with a sequence
+    // closest to the current delivery sequence will get its sequence
+    // set as current delivered and its recorded ahead packet returned
+    // as the read packet).
+
+    // If we find at least one horse, the packet read from that link
+    // will be delivered. All other link will be just ensured update
+    // up to this sequence number, or at worst all available packets
+    // will be read. In this case all kangaroos remain kangaroos,
+    // until the current delivery sequence m_RcvBaseSeqNo will be lifted
+    // to the sequence recorded for these links in m_Positions,
+    // during the next time ahead check, after which they will become
+    // horses.
+
+#if ENABLE_HEAVY_LOGGING
+    std::ostringstream ds;
+    ds << "E(" << m_RcvEID << ") ";
+#define HCLOG(expr) expr
+#else
+#define HCLOG(x) if (false) {}
+#endif
+
+    bool still_alive = false;
+    size_t size = 0;
+
+    // You can't lock the whole group for that
+    // action because this will result in a deadlock.
+    // Prepare first the list of sockets to be added as connect-pending
+    // and as read-ready, then unlock the group, and then add them to epoll.
+    vector<SRTSOCKET> read_ready, connect_pending;
+
+    {
+        HLOGC(dlog.Debug, log << "group/recv: Reviewing member sockets to epoll-add (locking)");
+        CGuard glock (m_GroupLock);
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            ++size; // list::size loops over all elements anyway, so this hits two birds with one stone
+            if (gi->laststatus == SRTS_CONNECTING)
+            {
+                HCLOG(ds << "@" << gi->id << "<pending> ");
+                /*
+                connect_pending.push_back(gi->id);
+                */
+
+                continue; // don't read over a failed or pending socket
+            }
+
+            if (gi->laststatus >= SRTS_BROKEN)
+            {
+                broken.insert(gi->ps);
+            }
+
+            if (broken.count(gi->ps))
+            {
+                HCLOG(ds << "@" << gi->id << "<broken> ");
+                continue;
+            }
+
+            if (gi->laststatus != SRTS_CONNECTED)
+            {
+                HCLOG(ds << "@" << gi->id << "<unstable:" << SockStatusStr(gi->laststatus) << "> ");
+                // Sockets in this state are ignored. We are waiting until it
+                // achieves CONNECTING state, then it's added to write.
+                // Or gets broken and closed in the next step.
+                continue;
+            }
+
+            still_alive = true;
+
+            // Don't skip packets that are ahead because if we have a situation
+            // that all links are either "elephants" (do not report read readiness)
+            // and "kangaroos" (have already delivered an ahead packet) then
+            // omiting kangaroos will result in only elephants to be polled for
+            // reading. Due to the strict timing requirements and ensurance that
+            // TSBPD on every link will result in exactly the same delivery time
+            // for a packet of given sequence, having an elephant and kangaroo in
+            // one cage means that the elephant is simply a broken or half-broken
+            // link (the data are not delivered, but it will get repaired soon,
+            // enough for SRT to maintain the connection, but it will still drop
+            // packets that didn't arrive in time), in both cases it may
+            // potentially block the reading for an indefinite time, while
+            // simultaneously a kangaroo might be a link that got some packets
+            // dropped, but then it's still capable to deliver packets on time.
+
+            // Note that gi->id might be a socket that was previously being polled
+            // on write, when it's attempting to connect, but now it's connected.
+            // This will update the socket with the new event set.
+
+            read_ready.push_back(gi->id);
+            HCLOG(ds << "@" << gi->id << "[READ] ");
+        }
+    }
+
+    int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
+    /* Done at the connecting stage so that it won't be missed.
+
+    int connect_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    for (vector<SRTSOCKET>::iterator i = connect_pending.begin(); i != connect_pending.end(); ++i)
+    {
+        srt_epoll_add_usock(m_RcvEID, *i, &connect_modes);
+    }
+
+    AND this below additionally for sockets that were so far pending connection,
+    will be now "upgraded" to readable sockets. The epoll adding function for a
+    socket that already is in the eid container will only change the poll flags,
+    but will not re-add it, that is, event reports that are both in old and new
+    flags will survive the operation.
+
+    */
+
+    for (vector<SRTSOCKET>::iterator i = read_ready.begin(); i != read_ready.end(); ++i)
+    {
+        srt_epoll_add_usock(m_RcvEID, *i, &read_modes);
+    }
+
+    HLOGC(dlog.Debug, log << "group/recv: " << ds.str() << " --> EPOLL/SWAIT");
+#undef HCLOG
+
+    if (!still_alive)
+    {
+        LOGC(dlog.Error, log << "group/recv: all links broken");
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    }
+
+    // Here we need to make an additional check.
+    // There might be a possibility that all sockets that
+    // were added to the reader group, are ahead. At least
+    // surely we don't have a situation that any link contains
+    // an ahead-read subsequent packet, because GroupCheckPacketAhead
+    // already handled that case.
+    //
+    // What we can have is that every link has:
+    // - no known seq position yet (is not registered in the position map yet)
+    // - the position equal to the latest delivered sequence
+    // - the ahead position
+
+    // Now the situation is that we don't have any packets
+    // waiting for delivery so we need to wait for any to report one.
+
+    // XXX We support blocking mode only at the moment.
+    // The non-blocking mode would need to simply check the readiness
+    // with only immediate report, and read-readiness would have to
+    // be done in background.
+
+    // Poll on this descriptor until reading is available, indefinitely.
+    CEPoll::fmap_t sready;
+
+    // In blocking mode, use m_iRcvTimeOut, which's default value -1
+    // means to block indefinitely, also in swait().
+    // In non-blocking mode use 0, which means to always return immediately.
+    int timeout = m_bSynRecving ? m_iRcvTimeOut : 0;
+    int nready = m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
+
+    HLOGC(dlog.Debug, log << "group/recv: RDY: " << DisplayEpollResults(sready));
+
+    if (nready == 0)
+    {
+        // This can only happen when 0 is passed as timeout and none is ready.
+        // And 0 is passed only in non-blocking mode. So this is none ready in
+        // non-blocking mode.
+        throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+    }
+
+    // Handle sockets of pending connection and with errors.
+
+    // Nice to have something like:
+
+    // broken = FilterIf(sready, [] (auto s)
+    //                   { return s.second == SRT_EPOLL_ERR && (auto cs = g->locateSocket(s.first, ERH_RETURN))
+    //                          ? {cs, true}
+    //                          : {nullptr, false}
+    //                   });
+
+    FilterIf(
+            /*FROM*/ sready.begin(), sready.end(),
+            /*TO*/ std::inserter(broken, broken.begin()),
+            /*VIA*/ FLookupSocketWithEvent(m_pGlobal, SRT_EPOLL_ERR));
+
+    // Ok, now we need to have some extra qualifications:
+    // 1. If a socket has no registry yet, we read anyway, just
+    // to notify the current position. We read ONLY ONE PACKET this time,
+    // we'll worry later about adjusting it to the current group sequence
+    // position.
+    // 2. If a socket is already position ahead, DO NOT read from it, even
+    // if it is ready.
+
+    // The state of things whether we were able to extract the very next
+    // sequence will be simply defined by the fact that `output` is nonempty.
+
+    int32_t next_seq = m_RcvBaseSeqNo;
+
+    // If this set is empty, it won't roll even once, therefore output
+    // will be surely empty. This will be checked then same way as when
+    // reading from every socket resulted in error.
+
+    for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+    {
+        if (i->second & SRT_EPOLL_ERR)
+            continue; // broken already
+
+        if ((i->second & SRT_EPOLL_IN) == 0)
+            continue; // not ready for reading
+
+        // Check if this socket is in aheads
+        // If so, don't read from it, wait until the ahead is flushed.
+        SRTSOCKET id = i->first;
+        CUDTSocket* ps = m_pGlobal->locateSocket(id); // exception would interrupt it (SANITY)
+        ReadPos* p = NULL;
+        pit_t pe = m_Positions.find(id);
+        if (pe != m_Positions.end())
+        {
+            p = &pe->second;
+
+            // Possible results of comparison:
+            // x < 0: the sequence is in the past, the socket should be adjusted FIRST
+            // x = 0: the socket should be ready to get the exactly next packet
+            // x = 1: the case is already handled by GroupCheckPacketAhead.
+            // x > 1: AHEAD. DO NOT READ.
+            int seqdiff = CSeqNo::seqcmp(p->mctrl.pktseq, m_RcvBaseSeqNo);
+            if (seqdiff > 1)
+            {
+                HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->mctrl.pktseq
+						<< " AHEAD %" << m_RcvBaseSeqNo << ", not reading.");
+                continue;
+            }
+        }
+        else
+        {
+            // The position is not known, so get the position on which
+            // the socket is currently standing.
+            pair<pit_t, bool> ee = m_Positions.insert(make_pair(id, ReadPos(ps->core().m_iRcvLastSkipAck)));
+            p = &(ee.first->second);
+            HLOGC(dlog.Debug, log << "group/recv: EPOLL: @" << id << " %" << p->mctrl.pktseq << " NEW SOCKET INSERTED");
+        }
+
+        // Read from this socket stubbornly, until:
+        // - reading is no longer possible (AGAIN)
+        // - the sequence difference is >= 1
+
+        for (;;)
+        {
+            SRT_MSGCTRL mctrl = srt_msgctrl_default;
+
+            // Read the data into the user's buffer. This is an optimistic
+            // prediction that we'll read the right data. This will be overwritten
+            // by "more correct data" if found more appropriate later. But we have to
+            // copy these data anyway anywhere, even if they need to fall on the floor later.
+            int stat;
+            if (output_size)
+            {
+                // We have already the data, so this must fall on the floor
+                char lostbuf[SRT_LIVE_MAX_PLSIZE];
+                stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                        << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
+            }
+            else
+            {
+                stat = ps->core().receiveMessage((buf), len, (mctrl), CUDTUnited::ERH_RETURN);
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " EXTRACTED data with %" << mctrl.pktseq << " #" << mctrl.msgno
+                        << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(buf, stat)));
+            }
+            if (stat == 0)
+            {
+                HLOGC(dlog.Debug, log << "group/recv: SPURIOUS epoll, ignoring");
+                // This is returned in case of "again". In case of errors, we have SRT_ERROR.
+                // Do not treat this as spurious, just stop reading.
+                break;
+            }
+
+            if (stat == SRT_ERROR)
+            {
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << ": " << srt_getlasterror_str());
+                broken.insert(ps);
+                break;
+            }
+
+            // NOTE: checks against m_RcvBaseSeqNo and decisions based on it
+            // must NOT be done if m_RcvBaseSeqNo is SRT_SEQNO_NONE, which
+            // means that we are about to deliver the very first packet and we
+            // take its sequence number as a good deal.
+
+            // The order must be:
+            // - check discrepancy
+            // - record the sequence
+            // - check ordering.
+            // The second one must be done always, but failed discrepancy
+            // check should exclude the socket from any further checks.
+            // That's why the common check for m_RcvBaseSeqNo != SRT_SEQNO_NONE can't
+            // embrace everything below.
+
+            // We need to first qualify the sequence, just for a case
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+            {
+                // This error should be returned if the link turns out
+                // to be the only one, or set to the group data.
+                // err = SRT_ESECFAIL;
+                LOGC(dlog.Error, log << "group/recv: @" << id << ": SEQUENCE DISCREPANCY: base=%"
+						<< m_RcvBaseSeqNo << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
+                broken.insert(ps);
+                break;
+            }
+
+            // Rewrite it to the state for a case when next reading
+            // would not succeed. Do not insert the buffer here because
+            // this is only required when the sequence is ahead; for that
+            // it will be fixed later.
+            p->mctrl.pktseq = mctrl.pktseq;
+
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
+            {
+                // Now we can safely check it.
+                int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo);
+
+                if (seqdiff <= 0)
+                {
+                    HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
+							<< " BEHIND base=%" << m_RcvBaseSeqNo << " - discarding");
+                    // The sequence is recorded, the packet has to be discarded.
+                    // That's all.
+                    continue;
+                }
+
+                // Now we have only two possibilities:
+                // seqdiff == 1: The very next sequence, we want to read and return the packet.
+                // seqdiff > 1: The packet is ahead - record the ahead packet, but continue with the others.
+
+                if (seqdiff > 1)
+                {
+                    HLOGC(dlog.Debug, log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
+							<< " AHEAD base=%" << m_RcvBaseSeqNo);
+                    p->packet.assign(buf, buf+stat);
+                    p->mctrl = mctrl;
+                    break; // Don't read from that socket anymore.
+                }
+            }
+
+            // We have seqdiff = 1, or we simply have the very first packet
+            // which's sequence is taken as a good deal. Update the sequence
+            // and record output.
+
+            if (output_size)
+            {
+                HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " REDUNDANT");
+                break;
+            }
+
+            HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " DELIVERING");
+            output_size = stat;
+            fillGroupData((w_mc), mctrl, (out_grpdata), out_grpdata_size);
+
+            // Record, but do not update yet, until all sockets are handled.
+            next_seq = mctrl.pktseq;
+            break;
+        }
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    if (!broken.empty())
+    {
+        std::ostringstream brks;
+        for (set<CUDTSocket*>::iterator b = broken.begin(); b != broken.end(); ++b)
+            brks << "@" << (*b)->m_SocketID << " ";
+        LOGC(dlog.Debug, log << "group/recv: REMOVING BROKEN: " << brks.str());
+    }
+#endif
+
+    // Now remove all broken sockets from aheads, if any.
+    // Even if they have already delivered a packet.
+    for (set<CUDTSocket*>::iterator di = broken.begin(); di != broken.end(); ++di)
+    {
+        CUDTSocket* ps = *di;
+        m_Positions.erase(ps->m_SocketID);
+        m_pGlobal->close(ps);
+    }
+
+    if (broken.size() >= size) // This > is for sanity check
+    {
+        // All broken
+        HLOGC(dlog.Debug, log << "group/recv: All sockets broken");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+
+    // May be required to be re-read.
+    broken.clear();
+
+    if (output_size)
+    {
+        // We have extracted something, meaning that we have the sequence shift.
+        // Update it now and don't do anything else with the sockets.
+
+        // Sanity check
+        if (next_seq == SRT_SEQNO_NONE)
+        {
+            LOGP(dlog.Error, "IPE: next_seq not set after output extracted!");
+
+            // This should never happen, but the only way to keep the code
+            // safe an recoverable is to use the incremented sequence. By
+            // leaving the sequence as is there's a risk of hangup.
+            // Not doing it in case of SRT_SEQNO_NONE as it would make a valid %0.
+            if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
+                m_RcvBaseSeqNo = CSeqNo::incseq(m_RcvBaseSeqNo);
+        }
+        else
+        {
+            m_RcvBaseSeqNo = next_seq;
+        }
+
+        ReadPos* pos = checkPacketAhead();
+        if (!pos)
+        {
+            // Don't clear the read-readinsess state if you have a packet ahead because
+            // if you have, the next read call will return it.
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+        }
+
+        HLOGC(dlog.Debug, log << "group/recv: successfully extracted packet size=" << output_size << " - returning");
+        return output_size;
+    }
+
+    HLOGC(dlog.Debug, log << "group/recv: NOT extracted anything - checking for a need to kick kangaroos");
+
+    // Check if we have any sockets left :D
+
+    // Here we surely don't have any more HORSES,
+    // only ELEPHANTS and KANGAROOS. Qualify them and
+    // attempt to at least take advantage of KANGAROOS.
+
+    // In this position all links are either:
+    // - updated to the current position
+    // - updated to the newest possible possition available
+    // - not yet ready for extraction (not present in the group)
+
+    // If we haven't extracted the very next sequence position,
+    // it means that we might only have the ahead packets read,
+    // that is, the next sequence has been dropped by all links.
+
+    if (!m_Positions.empty())
+    {
+        // This might notify both lingering links, which didn't
+        // deliver the required sequence yet, and links that have
+        // the sequence ahead. Review them, and if you find at
+        // least one packet behind, just wait for it to be ready.
+        // Use again the waiting function because we don't want
+        // the general waiting procedure to skip others.
+        set<SRTSOCKET> elephants;
+
+        // const because it's `typename decltype(m_Positions)::value_type`
+        pair<const SRTSOCKET, ReadPos>* slowest_kangaroo = 0;
+
+        for (pit_t rp = m_Positions.begin(); rp != m_Positions.end(); ++rp)
+        {
+            // NOTE that m_RcvBaseSeqNo in this place wasn't updated
+            // because we haven't successfully extracted anything.
+            int seqdiff = CSeqNo::seqcmp(rp->second.mctrl.pktseq, m_RcvBaseSeqNo);
+            if (seqdiff < 0)
+            {
+                elephants.insert(rp->first);
+            }
+            // If seqdiff == 0, we have a socket ON TRACK.
+            else if (seqdiff > 0)
+            {
+                // If there's already a slowest_kangaroo, seqdiff decides if this one is slower.
+                // Otherwise it is always slower by having no competition.
+                seqdiff = slowest_kangaroo ? CSeqNo::seqcmp(slowest_kangaroo->second.mctrl.pktseq, rp->second.mctrl.pktseq) : 1;
+                if (seqdiff > 0)
+                {
+                    slowest_kangaroo = &*rp;
+                }
+            }
+        }
+
+        // Note that if no "slowest_kangaroo" was found, it means
+        // that we don't have kangaroos.
+        if (slowest_kangaroo)
+        {
+            // We have a slowest kangaroo. Elephants must be ignored.
+            // Best case, they will get revived, worst case they will be
+            // soon broken.
+            //
+            // As we already have the packet delivered by the slowest
+            // kangaroo, we can simply return it.
+
+            m_RcvBaseSeqNo = slowest_kangaroo->second.mctrl.pktseq;
+            vector<char>& pkt = slowest_kangaroo->second.packet;
+            if (size_t(len) < pkt.size())
+                throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+
+            HLOGC(dlog.Debug, log << "@" << slowest_kangaroo->first << " KANGAROO->HORSE %"
+                    << slowest_kangaroo->second.mctrl.pktseq
+                    << " #" << slowest_kangaroo->second.mctrl.msgno
+                    << ": " << BufferStamp(&pkt[0], pkt.size()));
+
+            memcpy(buf, &pkt[0], pkt.size());
+            fillGroupData((w_mc), slowest_kangaroo->second.mctrl, (out_grpdata), out_grpdata_size);
+            len = pkt.size();
+            pkt.clear();
+
+            // It is unlikely to have a packet ahead because usually having one packet jumped-ahead
+            // clears the possibility of having aheads at all.
+            // XXX Research if this is possible at all; if it isn't, then don't waste time on
+            // looking for it.
+            ReadPos* pos = checkPacketAhead();
+            if (!pos)
+            {
+                // Don't clear the read-readinsess state if you have a packet ahead because
+                // if you have, the next read call will return it.
+                m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+            }
+            return len;
+        }
+
+        HLOGC(dlog.Debug, log << "group/recv: "
+                << (elephants.empty() ? "NO LINKS REPORTED ANY FRESHER PACKET." : "ALL LINKS ELEPHANTS.")
+                << " Re-polling.");
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "group/recv: POSITIONS EMPTY - Re-polling.");
+    }
+
+    goto RETRY_READING;
 }
 
 CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
@@ -11658,19 +13131,20 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         // aren't going to read from it - we have the packet already.
         ReadPos& a = i->second;
 
-        const int seqdiff = CSeqNo::seqcmp(a.sequence, m_RcvBaseSeqNo);
+        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
         if (seqdiff == 1)
         {
             // The very next packet. Return it.
-            m_RcvBaseSeqNo = a.sequence;
-            HLOGC(dlog.Debug, log << "group/recv: ahead delivery %"
-                    << a.sequence << "#" << a.mctrl.msgno << " from @" << i->first << ")");
+            // XXX SETTING THIS ONE IS PROBABLY A BUG.
+            m_RcvBaseSeqNo = a.mctrl.pktseq;
+            HLOGC(dlog.Debug, log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %"
+                    << a.mctrl.pktseq << "#" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
         {
             HLOGC(dlog.Debug, log << "group/recv: @" << i->first << " dropping collected ahead %"
-                    << a.sequence << "#" << a.mctrl.msgno << ")");
+                    << a.mctrl.pktseq << "#" << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
             a.packet.clear();
         }
         // In case when it's >1, keep it in ahead
@@ -11742,4 +13216,1279 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
 
         gi->ps->m_pUDT->m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
     }
+}
+
+
+// For sorting group members by priority
+
+struct FByPriotity //: public std::binary_predicate<CUDTGroup::gli_t, CUDTGroup::gli_t>
+{
+    typedef CUDTGroup::gli_t gli_t;
+    bool operator()(gli_t a, gli_t b)
+    {
+        // this should be operator <
+        return a->priority < b->priority;
+    }
+};
+
+bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
+{
+    SRT_SOCKSTATUS st = SRTS_NONEXIST;
+    if (d->ps)
+        st = d->ps->getStatus();
+    // If the socket is already broken, move it to broken.
+    if (int(st) >= int(SRTS_BROKEN))
+    {
+        HLOGC(dlog.Debug, log << "CUDTGroup::send.$" << id() << ": @" << d->id << " became "
+                << SockStatusStr(st) << ", WILL BE CLOSED.");
+        w_wipeme.push_back(d);
+        return false;
+    }
+
+    if (st != SRTS_CONNECTED)
+    {
+        HLOGC(dlog.Debug, log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
+        w_pending.push_back(d);
+        return false;
+    }
+
+    return true;
+}
+
+void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
+{
+    // Check if it was fresh set as idle, we had to wait until its sender
+    // buffer gets empty so that we can make sure that KEEPALIVE will be the
+    // really last sent for longer time.
+    CUDT& u = w_d->ps->core();
+    if (u.m_tsTmpActiveTime != steady_clock::zero())
+    {
+        CSndBuffer *b = u.m_pSndBuffer;
+        if (b && b->getCurrBufSize() == 0)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
+            u.m_tsTmpActiveTime = steady_clock::zero();
+
+            // Send first immediate keepalive. The link is to be turn to IDLE
+            // now so nothing will be sent to it over time and it will start
+            // getting KEEPALIVES since now. Send the first one now to increase
+            // probability that the link will be recognized as IDLE on the
+            // reception side ASAP.
+            int32_t arg = 1;
+            w_d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE, &arg);
+        }
+    }
+}
+
+void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point currtime, size_t& w_nunstable)
+{
+    steady_clock::time_point ts_oldest_unstable;
+
+    CUDT& u = w_d->ps->core();
+    // This link might be unstable, check its responsiveness status
+    // NOTE: currtime - last_rsp_time: we believe this value will be always positive as
+    // the Tk clock is believed to be monotonic. The resulting value
+
+    // IMPORTANT: the socket could be potentially updated IN THE MEANTIME in another
+    // thread AFTER (!!!) currtime has been read, but BEFORE (!!!) this value us used
+    // for calculation - which could make the difference negative.
+    // There's no way to avoid it because it would require making a mutex-locking for
+    // updating the m_tsLastRspTime field. This is useless because avoiding the
+    // negative value is relatively easy, while introducing a mutex would only add a
+    // deadlock risk and performance degradation.
+
+    bool is_unstable = false;
+
+    if (currtime > u.m_tsLastRspTime)
+    {
+        // The last response predates the start of this function, look at the difference
+        steady_clock::duration td_responsive = currtime - u.m_tsLastRspTime;
+
+        IF_HEAVY_LOGGING(string source = "heard");
+
+        if (u.m_tsTmpActiveTime != steady_clock::zero() && u.m_tsTmpActiveTime < currtime)
+        {
+            // The link is temporary-activated. Calculate then since the activation time.
+            // Mind that if the difference against the last update time is SMALLER,
+            // the temporary activation time should be cleared.
+            steady_clock::duration td_active = currtime - u.m_tsTmpActiveTime;
+
+            // Use the activation time, if it happened later than the last response.
+            // Still, check it against the timeout.
+            if (td_active < td_responsive)
+            {
+                IF_HEAVY_LOGGING(source = "activated");
+                td_responsive = td_active;
+            }
+            else
+            {
+                u.m_tsTmpActiveTime = steady_clock::zero();
+            }
+        }
+
+        if (count_microseconds(td_responsive) > m_uOPT_StabilityTimeout)
+        {
+            if (u.m_tsUnstableSince == steady_clock::zero())
+            {
+                HLOGC(dlog.Debug, log << "grp/sendBackup: socket NEW UNSTABLE: @" << w_d->id
+                        << " last " << source << " " << FormatDuration(td_responsive)
+                        << " > " << m_uOPT_StabilityTimeout << " (stability timeout)");
+                // The link seems to have missed two ACKs already.
+                // Qualify this link as unstable
+                // Notify that it has been seen so since now
+                u.m_tsUnstableSince = currtime;
+            }
+
+            is_unstable = true;
+        }
+    }
+
+    if (!is_unstable)
+    {
+        // If stability is ok, but unstable-since was set before, reset it.
+        HLOGC(dlog.Debug, log << "grp/sendBackup: link STABLE: @" << w_d->id
+                << (u.m_tsUnstableSince == steady_clock::zero() ? " - RESTORED" : " - CONTINUED")
+                << " TIME now - updated: " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime));
+        u.m_tsUnstableSince = steady_clock::zero();
+    }
+
+    // Could be set above
+    if (u.m_tsUnstableSince != steady_clock::zero())
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: link UNSTABLE for "
+                << FormatDuration(currtime - u.m_tsUnstableSince) << " : @" << w_d->id << " - will send a payload");
+        // The link is already unstable
+        if (ts_oldest_unstable != steady_clock::zero() || ts_oldest_unstable > u.m_tsUnstableSince)
+            ts_oldest_unstable = u.m_tsUnstableSince;
+        ++w_nunstable;
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: socket in RUNNING state: @" << w_d->id << " - will send a payload");
+    }
+}
+
+bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_point& currtime ATR_UNUSED,
+        const int stat, const int erc, const int32_t lastseq, const int32_t pktseq,
+        CUDT& w_u, int32_t& w_curseq, vector<gli_t>& w_parallel, int& w_final_stat,
+        set<int>& w_sendable_pri, size_t& w_nsuccessful, size_t& w_nunstable)
+{
+    bool none_succeeded = true;
+
+    if (stat != -1)
+    {
+        if (w_curseq == SRT_SEQNO_NONE)
+        {
+            w_curseq = pktseq;
+        }
+        else if (w_curseq != lastseq)
+        {
+            // We believe that all running links use the same seq.
+            // But we can do some sanity check.
+            LOGC(dlog.Error, log << "grp/sendBackup: IPE: another running link seq discrepancy: %" << lastseq
+                    << " vs. previous %" << w_curseq << " - fixing");
+            w_u.overrideSndSeqNo(w_curseq);
+        }
+
+        // If this link is already found as unstable,
+        // do not add it to the "w_parallel", as all links out
+        // of these "w_parallels" will be later tried to be
+        // shrunk to 1. Out of all links currently running we need
+        // only 1 link STABLE, and we allow any nymber of unstable
+        // links.
+
+        if (w_u.m_tsUnstableSince == steady_clock::zero())
+        {
+            w_parallel.push_back(d);
+        }
+        else
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << w_u.m_SocketID << " still UNSTABLE for "
+                    << FormatDuration(currtime - w_u.m_tsUnstableSince) << ", not counting as w_parallel");
+        }
+
+        // State it as succeeded, though. We don't know if the link
+        // is broken until we get the connection broken confirmation,
+        // and the instability state may wear off next time.
+        none_succeeded = false;
+        w_final_stat = stat;
+        ++w_nsuccessful;
+        w_sendable_pri.insert(d->priority);
+    }
+    else if (erc == SRT_EASYNCSND)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << w_u.m_SocketID << " DEEMED UNSTABLE (not ready to send)");
+        if (w_u.m_tsUnstableSince  == steady_clock::zero()) // skip those unstable already - they are already counted
+            ++w_nunstable;
+    }
+
+    return none_succeeded;
+}
+
+void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_curseq, SRT_MSGCTRL& w_mc)
+{
+    // This is required to rewrite into currentSchedSequence() property
+    // as this value will be used as ISN when a new link is connected.
+    int32_t oldest_buffer_seq = SRT_SEQNO_NONE;
+
+    if (w_curseq != SRT_SEQNO_NONE)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: successfully sent over running link, ADDING TO BUFFER.");
+
+        // Note: the sequence number that was used to send this packet should be
+        // recorded here.
+        oldest_buffer_seq = addMessageToBuffer(buf, len, (w_mc));
+    }
+    else
+    {
+        // We have to predict, which sequence number would have
+        // to be placed on the packet about to be sent now. To
+        // maintain consistency:
+
+        // 1. If there are any packets in the sender buffer,
+        //    get the sequence of the last packet, increase it.
+        //    This must be done even if this contradicts the ISN
+        //    of all idle links because otherwise packets will get
+        //    discrepancy.
+        if (!m_SenderBuffer.empty())
+        {
+            BufferedMessage& m = m_SenderBuffer.back();
+            w_curseq = CSeqNo::incseq(m.mc.pktseq);
+
+            // Set also this sequence to the current w_mc
+            w_mc.pktseq = w_curseq;
+
+            // XXX may need tighter revision when message mode is allowed
+            w_mc.msgno = ++MsgNo(m.mc.msgno);
+            oldest_buffer_seq = addMessageToBuffer(buf, len, (w_mc));
+        }
+
+        // Note that if buffer is empty and w_curseq is (still) SRT_SEQNO_NONE,
+        // it will have to try to send first in order to extract the data.
+
+        // Note that if w_curseq is still SRT_SEQNO_NONE at this point, it means
+        // that we have the case of the very first packet sending.
+        // Otherwise there would be something in the buffer already.
+    }
+
+    if (oldest_buffer_seq != SRT_SEQNO_NONE)
+        m_iLastSchedSeqNo = oldest_buffer_seq;
+}
+
+void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
+        const char* buf, const int len,
+        bool& w_none_succeeded, SRT_MSGCTRL& w_mc, int32_t& w_curseq, int32_t& w_final_stat,
+        CUDTException& w_cx, vector<Sendstate>& w_sendstates,
+        vector<gli_t>& w_parallel, vector<gli_t>& w_wipeme,
+        const string& activate_reason ATR_UNUSED)
+{
+    int stat = -1;
+
+    // If we have no stable links, activate one of idle links.
+
+    HLOGC(dlog.Debug, log << "grp/sendBackup: " << activate_reason << ", trying to activate an idle link (" << idlers.size() << " available)");
+
+    for (vector<gli_t>::const_iterator i = idlers.begin(); i != idlers.end(); ++i)
+    {
+        int erc = 0;
+        gli_t d = *i;
+
+        // Now send and check the status
+        // The link could have got broken
+
+        try
+        {
+            if (w_curseq == SRT_SEQNO_NONE)
+            {
+                // This marks the fact that the given here packet
+                // could not be sent over any link. This includes the
+                // situation of sending the very first packet after connection.
+
+                HLOGC(dlog.Debug, log << "grp/sendBackup: ... trying @" << d->id
+                        << " - sending the VERY FIRST message");
+                InvertedLock ug (m_GroupLock);
+                stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                if (stat != -1)
+                {
+                    // This will be no longer used, but let it stay here.
+                    // It's because if this is successful, no other links
+                    // will be tried.
+                    w_curseq = w_mc.pktseq;
+                    addMessageToBuffer(buf, len, (w_mc));
+                }
+            }
+            else
+            {
+                HLOGC(dlog.Debug, log << "grp/sendBackup: ... trying @" << d->id << " - resending "
+                        << m_SenderBuffer.size() << " collected messages...");
+                // Note: this will set the currently required packet
+                // because it has been just freshly added to the sender buffer
+                stat = sendBackupRexmit(d->ps->core(), (w_mc));
+            }
+        }
+        catch (CUDTException& e)
+        {
+            // This will be propagated from internal sendmsg2 call,
+            // but that's ok - we want this sending interrupted even in half.
+            w_cx = e;
+            stat = -1;
+            erc = e.getErrorCode();
+        }
+
+        d->sndresult = stat;
+        d->laststatus = d->ps->getStatus();
+
+        const Sendstate cstate = {d, stat, erc};
+        w_sendstates.push_back(cstate);
+
+        if (stat != -1)
+        {
+            if (d->sndstate != GST_RUNNING)
+            {
+                steady_clock::time_point currtime = steady_clock::now();
+                d->ps->core().m_tsTmpActiveTime = currtime;
+                HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
+                        << " LINK ACTIVATED (pri: " << d->priority << ").");
+            }
+            else
+            {
+                HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
+                        << " LINK ACTIVATED (pri: " << d->priority << ").");
+            }
+            // Note: this will override the sequence number
+            // for all next iterations in this loop.
+            d->sndstate = GST_RUNNING;
+
+            if (d->ps->core().m_tsUnstableSince == steady_clock::zero())
+            {
+                w_parallel.push_back(d);
+            }
+            else
+            {
+                HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << d->id << " (idle) UNSTABLE, not counting as parallel");
+            }
+            w_none_succeeded = false;
+            w_final_stat = stat;
+
+            // We've activated the link, so that's enough.
+            break;
+        }
+
+        // Failure - move to broken those that could not be activated
+        bool isblocked SRT_ATR_UNUSED = true;
+        if (erc != SRT_EASYNCSND)
+        {
+            isblocked = false;
+            w_wipeme.push_back(d);
+        }
+
+        // If we found a blocked link, leave it alone, however
+        // still try to send something over another link
+
+        HLOGC(dlog.Debug, log << "@" << d->id << " FAILED ("
+                << (isblocked ? "blocked" : "ERROR") << "), trying to activate another link.");
+    }
+}
+
+void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gli_t>& w_wipeme)
+{
+    // If we have at least one stable link, then select a link that have the
+    // highest priority and silence the rest.
+
+    // Note: If we have one stable link, this is the situation we need.
+    // If we have no stable links at all, there's nothing we can do anyway.
+    // The freshly activated previously idle links don't count because we
+    // just started them and we can't determine their stability. At least if
+    // we have one link that is stable and the freshly activated link is actually
+    // stable too, we'll check this next time.
+    //
+    if (!pending.empty())
+    {
+        HLOGC(dlog.Debug, log << "grp/send*: found pending sockets, polling them.");
+
+        // These sockets if they are in pending state, they should be added to m_SndEID
+        // at the connecting stage.
+        CEPoll::fmap_t sready;
+
+        if (m_SndEpolld->watch_empty())
+        {
+            // Sanity check - weird pending reported.
+            LOGC(dlog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
+            copy(pending.begin(), pending.end(), back_inserter(w_wipeme));
+        }
+        else
+        {
+            {
+                InvertedLock ug (m_GroupLock);
+                m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+            }
+
+            HLOGC(dlog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
+
+            // sockets in EX: should be moved to w_wipeme.
+            for (vector<gli_t>::const_iterator i = pending.begin(); i != pending.end(); ++i)
+            {
+                gli_t d = *i;
+                if (CEPoll::isready(sready, d->id, SRT_EPOLL_ERR))
+                {
+                    HLOGC(dlog.Debug, log << "grp/send*: Socket @" << d->id << " reported FAILURE - moved to wiped.");
+                    // Failed socket. Move d to w_wipeme. Remove from eid.
+                    w_wipeme.push_back(d);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
+                }
+            }
+
+            // After that, all sockets that have been reported
+            // as ready to write should be removed from EID. This
+            // will also remove those sockets that have been added
+            // as redundant links at the connecting stage and became
+            // writable (connected) before this function had a chance
+            // to check them.
+            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+        }
+    }
+}
+
+void CUDTGroup::send_CloseBrokenSockets(vector<gli_t>& w_wipeme)
+{
+    // Review the w_wipeme sockets.
+    // The reason why 'w_wipeme' is kept separately to 'broken_sockets' is that
+    // it might theoretically happen that ps becomes NULL while the item still exists.
+    vector<CUDTSocket*> broken_sockets;
+
+    // delete all sockets that were broken at the entrance
+    for (vector<gli_t>::iterator i = w_wipeme.begin(); i != w_wipeme.end(); ++i)
+    {
+        gli_t d = *i;
+        CUDTSocket *ps = d->ps;
+        if (!ps)
+        {
+            LOGC(dlog.Error, log << "grp/sendBackup: IPE: socket NULL at id=" << d->id << " - removing from group list");
+            // Closing such socket is useless, it simply won't be found in the map and
+            // the internal facilities won't know what to do with it anyway.
+            // Simply delete the entry.
+            m_Group.erase(d);
+            continue;
+        }
+        broken_sockets.push_back(ps);
+    }
+
+    if (!broken_sockets.empty()) // Prevent unlock-lock cycle if no broken sockets found
+    {
+        // Lift the group lock for a while, to avoid possible deadlocks.
+        InvertedLock ug (m_GroupLock);
+
+        for (vector<CUDTSocket*>::iterator x = broken_sockets.begin(); x != broken_sockets.end(); ++x)
+        {
+            CUDTSocket *ps = *x;
+            HLOGC(dlog.Debug, log << "grp/sendBackup: BROKEN SOCKET @" << ps->m_SocketID << " - CLOSING AND REMOVING.");
+
+            // NOTE: This does inside: ps->removeFromGroup().
+            // After this call, 'd' is no longer valid and *i is singular.
+            CUDT::s_UDTUnited.close(ps);
+        }
+    }
+
+    HLOGC(dlog.Debug, log << "grp/sendBackup: - wiped " << w_wipeme.size() << " broken sockets");
+
+    // We'll need you again.
+    w_wipeme.clear();
+}
+
+void CUDTGroup::sendBackup_CheckParallelLinks(const size_t nunstable, vector<gli_t>& w_parallel,
+        int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx)
+{
+    // In contradiction to redundancy sending, backup sending must check
+    // the blocking state in total first. We need this information through
+    // epoll because we didn't use all sockets to send the data hence the
+    // blocked socket information would not be complete.
+
+    // Don't do this check if sending has succeeded over at least one
+    // stable link. This procedure is to wait for at least one write-ready
+    // link.
+    //
+    // If sending succeeded also over at least one unstable link (you only have
+    // unstable links and none other or others just got broken), continue sending
+    // anyway.
+    if (w_parallel.empty() && !nunstable)
+    {
+        // XXX FILL THE TABLE
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+
+        if (m_SndEpolld->watch_empty())
+        {
+            // wipeme wiped, pending sockets checked, it can only mean that
+            // all sockets are broken.
+            HLOGC(dlog.Debug, log << "grp/sendBackup: epolld empty - all sockets broken?");
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
+
+        if (!m_bSynSending)
+        {
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+        }
+        // Here is the situation that the only links left here are:
+        // - those that failed to send (already closed and wiped out)
+        // - those that got blockade on sending
+
+        // At least, there was so far no socket through which we could
+        // successfully send anything.
+
+        // As a last resort in this situation, try to wait for any links
+        // remaining in the group to become ready to write.
+
+        CEPoll::fmap_t sready;
+        int brdy;
+
+        // This keeps the number of links that existed at the entry.
+        // Simply notify all dead links, regardless as to whether the number
+        // of group members decreases below. If the number of corpses reaches
+        // this number, consider the group connection broken.
+        size_t nlinks = m_Group.size();
+        size_t ndead = 0;
+
+RetryWaitBlocked:
+        {
+            InvertedLock ug (m_GroupLock);
+            HLOGC(dlog.Debug, log << "grp/sendBackup: swait call to get at least one link alive up to "
+                    << m_iSndTimeOut << "us");
+            brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+
+            // Check if there's anything in the "error" section.
+            // This must be cleared here before the lock on group is set again.
+            // (This loop will not fire neither once if no failed sockets found).
+            for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+            {
+                if (i->second & SRT_EPOLL_ERR)
+                    continue; // broken already
+
+                if ((i->second & SRT_EPOLL_IN) == 0)
+                    continue; // not ready for reading
+
+                // Check if this socket is in aheads
+                // If so, don't read from it, wait until the ahead is flushed.
+                SRTSOCKET id = i->first;
+                CUDTSocket *s = m_pGlobal->locateSocket(id);
+                if (s)
+                {
+                    HLOGC(dlog.Debug, log << "grp/sendBackup: swait/ex on @" << (id)
+                            << " while waiting for any writable socket - CLOSING");
+                    CUDT::s_UDTUnited.close(s);
+                }
+                else
+                {
+                    HLOGC(dlog.Debug, log << "grp/sendBackup: swait/ex on @" << (id)
+                            << " - WAS DELETED IN THE MEANTIME");
+                }
+
+                ++ndead;
+            }
+            HLOGC(dlog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
+        }
+
+        if (brdy == -1 || ndead >= nlinks)
+        {
+            LOGC(dlog.Error, log << "grp/sendBackup: swait=>" << brdy
+                    << " nlinks=" << nlinks << " ndead=" << ndead
+                    << " - looxlike all links broken");
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+            // You can safely throw here - nothing to fill in when all sockets down.
+            // (timeout was reported by exception in the swait call).
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
+
+        // XXX PROBABLE BUG:
+        // This loop may loop forever in case when all sockets fail.
+
+        // Ok, now check if we have at least one write-ready.
+        // Note that the procedure of activation of a new link in case of
+        // no stable links found embraces also rexmit-sending and status
+        // check as well, including blocked status.
+
+        // Find which one it was. This is so rare case that we can
+        // suffer linear search.
+
+        int nwaiting = 0;
+        int stat = -1;
+        for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+        {
+            //int erc = 0;
+
+            // Skip if not readable in this run
+            if (CEPoll::isready(sready, d->id, SRT_EPOLL_OUT))
+            {
+                ++nwaiting;
+                continue;
+            }
+
+            if (d->sndstate == GST_RUNNING)
+            {
+                HLOGC(dlog.Debug, log << "grp/sendBackup: link @" << d->id
+                        << " RUNNING - SKIPPING from activate and resend");
+                continue;
+            }
+
+            try
+            {
+                // Note: this will set the currently required packet
+                // because it has been just freshly added to the sender buffer
+                stat = sendBackupRexmit(d->ps->core(), (w_mc));
+            }
+            catch (CUDTException& e)
+            {
+                // This will be propagated from internal sendmsg2 call,
+                // but that's ok - we want this sending interrupted even in half.
+                w_cx = e;
+                stat = -1;
+                //erc = e.getErrorCode();
+            }
+
+            d->sndresult = stat;
+            d->laststatus = d->ps->getStatus();
+
+            if (stat == -1)
+            {
+                // This link is no longer waiting.
+                continue;
+            }
+
+            w_parallel.push_back(d);
+            w_final_stat = stat;
+            steady_clock::time_point currtime = steady_clock::now();
+            d->ps->core().m_tsTmpActiveTime = currtime;
+            d->sndstate = GST_RUNNING;
+            w_none_succeeded = false;
+            HLOGC(dlog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
+
+            break;
+        }
+
+        // If we have no links successfully activated, but at least
+        // one link "not ready for writing", continue waiting for at
+        // least one link ready.
+        if (stat == -1 && nwaiting > 0)
+        {
+            goto RetryWaitBlocked;
+        }
+    }
+
+    // The most important principle is to keep the data being sent constantly,
+    // even if it means temporarily full redundancy. However, if you are certain
+    // that you have multiple stable links running at the moment, SILENCE all but
+    // the one with highest priority.
+    if (w_parallel.size() > 1)
+    {
+        sort(w_parallel.begin(), w_parallel.end(), FByPriotity());
+        steady_clock::time_point currtime = steady_clock::now();
+
+        vector<gli_t>::iterator b = w_parallel.begin();
+        HLOGC(dlog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
+        ++b;
+        for (; b != w_parallel.end(); ++b)
+        {
+            gli_t& d = *b;
+            if (d->sndstate != GST_RUNNING)
+            {
+                LOGC(dlog.Error, log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
+                continue;
+            }
+            CUDT& ce = d->ps->core();
+            steady_clock::duration td;
+            if (ce.m_tsTmpActiveTime != steady_clock::zero()
+                    && count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
+            {
+                HLOGC(dlog.Debug, log << "... not silencing @" << d->id << ": too early: "
+                        << FormatDuration(td) << " < " << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                continue;
+            }
+
+            // Clear activation time because the link is no longer active!
+            d->sndstate = GST_IDLE;
+            HLOGC(dlog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
+            ce.m_tsTmpActiveTime = steady_clock::zero();
+        }
+    }
+}
+
+
+int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
+{
+    // Avoid stupid errors in the beginning.
+    if (len <= 0)
+    {
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    // Live only - sorry.
+    if (len > SRT_LIVE_MAX_PLSIZE)
+    {
+        LOGC(dlog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    // [[using assert(this->m_pSndBuffer != nullptr)]];
+
+    // NOTE: This is a "vector of list iterators". Every element here
+    // is an iterator to another container.
+    // Note that "list" is THE ONLY container in standard C++ library,
+    // for which NO ITERATORS ARE INVALIDATED after a node at particular
+    // iterator has been removed, except for that iterator itself.
+    vector<gli_t> wipeme;
+    vector<gli_t> idlers;
+    vector<gli_t> pending;
+
+    // We need them as sets because links at first seen as stable
+    // may become unstable after a while
+    size_t nunstable = 0;
+    vector<gli_t> sendable;
+
+    int stat = 0;
+    int final_stat = -1;
+    SRT_ATR_UNUSED CUDTException cx (MJ_SUCCESS, MN_NONE, 0);
+
+    CGuard guard (m_GroupLock);
+
+    steady_clock::time_point currtime = steady_clock::now();
+
+    sendable.reserve(m_Group.size());
+
+    // First, check status of every link - no matter if idle or active.
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        // Check socket sndstate before sending
+        if (d->sndstate == GST_BROKEN)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
+            wipeme.push_back(d);
+            continue;
+        }
+
+        if (d->sndstate == GST_IDLE)
+        {
+            if (!send_CheckIdle(d, (wipeme), (pending)))
+                continue;
+
+            HLOGC(dlog.Debug, log << "grp/sendBackup: socket in IDLE state: @" << d->id << " - will activate it IF NEEDED");
+            // This is idle, we'll take care of them next time
+            // Might be that:
+            // - this socket is idle, while some NEXT socket is running
+            // - we need at least one running socket to work BEFORE activating the idle one.
+            // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
+            //   and all others will be activated using the ISN from the first one.
+            idlers.push_back(d);
+            sendBackup_CheckIdleTime(d);
+            continue;
+        }
+
+        if (d->sndstate == GST_RUNNING)
+        {
+            sendBackup_CheckRunningStability(d, (currtime), (nunstable));
+            sendable.push_back(d);
+            continue;
+        }
+
+        HLOGC(dlog.Debug, log << "grp/sendBackup: socket @" << d->id << " not ready, state: "
+                << StateStr(d->sndstate) << "(" << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
+
+        pending.push_back(d);
+    }
+
+    // Sort the idle sockets by priority so the highest priority idle links are checked first.
+    sort(idlers.begin(), idlers.end(), FByPriotity());
+
+    vector<Sendstate> sendstates;
+
+    // Ok, we've separated the unstable from sendable just to know if:
+    // - we have any STABLE sendable (if not, we must activate a backup link)
+    // - we have multiple stable sendable and we need to stop all but one
+
+    // Normally there should be only one link with state == GST_RUNNING, but there might
+    // be multiple links set as running when a "breaking suspection" is set on a link.
+
+    bool none_succeeded = true; // be pessimistic
+
+    // This should be added all sockets that are currently stable
+    // and sending was successful. Later, all but the one with highest
+    // priority should remain active.
+    vector<gli_t> parallel;
+
+#if ENABLE_HEAVY_LOGGING
+    {
+        vector<SRTSOCKET> show_running, show_idle;
+        for (vector<gli_t>::iterator i = sendable.begin(); i != sendable.end(); ++i)
+            show_running.push_back((*i)->id);
+
+        for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+            show_idle.push_back((*i)->id);
+
+        LOGC(dlog.Debug, log << "grp/sendBackup: RUNNING: " << PrintableMod(show_running, "@")
+                << " IDLE: " << PrintableMod(show_idle, "@"));
+    }
+#endif
+
+    int32_t curseq = SRT_SEQNO_NONE;
+    size_t nsuccessful = 0;
+
+    // Collect priorities from sendable links, added only after sending is successful.
+    // This will be used to check if any of the idlers have higher priority
+    // and therefore need to be activated.
+    set<int> sendable_pri;
+
+    // We believe that we need to send the payload over every sendable link anyway.
+    for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+    {
+        gli_t d = *snd;
+        int erc = 0; // success
+        // Remaining sndstate is GST_RUNNING. Send a payload through it.
+        CUDT& u = d->ps->core();
+        int32_t lastseq = u.schedSeqNo();
+        try
+        {
+            // This must be wrapped in try-catch because on error it throws an exception.
+            // Possible return values are only 0, in case when len was passed 0, or a positive
+            // >0 value that defines the size of the data that it has sent, that is, in case
+            // of Live mode, equal to 'len'.
+
+            // Lift the group lock for a while, to avoid possible deadlocks.
+            InvertedLock ug (m_GroupLock);
+            stat = u.sendmsg2(buf, len, (w_mc));
+        }
+        catch (CUDTException& e)
+        {
+            cx = e;
+            stat = -1;
+            erc = e.getErrorCode();
+        }
+
+        none_succeeded &= sendBackup_CheckSendStatus(d, currtime, stat, erc, lastseq, w_mc.pktseq,
+                (u), (curseq), (parallel), (final_stat),
+                (sendable_pri), (nsuccessful), (nunstable));
+
+        const Sendstate cstate = {d, stat, erc};
+        sendstates.push_back(cstate);
+        d->sndresult = stat;
+        d->laststatus = d->ps->getStatus();
+    }
+
+    // Ok, we have attempted to send a payload over all active links
+    // We know that at least one is successful if we have non-default curmsgno
+    // value.
+
+    // Now we need to check the link that is currently defined as
+    // main active because we can have:
+    // - one active link only - we want to check its status
+    // - two active links - one "main active" and one "temporarily
+    //   activated"
+
+    // Here the only thing we need to decide about is:
+    // 1. if we have at least one active and STABLE link
+    //   - if there are no stable links, activate one idle link
+    // 2. if we have more than one active and stable link
+    //   - select those with highest priority out of them
+    //   - select the first in order from those
+    //   - silence the rest (turn them idle)
+
+
+    // In Backup group, we have the following possibilities
+    // - only one link active and stable (normal)
+    // - multiple links active (and possibly one of them stable)
+    //
+    // We might have had a situation that sending was not possible
+    // due to have been blocked.
+    //
+    // If you have any link blocked, treat it as unstable, which
+    // means that one link out of the waiting idle must be activated.
+    //
+    // HOWEVER:
+    //
+    // Collect blocked links in order to make an additional check:
+    //
+    // If all links out of the unstable-running links are blocked,
+    // perform epoll wait on them. In this situation we know that
+    // there are no idle blocked links because IDLE LINK CAN'T BE BLOCKED,
+    // no matter what. It's because the link may only be blocked if
+    // the sender buffer of this socket is full, and it can't be
+    // full if it wasn't used so far.
+    //
+    // This means that in case when we have no stable links, we
+    // need to try out any link that can accept the rexmit-load.
+    // We'll check link stability at the next sending attempt.
+
+    // Here we need to activate one IDLE link, if we have
+    // no stable links.
+    // Some portion of logical exclusions:
+    //
+    // - sockets that were broken in the beginning are already wiped out
+    // - broken sockets are checked first, so they can't be simultaneously idle
+    // - idle sockets can't get broken because there's no operation done on them
+    // - running sockets are the only one that could change sndstate here
+    // - running sockets can either remain running or turn to broken
+    // In short: Running and Broken sockets can't become idle,
+    // although Running sockets can become Broken.
+
+    // There's no certainty here as to whether at least one link was
+    // running and it has successfully performed the operation.
+    // Might have even happened that we had 2 running links that
+    // got broken and 3 other links so far in idle sndstate that just connected
+    // at that very moment (in Backup group: 1 running stable, 1 running
+    // unstable, 3 links keeping connetion being idle).
+
+    // In this case we have 3 idle links to activate one of,
+    // but there is no message number base. If so, take the number for
+    // the first activated link as a good deal.
+    //
+    // If it has additionally happened that the first link got broken at
+    // that very moment of sending, the second one has a chance to succeed
+    // and therefore take over the leading role in setting the leading message
+    // number. If the second one fails, too, then the only remaining idle link
+    // will simply go with its own original message number.
+    //
+    // Now we can go to the idle links and attempt to send the payload
+    // also over them.
+
+    sendBackup_Buffering(buf, len, (curseq), (w_mc));
+
+    // CHECK: no sendable that exceeds unstable
+    // This embraces the case when there are no sendable at all.
+    bool need_activate = sendable.size() <= nunstable;
+    string activate_reason;
+    IF_HEAVY_LOGGING(activate_reason = "BY NO REASON???");
+    if (need_activate)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: all " << sendable.size() << " links unstable - will activate an idle link");
+        IF_HEAVY_LOGGING(activate_reason = "no stable links");
+    }
+    else
+    {
+        // Another reason to activate might be if the link with highest priority
+        // among the idlers has a higher priority than any link currently active
+        // (those are collected in 'sendable_pri'). Check if there are any (if
+        // no sendable, a new link needs to be activated anyway), and if the
+        // priority has a lower number.
+        if (sendable_pri.empty()
+                || (!idlers.empty() && idlers[0]->priority < *sendable_pri.begin() ))
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: found link pri " << idlers[0]->priority << " < "
+                    << (*sendable_pri.begin()) << " (highest from sendable) - will activate an idle link");
+            need_activate = true;
+            IF_HEAVY_LOGGING(activate_reason = "found higher pri link");
+        }
+        else
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: sendable_pri (" << sendable_pri.size() << "): "
+                    << Printable(sendable_pri)
+                    << " first idle pri: " << (idlers.size() > 0 ? idlers[0]->priority : -1)
+                    << " - will NOT activate an idle link");
+        }
+    }
+
+    if (need_activate)
+    {
+        sendBackup_CheckNeedActivate(idlers, buf, len,
+                (none_succeeded), (w_mc), (curseq), (final_stat), (cx), (sendstates),
+                (parallel), (wipeme), activate_reason);
+    }
+    else
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: have sendable links, stable="
+                << (sendable.size() - nunstable) << " unstable=" << nunstable);
+    }
+
+    send_CheckPendingSockets(pending, (wipeme));
+
+    send_CloseBrokenSockets((wipeme));
+
+    sendBackup_CheckParallelLinks(nunstable, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
+
+    if (none_succeeded)
+    {
+        HLOGC(dlog.Debug, log << "grp/sendBackup: all links broken (none succeeded to send a payload)");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        // Reparse error code, if set.
+        // It might be set, if the last operation was failed.
+        // If any operation succeeded, this will not be executed anyway.
+
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+    // Now fill in the socket table. Check if the size is enough, if not,
+    // then set the pointer to NULL and set the correct size.
+
+    // Note that list::size() is linear time, however this shouldn't matter,
+    // as with the increased number of links in the redundancy group the
+    // impossibility of using that many of them grows exponentally.
+    size_t grpsize = m_Group.size();
+
+    if (w_mc.grpdata_size < grpsize)
+    {
+        w_mc.grpdata = NULL;
+    }
+
+    size_t i = 0;
+
+    bool ready_again = false;
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
+    {
+        if (w_mc.grpdata)
+        {
+            // Enough space to fill
+            w_mc.grpdata[i].id = d->id;
+            w_mc.grpdata[i].status = d->laststatus;
+
+            if (d->sndstate == GST_RUNNING)
+                w_mc.grpdata[i].result = d->sndresult;
+            else if (d->sndstate == GST_IDLE)
+                w_mc.grpdata[i].result = 0;
+            else
+                w_mc.grpdata[i].result = -1;
+
+            memcpy((&w_mc.grpdata[i].peeraddr), &d->peer, d->peer.size());
+        }
+
+        // We perform this loop anyway because we still need to check if any
+        // socket is writable. Note that the group lock will hold any write ready
+        // updates that are performed just after a single socket update for the
+        // group, so if any socket is actually ready at the moment when this
+        // is performed, and this one will result in none-write-ready, this will
+        // be fixed just after returning from this function.
+
+        ready_again = ready_again | d->ps->writeReady();
+    }
+    w_mc.grpdata_size = i;
+
+    if (!ready_again)
+    {
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+    }
+
+    HLOGC(dlog.Debug, log << "grp/sendBackup: successfully sent " << final_stat << " bytes, "
+            << (ready_again ? "READY for next" : "NOT READY to send next"));
+    return final_stat;
+}
+
+int32_t CUDTGroup::addMessageToBuffer(const char *buf, size_t len, SRT_MSGCTRL& w_mc)
+{
+    if (m_iSndAckedMsgNo == SRT_MSGNO_NONE)
+    {
+        // Very first packet, just set the msgno.
+        m_iSndAckedMsgNo = w_mc.msgno;
+        m_iSndOldestMsgNo = w_mc.msgno;
+    }
+    else if (m_iSndOldestMsgNo != m_iSndAckedMsgNo)
+    {
+        int offset = MsgNo(m_iSndAckedMsgNo) - MsgNo(m_iSndOldestMsgNo);
+        HLOGC(dlog.Debug, log << "addMessageToBuffer: new ACK-ed messages: #("
+                << m_iSndOldestMsgNo << "-" << m_iSndAckedMsgNo << ") - going to remove");
+
+        if (offset > int(m_SenderBuffer.size()))
+        {
+            LOGC(mglog.Error, log << "addMessageToBuffer: IPE: offset=" << offset <<
+                    " exceeds buffer size=" << m_SenderBuffer.size() << " - CLEARING");
+            m_SenderBuffer.clear();
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "addMessageToBuffer: erasing " << offset << "/"
+                    << m_SenderBuffer.size() << " group-senderbuffer ACKED messages for #"
+                    << m_iSndOldestMsgNo << " - #" << m_iSndAckedMsgNo);
+            m_SenderBuffer.erase(m_SenderBuffer.begin(), m_SenderBuffer.begin() + offset);
+        }
+
+        // Position at offset is not included
+        m_iSndOldestMsgNo = m_iSndAckedMsgNo;
+    }
+
+    m_SenderBuffer.resize(m_SenderBuffer.size()+1);
+    BufferedMessage& bm = m_SenderBuffer.back();
+    bm.mc = w_mc;
+    bm.copy(buf, len);
+
+    HLOGC(dlog.Debug, log << "addMessageToBuffer: #" << w_mc.msgno << " size=" << len
+            << " !" << BufferStamp(buf, len));
+
+    return m_SenderBuffer.front().mc.pktseq;
+}
+
+int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
+{
+    // This should resend all packets
+    if (m_SenderBuffer.empty())
+    {
+        LOGC(dlog.Fatal, log << "IPE: sendBackupRexmit: sender buffer empty");
+
+        // Although act as if it was successful, otherwise you'll get connection break
+        return 0;
+    }
+
+    // using [[assert !m_SenderBuffer.empty()]];
+
+    // Send everything you currently have in the sender buffer.
+    // The receiver will reject packets that it currently has.
+    // Start from the oldest.
+
+    CPacket packet;
+
+    set<int> results;
+    int stat = -1;
+
+    // Make sure that the link has correctly synchronized sequence numbers.
+    // Note that sequence numbers should be recorded in mc.
+    int32_t curseq = m_SenderBuffer[0].mc.pktseq;
+    size_t skip_initial = 0;
+    if (curseq != core.schedSeqNo())
+    {
+        int distance = CSeqNo::seqoff(core.schedSeqNo(), curseq);
+        if (distance < 0)
+        {
+            // This may happen in case when the link to be activated is already running.
+            skip_initial = -distance;
+            HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
+                    << " from BACKWARD %" << curseq << " - DENIED; skip " << skip_initial << " packets" );
+        }
+        else
+        {
+#if ENABLE_HEAVY_LOGGING
+            int32_t old = core.schedSeqNo();
+            bool su = core.overrideSndSeqNo(curseq);
+            HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
+                    << (su ? " - succeeded" : " - FAILED!"));
+#endif
+        }
+    }
+
+    senderBuffer_t::iterator i = m_SenderBuffer.begin();
+
+    if (skip_initial >= m_SenderBuffer.size())
+        return 0; // can't return any other state, nothing was sent
+    else if (skip_initial)
+        i += skip_initial;
+
+    // Send everything - including the packet freshly added to the buffer
+    for (; i != m_SenderBuffer.end(); ++i)
+    {
+        {
+            // XXX Not sure if the protection is right.
+            // Analyze this and perform appropriate tests here!
+            InvertedLock ug (m_GroupLock);
+
+            // NOTE: an exception from here will interrupt the loop
+            // and will be caught in the upper level.
+            stat = core.sendmsg2(i->data, i->size, (i->mc));
+        }
+        if (stat == -1)
+        {
+            // Stop sending if one sending ended up with error
+            return -1;
+        }
+    }
+
+    // Copy the contents of the last item being updated.
+    w_mc = m_SenderBuffer.back().mc;
+    return stat;
+}
+
+void CUDTGroup::ackMessage(int32_t msgno)
+{
+    // The message id could not be identified, skip.
+    if (msgno == SRT_MSGNO_CONTROL)
+    {
+        HLOGC(mglog.Debug, log << "ackMessage: msgno not found in ACK-ed sequence");
+        return;
+    }
+
+    // It's impossible to get the exact message position as the
+    // message is allowed also to span for multiple packets.
+    // Search since the oldest packet until you hit the first
+    // packet with this message number.
+
+    // First, you need to decrease the message number by 1. It's
+    // because the sequence number being ACK-ed can be in the middle
+    // of the message, while it doesn't acknowledge that the whole
+    // message has been received. Decrease the message number so that
+    // partial-message-acknowledgement does not swipe the whole message,
+    // part of which may need to be retransmitted over a backup link.
+
+    int offset = MsgNo(msgno) - MsgNo(m_iSndAckedMsgNo);
+    if (offset <= 0)
+    {
+        HLOGC(mglog.Debug, log << "ackMessage: already acked up to msgno=" << msgno);
+        return;
+    }
+
+    HLOGC(mglog.Debug, log << "ackMessage: updated to #" << msgno);
+
+    // Update last acked. Will be picked up when adding next message.
+    m_iSndAckedMsgNo = msgno;
+}
+
+void CUDTGroup::handleKeepalive(gli_t gli)
+{
+    // received keepalive for that group member
+    // In backup group it means that the link went IDLE.
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
+    {
+        gli->rcvstate = GST_IDLE;
+        HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning IDLE");
+    }
+}
+
+void CUDTGroup::internalKeepalive(gli_t gli)
+{
+    // This is in response to AGENT SENDING keepalive. This means that there's
+    // no transmission in either direction, but the KEEPALIVE packet from the
+    // other party could have been missed. This is to ensure that the IDLE state
+    // is recognized early enough, before any sequence discrepancy can happen.
+
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
+    {
+        gli->rcvstate = GST_IDLE;
+        gli->ps->core().m_tsTmpActiveTime = steady_clock::zero(); // Prevent sending KEEPALIVE again in group-sending
+        HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
+    }
+}
+
+CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
+
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    /* TMP review stub case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(mglog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;*/
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(mglog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
 }

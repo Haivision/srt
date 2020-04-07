@@ -79,8 +79,8 @@ CSndLossList::CSndLossList(int size)
     // -1 means there is no data in the node
     for (int i = 0; i < size; ++i)
     {
-        m_caSeq[i].seqstart = -1;
-        m_caSeq[i].seqend   = -1;
+        m_caSeq[i].seqstart = SRT_SEQNO_NONE;
+        m_caSeq[i].seqend   = SRT_SEQNO_NONE;
     }
 
     // sender list needs mutex protection
@@ -93,6 +93,20 @@ CSndLossList::~CSndLossList()
     releaseMutex(m_ListLock);
 }
 
+void CSndLossList::traceState() const
+{
+    int pos = m_iHead;
+    while (pos != SRT_SEQNO_NONE)
+    {
+        ::cout << pos << ":[" << m_caSeq[pos].seqstart;
+        if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
+            ::cout << ", " << m_caSeq[pos].seqend;
+        ::cout << "], ";
+        pos = m_caSeq[pos].inext;
+    }
+    ::cout << "\n";
+}
+
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
     CGuard listguard(m_ListLock);
@@ -103,10 +117,10 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
         return m_iLength;
     }
 
-    // otherwise find the position where the data can be inserted
-    int origlen = m_iLength;
-    int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
-    int loc     = (m_iHead + offset + m_iSize) % m_iSize;
+    // Find the insert position in the non-empty list
+    const int origlen = m_iLength;
+    const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
+    int       loc     = (m_iHead + offset + m_iSize) % m_iSize;
 
     if (offset < 0)
     {
@@ -122,44 +136,40 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
         }
         else
         {
-            // searching the prior node
-            int i;
-            if ((-1 != m_iLastInsertPos) && (CSeqNo::seqcmp(m_caSeq[m_iLastInsertPos].seqstart, seqno1) < 0))
+            // Find the prior node.
+            // It should be the highest sequence number less than seqno1.
+            // 1. Start the search either from m_iHead, or from m_iLastInsertPos
+            int i = m_iHead;
+            if ((m_iLastInsertPos != -1) && (CSeqNo::seqcmp(m_caSeq[m_iLastInsertPos].seqstart, seqno1) < 0))
                 i = m_iLastInsertPos;
-            else
-                i = m_iHead;
 
-            while ((-1 != m_caSeq[i].inext) && (CSeqNo::seqcmp(m_caSeq[m_caSeq[i].inext].seqstart, seqno1) < 0))
+            // 2. Find the highest sequence number less than seqno1.
+            while (m_caSeq[i].inext != -1 && CSeqNo::seqcmp(m_caSeq[m_caSeq[i].inext].seqstart, seqno1) < 0)
                 i = m_caSeq[i].inext;
 
-            if ((-1 == m_caSeq[i].seqend) || (CSeqNo::seqcmp(m_caSeq[i].seqend, seqno1) < 0))
+            // 3. Check if seqno1 overlaps with (seqbegin, seqend)
+            const int seqend = m_caSeq[i].seqend == SRT_SEQNO_NONE
+                ? m_caSeq[i].seqstart
+                : m_caSeq[i].seqend;
+
+            if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
             {
-                m_iLastInsertPos = loc;
-
-                // no overlap, create new node
-                m_caSeq[loc].seqstart = seqno1;
-                if (seqno2 != seqno1)
-                    m_caSeq[loc].seqend = seqno2;
-
-                m_caSeq[loc].inext = m_caSeq[i].inext;
-                m_caSeq[i].inext   = loc;
-
-                m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+                // No overlap
+                insertAfter(loc, i, seqno1, seqno2);
             }
             else
             {
+                // TODO: Replace with updateElement(i, seqno1, seqno2).
+                // Some changes to updateElement(..) are required.
                 m_iLastInsertPos = i;
+                if (CSeqNo::seqcmp(seqend, seqno2) >= 0)
+                    return 0;
 
                 // overlap, coalesce with prior node, insert(3, 7) to [2, 5], ... becomes [2, 7]
-                if (CSeqNo::seqcmp(m_caSeq[i].seqend, seqno2) < 0)
-                {
-                    m_iLength += CSeqNo::seqlen(m_caSeq[i].seqend, seqno2) - 1;
-                    m_caSeq[i].seqend = seqno2;
+                m_iLength += CSeqNo::seqlen(seqend, seqno2) - 1;
+                m_caSeq[i].seqend = seqno2;
 
-                    loc = i;
-                }
-                else
-                    return 0;
+                loc = i;
             }
         }
     }
@@ -190,7 +200,7 @@ void CSndLossList::remove(int32_t seqno)
         // It is the head. Remove the head and point to the next node
         loc = (loc + 1) % m_iSize;
 
-        if (-1 == m_caSeq[m_iHead].seqend)
+        if (SRT_SEQNO_NONE == m_caSeq[m_iHead].seqend)
             loc = m_caSeq[m_iHead].inext;
         else
         {
@@ -198,12 +208,12 @@ void CSndLossList::remove(int32_t seqno)
             if (CSeqNo::seqcmp(m_caSeq[m_iHead].seqend, CSeqNo::incseq(seqno)) > 0)
                 m_caSeq[loc].seqend = m_caSeq[m_iHead].seqend;
 
-            m_caSeq[m_iHead].seqend = -1;
+            m_caSeq[m_iHead].seqend = SRT_SEQNO_NONE;
 
             m_caSeq[loc].inext = m_caSeq[m_iHead].inext;
         }
 
-        m_caSeq[m_iHead].seqstart = -1;
+        m_caSeq[m_iHead].seqstart = SRT_SEQNO_NONE;
 
         if (m_iLastInsertPos == m_iHead)
             m_iLastInsertPos = -1;
@@ -222,7 +232,7 @@ void CSndLossList::remove(int32_t seqno)
             int temp = loc;
             loc      = (loc + 1) % m_iSize;
 
-            if (-1 == m_caSeq[temp].seqend)
+            if (SRT_SEQNO_NONE == m_caSeq[temp].seqend)
                 m_iHead = m_caSeq[temp].inext;
             else
             {
@@ -233,7 +243,7 @@ void CSndLossList::remove(int32_t seqno)
                 m_iHead              = loc;
                 m_caSeq[loc].inext   = m_caSeq[temp].inext;
                 m_caSeq[temp].inext  = loc;
-                m_caSeq[temp].seqend = -1;
+                m_caSeq[temp].seqend = SRT_SEQNO_NONE;
             }
         }
         else
@@ -245,7 +255,7 @@ void CSndLossList::remove(int32_t seqno)
 
             loc = (loc + 1) % m_iSize;
 
-            if (-1 == m_caSeq[i].seqend)
+            if (SRT_SEQNO_NONE == m_caSeq[i].seqend)
                 m_iHead = m_caSeq[i].inext;
             else if (CSeqNo::seqcmp(m_caSeq[i].seqend, seqno) > 0)
             {
@@ -268,15 +278,15 @@ void CSndLossList::remove(int32_t seqno)
         // Remove all nodes prior to the new head
         while (h != m_iHead)
         {
-            if (m_caSeq[h].seqend != -1)
+            if (m_caSeq[h].seqend != SRT_SEQNO_NONE)
             {
                 m_iLength -= CSeqNo::seqlen(m_caSeq[h].seqstart, m_caSeq[h].seqend);
-                m_caSeq[h].seqend = -1;
+                m_caSeq[h].seqend = SRT_SEQNO_NONE;
             }
             else
                 m_iLength--;
 
-            m_caSeq[h].seqstart = -1;
+            m_caSeq[h].seqstart = SRT_SEQNO_NONE;
 
             if (m_iLastInsertPos == h)
                 m_iLastInsertPos = -1;
@@ -300,7 +310,7 @@ int32_t CSndLossList::popLostSeq()
     if (0 == m_iLength)
     {
         SRT_ASSERT(m_iHead == -1);
-        return -1;
+        return SRT_SEQNO_NONE;
     }
 
     if (m_iLastInsertPos == m_iHead)
@@ -310,10 +320,10 @@ int32_t CSndLossList::popLostSeq()
     const int32_t seqno = m_caSeq[m_iHead].seqstart;
 
     // head moves to the next node
-    if (-1 == m_caSeq[m_iHead].seqend)
+    if (SRT_SEQNO_NONE == m_caSeq[m_iHead].seqend)
     {
-        //[3, -1] becomes [], and head moves to next node in the list
-        m_caSeq[m_iHead].seqstart = -1;
+        //[3, SRT_SEQNO_NONE] becomes [], and head moves to next node in the list
+        m_caSeq[m_iHead].seqstart = SRT_SEQNO_NONE;
         m_iHead                   = m_caSeq[m_iHead].inext;
     }
     else
@@ -325,8 +335,8 @@ int32_t CSndLossList::popLostSeq()
         if (CSeqNo::seqcmp(m_caSeq[m_iHead].seqend, m_caSeq[loc].seqstart) > 0)
             m_caSeq[loc].seqend = m_caSeq[m_iHead].seqend;
 
-        m_caSeq[m_iHead].seqstart = -1;
-        m_caSeq[m_iHead].seqend   = -1;
+        m_caSeq[m_iHead].seqstart = SRT_SEQNO_NONE;
+        m_caSeq[m_iHead].seqend   = SRT_SEQNO_NONE;
 
         m_caSeq[loc].inext = m_caSeq[m_iHead].inext;
         m_iHead            = loc;
@@ -340,6 +350,7 @@ int32_t CSndLossList::popLostSeq()
 void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)
 {
     m_caSeq[pos].seqstart = seqno1;
+    SRT_ASSERT(m_caSeq[pos].seqend == SRT_SEQNO_NONE);
     if (seqno2 != seqno1)
         m_caSeq[pos].seqend = seqno2;
 
@@ -351,17 +362,31 @@ void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)
     m_iLength += CSeqNo::seqlen(seqno1, seqno2);
 }
 
+void CSndLossList::insertAfter(int pos, int pos_after, int32_t seqno1, int32_t seqno2)
+{
+    m_caSeq[pos].seqstart = seqno1;
+    SRT_ASSERT(m_caSeq[pos].seqend == SRT_SEQNO_NONE);
+    if (seqno2 != seqno1)
+        m_caSeq[pos].seqend = seqno2;
+
+    m_caSeq[pos].inext       = m_caSeq[pos_after].inext;
+    m_caSeq[pos_after].inext = pos;
+    m_iLastInsertPos         = pos;
+
+    m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+}
+
 void CSndLossList::coalesce(int loc)
 {
     // coalesce with next node. E.g., [3, 7], ..., [6, 9] becomes [3, 9]
-    while ((m_caSeq[loc].inext != -1) && (m_caSeq[loc].seqend != -1))
+    while ((m_caSeq[loc].inext != -1) && (m_caSeq[loc].seqend != SRT_SEQNO_NONE))
     {
         const int i = m_caSeq[loc].inext;
         if (CSeqNo::seqcmp(m_caSeq[i].seqstart, CSeqNo::incseq(m_caSeq[loc].seqend)) > 0)
             break;
 
         // coalesce if there is overlap
-        if (m_caSeq[i].seqend != -1)
+        if (m_caSeq[i].seqend != SRT_SEQNO_NONE)
         {
             if (CSeqNo::seqcmp(m_caSeq[i].seqend, m_caSeq[loc].seqend) > 0)
             {
@@ -381,8 +406,8 @@ void CSndLossList::coalesce(int loc)
                 m_iLength--;
         }
 
-        m_caSeq[i].seqstart = -1;
-        m_caSeq[i].seqend   = -1;
+        m_caSeq[i].seqstart = SRT_SEQNO_NONE;
+        m_caSeq[i].seqend   = SRT_SEQNO_NONE;
         m_caSeq[loc].inext  = m_caSeq[i].inext;
     }
 }
@@ -391,10 +416,10 @@ bool CSndLossList::updateElement(int pos, int32_t seqno1, int32_t seqno2)
 {
     m_iLastInsertPos = pos;
 
-    if (seqno2 == -1 || seqno2 == seqno1)
+    if (seqno2 == SRT_SEQNO_NONE || seqno2 == seqno1)
         return false;
 
-    if (m_caSeq[pos].seqend == -1)
+    if (m_caSeq[pos].seqend == SRT_SEQNO_NONE)
     {
         m_iLength += CSeqNo::seqlen(seqno1, seqno2) - 1;
         m_caSeq[pos].seqend = seqno2;
@@ -425,8 +450,8 @@ CRcvLossList::CRcvLossList(int size)
     // -1 means there is no data in the node
     for (int i = 0; i < size; ++i)
     {
-        m_caSeq[i].seqstart = -1;
-        m_caSeq[i].seqend   = -1;
+        m_caSeq[i].seqstart = SRT_SEQNO_NONE;
+        m_caSeq[i].seqend   = SRT_SEQNO_NONE;
     }
 }
 
@@ -468,7 +493,7 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
     int loc = (m_iHead + offset) % m_iSize;
 
-    if ((-1 != m_caSeq[m_iTail].seqend) && (CSeqNo::incseq(m_caSeq[m_iTail].seqend) == seqno1))
+    if ((SRT_SEQNO_NONE != m_caSeq[m_iTail].seqend) && (CSeqNo::incseq(m_caSeq[m_iTail].seqend) == seqno1))
     {
         // coalesce with prior node, e.g., [2, 5], [6, 7] becomes [2, 7]
         loc                 = m_iTail;
@@ -507,7 +532,7 @@ bool CRcvLossList::remove(int32_t seqno)
     {
         // This is a seq. no. that starts the loss sequence
 
-        if (-1 == m_caSeq[loc].seqend)
+        if (SRT_SEQNO_NONE == m_caSeq[loc].seqend)
         {
             // there is only 1 loss in the sequence, delete it from the node
             if (m_iHead == loc)
@@ -525,7 +550,7 @@ bool CRcvLossList::remove(int32_t seqno)
                     m_iTail = m_caSeq[loc].iprior;
             }
 
-            m_caSeq[loc].seqstart = -1;
+            m_caSeq[loc].seqstart = SRT_SEQNO_NONE;
         }
         else
         {
@@ -543,8 +568,8 @@ bool CRcvLossList::remove(int32_t seqno)
                 m_caSeq[i].seqend = m_caSeq[loc].seqend;
 
             // remove the current node
-            m_caSeq[loc].seqstart = -1;
-            m_caSeq[loc].seqend   = -1;
+            m_caSeq[loc].seqstart = SRT_SEQNO_NONE;
+            m_caSeq[loc].seqend   = SRT_SEQNO_NONE;
 
             // update list pointer
             m_caSeq[i].inext  = m_caSeq[loc].inext;
@@ -571,11 +596,11 @@ bool CRcvLossList::remove(int32_t seqno)
 
     // searching previous node
     int i = (loc - 1 + m_iSize) % m_iSize;
-    while (-1 == m_caSeq[i].seqstart)
+    while (SRT_SEQNO_NONE == m_caSeq[i].seqstart)
         i = (i - 1 + m_iSize) % m_iSize;
 
     // not contained in this node, return
-    if ((-1 == m_caSeq[i].seqend) || (CSeqNo::seqcmp(seqno, m_caSeq[i].seqend) > 0))
+    if ((SRT_SEQNO_NONE == m_caSeq[i].seqend) || (CSeqNo::seqcmp(seqno, m_caSeq[i].seqend) > 0))
         return false;
 
     if (seqno == m_caSeq[i].seqend)
@@ -583,7 +608,7 @@ bool CRcvLossList::remove(int32_t seqno)
         // it is the sequence end
 
         if (seqno == CSeqNo::incseq(m_caSeq[i].seqstart))
-            m_caSeq[i].seqend = -1;
+            m_caSeq[i].seqend = SRT_SEQNO_NONE;
         else
             m_caSeq[i].seqend = CSeqNo::decseq(seqno);
     }
@@ -601,7 +626,7 @@ bool CRcvLossList::remove(int32_t seqno)
 
         // the first (original) sequence is between the original sequence start to CSeqNo::decseq(seqno)
         if (seqno == CSeqNo::incseq(m_caSeq[i].seqstart))
-            m_caSeq[i].seqend = -1;
+            m_caSeq[i].seqend = SRT_SEQNO_NONE;
         else
             m_caSeq[i].seqend = CSeqNo::decseq(seqno);
 
@@ -650,7 +675,7 @@ bool CRcvLossList::find(int32_t seqno1, int32_t seqno2) const
     {
         if ((CSeqNo::seqcmp(m_caSeq[p].seqstart, seqno1) == 0) ||
             ((CSeqNo::seqcmp(m_caSeq[p].seqstart, seqno1) > 0) && (CSeqNo::seqcmp(m_caSeq[p].seqstart, seqno2) <= 0)) ||
-            ((CSeqNo::seqcmp(m_caSeq[p].seqstart, seqno1) < 0) && (m_caSeq[p].seqend != -1) &&
+            ((CSeqNo::seqcmp(m_caSeq[p].seqstart, seqno1) < 0) && (m_caSeq[p].seqend != SRT_SEQNO_NONE) &&
              CSeqNo::seqcmp(m_caSeq[p].seqend, seqno1) >= 0))
             return true;
 
@@ -665,10 +690,10 @@ int CRcvLossList::getLossLength() const
     return m_iLength;
 }
 
-int CRcvLossList::getFirstLostSeq() const
+int32_t CRcvLossList::getFirstLostSeq() const
 {
     if (0 == m_iLength)
-        return -1;
+        return SRT_SEQNO_NONE;
 
     return m_caSeq[m_iHead].seqstart;
 }
@@ -682,7 +707,7 @@ void CRcvLossList::getLossArray(int32_t* array, int& len, int limit)
     while ((len < limit - 1) && (-1 != i))
     {
         array[len] = m_caSeq[i].seqstart;
-        if (-1 != m_caSeq[i].seqend)
+        if (SRT_SEQNO_NONE != m_caSeq[i].seqend)
         {
             // there are more than 1 loss in the sequence
             array[len] |= LOSSDATA_SEQNO_RANGE_FIRST;

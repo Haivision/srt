@@ -77,6 +77,7 @@ public:
        , m_SocketID(0)
        , m_ListenSocket(0)
        , m_PeerID(0)
+       , m_IncludedGroup()
        , m_iISN(0)
        , m_pUDT(NULL)
        , m_pQueuedSockets(NULL)
@@ -213,10 +214,11 @@ public:
    int bind(CUDTSocket* u, UDPSOCKET udpsock);
    int listen(const SRTSOCKET u, int backlog);
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
-   int connect(SRTSOCKET u, const sockaddr* srcname, int srclen, const sockaddr* tarname, int tarlen);
+   SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
+   int connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
-   int groupConnect(CUDTGroup* g, const sockaddr_any& source, SRT_SOCKGROUPDATA targets [], int arraysize);
+   int groupConnect(CUDTGroup* g, SRT_SOCKGROUPDATA targets [], int arraysize);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -247,7 +249,7 @@ public:
 
    CUDTException* getError();
 
-   CUDTGroup& addGroup(SRTSOCKET id)
+   CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
        srt::sync::CGuard cg (m_GlobControlLock);
        // This only ensures that the element exists.
@@ -257,7 +259,7 @@ public:
        {
            // This is a reference to the cell, so it will
            // rewrite it into the map.
-           g = new CUDTGroup;
+           g = new CUDTGroup(type);
        }
 
        // Now we are sure that g is not NULL,
@@ -361,9 +363,7 @@ private:
 private:
    volatile bool m_bClosing;
    srt::sync::Mutex m_GCStopLock;
-   srt::sync::ConditionMonotonic m_GCStopCond;
-
-
+   srt::sync::Condition m_GCStopCond;
 
    srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
