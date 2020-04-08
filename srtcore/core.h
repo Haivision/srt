@@ -721,20 +721,24 @@ private:
         // global measurements
         int64_t  pktSentTotal;               // total number of sent data packets (single packet passed through send)
         int64_t  pktRecvTotal;               // total number of received packets (packets delivered to the output)
-        int      pktRcvDropTotal;            // number of too-late-to play missing packets (jump-over sequence in delivery)
+        int      pktRcvDropTotal;            // total number of too-late-to play missing packets (jump-over sequence in delivery)
+        int      pktRcvDiscardTotal;         // total number of duplicated packets sent over the other link in the group
 
         uint64_t byteSentTotal;              // total number of sent data bytes (single packet passed through send)
         uint64_t byteRecvTotal;              // total number of received bytes (packets delivered to the output)
-        uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
+        uint64_t byteRcvDropTotal;           // total number of too-late-to play missing bytes (estimate based on average packet size)
+        uint64_t byteRcvDiscardTotal;        // total number of bytes from duplicated packets sent over the other link in the group
 
         // local measurements
         int64_t  pktSent;                    // number of sent data packets (only direct data)
         int64_t  pktRecv;                    // number of received packets
         int      pktRcvDrop;                 // number of too-late-to play missing packets
+        int      pktRcvDiscard;              // number of duplicated packets sent over the other link in the group
 
         uint64_t byteSent;                   // number of sent data bytes (directly)
         uint64_t byteRecv;                   // number of received (delivered) bytes
         uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
+        uint64_t byteRcvDiscard;             // number of bytes from duplicated packets sent over the other link in the group
 
         // Start time for sending will be reset:
         // - on broadcast and balakcing: if all links have empty buffers

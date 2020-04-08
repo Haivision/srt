@@ -376,8 +376,10 @@ public:
         output << R"("recv": {)";
         output << R"("packets":)" << mon.pktRecv << ",";
         output << R"("packetsDropped":)" << mon.pktRcvDrop << ",";
+        output << R"("packetsDiscarded":)" << mon.pktRcvDiscard << ",";
         output << R"("bytes":)" << mon.byteRecv << ",";
         output << R"("bytesDropped":)" << mon.byteRcvDrop << ",";
+        output << R"("bytesDiscarded":)" << mon.byteRcvDiscard << ",";
         output << R"("mbitRate":)" << mon.mbpsRecvRate;
         output << "},";
         output << R"("members": [)";

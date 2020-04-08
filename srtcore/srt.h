@@ -451,17 +451,21 @@ struct CGroupPerfMon
     int64_t  pktRecvTotal;               // total number of received packets (packets delivered to the output)
     int64_t  usSndDurationTotal;         // total time duration when the Group is sending data (idle time exclusive)
     int      pktRcvDropTotal;            // number of too-late-to play missing packets (jump-over sequence in delivery)
+    int      pktRcvDiscardTotal;
     uint64_t byteSentTotal;              // total number of sent data bytes (single packet passed through send)
     uint64_t byteRecvTotal;              // total number of received bytes (packets delivered to the output)
     uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
+    uint64_t byteRcvDiscardTotal;
 
     // local measurements
     int64_t  pktSent;                    // number of sent data packets (only direct data)
     int64_t  pktRecv;                    // number of received packets
     int      pktRcvDrop;                 // number of too-late-to play missing packets
+    int      pktRcvDiscard;
     uint64_t byteSent;                   // number of sent data bytes (directly)
     uint64_t byteRecv;                   // number of received (delivered) bytes
     uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
+    uint64_t byteRcvDiscard;
 
     int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
     double   mbpsSendRate;               // sending rate in Mb/s

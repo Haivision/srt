@@ -12905,6 +12905,13 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                     stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(dlog.Debug, log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
                             << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
+                    if (stat > 0)
+                    {
+                        m_stats.pktRcvDiscardTotal++;
+                        m_stats.pktRcvDiscard++;
+                        m_stats.byteRcvDiscardTotal += stat;
+                        m_stats.byteRcvDiscard += stat;
+                    }
                 }
                 else
                 {
@@ -13151,10 +13158,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
                 if (jump > 0)
                 {
-                    m_stats.pktRcvDropTotal++;
-                    m_stats.pktRcvDrop++;
-                    m_stats.byteRcvDropTotal += avgRcvPacketSize();
-                    m_stats.byteRcvDrop += avgRcvPacketSize();
+                    m_stats.pktRcvDropTotal += jump;
+                    m_stats.pktRcvDrop += jump;
+                    m_stats.byteRcvDropTotal += avgRcvPacketSize() * jump;
+                    m_stats.byteRcvDrop += avgRcvPacketSize() * jump;
                 }
 
                 m_RcvBaseSeqNo = slowest_kangaroo->second.mctrl.pktseq;
@@ -13353,6 +13360,8 @@ void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
 
 #define TAKE(field) perf-> field = m_stats. field
 
+    CGuard gg (m_GroupLock);
+
     perf->msTimeStamp = count_milliseconds(currtime - m_tsStartTime);
 
     TAKE(pktSent);
@@ -13364,28 +13373,28 @@ void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
     perf->byteRecv       = m_stats.byteRecv + (m_stats.pktRecv * PKT_HDR_SIZE);
 
     TAKE(pktRcvDrop);
+    TAKE(pktRcvDiscard);
 
     perf->byteRcvDrop = m_stats.byteRcvDrop + (m_stats.pktRcvDrop * PKT_HDR_SIZE);
+    perf->byteRcvDiscard = m_stats.byteRcvDiscard + (m_stats.pktRcvDiscard * PKT_HDR_SIZE);
 
     TAKE(pktSentTotal);
     TAKE(pktRecvTotal);
     TAKE(pktRcvDropTotal);
+    TAKE(pktRcvDiscardTotal);
 
     perf->byteSentTotal         = m_stats.byteSentTotal + (m_stats.pktSentTotal * PKT_HDR_SIZE);
     perf->byteRecvTotal         = m_stats.byteRecvTotal + (m_stats.pktRecvTotal * PKT_HDR_SIZE);
     perf->byteRcvDropTotal      = m_stats.byteRcvDropTotal + (m_stats.pktRcvDropTotal * PKT_HDR_SIZE);
+    perf->byteRcvDiscardTotal      = m_stats.byteRcvDiscardTotal + (m_stats.pktRcvDiscardTotal * PKT_HDR_SIZE);
 
     double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
 
     perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
 
-    steady_clock::time_point now = steady_clock::now();
-
     if (perf->members && perf->members_size > 0)
     {
-        CGuard gg (m_GroupLock);
-
         // Fill the group member stats
         CGroupMemberPerfMon* pp = perf->members;
 
@@ -13397,8 +13406,8 @@ void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
                 d != m_Group.end() && pp != perf->members + perf->members_size;
                 ++d, ++pp)
         {
-            pp->msTimeUsage = count_milliseconds(now - d->ps->core().m_stats.tsStartTime);
-            pp->msTimeActive = count_milliseconds(now - d->ps->core().m_tsActivationTime);
+            pp->msTimeUsage = count_milliseconds(currtime - d->ps->core().m_stats.tsStartTime);
+            pp->msTimeActive = count_milliseconds(currtime - d->ps->core().m_tsActivationTime);
             pp->msAvgResponseTime = count_milliseconds(d->ps->core().m_tdAvgResponseTime);
 
             // XXX No idea so far how to measure it.
@@ -13414,6 +13423,8 @@ void CUDTGroup::bstats(CGroupPerfMon *perf, bool clear)
     {
         m_stats.reset();
     }
+
+#undef TAKE
 }
 
 // For sorting group members by priority
