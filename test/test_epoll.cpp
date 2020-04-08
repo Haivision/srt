@@ -418,7 +418,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     try
     {
-		int no_events = 0;
+        int no_events = 0;
         EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
     }
     catch (CUDTException &ex)
@@ -470,7 +470,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 
     try
     {
-		int no_events = 0;
+        int no_events = 0;
         EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
     }
     catch (CUDTException &ex)
@@ -537,7 +537,7 @@ TEST(CEPoll, ThreadedUpdate)
 
     try
     {
-		int no_events = 0;
+        int no_events = 0;
         EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
     }
     catch (CUDTException &ex)
