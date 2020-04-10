@@ -23,7 +23,7 @@ fields.time_stamp = ProtoField.uint32("srt_dev.time_stamp", "Time Stamp", base.D
 fields.dst_sock = ProtoField.uint32("srt_dev.dst_sock", "Destination Socket ID", base.DEC)
 fields.none = ProtoField.none("srt_dev.none", "none", base.NONE)
 
--- Data packet fileds
+-- Data packet fields
 fields.data_flag_info_tree = ProtoField.uint8("srt_dev.data_flag_info_tree", "Data Flag Info", base.HEX)
 local FF_state_select = {
 	[0] = "[Middle packet]",
@@ -33,8 +33,8 @@ local FF_state_select = {
 }
 fields.FF_state = ProtoField.uint8("srt_dev.FF_state", "FF state", base.HEX, FF_state_select, 0xC0)
 local O_state_select = {
-	[0] = "[Data delivered unordered]",
-	[1] = "[Data delivered in order]"
+	[0] = "[ORD_REQUIRED]",
+	[1] = "[ORD_RELAX]"
 }
 fields.O_state = ProtoField.uint8("srt_dev.O_state", "O state", base.HEX, O_state_select, 0x20)
 local KK_state_select = {
@@ -44,14 +44,14 @@ local KK_state_select = {
 }
 fields.KK_state = ProtoField.uint8("srt_dev.KK_state", "KK state", base.HEX, KK_state_select, 0x18)
 local R_state_select = {
-	[0] = "[Not Set]",
-	[1] = "[Retransmit Packet]"
+	[0] = "[ORIGINAL]",
+	[1] = "[RETRANSMITTED]"
 }
 fields.R_state = ProtoField.uint8("srt_dev.R_state", "R state", base.HEX, R_state_select, 0x04)
 fields.seq_num = ProtoField.uint32("srt_dev.seq_num", "Sequence Number", base.DEC)
 fields.msg_num = ProtoField.uint32("srt_dev.msg_num", "Message Number", base.DEC)--, nil, 0x3FFFFFF)
 
--- control packet fileds
+-- control packet fields
 local msg_type_select = {
 	[0] = "[HANDSHAKE]",
 	[1] = "[KEEPALIVE]",
@@ -83,19 +83,19 @@ fields.peer_ipaddr_4 = ProtoField.ipv4("srt_dev.peer_ipaddr", "Peer IP address")
 fields.peer_ipaddr_6 = ProtoField.ipv6("srt_dev.peer_ipaddr", "Peer IP address")
 local ext_type_select = {
 	[-1] = "SRT_CMD_NONE",
-	[0] = "none",
+	[0] = "SRT_CMD_REJECT",
 	[1] = "SRT_CMD_HSREQ",
 	[2] = "SRT_CMD_HSRSP",
 	[3] = "SRT_CMD_KMREQ",
 	[4] = "SRT_CMD_KMRSP",
 	[5] = "SRT_CMD_SID",
-	[6] = "SRT_CMD_SMOOTHER"
+	[6] = "SRT_CMD_CONGESTION"
 }
 fields.ext_type_msg_tree = ProtoField.none("srt_dev.ext_type", "Extension Type Message", base.NONE)
 fields.ext_type = ProtoField.uint16("srt_dev.ext_type", "Extension Type", base.HEX, ext_type_select, 0xF)
 fields.ext_size = ProtoField.uint16("srt_dev.ext_size", "Extension Size", base.DEC)
 
--- Handshake packet, ext type == SRT_CMD_HSREQ or SRT_CMD_HSRSP filed
+-- Handshake packet, ext type == SRT_CMD_HSREQ or SRT_CMD_HSRSP field
 fields.srt_version = ProtoField.uint32("srt_dev.srt_version", "SRT Version", base.HEX)
 fields.srt_flags = ProtoField.uint32("srt_dev.srt_flags", "SRT Flags", base.HEX)
 fields.tsbpb_resv = ProtoField.uint16("srt_dev.tsbpb_resv", "TsbPb Receive", base.DEC)
@@ -132,15 +132,15 @@ fields.klen = ProtoField.uint8("srt_dev.klen", "SEK length(bytes)/4", base.DEC)
 fields.salt = ProtoField.uint32("srt_dev.salt", "Salt key", base.DEC)
 fields.wrap = ProtoField.none("srt_dev.wrap", "Wrap key(s)", base.NONE)
 
--- Handshake packet, ext_type == SRT_CMD_SMOOTHER filed
+-- Handshake packet, ext_type == SRT_CMD_SMOOTHER field
 fields.smoother_block = ProtoField.none("srt_dev.smoother_block", "Smoother Block", base.NONE)
 
--- Handshake packet, ext_type == SRT_CMD_SID filed
+-- Handshake packet, ext_type == SRT_CMD_SID field
 fields.sid_block = ProtoField.none("srt_dev.sid_block", "SID Block", base.NONE)
 
 -- SRT flags
 local flag_state_select = {
-	[0] = "Not set",
+	[0] = "Unset",
 	[1] = "Set"
 }
 fields.srt_opt_tsbpdsnd = ProtoField.uint32("srt_dev.srt_opt_tsbpdsnd", "SRT_OPT_TSBPDSND", base.HEX, flag_state_select, 0x1)
@@ -151,7 +151,7 @@ fields.srt_opt_nakreport = ProtoField.uint32("srt_dev.srt_opt_nakreport", "SRT_O
 fields.srt_opt_rexmitflg = ProtoField.uint32("srt_dev.srt_opt_rexmitflg", "SRT_OPT_REXMITFLG", base.HEX, flag_state_select, 0x20)
 fields.srt_opt_stream = ProtoField.uint32("srt_dev.srt_opt_stream", "SRT_OPT_STREAM", base.HEX, flag_state_select, 0x40)
 
--- ACK fileds
+-- ACK fields
 fields.last_ack_pack = ProtoField.uint32("srt_dev.last_ack_pack", "Last ACK Packet Sequence Number", base.DEC)
 fields.rtt = ProtoField.uint32("srt_dev.rtt", "Round Trip Time", base.DEC)
 fields.rtt_variance = ProtoField.uint32("srt_dev.rtt_variance", "Round Trip Time Variance", base.DEC)
@@ -160,11 +160,11 @@ fields.pack_rcv_rate = ProtoField.uint32("srt_dev.pack_rcv_rate", "Packet Receiv
 fields.est_link_capacity = ProtoField.uint32("srt_dev.est_link_capacity", "Estimated Link Capacity", base.DEC)
 fields.rcv_rate = ProtoField.uint32("srt_dev.rcv_rate", "Receiving Rate", base.DEC)
 
--- ACKACK fileds
-fields.ack_seq_num = ProtoField.uint32("srt_dev.ack_seq_num", "ACK sequence number", base.DEC)
+-- ACKACK fields
+fields.ack_num = ProtoField.uint32("srt_dev.ack_num", "ACK number", base.DEC)
 fields.ctl_info = ProtoField.uint32("srt_dev.ctl_info", "Control Information", base.DEC)
 
--- KMRSP fileds
+-- KMRSP fields
 local srt_km_state_select = {
 	[0] = "[SRT_KM_UNSECURED]",
 	[1] = "[SRT_KM_SECURING]",
@@ -174,7 +174,7 @@ local srt_km_state_select = {
 }
 fields.km_err = ProtoField.uint32("srt_dev.km_err", "Key Message Error", base.HEX, srt_km_state_select, 0xF)
 
--- NAK Control Packet fileds
+-- NAK Control Packet fields
 fields.lost_list_tree = ProtoField.none("srt_dev.lost_list_tree", "Lost Packet List", base.NONE)
 fields.lost_pack_seq = ProtoField.uint32("srt_dev.lost_pack_seq", "Lost Packet Sequence Number", base.DEC)
 fields.lost_pack_range_tree = ProtoField.none("srt_dev.lost_pack_range_tree", "Lost Packet Range", base.NONE)
@@ -202,7 +202,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 		
 		local msg_type = tvb(offset, 2):uint()
 		if msg_type ~= 0xFFFF then
-			-- If type filed isn't '0x7FFF',it means packet is normal data packet, then handle type filed
+			-- If type field isn't '0x7FFF',it means packet is normal data packet, then handle type field
 			msg_type = bit.band(msg_type, 0x7FFF)
 			
 			function parse_three_param()
@@ -230,7 +230,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					-- Handle Additional Info, Timestamp and Destination Socket
 					parse_three_param()
 
-					-- Handle UDT version filed
+					-- Handle UDT version field
 					local UDT_version = tvb(offset, 4):uint()
 					subtree:add(fields.UDT_version, tvb(offset, 4))
 					offset = offset + 4
@@ -267,7 +267,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 							subtree:add(fields.ext_fld, tvb(offset, 2))
 						else
 							-- Extension Field is HS_HEX_prefix
-							-- The define is in file handshake.h
+							-- The define is in fiel handshake.h
 							if ext_fld == 1 then
 								subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [CHandShake::HS_EXT_HSREQ]")
 							elseif ext_fld == 2 then
@@ -553,8 +553,8 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					pack_type_tree:add(fields.reserve, tvb(offset + 2, 2)):append_text(" [Undefined]")
 					offset = offset + 4
 					
-					-- Handle ACK Sequence Number (this field is not defined in this packet type)
-					subtree:add(fields.ack_seq_num, tvb(offset, 4))
+					-- Handle ACK Number
+					subtree:add(fields.ack_num, tvb(offset, 4))
 					offset = offset + 4
 					
 					-- Handle Time Stamp
@@ -656,7 +656,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					offset = offset + 4
 					
 					-- Handle ACK sequence number
-					subtree:add(fields.ack_seq_num, tvb(offset, 4))
+					subtree:add(fields.ack_num, tvb(offset, 4))
 					offset = offset + 4
 					
 					-- Handle Time Stamp
@@ -696,7 +696,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 				offset = offset + 4
 			end
 		else
-			-- If type filed is '0x7FFF', it means an extended type, Handle Reserve filed
+			-- If type field is '0x7FFF', it means an extended type, Handle Reserve field
 			offset = offset + 2
 			local msg_ext_type = tvb(offset, 2):uint()
 			if msg_ext_type == 0 then
@@ -731,7 +731,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 				subtree:add(fields.dst_sock, tvb(offset, 4))
 				offset = offset + 4
 				
-				-- Handle SRT Version filed
+				-- Handle SRT Version field
 				subtree:add(fields.srt_version, tvb(offset, 4))
 				offset = ofssset + 4
 				
@@ -754,7 +754,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 				subtree:add(fields.tsbpb_delay, tvb(offset, 2))
 				offset = offset + 2
 
-				-- Handle Reserved filed
+				-- Handle Reserved field
 				subtree:add(fields.reserve, tvb(offset, 4))
 				offset = offset + 4
 			elseif msg_ext_type == 3 or msg_ext_type == 4 then
