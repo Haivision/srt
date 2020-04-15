@@ -60,6 +60,14 @@ testmedia.cpp
 
 using namespace std;
 
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
+namespace srt_logging
+{
+Logger applog(SRT_LOGFA_APP, srt_logger_config, "TUNNELAPP");
+}
+
+using srt_logging::applog;
+
 class Medium
 {
     static int s_counter;
@@ -112,7 +120,14 @@ public:
 
     virtual const char* type() = 0;
     virtual bool IsOpen() = 0;
-    virtual void Close() = 0;
+    virtual void CloseInternal() = 0;
+
+    void Close()
+    {
+        m_open = false;
+        m_broken = true;
+        CloseInternal();
+    }
     virtual bool End() = 0;
 
     virtual int ReadInternal(char* output, int size) = 0;
@@ -226,6 +241,13 @@ public:
         // If this thread is already stopped, don't stop.
         if (thr.joinable())
         {
+            LOGP(applog.Debug, "Engine::Stop: Closing media:");
+            // Close both media as a hanged up reading thread
+            // will block joining.
+            media[0]->Close();
+            media[1]->Close();
+
+            LOGP(applog.Debug, "Engine::Stop: media closed, joining engine thread:");
             if (thr.get_id() == std::this_thread::get_id())
             {
                 // If this is this thread which called this, no need
@@ -233,10 +255,12 @@ public:
                 // You must, however, detach yourself, or otherwise the thr's
                 // destructor would kill the program.
                 thr.detach();
+                LOGP(applog.Debug, "DETACHED.");
             }
             else
             {
                 thr.join();
+                LOGP(applog.Debug, "Joined.");
             }
         }
     }
@@ -351,6 +375,10 @@ void Engine::Worker()
                 throw Medium::ReadEOF("");
 
             case Medium::RD_AGAIN:
+                // Theoreticall RD_AGAIN should not be reported
+                // because it should be taken care of internally by
+                // repeated sending - unless we get m_broken set.
+                // If it is, however, it should be handled just like error.
             case Medium::RD_ERROR:
                 status = -1;
                 Medium::Error("Error while reading");
@@ -397,7 +425,7 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void Close() override
+    void CloseInternal() override
     {
         Verb() << "Closing SRT socket for " << uri();
         lock_guard<mutex> lk(access);
@@ -481,7 +509,7 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void Close() override
+    void CloseInternal() override
     {
         Verb() << "Closing TCP socket for " << uri();
         lock_guard<mutex> lk(access);
@@ -633,6 +661,11 @@ unique_ptr<Medium> SrtMedium::Accept()
     }
 
     ConfigurePost(s);
+
+    // Configure 1s timeout
+    int timeout_1s = 1000;
+    srt_setsockflag(m_socket, SRTO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
+
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
 
@@ -648,6 +681,16 @@ unique_ptr<Medium> TcpMedium::Accept()
     {
         Error(errno, "accept");
     }
+
+    // Configure 1s timeout
+    timeval timeout_1s { 1, 0 };
+    int st = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
+    timeval re;
+    socklen_t size = sizeof re;
+    int st2 = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&re, &size);
+
+    LOGP(applog.Debug, "Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
+            ", read-back value: ", st2 == -1 ? int64_t(-1) : (int64_t(re.tv_sec)*1000000 + re.tv_usec)/1000, "ms");
 
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
@@ -678,6 +721,10 @@ void SrtMedium::Connect()
         Error(UDT::getlasterror(), "srt_connect");
 
     ConfigurePost(m_socket);
+
+    // Configure 1s timeout
+    int timeout_1s = 1000;
+    srt_setsockflag(m_socket, SRTO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
 }
 
 void TcpMedium::Connect()
@@ -689,19 +736,58 @@ void TcpMedium::Connect()
         Error(errno, "connect");
 
     ConfigurePost(m_socket);
+
+    // Configure 1s timeout
+    timeval timeout_1s { 1, 0 };
+    setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
 }
 
 int SrtMedium::ReadInternal(char* w_buffer, int size)
 {
-    int st = srt_recv(m_socket, (w_buffer), size);
-    if (st == SRT_ERROR)
-        return -1;
+    int st = -1;
+    do
+    {
+        st = srt_recv(m_socket, (w_buffer), size);
+        if (st == SRT_ERROR)
+        {
+            int syserr;
+            if (srt_getlasterror(&syserr) == SRT_EASYNCRCV && !m_broken)
+                continue;
+        }
+        break;
+
+    } while (true);
+
     return st;
 }
 
 int TcpMedium::ReadInternal(char* w_buffer, int size)
 {
-    return ::recv(m_socket, (w_buffer), size, 0);
+    int st = -1;
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - begin");
+    do
+    {
+        st = ::recv(m_socket, (w_buffer), size, 0);
+        if (st == -1)
+        {
+            if ((errno == EAGAIN || errno == EWOULDBLOCK))
+            {
+                if (!m_broken)
+                {
+                    LOGP(applog.Debug, "TcpMedium: read:AGAIN, repeating");
+                    continue;
+                }
+                LOGP(applog.Debug, "TcpMedium: read:AGAIN, not repeating - already broken");
+            }
+            else
+            {
+                LOGP(applog.Debug, "TcpMedium: read:ERROR: ", errno);
+            }
+        }
+        break;
+    } while (true);
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - result: ", st);
+    return st;
 }
 
 bool SrtMedium::IsErrorAgain()
@@ -915,7 +1001,6 @@ private:
             }
         }
     }
-
 };
 
 void Tunnel::Stop()
@@ -956,8 +1041,6 @@ Tunnelbox g_tunnels;
 std::unique_ptr<Medium> main_listener;
 
 size_t default_chunk = 4096;
-
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
 
 int OnINT_StopService(int)
 {
