@@ -291,7 +291,9 @@ The direction of initiating the stream doesn't need to be the same as the stream
 
 ## UDP Performance
 
-Performance issues concerning reading from UDP medium were reported in #933 and #762.
+Performance issues concerning reading from UDP medium were reported
+in [#933](https://github.com/Haivision/srt/issues/933) and
+[#762](https://github.com/Haivision/srt/issues/762).
 
 The ddicated research showed that at high and bursty data rates (~60 Mbps)
 the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
@@ -301,7 +303,8 @@ Waiting on a UDP socket with `::select(...)` works perfect,
 but it can't be used in the current implementation of the `srt-live-transmit`
 due to its design.
 
-PR #1152 adds a possibility to set the buffer size of the UDP socket in `srt-live-transmit`.
+PR [#1152](https://github.com/Haivision/srt/pull/1152) (v1.5.0 and above) adds a possibility
+to set the buffer size of the UDP socket in `srt-live-transmit`.
 Having a bigger buffer of UDP socket to store incomming data, `srt-live-transmit` handles high bitrates.
 
 The following steps have to be performed to use the bigger UDP buffer size.
