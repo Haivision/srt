@@ -288,3 +288,63 @@ When leaving the LAN for testing, please keep an eye on statistics and make sure
 If you perform tests on the public Internet, consider checking your firewall rules. The **SRT listener** must be reachable on the chosen UDP port. Same applies to routers using NAT. Please set a port forwarding rule with protocol UDP to the local IP address of the **SRT listener**.
 
 The direction of initiating the stream doesn't need to be the same as the stream direction. The sender of a stream can be a **SRT listener** or **SRT caller** as long as the receiving end uses the opposite mode. Typically you use the **SRT listener** on the end, which is easier to configure in terms of firewall/router setup. It also makes sense to leave the Sender in listener mode when trying to connect from various end points with possibly unknown IP addresses.
+
+## UDP Performance
+
+Performance issues concerning reading from UDP medium were reported in #933 and #762.
+
+The ddicated research showed that at high and bursty data rates (~60 Mbps)
+the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
+to read from a socket. It results in loosing data when the input bitrate is very high (above 20 Mbps).
+
+Waiting on a UDP socket with `::select(...)` works perfect,
+but it can't be used in the current implementation of the `srt-live-transmit`
+due to its design.
+
+PR #1152 adds a possibility to set the buffer size of the UDP socket in `srt-live-transmit`.
+Having a bigger buffer of UDP socket to store incomming data, `srt-live-transmit` handles high bitrates.
+
+The following steps have to be performed to use the bigger UDP buffer size.
+
+### Increase the system-default max rcv buffer size
+
+```
+$ cat /proc/sys/net/core/rmem_max
+212992
+$ sudo sysctl -w net.core.rmem_max=26214400
+net.core.rmem_max = 26214400
+$ cat /proc/sys/net/core/rmem_max
+26214400
+```
+
+### Specify the size of the UDP socket buffer via the URI
+
+Example URI:
+```
+"udp://:4200?rcvbuf=67108864"
+```
+
+Example full URI:
+```
+./srt-live-transmit "udp://:4200?rcvbuf=67108864" srt://192.168.0.10:4200 -v
+```
+
+Increasing the UDP buffer size could be the solution.
+
+First, the system maximum buffer size should be increased the following way:
+
+```
+$ cat /proc/sys/net/core/rmem_max
+212992
+$ sudo sysctl -w net.core.rmem_max=26214400
+net.core.rmem_max = 26214400
+$ cat /proc/sys/net/core/rmem_max
+26214400
+```
+
+Then the desired buffer size (in bytes) can be specified on the UDP socket (after PR #1152).
+For example, 64 MB:
+```
+./srt-live-transmit "udp://229.1.1.7:1117?rcvbuf=67108864" file://con
+```
+
