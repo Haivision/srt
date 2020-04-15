@@ -295,9 +295,9 @@ Performance issues concerning reading from UDP medium were reported
 in [#933](https://github.com/Haivision/srt/issues/933) and
 [#762](https://github.com/Haivision/srt/issues/762).
 
-The ddicated research showed that at high and bursty data rates (~60 Mbps)
+The dedicated research showed that at high and bursty data rates (~60 Mbps)
 the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
-to read from a socket. It results in loosing data when the input bitrate is very high (above 20 Mbps).
+to read from a socket. It results in losing data when the input bitrate is very high (above 20 Mbps).
 
 Waiting on a UDP socket with `::select(...)` works perfect,
 but it can't be used in the current implementation of the `srt-live-transmit`
@@ -350,4 +350,3 @@ For example, 64 MB:
 ```
 ./srt-live-transmit "udp://229.1.1.7:1117?rcvbuf=67108864" file://con
 ```
-
