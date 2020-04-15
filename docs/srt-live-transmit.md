@@ -300,8 +300,7 @@ the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
 to read from a socket. It results in losing data when the input bitrate is very high (above 20 Mbps).
 
 Waiting on a UDP socket with `::select(...)` works perfect,
-but it can't be used in the current implementation of the `srt-live-transmit`
-due to its design.
+but it can't be used in the current implementation of the `srt-live-transmit`.
 
 PR [#1152](https://github.com/Haivision/srt/pull/1152) (v1.5.0 and above) adds a possibility
 to set the buffer size of the UDP socket in `srt-live-transmit`.
