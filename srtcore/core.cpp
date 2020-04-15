@@ -2303,7 +2303,7 @@ void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
 
     for (;;) // ONE SHOT, but continuable loop
     {
-        int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
+        const int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
 
         if (cmd == SRT_CMD_NONE)
         {
