@@ -331,22 +331,3 @@ Example full URI:
 ```
 ./srt-live-transmit "udp://:4200?rcvbuf=67108864" srt://192.168.0.10:4200 -v
 ```
-
-Increasing the UDP buffer size could be the solution.
-
-First, the system maximum buffer size should be increased the following way:
-
-```
-$ cat /proc/sys/net/core/rmem_max
-212992
-$ sudo sysctl -w net.core.rmem_max=26214400
-net.core.rmem_max = 26214400
-$ cat /proc/sys/net/core/rmem_max
-26214400
-```
-
-Then the desired buffer size (in bytes) can be specified on the UDP socket (after PR #1152).
-For example, 64 MB:
-```
-./srt-live-transmit "udp://229.1.1.7:1117?rcvbuf=67108864" file://con
-```
