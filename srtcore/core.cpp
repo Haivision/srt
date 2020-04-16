@@ -2234,8 +2234,9 @@ bool CUDT::createSrtHandshake(
     return true;
 }
 
-static int FindExtensionBlock(uint32_t *begin, size_t total_length,
-        size_t& w_out_len, uint32_t*& w_next_block)
+template <class Integer>
+static inline int FindExtensionBlock(Integer* begin, size_t total_length,
+        size_t& w_out_len, Integer*& w_next_block)
 {
     // Check if there's anything to process
     if (total_length == 0)
@@ -2280,7 +2281,8 @@ static int FindExtensionBlock(uint32_t *begin, size_t total_length,
 
 // NOTE: the rule of order of arguments is broken here because this order
 // serves better the logics and readability.
-static inline bool NextExtensionBlock(uint32_t*& w_begin, uint32_t* next, size_t& w_length)
+template <class Integer>
+static inline bool NextExtensionBlock(Integer*& w_begin, Integer* next, size_t& w_length)
 {
     if (!next)
         return false;
@@ -2289,6 +2291,38 @@ static inline bool NextExtensionBlock(uint32_t*& w_begin, uint32_t* next, size_t
     w_begin  = next;
     return true;
 }
+
+void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
+        vector<SrtHandshakeExtension>& w_output)
+{
+    const uint32_t *begin = reinterpret_cast<const uint32_t *>(bufbegin + CHandShake::m_iContentSize);
+    size_t    size  = buflength - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+    const uint32_t *next  = 0;
+    size_t    length   = size / sizeof(uint32_t);
+    size_t    blocklen = 0;
+
+    for (;;) // ONE SHOT, but continuable loop
+    {
+        const int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
+
+        if (cmd == SRT_CMD_NONE)
+        {
+            // End of blocks
+            break;
+        }
+
+        w_output.push_back(SrtHandshakeExtension(cmd));
+
+        SrtHandshakeExtension& ext = w_output.back();
+
+        std::copy(begin+1, begin+blocklen, back_inserter(ext.contents));
+
+        // Any other kind of message extracted. Search on.
+        if (!NextExtensionBlock((begin), next, (length)))
+            break;
+    }
+}
+
 
 bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
@@ -11006,9 +11040,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
             }
 
             // Any other kind of message extracted. Search on.
-            length -= (next - begin);
-            begin = next;
-            if (!begin)
+            if (!NextExtensionBlock((begin), next, (length)))
                 break;
         }
     }
