@@ -240,7 +240,7 @@ const SocketOption srt_options [] {
 };
 }
 
-SocketOption::Mode SrtInterpretMode(std::string modestr, std::string host, std::string adapter);
+SocketOption::Mode SrtInterpretMode(const std::string& modestr, const std::string& host, const std::string& adapter);
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, std::string host, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 void SrtConfigurePost(SRTSOCKET socket, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 
