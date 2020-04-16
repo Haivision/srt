@@ -2074,53 +2074,53 @@ bool CUDT::createSrtHandshake(
     // The time synchronization should be done only on any kind of parallel sending group.
     // Currently all groups are such groups (broadcast, backup, balancing), but it may
     // need to be changed for some other types.
-    while (have_group)
+    if (have_group)
     {
         CGuard grd (m_parent->m_ControlLock);
         if (!m_parent->m_IncludedGroup)
         {
-            HLOGC(mglog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
-            break;
-        }
-        offset += ra_size;
-        pcmdspec = p+offset;
-        ++offset;
-
-        SRTSOCKET id = m_parent->m_IncludedGroup->id();
-        SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
-        SRTSOCKET master_peerid;
-        IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
-        steady_clock::time_point master_st;
-
-        // "Master" is the first found running connection. Will be false, if
-        // there's no other connection yet. When any connection is found, specify this
-        // as a determined master connection, and extract its id.
-        if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
-        {
-            master_peerid = -1;
-            IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
-            HLOGC(mglog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
+            LOGC(mglog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
         }
         else
         {
-            // The returned master_st is the master's start time. Calculate the
-            // differene time.
-            IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
-            HLOGC(mglog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
-                    << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+            offset += ra_size;
+            pcmdspec = p+offset;
+            ++offset;
+
+            SRTSOCKET id = m_parent->m_IncludedGroup->id();
+            SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
+            SRTSOCKET master_peerid;
+            IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
+            steady_clock::time_point master_st;
+
+            // "Master" is the first found running connection. Will be false, if
+            // there's no other connection yet. When any connection is found, specify this
+            // as a determined master connection, and extract its id.
+            if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
+            {
+                master_peerid = -1;
+                IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
+                HLOGC(mglog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
+            }
+            else
+            {
+                // The returned master_st is the master's start time. Calculate the
+                // differene time.
+                IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
+                HLOGC(mglog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
+                        << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+            }
+            // (this function will not fill the variables with anything, if no master is found)
+
+            int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->priority };
+            memcpy(p+offset, storedata, sizeof storedata);
+
+            ra_size = Size(storedata);
+            *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+            HLOGC(mglog.Debug, log << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size()
+                    << ": offset=" << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
         }
-        // (this function will not fill the variables with anything, if no master is found)
-
-        int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->priority };
-        memcpy(p+offset, storedata, sizeof storedata);
-
-        ra_size = Size(storedata);
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
-
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size()
-            << ": offset=" << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
-
-        break;
     }
 
     // When encryption turned on
