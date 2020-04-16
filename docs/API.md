@@ -832,6 +832,13 @@ choke and break quickly at any rising packet loss.*
 - **[SET]** - Set up the packet filter. The string must match appropriate syntax
 for packet filter setup.
 
+As there can only be one configuration for both parties, it is recommended that one party
+defines the full configuration while the other only defines the matching packet filter type
+(for example, one sets `fec,cols:10,rows:-5,layout:staircase` and the other
+just `fec`). Both parties can also set this option to the same value. The packet filter function 
+will attempt to merge configuration definitions, but if the options specified are in
+conflict, the connection will be rejected.
+
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ---
