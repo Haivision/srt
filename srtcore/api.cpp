@@ -124,7 +124,10 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
     return m_Status;
 }
 
-void CUDTSocket::makeClosed()
+/// This makes the socket no longer capable of performing any transmission
+/// operation, but continues to be responsive in the connection in order
+/// to finish sending the data that were scheduled for sending so far.
+void CUDTSocket::makeShutdown()
 {
     if (m_IncludedGroup)
     {
@@ -133,8 +136,13 @@ void CUDTSocket::makeClosed()
     }
 
     HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_pUDT->m_bBroken = true;
     m_pUDT->close();
+}
+
+void CUDTSocket::makeClosed()
+{
+    m_pUDT->m_bBroken = true;
+    makeShutdown();
     m_Status = SRTS_CLOSED;
     m_tsClosureTimeStamp = steady_clock::now();
 }
@@ -1645,12 +1653,9 @@ int CUDTUnited::close(CUDTSocket* s)
    {
        // Removing from group NOW - groups are used only for live mode
        // and it shouldn't matter if the transmission is broken in the middle of sending.
-       if (s->m_IncludedGroup)
-       {
-           HLOGC(mglog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
-           s->removeFromGroup();
-       }
-       s->m_pUDT->close();
+       // This makes the socket unable to process new requests, but it
+       // remains functional until all scheduled data are delivered.
+       s->makeShutdown();
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");

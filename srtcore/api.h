@@ -145,6 +145,7 @@ public:
    // This function shall be called always wherever
    // you'd like to call cudtsocket->m_pUDT->close().
    void makeClosed();
+   void makeShutdown();
    void removeFromGroup();
 
    // Instrumentally used by select() and also required for non-blocking
