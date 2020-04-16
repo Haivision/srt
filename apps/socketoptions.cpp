@@ -27,7 +27,7 @@ const char* const SocketOption::mode_names[3] = {
     "listener", "caller", "rendezvous"
 };
 
-SocketOption::Mode SrtInterpretMode(string modestr, string host, string adapter)
+SocketOption::Mode SrtInterpretMode(const string& modestr, const string& host, const string& adapter)
 {
     SocketOption::Mode mode = SocketOption::FAILURE;
 
@@ -136,5 +136,4 @@ void SrtConfigurePost(SRTSOCKET socket, map<string, string> options, vector<stri
         }
     }
 }
-
 

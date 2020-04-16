@@ -284,7 +284,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     if (!m_group_nodes.empty() && mode != SocketOption::CALLER)
     {
-        Error("Group node specification only available in caller mode");
+        Error("Group node specification is only available in caller mode");
     }
 
     // Fix the mode name after successful interpretation
@@ -1011,7 +1011,7 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    int outport = m_outgoing_port ? m_outgoing_port : port;
+    const int outport = m_outgoing_port ? m_outgoing_port : port;
 
     sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;

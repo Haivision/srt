@@ -438,7 +438,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
-    int outport = m_outgoing_port ? m_outgoing_port : port;
+    const int outport = m_outgoing_port ? m_outgoing_port : port;
 
     sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
