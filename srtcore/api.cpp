@@ -124,9 +124,6 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
     return m_Status;
 }
 
-/// This makes the socket no longer capable of performing any transmission
-/// operation, but continues to be responsive in the connection in order
-/// to finish sending the data that were scheduled for sending so far.
 void CUDTSocket::makeShutdown()
 {
     if (m_IncludedGroup)
