@@ -966,8 +966,9 @@ Only existing elements will be filled and only if the current number of members
 isn't greater than the size specified in `grpdata_size`.
 
 * `grpdata_size`: the size of the `grpdata` array should be passed here when
-calling the function. After the call this value should contain the actual
-number of members in the group and the filled items in `grpdata` array.
+calling the function. After the call this field will contain the current
+number of members in the group and the filled items in `grpdata` array,
+regardless whether the array had enough size to fill all members or not.
 
 For more information about `SRT_SOCKGROUPDATA` and obtaining the group
 data, please refer to [srt_group_data](#srt_group_data). Note that the

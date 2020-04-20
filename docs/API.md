@@ -216,7 +216,7 @@ future use):
 unused), values specified there could be used for input under certain
 circumstances. Especially in `srt_sendmsg2` you should not reuse existing
 objects of `SRT_MSGCTRL` type, but create always new ones and initialize them
-with default `srt_msgctl_default` (or overwrite them first with and set the
+with default `srt_msgctl_default` (or overwrite them first with it and set the
 desired values anew).
 
 Please note that the `msgttl` and `inorder` arguments and fields in
