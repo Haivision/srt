@@ -124,7 +124,7 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
     return m_Status;
 }
 
-void CUDTSocket::makeClosed()
+void CUDTSocket::makeShutdown()
 {
     if (m_IncludedGroup)
     {
@@ -133,8 +133,13 @@ void CUDTSocket::makeClosed()
     }
 
     HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_pUDT->m_bBroken = true;
     m_pUDT->close();
+}
+
+void CUDTSocket::makeClosed()
+{
+    m_pUDT->m_bBroken = true;
+    makeShutdown();
     m_Status = SRTS_CLOSED;
     m_tsClosureTimeStamp = steady_clock::now();
 }
@@ -240,7 +245,7 @@ int CUDTUnited::startup()
    CGuard gcinit(m_InitLock);
 
    if (m_iInstanceCount++ > 0)
-      return 0;
+      return 1;
 
    // Global initialization code
 #ifdef _WIN32
@@ -254,19 +259,15 @@ int CUDTUnited::startup()
 
    PacketFilter::globalInit();
 
-   //init CTimer::EventLock
-
    if (m_bGCStatus)
-      return true;
+      return 1;
 
    m_bClosing = false;
 
    setupMutex(m_GCStopLock, "GCStop");
    setupCond(m_GCStopCond, "GCStop");
-   {
-       ThreadName tn("SRT:GC");
-       pthread_create(&m_GCThread, NULL, garbageCollect, this);
-   }
+   if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
+      return -1;
 
    m_bGCStatus = true;
 
@@ -291,7 +292,7 @@ int CUDTUnited::cleanup()
    // is set here above. Worst case secenario, this
    // pthread_join() call will block for 1 second.
    CSync::signal_relaxed(m_GCStopCond);
-   pthread_join(m_GCThread, NULL);
+   m_GCThread.join();
 
    // XXX There's some weird bug here causing this
    // to hangup on Windows. This might be either something
@@ -1657,7 +1658,11 @@ int CUDTUnited::close(CUDTSocket* s)
    }
    else
    {
-       s->makeClosed();
+       // Removing from group NOW - groups are used only for live mode
+       // and it shouldn't matter if the transmission is broken in the middle of sending.
+       // This makes the socket unable to process new requests, but it
+       // remains functional until all scheduled data are delivered.
+       s->makeShutdown();
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
