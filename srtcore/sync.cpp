@@ -659,4 +659,62 @@ bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const c
     return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage error wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CThreadError
+{
+public:
+    CThreadError()
+    {
+        pthread_key_create(&m_TLSError, TLSDestroy);
+    }
+
+    ~CThreadError()
+    {
+        delete (CUDTException*)pthread_getspecific(m_TLSError);
+        pthread_key_delete(m_TLSError);
+    }
+
+public:
+    void set(CUDTException* e)
+    {
+        delete (CUDTException*)pthread_getspecific(m_TLSError);
+        pthread_setspecific(m_TLSError, e);
+    }
+
+    CUDTException* get()
+    {
+        if(!pthread_getspecific(m_TLSError))
+            return NULL;
+        return (CUDTException*)pthread_getspecific(m_TLSError);
+    }
+
+    static void TLSDestroy(void* e)
+    {
+        if (NULL != e)
+            delete (CUDTException*)e;
+    }
+
+private:
+    pthread_key_t m_TLSError;
+};
+
+// Threal local error will be used by CUDTUnited
+// that has a static scope
+static CThreadError s_thErr;
+
+void srt::sync::SetThreadLocalError(CUDTException* e)
+{
+    s_thErr.set(e);
+}
+
+CUDTException* srt::sync::GetThreadLocalError()
+{
+    return s_thErr.get();
+}
+
 #endif // !defined(USE_STDCXX_CHRONO)

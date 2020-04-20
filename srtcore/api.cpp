@@ -174,7 +174,6 @@ CUDTUnited::CUDTUnited():
 m_Sockets(),
 m_GlobControlLock(),
 m_IDLock(),
-m_TLSError(),
 m_mMultiplexer(),
 m_MultiplexerLock(),
 m_pCache(NULL),
@@ -204,8 +203,6 @@ m_ClosedSockets()
    setupMutex(m_IDLock, "ID");
    setupMutex(m_InitLock, "Init");
 
-   pthread_key_create(&m_TLSError, TLSDestroy);
-
    m_pCache = new CCache<CInfoBlock>;
 }
 
@@ -222,9 +219,6 @@ CUDTUnited::~CUDTUnited()
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
-
-    delete (CUDTException*)pthread_getspecific(m_TLSError);
-    pthread_key_delete(m_TLSError);
 
     delete m_pCache;
 }
@@ -2395,17 +2389,13 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
 void CUDTUnited::setError(CUDTException* e)
 {
-    delete (CUDTException*)pthread_getspecific(m_TLSError);
-    pthread_setspecific(m_TLSError, e);
+    SetThreadLocalError(e);
 }
 
 CUDTException* CUDTUnited::getError()
 {
-    if(!pthread_getspecific(m_TLSError))
-        pthread_setspecific(m_TLSError, new CUDTException);
-    return (CUDTException*)pthread_getspecific(m_TLSError);
+    return GetThreadLocalError();
 }
-
 
 void CUDTUnited::updateMux(
    CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)

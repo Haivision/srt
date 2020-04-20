@@ -51,5 +51,45 @@ void srt::sync::CCondVar::notify_all()
     m_cv.notify_all();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage error wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+struct CThreadError
+{
+    ~CThreadError()
+    {
+        delete tls_object;
+    }
+
+    void set(CUDTException *e)
+    {
+        delete tls_object;
+        tls_object = e;
+    }
+
+    CUDTException* get()
+    {
+        return tls_object;
+    }
+
+    CUDTException* tls_object = nullptr;
+};
+
+// Threal local error will be used by CUDTUnited
+// that has a static scope
+static thread_local CThreadError s_thErr;
+
+void srt::sync::SetThreadLocalError(CUDTException* e)
+{
+    s_thErr.set(e);
+}
+
+CUDTException* srt::sync::GetThreadLocalError()
+{
+    return s_thErr.get();
+}
 
 #endif // USE_STDCXX_CHRONO

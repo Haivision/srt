@@ -698,6 +698,20 @@ bool StartThread(CThread& th, Function&& f, void* args, const char* name);
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
 #endif
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Set thread local error
+/// @param e new CUDTException
+void SetThreadLocalError(CUDTException* e);
+
+/// Get thread local error
+/// @returns CUDTException pointer
+CUDTException* GetThreadLocalError();
+
 }; // namespace sync
 }; // namespace srt
 
