@@ -9631,7 +9631,6 @@ int CUDT::processData(CUnit* in_unit)
         {
             return -1;
         }
-
     } // End of recvbuf_acklock
 
     if (m_bClosing)
