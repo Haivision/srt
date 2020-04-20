@@ -230,9 +230,10 @@ can get broken during transmission - you might want to close the
 connection even if the group connection doesn't break by itself, but
 you don't have enough bandwidth coverage from existing links.
 
-As there could be various ways as to how to implement balancing
-algorithm, there's a framework provided to implement various methods,
-and two algorithms are currently provided:
+As there could be more than one way to implement a balancing
+algorithm, there is a framework for to implementing various methods,
+so that new algorithms are easier to provide in future. Currently
+there are two algorithms provided:
 
 1. `fixed`. In this algorithm you specify the share that is given to
 particular link manually through the `weight` parameter. The weight
@@ -242,7 +243,8 @@ think of the weight values as a percentage of load burden for particular
 link - however in reality the share of the load is calculated as a
 percentage that particular link's weight comprises among the sum of all
 weight values. Additionally, a value of 0 is special and it is translated
-into the arithmetic average of all non-zero weighted links.
+into the arithmetic average of all non-zero weighted links, and if all
+links have weight 0, all links have equal share.
 Be careful here with the non-established and broken links. For example,
 if you have 3 links with weight 10, 20 and 30, it results in a load
 balance of 16.6%, 33.3% and 50% respectively. However if the second link
@@ -251,16 +253,12 @@ load balance of 25% and 75% respectively. Keep in mind that it's up
 to the application to keep the minimum links allowed and break the
 group link that is unable to withstand the load.
 
-2. `window` (default). This algorithm is performing cyclic measurement of the
+2. `window` (default). This algorithm performs cyclic measurement of the
 minimum flight window and this way determines the "cost of sending"
-of a packet over particular link. The link is then "paid" for sending
-a packet appropriate "price", which is collected in the link's "pocket".
-To send the next packet the link with lowest state of the "pocket" is
-selected. The "cost of sending" measurement is being repeated once per
-a time with a distance of 16 packets on each link.
-
-The framework makes it easier to add also other balancing algorithms
-in the future.
+of a packet over a particular link. This evaluated cost is then added
+to the current burden state of the link, and then the link with lowest burden
+is selected to send the next packet. The "cost of sending" measurement is being
+repeated once per a time at an interval of 16 packets on each link.
 
 
 ## 4. Multicast (NOT IMPLEMENTED - a concept)
@@ -271,7 +269,7 @@ receiving a data stream sent from a stream server by multiple receivers.
 
 Multicast sending is using the feature of UDP multicast, however the
 connection concept is still in force. The concept of multicast groups
-is predicted to facilitate the multicast abilities provided by the router
+is intended to facilitate the multicast abilities provided by the router
 in the LAN, while still maintain the advantages of SRT.
 
 When you look at the difference that UDP multicast provides you towards
