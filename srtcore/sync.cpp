@@ -442,7 +442,13 @@ void srt::sync::CEvent::wait(UniqueLock& lock)
     return m_cond.wait(lock);
 }
 
+namespace srt {
+namespace sync {
+
 srt::sync::CEvent g_Sync;
+
+} // namespace sync
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -703,9 +709,15 @@ private:
     pthread_key_t m_TLSError;
 };
 
+namespace srt {
+namespace sync {
+
 // Threal local error will be used by CUDTUnited
 // that has a static scope
 static CThreadError s_thErr;
+
+} // namespace sync
+} // namespace srt
 
 void srt::sync::SetThreadLocalError(CUDTException* e)
 {

@@ -2392,9 +2392,11 @@ void CUDTUnited::setError(CUDTException* e)
     SetThreadLocalError(e);
 }
 
-CUDTException* CUDTUnited::getError()
+CUDTException& CUDTUnited::getError()
 {
-    return GetThreadLocalError();
+    if (!GetThreadLocalError())
+        SetThreadLocalError(new CUDTException);
+    return *GetThreadLocalError();
 }
 
 void CUDTUnited::updateMux(
@@ -3611,7 +3613,7 @@ int CUDT::epoll_release(const int eid)
 
 CUDTException& CUDT::getlasterror()
 {
-   return *s_UDTUnited.getError();
+   return s_UDTUnited.getError();
 }
 
 int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
