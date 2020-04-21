@@ -270,7 +270,7 @@ shell (using **"** **"** quotes or backslash).
 - **-verbose, -v** - Display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**.
 - **-statsout** - SRT statistics output: filename. Without this option specified, the statistics will be printed to the standard output.
 - **-pf**, **-statspf** - SRT statistics print format. Values: json, csv, default.
-- **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, in milliseconds.
+- **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, in the number of packets.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
 - **-logfa** - selected FAs in SRT to be logged (default: all is enabled, that is, you can filter out log messages from only wanted FAs using this option).
 - **-logfile:logs.txt** - Output of logs is written to file logs.txt instead of being printed to `stderr`.
