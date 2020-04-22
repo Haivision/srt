@@ -42,6 +42,7 @@ struct SocketOption
     enum Binding { PRE = 0, POST };
     enum Domain { SYSTEM, SRT };
     enum Mode {FAILURE = -1, LISTENER = 0, CALLER = 1, RENDEZVOUS = 2};
+    static const char* const mode_names [3];
 
     std::string name;
     int protocol;
@@ -239,6 +240,7 @@ const SocketOption srt_options [] {
 };
 }
 
+SocketOption::Mode SrtInterpretMode(const std::string& modestr, const std::string& host, const std::string& adapter);
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, std::string host, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 void SrtConfigurePost(SRTSOCKET socket, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 

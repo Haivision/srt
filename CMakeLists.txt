@@ -23,7 +23,10 @@ include(CheckFunctionExists)
 
 # Platform shortcuts
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
-set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
@@ -1006,7 +1009,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
-	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS})
+	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test-srt

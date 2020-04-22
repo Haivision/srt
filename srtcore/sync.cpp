@@ -13,7 +13,10 @@
 #include <stdexcept>
 #include "sync.h"
 #include "udt.h"
+#include "srt.h"
 #include "srt_compat.h"
+#include "logging.h"
+#include "common.h"
 
 #if defined(_WIN32)
 #define TIMING_USE_QPC
@@ -25,6 +28,12 @@
 #elif defined(ENABLE_MONOTONIC_CLOCK)
 #define TIMING_USE_CLOCK_GETTIME
 #endif
+
+namespace srt_logging
+{
+    extern Logger mglog;
+}
+using namespace srt_logging;
 
 namespace srt
 {
@@ -527,3 +536,127 @@ void srt::sync::CTimer::tick()
     m_event.notify_one();
 }
 
+
+void srt::sync::CGlobEvent::triggerEvent()
+{
+    return g_Sync.notify_one();
+}
+
+bool srt::sync::CGlobEvent::waitForEvent()
+{
+    return g_Sync.lock_wait_for(milliseconds_from(10));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThread class
+//
+////////////////////////////////////////////////////////////////////////////////
+#ifndef USE_STDCXX_CHRONO
+
+srt::sync::CThread::CThread()
+{
+    m_thread = pthread_t();
+}
+
+srt::sync::CThread::CThread(void *(*start_routine) (void *), void *arg)
+{
+    create(start_routine, arg);
+}
+
+#if HAVE_FULL_CXX11
+srt::sync::CThread& srt::sync::CThread::operator=(CThread&& other)
+#else
+srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
+#endif
+{
+    if (joinable())
+    {
+        // If the thread has already terminated, then
+        // pthread_join() returns immediately.
+        // But we have to check it has terminated before replacing it.
+        LOGC(mglog.Error, log << "IPE: Assigning to a thread that is not terminated!");
+
+#ifndef DEBUG
+        // In case of production build the hanging thread should be terminated
+        // to avoid hang ups and align with C++11 implementation.
+        pthread_cancel(m_thread);
+#else
+        join();
+#endif
+    }
+
+    // Move thread handler from other
+    m_thread = other.m_thread;
+    other.m_thread = pthread_t();
+    return *this;
+}
+
+#if !HAVE_FULL_CXX11
+void srt::sync::CThread::create_thread(void *(*start_routine) (void *), void *arg)
+{
+    SRT_ASSERT(!joinable());
+    create(start_routine, arg);
+}
+#endif
+
+bool srt::sync::CThread::joinable() const
+{
+    return !pthread_equal(m_thread, pthread_t());
+}
+
+void srt::sync::CThread::join()
+{
+    void *retval;
+    const int ret SRT_ATR_UNUSED = pthread_join(m_thread, &retval);
+    if (ret != 0)
+    {
+        LOGC(mglog.Error, log << "pthread_join failed with " << ret);
+    }
+#ifdef HEAVY_LOGGING
+    else
+    {
+        LOGC(mglog.Debug, log << "pthread_join SUCCEEDED");
+    }
+#endif
+    // After joining, joinable should be false
+    m_thread = pthread_t();
+    return;
+}
+
+void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
+{
+    const int st = pthread_create(&m_thread, NULL, start_routine, arg);
+    if (st != 0)
+    {
+        LOGC(mglog.Error, log << "pthread_create failed with " << st);
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+    }
+}
+
+#ifdef USE_STDCXX_CHRONO
+template< class Function >
+bool srt::sync::StartThread(CThread& th, Function&& f, void* args, const char* name)
+#else
+bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+#endif
+{
+    ThreadName tn(name);
+    try
+    {
+#if HAVE_FULL_CXX11 || defined(USE_STDCXX_CHRONO)
+        th = CThread(f, args);
+#else
+        // No move semantics in C++03, therefore using a dedicated function
+        th.create_thread(f, args);
+#endif
+    }
+    catch (const CThreadException& e)
+    {
+        HLOGC(mglog.Debug, log << name << ": failed to start thread. " << e.what());
+        return false;
+    }
+    return true;
+}
+
+#endif // !defined(USE_STDCXX_CHRONO)

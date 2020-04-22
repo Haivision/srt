@@ -15,8 +15,15 @@
 //#define ENABLE_CXX17
 
 #include <cstdlib>
+#ifdef USE_STDCXX_CHRONO
+#include <chrono>
+#include <thread>
+#else
 #include <pthread.h>
+#endif
 #include "utilities.h"
+
+class CUDTException;    // defined in common.h
 
 namespace srt
 {
@@ -603,17 +610,6 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
     return FormatDuration<DUNIT_US>(dur);
 }
 
-}; // namespace sync
-}; // namespace srt
-
-
-extern srt::sync::CEvent g_Sync;
-
-namespace srt
-{
-namespace sync
-{
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CGlobEvent class
@@ -625,18 +621,82 @@ class CGlobEvent
 public:
     /// Triggers the event and notifies waiting threads.
     /// Simply calls notify_one().
-    static void inline triggerEvent()
-    {
-        return g_Sync.notify_one();
-    }
+    static void triggerEvent();
 
     /// Waits for the event to be triggered with 10ms timeout.
     /// Simply calls wait_for().
-    static bool waitForEvent()
-    {
-        return g_Sync.lock_wait_for(milliseconds_from(10));
-    }
+    static bool waitForEvent();
 };
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThread class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+#ifdef USE_STDCXX_CHRONO
+typedef std::system_error CThreadException;
+using CThread = std::thread;
+#else // pthreads wrapper version
+typedef ::CUDTException CThreadException;
+
+class CThread
+{
+public:
+    CThread();
+    /// @throws std::system_error if the thread could not be started.
+    CThread(void *(*start_routine) (void *), void *arg);
+
+#if HAVE_FULL_CXX11
+    CThread& operator=(CThread &other) = delete;
+    CThread& operator=(CThread &&other);
+#else
+    CThread& operator=(CThread &other);
+    /// To be used only in StartThread function.
+    /// Creates a new stread and assigns to this.
+    /// @throw CThreadException
+    inline void create_thread(void *(*start_routine) (void *), void *arg);
+#endif
+
+public: // Observers
+    /// Checks if the CThread object identifies an active thread of execution.
+    /// A default constructed thread is not joinable.
+    /// A thread that has finished executing code, but has not yet been joined
+    /// is still considered an active thread of execution and is therefore joinable.
+    bool joinable() const;
+
+public:
+    /// Blocks the current thread until the thread identified by *this finishes its execution.
+    /// If that thread has already terminated, then join() returns immediately.
+    ///
+    /// @throws std::system_error if an error occurs
+    void join();
+
+public: // Internal
+    /// Calls pthread_create, throws exception on failure.
+    /// @throw CThreadException
+    void create(void *(*start_routine) (void *), void *arg);
+
+private:
+    pthread_t m_thread;
+};
+#endif
+
+/// StartThread function should be used to do CThread assignments:
+/// @code
+/// CThread a();
+/// a = CThread(func, args);
+/// @endcode
+///
+/// @returns true if thread was started successfully,
+///          false on failure
+///
+#ifdef USE_STDCXX_CHRONO
+template< class Function >
+bool StartThread(CThread& th, Function&& f, void* args, const char* name);
+#else
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
+#endif
 
 }; // namespace sync
 }; // namespace srt
