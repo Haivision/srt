@@ -2314,7 +2314,7 @@ void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
 
         SrtHandshakeExtension& ext = w_output.back();
 
-        std::copy(begin+1, begin+blocklen, back_inserter(ext.contents));
+        std::copy(begin+1, begin+blocklen+1, back_inserter(ext.contents));
 
         // Any other kind of message extracted. Search on.
         if (!NextExtensionBlock((begin), next, (length)))
