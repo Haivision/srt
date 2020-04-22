@@ -262,6 +262,12 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
             par.erase("type");
             par.erase("nodes");
+
+            // For a group-connect specification, it's
+            // always the caller mode.
+            // XXX change it here if maybe rendezvous is also
+            // possible in future.
+            par["mode"] = "caller";
         }
     }
 
