@@ -270,7 +270,7 @@ shell (using **"** **"** quotes or backslash).
 - **-verbose, -v** - Display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**.
 - **-statsout** - SRT statistics output: filename. Without this option specified, the statistics will be printed to the standard output.
 - **-pf**, **-statspf** - SRT statistics print format. Values: json, csv, default.
-- **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, in milliseconds.
+- **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, based on the number of packets.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
 - **-logfa** - selected FAs in SRT to be logged (default: all is enabled, that is, you can filter out log messages from only wanted FAs using this option).
 - **-logfile:logs.txt** - Output of logs is written to file logs.txt instead of being printed to `stderr`.
@@ -287,4 +287,9 @@ When leaving the LAN for testing, please keep an eye on statistics and make sure
 
 If you perform tests on the public Internet, consider checking your firewall rules. The **SRT listener** must be reachable on the chosen UDP port. Same applies to routers using NAT. Please set a port forwarding rule with protocol UDP to the local IP address of the **SRT listener**.
 
-The direction of initiating the stream doesn't need to be the same as the stream direction. The sender of a stream can be a **SRT listener** or **SRT caller** as long as the receiving end uses the opposite mode. Typically you use the **SRT listener** on the end, which is easier to configure in terms of firewall/router setup. It also makes sense to leave the Sender in listener mode when trying to connect from various end points with possibly unknown IP addresses.
+The initiation of an SRT connection (handshake) is decoupled from the stream direction. The 
+sender of a stream can be an **SRT listener** or an **SRT caller**, as long as the receiving end 
+uses the opposite connection mode. Typically you use the **SRT listener** on the receiving end, 
+since it is easier to configure in terms of firewall/router setup. It also makes sense to leave the 
+Sender in listener mode when trying to connect from various end points with possibly 
+unknown IP addresses.
