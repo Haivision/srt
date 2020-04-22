@@ -13,13 +13,13 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <iterator>
 #include <fstream>
-#if __APPLE__
-   #include "TargetConditionals.h"
-#endif
 #include "srt.h"
 #include "common.h"
+#include "packet.h"
 #include "core.h"
 #include "utilities.h"
 
@@ -31,30 +31,62 @@ extern "C" {
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
-SRTSOCKET srt_socket(int af, int type, int protocol) { return CUDT::socket(af, type, protocol); }
-SRTSOCKET srt_create_socket()
+// Socket creation.
+SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
+SRTSOCKET srt_create_socket() { return CUDT::socket(); }
+
+// Group management.
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
+int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
+int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
+SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
+int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
+int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
-    // XXX This must include rework around m_iIPVersion. This must be
-    // abandoned completely and all "IP VERSION" thing should rely on
-    // the exact specification in the 'sockaddr' objects passed to other functions,
-    // that is, the "current IP Version" remains undefined until any of
-    // srt_bind() or srt_connect() function is done. And when any of these
-    // functions are being called, the IP version is contained in the
-    // sockaddr object passed there.
-
-    // Until this rework is done, srt_create_socket() will set the
-    // default AF_INET family.
-
-    // Note that all arguments except the first one here are ignored.
-    return CUDT::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    return CUDT::configureGroup(socketgroup, str);
 }
+// int srt_bind_multicast()
 
+// Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
-int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, 0); }
+SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
+int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
 int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+int srt_connect_bind(SRTSOCKET u,
+        const struct sockaddr* source,
+        const struct sockaddr* target, int target_len)
+{
+    return CUDT::connect(u, source, target, target_len);
+}
+
+SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
+{
+    SRT_SOCKGROUPDATA data;
+    data.result = 0;
+    data.status = SRTS_INIT;
+    data.id = -1;
+    data.priority = 0;
+    if (src)
+        memcpy(&data.srcaddr, src, namelen);
+    else
+    {
+        memset(&data.srcaddr, 0, sizeof data.srcaddr);
+        // Still set the family according to the target address
+        data.srcaddr.ss_family = adr->sa_family;
+    }
+    memcpy(&data.peeraddr, adr, namelen);
+    return data;
+}
+
+int srt_connect_group(SRTSOCKET group,
+        SRT_SOCKGROUPDATA name [], int arraysize)
+{
+    return CUDT::connectLinks(group, name, arraysize);
+}
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
@@ -66,16 +98,10 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
     // Just as a safety precaution, check the structs.
     if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
             || local_name->sa_family != remote_name->sa_family)
-        return SRT_EINVPARAM;
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-    sockaddr_in* local_sin = (sockaddr_in*)local_name;
-    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
-
-    if (local_sin->sin_port != remote_sin->sin_port)
-        return SRT_EINVPARAM;
-
-    int st = srt_bind(u, local_name, local_namelen);
-    if ( st != 0 )
+    const int st = srt_bind(u, local_name, local_namelen);
+    if (st != 0)
         return st;
 
     return srt_connect(u, remote_name, remote_namelen);
@@ -116,12 +142,12 @@ int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
     fstream ifs(path, ios::binary | ios::in);
     if (!ifs)
     {
-        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_READFAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0);
     }
     int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
     ifs.close();
@@ -132,19 +158,29 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
     fstream ofs(path, ios::binary | ios::out);
     if (!ofs)
     {
-        return CUDT::setError(CUDTException(MJ_FILESYSTEM, MN_WRAVAIL, 0));
+        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0);
     }
     int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
     ofs.close();
     return ret;
 }
 
-extern const SRT_MSGCTRL srt_msgctrl_default = { 0, -1, false, 0, 0, 0, 0 };
+extern const SRT_MSGCTRL srt_msgctrl_default = {
+    0,     // no flags set
+    SRT_MSGTTL_INF,
+    false, // not in order (matters for msg mode only)
+    PB_SUBSEQUENT,
+    0,     // srctime: take "now" time
+    SRT_SEQNO_NONE,
+    SRT_MSGNO_NONE,
+    NULL,  // grpdata not supplied
+    0      // idem
+};
 
 void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
 {
@@ -155,17 +191,17 @@ int srt_sendmsg2(SRTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     // Allow NULL mctrl in the API, but not internally.
     if (mctrl)
-        return CUDT::sendmsg2(u, buf, len, Ref(*mctrl));
+        return CUDT::sendmsg2(u, buf, len, (*mctrl));
     SRT_MSGCTRL mignore = srt_msgctrl_default;
-    return CUDT::sendmsg2(u, buf, len, Ref(mignore));
+    return CUDT::sendmsg2(u, buf, len, (mignore));
 }
 
 int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     if (mctrl)
-        return CUDT::recvmsg2(u, buf, len, Ref(*mctrl));
+        return CUDT::recvmsg2(u, buf, len, (*mctrl));
     SRT_MSGCTRL mignore = srt_msgctrl_default;
-    return CUDT::recvmsg2(u, buf, len, Ref(mignore));
+    return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
 const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
@@ -197,6 +233,8 @@ SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::
 
 // event mechanism
 int srt_epoll_create() { return CUDT::epoll_create(); }
+
+int srt_epoll_clear_usocks(int eit) { return CUDT::epoll_clear_usocks(eit); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
@@ -310,9 +348,14 @@ enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
     if (!hook)
-        return CUDT::setError(CUDTException(MJ_NOTSUP, MN_INVAL));
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
+}
+
+uint32_t srt_getversion()
+{
+    return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
 }
 
 }

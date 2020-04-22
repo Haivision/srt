@@ -1,3 +1,4 @@
+#include <iostream>
 #include <chrono>
 #include <future>
 #include <thread>
@@ -68,7 +69,7 @@ TEST(CEPoll, WaitEmptyCall)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -92,7 +93,7 @@ TEST(CEPoll, UWaitEmptyCall)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -116,7 +117,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -151,7 +152,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -181,7 +182,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -205,7 +206,7 @@ TEST(CEPoll, HandleEpollEvent)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -266,7 +267,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(srt_startup(), 0);
 
     // 1. Prepare client
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes SRT_ATR_UNUSED = 1;
@@ -288,7 +289,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa_client.sin_addr), 1);
 
     // 2. Prepare server
-    SRTSOCKET server_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET server_sock = srt_create_socket();
     ASSERT_NE(server_sock, SRT_ERROR);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -381,7 +382,7 @@ TEST(CEPoll, HandleEpollEvent2)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -442,7 +443,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -492,7 +493,7 @@ TEST(CEPoll, ThreadedUpdate)
 {
     ASSERT_EQ(srt_startup(), 0);
 
-    SRTSOCKET client_sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+    SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -553,5 +554,229 @@ TEST(CEPoll, ThreadedUpdate)
 
 
     EXPECT_EQ(srt_cleanup(), 0);
+}
+
+
+class TestEPoll: public testing::Test
+{
+protected:
+
+    int m_client_pollid = SRT_ERROR;
+    SRTSOCKET m_client_sock = SRT_ERROR;
+
+    void clientSocket()
+    {
+        int yes = 1;
+        int no = 0;
+
+        m_client_sock = srt_create_socket();
+        ASSERT_NE(m_client_sock, SRT_ERROR);
+
+        ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+        ASSERT_NE(srt_setsockflag(m_client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
+
+        ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+        int epoll_out = SRT_EPOLL_OUT;
+        srt_epoll_add_usock(m_client_pollid, m_client_sock, &epoll_out);
+
+        sockaddr_in sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(9999);
+
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+        sockaddr* psa = (sockaddr*)&sa;
+
+        ASSERT_NE(srt_connect(m_client_sock, psa, sizeof sa), SRT_ERROR);
+
+
+        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
+
+        {
+            int rlen = 2;
+            SRTSOCKET read[2];
+
+            int wlen = 2;
+            SRTSOCKET write[2];
+
+            ASSERT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
+                        write, &wlen,
+                        -1, // -1 is set for debuging purpose.
+                        // in case of production we need to set appropriate value
+                        0, 0, 0, 0), SRT_ERROR);
+
+            ASSERT_EQ(rlen, 0); // get exactly one write event without reads
+            ASSERT_EQ(wlen, 1); // get exactly one write event without reads
+            ASSERT_EQ(write[0], m_client_sock); // for our client socket
+        }
+
+        char buffer[1316] = {1, 2, 3, 4};
+        ASSERT_NE(srt_sendmsg(m_client_sock, buffer, sizeof buffer,
+                    -1, // infinit ttl
+                    true // in order must be set to true
+                    ),
+                SRT_ERROR);
+
+        // disable receiving OUT events
+        int epoll_err = SRT_EPOLL_ERR;
+        ASSERT_EQ(0, srt_epoll_update_usock(m_client_pollid, m_client_sock, &epoll_err));
+        {
+            int rlen = 2;
+            SRTSOCKET read[2];
+
+            int wlen = 2;
+            SRTSOCKET write[2];
+
+            EXPECT_EQ(SRT_ERROR, srt_epoll_wait(m_client_pollid, read, &rlen,
+                        write, &wlen,
+                        1000,
+                        0, 0, 0, 0));
+            const int last_error = srt_getlasterror(NULL);
+            EXPECT_EQ(SRT_ETIMEOUT, last_error) << last_error;
+        }
+    }
+
+    int m_server_pollid = SRT_ERROR;
+
+    void createServerSocket(SRTSOCKET& w_servsock)
+    {
+        int yes = 1;
+        int no = 0;
+
+        SRTSOCKET servsock = srt_create_socket();
+        ASSERT_NE(servsock, SRT_ERROR);
+
+        ASSERT_NE(srt_setsockopt(servsock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+        ASSERT_NE(srt_setsockopt(servsock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+
+        int epoll_in = SRT_EPOLL_IN;
+        srt_epoll_add_usock(m_server_pollid, servsock, &epoll_in);
+
+        sockaddr_in sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(9999);
+        sa.sin_addr.s_addr = INADDR_ANY;
+        sockaddr* psa = (sockaddr*)&sa;
+
+        ASSERT_NE(srt_bind(servsock, psa, sizeof sa), SRT_ERROR);
+        ASSERT_NE(srt_listen(servsock, SOMAXCONN), SRT_ERROR);
+
+        w_servsock = servsock;
+    }
+
+    void runServer(SRTSOCKET servsock)
+    {
+        int epoll_in = SRT_EPOLL_IN;
+
+        { // wait for connection from client
+            int rlen = 2;
+            SRTSOCKET read[2];
+
+            int wlen = 2;
+            SRTSOCKET write[2];
+
+            ASSERT_NE(srt_epoll_wait(m_server_pollid,
+                        read,  &rlen,
+                        write, &wlen,
+                        -1, // -1 is set for debuging purpose.
+                        // in case of production we need to set appropriate value
+                        0, 0, 0, 0), SRT_ERROR );
+
+            ASSERT_EQ(rlen, 1); // get exactly one read event without writes
+            ASSERT_EQ(wlen, 0); // get exactly one read event without writes
+            ASSERT_EQ(read[0], servsock); // read event is for bind socket    	
+        }
+
+        sockaddr_in scl;
+        int sclen = sizeof scl;
+
+        SRTSOCKET acpsock = srt_accept(servsock, (sockaddr*)&scl, &sclen);
+        ASSERT_NE(acpsock, SRT_INVALID_SOCK);
+
+        srt_epoll_add_usock(m_server_pollid, acpsock, &epoll_in); // wait for input
+
+        { // wait for 1316 packet from client
+            int rlen = 2;
+            SRTSOCKET read[2];
+
+            int wlen = 2;
+            SRTSOCKET write[2];
+
+            ASSERT_NE(srt_epoll_wait(m_server_pollid,
+                        read,  &rlen,
+                        write, &wlen,
+                        -1, // -1 is set for debuging purpose.
+                        // in case of production we need to set appropriate value
+                        0, 0, 0, 0), SRT_ERROR );
+
+            ASSERT_EQ(rlen, 1); // get exactly one read event without writes
+            ASSERT_EQ(wlen, 0); // get exactly one read event without writes
+            ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
+        }
+
+        char buffer[1316];
+        ASSERT_EQ(srt_recvmsg(acpsock, buffer, sizeof buffer), 1316);
+
+        char pattern[4] = {1, 2, 3, 4};
+        EXPECT_TRUE(std::mismatch(pattern, pattern+4, buffer).first == pattern+4);
+
+        std::cout << "serverSocket waiting..." << std::endl;
+        {
+            int rlen = 2;
+            SRTSOCKET read[2];
+
+            int wlen = 2;
+            SRTSOCKET write[2];
+
+            ASSERT_EQ(-1, srt_epoll_wait(m_server_pollid,
+                        read,  &rlen,
+                        write, &wlen,
+                        2000,
+                        0, 0, 0, 0));
+            const int last_error = srt_getlasterror(NULL);
+            ASSERT_EQ(SRT_ETIMEOUT, last_error) << last_error;
+        }
+        std::cout << "serverSocket finished waiting" << std::endl;
+
+        srt_close(acpsock);
+        srt_close(servsock);
+    }
+
+    void SetUp() override
+    {
+        ASSERT_EQ(srt_startup(), 0);
+
+        m_client_pollid = srt_epoll_create();
+        ASSERT_NE(SRT_ERROR, m_client_pollid);
+
+        m_server_pollid = srt_epoll_create();
+        ASSERT_NE(SRT_ERROR, m_server_pollid);
+
+    }
+
+    void TearDown() override
+    {
+        (void)srt_epoll_release(m_client_pollid);
+        (void)srt_epoll_release(m_server_pollid);
+        srt_cleanup();
+    }
+};
+
+
+TEST_F(TestEPoll, SimpleAsync)
+{
+    SRTSOCKET ss = SRT_INVALID_SOCK;
+    createServerSocket( (ss) );
+
+    std::thread client([this] { clientSocket(); });
+
+    runServer(ss);
+
+    client.join(); // Make sure client has exit before you delete the socket
+
+    srt_close(m_client_sock); // cannot close m_client_sock after srt_sendmsg because of issue in api.c:2346 
 }
 

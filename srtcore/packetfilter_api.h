@@ -8,8 +8,16 @@
  * 
  */
 
-#ifndef INC__PACKETFILTER_API_H
-#define INC__PACKETFILTER_API_H
+#ifndef INC_SRT_PACKETFILTER_API_H
+#define INC_SRT_PACKETFILTER_API_H
+
+#include "platform_sys.h"
+
+#include <cstring>
+#include <string>
+#include <map>
+#include <vector>
+#include <utility>
 
 enum SrtPktHeaderFields
 {

@@ -7,7 +7,6 @@
 // where pthread.h, which defines _POSIX_THREAD_SAFE_FUNCTIONS,
 // has to be included before time.h so that time.h defines
 // localtime_r correctly
-#include <pthread.h>
 #include <time.h>
 
 #ifdef __cplusplus

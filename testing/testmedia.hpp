@@ -14,6 +14,7 @@
 #include <string>
 #include <map>
 #include <stdexcept>
+#include <deque>
 
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
@@ -21,7 +22,12 @@
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
 
+extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
+
 using namespace std;
+
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
+extern srt_logging::Logger applog;
 
 // Trial version of an exception. Try to implement later an official
 // interruption mechanism in SRT using this.
@@ -42,6 +48,16 @@ class SrtCommon
 
 protected:
 
+    struct Connection
+    {
+        string host;
+        int port;
+        int priority = 0;
+        SRTSOCKET socket = SRT_INVALID_SOCK;
+
+        Connection(string h, int p): host(h), port(p) {}
+    };
+
     int srt_epoll = -1;
     SRT_EPOLL_T m_direction = SRT_EPOLL_OPT_NONE; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
     bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_direction
@@ -51,39 +67,65 @@ protected:
     string m_mode;
     string m_adapter;
     map<string, string> m_options; // All other options, as provided in the URI
+    vector<Connection> m_group_nodes;
+    string m_group_type;
+    vector<SRT_SOCKGROUPDATA> m_group_data;
+#ifdef SRT_OLD_APP_READER
+    int32_t m_group_seqno = -1;
+
+    struct ReadPos
+    {
+        int32_t sequence;
+        bytevector packet;
+    };
+    map<SRTSOCKET, ReadPos> m_group_positions;
+    SRTSOCKET m_group_active; // The link from which the last packet was delivered
+#endif
+
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
+    bool m_listener_group = false;
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
 
+    void UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size);
+
 public:
-    void InitParameters(string host, map<string,string> par);
+    void InitParameters(string host, string path, map<string,string> par);
     void PrepareListener(string host, int port, int backlog);
     void StealFrom(SrtCommon& src);
     void AcceptNewClient();
 
-    SRTSOCKET Socket() { return m_sock; }
-    SRTSOCKET Listener() { return m_bindsock; }
+    SRTSOCKET Socket() const { return m_sock; }
+    SRTSOCKET Listener() const { return m_bindsock; }
+
+    void Acquire(SRTSOCKET s)
+    {
+        m_sock = s;
+        if (s & SRTGROUP_MASK)
+            m_listener_group = true;
+    }
 
     virtual void Close();
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
-    void Init(string host, int port, map<string,string> par, SRT_EPOLL_OPT dir);
+    void Error(string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
+    void Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);
     virtual int ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(string host, int port);
+    void OpenGroupClient();
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(string host, int port);
     void SetupRendezvous(string adapter, int port);
 
-    void OpenServer(string host, int port)
+    void OpenServer(string host, int port, int backlog = 1)
     {
-        PrepareListener(host, port, 1);
+        PrepareListener(host, port, backlog);
         if (transmit_accept_hook_fn)
         {
             srt_listen_callback(m_bindsock, transmit_accept_hook_fn, transmit_accept_hook_op);
@@ -107,13 +149,16 @@ class SrtSource: public virtual Source, public virtual SrtCommon
     std::string hostport_copy;
 public:
 
-    SrtSource(std::string host, int port, const std::map<std::string,std::string>& par);
+    SrtSource(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtSource()
     {
         // Do nothing - create just to prepare for use
     }
 
     bytevector Read(size_t chunk) override;
+    bytevector GroupRead(size_t chunk);
+    bool GroupCheckPacketAhead(bytevector& output);
+
 
     /*
        In this form this isn't needed.
@@ -136,7 +181,7 @@ class SrtTarget: public virtual Target, public virtual SrtCommon
 {
 public:
 
-    SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par);
+    SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
@@ -159,7 +204,7 @@ public:
 class SrtRelay: public Relay, public SrtSource, public SrtTarget
 {
 public:
-    SrtRelay(std::string host, int port, const std::map<std::string,std::string>& par);
+    SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtRelay() {}
 
     int ConfigurePre(SRTSOCKET sock) override
@@ -202,7 +247,7 @@ public:
 
 
     SrtModel(string host, int port, map<string,string> par);
-    void Establish(ref_t<std::string> name);
+    void Establish(std::string& w_name);
 
     void Close()
     {

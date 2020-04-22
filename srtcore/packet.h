@@ -56,6 +56,7 @@ modified by
 #include "udt.h"
 #include "common.h"
 #include "utilities.h"
+#include "netinet_any.h"
 #include "packetfilter_api.h"
 
 //////////////////////////////////////////////////////////////////////////////
@@ -64,59 +65,59 @@ modified by
 // to the native structure for use in WSARecvFrom() and recvmsg(...) functions 
 class IOVector
 #ifdef _WIN32
-	: public WSABUF
+    : public WSABUF
 #else
-	: public iovec
+    : public iovec
 #endif
 {
 public:
 
-	inline void set(void  *buffer, size_t length)
-	{
+    inline void set(void  *buffer, size_t length)
+    {
 #ifdef _WIN32
-		len = (ULONG)length;
-		buf = (CHAR*)buffer;
+        len = (ULONG)length;
+        buf = (CHAR*)buffer;
 #else
-		iov_base = (void*)buffer;
-		iov_len = length;
+        iov_base = (void*)buffer;
+        iov_len = length;
 #endif
-	}
+    }
 
-	inline char*& dataRef()
-	{
+    inline char*& dataRef()
+    {
 #ifdef _WIN32
-		return buf;
+        return buf;
 #else
-		return (char*&) iov_base;
+        return (char*&) iov_base;
 #endif
-	}
+    }
 
-	inline char* data()
-	{
+    inline char* data()
+    {
 #ifdef _WIN32
-		return buf;
+        return buf;
 #else
-		return (char*)iov_base;
+        return (char*)iov_base;
 #endif
-	}
+    }
 
-	inline size_t size() const
-	{
+    inline size_t size() const
+    {
 #ifdef _WIN32
-		return (size_t) len;
+        return (size_t) len;
 #else
-		return iov_len;
+        return iov_len;
 #endif
-	}
+    }
 
-	inline void setLength(size_t length)
-	{
+    inline void setLength(size_t length)
+    {
 #ifdef _WIN32
-		len = length;
+        len = length;
 #else
-		iov_len = length;
+        iov_len = length;
 #endif
-	}
+    }
 };
 
 
@@ -173,11 +174,14 @@ typedef Bits<26, 0> MSGNO_SEQ_OLD;
 // The message should be extracted as PMASK_MSGNO_SEQ, if REXMIT is supported, and PMASK_MSGNO_SEQ_OLD otherwise.
 
 const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
+const int MSGNO_SEQ_MAX = MSGNO_SEQ::mask;
 
 #else
 // Old bit breakdown - no rexmit flag
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
+
+typedef RollNumber<MSGNO_SEQ::size-1, 1> MsgNo;
 
 
 // constexpr in C++11 !
@@ -243,7 +247,7 @@ public:
       /// @param rparam [in] pointer to the second data structure, explained by the packet type.
       /// @param size [in] size of rparam, in number of bytes;
 
-   void pack(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
+   void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
 
       /// Read the packet vector.
       /// @return Pointer to the packet vector.
@@ -356,6 +360,10 @@ public:
        PV_SIZE = 2
    };
 
+public:
+    void toNL();
+    void toHL();
+
 protected:
    // Length in bytes
 
@@ -388,6 +396,10 @@ public:
    int32_t& m_iID;                      // alias: socket ID
    char*& m_pcData;                     // alias: data/control information
 
+   // Experimental: sometimes these references don't work!
+   char* getData();
+   char* release();
+
    //static const int m_iPktHdrSize;	// packet header size
    static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH__SIZE * sizeof(uint32_t)
 
@@ -409,13 +421,13 @@ public:
    size_t size() const { return getLength(); }
    uint32_t header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
-   std::string MessageFlagStr()
 #if ENABLE_LOGGING
-   { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+   std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+   std::string Info();
 #else
-   { return ""; }
+   std::string MessageFlagStr() { return std::string(); }
+   std::string Info() { return std::string(); }
 #endif
 };
-
 
 #endif

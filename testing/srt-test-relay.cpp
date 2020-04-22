@@ -44,7 +44,6 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
 volatile bool g_program_interrupted = false;
@@ -304,7 +303,7 @@ void SourceMedium::Runner()
         bytevector input = med->Read(g_chunksize);
         if (input.empty() && med->End())
         {
-            Verb() << VerbLock << "Exitting SourceMedium: " << this;
+            Verb() << VerbLock << "Exiting SourceMedium: " << this;
             return;
         }
         applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
@@ -367,7 +366,7 @@ void TargetMedium::Runner()
             {
                 if (!running)
                 {
-                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exitting.";
+                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exiting.";
                     return;
                 }
 
@@ -412,7 +411,7 @@ void TargetMedium::Runner()
 
 int main( int argc, char** argv )
 {
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_logfa = { "lf", "logfa" },
         o_verbose = {"v", "verbose" },
@@ -624,7 +623,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     Verb() << "Establishing SRT connection: " << srt_uri;
 
     ::g_pending_model = &m;
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     ::g_program_established = true;
     ::g_pending_model = nullptr;

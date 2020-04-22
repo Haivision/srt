@@ -654,11 +654,11 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
     out[off++] = g.flag_clip;
 
     // Ok, now the length clip
-    memcpy(out+off, &g.length_clip, sizeof g.length_clip);
+    memcpy((out + off), &g.length_clip, sizeof g.length_clip);
     off += sizeof g.length_clip;
 
     // And finally the payload clip
-    memcpy(out+off, &g.payload_clip[0], g.payload_clip.size());
+    memcpy((out + off), &g.payload_clip[0], g.payload_clip.size());
 
     // Ready. Now fill the header and finalize other data.
     pkt.length = total_size;
@@ -703,7 +703,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     // matrix dismissal FIRST before this packet is going to be handled.
     CheckLargeDrop(rpkt.getSeqNo());
 
-    if (rpkt.getMsgSeq() == 0)
+    if (rpkt.getMsgSeq() == SRT_MSGNO_CONTROL)
     {
         // Interpret the first byte of the contents.
         const char* payload = rpkt.data();
@@ -741,14 +741,14 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 
         HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
         MarkCellReceived(rpkt.getSeqNo());
-    }
 
-    // Remember this simply every time a packet comes in. In live mode usually
-    // this flag is ORD_RELAXED (false), but some earlier versions used ORD_REQUIRED.
-    // Even though this flag is now usually ORD_RELAXED, it's fate in live mode
-    // isn't completely decided yet, so stay flexible. We believe at least that this
-    // flag will stay unchanged during whole connection.
-    rcv.order_required = rpkt.getMsgOrderFlag();
+        // Remember this simply every time a packet comes in. In live mode usually
+        // this flag is ORD_RELAXED (false), but some earlier versions used ORD_REQUIRED.
+        // Even though this flag is now usually ORD_RELAXED, it's fate in live mode
+        // isn't completely decided yet, so stay flexible. We believe at least that this
+        // flag will stay unchanged during whole connection.
+        rcv.order_required = rpkt.getMsgOrderFlag();
+    }
 
     loss_seqs_t irrecover_row, irrecover_col;
 
@@ -1335,13 +1335,13 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
             << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));
 
+    // Mark this packet received
+    MarkCellReceived(seqno);
+
     // If this is a single request (filled from row and m_number_cols == 1),
     // do not attempt recursive rebuilding
     if (tp == Group::SINGLE)
         return;
-
-    // Mark this packet received
-    MarkCellReceived(seqno);
 
     // This flips HORIZ/VERT
     Group::Type crosstype = Group::Type(!tp);

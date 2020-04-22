@@ -54,6 +54,7 @@ public:
     std::string queryValue(const std::string& strKey) const;
     ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
     const std::map<std::string, std::string>& parameters() const { return m_mapQuery; }
+    typedef std::map<std::string, std::string>::const_iterator query_it;
 
 private:
     void Parse(const std::string& strUrl, DefaultExpect);

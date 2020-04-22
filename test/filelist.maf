@@ -6,7 +6,10 @@ test_cryspr.cpp
 test_enforced_encryption.cpp
 test_epoll.cpp
 test_fec_rebuilding.cpp
+test_list.cpp
 test_listen_callback.cpp
 test_seqno.cpp
 test_socket_options.cpp
+test_sync.cpp
 test_timer.cpp
+test_utilities.cpp
