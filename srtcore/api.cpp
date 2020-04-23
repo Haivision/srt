@@ -2991,7 +2991,7 @@ SRTSOCKET CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
       SetThreadLocalError(e);
       return INVALID_SOCK;
    }
-   catch (bad_alloc&)
+   catch (const bad_alloc&)
    {
       SetThreadLocalError(CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return INVALID_SOCK;
