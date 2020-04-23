@@ -670,6 +670,8 @@ bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const c
 // CThreadError class - thread local storage error wrapper
 //
 ////////////////////////////////////////////////////////////////////////////////
+namespace srt {
+namespace sync {
 
 class CThreadError
 {
@@ -709,24 +711,21 @@ private:
     pthread_key_t m_TLSError;
 };
 
-namespace srt {
-namespace sync {
-
 // Threal local error will be used by CUDTUnited
 // that has a static scope
 static CThreadError s_thErr;
 
-} // namespace sync
-} // namespace srt
-
-void srt::sync::SetThreadLocalError(CUDTException* e)
+void SetThreadLocalError(CUDTException* e)
 {
     s_thErr.set(e);
 }
 
-CUDTException* srt::sync::GetThreadLocalError()
+CUDTException* GetThreadLocalError()
 {
     return s_thErr.get();
 }
+
+} // namespace sync
+} // namespace srt
 
 #endif // !defined(USE_STDCXX_CHRONO)
