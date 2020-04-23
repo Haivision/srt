@@ -156,7 +156,6 @@ instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
-
 ## Medium: SRT
 
 Most important about SRT is that it can be either input or output and in
@@ -193,11 +192,13 @@ resolved to 0.0.0.0, which usually should mean connecting to the local host
 
 * For listener, it defines the IP address of the local device on which the
 socket should listen, e.g.:
+
 ```
 srt://10.10.10.100:5001?mode=listener
 ```
 
 An alternative method to specify this IP address is the `adapter` parameter:
+
 ```
 srt://:5001?adapter=10.10.10.100
 ```
@@ -252,7 +253,6 @@ Note also that **blocking** option has no practical use for users.
 Normally the non-blocking mode is used only when you have an event-driven application that needs a common
 signal bar for multiple event sources, or you prefer fibers to threads, when working with multiple SRT sockets in one application. The *srt-live-transmit* application isn't defined this way. This makes that the practical result of non-blocking mode here is that it uses polling on exactly one socket with infinite timeout. Every reading and writing operation will then return always without blocking, but when they report the "again" situation the application will stall on `srt_epoll_wait()` call. This option then exists for the testing purposes, as well as educational, to serve as an example of how your application should use the non-blocking mode.
 
-
 # Command-Line Options
 
 The following options are available in the application. Note that some may affect specifically only selected type of medium.
@@ -287,11 +287,11 @@ When leaving the LAN for testing, please keep an eye on statistics and make sure
 
 If you perform tests on the public Internet, consider checking your firewall rules. The **SRT listener** must be reachable on the chosen UDP port. Same applies to routers using NAT. Please set a port forwarding rule with protocol UDP to the local IP address of the **SRT listener**.
 
-The initiation of an SRT connection (handshake) is decoupled from the stream direction. The 
-sender of a stream can be an **SRT listener** or an **SRT caller**, as long as the receiving end 
-uses the opposite connection mode. Typically you use the **SRT listener** on the receiving end, 
-since it is easier to configure in terms of firewall/router setup. It also makes sense to leave the 
-Sender in listener mode when trying to connect from various end points with possibly 
+The initiation of an SRT connection (handshake) is decoupled from the stream direction. The
+sender of a stream can be an **SRT listener** or an **SRT caller**, as long as the receiving end
+uses the opposite connection mode. Typically you use the **SRT listener** on the receiving end,
+since it is easier to configure in terms of firewall/router setup. It also makes sense to leave the
+Sender in listener mode when trying to connect from various end points with possibly
 unknown IP addresses.
 
 ## UDP Performance
@@ -312,7 +312,7 @@ The following steps have to be performed to use the bigger UDP buffer size.
 
 ### Increase the system-default max rcv buffer size
 
-```
+```bash
 $ cat /proc/sys/net/core/rmem_max
 212992
 $ sudo sysctl -w net.core.rmem_max=26214400
@@ -324,12 +324,13 @@ $ cat /proc/sys/net/core/rmem_max
 ### Specify the size of the UDP socket buffer via the URI
 
 Example URI:
-```
+
+```bash
 "udp://:4200?rcvbuf=67108864"
 ```
 
 Example full URI:
-```
+
+```bash
 ./srt-live-transmit "udp://:4200?rcvbuf=67108864" srt://192.168.0.10:4200 -v
 ```
-
