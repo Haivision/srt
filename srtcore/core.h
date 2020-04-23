@@ -135,7 +135,7 @@ enum GroupDataItem
 {
     GRPD_GROUPID,
     GRPD_GROUPTYPE,
-    GRPD_PRIORITY,
+    GRPD_WEIGHT,
 
 
     GRPD__SIZE
@@ -219,7 +219,7 @@ public:
         bool ready_error;
 
         // Configuration
-        int priority;
+        int weight;
     };
 
     struct ConfigItem

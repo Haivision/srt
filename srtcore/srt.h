@@ -733,7 +733,7 @@ typedef struct SRT_SocketGroupData_
     int result;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    int priority;
+    int weight;
 } SRT_SOCKGROUPDATA;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
