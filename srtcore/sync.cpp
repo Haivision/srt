@@ -720,9 +720,11 @@ void SetThreadLocalError(CUDTException* e)
     s_thErr.set(e);
 }
 
-CUDTException* GetThreadLocalError()
+CUDTException& GetThreadLocalError()
 {
-    return s_thErr.get();
+    if (s_thErr.get() == NULL)
+        s_thErr.set(new CUDTException);
+    return *s_thErr.get();
 }
 
 } // namespace sync

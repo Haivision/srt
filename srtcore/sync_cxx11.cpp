@@ -87,9 +87,11 @@ void srt::sync::SetThreadLocalError(CUDTException* e)
     s_thErr.set(e);
 }
 
-CUDTException* srt::sync::GetThreadLocalError()
+CUDTException& srt::sync::GetThreadLocalError()
 {
-    return s_thErr.get();
+    if (!s_thErr.get())
+        s_thErr.set(new CUDTException);
+    return *s_thErr.get();
 }
 
 #endif // USE_STDCXX_CHRONO

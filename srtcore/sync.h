@@ -710,7 +710,7 @@ void SetThreadLocalError(CUDTException* e);
 
 /// Get thread local error
 /// @returns CUDTException pointer
-CUDTException* GetThreadLocalError();
+CUDTException& GetThreadLocalError();
 
 } // namespace sync
 } // namespace srt
