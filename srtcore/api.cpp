@@ -1660,36 +1660,44 @@ int CUDTUnited::close(CUDTSocket* s)
 
        // synchronize with garbage collection.
        HLOGC(mglog.Debug, log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
-       CGuard manager_cg(m_GlobControlLock);
-
-       // since "s" is located before m_GlobControlLock, locate it again in case
-       // it became invalid
-       // XXX This is very weird; if we state that the CUDTSocket object
-       // could not be deleted between locks, then definitely it couldn't
-       // also change the pointer value. There's no other reason for getting
-       // this iterator but to obtain the 's' pointer, which is impossible to
-       // be different than previous 's' (m_Sockets is a map that stores pointers
-       // transparently). This iterator isn't even later used to delete the socket
-       // from the container, though it would be more efficient.
-       // FURTHER RESEARCH REQUIRED.
-       sockets_t::iterator i = m_Sockets.find(u);
-       if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
        {
-           HLOGC(mglog.Debug, log << "@" << u << "U::close: NOT AN ACTIVE SOCKET, returning.");
-           return 0;
-       }
-       s = i->second;
+           InvertedLock socket_unlock(s->m_ControlLock);
+           CGuard manager_cg(m_GlobControlLock);
 
-       s->m_Status = SRTS_CLOSED;
+           // since "s" is located before m_GlobControlLock, locate it again in case
+           // it became invalid
+           // XXX This is very weird; if we state that the CUDTSocket object
+           // could not be deleted between locks, then definitely it couldn't
+           // also change the pointer value. There's no other reason for getting
+           // this iterator but to obtain the 's' pointer, which is impossible to
+           // be different than previous 's' (m_Sockets is a map that stores pointers
+           // transparently). This iterator isn't even later used to delete the socket
+           // from the container, though it would be more efficient.
+           // FURTHER RESEARCH REQUIRED.
+           sockets_t::iterator i = m_Sockets.find(u);
+           if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
+           {
+               HLOGC(mglog.Debug, log << "@" << u << "U::close: NOT AN ACTIVE SOCKET, returning.");
+               return 0;
+           }
+           // s = i->second; superfluous?
+       }
+
+       // Falling into here means that
 
        // a socket will not be immediately removed when it is closed
        // in order to prevent other methods from accessing invalid address
        // a timer is started and the socket will be removed after approximately
        // 1 second
        s->m_tsClosureTimeStamp = steady_clock::now();
+       u = s->m_SocketID;
 
-       m_Sockets.erase(s->m_SocketID);
-       m_ClosedSockets[s->m_SocketID] = s;
+       {
+           InvertedLock socket_unlock(s->m_ControlLock);
+           CGuard manager_cg(m_GlobControlLock);
+           m_Sockets.erase(s->m_SocketID);
+           m_ClosedSockets[s->m_SocketID] = s;
+       }
        HLOGC(mglog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
        CGlobEvent::triggerEvent();
