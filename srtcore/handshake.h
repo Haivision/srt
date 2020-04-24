@@ -46,6 +46,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef INC__HANDSHAKE_H
 #define INC__HANDSHAKE_H
 
+#include <vector>
+
 #include "crypto.h"
 #include "utilities.h"
 
@@ -113,26 +115,19 @@ typedef Bits<15, 0> SRT_HS_LATENCY_SND;
 typedef Bits<15, 0> SRT_HS_LATENCY_LEG;
 
 
-// XXX These structures are currently unused. The code can be changed
-// so that these are used instead of manual tailoring of the messages.
 struct SrtHandshakeExtension
 {
-protected:
+    int16_t type;
+    std::vector<uint32_t> contents;
 
-   uint32_t m_SrtCommand; // Used only in extension
-
-public:
-   SrtHandshakeExtension(int cmd)
-   {
-       m_SrtCommand = cmd;
-   }
-
-   void setCommand(int cmd)
-   {
-       m_SrtCommand = cmd;
-   }
-
+    SrtHandshakeExtension(int16_t cmd): type(cmd) {}
 };
+
+// Implemented in core.cpp, so far
+void SrtExtractHandshakeExtensions(const char* bufbegin, size_t size,
+        std::vector<SrtHandshakeExtension>& w_output);
+
+
 
 struct SrtHSRequest: public SrtHandshakeExtension
 {

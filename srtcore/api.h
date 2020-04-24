@@ -142,9 +142,17 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
-   // This function shall be called always wherever
-   // you'd like to call cudtsocket->m_pUDT->close().
+   /// This function shall be called always wherever
+   /// you'd like to call cudtsocket->m_pUDT->close(),
+   /// from within the GC thread only (that is, only when
+   /// the socket should be no longer visible in the
+   /// connection, including for sending remaining data).
    void makeClosed();
+
+   /// This makes the socket no longer capable of performing any transmission
+   /// operation, but continues to be responsive in the connection in order
+   /// to finish sending the data that were scheduled for sending so far.
+   void makeShutdown();
    void removeFromGroup();
 
    // Instrumentally used by select() and also required for non-blocking
@@ -367,7 +375,7 @@ private:
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 
-   pthread_t m_GCThread;
+   srt::sync::CThread m_GCThread;
    static void* garbageCollect(void*);
 
    sockets_t m_ClosedSockets;   // temporarily store closed sockets

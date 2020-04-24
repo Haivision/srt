@@ -69,7 +69,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
-    data.priority = 0;
+    data.weight = 0;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -99,9 +99,6 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
     if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
             || local_name->sa_family != remote_name->sa_family)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    sockaddr_in* local_sin = (sockaddr_in*)local_name;
-    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
 
     const int st = srt_bind(u, local_name, local_namelen);
     if (st != 0)

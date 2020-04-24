@@ -135,7 +135,7 @@ enum GroupDataItem
 {
     GRPD_GROUPID,
     GRPD_GROUPTYPE,
-    GRPD_PRIORITY,
+    GRPD_WEIGHT,
 
 
     GRPD__SIZE
@@ -219,7 +219,7 @@ public:
         bool ready_error;
 
         // Configuration
-        int priority;
+        int weight;
     };
 
     struct ConfigItem
@@ -1032,6 +1032,11 @@ private:
     SRT_ATR_NODISCARD bool createSrtHandshake(int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen,
             CPacket& w_reqpkt, CHandShake& w_hs);
 
+    SRT_ATR_NODISCARD size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
+    SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
+    SRT_ATR_NODISCARD size_t fillHsExtKMREQ(uint32_t *pcmdspec, size_t ki);
+    SRT_ATR_NODISCARD size_t fillHsExtKMRSP(uint32_t *pcmdspec, const uint32_t *kmdata, size_t kmdata_wordsize);
+
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
     SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
@@ -1435,7 +1440,7 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
 
-    pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
+    srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
     srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
