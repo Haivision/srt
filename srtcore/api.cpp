@@ -1284,7 +1284,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
         CUDTGroup::gli_t f = g.add(g.prepareData(ns));
         ns->m_IncludedIter = f;
         ns->m_IncludedGroup = &g;
-        f->priority = targets[tii].priority;
+        f->weight = targets[tii].weight;
 
         // XXX This should be reenabled later, this should
         // be probably still in use to exchange information about
@@ -1472,9 +1472,18 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
                 // Remove from spawned and try again
                 spawned.erase(sid);
                 broken.push_back(sid);
+
+                /* XXX This is theoretically cleaner,
+                   although it's not necessary because destroyed
+                   sockets are removed from eids in the end. The problem
+                   is that there's some mistake in the implementation and
+                   those below cause misleading IPE message to be printed.
+                   PR #1127 is intended to fix the misleading IPE report.
+
                 srt_epoll_remove_usock(eid, sid);
                 srt_epoll_remove_usock(g.m_SndEID, sid);
                 srt_epoll_remove_usock(g.m_RcvEID, sid);
+                */
 
                 continue;
             }

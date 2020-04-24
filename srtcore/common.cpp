@@ -58,6 +58,8 @@ modified by
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <iterator>
+#include <vector>
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
@@ -553,6 +555,28 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
         return srt_rejectreason_msg[0];
     return srt_rejectreason_msg[id];
 }
+
+bool SrtParseConfig(string s, SrtConfig& w_config)
+{
+    using namespace std;
+
+    vector<string> parts;
+    Split(s, ',', back_inserter(parts));
+
+    w_config.type = parts[0];
+
+    for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
+    {
+        vector<string> keyval;
+        Split(*i, ':', back_inserter(keyval));
+        if (keyval.size() != 2)
+            return false;
+        w_config.parameters[keyval[0]] = keyval[1];
+    }
+
+    return true;
+}
+
 
 // Some logging imps
 #if ENABLE_LOGGING
