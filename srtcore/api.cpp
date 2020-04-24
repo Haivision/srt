@@ -183,7 +183,6 @@ m_GCStopCond(),
 m_InitLock(),
 m_iInstanceCount(0),
 m_bGCStatus(false),
-m_GCThread(),
 m_ClosedSockets()
 {
    // Socket ID MUST start from a random value

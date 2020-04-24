@@ -472,10 +472,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // This weird cast through int is required because
             // API requires 'int', and internals require 'size_t';
             // their size is different on 64-bit systems.
-            size_t val = size_t(*(int *)optval);
+            const size_t val = size_t(*(const int *)optval);
 
             // Mimimum recv buffer size is 32 packets
-            size_t mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
+            const size_t mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
 
             // XXX This magic 32 deserves some constant
             if (val > mssin_size * 32)
