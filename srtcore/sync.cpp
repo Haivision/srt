@@ -688,16 +688,20 @@ public:
     }
 
 public:
-    void set(CUDTException* e)
+    void set(const CUDTException& e)
     {
-        delete (CUDTException*)pthread_getspecific(m_TLSError);
-        pthread_setspecific(m_TLSError, e);
+        CUDTException* cur = get();
+        SRT_ASSERT(cur != NULL);
+        *cur = e;
     }
 
     CUDTException* get()
     {
-        if(!pthread_getspecific(m_TLSError))
+        if (!pthread_getspecific(m_TLSError))
+        {
+            pthread_setspecific(m_TLSError, new CUDTException);
             return NULL;
+        }
         return (CUDTException*)pthread_getspecific(m_TLSError);
     }
 
@@ -717,13 +721,11 @@ static CThreadError s_thErr;
 
 void SetThreadLocalError(const CUDTException& e)
 {
-    s_thErr.set(new CUDTException(e));
+    s_thErr.set(e);
 }
 
 CUDTException& GetThreadLocalError()
 {
-    if (s_thErr.get() == NULL)
-        s_thErr.set(new CUDTException);
     return *s_thErr.get();
 }
 
