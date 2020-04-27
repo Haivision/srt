@@ -57,41 +57,18 @@ void srt::sync::CCondVar::notify_all()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-struct CThreadError
-{
-    ~CThreadError()
-    {
-        delete tls_object;
-    }
-
-    void set(CUDTException *e)
-    {
-        delete tls_object;
-        tls_object = e;
-    }
-
-    CUDTException* get()
-    {
-        return tls_object;
-    }
-
-    CUDTException* tls_object = nullptr;
-};
-
 // Threal local error will be used by CUDTUnited
-// that has a static scope
-static thread_local CThreadError s_thErr;
+// with a static scope, therefore static thread_local
+static thread_local CUDTException s_thErr;
 
 void srt::sync::SetThreadLocalError(const CUDTException& e)
 {
-    s_thErr.set(new CUDTException(e));
+    s_thErr = e;
 }
 
 CUDTException& srt::sync::GetThreadLocalError()
 {
-    if (!s_thErr.get())
-        s_thErr.set(new CUDTException);
-    return *s_thErr.get();
+    return s_thErr;
 }
 
 #endif // USE_STDCXX_CHRONO
