@@ -700,7 +700,6 @@ public:
         if (!pthread_getspecific(m_TLSError))
         {
             pthread_setspecific(m_TLSError, new CUDTException);
-            return NULL;
         }
         return (CUDTException*)pthread_getspecific(m_TLSError);
     }
