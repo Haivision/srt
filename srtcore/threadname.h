@@ -60,6 +60,14 @@ public:
 
 #else
 
+#if defined(__cplusplus) && __cplusplus > 199711L // <-- HAVE_C++11
+#include <thread>
+#elif _WIN32
+// nothing to #include - already done in other headers
+#elif POSIX
+#include <pthread.h>
+#endif
+
 // Fake class, which does nothing. You can also take a look how
 // this works in other systems that are not supported here and add
 // the support. This is a fallback for systems that do not support
@@ -68,8 +76,28 @@ public:
 class ThreadName
 {
 public:
+    static const size_t BUFSIZE = 128;
 
-    static bool get(char*) { return false; }
+    static bool get(char* output)
+    {
+        // The default implementation will simply try to get the thread ID
+#if defined(__cplusplus) && __cplusplus > 199711L // <-- HAVE_C++11
+        std::ostringstream bs;
+        bs << "T" << std::this_thread::get_id();
+        size_t s = bs.str().copy(output, BUFSIZE-1);
+        output[s] = '\0';
+        return true;
+#elif _WIN32
+        sprintf(output, "T%uX", GetCurrentThreadId());
+        return true;
+#elif POSIX
+        sprintf(output, "T%ulX", pthread_self());
+        return true;
+#else
+        (void)output;
+        return false;
+#endif
+    }
     static bool set(const char*) { return false; }
 
     ThreadName(const char*)
