@@ -174,7 +174,6 @@ CUDTUnited::CUDTUnited():
 m_Sockets(),
 m_GlobControlLock(),
 m_IDLock(),
-m_TLSError(),
 m_mMultiplexer(),
 m_MultiplexerLock(),
 m_pCache(NULL),
@@ -204,8 +203,6 @@ m_ClosedSockets()
    setupMutex(m_IDLock, "ID");
    setupMutex(m_InitLock, "Init");
 
-   pthread_key_create(&m_TLSError, TLSDestroy);
-
    m_pCache = new CCache<CInfoBlock>;
 }
 
@@ -222,9 +219,6 @@ CUDTUnited::~CUDTUnited()
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
-
-    delete (CUDTException*)pthread_getspecific(m_TLSError);
-    pthread_key_delete(m_TLSError);
 
     delete m_pCache;
 }
@@ -818,7 +812,7 @@ int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* h
     }
     catch (CUDTException& e)
     {
-        setError(new CUDTException(e));
+        SetThreadLocalError(e);
         return SRT_ERROR;
     }
 
@@ -2393,20 +2387,6 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    }
 }
 
-void CUDTUnited::setError(CUDTException* e)
-{
-    delete (CUDTException*)pthread_getspecific(m_TLSError);
-    pthread_setspecific(m_TLSError, e);
-}
-
-CUDTException* CUDTUnited::getError()
-{
-    if(!pthread_getspecific(m_TLSError))
-        pthread_setspecific(m_TLSError, new CUDTException);
-    return (CUDTException*)pthread_getspecific(m_TLSError);
-}
-
-
 void CUDTUnited::updateMux(
    CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
@@ -2688,12 +2668,12 @@ SRTSOCKET CUDT::socket()
    }
    catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
+      SetThreadLocalError(e);
       return INVALID_SOCK;
    }
-   catch (bad_alloc&)
+   catch (const bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      SetThreadLocalError(CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return INVALID_SOCK;
    }
    catch (const std::exception& ee)
@@ -2701,19 +2681,19 @@ SRTSOCKET CUDT::socket()
       LOGC(mglog.Fatal, log << "socket: UNEXPECTED EXCEPTION: "
          << typeid(ee).name()
          << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return INVALID_SOCK;
    }
 }
 
 CUDT::APIError::APIError(const CUDTException& e)
 {
-    CUDT::s_UDTUnited.setError(new CUDTException(e));
+    SetThreadLocalError(e);
 }
 
 CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 {
-    CUDT::s_UDTUnited.setError(new CUDTException(mj, mn, syserr));
+    SetThreadLocalError(CUDTException(mj, mn, syserr));
 }
 
 // This is an internal function; 'type' should be pre-checked if it has a correct value.
@@ -2954,19 +2934,19 @@ SRTSOCKET CUDT::accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msT
    }
    catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
+      SetThreadLocalError(e);
       return INVALID_SOCK;
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      SetThreadLocalError(CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return INVALID_SOCK;
    }
    catch (const std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "accept_bond: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return INVALID_SOCK;
    }
 }
@@ -2979,19 +2959,19 @@ SRTSOCKET CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
    }
    catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
+      SetThreadLocalError(e);
       return INVALID_SOCK;
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+      SetThreadLocalError(CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
       return INVALID_SOCK;
    }
    catch (const std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "accept: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return INVALID_SOCK;
    }
 }
@@ -3621,7 +3601,7 @@ int CUDT::epoll_release(const int eid)
 
 CUDTException& CUDT::getlasterror()
 {
-   return *s_UDTUnited.getError();
+   return GetThreadLocalError();
 }
 
 int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
@@ -3652,14 +3632,14 @@ CUDT* CUDT::getUDTHandle(SRTSOCKET u)
    }
    catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
+      SetThreadLocalError(e);
       return NULL;
    }
    catch (const std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "getUDTHandle: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return NULL;
    }
 }
@@ -3686,16 +3666,16 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
       }
       return s_UDTUnited.getStatus(u);
    }
-   catch (const CUDTException &e)
+   catch (const CUDTException& e)
    {
-      s_UDTUnited.setError(new CUDTException(e));
+      SetThreadLocalError(e);
       return SRTS_NONEXIST;
    }
    catch (const std::exception& ee)
    {
       LOGC(mglog.Fatal, log << "getsockstate: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
-      s_UDTUnited.setError(new CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
       return SRTS_NONEXIST;
    }
 }
