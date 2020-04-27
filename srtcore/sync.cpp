@@ -699,15 +699,16 @@ public:
     {
         if (!pthread_getspecific(m_TLSError))
         {
-            pthread_setspecific(m_TLSError, new CUDTException);
+            CUDTException* ne = new CUDTException();
+            pthread_setspecific(m_TLSError, ne);
+            return ne;
         }
         return (CUDTException*)pthread_getspecific(m_TLSError);
     }
 
     static void TLSDestroy(void* e)
     {
-        if (NULL != e)
-            delete (CUDTException*)e;
+        delete (CUDTException*)e;
     }
 
 private:
