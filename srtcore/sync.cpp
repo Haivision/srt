@@ -715,9 +715,9 @@ private:
 // that has a static scope
 static CThreadError s_thErr;
 
-void SetThreadLocalError(CUDTException* e)
+void SetThreadLocalError(const CUDTException& e)
 {
-    s_thErr.set(e);
+    s_thErr.set(new CUDTException(e));
 }
 
 CUDTException& GetThreadLocalError()

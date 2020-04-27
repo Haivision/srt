@@ -706,7 +706,7 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
 
 /// Set thread local error
 /// @param e new CUDTException
-void SetThreadLocalError(CUDTException* e);
+void SetThreadLocalError(const CUDTException& e);
 
 /// Get thread local error
 /// @returns CUDTException pointer

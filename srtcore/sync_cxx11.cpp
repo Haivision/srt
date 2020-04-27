@@ -82,9 +82,9 @@ struct CThreadError
 // that has a static scope
 static thread_local CThreadError s_thErr;
 
-void srt::sync::SetThreadLocalError(CUDTException* e)
+void srt::sync::SetThreadLocalError(const CUDTException& e)
 {
-    s_thErr.set(e);
+    s_thErr.set(new CUDTException(e));
 }
 
 CUDTException& srt::sync::GetThreadLocalError()
