@@ -270,35 +270,39 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
             par.erase("type");
             par.erase("nodes");
+
+            // For a group-connect specification, it's
+            // always the caller mode.
+            // XXX change it here if maybe rendezvous is also
+            // possible in future.
+            par["mode"] = "caller";
         }
+    }
+
+    string adapter;
+    if (par.count("adapter"))
+    {
+        adapter = par.at("adapter");
     }
 
     m_mode = "default";
     if (par.count("mode"))
+    {
         m_mode = par.at("mode");
-
-    if (m_mode == "default")
+    }
+    SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
+    if (mode == SocketOption::FAILURE)
     {
-        // Use the following convention:
-        // 1. Server for source, Client for target
-        // 2. If host is empty, then always server.
-        if (host == "" && m_group_nodes.empty())
-            m_mode = "listener";
-        //else if (!dir_output)
-        //m_mode = "server";
-        else
-            m_mode = "caller";
+        Error("Invalid mode");
     }
 
-    if (m_mode == "client")
-        m_mode = "caller";
-    else if (m_mode == "server")
-        m_mode = "listener";
-
-    if (m_mode == "listener" && !m_group_nodes.empty())
+    if (!m_group_nodes.empty() && mode != SocketOption::CALLER)
     {
-        Error("Multiple nodes (redundant links) only supported in CALLER (client) mode.");
+        Error("Group node specification is only available in caller mode");
     }
+
+    // Fix the mode name after successful interpretation
+    m_mode = SocketOption::mode_names[mode];
 
     par.erase("mode");
 
@@ -316,7 +320,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     if (par.count("adapter"))
     {
-        m_adapter = par.at("adapter");
+        m_adapter = adapter;
         par.erase("adapter");
     }
     else if (m_mode == "listener")
@@ -1033,9 +1037,11 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    sockaddr_in localsa = CreateAddrInet(adapter, port);
+    const int outport = m_outgoing_port ? m_outgoing_port : port;
+
+    sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
-    Verb() << "Binding a server on " << adapter << ":" << port << " ...";
+    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
     int stat = srt_bind(m_sock, plsa, sizeof localsa);
     if (stat == SRT_ERROR)
     {

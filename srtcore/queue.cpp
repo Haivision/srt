@@ -484,10 +484,10 @@ CSndQueue::~CSndQueue()
 
     CSync::lock_signal(m_WindowCond, m_WindowLock);
 
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (m_WorkerThread.joinable())
     {
         HLOGC(mglog.Debug, log << "SndQueue: EXIT");
-        pthread_join(m_WorkerThread, NULL);
+        m_WorkerThread.join();
     }
     releaseCond(m_WindowCond);
 
@@ -510,13 +510,12 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 #if ENABLE_LOGGING
     ++m_counter;
     const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
-    ThreadName tn(thrname.c_str());
+    const char* thname = thrname.c_str();
+#else
+    const char* thname = "SRT:SndQ";
 #endif
-    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-    {
-        m_WorkerThread = pthread_t();
+    if (!StartThread(m_WorkerThread, CSndQueue::worker, this, thname))
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
-    }
 }
 
 #ifdef SRT_ENABLE_IPOPTS

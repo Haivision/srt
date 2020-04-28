@@ -100,14 +100,8 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
             || local_name->sa_family != remote_name->sa_family)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-    sockaddr_in* local_sin = (sockaddr_in*)local_name;
-    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
-
-    if (local_sin->sin_port != remote_sin->sin_port)
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    int st = srt_bind(u, local_name, local_namelen);
-    if ( st != 0 )
+    const int st = srt_bind(u, local_name, local_namelen);
+    if (st != 0)
         return st;
 
     return srt_connect(u, remote_name, remote_namelen);

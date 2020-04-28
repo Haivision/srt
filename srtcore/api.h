@@ -142,9 +142,17 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
-   // This function shall be called always wherever
-   // you'd like to call cudtsocket->m_pUDT->close().
+   /// This function shall be called always wherever
+   /// you'd like to call cudtsocket->m_pUDT->close(),
+   /// from within the GC thread only (that is, only when
+   /// the socket should be no longer visible in the
+   /// connection, including for sending remaining data).
    void makeClosed();
+
+   /// This makes the socket no longer capable of performing any transmission
+   /// operation, but continues to be responsive in the connection in order
+   /// to finish sending the data that were scheduled for sending so far.
+   void makeShutdown();
    void removeFromGroup();
 
    // Instrumentally used by select() and also required for non-blocking
@@ -236,16 +244,6 @@ public:
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
    int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
-
-      /// record the UDT exception.
-      /// @param [in] e pointer to a UDT exception instance.
-
-   void setError(CUDTException* e);
-
-      /// look up the most recent UDT exception.
-      /// @return pointer to a UDT exception instance.
-
-   CUDTException* getError();
 
    CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
@@ -339,10 +337,6 @@ private:
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
-   pthread_key_t m_TLSError;                         // thread local error record (last error)
-   static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
-
-private:
    friend struct FLookupSocketWithEvent;
 
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
@@ -367,7 +361,7 @@ private:
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 
-   pthread_t m_GCThread;
+   srt::sync::CThread m_GCThread;
    static void* garbageCollect(void*);
 
    sockets_t m_ClosedSockets;   // temporarily store closed sockets
