@@ -1,12 +1,12 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2018 Haivision Systems Inc.
+ * Copyright (c) 2020 Haivision Systems Inc.
  * 
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * Submited by: Russell Greene (Issue #440)
+ * Based on the proposal by Russell Greene (Issue #440)
  *
  */
 
@@ -39,7 +39,6 @@ extern "C" {
 TEST(Transmission, FileUpload)
 {
     srt_startup();
-    //srt_setloglevel(SRT_LOG_LEVEL_MAX);
 
     // Generate the source file
     // We need a file that will contain more data
@@ -143,12 +142,10 @@ TEST(Transmission, FileUpload)
 
             n -= st;
             shift += st;
-            //std::cout << "(" << st << "+" << n << ")" << std::flush;
         }
 
         if (ifile.eof())
         {
-            //std::cout << "EOF\n(n=" << n << ")\n";
             break;
         }
 
