@@ -59,6 +59,7 @@ modified by
 #include <iostream>
 #include <iomanip>
 #include <iterator>
+#include <vector>
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
@@ -557,6 +558,8 @@ const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
 
 bool SrtParseConfig(string s, SrtConfig& w_config)
 {
+    using namespace std;
+
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
 

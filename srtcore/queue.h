@@ -401,12 +401,9 @@ public:
        m_bClosing = true;
    }
 
-   pthread_t threadId() { return m_WorkerThread; }
-
 private:
    static void* worker(void* param);
-   pthread_t m_WorkerThread;
-
+   srt::sync::CThread m_WorkerThread;
 
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending

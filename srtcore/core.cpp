@@ -475,10 +475,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // This weird cast through int is required because
             // API requires 'int', and internals require 'size_t';
             // their size is different on 64-bit systems.
-            size_t val = size_t(*(int *)optval);
+            const size_t val = size_t(*(const int *)optval);
 
             // Mimimum recv buffer size is 32 packets
-            size_t mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
+            const size_t mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
 
             // XXX This magic 32 deserves some constant
             if (val > mssin_size * 32)
@@ -1756,6 +1756,133 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     }
 }
 
+size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
+{
+    uint32_t* space = pcmdspec + 1;
+    size_t wordsize         = (str.size() + 3) / 4;
+    size_t aligned_bytesize = wordsize * 4;
+
+    memset((space), 0, aligned_bytesize);
+    memcpy((space), str.data(), str.size());
+    // Preswap to little endian (in place due to possible padding zeros)
+    HtoILA((space), space, wordsize);
+
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(wordsize);
+
+    return wordsize;
+}
+
+size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
+{
+    uint32_t* space = pcmdspec + 1;
+
+    SRTSOCKET id = m_parent->m_IncludedGroup->id();
+    SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
+    SRTSOCKET master_peerid;
+    IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
+    steady_clock::time_point master_st;
+
+    // "Master" is the first found running connection. Will be false, if
+    // there's no other connection yet. When any connection is found, specify this
+    // as a determined master connection, and extract its id.
+    if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
+    {
+        master_peerid = -1;
+        IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
+        HLOGC(mglog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
+    }
+    else
+    {
+        // The returned master_st is the master's start time. Calculate the
+        // differene time.
+        IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
+        HLOGC(mglog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
+                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+    }
+    // (this function will not fill the variables with anything, if no master is found)
+
+    int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->weight };
+    memcpy((space), storedata, sizeof storedata);
+
+    size_t ra_size = Size(storedata);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+    return ra_size;
+}
+
+size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
+{
+    uint32_t* space = pcmdspec + 1;
+
+    size_t msglen = m_pCryptoControl->getKmMsg_size(ki);
+    // Make ra_size back in element unit
+    // Add one extra word if the size isn't aligned to 32-bit.
+    size_t ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
+
+    // Store the CMD + SIZE in the next field
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+    // Copy the key - do the endian inversion because another endian inversion
+    // will be done for every control message before sending, and this KM message
+    // is ALREADY in network order.
+    const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_pCryptoControl->getKmMsg_data(ki));
+
+    HLOGC(mglog.Debug,
+            log << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
+            << " words (KmMsg_size=" << msglen << ")");
+    // XXX INSECURE ": [" << FormatBinaryString((uint8_t*)keydata, msglen) << "]";
+
+    // Yes, I know HtoNLA and NtoHLA do exactly the same operation, but I want
+    // to be clear about the true intention.
+    NtoHLA((space), keydata, ra_size);
+
+    return ra_size;
+}
+
+size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t kmdata_wordsize)
+{
+    uint32_t* space = pcmdspec + 1;
+    const uint32_t failure_kmrsp[] = {SRT_KM_S_UNSECURED};
+    const uint32_t* keydata = 0;
+
+    // Shift the starting point with the value of previously added block,
+    // to start with the new one.
+
+    size_t ra_size;
+
+    if (kmdata_wordsize == 0)
+    {
+        LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+        ra_size = 1;
+        keydata = failure_kmrsp;
+
+        // Update the KM state as well
+        m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET;  // Agent has PW, but Peer won't decrypt
+        m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Peer won't encrypt as well.
+    }
+    else
+    {
+        if (!kmdata)
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
+            return false;
+        }
+        ra_size = kmdata_wordsize;
+        keydata = reinterpret_cast<const uint32_t *>(kmdata);
+    }
+
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    HLOGC(mglog.Debug,
+            log << "createSrtHandshake: KMRSP: applying returned key length="
+            << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
+            // kmdata_wordsize*sizeof(uint32_t)) << "]";
+
+    NtoHLA((space), keydata, ra_size);
+    return ra_size;
+}
+
+
 // PREREQUISITE:
 // pkt must be set the buffer and configured for UMSG_HANDSHAKE.
 // Note that this function replaces also serialization for the HSv4.
@@ -1858,24 +1985,20 @@ bool CUDT::createSrtHandshake(
         return false; // should cause rejection
     }
 
-    string logext = "HSX";
-
-    bool have_kmreq   = false;
-    bool have_sid     = false;
-    bool have_congctl = false;
-    bool have_filter  = false;
-    bool have_group = false;
+    ostringstream logext;
+    logext << "HSX";
 
     // Install the SRT extensions
     w_hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
+    bool have_sid = false;
     if (srths_cmd == SRT_CMD_HSREQ)
     {
         if (m_sStreamName != "")
         {
             have_sid = true;
             w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-            logext += ",SID";
+            logext << ",SID";
         }
     }
 
@@ -1907,21 +2030,24 @@ bool CUDT::createSrtHandshake(
     // the filter config string from the peer and therefore
     // possibly confronted with the contents of m_OPT_FECConfigString,
     // and if it decided to go with filter, it will be nonempty.
+    bool have_filter  = false;
     if (peer_filter_capable && m_OPT_PktFilterConfigString != "")
     {
         have_filter = true;
         w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext += ",filter";
+        logext << ",filter";
     }
 
-    string sm = m_CongCtl.selected_name();
+    bool have_congctl = false;
+    const string& sm = m_CongCtl.selected_name();
     if (sm != "" && sm != "live")
     {
         have_congctl = true;
         w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext += ",CONGCTL";
+        logext << ",CONGCTL";
     }
 
+    bool have_kmreq   = false;
     // Prevent adding KMRSP only in case when BOTH:
     // - Agent has set no password
     // - no KMREQ has arrived from Peer
@@ -1932,19 +2058,20 @@ bool CUDT::createSrtHandshake(
     {
         have_kmreq = true;
         w_hs.m_iType |= CHandShake::HS_EXT_KMREQ;
-        logext += ",KMX";
+        logext << ",KMX";
     }
 
+    bool have_group = false;
     if (m_parent->m_IncludedGroup)
     {
         // Whatever group this socket belongs to, the information about
         // the group is always sent the same way with the handshake.
         have_group = true;
         w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext += ",GROUP";
+        logext << ",GROUP";
     }
 
-    HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext << ") data: " << w_hs.show());
+    HLOGC(mglog.Debug, log << "createSrtHandshake: (ext: " << logext.str() << ") data: " << w_hs.show());
 
     // NOTE: The HSREQ is practically always required, although may happen
     // in future that CONCLUSION can be sent multiple times for a separate
@@ -1977,13 +2104,9 @@ bool CUDT::createSrtHandshake(
           log << "createSrtHandshake: after HSREQ: offset=" << offset << " HSREQ size=" << ra_size
               << " space left: " << (total_ra_size - offset));
 
+    // Use only in REQ phase and only if stream name is set
     if (have_sid)
     {
-        // Use only in REQ phase and only if stream name is set
-        offset += ra_size;
-        pcmdspec = p + offset;
-        ++offset;
-
         // Now prepare the string with 4-byte alignment. The string size is limited
         // to half the payload size. Just a sanity check to not pack too much into
         // the conclusion packet.
@@ -1997,20 +2120,12 @@ bool CUDT::createSrtHandshake(
             return false;
         }
 
-        size_t wordsize         = (m_sStreamName.size() + 3) / 4;
-        size_t aligned_bytesize = wordsize * 4;
-
-        memset((p + offset), 0, aligned_bytesize);
-        memcpy((p + offset), m_sStreamName.data(), m_sStreamName.size());
-        // Preswap to little endian (in place due to possible padding zeros)
-        HtoILA((uint32_t *)(p + offset), (uint32_t *)(p + offset), wordsize);
-
-        ra_size   = wordsize;
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_SID) | HS_CMDSPEC_SIZE::wrap(ra_size);
+        offset += ra_size + 1;
+        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_SID, m_sStreamName);
 
         HLOGC(mglog.Debug,
               log << "createSrtHandshake: after SID [" << m_sStreamName << "] length=" << m_sStreamName.size()
-                  << " alignedln=" << aligned_bytesize << ": offset=" << offset << " SID size=" << ra_size
+                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " SID size=" << ra_size
                   << " space left: " << (total_ra_size - offset));
     }
 
@@ -2020,51 +2135,23 @@ bool CUDT::createSrtHandshake(
         // The other side should reject connection if it uses a different congctl.
         // The other side should also respond with the congctl it uses, if its non-default (for backward compatibility).
 
-        // XXX Consider change the congctl settings in the listener socket to "adaptive"
-        // congctl and also "adaptive" value of CUDT::m_bMessageAPI so that the caller
-        // may ask for whatever kind of transmission it wants, or select transmission
-        // type differently for different connections, however with the same listener.
-
-        offset += ra_size;
-        pcmdspec = p + offset;
-        ++offset;
-
-        size_t wordsize         = (sm.size() + 3) / 4;
-        size_t aligned_bytesize = wordsize * 4;
-
-        memset((p + offset), 0, aligned_bytesize);
-
-        memcpy((p + offset), sm.data(), sm.size());
-        // Preswap to little endian (in place due to possible padding zeros)
-        HtoILA((uint32_t *)(p + offset), (uint32_t *)(p + offset), wordsize);
-
-        ra_size   = wordsize;
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_CONGESTION) | HS_CMDSPEC_SIZE::wrap(ra_size);
+        offset += ra_size + 1;
+        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_CONGESTION, sm);
 
         HLOGC(mglog.Debug,
               log << "createSrtHandshake: after CONGCTL [" << sm << "] length=" << sm.size()
-                  << " alignedln=" << aligned_bytesize << ": offset=" << offset << " CONGCTL size=" << ra_size
+                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " CONGCTL size=" << ra_size
                   << " space left: " << (total_ra_size - offset));
     }
 
     if (have_filter)
     {
-        offset += ra_size;
-        pcmdspec = p + offset;
-        ++offset;
-
-        size_t wordsize         = (m_OPT_PktFilterConfigString.size() + 3) / 4;
-        size_t aligned_bytesize = wordsize * 4;
-
-        memset((p + offset), 0, aligned_bytesize);
-        memcpy((p + offset), m_OPT_PktFilterConfigString.data(), m_OPT_PktFilterConfigString.size());
-
-        ra_size   = wordsize;
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_FILTER) | HS_CMDSPEC_SIZE::wrap(ra_size);
+        offset += ra_size + 1;
+        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_FILTER, m_OPT_PktFilterConfigString);
 
         HLOGC(mglog.Debug,
               log << "createSrtHandshake: after filter [" << m_OPT_PktFilterConfigString << "] length="
-                  << m_OPT_PktFilterConfigString.size() << " alignedln=" << aligned_bytesize << ": offset=" << offset
+                  << m_OPT_PktFilterConfigString.size() << " alignedln=" << (4*ra_size) << ": offset=" << offset
                   << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
@@ -2078,53 +2165,21 @@ bool CUDT::createSrtHandshake(
     // The time synchronization should be done only on any kind of parallel sending group.
     // Currently all groups are such groups (broadcast, backup, balancing), but it may
     // need to be changed for some other types.
-    while (have_group)
+    if (have_group)
     {
         CGuard grd (m_parent->m_ControlLock);
         if (!m_parent->m_IncludedGroup)
         {
-            HLOGC(mglog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
-            break;
-        }
-        offset += ra_size;
-        pcmdspec = p+offset;
-        ++offset;
-
-        SRTSOCKET id = m_parent->m_IncludedGroup->id();
-        SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
-        SRTSOCKET master_peerid;
-        IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
-        steady_clock::time_point master_st;
-
-        // "Master" is the first found running connection. Will be false, if
-        // there's no other connection yet. When any connection is found, specify this
-        // as a determined master connection, and extract its id.
-        if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
-        {
-            master_peerid = -1;
-            IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
-            HLOGC(mglog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
+            LOGC(mglog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
         }
         else
         {
-            // The returned master_st is the master's start time. Calculate the
-            // differene time.
-            IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
-            HLOGC(mglog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
-                    << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+            offset += ra_size + 1;
+            ra_size = fillHsExtGroup(p + offset - 1);
+
+            HLOGC(mglog.Debug, log << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size()
+                    << ": offset=" << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
         }
-        // (this function will not fill the variables with anything, if no master is found)
-
-        int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->weight };
-        memcpy(p+offset, storedata, sizeof storedata);
-
-        ra_size = Size(storedata);
-        *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
-
-        HLOGC(mglog.Debug, log << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size()
-            << ": offset=" << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
-
-        break;
     }
 
     // When encryption turned on
@@ -2144,30 +2199,9 @@ bool CUDT::createSrtHandshake(
 
                 m_pCryptoControl->getKmMsg_markSent(ki, false);
 
-                offset += ra_size;
+                offset += ra_size + 1;
+                ra_size = fillHsExtKMREQ(p + offset - 1, ki);
 
-                size_t msglen = m_pCryptoControl->getKmMsg_size(ki);
-                // Make ra_size back in element unit
-                // Add one extra word if the size isn't aligned to 32-bit.
-                ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
-
-                // Store the CMD + SIZE in the next field
-                *(p + offset) = HS_CMDSPEC_CMD::wrap(srtkm_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
-                ++offset;
-
-                // Copy the key - do the endian inversion because another endian inversion
-                // will be done for every control message before sending, and this KM message
-                // is ALREADY in network order.
-                const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_pCryptoControl->getKmMsg_data(ki));
-
-                HLOGC(mglog.Debug,
-                      log << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
-                          << " words (KmMsg_size=" << msglen << ")");
-                // XXX INSECURE ": [" << FormatBinaryString((uint8_t*)keydata, msglen) << "]";
-
-                // Yes, I know HtoNLA and NtoHLA do exactly the same operation, but I want
-                // to be clear about the true intention.
-                NtoHLA(p + offset, keydata, ra_size);
                 have_any_keys = true;
             }
 
@@ -2180,44 +2214,9 @@ bool CUDT::createSrtHandshake(
         }
         else if (srtkm_cmd == SRT_CMD_KMRSP)
         {
-            uint32_t        failure_kmrsp[] = {SRT_KM_S_UNSECURED};
-            const uint32_t *keydata         = 0;
+            offset += ra_size + 1;
+            ra_size = fillHsExtKMRSP(p + offset - 1, kmdata, kmdata_wordsize);
 
-            // Shift the starting point with the value of previously added block,
-            // to start with the new one.
-            offset += ra_size;
-
-            if (kmdata_wordsize == 0)
-            {
-                LOGC(mglog.Error,
-                     log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
-                ra_size = 1;
-                keydata = failure_kmrsp;
-
-                // Update the KM state as well
-                m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET;  // Agent has PW, but Peer won't decrypt
-                m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Peer won't encrypt as well.
-            }
-            else
-            {
-                if (!kmdata)
-                {
-                    m_RejectReason = SRT_REJ_IPE;
-                    LOGC(mglog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
-                    return false;
-                }
-                ra_size = kmdata_wordsize;
-                keydata = reinterpret_cast<const uint32_t *>(kmdata);
-            }
-
-            *(p + offset) = HS_CMDSPEC_CMD::wrap(srtkm_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
-            ++offset; // Once cell, containting CMD spec and size
-            HLOGC(mglog.Debug,
-                  log << "createSrtHandshake: KMRSP: applying returned key length="
-                      << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
-                                   // kmdata_wordsize*sizeof(uint32_t)) << "]";
-
-            NtoHLA(p + offset, keydata, ra_size);
         }
         else
         {
@@ -2238,8 +2237,9 @@ bool CUDT::createSrtHandshake(
     return true;
 }
 
-static int FindExtensionBlock(uint32_t *begin, size_t total_length,
-        size_t& w_out_len, uint32_t*& w_next_block)
+template <class Integer>
+static inline int FindExtensionBlock(Integer* begin, size_t total_length,
+        size_t& w_out_len, Integer*& w_next_block)
 {
     // Check if there's anything to process
     if (total_length == 0)
@@ -2284,7 +2284,8 @@ static int FindExtensionBlock(uint32_t *begin, size_t total_length,
 
 // NOTE: the rule of order of arguments is broken here because this order
 // serves better the logics and readability.
-static inline bool NextExtensionBlock(uint32_t*& w_begin, uint32_t* next, size_t& w_length)
+template <class Integer>
+static inline bool NextExtensionBlock(Integer*& w_begin, Integer* next, size_t& w_length)
 {
     if (!next)
         return false;
@@ -2293,6 +2294,38 @@ static inline bool NextExtensionBlock(uint32_t*& w_begin, uint32_t* next, size_t
     w_begin  = next;
     return true;
 }
+
+void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
+        vector<SrtHandshakeExtension>& w_output)
+{
+    const uint32_t *begin = reinterpret_cast<const uint32_t *>(bufbegin + CHandShake::m_iContentSize);
+    size_t    size  = buflength - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+    const uint32_t *next  = 0;
+    size_t    length   = size / sizeof(uint32_t);
+    size_t    blocklen = 0;
+
+    for (;;) // ONE SHOT, but continuable loop
+    {
+        const int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
+
+        if (cmd == SRT_CMD_NONE)
+        {
+            // End of blocks
+            break;
+        }
+
+        w_output.push_back(SrtHandshakeExtension(cmd));
+
+        SrtHandshakeExtension& ext = w_output.back();
+
+        std::copy(begin+1, begin+blocklen+1, back_inserter(ext.contents));
+
+        // Any other kind of message extracted. Search on.
+        if (!NextExtensionBlock((begin), next, (length)))
+            break;
+    }
+}
+
 
 bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
@@ -3291,8 +3324,8 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq
 
     // Optional in this version
     int link_weight = 0;
-    if (data_size > GRPD_PRIORITY)
-        link_weight = groupdata[GRPD_PRIORITY];
+    if (data_size > GRPD_WEIGHT)
+        link_weight = groupdata[GRPD_WEIGHT];
 
     if (m_OPT_GroupConnect == 0)
     {
@@ -6201,12 +6234,11 @@ bool CUDT::close()
     if (m_pCryptoControl)
         m_pCryptoControl->close();
 
-    if (isOPT_TsbPd() && !pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (isOPT_TsbPd() && m_RcvTsbPdThread.joinable())
     {
         HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        void *retval;
-        int ret SRT_ATR_UNUSED = pthread_join(m_RcvTsbPdThread, &retval);
-        HLOGC(mglog.Debug, log << "... " << (ret == 0 ? "SUCCEEDED" : "FAILED"));
+        m_RcvTsbPdThread.join();
+        HLOGC(mglog.Debug, log << "... returned from TSBPD join");
     }
 
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
@@ -7572,8 +7604,6 @@ void CUDT::initSynch()
     setupMutex(m_RcvBufferLock, "RcvBuffer");
     setupMutex(m_ConnectionLock, "Connection");
     setupMutex(m_StatsLock, "Stats");
-
-    memset(&m_RcvTsbPdThread, 0, sizeof m_RcvTsbPdThread);
     setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
@@ -7605,10 +7635,9 @@ void CUDT::releaseSynch()
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
     enterCS(m_RecvDataLock);
-    if (!pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (m_RcvTsbPdThread.joinable())
     {
-        pthread_join(m_RcvTsbPdThread, NULL);
-        m_RcvTsbPdThread = pthread_t();
+        m_RcvTsbPdThread.join();
     }
     leaveCS(m_RecvDataLock);
 
@@ -9272,29 +9301,23 @@ int CUDT::processData(CUnit* in_unit)
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (need_tsbpd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
+    if (need_tsbpd && !m_RcvTsbPdThread.joinable())
     {
         HLOGP(mglog.Debug, "Spawning Socket TSBPD thread");
-        int st = 0;
-        {
 #if ENABLE_HEAVY_LOGGING
-            std::ostringstream tns1, tns2;
-            // Take the last 2 ciphers from the socket ID.
-            tns1 << m_SocketID;
-            std::string s = tns1.str();
-            tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+        std::ostringstream tns1, tns2;
+        // Take the last 2 ciphers from the socket ID.
+        tns1 << m_SocketID;
+        std::string s = tns1.str();
+        tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
 
-            ThreadName tn(tns2.str().c_str());
+        ThreadName tn(tns2.str().c_str());
+        const char* thname = tns2.str().c_str();
 #else
-            ThreadName tn("SRT:TsbPd");
+        const char* thname = "SRT:TsbPd";
 #endif
-            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
-        }
-        if (st != 0)
-        {
-            LOGC(mglog.Error, log << "processData: PROBLEM SPAWNING TSBPD thread: " << st);
+        if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
             return -1;
-        }
     }
     // NOTE: In case of group TSBPD, this facility will be started
     // in different place. Group TSBPD is a concept implementation - not done here.
@@ -9670,7 +9693,6 @@ int CUDT::processData(CUnit* in_unit)
         {
             return -1;
         }
-
     } // End of recvbuf_acklock
 
     if (m_bClosing)
@@ -11045,9 +11067,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
             }
 
             // Any other kind of message extracted. Search on.
-            length -= (next - begin);
-            begin = next;
-            if (!begin)
+            if (!NextExtensionBlock((begin), next, (length)))
                 break;
         }
     }
@@ -11143,7 +11163,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
         false, false, false,
         0.0, // load factor: no load in the beginning
         1.0, // unit load: how much one packet would increase the load
-        0, // priority
+        0, // weight
         { 0, 0, 0, 0 } // CGroupMemberPerfMon
     };
     return sd;

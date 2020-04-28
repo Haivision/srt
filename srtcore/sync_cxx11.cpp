@@ -51,5 +51,24 @@ void srt::sync::CCondVar::notify_all()
     m_cv.notify_all();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage error wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// Threal local error will be used by CUDTUnited
+// with a static scope, therefore static thread_local
+static thread_local CUDTException s_thErr;
+
+void srt::sync::SetThreadLocalError(const CUDTException& e)
+{
+    s_thErr = e;
+}
+
+CUDTException& srt::sync::GetThreadLocalError()
+{
+    return s_thErr;
+}
 
 #endif // USE_STDCXX_CHRONO
