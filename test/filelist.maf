@@ -6,6 +6,7 @@ test_cryspr.cpp
 test_enforced_encryption.cpp
 test_epoll.cpp
 test_fec_rebuilding.cpp
+test_file_transmission.cpp
 test_list.cpp
 test_listen_callback.cpp
 test_seqno.cpp
