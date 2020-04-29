@@ -7280,7 +7280,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
     perf->pktSent              = m_stats.traceSent;
+    perf->pktSentUnique        = m_stats.traceSentUniq;
     perf->pktRecv              = m_stats.traceRecv;
+    perf->pktRecvUnique        = m_stats.traceRecvUniq;
     perf->pktSndLoss           = m_stats.traceSndLoss;
     perf->pktRcvLoss           = m_stats.traceRcvLoss;
     perf->pktRetrans           = m_stats.traceRetrans;
@@ -7303,7 +7305,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     /* perf byte counters include all headers (SRT+UDP+IP) */
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
     perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
+    perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
     perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
+    perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
     perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
     perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
@@ -7318,7 +7322,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
 
     perf->pktSentTotal       = m_stats.sentTotal;
+    perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
     perf->pktRecvTotal       = m_stats.recvTotal;
+    perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
     perf->pktSndLossTotal    = m_stats.sndLossTotal;
     perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
     perf->pktRetransTotal    = m_stats.retransTotal;
@@ -7329,7 +7335,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
 
     perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
     perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
     perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
     perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
     perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
