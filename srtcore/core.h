@@ -1703,7 +1703,9 @@ private: // Trace
     {
         time_point tsStartTime;                 // timestamp when the UDT entity is started
         int64_t sentTotal;                  // total number of sent data packets, including retransmissions
+        int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
         int64_t recvTotal;                  // total number of received packets
+        int64_t recvUniqTotal;              // total number of received and delivered packets
         int sndLossTotal;                   // total number of lost packets (sender side)
         int rcvLossTotal;                   // total number of lost packets (receiver side)
         int retransTotal;                   // total number of retransmitted packets
@@ -1714,7 +1716,9 @@ private: // Trace
         int sndDropTotal;
         int rcvDropTotal;
         uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
+        uint64_t bytesSentUniqTotal;        // total number of bytes sent,  including retransmissions
         uint64_t bytesRecvTotal;            // total number of received bytes
+        uint64_t bytesRecvUniqTotal;        // total number of received bytes
         uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
         uint64_t bytesRetransTotal;         // total number of retransmitted bytes
         uint64_t sndBytesDropTotal;
@@ -1731,7 +1735,9 @@ private: // Trace
 
         time_point tsLastSampleTime;            // last performance sample time
         int64_t traceSent;                  // number of packets sent in the last trace interval
+        int64_t traceSentUniq;              // number of original packets sent in the last trace interval
         int64_t traceRecv;                  // number of packets received in the last trace interval
+        int64_t traceRecvUniq;              // number of packets received AND DELIVERED in the last trace interval
         int traceSndLoss;                   // number of lost packets in the last trace interval (sender side)
         int traceRcvLoss;                   // number of lost packets in the last trace interval (receiver side)
         int traceRetrans;                   // number of retransmitted packets in the last trace interval
@@ -1746,7 +1752,9 @@ private: // Trace
         double traceBelatedTime;
         int64_t traceRcvBelated;
         uint64_t traceBytesSent;            // number of bytes sent in the last trace interval
+        uint64_t traceBytesSentUniq;        // number of bytes sent in the last trace interval
         uint64_t traceBytesRecv;            // number of bytes sent in the last trace interval
+        uint64_t traceBytesRecvUniq;        // number of bytes sent in the last trace interval
         uint64_t traceRcvBytesLoss;         // number of bytes bytes lost in the last trace interval (estimate)
         uint64_t traceBytesRetrans;         // number of bytes retransmitted in the last trace interval
         uint64_t traceSndBytesDrop;

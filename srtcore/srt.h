@@ -415,6 +415,20 @@ struct CBytePerfMon
    int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
    int      pktReorderTolerance;        // packet reorder tolerance value
    //<
+
+   // New stats in 1.5.0
+
+   // Total
+   int64_t  pktSentUniqTotal;               // total number of sent data packets, including retransmissions
+   int64_t  pktRecvUniqTotal;               // total number of received packets
+   uint64_t byteSentUniqTotal;              // total number of sent data bytes, including retransmissions
+   uint64_t byteRecvUniqTotal;              // total number of received bytes
+
+   // Local
+   int64_t  pktSentUniq;                    // number of sent data packets, including retransmissions
+   int64_t  pktRecvUniq;                    // number of received packets
+   uint64_t byteSentUniq;                   // number of sent data bytes, including retransmissions
+   uint64_t byteRecvUniq;                   // number of received bytes
 };
 
 struct CGroupMemberPerfMon

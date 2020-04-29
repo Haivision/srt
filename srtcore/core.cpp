@@ -1347,11 +1347,13 @@ void CUDT::clearData()
         CGuard stat_lock(m_StatsLock);
 
         m_stats.tsStartTime = steady_clock::now();
-        m_stats.sentTotal = m_stats.recvTotal = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal =
-            m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
+        m_stats.sentTotal = m_stats.sentUniqTotal = m_stats.recvTotal = m_stats.recvUniqTotal
+            = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal
+            = m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
         m_stats.tsLastSampleTime = steady_clock::now();
-        m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans =
-            m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+        m_stats.traceSent = m_stats.traceSentUniq = m_stats.traceRecv = m_stats.traceRecvUniq
+            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
         m_stats.traceRcvRetrans                                                   = 0;
         m_stats.traceReorderDistance                                              = 0;
         m_stats.traceBelatedTime                                                  = 0.0;
@@ -1366,10 +1368,14 @@ void CUDT::clearData()
         m_stats.traceRcvUndecrypt   = 0;
 
         m_stats.bytesSentTotal    = 0;
+        m_stats.bytesSentUniqTotal    = 0;
         m_stats.bytesRecvTotal    = 0;
+        m_stats.bytesRecvUniqTotal    = 0;
         m_stats.bytesRetransTotal = 0;
         m_stats.traceBytesSent    = 0;
+        m_stats.traceBytesSentUniq    = 0;
         m_stats.traceBytesRecv    = 0;
+        m_stats.traceBytesRecvUniq    = 0;
         m_stats.sndFilterExtra    = 0;
         m_stats.rcvFilterExtra    = 0;
         m_stats.rcvFilterSupply   = 0;
@@ -7453,9 +7459,12 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.traceRcvBytesUndecrypt = 0;
         // new>
         m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
+        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
         //<
-        m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans =
-            m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+        m_stats.traceSent = m_stats.traceRecv
+            = m_stats.traceSentUniq = m_stats.traceRecvUniq
+            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
         m_stats.sndDuration                                                       = 0;
         m_stats.traceRcvRetrans                                                   = 0;
         m_stats.traceRcvBelated                                                   = 0;
@@ -9146,6 +9155,13 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     m_stats.bytesSentTotal += payload;
     ++m_stats.traceSent;
     ++m_stats.sentTotal;
+    if (new_packet_packed)
+    {
+        ++m_stats.traceSentUniq;
+        ++m_stats.sentUniqTotal;
+        m_stats.traceBytesSentUniq += payload;
+        m_stats.bytesSentUniqTotal += payload;
+    }
     leaveCS(m_StatsLock);
 
     if (probe)
@@ -9566,6 +9582,12 @@ int CUDT::processData(CUnit* in_unit)
                 // So this packet is "redundant".
                 IF_HEAVY_LOGGING(exc_type = "UNACKED");
                 adding_successful = false;
+                enterCS(m_StatsLock);
+                ++m_stats.traceRecvUniq;
+                ++m_stats.recvUniqTotal;
+                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
+                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
+                leaveCS(m_StatsLock);
             }
             else
             {
