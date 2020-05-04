@@ -121,29 +121,29 @@ The time elapsed, in milliseconds, since the SRT socket has been created (after 
 
 The total number of sent DATA packets, including retransmitted packets ([pktRetransTotal](#pktRetransTotal)). Available for sender.
 
-In case the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts sent packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts sent packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
 ### pktRecvTotal
 
 The total number of received DATA packets, including retransmitted packets ([pktRcvRetransTotal](#pktRcvRetransTotal)). Available for receiver.
 
-In case the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
 ### pktSentUniqueTotal 
 
 The number of unique DATA packets sent by the SRT sender. Available for sender. 
 
-This value contains only unique **original** DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. In case the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are not taken into account as well. 
+This value contains only unique **original** DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
 
-By implementation, this value corresponds to the number of original DATA packets sent by the SRT sender and can be calculated as follows: `pktSentUniqueTotal = pktSentTotal – pktRetransTotal` or `pktSentUniqueTotal = pktSentTotal – pktRetransTotal - pktSndFilterExtraTotal` if the  `SRTO_PACKETFILTER` socket option is enabled. The original packets are sent only once. 
+This value corresponds to the number of original DATA packets sent by the SRT sender. It counts every packet sent over the network for the first time, and can be calculated as follows: `pktSentUniqueTotal = pktSentTotal – pktRetransTotal`, or by `pktSentUniqueTotal = pktSentTotal – pktRetransTotal - pktSndFilterExtraTotal` if the  `SRTO_PACKETFILTER` socket option is enabled. The original DATA packets are sent only once. 
 
 ### pktRecvUniqueTotal 
 
-The number of unique original or retransmitted DATA packets received by the SRT receiver **in time** and as a result successfully delivered to the application. Available for receiver. 
+The number of unique original or retransmitted DATA packets **received in time** by the SRT receiver and, as a result, successfully delivered to the application. Available for receiver.
 
-This statistic counts only **unique** meaning first arrived DATA packets so that there is no difference whether it is original or retransmitted (in case of loss) packet that comes first and is taken into account. This statistic doesn't count packets received as duplicated (retransmitted or sent several times by the defective hardware/software) or “too late to deliver” packets (retransmitted or reordered arrived too late packets and as a result dropped by the TLPKTDROP mechanism, see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
+This value contains only **unique** (meaning "first arrived") DATA packets. There is no difference whether a packet is original or retransmitted (in case of loss). Whichever packet comes first is taken into account. This statistic doesn't count duplicate packets (retransmitted or sent several times by defective hardware/software) or arrived too late packets (retransmitted or original packets arrived out of order) and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
-In case the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic also takes into account recovered by the packet filter packets ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) and does not take into account received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic also takes into account recovered by the packet filter DATA packets ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) and does not take into account received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
 ### pktSndLossTotal
 
@@ -227,7 +227,7 @@ The total number of packet filter control packets generated by the packet filter
 
 Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterExtraTotal
 
@@ -235,19 +235,19 @@ The total number of packet filter control packets received by the packet filter 
 
 Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterSupplyTotal
 
 The total number of lost DATA packets recovered by the packet filter at the receiver side (e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterLossTotal
 
 The total number of lost DATA packets **not** recovered by the packet filter at the receiver side (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### byteSentTotal
 
