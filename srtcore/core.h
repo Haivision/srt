@@ -683,7 +683,9 @@ public:
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using srt_logging::mglog;
-        if (srt::sync::is_zero(m_tsStartTime))
+        using srt::sync::is_zero;
+
+        if (is_zero(m_tsStartTime))
         {
             // The first socket, defines the group time for the whole group.
             m_tsStartTime = w_start_time;
@@ -692,7 +694,7 @@ public:
         }
 
         // Sanity check. This should never happen, fix the bug if found!
-        if (srt::sync::is_zero(m_tsRcvPeerStartTime))
+        if (is_zero(m_tsRcvPeerStartTime))
         {
             LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
             // Kinda fallback, but that's not too safe.
