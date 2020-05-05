@@ -31,6 +31,15 @@ namespace sync
 {
 using namespace std;
 
+///////////////////////////////////////////////////////////////////////////////
+//
+// Duration class
+//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Class template srt::sync::Duration represents a time interval.
+/// It consists of a count of ticks of _Clock.
+/// It is a wrapper of system timers in case of non-C++11 chrono build.
 template <class _Clock>
 class Duration
 {
@@ -72,6 +81,12 @@ private:
     int64_t m_duration;
 };
 
+///////////////////////////////////////////////////////////////////////////////
+//
+// TimePoint and steadt_clock classes
+//
+///////////////////////////////////////////////////////////////////////////////
+
 template <class _Clock>
 class TimePoint;
 
@@ -83,12 +98,12 @@ public:
 
 public:
     static time_point now();
-    static time_point zero();
 };
 
+/// Represents a point in time
 template <class _Clock>
 class TimePoint
-{ // represents a point in time
+{
 public:
     TimePoint()
         : m_timestamp(0)
@@ -146,24 +161,11 @@ public: //
 #endif
 
 public:
-    uint64_t         us_since_epoch() const;
     Duration<_Clock> time_since_epoch() const;
-
-public:
-    bool is_zero() const { return m_timestamp == 0; }
 
 private:
     uint64_t m_timestamp;
 };
-
-inline TimePoint<srt::sync::steady_clock> steady_clock::zero()
-{
-    return TimePoint<steady_clock>(0);
-}
-
-
-template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const;
 
 template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const;
@@ -171,11 +173,6 @@ srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::ste
 inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_clock>& rhs)
 {
     return rhs * lhs;
-}
-
-inline int64_t count_microseconds(const TimePoint<steady_clock> tp)
-{
-    return static_cast<int64_t>(tp.us_since_epoch());
 }
 
 int64_t count_microseconds(const steady_clock::duration& t);
@@ -186,7 +183,10 @@ Duration<steady_clock> microseconds_from(int64_t t_us);
 Duration<steady_clock> milliseconds_from(int64_t t_ms);
 Duration<steady_clock> seconds_from(int64_t t_s);
 
-inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
+inline bool is_zero(const TimePoint<steady_clock>& t)
+{
+    return t == TimePoint<steady_clock>();
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////

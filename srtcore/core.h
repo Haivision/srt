@@ -683,7 +683,7 @@ public:
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using srt_logging::mglog;
-        if (m_tsStartTime == steady_clock::zero())
+        if (srt::sync::is_zero(m_tsStartTime))
         {
             // The first socket, defines the group time for the whole group.
             m_tsStartTime = w_start_time;
@@ -692,7 +692,7 @@ public:
         }
 
         // Sanity check. This should never happen, fix the bug if found!
-        if (m_tsRcvPeerStartTime == steady_clock::zero())
+        if (srt::sync::is_zero(m_tsRcvPeerStartTime))
         {
             LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
             // Kinda fallback, but that's not too safe.
@@ -926,7 +926,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_tsStartTime,
         // otherwise it may go unnoticed with clock skew.
-        return count_microseconds(from_time - m_stats.tsStartTime);
+        return srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
     }
 
     void setPacketTS(CPacket& p, const time_point& local_time)
