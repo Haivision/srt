@@ -143,7 +143,7 @@ The number of unique original or retransmitted DATA packets **received in time**
 
 This value contains only **unique** (meaning "first arrived") DATA packets. There is no difference whether a packet is original or retransmitted (in case of loss). Whichever packet comes first is taken into account. This statistic doesn't count duplicate packets (retransmitted or sent several times by defective hardware/software) or arrived too late packets (retransmitted or original packets arrived out of order) and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
-If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic also takes into account recovered by the packet filter DATA packets ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) and does not take into account received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic also takes into account DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)), and does not take into account control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
 ### pktSndLossTotal
 
