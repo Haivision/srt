@@ -215,7 +215,7 @@ public:
        m_tsCurrArrTime = srt::sync::steady_clock::now();
 
        // record the packet interval between the current and the last one
-       m_aPktWindow[m_iPktWindowPtr] = count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
+       m_aPktWindow[m_iPktWindowPtr] = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
        m_aBytesWindow[m_iPktWindowPtr] = pktsz;
 
        // the window is logically circular
@@ -295,8 +295,8 @@ public:
 
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
-       int64_t timediff = count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
-       int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
+       const int64_t timediff = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
+       const int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
 
        // Let's take it simpler than it is coded here:
        // (stating that a packet has never zero size)

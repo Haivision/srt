@@ -1446,13 +1446,13 @@ void CUDT::open()
     m_tsLastSndTime                        = currtime;
 
     m_iReXmitCount   = 1;
-    m_tsUnstableSince = steady_clock::zero();
-    m_tsTmpActiveTime = steady_clock::zero();
+    m_tsUnstableSince = steady_clock::time_point();
+    m_tsTmpActiveTime = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
     m_tsNextSendTime = steady_clock::time_point();
-    m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+    m_tdSendTimeDiff = microseconds_from(0);
 
     // Now UDT is opened.
     m_bOpened = true;
@@ -3655,7 +3655,7 @@ bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, steady_clock::time_point& 
     w_wp = master->m_pRcvBuffer->getInternalTimeBase((w_tb), (w_dr));
 
     // Sanity check
-    if (w_tb == steady_clock::zero())
+    if (is_zero(w_tb))
     {
         LOGC(mglog.Error, log << "IPE: existing previously socket has no time base set yet!");
         return false; // this will enforce initializing the time base normal way
@@ -3883,7 +3883,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (forced_isn == SRT_SEQNO_NONE)
     {
         // Random Initial Sequence Number (normal mode)
-        srand(count_microseconds(steady_clock::now()));
+        srand(count_microseconds(steady_clock::now().time_since_epoch()));
         m_iISN = m_ConnReq.m_iISN = (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
     }
     else
@@ -13264,13 +13264,13 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     // buffer gets empty so that we can make sure that KEEPALIVE will be the
     // really last sent for longer time.
     CUDT& u = w_d->ps->core();
-    if (u.m_tsTmpActiveTime != steady_clock::zero())
+    if (!is_zero(u.m_tsTmpActiveTime))
     {
         CSndBuffer *b = u.m_pSndBuffer;
         if (b && b->getCurrBufSize() == 0)
         {
             HLOGC(dlog.Debug, log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
-            u.m_tsTmpActiveTime = steady_clock::zero();
+            u.m_tsTmpActiveTime = steady_clock::time_point();
 
             // Send first immediate keepalive. The link is to be turn to IDLE
             // now so nothing will be sent to it over time and it will start
@@ -13309,7 +13309,7 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
 
         IF_HEAVY_LOGGING(string source = "heard");
 
-        if (u.m_tsTmpActiveTime != steady_clock::zero() && u.m_tsTmpActiveTime < currtime)
+        if (!is_zero(u.m_tsTmpActiveTime) && u.m_tsTmpActiveTime < currtime)
         {
             // The link is temporary-activated. Calculate then since the activation time.
             // Mind that if the difference against the last update time is SMALLER,
@@ -13325,13 +13325,13 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
             }
             else
             {
-                u.m_tsTmpActiveTime = steady_clock::zero();
+                u.m_tsTmpActiveTime = steady_clock::time_point();
             }
         }
 
         if (count_microseconds(td_responsive) > m_uOPT_StabilityTimeout)
         {
-            if (u.m_tsUnstableSince == steady_clock::zero())
+            if (is_zero(u.m_tsUnstableSince))
             {
                 HLOGC(dlog.Debug, log << "grp/sendBackup: socket NEW UNSTABLE: @" << w_d->id
                         << " last " << source << " " << FormatDuration(td_responsive)
@@ -13350,18 +13350,18 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
     {
         // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(dlog.Debug, log << "grp/sendBackup: link STABLE: @" << w_d->id
-                << (u.m_tsUnstableSince == steady_clock::zero() ? " - RESTORED" : " - CONTINUED")
+                << (is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED")
                 << " TIME now - updated: " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime));
-        u.m_tsUnstableSince = steady_clock::zero();
+        u.m_tsUnstableSince = steady_clock::time_point();
     }
 
     // Could be set above
-    if (u.m_tsUnstableSince != steady_clock::zero())
+    if (u.m_tsUnstableSince != steady_clock::time_point())
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: link UNSTABLE for "
                 << FormatDuration(currtime - u.m_tsUnstableSince) << " : @" << w_d->id << " - will send a payload");
         // The link is already unstable
-        if (ts_oldest_unstable != steady_clock::zero() || ts_oldest_unstable > u.m_tsUnstableSince)
+        if (ts_oldest_unstable != steady_clock::time_point() || ts_oldest_unstable > u.m_tsUnstableSince)
             ts_oldest_unstable = u.m_tsUnstableSince;
         ++w_nunstable;
     }
@@ -13400,7 +13400,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
         // only 1 link STABLE, and we allow any nymber of unstable
         // links.
 
-        if (w_u.m_tsUnstableSince == steady_clock::zero())
+        if (is_zero(w_u.m_tsUnstableSince))
         {
             w_parallel.push_back(d);
         }
@@ -13421,7 +13421,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
     else if (erc == SRT_EASYNCSND)
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << w_u.m_SocketID << " DEEMED UNSTABLE (not ready to send)");
-        if (w_u.m_tsUnstableSince  == steady_clock::zero()) // skip those unstable already - they are already counted
+        if (is_zero(w_u.m_tsUnstableSince)) // skip those unstable already - they are already counted
             ++w_nunstable;
     }
 
@@ -13562,7 +13562,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             // for all next iterations in this loop.
             d->sndstate = GST_RUNNING;
 
-            if (d->ps->core().m_tsUnstableSince == steady_clock::zero())
+            if (is_zero(d->ps->core().m_tsUnstableSince))
             {
                 w_parallel.push_back(d);
             }
@@ -13899,7 +13899,7 @@ RetryWaitBlocked:
             }
             CUDT& ce = d->ps->core();
             steady_clock::duration td;
-            if (ce.m_tsTmpActiveTime != steady_clock::zero()
+            if (!is_zero(ce.m_tsTmpActiveTime)
                     && count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {
                 HLOGC(dlog.Debug, log << "... not silencing @" << d->id << ": too early: "
@@ -13910,7 +13910,7 @@ RetryWaitBlocked:
             // Clear activation time because the link is no longer active!
             d->sndstate = GST_IDLE;
             HLOGC(dlog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
-            ce.m_tsTmpActiveTime = steady_clock::zero();
+            ce.m_tsTmpActiveTime = steady_clock::time_point();
         }
     }
 }
@@ -14448,8 +14448,10 @@ void CUDTGroup::internalKeepalive(gli_t gli)
     if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
     {
         gli->rcvstate = GST_IDLE;
-        gli->ps->core().m_tsTmpActiveTime = steady_clock::zero(); // Prevent sending KEEPALIVE again in group-sending
-        HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
+        // Prevent sending KEEPALIVE again in group-sending
+        gli->ps->core().m_tsTmpActiveTime = steady_clock::time_point();
+        HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @"
+                               << gli->id << " - link turning IDLE");
     }
 }
 

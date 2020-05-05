@@ -139,12 +139,6 @@ static timespec us_to_timespec(const uint64_t time_us)
 ////////////////////////////////////////////////////////////////////////////////
 
 template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
-{
-    return m_timestamp / s_cpu_frequency;
-}
-
-template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
 {
     return srt::sync::Duration<srt::sync::steady_clock>(m_timestamp);
@@ -195,7 +189,7 @@ std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
         return "00:00:00.000000";
     }
 
-    const uint64_t total_us  = timestamp.us_since_epoch();
+    const uint64_t total_us  = count_microseconds(timestamp.time_since_epoch());
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
 
@@ -221,14 +215,14 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
     const int64_t                  delta_s =
-        floor((static_cast<int64_t>(now_timestamp.us_since_epoch() % 1000000) + delta_us) / 1000000.0);
+        floor((static_cast<int64_t>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0);
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
     ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (timestamp.us_since_epoch() % 1000000) << " [SYS]";
+    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYS]";
     return out.str();
 }
 
@@ -420,13 +414,13 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }

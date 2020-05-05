@@ -161,7 +161,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     if (w_srctime == 0)
     {
         HLOGC(dlog.Debug, log << CONID() << "addBuffer: DEFAULT SRCTIME - overriding with current time.");
-        w_srctime = time.us_since_epoch();
+        w_srctime = count_microseconds(time.time_since_epoch());
     }
     int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
