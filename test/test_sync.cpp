@@ -420,7 +420,7 @@ TEST(SyncEvent, WaitForNotifyAll)
  * FormatTime
  */
 /*****************************************************************************/
-#if !defined(__GNUC__) || (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9))
+#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9))
 //#if !defined(__GNUC__) || (__GNUC__ > 4)
 //#if !defined(__GNUC__) || (__GNUC__ >= 5)
 // g++ before 4.9 (?) does not support regex and crashes on execution.
@@ -451,13 +451,13 @@ TEST(Sync, FormatTime)
         cerr << desc << time << " (" << diff << " us)" << endl;
     };
 
-    const steady_clock::time_point a = steady_clock::now();
-    const string                   time1 = FormatTime(a);
-    const string                   time2 = FormatTime(a);
-    const string                   time3 = FormatTime(a + milliseconds_from(500));
-    const string                   time4 = FormatTime(a + seconds_from(1));
-    const string                   time5 = FormatTime(a + seconds_from(5));
-    const string                   time6 = FormatTime(a + milliseconds_from(-4350));
+    const auto   a = steady_clock::now();
+    const string time1 = FormatTime(a);
+    const string time2 = FormatTime(a);
+    const string time3 = FormatTime(a + milliseconds_from(500));
+    const string time4 = FormatTime(a + seconds_from(1));
+    const string time5 = FormatTime(a + seconds_from(5));
+    const string time6 = FormatTime(a + milliseconds_from(-4350));
     cerr << "Current time formated:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
     cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;
