@@ -26,7 +26,7 @@ using namespace srt::sync;
 
 TEST(SyncDuration, BasicChecks)
 {
-    const steady_clock::duration d;
+    const steady_clock::duration d = steady_clock::duration();
 
     EXPECT_EQ(d.count(), 0);
     EXPECT_TRUE(d == d);  // operator==
@@ -63,7 +63,7 @@ TEST(SyncDuration, DurationFrom)
 
 TEST(SyncDuration, RelOperators)
 {
-    const steady_clock::duration a;
+    const steady_clock::duration a = steady_clock::duration();
 
     EXPECT_EQ(a.count(), 0);
     EXPECT_TRUE(a == a);  // operator==
@@ -190,6 +190,7 @@ TEST(SyncTimePoint, RelOperators)
     EXPECT_FALSE(a < b);
 }
 
+#ifndef ENABLE_STDCXX_SYNC
 TEST(SyncTimePoint, OperatorMinus)
 {
     const int64_t                  delta = 1024;
@@ -254,6 +255,7 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
     r -= steady_clock::duration(-delta);
     EXPECT_EQ(r, a);
 }
+#endif
 
 /*****************************************************************************/
 /*
