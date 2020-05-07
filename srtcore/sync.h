@@ -11,11 +11,11 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STDCXX_CHRONO
+//#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
 
 #include <cstdlib>
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
 #else
@@ -37,7 +37,7 @@ using namespace std;
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
 
 template <class Clock>
 using Duration = chrono::duration<Clock>;
@@ -88,7 +88,7 @@ private:
     int64_t m_duration;
 };
 
-#endif // USE_STDCXX_CHRONO
+#endif // ENABLE_STDCXX_SYNC
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -96,7 +96,7 @@ private:
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
 
 using steady_clock = chrono::steady_clock;
 
@@ -206,7 +206,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
     return rhs * lhs;
 }
 
-#endif // USE_STDCXX_CHRONO
+#endif // ENABLE_STDCXX_SYNC
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -214,7 +214,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
 
 inline long long count_microseconds(const steady_clock::duration &t)
 {
@@ -266,7 +266,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
     return t == TimePoint<steady_clock>();
 }
 
-#endif // USE_STDCXX_CHRONO
+#endif // ENABLE_STDCXX_SYNC
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -275,7 +275,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
 using Mutex = mutex;
 using UniqueLock = unique_lock<mutex>;
 using ScopedLock = lock_guard<mutex>;
@@ -333,7 +333,7 @@ private:
     int m_iLocked;
     Mutex& m_Mutex;
 };
-#endif // USE_STDCXX_CHRONO
+#endif // ENABLE_STDCXX_SYNC
 
 /// The purpose of this typedef is to reduce the number of changes in the code (renamings)
 /// and produce less merge conflicts with some other parallel work done.
@@ -436,7 +436,7 @@ public:
     void notify_all();
 
 private:
-#if USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
     condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
@@ -454,7 +454,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 inline void SleepFor(const steady_clock::duration& t)
 {
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
     this_thread::sleep_for(t);
 #elif !defined(_WIN32)
     usleep(count_microseconds(t)); // microseconds
@@ -722,7 +722,7 @@ public:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
 #else // pthreads wrapper version
@@ -779,7 +779,7 @@ private:
 /// @returns true if thread was started successfully,
 ///          false on failure
 ///
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
 #else
