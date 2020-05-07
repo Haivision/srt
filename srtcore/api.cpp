@@ -524,7 +524,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
    {
        w_error = SRT_REJ_BACKLOG;
-       LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+       LOGC(mglog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
        return -1;
    }
 
@@ -771,11 +771,11 @@ ERR_ROLLBACK:
 #if ENABLE_LOGGING
        static const char* why [] = {
            "UNKNOWN ERROR",
-           "CONNECTION REJECTED",
+           "INTERNAL REJECTION",
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
-       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+       LOGC(mglog.Note, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
       SRTSOCKET id = ns->m_SocketID;
       ns->makeClosed();
