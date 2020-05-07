@@ -35,6 +35,7 @@ namespace srt_logging
 }
 using namespace srt_logging;
 
+#if !defined(USE_STDCXX_CHRONO)
 namespace srt
 {
 namespace sync
@@ -117,6 +118,7 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 } // namespace sync
 } // namespace srt
+#endif // #if !defined(USE_STDCXX_CHRONO)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -137,6 +139,7 @@ static timespec us_to_timespec(const uint64_t time_us)
 // TimePoint section
 //
 ////////////////////////////////////////////////////////////////////////////////
+#ifndef USE_STDCXX_CHRONO
 
 template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
@@ -180,6 +183,8 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 {
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
+
+#endif // !defined(USE_STDCXX_CHRONO)
 
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
@@ -226,6 +231,7 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+#if !defined(USE_STDCXX_CHRONO)
 srt::sync::Mutex::Mutex()
 {
     pthread_mutex_init(&m_mutex, NULL);
@@ -262,9 +268,12 @@ srt::sync::ScopedLock::~ScopedLock()
     m_mutex.unlock();
 }
 
+#endif // !defined(USE_STDCXX_CHRONO)
+
 //
 //
 //
+#if !defined(USE_STDCXX_CHRONO)
 
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
@@ -290,6 +299,7 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 {
     return &m_Mutex;
 }
+#endif // !defined(USE_STDCXX_CHRONO)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -634,11 +644,15 @@ void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
     }
 }
 
+#endif // !defined(USE_STDCXX_CHRONO)
+
+namespace srt {
+namespace sync {
+
 #ifdef USE_STDCXX_CHRONO
-template< class Function >
-bool srt::sync::StartThread(CThread& th, Function&& f, void* args, const char* name)
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
 #else
-bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
 #endif
 {
     ThreadName tn(name);
@@ -659,11 +673,16 @@ bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const c
     return true;
 }
 
+} // namespace sync
+} // namespace srt
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CThreadError class - thread local storage error wrapper
 //
 ////////////////////////////////////////////////////////////////////////////////
+#if !defined(USE_STDCXX_CHRONO)
 namespace srt {
 namespace sync {
 
