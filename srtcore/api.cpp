@@ -775,7 +775,7 @@ ERR_ROLLBACK:
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
-       LOGC(mglog.Note, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+       LOGC(mglog.Warn, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
       SRTSOCKET id = ns->m_SocketID;
       ns->makeClosed();
