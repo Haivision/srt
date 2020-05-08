@@ -1740,7 +1740,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
         break;
 
     default:
-        LOGF(mglog.Error, "sndSrtMsg: cmd=%d unsupported", cmd);
+        LOGF(mglog.Error, "sndSrtMsg: IPE: cmd=%d unsupported", cmd);
         break;
     }
 
@@ -1848,7 +1848,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 
     if (kmdata_wordsize == 0)
     {
-        LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+        LOGC(mglog.Warn, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
         ra_size = 1;
         keydata = failure_kmrsp;
 
@@ -2111,7 +2111,7 @@ bool CUDT::createSrtHandshake(
         if (m_sStreamName.size() >= size_limit)
         {
             m_RejectReason = SRT_REJ_ROGUE;
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "createSrtHandshake: stream id too long, limited to " << (size_limit - 1) << " bytes");
             return false;
         }
@@ -2360,9 +2360,9 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 {
                     if (m_bOPT_StrictEncryption)
                     {
-                        LOGC(mglog.Error,
+                        LOGC(mglog.Warn,
                              log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
-                                 << " - rejecting per strict encryption");
+                                 << " - rejecting per enforced encryption");
                         return false;
                     }
                     HLOGC(mglog.Debug,
@@ -2378,7 +2378,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             // Please review later.
             else
             {
-                LOGC(mglog.Error, log << "KMREQ failed to process the request - ignoring");
+                LOGC(mglog.Warn, log << "KMREQ failed to process the request - ignoring");
             }
 
             return true; // already done what's necessary
@@ -2860,7 +2860,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else if (cmd == SRT_CMD_NONE)
             {
                 m_RejectReason = SRT_REJ_ROGUE;
-                LOGC(mglog.Error, log << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
+                LOGC(mglog.Warn, log << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
                 // This means that there can be no more processing done by FindExtensionBlock().
                 // And we haven't found what we need - otherwise one of the above cases would pass
                 // and lead to exit this loop immediately.
@@ -2895,13 +2895,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             if (m_bOPT_StrictEncryption)
             {
                 m_RejectReason = SRT_REJ_UNSECURE;
-                LOGC(
-                    mglog.Error,
-                    log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per strict requirement");
+                LOGC(mglog.Error,
+                    log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per enforced encryption");
                 return false;
             }
 
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
@@ -2955,7 +2954,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                             m_RejectReason = SRT_REJ_UNSECURE;
                         }
                         LOGC(mglog.Error,
-                             log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
+                             log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per enforced encryption");
                         return false;
                     }
                 }
@@ -2967,7 +2966,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 if (m_bOPT_StrictEncryption && res == -1)
                 {
                     m_RejectReason = SRT_REJ_UNSECURE;
-                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per strict encryption.");
+                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per enforced encryption.");
                     return false;
                 }
                 encrypted = true;
@@ -2996,11 +2995,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error,
                  log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting "
-                        "per strict requirement");
+                        "per enforced encryption");
             return false;
         }
 
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - still allowing "
                     "connection.");
         encrypted = true;
@@ -3185,12 +3184,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error,
-                 log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per strict "
-                        "requirement.");
+                 log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per "
+                        "enforced encryption.");
             return false;
         }
 
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets "
                     "from Peer).");
 
@@ -4095,7 +4094,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // are sent only when there is a rendezvous mode or non-blocking mode.
             if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
             {
-                LOGC(mglog.Error, log << "createSrtHandshake failed - REJECTING.");
+                LOGC(mglog.Warn, log << "createSrtHandshake failed - REJECTING.");
                 cst = CONN_REJECT;
                 break;
             }
@@ -4228,7 +4227,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
         if (cst != CONN_CONTINUE)
         {
             // processRendezvous already set the reject reason
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
             status = false;
         }
@@ -4236,7 +4235,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     else if (cst == CONN_REJECT)
     {
         // m_RejectReason already set at worker_ProcessAddressedPacket.
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "processAsyncConnectRequest: REJECT reported from HS processing, not processing further.");
         return false;
     }
@@ -4602,7 +4601,7 @@ EConnectStatus CUDT::processRendezvous(
                 (w_reqpkt), (m_ConnReq)))
     {
         // m_RejectReason already set
-        LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        LOGC(mglog.Warn, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
         m_tsLastReqTime = steady_clock::time_point();
         return CONN_REJECT;
     }
@@ -4716,7 +4715,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         m_RejectReason = SRT_REJ_ROGUE;
         if (!response.isControl())
         {
-            LOGC(mglog.Error, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
+            LOGC(mglog.Warn, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
         }
         else
         {
@@ -6415,7 +6414,6 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             {
                 m_iSndCurrSeqNo = minlastack;
             }
-            LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
             HLOGC(dlog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
                     << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms, FIRST #" << first_msgno);
@@ -8175,7 +8173,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     if (wrongsize)
     {
         // Issue a log, but don't do anything but skipping the "odd" bytes from the payload.
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << CONID() << "Received UMSG_ACK payload is not evened up to 4-byte based field size - cutting to "
                  << acksize << " fields");
     }
@@ -8183,7 +8181,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Start with checking the base size.
     if (acksize < ACKD_TOTAL_SIZE_SMALL)
     {
-        LOGC(mglog.Error, log << CONID() << "Invalid ACK size " << acksize << " fields - less than minimum required!");
+        LOGC(mglog.Warn, log << CONID() << "Invalid ACK size " << acksize << " fields - less than minimum required!");
         // Ack is already interpreted, just skip further parts.
         return;
     }
@@ -8286,7 +8284,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
                     (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
                 {
-                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
+                    LOGC(mglog.Warn, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
                         << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
                     // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                     secure = false;
@@ -8353,7 +8351,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             {
                 if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
                 {
-                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                    LOGC(mglog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
                         << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
                     // seq_a must not be greater than the most recent sent seq
                     secure = false;
@@ -9044,7 +9042,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             else
             {
                 setPacketTS(w_packet, steady_clock::now());
-                LOGC(dlog.Error, log << "packData: reference time=" << FormatTime(origintime)
+                LOGC(dlog.Warn, log << "packData: reference time=" << FormatTime(origintime)
                         << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
                         << " - setting NOW as reference time for the data packet");
             }
@@ -9066,7 +9064,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         {
             // Encryption failed
             //>>Add stats for crypto failure
-            LOGC(dlog.Error, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
+            LOGC(dlog.Warn, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
             // Encryption failed
             return std::make_pair(-1, enter_time);
         }
@@ -9512,7 +9510,7 @@ int CUDT::processData(CUnit* in_unit)
                 }
                 else
                 {
-                    LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                    LOGC(mglog.Warn, log << CONID() << "No room to store incoming packet: offset="
                             << offset << " avail=" << avail_bufsize
                             << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
                             << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
@@ -10446,7 +10444,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         if (result == -1)
         {
             hs.m_iReqType = URQFailure(error);
-            LOGF(mglog.Error, "UU:newConnection: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
+            LOGF(mglog.Warn, "processConnectRequest: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
         }
 
         // CONFUSION WARNING!
@@ -11044,7 +11042,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     }
     catch (...)
     {
-        LOGP(mglog.Error, "runAcceptHook: hook interrupted by exception");
+        LOGP(mglog.Warn, "runAcceptHook: hook interrupted by exception");
         return false;
     }
 

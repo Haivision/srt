@@ -1287,7 +1287,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     uint16_t length_hw = ntohs(g.length_clip);
     if (length_hw > payloadSize())
     {
-        LOGC(mglog.Error, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
+        LOGC(mglog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
         return;
     }
 
@@ -1438,7 +1438,7 @@ int FECFilterBuiltin::ExtendRows(int rowx)
 
     if (rowx > int(m_number_cols*3))
     {
-        LOGC(mglog.Error, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
+        LOGC(mglog.Warn, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
 
         rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
         rowx -= m_number_cols;
@@ -2154,7 +2154,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
     {
         // This shouldn't happen because columns should be dismissed
         // once the last row of the first series is closed.
-        LOGC(mglog.Error, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
+        LOGC(mglog.Warn, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
 
         // Delete one series of columns.
         int32_t oldbase SRT_ATR_UNUSED = rcv.colq[0].base;
