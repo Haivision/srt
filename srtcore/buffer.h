@@ -476,9 +476,7 @@ public:
 
    time_point getTsbPdTimeBase(uint32_t timestamp_us);
 
-      /// Get packet local delivery time
-      /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
-      /// @return local delivery time (usec)
+   int64_t getDrift() const { return m_DriftTracer.drift(); }
 
 public:
 
@@ -505,6 +503,9 @@ public:
 private:
    int extractData(char *data, int len, int p, int q, bool passack);
    bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
+
+   /// Describes the state of the first N packets
+   std::string debugTimeState(size_t first_n_pkts) const;
    
    /// thread safe bytes counter of the Recv & Ack buffer
    /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
