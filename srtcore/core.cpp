@@ -6140,18 +6140,34 @@ bool CUDT::close()
 
     /*
      * update_events below useless
-     * removing usock for EPolls right after (remove_usocks) clears it (in other HAI patch).
+     * removing usock for EPolls right after (update_usocks) clears it (in other HAI patch).
      *
      * What is in EPoll shall be the responsibility of the application, if it want local close event,
      * it would remove the socket from the EPoll after close.
      */
     // trigger any pending IO events.
+    HLOGC(dlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(m_sPollID) << " of @" << m_SocketID);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     try
     {
+        int no_events = 0;
         for (set<int>::iterator i = m_sPollID.begin(); i != m_sPollID.end(); ++i)
-            s_UDTUnited.m_EPoll.remove_usock(*i, m_SocketID);
+        {
+            HLOGC(dlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
+            s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
+            HLOGC(dlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
+        }
+
+        // Not deleting elements from m_sPollID inside the loop because it invalidates
+        // the control iterator of the loop. Instead, all will be removed at once.
+
+        // IMPORTANT: there's theoretically little time between setting ERR readiness
+        // and unsubscribing, however if there's an application waiting on this event,
+        // it should be informed before this below instruction locks the epoll mutex.
+        enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+        m_sPollID.clear();
+        leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
     }
     catch (...)
     {
@@ -10834,14 +10850,17 @@ void CUDT::addEPoll(const int eid)
     }
 }
 
-void CUDT::removeEPoll(const int eid)
+void CUDT::removeEPollEvents(const int eid)
 {
     // clear IO events notifications;
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
 
+void CUDT::removeEPollID(const int eid)
+{
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
@@ -10899,14 +10918,17 @@ void CUDTGroup::addEPoll(int eid)
        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
 }
 
-void CUDTGroup::removeEPoll(const int eid)
+void CUDTGroup::removeEPollEvents(const int eid)
 {
    // clear IO events notifications;
    // since this happens after the epoll ID has been removed, they cannot be set again
    set<int> remove;
    remove.insert(eid);
    m_pGlobal->m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
 
+void CUDTGroup::removeEPollID(const int eid)
+{
    enterCS(m_pGlobal->m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);
    leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
@@ -11988,7 +12010,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     HLOGC(dlog.Debug, log << "grp/sendBroadcast: Socket @" << d->id << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to wipeme. Remove from eid.
                     wipeme.push_back(d);
-                    m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
                 }
             }
 
@@ -13635,7 +13658,8 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
                     HLOGC(dlog.Debug, log << "grp/send*: Socket @" << d->id << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to w_wipeme. Remove from eid.
                     w_wipeme.push_back(d);
-                    m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
                 }
             }
 

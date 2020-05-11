@@ -289,6 +289,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     CGuard pg(m_EPollLock);
+    IF_HEAVY_LOGGING(ostringstream evd);
 
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
@@ -310,6 +311,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
             // parameter, but others are probably unchanged. Change them
             // forcefully and take out notices that are no longer valid.
             const int removable = wait.watch & ~evts;
+            IF_HEAVY_LOGGING(PrintEpollEvent(evd, evts & (~wait.watch)));
 
             // Check if there are any events that would be removed.
             // If there are no removed events watched (for example, when
@@ -327,6 +329,12 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
             // Now it should look exactly like newly added
             // and the state is also updated
+            HLOGC(dlog.Debug, log << "srt_epoll_update_usock: UPDATED E" << eid << " for @" << u << " +" << evd.str());
+        }
+        else
+        {
+            IF_HEAVY_LOGGING(PrintEpollEvent(evd, evts));
+            HLOGC(dlog.Debug, log << "srt_epoll_update_usock: ADDED E" << eid << " for @" << u << " " << evd.str());
         }
 
         const int newstate = wait.watch & wait.state;
@@ -343,6 +351,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     else
     {
         // Update with no events means to remove subscription
+        HLOGC(dlog.Debug, log << "srt_epoll_update_usock: REMOVED E" << eid << " socket @" << u);
         d.removeSubscription(u);
     }
     return 0;

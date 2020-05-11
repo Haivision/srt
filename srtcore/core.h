@@ -393,7 +393,8 @@ public:
 
     srt::sync::Mutex* exp_groupLock() { return &m_GroupLock; }
     void addEPoll(int eid);
-    void removeEPoll(int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
     void updateReadState(SRTSOCKET sock, int32_t sequence);
     void updateWriteState();
 
@@ -957,6 +958,7 @@ public: // internal API
     CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
+    SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
@@ -1644,7 +1646,8 @@ public: // For SrtCongestion
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     void addEPoll(const int eid);
-    void removeEPoll(const int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
 };
 
 

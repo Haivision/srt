@@ -238,6 +238,8 @@ public:
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
+   template <class EntityType>
+   int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
