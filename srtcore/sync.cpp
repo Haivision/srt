@@ -35,6 +35,7 @@ namespace srt_logging
 }
 using namespace srt_logging;
 
+#if !defined(ENABLE_STDCXX_SYNC)
 namespace srt
 {
 namespace sync
@@ -117,6 +118,7 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 } // namespace sync
 } // namespace srt
+#endif // #if !defined(ENABLE_STDCXX_SYNC)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -137,12 +139,7 @@ static timespec us_to_timespec(const uint64_t time_us)
 // TimePoint section
 //
 ////////////////////////////////////////////////////////////////////////////////
-
-template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
-{
-    return m_timestamp / s_cpu_frequency;
-}
+#ifndef ENABLE_STDCXX_SYNC
 
 template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
@@ -187,6 +184,8 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
 
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
     if (is_zero(timestamp))
@@ -195,7 +194,7 @@ std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
         return "00:00:00.000000";
     }
 
-    const uint64_t total_us  = timestamp.us_since_epoch();
+    const uint64_t total_us  = count_microseconds(timestamp.time_since_epoch());
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
 
@@ -221,17 +220,18 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
     const int64_t                  delta_s =
-        floor((static_cast<int64_t>(now_timestamp.us_since_epoch() % 1000000) + delta_us) / 1000000.0);
+        floor((static_cast<int64_t>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0);
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
     ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (timestamp.us_since_epoch() % 1000000) << " [SYS]";
+    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYS]";
     return out.str();
 }
 
+#if !defined(ENABLE_STDCXX_SYNC)
 srt::sync::Mutex::Mutex()
 {
     pthread_mutex_init(&m_mutex, NULL);
@@ -268,9 +268,12 @@ srt::sync::ScopedLock::~ScopedLock()
     m_mutex.unlock();
 }
 
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
 //
 //
 //
+#if !defined(ENABLE_STDCXX_SYNC)
 
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
@@ -296,13 +299,14 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 {
     return &m_Mutex;
 }
+#endif // !defined(ENABLE_STDCXX_SYNC)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Condition section (based on pthreads)
 //
 ////////////////////////////////////////////////////////////////////////////////
-#ifndef USE_STDCXX_CHRONO
+#ifndef ENABLE_STDCXX_SYNC
 
 namespace srt
 {
@@ -382,7 +386,7 @@ void Condition::notify_all()
 }; // namespace sync
 }; // namespace srt
 
-#endif // ndef USE_STDCXX_CHRONO
+#endif // ndef ENABLE_STDCXX_SYNC
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -420,13 +424,13 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }
@@ -558,7 +562,7 @@ bool srt::sync::CGlobEvent::waitForEvent()
 // CThread class
 //
 ////////////////////////////////////////////////////////////////////////////////
-#ifndef USE_STDCXX_CHRONO
+#ifndef ENABLE_STDCXX_SYNC
 
 srt::sync::CThread::CThread()
 {
@@ -640,17 +644,21 @@ void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
     }
 }
 
-#ifdef USE_STDCXX_CHRONO
-template< class Function >
-bool srt::sync::StartThread(CThread& th, Function&& f, void* args, const char* name)
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
+namespace srt {
+namespace sync {
+
+#ifdef ENABLE_STDCXX_SYNC
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
 #else
-bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
 #endif
 {
     ThreadName tn(name);
     try
     {
-#if HAVE_FULL_CXX11 || defined(USE_STDCXX_CHRONO)
+#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
         th = CThread(f, args);
 #else
         // No move semantics in C++03, therefore using a dedicated function
@@ -665,11 +673,16 @@ bool srt::sync::StartThread(CThread& th, void* (*f) (void*), void* args, const c
     return true;
 }
 
+} // namespace sync
+} // namespace srt
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CThreadError class - thread local storage error wrapper
 //
 ////////////////////////////////////////////////////////////////////////////////
+#if !defined(ENABLE_STDCXX_SYNC)
 namespace srt {
 namespace sync {
 
@@ -732,4 +745,4 @@ CUDTException& GetThreadLocalError()
 } // namespace sync
 } // namespace srt
 
-#endif // !defined(USE_STDCXX_CHRONO)
+#endif // !defined(ENABLE_STDCXX_SYNC)

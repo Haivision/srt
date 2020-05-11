@@ -525,7 +525,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
    {
        w_error = SRT_REJ_BACKLOG;
-       LOGC(mglog.Error, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+       LOGC(mglog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
        return -1;
    }
 
@@ -772,11 +772,11 @@ ERR_ROLLBACK:
 #if ENABLE_LOGGING
        static const char* why [] = {
            "UNKNOWN ERROR",
-           "CONNECTION REJECTED",
+           "INTERNAL REJECTION",
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
-       LOGC(mglog.Error, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
+       LOGC(mglog.Warn, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error]);
 #endif
       SRTSOCKET id = ns->m_SocketID;
       ns->makeClosed();
@@ -2027,7 +2027,7 @@ int CUDTUnited::epoll_add_usock(
       if (!g)
          throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-      ret = m_EPoll.add_usock(eid, u, events);
+      ret = m_EPoll.update_usock(eid, u, events);
       g->addEPoll(eid);
       return 0;
    }
@@ -2035,7 +2035,7 @@ int CUDTUnited::epoll_add_usock(
    CUDTSocket* s = locateSocket(u);
    if (s)
    {
-      ret = m_EPoll.add_usock(eid, u, events);
+      ret = m_EPoll.update_usock(eid, u, events);
       s->m_pUDT->addEPoll(eid);
    }
    else
@@ -2076,28 +2076,45 @@ int CUDTUnited::epoll_update_ssock(
    return m_EPoll.update_ssock(eid, s, events);
 }
 
+template <class EntityType>
+int CUDTUnited::epoll_remove_entity(const int eid, EntityType* ent)
+{
+    // XXX Not sure if this is anyhow necessary because setting readiness
+    // to false doesn't actually trigger any action. Further research needed.
+    HLOGC(dlog.Debug, log << "epoll_remove_usock: CLEARING readiness on E" << eid << " of @" << ent->id());
+    ent->removeEPollEvents(eid);
+
+    HLOGC(dlog.Debug, log << "epoll_remove_usock: CLEARING subscription on E" << eid << " of @" << ent->id());
+    int no_events = 0;
+    int ret = m_EPoll.update_usock(eid, ent->id(), &no_events);
+
+    HLOGC(dlog.Debug, log << "epoll_remove_usock: REMOVING E" << eid << " from back-subscirbers in @" << ent->id());
+    ent->removeEPollID(eid);
+
+    return ret;
+}
+
 int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 {
-   int ret = m_EPoll.remove_usock(eid, u);
-
+   CUDTGroup* g = 0;
+   CUDTSocket* s = 0;
    if (u & SRTGROUP_MASK)
    {
-      CUDTGroup* g = locateGroup(u);
+      g = locateGroup(u);
       if (g)
-         g->removeEPoll(eid);
-      return ret;
+          return epoll_remove_entity(eid, g);
    }
-   CUDTSocket* s = locateSocket(u);
-   if (s)
+   else
    {
-      s->m_pUDT->removeEPoll(eid);
+       s = locateSocket(u);
+       if (s)
+           return epoll_remove_entity(eid, s->m_pUDT);
    }
-   //else
-   //{
-   //   throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
-   //}
 
-   return ret;
+   LOGC(mglog.Error, log << "IPE: remove_usock: @" << u
+           << " not found as either socket or group. Removing only from epoll system.");
+   int no_events = 0;
+   return m_EPoll.update_usock(eid, u, &no_events);
 }
 
 int CUDTUnited::epoll_remove_ssock(const int eid, const SYSSOCKET s)

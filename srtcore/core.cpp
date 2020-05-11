@@ -1455,14 +1455,14 @@ void CUDT::open()
     m_tsLastSndTime                        = currtime;
 
     m_iReXmitCount   = 1;
-    m_tsActivationTime = steady_clock::zero();
-    m_tsUnstableSince = steady_clock::zero();
-    m_tsTmpActiveTime = steady_clock::zero();
+    m_tsActivationTime = steady_clock::time_point();
+    m_tsUnstableSince = steady_clock::time_point();
+    m_tsTmpActiveTime = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
     m_tsNextSendTime = steady_clock::time_point();
-    m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+    m_tdSendTimeDiff = microseconds_from(0);
 
     // Now UDT is opened.
     m_bOpened = true;
@@ -1750,7 +1750,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
         break;
 
     default:
-        LOGF(mglog.Error, "sndSrtMsg: cmd=%d unsupported", cmd);
+        LOGF(mglog.Error, "sndSrtMsg: IPE: cmd=%d unsupported", cmd);
         break;
     }
 
@@ -1858,7 +1858,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 
     if (kmdata_wordsize == 0)
     {
-        LOGC(mglog.Error, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+        LOGC(mglog.Warn, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
         ra_size = 1;
         keydata = failure_kmrsp;
 
@@ -1933,7 +1933,7 @@ bool CUDT::createSrtHandshake(
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
         // Check if there was a failure to receie HSREQ before trying to craft HSRSP.
-        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == steady_clock::zero(),
+        // If fillSrtHandshake_HSRSP catches the condition of m_tsRcvPeerStartTime == steady_clock::time_point(),
         // it will return size 0, which will mess up with further extension procedures;
         // PREVENT THIS HERE.
         if (w_hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && is_zero(m_tsRcvPeerStartTime))
@@ -2121,7 +2121,7 @@ bool CUDT::createSrtHandshake(
         if (m_sStreamName.size() >= size_limit)
         {
             m_RejectReason = SRT_REJ_ROGUE;
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "createSrtHandshake: stream id too long, limited to " << (size_limit - 1) << " bytes");
             return false;
         }
@@ -2370,9 +2370,9 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 {
                     if (m_bOPT_StrictEncryption)
                     {
-                        LOGC(mglog.Error,
+                        LOGC(mglog.Warn,
                              log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
-                                 << " - rejecting per strict encryption");
+                                 << " - rejecting per enforced encryption");
                         return false;
                     }
                     HLOGC(mglog.Debug,
@@ -2388,7 +2388,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             // Please review later.
             else
             {
-                LOGC(mglog.Error, log << "KMREQ failed to process the request - ignoring");
+                LOGC(mglog.Warn, log << "KMREQ failed to process the request - ignoring");
             }
 
             return true; // already done what's necessary
@@ -2870,7 +2870,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else if (cmd == SRT_CMD_NONE)
             {
                 m_RejectReason = SRT_REJ_ROGUE;
-                LOGC(mglog.Error, log << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
+                LOGC(mglog.Warn, log << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
                 // This means that there can be no more processing done by FindExtensionBlock().
                 // And we haven't found what we need - otherwise one of the above cases would pass
                 // and lead to exit this loop immediately.
@@ -2905,13 +2905,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             if (m_bOPT_StrictEncryption)
             {
                 m_RejectReason = SRT_REJ_UNSECURE;
-                LOGC(
-                    mglog.Error,
-                    log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per strict requirement");
+                LOGC(mglog.Error,
+                    log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per enforced encryption");
                 return false;
             }
 
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
@@ -2965,7 +2964,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                             m_RejectReason = SRT_REJ_UNSECURE;
                         }
                         LOGC(mglog.Error,
-                             log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per strict encryption");
+                             log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per enforced encryption");
                         return false;
                     }
                 }
@@ -2977,7 +2976,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 if (m_bOPT_StrictEncryption && res == -1)
                 {
                     m_RejectReason = SRT_REJ_UNSECURE;
-                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per strict encryption.");
+                    LOGC(mglog.Error, log << "KMRSP failed - rejecting connection as per enforced encryption.");
                     return false;
                 }
                 encrypted = true;
@@ -3006,11 +3005,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error,
                  log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting "
-                        "per strict requirement");
+                        "per enforced encryption");
             return false;
         }
 
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - still allowing "
                     "connection.");
         encrypted = true;
@@ -3195,12 +3194,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(mglog.Error,
-                 log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per strict "
-                        "requirement.");
+                 log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per "
+                        "enforced encryption.");
             return false;
         }
 
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets "
                     "from Peer).");
 
@@ -3678,7 +3677,7 @@ bool CUDTGroup::getBufferTimeBase(CUDT* forthesakeof, steady_clock::time_point& 
     w_wp = master->m_pRcvBuffer->getInternalTimeBase((w_tb), (w_dr));
 
     // Sanity check
-    if (w_tb == steady_clock::zero())
+    if (is_zero(w_tb))
     {
         LOGC(mglog.Error, log << "IPE: existing previously socket has no time base set yet!");
         return false; // this will enforce initializing the time base normal way
@@ -3906,7 +3905,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (forced_isn == SRT_SEQNO_NONE)
     {
         // Random Initial Sequence Number (normal mode)
-        srand(count_microseconds(steady_clock::now()));
+        srand(count_microseconds(steady_clock::now().time_since_epoch()));
         m_iISN = m_ConnReq.m_iISN = (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
     }
     else
@@ -4118,7 +4117,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // are sent only when there is a rendezvous mode or non-blocking mode.
             if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
             {
-                LOGC(mglog.Error, log << "createSrtHandshake failed - REJECTING.");
+                LOGC(mglog.Warn, log << "createSrtHandshake failed - REJECTING.");
                 cst = CONN_REJECT;
                 break;
             }
@@ -4251,7 +4250,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
         if (cst != CONN_CONTINUE)
         {
             // processRendezvous already set the reject reason
-            LOGC(mglog.Error,
+            LOGC(mglog.Warn,
                  log << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
             status = false;
         }
@@ -4259,7 +4258,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     else if (cst == CONN_REJECT)
     {
         // m_RejectReason already set at worker_ProcessAddressedPacket.
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << "processAsyncConnectRequest: REJECT reported from HS processing, not processing further.");
         return false;
     }
@@ -4625,7 +4624,7 @@ EConnectStatus CUDT::processRendezvous(
                 (w_reqpkt), (m_ConnReq)))
     {
         // m_RejectReason already set
-        LOGC(mglog.Error, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        LOGC(mglog.Warn, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
         m_tsLastReqTime = steady_clock::time_point();
         return CONN_REJECT;
     }
@@ -4739,7 +4738,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         m_RejectReason = SRT_REJ_ROGUE;
         if (!response.isControl())
         {
-            LOGC(mglog.Error, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
+            LOGC(mglog.Warn, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
         }
         else
         {
@@ -5998,14 +5997,14 @@ SRT_REJECT_REASON CUDT::setupCC()
     // When default 0 value is returned, the current value set by CUDT
     // is preserved.
     const steady_clock::duration min_nak = microseconds_from(m_CongCtl->minNAKInterval());
-    if (min_nak != steady_clock::duration::zero())
+    if (min_nak != steady_clock::duration())
         m_tdMinNakInterval = min_nak;
 
     // Update timers
     const steady_clock::time_point currtime = steady_clock::now();
 
     const steady_clock::duration response_time = currtime - m_tsLastReqTime;
-    if (m_tdAvgResponseTime == steady_clock::duration::zero())
+    if (m_tdAvgResponseTime == steady_clock::duration())
         m_tdAvgResponseTime = response_time;
     else
         m_tdAvgResponseTime = avg_iir<10>(m_tdAvgResponseTime, response_time);
@@ -6173,18 +6172,34 @@ bool CUDT::close()
 
     /*
      * update_events below useless
-     * removing usock for EPolls right after (remove_usocks) clears it (in other HAI patch).
+     * removing usock for EPolls right after (update_usocks) clears it (in other HAI patch).
      *
      * What is in EPoll shall be the responsibility of the application, if it want local close event,
      * it would remove the socket from the EPoll after close.
      */
     // trigger any pending IO events.
+    HLOGC(dlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(m_sPollID) << " of @" << m_SocketID);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     try
     {
+        int no_events = 0;
         for (set<int>::iterator i = m_sPollID.begin(); i != m_sPollID.end(); ++i)
-            s_UDTUnited.m_EPoll.remove_usock(*i, m_SocketID);
+        {
+            HLOGC(dlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
+            s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
+            HLOGC(dlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
+        }
+
+        // Not deleting elements from m_sPollID inside the loop because it invalidates
+        // the control iterator of the loop. Instead, all will be removed at once.
+
+        // IMPORTANT: there's theoretically little time between setting ERR readiness
+        // and unsubscribing, however if there's an application waiting on this event,
+        // it should be informed before this below instruction locks the epoll mutex.
+        enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+        m_sPollID.clear();
+        leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
     }
     catch (...)
     {
@@ -6447,7 +6462,6 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             {
                 m_iSndCurrSeqNo = minlastack;
             }
-            LOGC(dlog.Error, log << "SND-DROPPED " << dpkts << " packets - lost delaying for " << timespan_ms << "ms");
 
             HLOGC(dlog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
                     << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms, FIRST #" << first_msgno);
@@ -6676,7 +6690,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         int32_t seqno = m_iSndNextSeqNo;
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
-        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point(w_mctrl.srctime));
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
@@ -8230,7 +8244,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     if (wrongsize)
     {
         // Issue a log, but don't do anything but skipping the "odd" bytes from the payload.
-        LOGC(mglog.Error,
+        LOGC(mglog.Warn,
              log << CONID() << "Received UMSG_ACK payload is not evened up to 4-byte based field size - cutting to "
                  << acksize << " fields");
     }
@@ -8238,7 +8252,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Start with checking the base size.
     if (acksize < ACKD_TOTAL_SIZE_SMALL)
     {
-        LOGC(mglog.Error, log << CONID() << "Invalid ACK size " << acksize << " fields - less than minimum required!");
+        LOGC(mglog.Warn, log << CONID() << "Invalid ACK size " << acksize << " fields - less than minimum required!");
         // Ack is already interpreted, just skip further parts.
         return;
     }
@@ -8341,7 +8355,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
                     (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
                 {
-                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
+                    LOGC(mglog.Warn, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
                         << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
                     // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                     secure = false;
@@ -8408,7 +8422,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             {
                 if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
                 {
-                    LOGC(mglog.Error, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                    LOGC(mglog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
                         << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
                     // seq_a must not be greater than the most recent sent seq
                     secure = false;
@@ -9099,7 +9113,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             else
             {
                 setPacketTS(w_packet, steady_clock::now());
-                LOGC(dlog.Error, log << "packData: reference time=" << FormatTime(origintime)
+                LOGC(dlog.Warn, log << "packData: reference time=" << FormatTime(origintime)
                         << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
                         << " - setting NOW as reference time for the data packet");
             }
@@ -9121,7 +9135,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         {
             // Encryption failed
             //>>Add stats for crypto failure
-            LOGC(dlog.Error, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
+            LOGC(dlog.Warn, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
             // Encryption failed
             return std::make_pair(-1, enter_time);
         }
@@ -9574,7 +9588,7 @@ int CUDT::processData(CUnit* in_unit)
                 }
                 else
                 {
-                    LOGC(mglog.Error, log << CONID() << "No room to store incoming packet: offset="
+                    LOGC(mglog.Warn, log << CONID() << "No room to store incoming packet: offset="
                             << offset << " avail=" << avail_bufsize
                             << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
                             << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
@@ -10515,7 +10529,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
         if (result == -1)
         {
             hs.m_iReqType = URQFailure(error);
-            LOGF(mglog.Error, "UU:newConnection: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
+            LOGF(mglog.Warn, "processConnectRequest: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
         }
 
         // CONFUSION WARNING!
@@ -10905,14 +10919,17 @@ void CUDT::addEPoll(const int eid)
     }
 }
 
-void CUDT::removeEPoll(const int eid)
+void CUDT::removeEPollEvents(const int eid)
 {
     // clear IO events notifications;
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
 
+void CUDT::removeEPollID(const int eid)
+{
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
@@ -10970,14 +10987,17 @@ void CUDTGroup::addEPoll(int eid)
        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
 }
 
-void CUDTGroup::removeEPoll(const int eid)
+void CUDTGroup::removeEPollEvents(const int eid)
 {
    // clear IO events notifications;
    // since this happens after the epoll ID has been removed, they cannot be set again
    set<int> remove;
    remove.insert(eid);
    m_pGlobal->m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
 
+void CUDTGroup::removeEPollID(const int eid)
+{
    enterCS(m_pGlobal->m_EPoll.m_EPollLock);
    m_sPollID.erase(eid);
    leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
@@ -11113,7 +11133,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     }
     catch (...)
     {
-        LOGP(mglog.Error, "runAcceptHook: hook interrupted by exception");
+        LOGP(mglog.Warn, "runAcceptHook: hook interrupted by exception");
         return false;
     }
 
@@ -12076,7 +12096,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     HLOGC(dlog.Debug, log << "grp/sendBroadcast: Socket @" << d->id << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to wipeme. Remove from eid.
                     wipeme.push_back(d);
-                    m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
                 }
             }
 
@@ -12348,7 +12369,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     m_stats.byteSent += len;
 
     // Also stats: the first successful reading should make the link active
-    if (m_stats.tsActivateTime == steady_clock::zero())
+    if (m_stats.tsActivateTime == steady_clock::time_point())
         m_stats.tsActivateTime = steady_clock::now();
 
     // Pity that the blocking mode only determines as to whether this function should
@@ -13066,7 +13087,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 updateAvgPayloadSize(output_size);
 
                 // Also stats: the first successful reading should make the link active
-                if (m_stats.tsActivateTime == steady_clock::zero())
+                if (m_stats.tsActivateTime == steady_clock::time_point())
                     m_stats.tsActivateTime = steady_clock::now();
 
                 // Record, but do not update yet, until all sockets are handled.
@@ -13519,13 +13540,13 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     // buffer gets empty so that we can make sure that KEEPALIVE will be the
     // really last sent for longer time.
     CUDT& u = w_d->ps->core();
-    if (u.m_tsTmpActiveTime != steady_clock::zero())
+    if (!is_zero(u.m_tsTmpActiveTime))
     {
         CSndBuffer *b = u.m_pSndBuffer;
         if (b && b->getCurrBufSize() == 0)
         {
             HLOGC(dlog.Debug, log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
-            u.m_tsTmpActiveTime = steady_clock::zero();
+            u.m_tsTmpActiveTime = steady_clock::time_point();
 
             // Send first immediate keepalive. The link is to be turn to IDLE
             // now so nothing will be sent to it over time and it will start
@@ -13564,7 +13585,7 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
 
         IF_HEAVY_LOGGING(string source = "heard");
 
-        if (u.m_tsTmpActiveTime != steady_clock::zero() && u.m_tsTmpActiveTime < currtime)
+        if (!is_zero(u.m_tsTmpActiveTime) && u.m_tsTmpActiveTime < currtime)
         {
             // The link is temporary-activated. Calculate then since the activation time.
             // Mind that if the difference against the last update time is SMALLER,
@@ -13580,13 +13601,13 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
             }
             else
             {
-                u.m_tsTmpActiveTime = steady_clock::zero();
+                u.m_tsTmpActiveTime = steady_clock::time_point();
             }
         }
 
         if (count_microseconds(td_responsive) > m_uOPT_StabilityTimeout)
         {
-            if (u.m_tsUnstableSince == steady_clock::zero())
+            if (is_zero(u.m_tsUnstableSince))
             {
                 HLOGC(dlog.Debug, log << "grp/sendBackup: socket NEW UNSTABLE: @" << w_d->id
                         << " last " << source << " " << FormatDuration(td_responsive)
@@ -13605,18 +13626,18 @@ void CUDTGroup::sendBackup_CheckRunningStability(gli_t w_d, const time_point cur
     {
         // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(dlog.Debug, log << "grp/sendBackup: link STABLE: @" << w_d->id
-                << (u.m_tsUnstableSince == steady_clock::zero() ? " - RESTORED" : " - CONTINUED")
+                << (is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED")
                 << " TIME now - updated: " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime));
-        u.m_tsUnstableSince = steady_clock::zero();
+        u.m_tsUnstableSince = steady_clock::time_point();
     }
 
     // Could be set above
-    if (u.m_tsUnstableSince != steady_clock::zero())
+    if (u.m_tsUnstableSince != steady_clock::time_point())
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: link UNSTABLE for "
                 << FormatDuration(currtime - u.m_tsUnstableSince) << " : @" << w_d->id << " - will send a payload");
         // The link is already unstable
-        if (ts_oldest_unstable != steady_clock::zero() || ts_oldest_unstable > u.m_tsUnstableSince)
+        if (ts_oldest_unstable != steady_clock::time_point() || ts_oldest_unstable > u.m_tsUnstableSince)
             ts_oldest_unstable = u.m_tsUnstableSince;
         ++w_nunstable;
     }
@@ -13655,7 +13676,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
         // only 1 link STABLE, and we allow any nymber of unstable
         // links.
 
-        if (w_u.m_tsUnstableSince == steady_clock::zero())
+        if (is_zero(w_u.m_tsUnstableSince))
         {
             w_parallel.push_back(d);
         }
@@ -13676,7 +13697,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
     else if (erc == SRT_EASYNCSND)
     {
         HLOGC(dlog.Debug, log << "grp/sendBackup: Link @" << w_u.m_SocketID << " DEEMED UNSTABLE (not ready to send)");
-        if (w_u.m_tsUnstableSince  == steady_clock::zero()) // skip those unstable already - they are already counted
+        if (is_zero(w_u.m_tsUnstableSince)) // skip those unstable already - they are already counted
             ++w_nunstable;
     }
 
@@ -13818,7 +13839,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             // for all next iterations in this loop.
             d->sndstate = GST_RUNNING;
 
-            if (d->ps->core().m_tsUnstableSince == steady_clock::zero())
+            if (is_zero(d->ps->core().m_tsUnstableSince))
             {
                 w_parallel.push_back(d);
             }
@@ -13893,7 +13914,8 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
                     HLOGC(dlog.Debug, log << "grp/send*: Socket @" << d->id << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to w_wipeme. Remove from eid.
                     w_wipeme.push_back(d);
-                    m_pGlobal->m_EPoll.remove_usock(m_SndEID, d->id);
+                    int no_events = 0;
+                    m_pGlobal->m_EPoll.update_usock(m_SndEID, d->id, &no_events);
                 }
             }
 
@@ -14157,7 +14179,7 @@ RetryWaitBlocked:
             }
             CUDT& ce = d->ps->core();
             steady_clock::duration td;
-            if (ce.m_tsTmpActiveTime != steady_clock::zero()
+            if (!is_zero(ce.m_tsTmpActiveTime)
                     && count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {
                 HLOGC(dlog.Debug, log << "... not silencing @" << d->id << ": too early: "
@@ -14168,7 +14190,7 @@ RetryWaitBlocked:
             // Clear activation time because the link is no longer active!
             d->sndstate = GST_IDLE;
             HLOGC(dlog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
-            ce.m_tsTmpActiveTime = steady_clock::zero();
+            ce.m_tsTmpActiveTime = steady_clock::time_point();
         }
     }
 }
@@ -14706,8 +14728,10 @@ void CUDTGroup::internalKeepalive(gli_t gli)
     if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
     {
         gli->rcvstate = GST_IDLE;
-        gli->ps->core().m_tsTmpActiveTime = steady_clock::zero(); // Prevent sending KEEPALIVE again in group-sending
-        HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
+        // Prevent sending KEEPALIVE again in group-sending
+        gli->ps->core().m_tsTmpActiveTime = steady_clock::time_point();
+        HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @"
+                               << gli->id << " - link turning IDLE");
     }
 }
 

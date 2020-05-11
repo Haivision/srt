@@ -399,7 +399,8 @@ public:
 
     srt::sync::Mutex* exp_groupLock() { return &m_GroupLock; }
     void addEPoll(int eid);
-    void removeEPoll(int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
     void updateReadState(SRTSOCKET sock, int32_t sequence);
     void updateWriteState();
 
@@ -755,7 +756,7 @@ private:
         {
             pktSentTotal = 0;
             pktRecvTotal = 0;
-            tsActivateTime = srt::sync::steady_clock::zero();
+            tsActivateTime = srt::sync::steady_clock::time_point();
             pktRcvDropTotal = 0;
             byteSentTotal = 0;
             byteRecvTotal = 0;
@@ -844,7 +845,9 @@ public:
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using srt_logging::mglog;
-        if (m_tsStartTime == steady_clock::zero())
+        using srt::sync::is_zero;
+
+        if (is_zero(m_tsStartTime))
         {
             // The first socket, defines the group time for the whole group.
             m_tsStartTime = w_start_time;
@@ -853,7 +856,7 @@ public:
         }
 
         // Sanity check. This should never happen, fix the bug if found!
-        if (m_tsRcvPeerStartTime == steady_clock::zero())
+        if (is_zero(m_tsRcvPeerStartTime))
         {
             LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
             // Kinda fallback, but that's not too safe.
@@ -1088,7 +1091,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_tsStartTime,
         // otherwise it may go unnoticed with clock skew.
-        return count_microseconds(from_time - m_stats.tsStartTime);
+        return srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
     }
 
     void setPacketTS(CPacket& p, const time_point& local_time)
@@ -1117,6 +1120,7 @@ public: // internal API
     CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
+    SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
@@ -1817,7 +1821,8 @@ public: // For SrtCongestion
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     void addEPoll(const int eid);
-    void removeEPoll(const int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
 };
 
 
