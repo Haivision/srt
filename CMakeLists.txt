@@ -107,7 +107,6 @@ option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
-option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
@@ -992,6 +991,14 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
+	set (SOURCES_suflip
+		${CMAKE_CURRENT_SOURCE_DIR}/examples/suflip.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/uriparser.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/apputil.cpp
+	)
+	srt_add_program(suflip ${SOURCES_suflip})
+	target_link_libraries(suflip ${srt_link_library})
+	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 
@@ -1046,13 +1053,3 @@ if (DEFINED SRT_EXTRA_APPS_INC)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
 endif()
-
-if ( ENABLE_SUFLIP )
-	set (SOURCES_suflip
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/suflip.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
-	)
-	srt_add_program(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif ()
