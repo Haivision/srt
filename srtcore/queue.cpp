@@ -178,6 +178,9 @@ int CUnitQueue::increase()
         delete[] tempu;
         delete[] tempb;
 
+        LOGC(mglog.Error,
+            log << "CUnitQueue:increase: failed to allocate " << size << " new units."
+                << " Current size=" << m_iSize);
         return -1;
     }
 

@@ -1745,8 +1745,9 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
             /* Exiting wrap check period (if for packet delivery head) */
             m_bTsbPdWrapCheck = false;
             m_tsTsbPdTimeBase += microseconds_from(int64_t(CPacket::MAX_TIMESTAMP) + 1);
-            HLOGC(tslog.Debug, log << "tsbpd wrap period ends - NEW TIME BASE: "
-                   << FormatTime(m_tsTsbPdTimeBase));
+            LOGC(tslog.Debug, log << "tsbpd wrap period ends with ts=" << timestamp_us
+                << " - NEW TIME BASE: " << FormatTime(m_tsTsbPdTimeBase)
+                << " drift: " << m_DriftTracer.drift() << "us");
         }
     }
     // Check if timestamp_us is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1754,7 +1755,8 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     {
         /* Approching wrap around point, start wrap check period (if for packet delivery head) */
         m_bTsbPdWrapCheck = true;
-        HLOGP(tslog.Debug, "tsbpd wrap period begins");
+        LOGC(tslog.Debug, log << "tsbpd wrap period begins with ts=" << timestamp_us
+            << " drift: " << m_DriftTracer.drift() << "us.");
     }
 
     return (m_tsTsbPdTimeBase + microseconds_from(carryover));
@@ -2117,6 +2119,26 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
     HLOGC(dlog.Debug, log << "rcvBuf/extractData: begin=" << m_iStartPos << " reporting extraction size=" << (len - rs));
 
     return len - rs;
+}
+
+string CRcvBuffer::debugTimeState(size_t first_n_pkts) const
+{
+    stringstream ss;
+    int ipos = m_iStartPos;
+    for (size_t i = 0; i < first_n_pkts; ++i, ipos = CSeqNo::incseq(ipos))
+    {
+        const CUnit* unit = m_pUnit[ipos];
+        if (!unit)
+        {
+            ss << "pkt[" << i << "] missing, ";
+            continue;
+        }
+
+        const CPacket& pkt = unit->m_Packet;
+        pkt.getMsgTimeStamp();
+        ss << "pkt[" << i << "] ts=" << pkt.getMsgTimeStamp() << ", ";
+    }
+    return ss.str();
 }
 
 #if ENABLE_HEAVY_LOGGING
