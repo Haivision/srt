@@ -8463,7 +8463,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
-        m_tdSendInterval *= 1.125;
+        m_tdSendInterval = (m_tdSendInterval * 1125) / 1000;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under

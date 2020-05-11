@@ -673,6 +673,15 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
     return true;
 }
 
+bool CheckIfThisThread(const CThread& th)
+{
+#if ENABLE_STDCXX_SYNC
+    return this_thread::get_id() == th.get_id();
+#else
+    return pthread_equal(pthread_self(), th.get_id()) != 0;
+#endif
+}
+
 } // namespace sync
 } // namespace srt
 
