@@ -455,17 +455,6 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-inline void SleepFor(const steady_clock::duration& t)
-{
-#ifdef ENABLE_STDCXX_SYNC
-    this_thread::sleep_for(t);
-#elif !defined(_WIN32)
-    usleep(count_microseconds(t)); // microseconds
-#else
-    Sleep(count_milliseconds(t));
-#endif
-}
-
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
@@ -792,6 +781,15 @@ private:
 namespace this_thread
 {
     const inline CThread::id get_id() { return CThread::id (pthread_self()); }
+
+    inline void sleep_for(const steady_clock::duration& t)
+    {
+#if !defined(_WIN32)
+        usleep(count_microseconds(t)); // microseconds
+#else
+        Sleep(count_milliseconds(t));
+#endif
+    }
 }
 
 #endif
