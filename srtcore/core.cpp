@@ -10497,6 +10497,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
                       << RequestTypeStr(hs.m_iReqType));
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
+            packet.setLength(size);
             packet.m_iID        = id;
             setPacketTS(packet, steady_clock::now());
             HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
