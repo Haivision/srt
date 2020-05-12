@@ -528,9 +528,17 @@ interface prior to connecting. Non-rendezvous sockets (caller sockets) can be
 left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
   * `SRT_ECONNREJ`: Connection has been rejected
+  * `SRT_ENOSERVER`: Connection has been timed out (see `SRTO_CONNTIMEO`)
 
 In case when `SRT_ECONNREJ` error was reported, you can get the reason for
-a rejected connection from `srt_getrejectreason`.
+a rejected connection from `srt_getrejectreason`. In case of non-blocking
+mode (when `SRTO_RCVSYN` is set to false), only `SRT_EINVSOCK`,
+`SRT_ERDVUNBOUND` and `SRT_ECONNSOCK` can be reported. In all other cases
+the function returns immediately with a success and the only way to obtain
+the connecting status is through the epoll flag with `SRT_EPOLL_ERR` flag,
+in which case you can also call `srt_getrejectreason` to get the detailed
+reason of the error, including connection timeout (`SRT_REJ_TIMEOUT`).
+
 
 ### srt_connect_bind
 
@@ -1191,10 +1199,11 @@ enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
 ```
 
 This function shall be called after a connecting function (such as `srt_connect`)
-has returned an error, which's code was `SRT_ECONNREJ`. It allows to get a more
-detailed rejection reason. This function returns a numeric code, which can be
-translated into a message by `srt_rejectreason_str`. The following codes are
-currently reported:
+has returned an error, which's code was `SRT_ECONNREJ`, or - if the socket used
+for connection has been set `SRTO_RCVSYN` - when the `SRT_EPOLL_ERR` event is set
+for this socket. It allows to get a more detailed rejection reason. This
+function returns a numeric code, which can be translated into a message by
+`srt_rejectreason_str`. The following codes are currently reported:
 
 #### SRT_REJ_UNKNOWN
 
@@ -1276,6 +1285,17 @@ connection parties.
 
 The `SRTO_PACKETFILTER` option has been set differently on both connection
 parties.
+
+#### SRT_REJ_GROUP
+
+The group type or some group settings are incompatible for both connection
+parties.
+
+#### SRT_REJ_TIMEOUT
+
+The connection wasn't rejected, but it timed out. This code is always set on
+connection timeout, but this is the only way to get this state in non-blocking
+mode (see `SRTO_RCVSYN`).
 
 
 ### srt_rejectreason_str
