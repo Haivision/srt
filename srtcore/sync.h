@@ -756,9 +756,22 @@ public: // Observers
     /// is still considered an active thread of execution and is therefore joinable.
     bool joinable() const;
 
+    struct id
+    {
+        id(const pthread_t t)
+            : value(t)
+        {}
+
+        const pthread_t value;
+        inline bool operator==(const id& second) const
+        {
+            return pthread_equal(value, second.value) != 0;
+        }
+    };
+
     /// Returns the id of the current thread.
     /// In this implementation the ID is the pthread_t.
-    const pthread_t get_id() const { return m_thread; }
+    const id get_id() const { return id(m_thread); }
 
 public:
     /// Blocks the current thread until the thread identified by *this finishes its execution.
@@ -775,6 +788,12 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+namespace this_thread
+{
+    const inline CThread::id get_id() { return CThread::id (pthread_self()); }
+}
+
 #endif
 
 /// StartThread function should be used to do CThread assignments:
@@ -792,10 +811,6 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
 #else
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
 #endif
-
-/// Checks if the thread object passed to this function is the current thread.
-/// @param th reference to the CThread object to check
-bool CheckIfThisThread(const CThread& th);
 
 ////////////////////////////////////////////////////////////////////////////////
 //
