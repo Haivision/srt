@@ -9566,12 +9566,6 @@ int CUDT::processData(CUnit* in_unit)
                 // So this packet is "redundant".
                 IF_HEAVY_LOGGING(exc_type = "UNACKED");
                 adding_successful = false;
-                enterCS(m_StatsLock);
-                ++m_stats.traceRecvUniq;
-                ++m_stats.recvUniqTotal;
-                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
-                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
-                leaveCS(m_StatsLock);
             }
             else
             {
@@ -9601,6 +9595,16 @@ int CUDT::processData(CUnit* in_unit)
                     }
                 }
             }
+
+            if (adding_successful)
+            {
+                CGuard statslock(m_StatsLock);
+                ++m_stats.traceRecvUniq;
+                ++m_stats.recvUniqTotal;
+                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
+                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
+            }
+
 #if ENABLE_HEAVY_LOGGING
             std::ostringstream timebufspec;
             if (m_bTsbPd)
