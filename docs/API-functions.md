@@ -1197,10 +1197,13 @@ report a "successful" code.
 ```
 enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
 ```
-
-This function shall be called after a connecting function (such as `srt_connect`)
-has returned an error, the code for which is `SRT_ECONNREJ`. If `SRTO_RCVSYN` has been set on the socket used for the connection, the function shall also be called when the `SRT_EPOLL_ERR` event is set
-for this socket. This function provides a more detailed reason for the rejection. It returns a numeric code, which can be translated into a message by `srt_rejectreason_str`. The following codes are currently reported:
+This function provides a more detailed reason for the failed connection attempt. 
+It shall be called after a connecting function (such as `srt_connect`)
+has returned an error, the code for which is `SRT_ECONNREJ`. If `SRTO_RCVSYN`
+has been set on the socket used for the connection, the function should also be
+called when the `SRT_EPOLL_ERR` event is set for this socket. It returns a
+numeric code, which can be translated into a message by `srt_rejectreason_str`.
+The following codes are currently reported:
 
 #### SRT_REJ_UNKNOWN
 
