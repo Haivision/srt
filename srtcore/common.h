@@ -69,6 +69,7 @@ modified by
 #include "utilities.h"
 #include "sync.h"
 #include "netinet_any.h"
+#include "packetfilter_api.h"
 
 // System-independent errno
 #ifndef _WIN32
@@ -538,62 +539,6 @@ struct EventSlot
 };
 
 
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
-
-class CTimer
-{
-public:
-   CTimer();
-   ~CTimer();
-
-public:
-
-      /// Seelp until CC "nexttime_tk".
-      /// @param [in] nexttime_tk next time the caller is waken up.
-
-   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
-
-      /// Stop the sleep() or sleepto() methods.
-
-   void interrupt();
-
-      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
-
-   void tick();
-
-public:
-
-      /// trigger an event such as new connection, close, new data, etc. for "select" call.
-
-   static void triggerEvent();
-
-   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
-
-      /// wait for an event to br triggered by "triggerEvent".
-      /// @retval WT_EVENT The event has happened
-      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
-      /// @retval WT_ERROR The function has exit due to an error
-
-   static EWait waitForEvent();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
-private:
-   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
-
-   pthread_cond_t m_TickCond;
-   srt::sync::Mutex m_TickLock;
-
-   static pthread_cond_t m_EventCond;
-   static srt::sync::Mutex m_EventLock;
-};
-
 // UDT Sequence Number 0 - (2^31 - 1)
 
 // seqcmp: compare two seq#, considering the wraping
@@ -762,6 +707,7 @@ class RollNumber
     uint32_t number;
 
 public:
+
     static const size_t OVER = number_t::mask+1;
     static const size_t HALF = (OVER-MIN)/2;
 
@@ -903,21 +849,21 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-    StatsLossRecords(): initseq(-1) {}
+    StatsLossRecords(): initseq(SRT_SEQNO_NONE) {}
 
     // To check if this structure still keeps record of that sequence.
     // This is to check if the information about this not being found
     // is still reliable.
     bool exists(int32_t seq)
     {
-        return initseq != -1 && CSeqNo::seqcmp(seq, initseq) >= 0;
+        return initseq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seq, initseq) >= 0;
     }
 
     int32_t base() { return initseq; }
 
     void clear()
     {
-        initseq = -1;
+        initseq = SRT_SEQNO_NONE;
         array.reset();
     }
 
@@ -1433,7 +1379,7 @@ inline int32_t SrtParseVersion(const char* v)
         return 0;
     }
 
-    return major*0x10000 + minor*0x100 + patch;
+    return SrtVersion(major, minor, patch);
 }
 
 inline std::string SrtVersionString(int version)
@@ -1446,5 +1392,7 @@ inline std::string SrtVersionString(int version)
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
+
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
 
 #endif

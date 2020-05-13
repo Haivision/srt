@@ -289,6 +289,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     CGuard pg(m_EPollLock);
+    IF_HEAVY_LOGGING(ostringstream evd);
 
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
@@ -310,6 +311,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
             // parameter, but others are probably unchanged. Change them
             // forcefully and take out notices that are no longer valid.
             const int removable = wait.watch & ~evts;
+            IF_HEAVY_LOGGING(PrintEpollEvent(evd, evts & (~wait.watch)));
 
             // Check if there are any events that would be removed.
             // If there are no removed events watched (for example, when
@@ -327,6 +329,12 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
             // Now it should look exactly like newly added
             // and the state is also updated
+            HLOGC(dlog.Debug, log << "srt_epoll_update_usock: UPDATED E" << eid << " for @" << u << " +" << evd.str());
+        }
+        else
+        {
+            IF_HEAVY_LOGGING(PrintEpollEvent(evd, evts));
+            HLOGC(dlog.Debug, log << "srt_epoll_update_usock: ADDED E" << eid << " for @" << u << " " << evd.str());
         }
 
         const int newstate = wait.watch & wait.state;
@@ -343,6 +351,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     else
     {
         // Update with no events means to remove subscription
+        HLOGC(dlog.Debug, log << "srt_epoll_update_usock: REMOVED E" << eid << " socket @" << u);
         d.removeSubscription(u);
     }
     return 0;
@@ -497,7 +506,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
-        CTimer::waitForEvent();
+        CGlobEvent::waitForEvent();
     }
 
     return 0;
@@ -690,9 +699,9 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
         }
 
-        CTimer::EWait wt ATR_UNUSED = CTimer::waitForEvent();
+        const bool wait_signaled ATR_UNUSED = CGlobEvent::waitForEvent();
         HLOGC(mglog.Debug, log << "CEPoll::wait: EVENT WAITING: "
-            << (wt == CTimer::WT_TIMEOUT ? "CHECKPOINT" : wt == CTimer::WT_EVENT ? "TRIGGERED" : "ERROR"));
+            << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
 
     return 0;
@@ -773,7 +782,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
             return 0; // meaning "none is ready"
         }
 
-        CTimer::waitForEvent();
+        CGlobEvent::waitForEvent();
     }
 
     return 0;

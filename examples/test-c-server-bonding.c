@@ -39,7 +39,7 @@ int main(int argc, char** argv)
 
     printf("srt startup\n");
     srt_startup();
-    // Since now, srt_cleanup() must be done before exitting.
+    // Since now, srt_cleanup() must be done before exiting.
 
     printf("srt socket\n");
     ss = srt_create_socket();

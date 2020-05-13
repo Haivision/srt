@@ -281,7 +281,17 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    int type;
+    int size = sizeof type;
+    srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+
+    return 0;
+}
+
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
@@ -325,7 +335,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const so
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
     return 0;
 }
@@ -344,6 +354,37 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     UDT::setstreamid(acpsock, data->streaminfo);
 
     return -1;
+}
+
+void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
+{
+    std::ostringstream son, soff;
+
+    for (auto& s: speclist)
+    {
+        string name;
+        bool on = true;
+        if (s[0] == '+')
+            name = s.substr(1);
+        else if (s[0] == '~')
+        {
+            name = s.substr(1);
+            on = false;
+        }
+        else
+            name = s;
+
+        if (on)
+            son << "," << name;
+        else
+            soff << "," << name;
+    }
+
+    const string& sons = son.str();
+    const string& soffs = soff.str();
+
+    w_on = sons.empty() ? string() : sons.substr(1);
+    w_off = soffs.empty() ? string() : soffs.substr(1);
 }
 
 int main( int argc, char** argv )
@@ -372,8 +413,8 @@ int main( int argc, char** argv )
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
         o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
-        o_loglevel  ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
-        o_logfa     ((optargs), "<FA=all> Enabled Functional Areas", "lfa", "logfa"),
+        o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
+        o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
         o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
         o_stats     ((optargs), "<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
         o_statspf   ((optargs), "<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
@@ -382,7 +423,7 @@ int main( int argc, char** argv )
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
-        o_help      ((optargs), " This help", "?",   "help", "-help")
+        o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
     options_t params = ProcessOptions(argv, argc, optargs);
@@ -483,6 +524,26 @@ int main( int argc, char** argv )
 
     if (need_help)
     {
+        string helpspec = Option<OutString>(params, o_help);
+        if (helpspec == "logging")
+        {
+            cerr << "Logging options:\n";
+            cerr << "    -ll <LEVEL>   - specify minimum log level\n";
+            cerr << "    -lfa <area...> - specify functional areas\n";
+            cerr << "Where:\n\n";
+            cerr << "    <LEVEL>: fatal error note warning debug\n\n";
+            cerr << "This turns on logs that are at the given log name and all on the left.\n";
+            cerr << "(Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in hierarchy.)\n\n";
+            cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
+            cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
+            cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
+            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            return 1;
+        }
+
+        // Unrecognized helpspec is same as no helpspec, that is, general help.
         cerr << "Usage:\n";
         cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
         cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
@@ -523,7 +584,7 @@ int main( int argc, char** argv )
     bool crashonx = OptionPresent(params, o_crash);
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    string logfa = Option<OutString>(params, "general", o_logfa);
+    vector<string> logfa = Option<OutList>(params, o_logfa);
     string logfile = Option<OutString>(params, "", o_logfile);
     transmit_stats_report = Option<OutNumber>(params, "0", o_stats);
 
@@ -549,6 +610,11 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
+        else if (hargs[0] == "groupcheck")
+        {
+            transmit_accept_hook_fn = &SrtCheckGroupHook;
+            transmit_accept_hook_op = nullptr;
+        }
     }
 
     SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
@@ -564,9 +630,40 @@ int main( int argc, char** argv )
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
-        srt_addlogfa(*i);
+    string logfa_on, logfa_off;
+    ParseLogFASpec(logfa, (logfa_on), (logfa_off));
+
+    set<srt_logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
+    set<srt_logging::LogFA> fason = SrtParseLogFA(logfa_on);
+
+    auto fa_del = [fasoff]() {
+        for (set<srt_logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+            srt_dellogfa(*i);
+    };
+
+    auto fa_add = [fason]() {
+        for (set<srt_logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+            srt_addlogfa(*i);
+    };
+
+    if (logfa_off == "all")
+    {
+        // If the spec is:
+        //     -lfa ~all control app
+        // then we first delete all, then enable given ones
+        fa_del();
+        fa_add();
+    }
+    else
+    {
+        // Otherwise we first add all those that have to be added,
+        // then delete those unwanted. This embraces both
+        //   -lfa control app ~cc
+        // and
+        //   -lfa all ~cc
+        fa_add();
+        fa_del();
+    }
 
 
     UDT::addlogfa(SRT_LOGFA_APP);
@@ -658,7 +755,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.";
+        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -688,7 +785,7 @@ int main( int argc, char** argv )
 
         if (remain <= final_delay)
         {
-            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
+            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exiting\n";
             return 0;
         }
 
