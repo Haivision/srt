@@ -18,6 +18,8 @@
 #ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #else
 #include <pthread.h>
 #endif
@@ -75,13 +77,14 @@ public: // Relational operators
     inline bool operator<(const Duration& rhs) const { return m_duration < rhs.m_duration; }
 
 public: // Assignment operators
-    inline void operator*=(const double mult) { m_duration = static_cast<int64_t>(m_duration * mult); }
+    inline void operator*=(const int64_t mult) { m_duration = static_cast<int64_t>(m_duration * mult); }
     inline void operator+=(const Duration& rhs) { m_duration += rhs.m_duration; }
     inline void operator-=(const Duration& rhs) { m_duration -= rhs.m_duration; }
 
     inline Duration operator+(const Duration& rhs) const { return Duration(m_duration + rhs.m_duration); }
     inline Duration operator-(const Duration& rhs) const { return Duration(m_duration - rhs.m_duration); }
-    inline Duration operator*(const int& rhs) const { return Duration(m_duration * rhs); }
+    inline Duration operator*(const int64_t& rhs) const { return Duration(m_duration * rhs); }
+    inline Duration operator/(const int64_t& rhs) const { return Duration(m_duration / rhs); }
 
 private:
     // int64_t range is from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
@@ -452,17 +455,6 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-inline void SleepFor(const steady_clock::duration& t)
-{
-#ifdef ENABLE_STDCXX_SYNC
-    this_thread::sleep_for(t);
-#elif !defined(_WIN32)
-    usleep(count_microseconds(t)); // microseconds
-#else
-    Sleep(count_milliseconds(t));
-#endif
-}
-
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
@@ -753,6 +745,23 @@ public: // Observers
     /// is still considered an active thread of execution and is therefore joinable.
     bool joinable() const;
 
+    struct id
+    {
+        id(const pthread_t t)
+            : value(t)
+        {}
+
+        const pthread_t value;
+        inline bool operator==(const id& second) const
+        {
+            return pthread_equal(value, second.value) != 0;
+        }
+    };
+
+    /// Returns the id of the current thread.
+    /// In this implementation the ID is the pthread_t.
+    const id get_id() const { return id(m_thread); }
+
 public:
     /// Blocks the current thread until the thread identified by *this finishes its execution.
     /// If that thread has already terminated, then join() returns immediately.
@@ -768,6 +777,21 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+namespace this_thread
+{
+    const inline CThread::id get_id() { return CThread::id (pthread_self()); }
+
+    inline void sleep_for(const steady_clock::duration& t)
+    {
+#if !defined(_WIN32)
+        usleep(count_microseconds(t)); // microseconds
+#else
+        Sleep(count_milliseconds(t));
+#endif
+    }
+}
+
 #endif
 
 /// StartThread function should be used to do CThread assignments:
