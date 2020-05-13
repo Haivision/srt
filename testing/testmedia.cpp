@@ -222,9 +222,17 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
-            if (m_group_type != "broadcast")
+            vector<string> parts;
+            Split(m_group_type, '/', back_inserter(parts));
+            if (parts.size() == 0 || parts.size() > 2)
             {
-                Error("With //group, only type=broadcast is currently supported");
+                Error("Invalid specification for 'type' parameter");
+            }
+
+            if (parts.size() == 2)
+            {
+                m_group_type = parts[0];
+                m_group_config = parts[1];
             }
 
             vector<string> nodes;
@@ -347,6 +355,14 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         }
     }
 
+    // Assigning group configuration from a special "groupconfig" attribute.
+    // This is the only way how you can set up this configuration at the listener side.
+    if (par.count("groupconfig"))
+    {
+        m_group_config = par.at("groupconfig");
+        par.erase("groupconfig");
+    }
+
     // Assign the others here.
     m_options = par;
     m_options["mode"] = m_mode;
@@ -434,6 +450,15 @@ void SrtCommon::AcceptNewClient()
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
+        if (m_group_config != "")
+        {
+            int stat = srt_group_configure(m_sock, m_group_config.c_str());
+            if (stat == SRT_ERROR)
+            {
+                // Don't break the connection basing on this, just ignore.
+                Verb() << " (error setting config: '" << m_group_config << "') " << VerbNoEOL;
+            }
+        }
         // There might be added a poller, remove it.
         // We need it work different way.
 
@@ -730,14 +755,26 @@ void SrtCommon::OpenGroupClient()
         type = SRT_GTYPE_BROADCAST;
     else if (m_group_type == "backup")
         type = SRT_GTYPE_BACKUP;
+    else if (m_group_type == "balancing")
+        type = SRT_GTYPE_BALANCING;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
     }
 
     m_sock = srt_create_group(type);
+    if (m_sock == -1)
+        Error("srt_create_group");
 
-    int stat = ConfigurePre(m_sock);
+    int stat = -1;
+    if (m_group_config != "")
+    {
+        stat = srt_group_configure(m_sock, m_group_config.c_str());
+        if (stat == SRT_ERROR)
+            Error("srt_group_configure");
+    }
+
+    stat = ConfigurePre(m_sock);
 
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
