@@ -131,7 +131,6 @@ void SrtExtractHandshakeExtensions(const char* bufbegin, size_t size,
 
 struct SrtHSRequest: public SrtHandshakeExtension
 {
-
     typedef Bits<31, 16> SRT_HSTYPE_ENCFLAGS;
     typedef Bits<15, 0> SRT_HSTYPE_HSFLAGS;
 
@@ -149,6 +148,18 @@ struct SrtHSRequest: public SrtHandshakeExtension
         int32_t base = withmagic ? SRT_MAGIC_CODE : 0;
         return base | SRT_HSTYPE_ENCFLAGS::wrap( SRT_PBKEYLEN_BITS::unwrap(crypto_keylen) );
     }
+
+    // Group handshake extension layout
+//  0                   1                   2                   3
+//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//  |                           Group ID                            |
+//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//  | Group Type  | Group's Flags |       Group's Weight            |
+//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    typedef Bits<31, 24> HS_GROUP_TYPE;
+    typedef Bits<23, 16> HS_GROUP_FLAGS;
+    typedef Bits<15, 0> HS_GROUP_WEIGHT;
 
 private:
     friend class CHandShake;

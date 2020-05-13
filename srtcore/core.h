@@ -134,11 +134,9 @@ extern const SRT_SOCKOPT srt_post_opt_list [];
 enum GroupDataItem
 {
     GRPD_GROUPID,
-    GRPD_GROUPTYPE,
-    GRPD_WEIGHT,
+    GRPD_GROUPDATA,
 
-
-    GRPD__SIZE
+    GRPD_E_SIZE
 };
 
 const size_t GRPD_MIN_SIZE = 2; // ID and GROUPTYPE as backward compat
@@ -379,6 +377,7 @@ public:
     void setOpt(SRT_SOCKOPT optname, const void* optval, int optlen);
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
     void deriveSettings(CUDT* source);
+    bool applyFlags(uint32_t flags, HandshakeSide);
 
     SRT_SOCKSTATUS getStatus();
 
@@ -490,6 +489,7 @@ private:
     };
     GroupContainer m_Group;
     bool m_selfManaged;
+    bool m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
 
@@ -724,6 +724,7 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t,        currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(                std::set<int>&, epollset,             m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t,        latency,              m_iTsbPdDelay_us);
+    SRTU_PROPERTY_RO(                 bool,           synconmsgno,          m_bSyncOnMsgNo);
 };
 
 
@@ -1053,7 +1054,7 @@ private:
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
+    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
     void synchronizeWithGroup(CUDTGroup* grp);
 
     void updateAfterSrtHandshake(int hsv);
