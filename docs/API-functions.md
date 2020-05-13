@@ -530,14 +530,14 @@ left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNREJ`: Connection has been rejected
   * `SRT_ENOSERVER`: Connection has been timed out (see `SRTO_CONNTIMEO`)
 
-In case when `SRT_ECONNREJ` error was reported, you can get the reason for
-a rejected connection from `srt_getrejectreason`. In case of non-blocking
+When `SRT_ECONNREJ` error is reported, you can get the reason for
+a rejected connection from `srt_getrejectreason`. In non-blocking
 mode (when `SRTO_RCVSYN` is set to false), only `SRT_EINVSOCK`,
 `SRT_ERDVUNBOUND` and `SRT_ECONNSOCK` can be reported. In all other cases
-the function returns immediately with a success and the only way to obtain
-the connecting status is through the epoll flag with `SRT_EPOLL_ERR` flag,
-in which case you can also call `srt_getrejectreason` to get the detailed
-reason of the error, including connection timeout (`SRT_REJ_TIMEOUT`).
+the function returns immediately with a success, and the only way to obtain
+the connecting status is through the epoll flag with `SRT_EPOLL_ERR`.
+In this case you can also call `srt_getrejectreason` to get the detailed
+reason for the error, including connection timeout (`SRT_REJ_TIMEOUT`).
 
 
 ### srt_connect_bind
@@ -1199,11 +1199,8 @@ enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
 ```
 
 This function shall be called after a connecting function (such as `srt_connect`)
-has returned an error, which's code was `SRT_ECONNREJ`, or - if the socket used
-for connection has been set `SRTO_RCVSYN` - when the `SRT_EPOLL_ERR` event is set
-for this socket. It allows to get a more detailed rejection reason. This
-function returns a numeric code, which can be translated into a message by
-`srt_rejectreason_str`. The following codes are currently reported:
+has returned an error, the code for which is `SRT_ECONNREJ`. If `SRTO_RCVSYN` has been set on the socket used for the connection, the function shall also be called when the `SRT_EPOLL_ERR` event is set
+for this socket. This function provides a more detailed reason for the rejection. It returns a numeric code, which can be translated into a message by `srt_rejectreason_str`. The following codes are currently reported:
 
 #### SRT_REJ_UNKNOWN
 
