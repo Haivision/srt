@@ -251,7 +251,7 @@ inline int RejectReasonForURQ(UDTRequestType req)
     if (req < URQ_FAILURE_TYPES)
         return SRT_REJ_UNKNOWN;
 
-    if (req < URQ_SERVER_FAILURE_TYPES && req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
+    if (req < URQ_SERVER_FAILURE_TYPES && req - URQ_FAILURE_TYPES >= SRT_REJ_E_SIZE)
         return SRT_REJ_UNKNOWN;
 
     return req - URQ_FAILURE_TYPES;

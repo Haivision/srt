@@ -573,7 +573,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
 
-    SRT_REJ__SIZE,
+    SRT_REJ_E_SIZE,
 };
 
 // Reject category codes:

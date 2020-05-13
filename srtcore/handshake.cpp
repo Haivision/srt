@@ -144,10 +144,15 @@ std::string RequestTypeStr(UDTRequestType rq)
         std::ostringstream rt;
         rt << "ERROR:";
         int id = RejectReasonForURQ(rq);
-        if (id < SRT_REJ__SIZE)
+        if (id < SRT_REJ_E_SIZE)
             rt << srt_rejectreason_name[id];
         else if (id < SRT_REJC_USER)
-            rt << "SERVER:" << (id - SRT_REJC_SERVER);
+        {
+            if (id < SRT_REJC_SERVER)
+                rt << "UNKNOWN:" << id;
+            else
+                rt << "SERVER:" << (id - SRT_REJC_SERVER);
+        }
         else
             rt << "USER:" << (id - SRT_REJC_USER);
 
