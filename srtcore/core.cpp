@@ -1812,10 +1812,10 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
         | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_IncludedIter->weight);
 
-    uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
+    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
     memcpy((space), storedata, sizeof storedata);
 
-    size_t ra_size = Size(storedata);
+    const size_t ra_size = Size(storedata);
     *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
     return ra_size;
