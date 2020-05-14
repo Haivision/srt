@@ -93,12 +93,12 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 
 #ifdef _WIN32
-    const int invalid = INVALID_SOCKET;
+    // use INVALID_SOCKET, as provided
 #else
-    const int invalid = -1;
+    static const int INVALID_SOCKET = -1;
 #endif
 
-    if (m_iSocket == invalid)
+    if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
