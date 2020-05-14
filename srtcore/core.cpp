@@ -1344,11 +1344,13 @@ void CUDT::clearData()
         CGuard stat_lock(m_StatsLock);
 
         m_stats.tsStartTime = steady_clock::now();
-        m_stats.sentTotal = m_stats.recvTotal = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal =
-            m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
+        m_stats.sentTotal = m_stats.sentUniqTotal = m_stats.recvTotal = m_stats.recvUniqTotal
+            = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal
+            = m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
         m_stats.tsLastSampleTime = steady_clock::now();
-        m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans =
-            m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+        m_stats.traceSent = m_stats.traceSentUniq = m_stats.traceRecv = m_stats.traceRecvUniq
+            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
         m_stats.traceRcvRetrans                                                   = 0;
         m_stats.traceReorderDistance                                              = 0;
         m_stats.traceBelatedTime                                                  = 0.0;
@@ -1363,10 +1365,14 @@ void CUDT::clearData()
         m_stats.traceRcvUndecrypt   = 0;
 
         m_stats.bytesSentTotal    = 0;
+        m_stats.bytesSentUniqTotal    = 0;
         m_stats.bytesRecvTotal    = 0;
+        m_stats.bytesRecvUniqTotal    = 0;
         m_stats.bytesRetransTotal = 0;
         m_stats.traceBytesSent    = 0;
+        m_stats.traceBytesSentUniq    = 0;
         m_stats.traceBytesRecv    = 0;
+        m_stats.traceBytesRecvUniq    = 0;
         m_stats.sndFilterExtra    = 0;
         m_stats.rcvFilterExtra    = 0;
         m_stats.rcvFilterSupply   = 0;
@@ -7295,7 +7301,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
     perf->pktSent              = m_stats.traceSent;
+    perf->pktSentUnique        = m_stats.traceSentUniq;
     perf->pktRecv              = m_stats.traceRecv;
+    perf->pktRecvUnique        = m_stats.traceRecvUniq;
     perf->pktSndLoss           = m_stats.traceSndLoss;
     perf->pktRcvLoss           = m_stats.traceRcvLoss;
     perf->pktRetrans           = m_stats.traceRetrans;
@@ -7318,7 +7326,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     /* perf byte counters include all headers (SRT+UDP+IP) */
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
     perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
+    perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
     perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
+    perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
     perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
     perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
@@ -7333,7 +7343,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
 
     perf->pktSentTotal       = m_stats.sentTotal;
+    perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
     perf->pktRecvTotal       = m_stats.recvTotal;
+    perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
     perf->pktSndLossTotal    = m_stats.sndLossTotal;
     perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
     perf->pktRetransTotal    = m_stats.retransTotal;
@@ -7344,7 +7356,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
 
     perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
     perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
     perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
     perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
     perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
@@ -7473,9 +7487,12 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.traceRcvBytesUndecrypt = 0;
         // new>
         m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
+        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
         //<
-        m_stats.traceSent = m_stats.traceRecv = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans =
-            m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+        m_stats.traceSent = m_stats.traceRecv
+            = m_stats.traceSentUniq = m_stats.traceRecvUniq
+            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
         m_stats.sndDuration                                                       = 0;
         m_stats.traceRcvRetrans                                                   = 0;
         m_stats.traceRcvBelated                                                   = 0;
@@ -8521,7 +8538,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
-        m_tdSendInterval *= 1.125;
+        m_tdSendInterval = (m_tdSendInterval * 1125) / 1000;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
@@ -9164,6 +9181,13 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     m_stats.bytesSentTotal += payload;
     ++m_stats.traceSent;
     ++m_stats.sentTotal;
+    if (new_packet_packed)
+    {
+        ++m_stats.traceSentUniq;
+        ++m_stats.sentUniqTotal;
+        m_stats.traceBytesSentUniq += payload;
+        m_stats.bytesSentUniqTotal += payload;
+    }
     leaveCS(m_StatsLock);
 
     if (probe)
@@ -9613,6 +9637,16 @@ int CUDT::processData(CUnit* in_unit)
                     }
                 }
             }
+
+            if (adding_successful)
+            {
+                CGuard statslock(m_StatsLock);
+                ++m_stats.traceRecvUniq;
+                ++m_stats.recvUniqTotal;
+                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
+                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
+            }
+
 #if ENABLE_HEAVY_LOGGING
             std::ostringstream timebufspec;
             if (m_bTsbPd)
@@ -10539,6 +10573,7 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
                       << RequestTypeStr(hs.m_iReqType));
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
+            packet.setLength(size);
             packet.m_iID        = id;
             setPacketTS(packet, steady_clock::now());
             HLOGC(mglog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());

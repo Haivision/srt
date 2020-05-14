@@ -463,8 +463,7 @@ void CSndUList::remove_(const CUDT* u)
 
 //
 CSndQueue::CSndQueue()
-    : m_WorkerThread()
-    , m_pSndUList(NULL)
+    : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
     , m_WindowCond()
@@ -1055,10 +1054,11 @@ CRcvQueue::CRcvQueue()
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
+
+    if (m_WorkerThread.joinable())
     {
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
-        pthread_join(m_WorkerThread, NULL);
+        m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
 
@@ -1101,13 +1101,13 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *c
 
 #if ENABLE_LOGGING
     ++m_counter;
-    std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
-    ThreadName tn(thrname.c_str());
+    const std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+#else
+    const std::string thrname = "SRT:RcvQ:w";
 #endif
 
-    if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
+    if (!StartThread(m_WorkerThread, CRcvQueue::worker, this, thrname.c_str()))
     {
-        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1529,7 +1529,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (pthread_equal(pthread_self(), m_WorkerThread))
+    if (this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
@@ -1537,7 +1537,7 @@ void CRcvQueue::stopWorker()
 
     HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
-    pthread_join(m_WorkerThread, NULL);
+    m_WorkerThread.join();
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
