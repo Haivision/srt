@@ -1236,7 +1236,7 @@ As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `UDT::setstreamid` and
 `UDT::getstreamid`. This option doesn't make sense in Rendezvous connection;
 the result might be that simply one side will override the value from the other
-side and it's the matter of luck which one would win.
+side and it's a matter of luck which one would win.
 
 ---
 

@@ -1319,9 +1319,9 @@ const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 ```
 
 Returns a constant string for the reason of the connection rejected,
-as per given code id. It provides a system-defined message for
-values below `SRT_REJC_SERVER` and for values from the server and
-user ranges just the number with "SERVER" or "USER" prefix.
+as per given code ID. It provides a system-defined message for
+values below `SRT_REJC_SERVER`. For values from the server and
+user ranges it provides just the number with the prefix "SERVER" or "USER".
 
 The actual messages assigned to system rejection codes, that is,
 between `SRT_REJC_SYSTEM` and `SRT_REJ_E_SIZE` (both exclusive), can be also
@@ -1335,15 +1335,15 @@ int srt_setrejectreason(SRTSOCKET sock, int value);
 
 Sets the rejection code on the socket. This call is only useful in the
 listener callback. The code from `value` set this way will be set as a
-rejection reason for the socket and after the callback decided to reject
-the connection the code will be passed back to the caller peer with the
+rejection reason for the socket. After the callback rejects
+the connection, the code will be passed back to the caller peer with the
 handshake response.
 
-Note that allowed values for that function begin with `SRT_REJC_SERVER`
-(that is, you cannot set a system rejection code using that function).
+Note that allowed values for this function begin with `SRT_REJC_SERVER`
+(that is, you cannot set a system rejection code using` srt_setrejectreason(SRTSOCKET sock, int value);`).
 For example, your application can inform the calling side that the resource
 specified under the `r` key in the StreamID string is not availble - it
-sets then the value `SRT_REJC_SERVER + 404`.
+then sets the value to `SRT_REJC_SERVER + 404`.
 
 - Returns:
   * 0 in case of success.
