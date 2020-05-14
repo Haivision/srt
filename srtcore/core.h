@@ -1533,7 +1533,13 @@ private: // Generation and processing of packets
     int processData(CUnit* unit);
     void processClose();
 
-    /// Returns: URQ code, possibly containing reject reason
+    /// Process the request after receiving the handshake from caller.
+    /// The @a packet param is passed here as non-const because this function
+    /// will need to make a temporary back-and-forth endian swap; it doesn't intend to
+    /// modify the object permanently.
+    /// @param addr source address from where the request came
+    /// @param packet contents of the packet
+    /// @return URQ code, possibly containing reject reason
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     size_t addHandshakeExtension(char *data, int cmd, size_t hs_size, std::string contents);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);

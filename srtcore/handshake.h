@@ -225,20 +225,20 @@ enum UDTRequestType
     // --> CONCLUSION (with response extensions, if RESPONDER)
     // <-- AGREEMENT (sent exclusively by INITIATOR upon reception of CONCLUSIOn with response extensions)
 
-    // Errors reported by the peer, also used as useless error codes
-    // in handshake processing functions.
+    // This marks the beginning of values that are error codes.
     URQ_FAILURE_TYPES = 1000,
 
     // NOTE: codes above 1000 are reserved for failure codes for
-    // rejection reason, as per `SRT_REJECT_REASON` enum. DO NOT
-    // add any new values here (below 1000).
+    // rejection reason, as per `SRT_REJECT_REASON` enum. The
+    // actual rejection code is the value of the request type
+    // minus URQ_FAILURE_TYPES.
 
     // This is in order to return standard error codes for server
     // data retrieval failures.
-    URQ_SERVER_FAILURE_TYPES = 2000,
+    URQ_SERVER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_SERVER,
 
     // This is for a completely user-defined reject reasons.
-    URQ_USER_FAILURE_TYPES = 3000
+    URQ_USER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_USER
 };
 
 inline UDTRequestType URQFailure(int reason)
