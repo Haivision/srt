@@ -72,7 +72,6 @@ public:
             std::cerr << arg;
         return *this;
     }
-
 };
 
 }
