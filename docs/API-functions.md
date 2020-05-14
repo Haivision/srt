@@ -1305,14 +1305,12 @@ connection parties.
 The `SRTO_PACKETFILTER` option has been set differently on both connection
 parties.
 
-Beside these codes, there could be also server and user rejection codes,
-as defined by `SRT_REJC_SYSTEM`, `SRT_REJC_SERVER` and `SRT_REJC_USER`
-constants. These above values are all below `SRT_REJC_SERVER` value.
-From this value on, the number space is reserved for "server codes"
-(`SRT_REJC_SERVER` value plus HTTP codes) and values above `SRT_REJC_USER`
+There may also be server and user rejection codes,
+as defined by the `SRT_REJC_SYSTEM`, `SRT_REJC_SERVER` and `SRT_REJC_USER`
+constants. Note that the number space from the value of `SRT_REJC_SERVER`  and above is reserved for "server codes" (`SRT_REJC_SERVER` value plus HTTP codes). Values above `SRT_REJC_USER`
 are freely defined by the application. In addition to this code, the
 extended free-form rejection message can be obtained by reading the
-value of `SRTO_STREAMID` value on a socket that received the rejection.
+value of `SRTO_STREAMID` on a socket that received the rejection.
 
 ### srt_rejectreason_str
 
