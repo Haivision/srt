@@ -727,6 +727,10 @@ typedef enum SRT_GROUP_TYPE
     SRT_GTYPE__END
 } SRT_GROUP_TYPE;
 
+// Free-form flags for groups
+// Flags may be type-specific!
+static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
+
 // library initialization
 SRT_API       int srt_startup(void);
 SRT_API       int srt_cleanup(void);
