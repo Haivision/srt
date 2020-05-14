@@ -59,7 +59,6 @@ public:
 
 class ErrLog: public Log
 {
-    bool noeol;
 public:
 
     template <class V>
@@ -73,6 +72,7 @@ public:
             std::cerr << arg;
         return *this;
     }
+
 };
 
 }

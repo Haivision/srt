@@ -239,6 +239,9 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
       throw CUDTException();
 #else
 
+   // fake use 'events' to prevent warning. Remove when implemented.
+   (void)events;
+
 #ifdef _MSC_VER
 // Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
 // Use #pragma message with the same text.
