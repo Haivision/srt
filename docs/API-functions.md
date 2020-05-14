@@ -1340,10 +1340,10 @@ the connection, the code will be passed back to the caller peer with the
 handshake response.
 
 Note that allowed values for this function begin with `SRT_REJC_SERVER`
-(that is, you cannot set a system rejection code using` srt_setrejectreason(SRTSOCKET sock, int value);`).
+(that is, you cannot set a system rejection code).
 For example, your application can inform the calling side that the resource
-specified under the `r` key in the StreamID string is not availble - it
-then sets the value to `SRT_REJC_SERVER + 404`.
+specified under the `r` key in the StreamID string (see `SRTO_STREAMID`)
+is not availble - it then sets the value to `SRT_REJC_SERVER + 404`.
 
 - Returns:
   * 0 in case of success.
