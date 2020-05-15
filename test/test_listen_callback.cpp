@@ -4,16 +4,6 @@
 #include <map>
 
 #ifdef _WIN32
-#define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
-#include <winsock2.h>
-
-#if defined(__GNUC__) || defined(__MINGW32__)
-extern "C" {
-    WINSOCK_API_LINKAGE  INT WSAAPI inet_pton( INT Family, PCSTR pszAddrString, PVOID pAddrBuf);
-    WINSOCK_API_LINKAGE  PCSTR WSAAPI inet_ntop(INT  Family, PVOID pAddr, PSTR pStringBuf, size_t StringBufSize);
-}
-#endif
-
 #define INC__WIN_WINTIME // exclude gettimeofday from srt headers
 #endif
 

@@ -239,6 +239,10 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
       throw CUDTException();
 #else
 
+   // fake use 'events' to prevent warning. Remove when implemented.
+   (void)events;
+   (void)s;
+
 #ifdef _MSC_VER
 // Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
 // Use #pragma message with the same text.
@@ -415,6 +419,12 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    }
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
       throw CUDTException();
+#else
+
+   // fake use 'events' to prevent warning. Remove when implemented.
+   (void)events;
+   (void)s;
+
 #endif
 // Assuming add is used if not inserted
 //   p->second.m_sLocals.insert(s);
