@@ -1297,6 +1297,11 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
 
         int isn = g.currentSchedSequence();
 
+        // Don't synchronize ISN in case of synch on msgno. Every link
+        // may send their own payloads independently.
+        if (g.synconmsgno())
+            isn = -1;
+
         // We got it. Bind the socket, if the source address was set
         if (!source_addr.empty())
             bind(ns, source_addr);

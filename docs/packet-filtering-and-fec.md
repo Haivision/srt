@@ -123,8 +123,15 @@ possible values are:
 
 For example, this is how it should be used in the URI:
 ```
-srt://recv.com:5000?latency=500&filter=fec,cols:10,rows:5
+srt://recv.com:5000?latency=500&packetfilter=fec,cols:10,rows:5
 ```
+
+As there can only be one configuration for both parties, it is recommended that one party
+defines the full configuration while the other only defines the matching packet filter type
+(for example, the sender sets `fec,cols:10,rows:-5,layout:staircase` and the receiver sets
+just `fec`). Both parties can also set this option to the same value. The packet filter function 
+will attempt to merge configuration definitions, but if the options specified are in
+conflict, the connection will be rejected.
 
 ## **The motivation for staircase arrangement**
 

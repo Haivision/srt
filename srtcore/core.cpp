@@ -1780,6 +1780,14 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
 
     SRTSOCKET id = m_parent->m_IncludedGroup->id();
     SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
+    uint32_t flags = 0;
+
+    // Note: if agent is a listener, and the current version supports
+    // both sync methods, this flag might have been changed according to
+    // the wish of the caller.
+    if (m_parent->m_IncludedGroup->synconmsgno())
+        flags |= SRT_GFLAG_SYNCONMSG;
+
     SRTSOCKET master_peerid;
     IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
     steady_clock::time_point master_st;
@@ -1803,10 +1811,17 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     }
     // (this function will not fill the variables with anything, if no master is found)
 
-    int32_t storedata [GRPD__SIZE] = { id, tp, m_parent->m_IncludedIter->weight };
+    // See CUDT::interpretGroup()
+
+    uint32_t dataword = 0
+        | SrtHSRequest::HS_GROUP_TYPE::wrap(tp)
+        | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
+        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_IncludedIter->weight);
+
+    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
     memcpy((space), storedata, sizeof storedata);
 
-    size_t ra_size = Size(storedata);
+    const size_t ra_size = Size(storedata);
     *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
     return ra_size;
@@ -3225,8 +3240,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 //   a mirror group for that group ID).
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
-                int32_t groupdata[GRPD__SIZE] = {};
-                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
+                int32_t groupdata[GRPD_E_SIZE] = {};
+                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE || blocklen > GRPD_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
@@ -3394,16 +3409,20 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     return true;
 }
 
-bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq_type_cmd SRT_ATR_UNUSED)
+bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
+    // `data_size` isn't checked because we believe it's checked earlier.
+    // Also this code doesn't predict to get any other format than the official one,
+    // so there are only data in two fields. Passing this argument is only left
+    // for consistency and possibly changes in future.
+
     // We are granted these two fields do exist
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
-    SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(groupdata[GRPD_GROUPTYPE]);
+    uint32_t gd = groupdata[GRPD_GROUPDATA];
 
-    // Optional in this version
-    int link_weight = 0;
-    if (data_size > GRPD_WEIGHT)
-        link_weight = groupdata[GRPD_WEIGHT];
+    SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
+    int link_weight = SrtHSRequest::HS_GROUP_WEIGHT::unwrap(gd);
+    uint32_t link_flags = SrtHSRequest::HS_GROUP_FLAGS::unwrap(gd);
 
     if (m_OPT_GroupConnect == 0)
     {
@@ -3434,7 +3453,8 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq
 
 #if ENABLE_HEAVY_LOGGING
     static const char* hs_side_name[] = {"draw", "initiator", "responder"};
-    HLOGC(mglog.Debug, log << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide] << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd));
+    HLOGC(mglog.Debug, log << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide] << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd)
+            << " $" << grpid << " type=" << gtp << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
 #endif
 
     // XXX Here are two separate possibilities:
@@ -3500,7 +3520,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq
         // and its group ID will be added to the HS extensions as mirror group
         // ID to the peer.
 
-        SRTSOCKET lgid = makeMePeerOf(grpid, gtp);
+        SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags);
         if (!lgid)
             return true; // already done
 
@@ -3547,7 +3567,7 @@ void CUDTGroup::debugGroup()
 
 // NOTE: This function is called only in one place and it's done
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
-SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
+SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
 {
     CUDTSocket* s = m_parent;
     CGuard cg (s->m_ControlLock);
@@ -3571,6 +3591,13 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
     else
     {
         gp = &newGroup(gtp);
+        if (!gp->applyFlags(link_flags, m_SrtHsSide))
+        {
+            // Wrong settings. Must reject. Delete group.
+            s_UDTUnited.deleteGroup(gp);
+            return -1;
+        }
+
         gp->peerid(peergroup);
         gp->deriveSettings(this);
 
@@ -3581,7 +3608,6 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp)
 
         HLOGC(mglog.Debug, log << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $" << gp->id());
     }
-
 
     if (was_empty)
     {
@@ -3684,23 +3710,30 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
 
-    // These are the values that are normally set initially by setters.
-    int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-    if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
+    if (gp->synconmsgno())
     {
-        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck)
-                << ") SND=%" << m_iSndLastAck << " -> %" << snd_isn
-                << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
-        setInitialRcvSeq(rcv_isn);
-        setInitialSndSeq(snd_isn);
+        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID << ": NOT synchronizing sequence numbers.");
     }
     else
     {
-        HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DEFINED ISN: RCV=%" << m_iRcvLastAck
-                << " SND=%" << m_iSndLastAck);
+        // These are the values that are normally set initially by setters.
+        int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
+        if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
+        {
+            HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
+                    << " DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                    << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck)
+                    << ") SND=%" << m_iSndLastAck << " -> %" << snd_isn
+                    << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+            setInitialRcvSeq(rcv_isn);
+            setInitialSndSeq(snd_isn);
+        }
+        else
+        {
+            HLOGC(mglog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
+                    << " DEFINED ISN: RCV=%" << m_iRcvLastAck
+                    << " SND=%" << m_iSndLastAck);
+        }
     }
 }
 
@@ -6559,6 +6592,15 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     {
         LOGC(dlog.Error, log << "INVALID: Data size for sending declared with length: " << len);
         return 0;
+    }
+
+    if (w_mctrl.msgno != -1) // most unlikely, unless you use balancing groups
+    {
+        if (w_mctrl.msgno < 1 || w_mctrl.msgno > MSGNO_SEQ_MAX)
+        {
+            LOGC(dlog.Error, log << "INVALID forced msgno " << w_mctrl.msgno << ": can be -1 (trap) or <1..." << MSGNO_SEQ_MAX << ">");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
     }
 
     int  msttl   = w_mctrl.msgttl;
@@ -11323,6 +11365,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
     , m_selfManaged(true)
+    , m_bSyncOnMsgNo(false)
     , m_type(gtype)
     , m_listener()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
@@ -11367,6 +11410,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 
     case SRT_GTYPE_BALANCING:
         m_selfManaged = true;
+        m_bSyncOnMsgNo = true;
         break;
 
     case SRT_GTYPE_MULTICAST:
@@ -11639,6 +11683,41 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // are assigned to configurable items.
 
 #undef IM
+}
+
+bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
+{
+    bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
+
+    if (m_type == SRT_GTYPE_BALANCING)
+    {
+        // We support only TRUE for this flag
+        if (!synconmsg)
+        {
+            HLOGP(mglog.Debug, "GROUP: Balancing mode implemented only with sync on msgno - overridden request");
+            return true; // accept, but override
+        }
+
+        // We have this flag set; change it in yourself, if needed.
+        if (hsd == HSD_INITIATOR && !m_bSyncOnMsgNo)
+        {
+            // With this you can change in future the default value to false.
+            HLOGP(mglog.Debug, "GROUP: Balancing requrested msgno-sync, OVERRIDING original setting");
+            m_bSyncOnMsgNo = true;
+            return true;
+        }
+    }
+    else
+    {
+        if (synconmsg)
+        {
+            LOGP(mglog.Error, "GROUP: non-balancing type requested sync on msgno - IPE/EPE?");
+            return false;
+        }
+    }
+
+    // Ignore the flag anyway. This can change in future versions though.
+    return true;
 }
 
 template <class Type>
@@ -14657,15 +14736,15 @@ int CUDTGroup::configure(const char* str)
     {
     /* TMP review stub case SRT_GTYPE_BALANCING:
         // config contains the algorithm name
-        if (config == "" || config == "plain")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
-            HLOGC(mglog.Debug, log << "group(balancing): PLAIN algorithm selected");
-        }
-        else if (config == "window")
+        if (config == "" || config == "auto")
         {
             m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
             HLOGC(mglog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else if (config == "fixed")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_fixed_fw);
+            HLOGC(mglog.Debug, log << "group(balancing): FIXED algorithm selected");
         }
         else
         {
