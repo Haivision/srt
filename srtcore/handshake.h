@@ -237,25 +237,36 @@ enum UDTRequestType
     // --> CONCLUSION (with response extensions, if RESPONDER)
     // <-- AGREEMENT (sent exclusively by INITIATOR upon reception of CONCLUSIOn with response extensions)
 
-    // Errors reported by the peer, also used as useless error codes
-    // in handshake processing functions.
-    URQ_FAILURE_TYPES = 1000
+    // This marks the beginning of values that are error codes.
+    URQ_FAILURE_TYPES = 1000,
 
     // NOTE: codes above 1000 are reserved for failure codes for
-    // rejection reason, as per `SRT_REJECT_REASON` enum. DO NOT
-    // add any new values here.
+    // rejection reason, as per `SRT_REJECT_REASON` enum. The
+    // actual rejection code is the value of the request type
+    // minus URQ_FAILURE_TYPES.
+
+    // This is in order to return standard error codes for server
+    // data retrieval failures.
+    URQ_SERVER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_SERVER,
+
+    // This is for a completely user-defined reject reasons.
+    URQ_USER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_USER
 };
 
-inline UDTRequestType URQFailure(SRT_REJECT_REASON reason)
+inline UDTRequestType URQFailure(int reason)
 {
     return UDTRequestType(URQ_FAILURE_TYPES + int(reason));
 }
 
-inline SRT_REJECT_REASON RejectReasonForURQ(UDTRequestType req)
+inline int RejectReasonForURQ(UDTRequestType req)
 {
-    if (req < URQ_FAILURE_TYPES || req - URQ_FAILURE_TYPES >= SRT_REJ__SIZE)
+    if (req < URQ_FAILURE_TYPES)
         return SRT_REJ_UNKNOWN;
-    return SRT_REJECT_REASON(req - URQ_FAILURE_TYPES);
+
+    if (req < URQ_SERVER_FAILURE_TYPES && req - URQ_FAILURE_TYPES >= SRT_REJ_E_SIZE)
+        return SRT_REJ_UNKNOWN;
+
+    return req - URQ_FAILURE_TYPES;
 }
 
 // DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).

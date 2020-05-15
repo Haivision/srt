@@ -981,7 +981,7 @@ void SrtCommon::ConnectClient(string host, int port)
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if (stat == SRT_ERROR)
     {
-        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
+        int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
@@ -1017,7 +1017,7 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("ConfigurePost");
 }
 
-void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
+void SrtCommon::Error(string src, int reason)
 {
     int errnov = 0;
     const int result = srt_getlasterror(&errnov);

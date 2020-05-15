@@ -547,9 +547,16 @@ extern const char* const srt_rejectreason_msg [] = {
     "Group settings collision"
 };
 
-const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+const char* srt_rejectreason_str(int id)
 {
-    int id = rid;
+    if (id > SRT_REJC_SERVER)
+    {
+        if (id > SRT_REJC_USER)
+            return "USER ERROR";
+
+        return "SERVER ERROR";
+    }
+
     static const size_t ra_size = Size(srt_rejectreason_msg);
     if (size_t(id) >= ra_size)
         return srt_rejectreason_msg[0];

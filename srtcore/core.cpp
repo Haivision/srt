@@ -10326,7 +10326,7 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
 //
 // XXX Make this function return EConnectStatus enum type (extend if needed),
 // and this will be directly passed to the caller.
-SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
+int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 {
     // XXX ASSUMPTIONS:
     // [[using assert(packet.m_iID == 0)]]
@@ -10523,8 +10523,8 @@ SRT_REJECT_REASON CUDT::processConnectRequest(const sockaddr_any& addr, CPacket&
     }
     else
     {
-        SRT_REJECT_REASON error  = SRT_REJ_UNKNOWN;
-        int               result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        int error  = SRT_REJ_UNKNOWN;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -11058,13 +11058,26 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
     return std::abs(timespan);
 }
 
-SRT_REJECT_REASON CUDT::rejectReason(SRTSOCKET u)
+int CUDT::rejectReason(SRTSOCKET u)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
     if (!s || !s->m_pUDT)
         return SRT_REJ_UNKNOWN;
 
     return s->m_pUDT->m_RejectReason;
+}
+
+int CUDT::rejectReason(SRTSOCKET u, int value)
+{
+    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    if (!s || !s->m_pUDT)
+        return APIError(MJ_NOTSUP, MN_SIDINVAL);
+
+    if (value < SRT_REJC_SERVER)
+        return APIError(MJ_NOTSUP, MN_INVAL);
+
+    s->m_pUDT->m_RejectReason = value;
+    return 0;
 }
 
 bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
