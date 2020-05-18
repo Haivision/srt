@@ -576,6 +576,9 @@ enum SRT_REJECT_REASON
     SRT_REJ_E_SIZE,
 };
 
+// XXX This value remains for some time, but it's deprecated
+#define SRT_REJ__SIZE SRT_REJ_E_SIZE
+
 // Reject category codes:
 
 #define SRT_REJC_VALUE(code) (1000 * (code/1000))

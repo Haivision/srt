@@ -549,9 +549,9 @@ extern const char* const srt_rejectreason_msg [] = {
 
 const char* srt_rejectreason_str(int id)
 {
-    if (id > SRT_REJC_SERVER)
+    if (id >= SRT_REJC_SERVER)
     {
-        if (id > SRT_REJC_USER)
+        if (id >= SRT_REJC_USER)
             return "USER ERROR";
 
         return "SERVER ERROR";
