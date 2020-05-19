@@ -4238,6 +4238,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         {
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
+            m_RejectReason = SRT_REJ_TIMEOUT;
             break;
         }
     }
@@ -11196,7 +11197,7 @@ int CUDT::rejectReason(SRTSOCKET u, int value)
     if (!s || !s->m_pUDT)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    if (value < SRT_REJC_SERVER)
+    if (value < SRT_REJC_PREDEFINED)
         return APIError(MJ_NOTSUP, MN_INVAL);
 
     s->m_pUDT->m_RejectReason = value;

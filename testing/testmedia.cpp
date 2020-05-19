@@ -741,7 +741,7 @@ void SrtCommon::PrepareClient()
 
     if (!m_blocking_mode)
     {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT | SRT_EPOLL_ERR);
     }
 
 }
@@ -782,7 +782,7 @@ void SrtCommon::OpenGroupClient()
     if ( !m_blocking_mode )
     {
         // Note: here the GROUP is added to the poller.
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT | SRT_EPOLL_ERR);
     }
 
     // Don't check this. Should this fail, the above would already.
@@ -974,7 +974,6 @@ void SrtCommon::OpenGroupClient()
 
 void SrtCommon::ConnectClient(string host, int port)
 {
-
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
@@ -1000,11 +999,18 @@ void SrtCommon::ConnectClient(string host, int port)
         // SpinWaitAsync();
 
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1)
+        int lenc = 2, lene = 2;
+        SRTSOCKET ready_connect[2], ready_error[2];
+        if (srt_epoll_wait(srt_conn_epoll, ready_error, &lene, ready_connect, &lenc, -1, 0, 0, 0, 0) != -1)
         {
-            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+            if (lene > 0)
+            {
+                Verb() << "[EPOLL(error): " << lene << " sockets]";
+                int reason = srt_getrejectreason(ready_error[0]);
+                string reasonstr = UDT::getstreamid(ready_error[0]);
+                Error("srt_connect(async)", reasonstr, reason, SRT_ECONNREJ);
+            }
+            Verb() << "[EPOLL: " << lenc << " sockets] " << VerbNoEOL;
         }
         else
         {
@@ -1018,10 +1024,10 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("ConfigurePost");
 }
 
-void SrtCommon::Error(string src, string streaminfo, int reason)
+void SrtCommon::Error(string src, string streaminfo, int reason, int force_result)
 {
     int errnov = 0;
-    const int result = srt_getlasterror(&errnov);
+    const int result = force_result == 0 ? srt_getlasterror(&errnov) : force_result;
     if (result == SRT_SUCCESS)
     {
         cerr << "\nERROR (app): " << src << endl;

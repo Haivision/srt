@@ -572,16 +572,20 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
+    SRT_REJ_TIMEOUT,     // connection timeout
 
     SRT_REJ_E_SIZE,
 };
 
+// XXX This value remains for some time, but it's deprecated
+#define SRT_REJ__SIZE SRT_REJ_E_SIZE
+
 // Reject category codes:
 
 #define SRT_REJC_VALUE(code) (1000 * (code/1000))
-#define SRT_REJC_SYSTEM 0     // Codes from above SRT_REJECT_REASON enum
-#define SRT_REJC_SERVER 1000  // Standard server error codes
-#define SRT_REJC_USER 2000    // User defined error codes
+#define SRT_REJC_INTERNAL 0     // Codes from above SRT_REJECT_REASON enum
+#define SRT_REJC_PREDEFINED 1000  // Standard server error codes
+#define SRT_REJC_USERDEFINED 2000    // User defined error codes
 
 
 // Logging API - specialization for SRT.

@@ -528,9 +528,17 @@ interface prior to connecting. Non-rendezvous sockets (caller sockets) can be
 left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
   * `SRT_ECONNREJ`: Connection has been rejected
+  * `SRT_ENOSERVER`: Connection has been timed out (see `SRTO_CONNTIMEO`)
 
-In case when `SRT_ECONNREJ` error was reported, you can get the reason for
-a rejected connection from `srt_getrejectreason`.
+When `SRT_ECONNREJ` error is reported, you can get the reason for
+a rejected connection from `srt_getrejectreason`. In non-blocking
+mode (when `SRTO_RCVSYN` is set to false), only `SRT_EINVSOCK`,
+`SRT_ERDVUNBOUND` and `SRT_ECONNSOCK` can be reported. In all other cases
+the function returns immediately with a success, and the only way to obtain
+the connecting status is through the epoll flag with `SRT_EPOLL_ERR`.
+In this case you can also call `srt_getrejectreason` to get the detailed
+reason for the error, including connection timeout (`SRT_REJ_TIMEOUT`).
+
 
 ### srt_connect_bind
 
@@ -1217,12 +1225,13 @@ report a "successful" code.
 ```
 int srt_getrejectreason(SRTSOCKET sock);
 ```
-
-This function shall be called after a connecting function (such as `srt_connect`)
-has returned an error, which's code was `SRT_ECONNREJ`. It allows to get a more
-detailed rejection reason. This function returns a numeric code, which can be
-translated into a message by `srt_rejectreason_str`. The following codes are
-currently reported:
+This function provides a more detailed reason for the failed connection attempt. 
+It shall be called after a connecting function (such as `srt_connect`)
+has returned an error, the code for which is `SRT_ECONNREJ`. If `SRTO_RCVSYN`
+has been set on the socket used for the connection, the function should also be
+called when the `SRT_EPOLL_ERR` event is set for this socket. It returns a
+numeric code, which can be translated into a message by `srt_rejectreason_str`.
+The following codes are currently reported:
 
 #### SRT_REJ_UNKNOWN
 
@@ -1305,12 +1314,23 @@ connection parties.
 The `SRTO_PACKETFILTER` option has been set differently on both connection
 parties.
 
+#### SRT_REJ_GROUP
+
+The group type or some group settings are incompatible for both connection
+parties.
+
+#### SRT_REJ_TIMEOUT
+
+The connection wasn't rejected, but it timed out. This code is always set on
+connection timeout, but this is the only way to get this state in non-blocking
+mode (see `SRTO_RCVSYN`).
+
 There may also be server and user rejection codes,
-as defined by the `SRT_REJC_SYSTEM`, `SRT_REJC_SERVER` and `SRT_REJC_USER`
-constants. Note that the number space from the value of `SRT_REJC_SERVER`  and above is reserved for "server codes" (`SRT_REJC_SERVER` value plus HTTP codes). Values above `SRT_REJC_USER`
-are freely defined by the application. In addition to this code, the
-extended free-form rejection message can be obtained by reading the
-value of `SRTO_STREAMID` on a socket that received the rejection.
+as defined by the `SRT_REJC_INTERNAL`, `SRT_REJC_PREDEFINED` and `SRT_REJC_USERDEFINED`
+constants. Note that the number space from the value of `SRT_REJC_PREDEFINED`
+and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
+adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
+the application.
 
 ### srt_rejectreason_str
 
@@ -1320,12 +1340,14 @@ const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 
 Returns a constant string for the reason of the connection rejected,
 as per given code ID. It provides a system-defined message for
-values below `SRT_REJC_SERVER`. For values from the server and
-user ranges it provides just the number with the prefix "SERVER" or "USER".
+values below `SRT_REJ_E_SIZE`. For other values below
+`SRT_REJC_PREDEFINED` it returns the string for `SRT_REJ_UNKNOWN`.
+For values since `SRT_REJC_PREDEFINED` on, returns
+"Application-defined rejection reason".
 
-The actual messages assigned to system rejection codes, that is,
-between `SRT_REJC_SYSTEM` and `SRT_REJ_E_SIZE` (both exclusive), can be also
-obtained from `srt_rejectreason_msg` array.
+The actual messages assigned to the internal rejection codes, that is,
+less than `SRT_REJ_E_SIZE`, can be also obtained from `srt_rejectreason_msg`
+array.
 
 ### srt_setrejectreason
 
@@ -1339,11 +1361,11 @@ rejection reason for the socket. After the callback rejects
 the connection, the code will be passed back to the caller peer with the
 handshake response.
 
-Note that allowed values for this function begin with `SRT_REJC_SERVER`
+Note that allowed values for this function begin with `SRT_REJC_PREDEFINED`
 (that is, you cannot set a system rejection code).
 For example, your application can inform the calling side that the resource
 specified under the `r` key in the StreamID string (see `SRTO_STREAMID`)
-is not availble - it then sets the value to `SRT_REJC_SERVER + 404`.
+is not availble - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
 
 - Returns:
   * 0 in case of success.
@@ -1352,7 +1374,7 @@ is not availble - it then sets the value to `SRT_REJC_SERVER + 404`.
 - Errors:
 
   * `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid socket
-  * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_SERVER`
+  * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_PREDEFINED`
 
 
 Performance tracking

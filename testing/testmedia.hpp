@@ -111,7 +111,7 @@ public:
 
 protected:
 
-    void Error(string src, string streaminfo = string(), int reason = SRT_REJ_UNKNOWN);
+    void Error(string src, string streaminfo = string(), int reason = SRT_REJ_UNKNOWN, int force_result = 0);
     void Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);

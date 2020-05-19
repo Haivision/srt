@@ -247,10 +247,10 @@ enum UDTRequestType
 
     // This is in order to return standard error codes for server
     // data retrieval failures.
-    URQ_SERVER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_SERVER,
+    URQ_SERVER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_PREDEFINED,
 
     // This is for a completely user-defined reject reasons.
-    URQ_USER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_USER
+    URQ_USER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_USERDEFINED
 };
 
 inline UDTRequestType URQFailure(int reason)
@@ -263,10 +263,11 @@ inline int RejectReasonForURQ(UDTRequestType req)
     if (req < URQ_FAILURE_TYPES)
         return SRT_REJ_UNKNOWN;
 
-    if (req < URQ_SERVER_FAILURE_TYPES && req - URQ_FAILURE_TYPES >= SRT_REJ_E_SIZE)
+    int reason = req - URQ_FAILURE_TYPES;
+    if (reason < SRT_REJC_PREDEFINED && reason >= SRT_REJ_E_SIZE)
         return SRT_REJ_UNKNOWN;
 
-    return req - URQ_FAILURE_TYPES;
+    return reason;
 }
 
 // DEPRECATED values. Use URQFailure(SRT_REJECT_REASON).
