@@ -11074,7 +11074,7 @@ int CUDT::rejectReason(SRTSOCKET u, int value)
     if (!s || !s->m_pUDT)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    if (value < SRT_REJC_SERVER)
+    if (value < SRT_REJC_PREDEFINED)
         return APIError(MJ_NOTSUP, MN_INVAL);
 
     s->m_pUDT->m_RejectReason = value;

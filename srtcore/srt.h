@@ -583,9 +583,9 @@ enum SRT_REJECT_REASON
 // Reject category codes:
 
 #define SRT_REJC_VALUE(code) (1000 * (code/1000))
-#define SRT_REJC_SYSTEM 0     // Codes from above SRT_REJECT_REASON enum
-#define SRT_REJC_SERVER 1000  // Standard server error codes
-#define SRT_REJC_USER 2000    // User defined error codes
+#define SRT_REJC_INTERNAL 0     // Codes from above SRT_REJECT_REASON enum
+#define SRT_REJC_PREDEFINED 1000  // Standard server error codes
+#define SRT_REJC_USERDEFINED 2000    // User defined error codes
 
 
 // Logging API - specialization for SRT.

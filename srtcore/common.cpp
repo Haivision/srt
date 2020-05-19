@@ -550,12 +550,9 @@ extern const char* const srt_rejectreason_msg [] = {
 
 const char* srt_rejectreason_str(int id)
 {
-    if (id >= SRT_REJC_SERVER)
+    if (id >= SRT_REJC_PREDEFINED)
     {
-        if (id >= SRT_REJC_USER)
-            return "USER ERROR";
-
-        return "SERVER ERROR";
+        return "Application-defined rejection reason";
     }
 
     static const size_t ra_size = Size(srt_rejectreason_msg);
