@@ -1858,7 +1858,7 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         else if (iDrift <= -10)          m_TsbPdDriftHisto1ms[0]++;
         else                             m_TsbPdDriftHisto1ms[20]++;
     }
-
+    ++m_iTsbPdDriftNbSamples;
     if ((m_iTsbPdDriftNbSamples % TSBPD_DRIFT_PRT_SAMPLES) == 0)
     {
         int *histo = m_TsbPdDriftHisto1ms;
@@ -1877,17 +1877,15 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         fprintf(stderr, "%4d %4d %4d %4d %4d %4d %4d %4d %4d\n",
                 histo[11],histo[12],histo[13],histo[14],histo[15],
                 histo[16],histo[17],histo[18],histo[19]);
+
+        m_iTsbPdDriftNbSamples = 0;
     }
 }
 
 void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 {
-    char szTime[32] = {};
-    uint64_t now = CTimer::getTime();
-    time_t tnow = (time_t)(now/1000000);
-    strftime(szTime, sizeof(szTime), "%H:%M:%S", localtime(&tnow));
-    fprintf(stderr, "%s.%03d: tsbpd offset=%d drift=%d usec\n", 
-            szTime, (int)((now%1000000)/1000), tsbPdOffset, tsbPdDriftAvg);
+    fprintf(stderr, "%s: tsbpd offset=%d drift=%d usec\n", 
+        FormatTime(steady_clock::now()).c_str(), tsbPdOffset, tsbPdDriftAvg);
     memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
     memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 }
@@ -1923,7 +1921,7 @@ bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_l
     bool updated = m_DriftTracer.update(count_microseconds(iDrift));
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
-    printDriftHistogram(iDrift);
+    printDriftHistogram(count_microseconds(iDrift));
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
     if ( updated )

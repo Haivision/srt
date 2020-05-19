@@ -578,11 +578,10 @@ private:
    bool m_bTsbPdWrapCheck;              // true: check packet time stamp wrap around
    static const uint32_t TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
 
-   static const int TSBPD_DRIFT_MAX_VALUE = 5000;   // Max drift (usec) above which TsbPD Time Offset is adjusted
-   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;  // Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
-   //int m_iTsbPdDrift;                           // recent drift in the packet time stamp
-   //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
-   //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
+   /// Max drift (usec) above which TsbPD Time Offset is adjusted
+   static const int TSBPD_DRIFT_MAX_VALUE = 5000;
+   /// Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
+   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    time_point m_tsLastSamplingTime;
@@ -593,6 +592,7 @@ private:
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    int m_TsbPdDriftHisto100us[22];              // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
    int m_TsbPdDriftHisto1ms[22];                // Histogram of TsbPD drift (-10.0 .. +10.0 ms, in 1.0 ms increment)
+   int m_iTsbPdDriftNbSamples = 0;              // Number of samples in sum and histogram
    static const int TSBPD_DRIFT_PRT_SAMPLES = 200;    // Number of samples (UMSG_ACKACK packets) to print hostogram
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
