@@ -418,16 +418,16 @@ struct CBytePerfMon
    // New stats in 1.5.0
 
    // Total
-   int64_t  pktSentUniqueTotal;               // total number of sent data packets, including retransmissions
-   int64_t  pktRecvUniqueTotal;               // total number of received packets
-   uint64_t byteSentUniqueTotal;              // total number of sent data bytes, including retransmissions
-   uint64_t byteRecvUniqueTotal;              // total number of received bytes
+   int64_t  pktSentUniqueTotal;         // total number of data packets sent by the application
+   int64_t  pktRecvUniqueTotal;         // total number of packets to be received by the application
+   uint64_t byteSentUniqueTotal;        // total number of data bytes, sent by the application
+   uint64_t byteRecvUniqueTotal;        // total number of data bytes to be received by the application
 
    // Local
-   int64_t  pktSentUnique;                    // number of sent data packets, including retransmissions
-   int64_t  pktRecvUnique;                    // number of received packets
-   uint64_t byteSentUnique;                   // number of sent data bytes, including retransmissions
-   uint64_t byteRecvUnique;                   // number of received bytes
+   int64_t  pktSentUnique;              // number of data packets sent by the application
+   int64_t  pktRecvUnique;              // number of packets to be received by the application
+   uint64_t byteSentUnique;             // number of data bytes, sent by the application
+   uint64_t byteRecvUnique;             // number of data bytes to be received by the application
 };
 
 ////////////////////////////////////////////////////////////////////////////////
