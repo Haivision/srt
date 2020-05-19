@@ -980,7 +980,7 @@ void SrtCommon::ConnectClient(string host, int port)
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if (stat == SRT_ERROR)
     {
-        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
+        int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
@@ -1005,7 +1005,7 @@ void SrtCommon::ConnectClient(string host, int port)
             if (lene > 0)
             {
                 Verb() << "[EPOLL(error): " << lene << " sockets]";
-                SRT_REJECT_REASON reason = srt_getrejectreason(ready_error[0]);
+                int reason = srt_getrejectreason(ready_error[0]);
                 Error("srt_connect(async)", reason, SRT_ECONNREJ);
             }
             Verb() << "[EPOLL: " << lenc << " sockets] " << VerbNoEOL;
@@ -1022,7 +1022,7 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("ConfigurePost");
 }
 
-void SrtCommon::Error(string src, SRT_REJECT_REASON reason, int force_result)
+void SrtCommon::Error(string src, int reason, int force_result)
 {
     int errnov = 0;
     const int result = force_result == 0 ? srt_getlasterror(&errnov) : force_result;

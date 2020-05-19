@@ -1223,7 +1223,7 @@ report a "successful" code.
 ### srt_getrejectreason
 
 ```
-enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+int srt_getrejectreason(SRTSOCKET sock);
 ```
 This function provides a more detailed reason for the failed connection attempt. 
 It shall be called after a connecting function (such as `srt_connect`)
@@ -1325,6 +1325,12 @@ The connection wasn't rejected, but it timed out. This code is always set on
 connection timeout, but this is the only way to get this state in non-blocking
 mode (see `SRTO_RCVSYN`).
 
+There may also be server and user rejection codes,
+as defined by the `SRT_REJC_INTERNAL`, `SRT_REJC_PREDEFINED` and `SRT_REJC_USERDEFINED`
+constants. Note that the number space from the value of `SRT_REJC_PREDEFINED`
+and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
+adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
+the application.
 
 ### srt_rejectreason_str
 
@@ -1333,9 +1339,42 @@ const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 ```
 
 Returns a constant string for the reason of the connection rejected,
-as per given code id. Alternatively you can use the `srt_rejectreason_msg`
-array. This function additionally handles the case for unknown id by
-reporting `SRT_REJ_UNKNOWN` in such case.
+as per given code ID. It provides a system-defined message for
+values below `SRT_REJ_E_SIZE`. For other values below
+`SRT_REJC_PREDEFINED` it returns the string for `SRT_REJ_UNKNOWN`.
+For values since `SRT_REJC_PREDEFINED` on, returns
+"Application-defined rejection reason".
+
+The actual messages assigned to the internal rejection codes, that is,
+less than `SRT_REJ_E_SIZE`, can be also obtained from `srt_rejectreason_msg`
+array.
+
+### srt_setrejectreason
+
+```
+int srt_setrejectreason(SRTSOCKET sock, int value);
+```
+
+Sets the rejection code on the socket. This call is only useful in the
+listener callback. The code from `value` set this way will be set as a
+rejection reason for the socket. After the callback rejects
+the connection, the code will be passed back to the caller peer with the
+handshake response.
+
+Note that allowed values for this function begin with `SRT_REJC_PREDEFINED`
+(that is, you cannot set a system rejection code).
+For example, your application can inform the calling side that the resource
+specified under the `r` key in the StreamID string (see `SRTO_STREAMID`)
+is not availble - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
+
+- Returns:
+  * 0 in case of success.
+  * -1 in case of error.
+
+- Errors:
+
+  * `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid socket
+  * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_PREDEFINED`
 
 
 Performance tracking

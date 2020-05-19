@@ -548,9 +548,13 @@ extern const char* const srt_rejectreason_msg [] = {
     "Connection timeout"
 };
 
-const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+const char* srt_rejectreason_str(int id)
 {
-    int id = rid;
+    if (id >= SRT_REJC_PREDEFINED)
+    {
+        return "Application-defined rejection reason";
+    }
+
     static const size_t ra_size = Size(srt_rejectreason_msg);
     if (size_t(id) >= ra_size)
         return srt_rejectreason_msg[0];
