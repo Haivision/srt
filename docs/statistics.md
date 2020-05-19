@@ -1,4 +1,14 @@
+
 # SRT Statistics
+
+TODO: 
+
+- The difference between individual statistics and group statistics, 
+- which function to use to retreive group statistics,
+- table of contents,
+- headers for socket statistics
+
+# SRT Socket Statistics
 
 SRT provides a powerful set of statistical data on a socket. This data can be used to keep an eye on a socket's health and track faulty behavior.
 
@@ -11,9 +21,9 @@ The following API functions can be used to retrieve statistics on an SRT socket:
 
 Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
 
-# Summary Table
+## Summary Table
 
-The table below provides a summary of SRT statistics: name, type, unit of measurement, data type, and whether it is calculated by the sender or receiver. See the section [Detailed Description](#detailed-description) for a detailed description of each statistic.
+The table below provides a summary of SRT socket statistics: name, type, unit of measurement, data type, and whether it is calculated by the sender or receiver. See the section [Detailed Description](#detailed-description) for a detailed description of each statistic.
 
 There are three types of statistics:
 
@@ -109,7 +119,7 @@ There are three types of statistics:
 | [msRcvTsbPdDelay](#msRcvTsbPdDelay)                 | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
 
 
-# Detailed Description
+<!-- ## Detailed Description -->
 
 ## Accumulated Statistics
 
@@ -705,3 +715,78 @@ The value is used to apply TSBPD delay for reading the received data on the sock
 
 If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
 
+# Connection Bonding: Group Statistics
+
+TODO:
+
+- The idea is the same ...
+- Check links
+- total vs interval-based + statistics in bytes
+
+## Summary Table
+
+The table below provides a summary of SRT socket statistics: name, type, unit of measurement, data type, and whether it is calculated by the sender or receiver. See the section [Detailed Description](#detailed-description) for a detailed description of each statistic.
+
+There are three types of statistics: TODO
+
+| Statistic                                 | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
+| ----------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
+| [msTimeStamp](#msTimeStamp)               | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
+| [pktSentUniqueTotal](#pktSentUniqueTotal) | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUniqueTotal](#pktRecvUniqueTotal) | accumulated       | packets             | -                    | ✓                      | int64_t   |
+|                                           |                   |                     |                      |                        |           |
+|                                           |                   |                     |                      |                        |           |
+|                                           |                   |                     |                      |                        |           |
+|                                           |                   |                     |                      |                        |           |
+|                                           |                   |                     |                      |                        |           |
+|                                           |                   |                     |                      |                        |           |
+
+## Detailed Description
+
+### msTimeStamp 
+
+The time elapsed, in milliseconds, since the time ("connection" time) when the initial group connection has been initiated (the time when the first connection in the group has been made and therefore made the group connected). This "connection" time will be then set in this statistic in every next socket that will become a member of the group as the new connections are established. A new connection to an already connected group doesn’t change the value of "connection" time. Available both for sender and receiver. 
+
+### PktSentUniqueTotal 
+
+The number of *unique original* DATA packets sent by the socket group. Available for sender.
+
+This value counts every *original* DATA packet sent over the network for the first time by the socket group. There is no difference between Connection Bonding modes (broadcast, backup and balancing). For example, sending the packet with the a particular sequence number over multiple links in case of broadcast mode (it means sending this packet multiple times) does not affect the statistic and this very packet is taken into account only once.
+
+This statistic does not count retransmitted DATA packets that are individual per socket connection within the group. See the corresponding [pktRetransTotal](#pktRetransTotal) socket statistic.
+
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), this statistic does not count packet filter control packets that are individual per socket connection within the group. See the corresponding [pktSndFilterExtraTotal](#pktSndFilterExtraTotal) socket statistic.
+
+### pktRecvUniqueTotal
+
+TODO: rephrase. FEC and retransmissions are individual per connection
+
+The number of *unique* original, retransmitted or recovered by the packet filter DATA packets *received in time*, *decrypted without errors* and, as a result, scheduled for delivery to the upstream application by the socket group. Available for receiver.
+
+Unique means "first arrived among multiple links" DATA packets. There is no difference whether a packet is original or, in case of loss, retransmitted or recovered by the packet filter. Whichever packet comes first over whichever link is taken into account. 
+
+TODO: This is not good! Rephrase - they dropped or discarded by the group
+
+This statistic doesn't count
+
+- duplicate packets (retransmitted or sent several times by defective hardware/software as well as original packets received over multiple links), 
+- arrived too late packets (retransmitted or original packets arrived out of order) and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
+- arrived in time packets, but decrypted with errors and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
+
+DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
+
+### PktRcvDropTotal 
+
+The number of *dropped* (as a result, not delivered to the upstream application) by the socket group packets. Available for receiver.
+
+This value counts arrived too late (at the group level) packets (retransmitted or original packets arrived out of order). It means that none of those packets were received in time over multiple links by the group.
+
+In case of broadcast mode, a packet with the same sequence number is sent several times over multiple links. If this packet is not received in time (as a result, dropped) on one of the links, but still received in time over another, it is *not* considered dropped by the group and is delivered to the application. Only if this packet is not received in time over all the links (as a result, dropped over all the links), it is considered dropped by the group and can not be delivered to the application. 
+
+In case of backup/balancing mode, a packet with the same sequence number is sent only once over one of the available links. If this packet is not received in time (as a result dropped) on that link, it is considered dropped by the group and can not be delivered to the application. 
+
+In fact, only sockets can drop the packets and the group is simply responsible for delivering received over multiple sockets packets to the application. 
+
+???
+
+This statistic also includes packets that were failed to be decrypted. 
