@@ -27,6 +27,8 @@ There are three types of statistics:
 | [msTimeStamp](#msTimeStamp)                         | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
 | [pktSentTotal](#pktSentTotal)                       | accumulated       | packets             | ✓                    | -                      | int64_t   |
 | [pktRecvTotal](#pktRecvTotal)                       | accumulated       | packets             | -                    | ✓                      | int64_t   |
+| [pktSentUniqueTotal](#pktSentUniqueTotal)           | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUniqueTotal](#pktRecvUniqueTotal)           | accumulated       | packets             | -                    | ✓                      | int64_t   |
 | [pktSndLossTotal](#pktSndLossTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
 | [pktRcvLossTotal](#pktRcvLossTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
 | [pktRetransTotal](#pktRetransTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
@@ -45,6 +47,8 @@ There are three types of statistics:
 | [pktRcvFilterLossTotal](#pktRcvFilterLossTotal)     | accumulated       | packets             | -                    | ✓                      | int32_t   |
 | [byteSentTotal](#byteSentTotal)                     | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
 | [byteRecvTotal](#byteRecvTotal)                     | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [byteSentUniqueTotal](#byteSentUniqueTotal)         | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecvUniqueTotal](#byteRecvUniqueTotal)         | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRcvLossTotal](#byteRcvLossTotal)               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRetransTotal](#byteRetransTotal)               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
 | [byteSndDropTotal](#byteSndDropTotal)               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
@@ -52,6 +56,8 @@ There are three types of statistics:
 | [byteRcvUndecryptTotal](#byteRcvUndecryptTotal)     | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | [pktSent](#pktSent)                                 | interval-based    | packets             | ✓                    | -                      | int64_t   |
 | [pktRecv](#pktRecv)                                 | interval-based    | packets             | -                    | ✓                      | int64_t   |
+| [pktSentUnique](#pktSentUnique)                     | interval-based    | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUnique](#pktRecvUnique)                     | interval-based    | packets             | -                    | ✓                      | int64_t   |
 | [pktSndLoss](#pktSndLoss)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
 | [pktRcvLoss](#pktRcvLoss)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
 | [pktRetrans](#pktRetrans)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
@@ -76,6 +82,8 @@ There are three types of statistics:
 | [pktRcvUndecrypt](#pktRcvUndecrypt)                 | interval-based    | packets             | -                    | ✓                      | int32_t   |
 | [byteSent](#byteSent)                               | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
 | [byteRecv](#byteRecv)                               | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [byteSentUnique](#byteSentUnique)                   | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecvUnique](#byteRecvUnique)                   | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRcvLoss](#byteRcvLoss)                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRetrans](#byteRetrans)                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
 | [byteSndDrop](#byteSndDrop)                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
@@ -111,11 +119,37 @@ The time elapsed, in milliseconds, since the SRT socket has been created (after 
 
 ### pktSentTotal
 
-The total number of sent data packets, including retransmitted packets. Available for sender.
+The total number of sent DATA packets, including retransmitted packets ([pktRetransTotal](#pktRetransTotal)). Available for sender.
+
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts sent packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
 ### pktRecvTotal
 
-The total number of received packets, including retransmitted packets. Available for receiver.
+The total number of received DATA packets, including retransmitted packets ([pktRcvRetransTotal](#pktRcvRetransTotal)). Available for receiver.
+
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
+
+### pktSentUniqueTotal 
+
+The number of *unique* DATA packets sent by the SRT sender. Available for sender. 
+
+This value contains only *unique* *original* DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
+
+This value corresponds to the number of original DATA packets sent by the SRT sender. It counts every packet sent over the network for the first time, and can be calculated as follows: `pktSentUniqueTotal = pktSentTotal – pktRetransTotal`, or by `pktSentUniqueTotal = pktSentTotal – pktRetransTotal - pktSndFilterExtraTotal` if the  `SRTO_PACKETFILTER` socket option is enabled. The original DATA packets are sent only once.
+
+### pktRecvUniqueTotal
+
+The number of *unique* original, retransmitted or recovered by the packet filter DATA packets *received in time*, *decrypted without errors* and, as a result, scheduled for delivery to the upstream application by the SRT receiver. Available for receiver.
+
+Unique means "first arrived" DATA packets. There is no difference whether a packet is original or, in case of loss, retransmitted or recovered by the packet filter. Whichever packet comes first is taken into account. 
+
+This statistic doesn't count
+
+- duplicate packets (retransmitted or sent several times by defective hardware/software), 
+- arrived too late packets (retransmitted or original packets arrived out of order) and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
+- arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
+
+DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
 ### pktSndLossTotal
 
@@ -195,39 +229,31 @@ The total number of packets that failed to be decrypted at the receiver side. Av
 
 ### pktSndFilterExtraTotal
 
-The total number of packet filter control packets supplied by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for sender.
+The total number of packet filter control packets generated by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for sender.
 
-Packet filter control packets are SRT DATA packets.
+Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterExtraTotal
 
-The total number of packet filter control packets received but not returned by the packet filter
-(refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of packet filter control packets received by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Packet filter control packets are SRT DATA packets.
+Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-For FEC, this is the total number of received FEC control packets.
-
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterSupplyTotal
 
-The total number of packets supplied by the packet filter excluding actually received packets
-(e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of lost DATA packets recovered by the packet filter at the receiver side (e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Packet filter control packets are SRT DATA packets.
-
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### pktRcvFilterLossTotal
 
-The total number of lost packets that were not covered by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of lost DATA packets **not** recovered by the packet filter at the receiver side (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
-Packet filter control packets are SRT DATA packets.
-
-The `SRTO_PACKETFILTER` socket option should be enabled (refer to [API.md](API.md)). Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 ### byteSentTotal
 
@@ -236,6 +262,14 @@ Same as [pktSentTotal](#pktSentTotal), but expressed in bytes, including payload
 ### byteRecvTotal
 
 Same as [pktRecvTotal](#pktRecvTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+
+### byteSentUniqueTotal
+
+Same as [pktSentUniqueTotal](#pktSentUniqueTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
+
+### byteRecvUniqueTotal
+
+Same as [pktRecvUniqueTotal](#pktRecvUniqueTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
 ### byteRcvLossTotal
 
@@ -267,6 +301,14 @@ Same as `pktSentTotal`, but for a specified interval.
 ### pktRecv
 
 Same as `pktRecvTotal`, but for a specified interval.
+
+### pktSentUnique
+
+Same as [pktSentUniqueTotal](#pktSentUniqueTotal), but for a specified interval.
+
+### pktRecvUnique
+
+Same as [pktRecvUniqueTotal](#pktRecvUniqueTotal), but for a specified interval.
 
 ### pktSndLoss
 
@@ -413,6 +455,14 @@ Same as `byteSentTotal`, but for a specified interval.
 ### byteRecv
 
 Same as `byteRecvTotal`, but for a specified interval.
+
+### byteSentUnique
+
+Same as [byteSentUniqueTotal](#byteSentUniqueTotal), but for a specified interval.
+
+### byteRecvUnique
+
+Same as [byteRecvUniqueTotal](#byteRecvUniqueTotal), but for a specified interval.
 
 ### byteRcvLoss
 
