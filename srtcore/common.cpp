@@ -544,7 +544,8 @@ extern const char* const srt_rejectreason_msg [] = {
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
     "Packet Filter type collision",
-    "Group settings collision"
+    "Group settings collision",
+    "Connection timeout"
 };
 
 const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
