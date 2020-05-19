@@ -572,6 +572,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
+    SRT_REJ_TIMEOUT,     // connection timeout
 
     SRT_REJ_E_SIZE,
 };
