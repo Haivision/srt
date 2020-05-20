@@ -757,7 +757,7 @@ This value counts every *original* DATA packet sent over the network for the fir
 
 This statistic does not count retransmitted DATA packets that are individual per socket connection within the group. See the corresponding [pktRetransTotal](#pktRetransTotal) socket statistic.
 
-If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), this statistic does not count packet filter control packets that are individual per socket connection within the group. See the corresponding [pktSndFilterExtraTotal](#pktSndFilterExtraTotal) socket statistic.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic does not count packet filter control packets that are individual per socket connection within the group. See the corresponding [pktSndFilterExtraTotal](#pktSndFilterExtraTotal) socket statistic.
 
 ### pktRecvUniqueTotal <a name="group-pktRecvUniqueTotal"></a>
 
@@ -767,19 +767,16 @@ Unique means "first arrived over multiple links" DATA packets. Whichever packet 
 
 This statistic doesn't count
 
-- discarded as duplicate by the group reader packets, see pktRcvDiscardTotal statistic,
-- dropped by the socket group packets, see pktRcvDropTotal.
+- discarded as duplicate by the group reader packets, see [pktRcvDiscardTotal](#group-pktRcvDiscardTotal) statistic,
+- dropped by the socket group packets, see [pktRcvDropTotal](#group-pktRcvDropTotal) statistic.
 
 ### pktRcvDropTotal <a name="group-pktRcvDropTotal"></a>
 
 The number of *dropped* and, as a result, *not delivered* to the upstream application by the socket group DATA packets. Available for receiver.
 
-A packet is considered dropped by the socket group if 
+A packet is considered dropped by the socket group if it has been dropped by the TLPKTDROP mechanism over all the links from the group. See the corresponding socket [pktRcvDropTotal](#pktRcvDropTotal) statistic.
 
-- it has arrived too late and, as a result, has been dropped by the TLPKTDROP mechanism over all the member links,
-- it has arrived in time, but has been decrypted with errors and, as a result, dropped by the TLPKTDROP mechanism over all the member links.
-
-For example, if a packet with a particular sequence number has arrived too late over one of the member links (as a result, has been dropped at the socket level), but has arrived in time over another link, it is *not* considered dropped by the socket group and can be delivered to the upstream application. Only if this packet has not been received in time over all the member links (as a result, has been dropped over all the member links), it is considered dropped by the socket group and can not be delivered to the upstream application. The same is true for packets arrived in time, but decrypted with errors.
+For example, if a packet with a particular sequence number has been dropped over one or several links, but has not been dropped over at least one link, it is *not* considered dropped by the socket group and can be delivered to the upstream application. Only if a packet has been dropped over all the links from the group, it is considered dropped by the socket group and can not be delivered to the upstream application.
 
 In fact, only sockets can drop the packets and the group is simply responsible for delivering received over multiple sockets packets to the application.
 
@@ -787,7 +784,7 @@ In fact, only sockets can drop the packets and the group is simply responsible f
 
 The number of *discarded* by the socket group packets. Available for receiver. 
 
-This statistic counts packets that have been received over any of the member link, but then discarded by the group reader as being a duplicate of the same packet received over another link.
+This statistic counts packets that have been received over any of the links, but then discarded by the socket group as being a duplicate of the same packet received over another link previously.
 
 ## Interval-Based Statistics <a name="group-interval-based-statistics"></a>
 
