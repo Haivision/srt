@@ -146,7 +146,7 @@ Unique means "first arrived" DATA packets. There is no difference whether a pack
 This statistic doesn't count
 
 - duplicate packets (retransmitted or sent several times by defective hardware/software), 
-- arrived too late packets (retransmitted or original packets arrived out of order) that were previously dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
+- arrived too late packets (retransmitted or original packets arrived out of order) that were already dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
 - arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
 DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
@@ -704,4 +704,3 @@ Timestamp-based Packet Delivery Delay value set on the socket via `SRTO_RCVLATEN
 The value is used to apply TSBPD delay for reading the received data on the socket. Receiver side.
 
 If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
-
