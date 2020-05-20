@@ -718,7 +718,8 @@ to the size of the `output` array.
 The current number of members will be written back to `inoutlen`.
 
 If the size of the `output` array is enough for the current number of members,
-the `output` array will be filled with group data and the function will return 0.
+the `output` array will be filled with group data and the function will return
+the number of elements filled.
 Otherwise the array will not be filled and `SRT_ERROR` will be returned.
 
 This function can be used to get the group size by setting `output` to `NULL`,
@@ -726,15 +727,21 @@ and providing `socketgroup` and `inoutlen`.
 
 - Returns:
 
-   * 0, on success
+   * the number of data elements filled, on success
    * -1, on error
 
 - Errors:
 
    * `SRT_EINVPARAM` reported if `socketgroup` is not an existing group ID
+   * `SRT_ELARGEMSG` reported if `inoutlen` if less than the size of the group
 
-Note that if the array was too small for all group members,
-no error code is set, but `-1` is returned.
+| in:output | in:inoutlen    | returns      | out:output | out:inoutlen | Error |
+|-----------|----------------|--------------|-----------|--------------|--------|
+| NULL      | NULL           | -1           | NULL      | NULL         | `SRT_EINVPARAM` |
+| NULL      | ptr            | 0            | NULL      | group.size() | ✖️ |
+| ptr       | NULL           | -1           | ✖️         | NULL         | `SRT_EINVPARAM` |
+| ptr       | ≥ group.size   | group.size() | group.data | group.size | ✖️ |
+| ptr       | < group.size   | -1           | ✖️         | group.size  | `SRT_ELARGEMSG` |
 
 
 ### srt_connect_group
