@@ -259,6 +259,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
     m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
     m_OPT_GroupConnect      = 0;
+    m_HSGroupType           = SRT_GTYPE_UNDEFINED;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -1265,6 +1266,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_GROUPCONNECT:
         optlen         = sizeof (int);
         *(int*)optval = m_OPT_GroupConnect;
+        break;
+
+    case SRTO_GROUPTYPE:
+        optlen         = sizeof (int);
+        *(int*)optval = m_HSGroupType;
         break;
 
     case SRTO_ENFORCEDENCRYPTION:
@@ -11098,6 +11104,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
 
     bool have_group = false;
+    SRT_GROUP_TYPE gt = SRT_GTYPE_UNDEFINED;
 
     // This tests if there are any extensions.
     if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
@@ -11131,7 +11138,14 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
             }
             else if (cmd == SRT_CMD_GROUP)
             {
-                have_group = true;
+                uint32_t* groupdata = begin + 1;
+                have_group = true; // Even if parse error happes
+                if (bytelen / sizeof(int32_t) >= GRPD_E_SIZE)
+                {
+                    uint32_t gd = groupdata[GRPD_GROUPDATA];
+                    gt = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
+                }
+
             }
             else if (cmd == SRT_CMD_NONE)
             {
@@ -11147,6 +11161,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
     // Update the groupconnect flag
     acore->m_OPT_GroupConnect = have_group ? 1 : 0;
+    acore->m_HSGroupType = gt;
 
     try
     {
