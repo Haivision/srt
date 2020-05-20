@@ -11145,7 +11145,6 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
                     uint32_t gd = groupdata[GRPD_GROUPDATA];
                     gt = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
                 }
-
             }
             else if (cmd == SRT_CMD_NONE)
             {
