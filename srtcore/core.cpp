@@ -12501,7 +12501,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         memcpy(&pdata[i].peeraddr, &d->peer, d->peer.size());
     }
 
-    return 0;
+    return m_Group.size();
 }
 
 void CUDTGroup::getGroupCount(size_t& w_size, bool& w_still_alive)
