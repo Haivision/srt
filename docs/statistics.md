@@ -211,17 +211,17 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 The total number of "too late to send" packets dropped by the sender (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for sender.
 
+Packets may be dropped conditionally, when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are set to true.
+
 The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PEERLATENCY`, plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms). The delay used is the timespan between the very first packet and the latest packet in the sender's buffer.
 
 ### pktRcvDropTotal
 
-The total number of "too late to deliver" missing packets. Available for receiver.
+The total number of "too late to deliver" missing packets (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for receiver.
 
-Missing packets means lost or not yet received out-of-order packets. The receiver drops only those packets that are missing by the time there is at least one packet ready to be delivered to the upstream application.
+Packets may be dropped conditionally, when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are set to true.
 
-Also includes packets that failed to be decrypted (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)). These packets are present in the receiver's buffer and not dropped at the moment the decryption has failed.
-
- `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options should be enabled (refer to in [API.md](API.md)).
+This metric includes also packets that failed to be decrypted, which is also counted by [pktRcvUndecryptTotal](#pktRcvUndecryptTotal).
 
 ### pktRcvUndecryptTotal
 
