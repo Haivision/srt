@@ -542,6 +542,21 @@ not be available to the `srt_accept` call.
 
 ---
 
+| OptName               | Since | Binding | Type              | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----------------- | ------ | -------- | ------ |
+| `SRTO_GROUPTYPE`      |       | pre     | `SRT_GROUP_TYPE`  |        |          | enum   |
+
+- This option is read-only and it is intended to be called inside the listener
+callback handler (see `srt_listen_callback`). Possible values are defined in
+the `SRT_GROUP_TYPE` enumeration type.
+
+- This option returns the group type that is declared in the incoming connection.
+If the incoming connection is not going to make a group-member connection, then
+the value returned is `SRT_GTYPE_UNDEFINED`. If this option is read in any other
+context than inside the listener callback handler, the value is undefined.
+
+---
+
 | OptName               | Since | Binding | Type   | Units  | Default  | Range  |
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
 | `SRTO_GROUPSTABTIMEO` |       | pre     | `int`  | ms     | 40       | 10+    |
