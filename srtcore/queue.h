@@ -108,15 +108,12 @@ public:     // Operations on units
 
    CUnit* getNextAvailUnit();
 
-
    void makeUnitFree(CUnit * unit);
 
    void makeUnitGood(CUnit * unit);
 
 public:
-
-    inline int getIPversion() const { return m_iIPversion; }
-
+   inline int getIPversion() const { return m_iIPversion; }
 
 private:
    struct CQEntry
@@ -471,9 +468,6 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
-   // Needed for affinity check (debug only)
-   pthread_t threadId() { return m_WorkerThread; }
-
    void stopWorker();
 
    void setClosing()
@@ -483,7 +477,7 @@ public:
 
 private:
    static void* worker(void* param);
-   pthread_t m_WorkerThread;
+   srt::sync::CThread m_WorkerThread;
    // Subroutines of worker
    EReadStatus worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);

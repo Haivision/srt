@@ -11,13 +11,15 @@
 #ifndef __SRT_SYNC_H__
 #define __SRT_SYNC_H__
 
-//#define USE_STDCXX_CHRONO
+//#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
 
 #include <cstdlib>
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #else
 #include <pthread.h>
 #endif
@@ -31,6 +33,22 @@ namespace sync
 {
 using namespace std;
 
+///////////////////////////////////////////////////////////////////////////////
+//
+// Duration class
+//
+///////////////////////////////////////////////////////////////////////////////
+
+#if ENABLE_STDCXX_SYNC
+
+template <class Clock>
+using Duration = chrono::duration<Clock>;
+
+#else
+
+/// Class template srt::sync::Duration represents a time interval.
+/// It consists of a count of ticks of _Clock.
+/// It is a wrapper of system timers in case of non-C++11 chrono build.
 template <class _Clock>
 class Duration
 {
@@ -59,19 +77,50 @@ public: // Relational operators
     inline bool operator<(const Duration& rhs) const { return m_duration < rhs.m_duration; }
 
 public: // Assignment operators
-    inline void operator*=(const double mult) { m_duration = static_cast<int64_t>(m_duration * mult); }
+    inline void operator*=(const int64_t mult) { m_duration = static_cast<int64_t>(m_duration * mult); }
     inline void operator+=(const Duration& rhs) { m_duration += rhs.m_duration; }
     inline void operator-=(const Duration& rhs) { m_duration -= rhs.m_duration; }
 
     inline Duration operator+(const Duration& rhs) const { return Duration(m_duration + rhs.m_duration); }
     inline Duration operator-(const Duration& rhs) const { return Duration(m_duration - rhs.m_duration); }
-    inline Duration operator*(const int& rhs) const { return Duration(m_duration * rhs); }
+    inline Duration operator*(const int64_t& rhs) const { return Duration(m_duration * rhs); }
+    inline Duration operator/(const int64_t& rhs) const { return Duration(m_duration / rhs); }
 
 private:
     // int64_t range is from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
     int64_t m_duration;
 };
 
+#endif // ENABLE_STDCXX_SYNC
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// TimePoint and steadt_clock classes
+//
+///////////////////////////////////////////////////////////////////////////////
+
+#if ENABLE_STDCXX_SYNC
+
+using steady_clock = chrono::steady_clock;
+
+template <class Clock, class Duration = typename Clock::duration>
+using time_point = chrono::time_point<Clock, Duration>;
+
+template <class Clock>
+using TimePoint = chrono::time_point<Clock>;
+
+template <class Clock, class Duration = typename Clock::duration>
+inline bool is_zero(const time_point<Clock, Duration> &tp)
+{
+    return tp.time_since_epoch() == Clock::duration::zero();
+}
+
+inline bool is_zero(const steady_clock::time_point& t)
+{
+    return t == steady_clock::time_point();
+}
+
+#else
 template <class _Clock>
 class TimePoint;
 
@@ -83,12 +132,12 @@ public:
 
 public:
     static time_point now();
-    static time_point zero();
 };
 
+/// Represents a point in time
 template <class _Clock>
 class TimePoint
-{ // represents a point in time
+{
 public:
     TimePoint()
         : m_timestamp(0)
@@ -146,24 +195,11 @@ public: //
 #endif
 
 public:
-    uint64_t         us_since_epoch() const;
     Duration<_Clock> time_since_epoch() const;
-
-public:
-    bool is_zero() const { return m_timestamp == 0; }
 
 private:
     uint64_t m_timestamp;
 };
-
-inline TimePoint<srt::sync::steady_clock> steady_clock::zero()
-{
-    return TimePoint<steady_clock>(0);
-}
-
-
-template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const;
 
 template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const;
@@ -173,10 +209,52 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
     return rhs * lhs;
 }
 
-inline int64_t count_microseconds(const TimePoint<steady_clock> tp)
+#endif // ENABLE_STDCXX_SYNC
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Duration and timepoint conversions
+//
+///////////////////////////////////////////////////////////////////////////////
+
+#if ENABLE_STDCXX_SYNC
+
+inline long long count_microseconds(const steady_clock::duration &t)
 {
-    return static_cast<int64_t>(tp.us_since_epoch());
+    return std::chrono::duration_cast<std::chrono::microseconds>(t).count();
 }
+
+inline long long count_microseconds(const steady_clock::time_point tp)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
+}
+
+inline long long count_milliseconds(const steady_clock::duration &t)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+}
+
+inline long long count_seconds(const steady_clock::duration &t)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(t).count();
+}
+
+inline steady_clock::duration microseconds_from(long t_us)
+{
+    return std::chrono::microseconds(t_us);
+}
+
+inline steady_clock::duration milliseconds_from(long t_ms)
+{
+    return std::chrono::milliseconds(t_ms);
+}
+
+inline steady_clock::duration seconds_from(long t_s)
+{
+    return std::chrono::seconds(t_s);
+}
+
+#else
 
 int64_t count_microseconds(const steady_clock::duration& t);
 int64_t count_milliseconds(const steady_clock::duration& t);
@@ -186,7 +264,12 @@ Duration<steady_clock> microseconds_from(int64_t t_us);
 Duration<steady_clock> milliseconds_from(int64_t t_ms);
 Duration<steady_clock> seconds_from(int64_t t_s);
 
-inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
+inline bool is_zero(const TimePoint<steady_clock>& t)
+{
+    return t == TimePoint<steady_clock>();
+}
+
+#endif // ENABLE_STDCXX_SYNC
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -195,6 +278,11 @@ inline bool is_zero(const TimePoint<steady_clock>& t) { return t.is_zero(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#if ENABLE_STDCXX_SYNC
+using Mutex = mutex;
+using UniqueLock = unique_lock<mutex>;
+using ScopedLock = lock_guard<mutex>;
+#else
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
 /// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
@@ -248,6 +336,7 @@ private:
     int m_iLocked;
     Mutex& m_Mutex;
 };
+#endif // ENABLE_STDCXX_SYNC
 
 /// The purpose of this typedef is to reduce the number of changes in the code (renamings)
 /// and produce less merge conflicts with some other parallel work done.
@@ -350,7 +439,7 @@ public:
     void notify_all();
 
 private:
-#ifdef USE_STDCXX_CHRONO
+#if ENABLE_STDCXX_SYNC
     condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
@@ -365,15 +454,6 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 // Event (CV) section
 //
 ///////////////////////////////////////////////////////////////////////////////
-
-inline void SleepFor(const steady_clock::duration& t)
-{
-#ifndef _WIN32
-    usleep(count_microseconds(t)); // microseconds
-#else
-    Sleep(count_milliseconds(t));
-#endif
-}
 
 // This class is used for condition variable combined with mutex by different ways.
 // This should provide a cleaner API around locking with debug-logging inside.
@@ -634,7 +714,7 @@ public:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef USE_STDCXX_CHRONO
+#ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
 #else // pthreads wrapper version
@@ -665,6 +745,23 @@ public: // Observers
     /// is still considered an active thread of execution and is therefore joinable.
     bool joinable() const;
 
+    struct id
+    {
+        id(const pthread_t t)
+            : value(t)
+        {}
+
+        const pthread_t value;
+        inline bool operator==(const id& second) const
+        {
+            return pthread_equal(value, second.value) != 0;
+        }
+    };
+
+    /// Returns the id of the current thread.
+    /// In this implementation the ID is the pthread_t.
+    const id get_id() const { return id(m_thread); }
+
 public:
     /// Blocks the current thread until the thread identified by *this finishes its execution.
     /// If that thread has already terminated, then join() returns immediately.
@@ -680,6 +777,21 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+namespace this_thread
+{
+    const inline CThread::id get_id() { return CThread::id (pthread_self()); }
+
+    inline void sleep_for(const steady_clock::duration& t)
+    {
+#if !defined(_WIN32)
+        usleep(count_microseconds(t)); // microseconds
+#else
+        Sleep(count_milliseconds(t));
+#endif
+    }
+}
+
 #endif
 
 /// StartThread function should be used to do CThread assignments:
@@ -691,14 +803,28 @@ private:
 /// @returns true if thread was started successfully,
 ///          false on failure
 ///
-#ifdef USE_STDCXX_CHRONO
-template< class Function >
-bool StartThread(CThread& th, Function&& f, void* args, const char* name);
+#ifdef ENABLE_STDCXX_SYNC
+typedef void* (&ThreadFunc) (void*);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
 #else
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
 #endif
 
-}; // namespace sync
-}; // namespace srt
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Set thread local error
+/// @param e new CUDTException
+void SetThreadLocalError(const CUDTException& e);
+
+/// Get thread local error
+/// @returns CUDTException pointer
+CUDTException& GetThreadLocalError();
+
+} // namespace sync
+} // namespace srt
 
 #endif // __SRT_SYNC_H__

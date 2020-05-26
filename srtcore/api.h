@@ -206,7 +206,7 @@ public:
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-           CHandShake& w_hs, SRT_REJECT_REASON& w_error);
+           CHandShake& w_hs, int& w_error);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 
@@ -238,22 +238,14 @@ public:
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
+   template <class EntityType>
+   int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
    int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
-
-      /// record the UDT exception.
-      /// @param [in] e pointer to a UDT exception instance.
-
-   void setError(CUDTException* e);
-
-      /// look up the most recent UDT exception.
-      /// @return pointer to a UDT exception instance.
-
-   CUDTException* getError();
 
    CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
@@ -345,10 +337,6 @@ private:
    SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
-
-private:
-   pthread_key_t m_TLSError;                         // thread local error record (last error)
-   static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
 
 private:
    friend struct FLookupSocketWithEvent;

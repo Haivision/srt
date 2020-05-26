@@ -41,7 +41,9 @@ int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGro
 int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
-{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
+{
+    return CUDT::getGroupData(socketgroup, output, inoutlen);
+}
 int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
     return CUDT::configureGroup(socketgroup, str);
@@ -69,7 +71,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
-    data.priority = 0;
+    data.weight = 0;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -340,9 +342,14 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
-enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+int srt_getrejectreason(SRTSOCKET sock)
 {
     return CUDT::rejectReason(sock);
+}
+
+int srt_setrejectreason(SRTSOCKET sock, int value)
+{
+    return CUDT::rejectReason(sock, value);
 }
 
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
