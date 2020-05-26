@@ -1611,9 +1611,9 @@ void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
            *   +----------------------------------+-------+
            *  -1 sec                             LST      0(now)
            */
-          m_iCountMAvg      = (int)(((m_iCountMAvg      * (1000 - elapsed_ms)) + (count      * elapsed_ms)) / 1000);
-          m_iBytesCountMAvg = (int)(((m_iBytesCountMAvg * (1000 - elapsed_ms)) + (bytescount * elapsed_ms)) / 1000);
-          m_TimespanMAvg    = (int)(((m_TimespanMAvg    * (1000 - elapsed_ms)) + (instspan   * elapsed_ms)) / 1000);
+          m_iCountMAvg      = avg_iir_w<1000>(m_iCountMAvg,      count,      elapsed_ms);
+          m_iBytesCountMAvg = avg_iir_w<1000>(m_iBytesCountMAvg, bytescount, elapsed_ms);
+          m_TimespanMAvg    = avg_iir_w<1000>(m_TimespanMAvg,    instspan,   elapsed_ms);
       }
       m_tsLastSamplingTime = now;
 
