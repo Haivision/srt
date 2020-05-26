@@ -1591,20 +1591,30 @@ void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
    }
    else if (elapsed_ms >= (SRT_MAVG_BASE_PERIOD / SRT_MAVG_SAMPLING_RATE) / SRT_us2ms)
    {
-      /*
-      * Weight last average value between -1 sec and last sampling time (LST)
-      * and new value between last sampling time and now
-      *                                      |elapsed|
-      *   +----------------------------------+-------+
-      *  -1                                 LST      0(now)
-      */
       int instspan;
       int bytescount;
-      int count = getRcvDataSize(bytescount, instspan);
+      const int count = getRcvDataSize(bytescount, instspan);
 
-      m_iCountMAvg      = (int)(((m_iCountMAvg      * (1000 - elapsed_ms)) + (count      * elapsed_ms)) / 1000);
-      m_iBytesCountMAvg = (int)(((m_iBytesCountMAvg * (1000 - elapsed_ms)) + (bytescount * elapsed_ms)) / 1000);
-      m_TimespanMAvg    = (int)(((m_TimespanMAvg    * (1000 - elapsed_ms)) + (instspan   * elapsed_ms)) / 1000);
+      if (m_iCountMAvg == 0)
+      {
+          // This is the first call, so just take the new value
+          m_iCountMAvg      = count;
+          m_iBytesCountMAvg = bytescount;
+          m_TimespanMAvg    = instspan;
+      }
+      else
+      {
+          /*
+           * Weight last average value between -1 sec from now and last sampling time (LST)
+           * and new value between last sampling time and now
+           *                                      |elapsed|
+           *   +----------------------------------+-------+
+           *  -1 sec                             LST      0(now)
+           */
+          m_iCountMAvg      = (int)(((m_iCountMAvg      * (1000 - elapsed_ms)) + (count      * elapsed_ms)) / 1000);
+          m_iBytesCountMAvg = (int)(((m_iBytesCountMAvg * (1000 - elapsed_ms)) + (bytescount * elapsed_ms)) / 1000);
+          m_TimespanMAvg    = (int)(((m_TimespanMAvg    * (1000 - elapsed_ms)) + (instspan   * elapsed_ms)) / 1000);
+      }
       m_tsLastSamplingTime = now;
 
       HLOGC(dlog.Debug, log << "getRcvDataSize: " << count << " " << bytescount << " " << instspan
