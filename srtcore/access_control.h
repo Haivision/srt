@@ -20,9 +20,8 @@ written by
 
 #define SRT_REJX_FALLBACK 1000 // A code used in case when the application wants to report some problem, but can't precisely specify it.
 #define SRT_REJX_KEY_NOTSUP 1001  // The key used in the StreamID keyed string is not supported by the service.
-#define SRT_REJX_SESSIONOFF 1002  // Session specified by the `s` key (session id) has expired (or it's generally unknown)
-#define SRT_REJX_FILEPATH 1003  // The resource type designates a file and the path is either wrong syntax or not found
-#define SRT_REJX_HOSTNOTFOUND 1004 // The `h` host specification was not recognized by the service
+#define SRT_REJX_FILEPATH 1002  // The resource type designates a file and the path is either wrong syntax or not found
+#define SRT_REJX_HOSTNOTFOUND 1003 // The `h` host specification was not recognized by the service
 
 // The list of http codes adopted for SRT.
 // An example C++ header for HTTP codes can be found at:
@@ -31,7 +30,7 @@ written by
 // Some of the unused code can be revived in the future, if there
 // happens to be a good reason for it.
 
-#define SRT_REJX_BAD_REQUEST 1400  // General syntax error in the SocketID specification (also a fallback code for undefined cases
+#define SRT_REJX_BAD_REQUEST 1400  // General syntax error in the SocketID specification (also a fallback code for undefined cases)
 #define SRT_REJX_UNAUTHORIZED 1401  // Authentication failed, provided that the user was correctly identified and access to the required resource would be granted
 #define SRT_REJX_OVERLOAD 1402  // The server is too heavily loaded, or you have exceeded credits for accessing the service and the resource.
 #define SRT_REJX_FORBIDDEN 1403  // Access denied to the resource by any kind of reason.
@@ -46,7 +45,7 @@ written by
 // CODE NOT IN USE 412: unused: preconditions not predicted in AC
 // CODE NOT IN USE 413: unused: AC size is already defined as 512
 // CODE NOT IN USE 414: unused: AC size is already defined as 512
-#define SRT_REJX_NOTSUP_MEDIA 1415  // The media type in not supported by the application. This is the `t` key that specifies the media type as stream, file and auth, possibly extended by the application.
+#define SRT_REJX_NOTSUP_MEDIA 1415  // The media type is not supported by the application. This is the `t` key that specifies the media type as stream, file and auth, possibly extended by the application.
 // CODE NOT IN USE 416: unused: no detailed specification defined
 // CODE NOT IN USE 417: unused: expectations not supported
 // CODE NOT IN USE 418: unused: sharks do not drink tea
