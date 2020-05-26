@@ -16,6 +16,7 @@
 #include <mutex>
 
 #include "srt.h"
+#include "sync.h"
 
 
 
@@ -153,7 +154,8 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  * In the cases B.2-B.4 the caller will reject the connection due to the enforced encryption check
  * of the HS response from the listener on the stage of the KM response check.
  * While the listener accepts the connection with the connected state. So the caller sends UMSG_SHUTDOWN
- * to notify the listener that he has closed the connection. The accepted socket gets the SRTS_BROKEN states.
+ * to notify the listener that it has closed the connection. The accepted socket gets the SRTS_BROKEN states.
+ * For these cases a special accept_ret = -2 is used, that allows the accepted socket to be broken or already closed.
  *
  * In the cases C.2-C.4 it is the listener who rejects the connection, so we don't have an accepted socket.
  */
@@ -168,9 +170,9 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,                0, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -293,7 +295,6 @@ public:
     template<typename TResult>
     const TestCase<TResult>& GetTestMatrix(TEST_CASE test_case) const;
 
-
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
@@ -333,26 +334,8 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
-        EXPECT_EQ(connect_ret, expect.connect_ret);
-
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
-        {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
-        }
-
-        bool accept_ready = false;
-        std::mutex ready_to_accept_mtx;
-        std::condition_variable ready_to_accept;
-
-        const int epoll_res = WaitOnEpoll(expect);
-
         auto accepting_thread = std::thread([&] {
-            ready_to_accept_mtx.lock();
-            accept_ready = true;
-            ready_to_accept.notify_one();
-            ready_to_accept_mtx.unlock();
+            const int epoll_res = WaitOnEpoll(expect);
 
             if (epoll_res == SRT_ERROR)
             {
@@ -367,9 +350,13 @@ public:
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
+            {
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
-            else
+            }
+            else if (expect.accept_ret != -2)
+            {
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
+            }
 
             if (accepted_socket != SRT_INVALID_SOCK)
             {
@@ -377,17 +364,34 @@ public:
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
-                EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
-                if (m_is_tracing)
+                const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
+                if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
-                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    EXPECT_TRUE(status == SRTS_BROKEN || status == SRTS_CLOSED);
+                }
+                else
+                {
+                    EXPECT_EQ(status, expect.socket_state[CHECK_SOCKET_ACCEPTED]);
+                    EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+                    if (m_is_tracing)
+                    {
+                        std::cerr << "Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)] << "\n";
+                        std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                        std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                        std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    }
                 }
             }
         });
+
+        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        EXPECT_EQ(connect_ret, expect.connect_ret);
+
+        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        {
+            std::cerr << "UNEXPECTED! srt_connect returned error: "
+                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        }
 
         if (is_blocking == false)
             accepting_thread.join();
@@ -412,10 +416,6 @@ public:
 
         if (is_blocking)
         {
-            // We need to ensure the accepting thread is up and running
-            std::unique_lock<std::mutex> lock(ready_to_accept_mtx);
-            ready_to_accept.wait(lock, [&accept_ready] { return accept_ready; });
-
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

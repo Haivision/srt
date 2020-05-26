@@ -69,6 +69,7 @@ modified by
 #include "utilities.h"
 #include "sync.h"
 #include "netinet_any.h"
+#include "packetfilter_api.h"
 
 // System-independent errno
 #ifndef _WIN32
@@ -538,62 +539,6 @@ struct EventSlot
 };
 
 
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
-
-class CTimer
-{
-public:
-   CTimer();
-   ~CTimer();
-
-public:
-
-      /// Seelp until CC "nexttime_tk".
-      /// @param [in] nexttime_tk next time the caller is waken up.
-
-   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
-
-      /// Stop the sleep() or sleepto() methods.
-
-   void interrupt();
-
-      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
-
-   void tick();
-
-public:
-
-      /// trigger an event such as new connection, close, new data, etc. for "select" call.
-
-   static void triggerEvent();
-
-   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
-
-      /// wait for an event to br triggered by "triggerEvent".
-      /// @retval WT_EVENT The event has happened
-      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
-      /// @retval WT_ERROR The function has exit due to an error
-
-   static EWait waitForEvent();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
-private:
-   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
-
-   pthread_cond_t m_TickCond;
-   srt::sync::Mutex m_TickLock;
-
-   static pthread_cond_t m_EventCond;
-   static srt::sync::Mutex m_EventLock;
-};
-
 // UDT Sequence Number 0 - (2^31 - 1)
 
 // seqcmp: compare two seq#, considering the wraping
@@ -605,7 +550,59 @@ private:
 
 class CSeqNo
 {
+    int32_t value;
+
 public:
+
+   explicit CSeqNo(int32_t v): value(v) {}
+
+   // Comparison
+   bool operator == (const CSeqNo& other) const { return other.value == value; }
+   bool operator < (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) < 0;
+   }
+
+   // The std::rel_ops namespace cannot be "imported"
+   // as a whole into the class - it can only be used
+   // in the application code. 
+   bool operator != (const CSeqNo& other) const { return other.value != value; }
+   bool operator > (const CSeqNo& other) const { return other < *this; }
+   bool operator >= (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) >= 0;
+   }
+   bool operator <=(const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) <= 0;
+   }
+
+   // circular arithmetics
+   friend int operator-(const CSeqNo& c1, const CSeqNo& c2)
+   {
+       return seqoff(c2.value, c1.value);
+   }
+
+   friend CSeqNo operator-(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(decseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(int off, const CSeqNo& c1)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   CSeqNo& operator++()
+   {
+       value = incseq(value);
+       return *this;
+   }
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
@@ -702,7 +699,130 @@ public:
    static const int32_t m_iMaxAckSeqNo = 0x7FFFFFFF;         // maximum ACK sub-sequence number used in UDT
 };
 
+template <size_t BITS, uint32_t MIN = 0>
+class RollNumber
+{
+    typedef RollNumber<BITS, MIN> this_t;
+    typedef Bits<BITS, 0> number_t;
+    uint32_t number;
 
+public:
+
+    static const size_t OVER = number_t::mask+1;
+    static const size_t HALF = (OVER-MIN)/2;
+
+private:
+    static int Diff(uint32_t left, uint32_t right)
+    {
+        // UNExpected order, diff is negative
+        if ( left < right )
+        {
+            int32_t diff = right - left;
+            if ( diff >= int32_t(HALF) ) // over barrier
+            {
+                // It means that left is less than right because it was overflown
+                // For example: left = 0x0005, right = 0xFFF0; diff = 0xFFEB > HALF
+                left += OVER - MIN;  // left was really 0x00010005, just narrowed.
+                // Now the difference is 0x0015, not 0xFFFF0015
+            }
+        }
+        else
+        {
+            int32_t diff = left - right;
+            if ( diff >= int32_t(HALF) )
+            {
+                right += OVER - MIN;
+            }
+        }
+
+        return left - right;
+    }
+
+public:
+    explicit RollNumber(uint32_t val): number(val)
+    {
+    }
+
+    bool operator<(const this_t& right) const
+    {
+        int32_t ndiff = number - right.number;
+        if (ndiff < -int32_t(HALF))
+        {
+            // it' like ndiff > 0
+            return false;
+        }
+
+        if (ndiff > int32_t(HALF))
+        {
+            // it's like ndiff < 0
+            return true;
+        }
+
+        return ndiff < 0;
+    }
+
+    bool operator>(const this_t& right) const
+    {
+        return right < *this;
+    }
+
+    bool operator=(const this_t& right) const
+    {
+        return number == right.number;
+    }
+
+    bool operator<=(const this_t& right) const
+    {
+        return !(*this > right);
+    }
+
+    bool operator>=(const this_t& right) const
+    {
+        return !(*this < right);
+    }
+
+    void operator++(int)
+    {
+        ++number;
+        if (number > number_t::mask)
+            number = MIN;
+    }
+
+    this_t& operator++() { (*this)++; return *this; }
+
+    void operator--(int)
+    {
+        if (number == MIN)
+            number = number_t::mask;
+        else
+            --number;
+    }
+    this_t& operator--() { (*this)--; return *this; }
+
+    int32_t operator-(this_t right)
+    {
+        return Diff(this->number, right.number);
+    }
+
+    void operator+=(int32_t delta)
+    {
+        // NOTE: this condition in practice tests if delta is negative.
+        // That's because `number` is always positive, so negated delta
+        // can't be ever greater than this, unless it's negative.
+        if (-delta > int64_t(number))
+        {
+            number = OVER - MIN + number + delta; // NOTE: delta is negative
+        }
+        else
+        {
+            number += delta;
+            if (number >= OVER)
+                number -= OVER - MIN;
+        }
+    }
+
+    operator uint32_t() const { return number; }
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -729,22 +849,21 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-
-    StatsLossRecords(): initseq(-1) {}
+    StatsLossRecords(): initseq(SRT_SEQNO_NONE) {}
 
     // To check if this structure still keeps record of that sequence.
     // This is to check if the information about this not being found
     // is still reliable.
     bool exists(int32_t seq)
     {
-        return initseq != -1 && CSeqNo::seqcmp(seq, initseq) >= 0;
+        return initseq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seq, initseq) >= 0;
     }
 
     int32_t base() { return initseq; }
 
     void clear()
     {
-        initseq = -1;
+        initseq = SRT_SEQNO_NONE;
         array.reset();
     }
 
@@ -1260,7 +1379,7 @@ inline int32_t SrtParseVersion(const char* v)
         return 0;
     }
 
-    return major*0x10000 + minor*0x100 + patch;
+    return SrtVersion(major, minor, patch);
 }
 
 inline std::string SrtVersionString(int version)
@@ -1273,5 +1392,7 @@ inline std::string SrtVersionString(int version)
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
+
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
 
 #endif

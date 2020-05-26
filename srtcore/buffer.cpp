@@ -161,13 +161,13 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     if (w_srctime == 0)
     {
         HLOGC(dlog.Debug, log << CONID() << "addBuffer: DEFAULT SRCTIME - overriding with current time.");
-        w_srctime = time.us_since_epoch();
+        w_srctime = count_microseconds(time.time_since_epoch());
     }
     int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     HLOGC(dlog.Debug, log << CONID() << "addBuffer: adding "
         << size << " packets (" << len << " bytes) to send, msgno="
-        << (w_msgno ? w_msgno : m_iNextMsgNo)
+        << (w_msgno > 0 ? w_msgno : m_iNextMsgNo)
         << (inorder ? "" : " NOT") << " in order");
 
     // The sequence number passed to this function is the sequence number
@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     Block* s = m_pLastBlock;
 
-    if (w_msgno == 0) // DEFAULT-UNCHANGED msgno supplied
+    if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(dlog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
@@ -247,9 +247,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
-    m_iNextMsgNo ++;
-    if (m_iNextMsgNo == int32_t(MSGNO_SEQ::mask))
-        m_iNextMsgNo = 1;
+    const int nextmsgno = ++MsgNo(m_iNextMsgNo);
+    HLOGC(mglog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
+    m_iNextMsgNo = nextmsgno;
 }
 
 void CSndBuffer::setInputRateSmpPeriod(int period)
@@ -338,7 +338,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
       // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
 
       s->m_iLength = pktlen;
-      s->m_iTTL = -1;
+      s->m_iTTL = SRT_MSGTTL_INF;
       s = s->m_pNext;
 
       total += pktlen;
@@ -416,6 +416,52 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
    HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
 
    return readlen;
+}
+
+int32_t CSndBuffer::getMsgNoAt(const int offset)
+{
+   CGuard bufferguard (m_BufLock);
+
+   Block* p = m_pFirstBlock;
+
+   if (p)
+   {
+       HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: FIRST MSG: size="
+               << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+               << " !" << BufferStamp(p->m_pcData, p->m_iLength));
+   }
+
+   if (offset >= m_iCount)
+   {
+       // Prevent accessing the last "marker" block
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, max offset=" << m_iCount);
+       return SRT_MSGNO_CONTROL;
+   }
+
+   // XXX Suboptimal procedure to keep the blocks identifiable
+   // by sequence number. Consider using some circular buffer.
+   int i;
+   Block* ee SRT_ATR_UNUSED = 0;
+   for (i = 0; i < offset && p; ++ i)
+   {
+      ee = p;
+      p = p->m_pNext;
+   }
+
+   if (!p)
+   {
+       LOGC(dlog.Error, log << "CSndBuffer::getMsgNoAt: IPE: offset="
+               << offset << " not found, stopped at " << i
+               << " with #" << (ee ? ee->getMsgSeq() : SRT_MSGNO_NONE));
+       return SRT_MSGNO_CONTROL;
+   }
+
+   HLOGC(dlog.Debug, log << "CSndBuffer::getMsgNoAt: offset="
+           << offset << " found, size=" << p->m_iLength << " %" << p->m_iSeqNo << " #" << p->getMsgSeq()
+           << " !" << BufferStamp(p->m_pcData, p->m_iLength));
+
+   return p->getMsgSeq();
 }
 
 int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
@@ -516,7 +562,7 @@ void CSndBuffer::ackData(int offset)
    updAvgBufSize(steady_clock::now());
 #endif
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -590,17 +636,19 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
    return m_iCount;
 }
 
-int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_late_time)
+int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)
 {
    int dpkts = 0;
    int dbytes = 0;
    bool move = false;
+   int32_t msgno = 0;
 
    CGuard bufferguard (m_BufLock);
    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++ i)
    {
       dpkts++;
       dbytes += m_pFirstBlock->m_iLength;
+      msgno = m_pFirstBlock->getMsgSeq();
 
       if (m_pFirstBlock == m_pCurrBlock)
           move = true;
@@ -614,7 +662,12 @@ int CSndBuffer::dropLateData(int& bytes, const steady_clock::time_point& too_lat
    m_iCount -= dpkts;
 
    m_iBytesCount -= dbytes;
-   bytes = dbytes;
+   w_bytes = dbytes;
+
+   // We report the increased number towards the last ever seen
+   // by the loop, as this last one is the last received. So remained
+   // (even if "should remain") is the first after the last removed one.
+   w_first_msgno = ++MsgNo(msgno);
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    updAvgBufSize(steady_clock::now());
@@ -944,7 +997,7 @@ int CRcvBuffer::ackData(int len)
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
 
-   CTimer::triggerEvent();
+   CGlobEvent::triggerEvent();
 
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.
@@ -1004,13 +1057,13 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                                 int32_t&                  w_skipseqno,
                                 int32_t&                  w_curpktseq)
 {
-    w_skipseqno = -1;
+    w_skipseqno = SRT_SEQNO_NONE;
     w_passack = false;
     // tsbpdtime will be retrieved by the below call
     // Returned values:
     // - tsbpdtime: real time when the packet is ready to play (whether ready to play or not)
     // - w_passack: false (the report concerns a packet with an exactly next sequence)
-    // - w_skipseqno == -1: no packets to skip towards the first RTP
+    // - w_skipseqno == SRT_SEQNO_NONE: no packets to skip towards the first RTP
     // - w_curpktseq: that exactly packet that is reported (for debugging purposes)
     // - @return: whether the reported packet is ready to play
 
@@ -1037,7 +1090,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     // Below this line we have only two options:
     // - m_iMaxPos == 0, which means that no more packets are in the buffer
-    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=-1, w_curpktseq=<unchanged>, @return false
+    //    - returned: tsbpdtime=0, w_passack=true, w_skipseqno=SRT_SEQNO_NONE, w_curpktseq=<unchanged>, @return false
     // - m_iMaxPos > 0, which means that there are packets arrived after a lost packet:
     //    - returned: tsbpdtime=PKT.TS, w_passack=true, w_skipseqno=PKT.SEQ, w_curpktseq=PKT, @return LOCAL(PKT.TS) <= NOW
 
@@ -1139,6 +1192,17 @@ steady_clock::time_point CRcvBuffer::debugGetDeliveryTime(int offset)
         return steady_clock::time_point();
 
     return getPktTsbPdTime(u->m_Packet.getMsgTimeStamp());
+}
+
+int32_t CRcvBuffer::getTopMsgno() const
+{
+    if (m_iStartPos == m_iLastAckPos)
+        return SRT_MSGNO_NONE; // No message is waiting
+
+    if (!m_pUnit[m_iStartPos])
+        return SRT_MSGNO_NONE; // pity
+
+    return m_pUnit[m_iStartPos]->m_Packet.getMsgSeq();
 }
 
 bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto)
@@ -1405,7 +1469,7 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
 void CRcvBuffer::reportBufferStats() const
 {
     int nmissing = 0;
-    int32_t low_seq= -1, high_seq = -1;
+    int32_t low_seq = SRT_SEQNO_NONE, high_seq = SRT_SEQNO_NONE;
     int32_t low_ts = 0, high_ts = 0;
 
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = (i + 1) % m_iSize)
@@ -1447,7 +1511,7 @@ void CRcvBuffer::reportBufferStats() const
 
     int32_t timespan = upper_time - lower_time;
     int seqspan = 0;
-    if (low_seq != -1 && high_seq != -1)
+    if (low_seq != SRT_SEQNO_NONE && high_seq != SRT_SEQNO_NONE)
     {
         seqspan = CSeqNo::seqoff(low_seq, high_seq);
     }
@@ -1681,8 +1745,9 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
             /* Exiting wrap check period (if for packet delivery head) */
             m_bTsbPdWrapCheck = false;
             m_tsTsbPdTimeBase += microseconds_from(int64_t(CPacket::MAX_TIMESTAMP) + 1);
-            HLOGC(tslog.Debug, log << "tsbpd wrap period ends - NEW TIME BASE: "
-                   << FormatTime(m_tsTsbPdTimeBase));
+            LOGC(tslog.Debug, log << "tsbpd wrap period ends with ts=" << timestamp_us
+                << " - NEW TIME BASE: " << FormatTime(m_tsTsbPdTimeBase)
+                << " drift: " << m_DriftTracer.drift() << "us");
         }
     }
     // Check if timestamp_us is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1690,7 +1755,8 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     {
         /* Approching wrap around point, start wrap check period (if for packet delivery head) */
         m_bTsbPdWrapCheck = true;
-        HLOGP(tslog.Debug, "tsbpd wrap period begins");
+        LOGC(tslog.Debug, log << "tsbpd wrap period begins with ts=" << timestamp_us
+            << " drift: " << m_DriftTracer.drift() << "us.");
     }
 
     return (m_tsTsbPdTimeBase + microseconds_from(carryover));
@@ -1794,7 +1860,7 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         else if (iDrift <= -10)          m_TsbPdDriftHisto1ms[0]++;
         else                             m_TsbPdDriftHisto1ms[20]++;
     }
-
+    ++m_iTsbPdDriftNbSamples;
     if ((m_iTsbPdDriftNbSamples % TSBPD_DRIFT_PRT_SAMPLES) == 0)
     {
         int *histo = m_TsbPdDriftHisto1ms;
@@ -1813,17 +1879,15 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         fprintf(stderr, "%4d %4d %4d %4d %4d %4d %4d %4d %4d\n",
                 histo[11],histo[12],histo[13],histo[14],histo[15],
                 histo[16],histo[17],histo[18],histo[19]);
+
+        m_iTsbPdDriftNbSamples = 0;
     }
 }
 
 void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 {
-    char szTime[32] = {};
-    uint64_t now = CTimer::getTime();
-    time_t tnow = (time_t)(now/1000000);
-    strftime(szTime, sizeof(szTime), "%H:%M:%S", localtime(&tnow));
-    fprintf(stderr, "%s.%03d: tsbpd offset=%d drift=%d usec\n", 
-            szTime, (int)((now%1000000)/1000), tsbPdOffset, tsbPdDriftAvg);
+    fprintf(stderr, "%s: tsbpd offset=%d drift=%d usec\n", 
+        FormatTime(steady_clock::now()).c_str(), tsbPdOffset, tsbPdDriftAvg);
     memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
     memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 }
@@ -1859,7 +1923,7 @@ bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_l
     bool updated = m_DriftTracer.update(count_microseconds(iDrift));
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
-    printDriftHistogram(iDrift);
+    printDriftHistogram(count_microseconds(iDrift));
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
     if ( updated )
@@ -2055,6 +2119,26 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
     HLOGC(dlog.Debug, log << "rcvBuf/extractData: begin=" << m_iStartPos << " reporting extraction size=" << (len - rs));
 
     return len - rs;
+}
+
+string CRcvBuffer::debugTimeState(size_t first_n_pkts) const
+{
+    stringstream ss;
+    int ipos = m_iStartPos;
+    for (size_t i = 0; i < first_n_pkts; ++i, ipos = CSeqNo::incseq(ipos))
+    {
+        const CUnit* unit = m_pUnit[ipos];
+        if (!unit)
+        {
+            ss << "pkt[" << i << "] missing, ";
+            continue;
+        }
+
+        const CPacket& pkt = unit->m_Packet;
+        pkt.getMsgTimeStamp();
+        ss << "pkt[" << i << "] ts=" << pkt.getMsgTimeStamp() << ", ";
+    }
+    return ss.str();
 }
 
 #if ENABLE_HEAVY_LOGGING

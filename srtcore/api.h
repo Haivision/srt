@@ -77,6 +77,7 @@ public:
        , m_SocketID(0)
        , m_ListenSocket(0)
        , m_PeerID(0)
+       , m_IncludedGroup()
        , m_iISN(0)
        , m_pUDT(NULL)
        , m_pQueuedSockets(NULL)
@@ -141,9 +142,17 @@ public:
 
    SRT_SOCKSTATUS getStatus();
 
-   // This function shall be called always wherever
-   // you'd like to call cudtsocket->m_pUDT->close().
+   /// This function shall be called always wherever
+   /// you'd like to call cudtsocket->m_pUDT->close(),
+   /// from within the GC thread only (that is, only when
+   /// the socket should be no longer visible in the
+   /// connection, including for sending remaining data).
    void makeClosed();
+
+   /// This makes the socket no longer capable of performing any transmission
+   /// operation, but continues to be responsive in the connection in order
+   /// to finish sending the data that were scheduled for sending so far.
+   void makeShutdown();
    void removeFromGroup();
 
    // Instrumentally used by select() and also required for non-blocking
@@ -197,7 +206,7 @@ public:
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-           CHandShake& w_hs, SRT_REJECT_REASON& w_error);
+           CHandShake& w_hs, int& w_error);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 
@@ -213,6 +222,7 @@ public:
    int bind(CUDTSocket* u, UDPSOCKET udpsock);
    int listen(const SRTSOCKET u, int backlog);
    SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
+   SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
    int connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
@@ -228,6 +238,8 @@ public:
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
+   template <class EntityType>
+   int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
@@ -235,17 +247,7 @@ public:
    int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
 
-      /// record the UDT exception.
-      /// @param [in] e pointer to a UDT exception instance.
-
-   void setError(CUDTException* e);
-
-      /// look up the most recent UDT exception.
-      /// @return pointer to a UDT exception instance.
-
-   CUDTException* getError();
-
-   CUDTGroup& addGroup(SRTSOCKET id)
+   CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
        srt::sync::CGuard cg (m_GlobControlLock);
        // This only ensures that the element exists.
@@ -255,7 +257,7 @@ public:
        {
            // This is a reference to the cell, so it will
            // rewrite it into the map.
-           g = new CUDTGroup;
+           g = new CUDTGroup(type);
        }
 
        // Now we are sure that g is not NULL,
@@ -337,10 +339,6 @@ private:
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
-   pthread_key_t m_TLSError;                         // thread local error record (last error)
-   static void TLSDestroy(void* e) {if (NULL != e) delete (CUDTException*)e;}
-
-private:
    friend struct FLookupSocketWithEvent;
 
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
@@ -359,15 +357,13 @@ private:
 private:
    volatile bool m_bClosing;
    srt::sync::Mutex m_GCStopLock;
-   srt::sync::ConditionMonotonic m_GCStopCond;
-
-
+   srt::sync::Condition m_GCStopCond;
 
    srt::sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 
-   pthread_t m_GCThread;
+   srt::sync::CThread m_GCThread;
    static void* garbageCollect(void*);
 
    sockets_t m_ClosedSockets;   // temporarily store closed sockets

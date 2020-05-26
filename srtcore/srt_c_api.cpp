@@ -41,7 +41,13 @@ int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGro
 int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
-{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
+{
+    return CUDT::getGroupData(socketgroup, output, inoutlen);
+}
+int srt_group_configure(SRTSOCKET socketgroup, const char* str)
+{
+    return CUDT::configureGroup(socketgroup, str);
+}
 // int srt_bind_multicast()
 
 // Binding and connection management
@@ -49,7 +55,8 @@ int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CU
 int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
-int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, -1); }
+SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
+int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
 int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
 int srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* source,
@@ -64,6 +71,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
     data.result = 0;
     data.status = SRTS_INIT;
     data.id = -1;
+    data.weight = 0;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -92,16 +100,10 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
     // Just as a safety precaution, check the structs.
     if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
             || local_name->sa_family != remote_name->sa_family)
-        return SRT_EINVPARAM;
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-    sockaddr_in* local_sin = (sockaddr_in*)local_name;
-    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
-
-    if (local_sin->sin_port != remote_sin->sin_port)
-        return SRT_EINVPARAM;
-
-    int st = srt_bind(u, local_name, local_namelen);
-    if ( st != 0 )
+    const int st = srt_bind(u, local_name, local_namelen);
+    if (st != 0)
         return st;
 
     return srt_connect(u, remote_name, remote_namelen);
@@ -172,12 +174,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 
 extern const SRT_MSGCTRL srt_msgctrl_default = {
     0,     // no flags set
-    -1,    // -1 = infinity
+    SRT_MSGTTL_INF,
     false, // not in order (matters for msg mode only)
     PB_SUBSEQUENT,
     0,     // srctime: take "now" time
-    -1,    // -1: no seq (0 is a valid seqno!)
-    0,     // 0: no msg/control packet
+    SRT_SEQNO_NONE,
+    SRT_MSGNO_NONE,
     NULL,  // grpdata not supplied
     0      // idem
 };
@@ -340,9 +342,14 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
-enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+int srt_getrejectreason(SRTSOCKET sock)
 {
     return CUDT::rejectReason(sock);
+}
+
+int srt_setrejectreason(SRTSOCKET sock, int value)
+{
+    return CUDT::rejectReason(sock, value);
 }
 
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
@@ -351,6 +358,11 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
+}
+
+uint32_t srt_getversion()
+{
+    return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
 }
 
 }

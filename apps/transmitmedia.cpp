@@ -116,27 +116,25 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         }
     }
 
-    m_mode = "default";
-    if (par.count("mode"))
-        m_mode = par.at("mode");
-
-    if (m_mode == "default")
+    string adapter;
+    if (par.count("adapter"))
     {
-        // Use the following convention:
-        // 1. Server for source, Client for target
-        // 2. If host is empty, then always server.
-        if ( host == "" )
-            m_mode = "listener";
-        //else if ( !dir_output )
-        //m_mode = "server";
-        else
-            m_mode = "caller";
+        adapter = par.at("adapter");
     }
 
-    if ( m_mode == "client" )
-        m_mode = "caller";
-    else if ( m_mode == "server" )
-        m_mode = "listener";
+    m_mode = "default";
+    if (par.count("mode"))
+    {
+        m_mode = par.at("mode");
+    }
+    SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
+    if (mode == SocketOption::FAILURE)
+    {
+        Error("Invalid mode");
+    }
+
+    // Fix the mode name after successful interpretation
+    m_mode = SocketOption::mode_names[mode];
 
     par.erase("mode");
 
@@ -440,10 +438,12 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
-    sockaddr_in localsa = CreateAddrInet(adapter, port);
+    const int outport = m_outgoing_port ? m_outgoing_port : port;
+
+    sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
 
-    Verb() << "Binding a server on " << adapter << ":" << port;
+    Verb() << "Binding a server on " << adapter << ":" << outport;
 
     stat = srt_bind(m_sock, plsa, sizeof localsa);
     if ( stat == SRT_ERROR )

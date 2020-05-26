@@ -83,7 +83,7 @@ public:
         m_iHead(0),
         m_iTail(0)
     {
-        m_aSeq[0].iACKSeqNo = -1;
+        m_aSeq[0].iACKSeqNo = SRT_SEQNO_NONE;
     }
 
    ~CACKWindow() {}
@@ -146,8 +146,10 @@ public:
         m_tsLastArrTime(srt::sync::steady_clock::now()),
         m_tsCurrArrTime(),
         m_tsProbeTime(),
-        m_Probe1Sequence(-1)
+        m_Probe1Sequence(SRT_SEQNO_NONE)
     {
+        srt::sync::setupMutex(m_lockPktWindow, "PktWindow");
+        srt::sync::setupMutex(m_lockProbeWindow, "ProbeWindow");
         CPktTimeWindowTools::initializeWindowArrays(m_aPktWindow, m_aProbeWindow, m_aBytesWindow, ASIZE, PSIZE);
     }
 
@@ -213,7 +215,7 @@ public:
        m_tsCurrArrTime = srt::sync::steady_clock::now();
 
        // record the packet interval between the current and the last one
-       m_aPktWindow[m_iPktWindowPtr] = count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
+       m_aPktWindow[m_iPktWindowPtr] = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
        m_aBytesWindow[m_iPktWindowPtr] = pktsz;
 
        // the window is logically circular
@@ -254,7 +256,7 @@ public:
            // Reset the starting probe into "undefined", when
            // a packet has come as retransmitted before the
            // measurement at arrival of 17th could be taken.
-           m_Probe1Sequence = -1;
+           m_Probe1Sequence = SRT_SEQNO_NONE;
            return;
        }
 
@@ -274,7 +276,7 @@ public:
        // expected packet pair, behave as if the 17th packet was lost.
 
        // no start point yet (or was reset) OR not very next packet
-       if (m_Probe1Sequence == -1 || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
+       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
            return;
 
        // Grab the current time before trying to acquire
@@ -289,12 +291,12 @@ public:
 
        // Reset the starting probe to prevent checking if the
        // measurement was already taken.
-       m_Probe1Sequence = -1;
+       m_Probe1Sequence = SRT_SEQNO_NONE;
 
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
-       int64_t timediff = count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
-       int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
+       const int64_t timediff = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
+       const int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
 
        // Let's take it simpler than it is coded here:
        // (stating that a packet has never zero size)

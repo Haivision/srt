@@ -178,6 +178,9 @@ int CUnitQueue::increase()
         delete[] tempu;
         delete[] tempb;
 
+        LOGC(mglog.Error,
+            log << "CUnitQueue:increase: failed to allocate " << size << " new units."
+                << " Current size=" << m_iSize);
         return -1;
     }
 
@@ -463,8 +466,7 @@ void CSndUList::remove_(const CUDT* u)
 
 //
 CSndQueue::CSndQueue()
-    : m_WorkerThread()
-    , m_pSndUList(NULL)
+    : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
     , m_WindowCond()
@@ -484,10 +486,10 @@ CSndQueue::~CSndQueue()
 
     CSync::lock_signal(m_WindowCond, m_WindowLock);
 
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
+    if (m_WorkerThread.joinable())
     {
         HLOGC(mglog.Debug, log << "SndQueue: EXIT");
-        pthread_join(m_WorkerThread, NULL);
+        m_WorkerThread.join();
     }
     releaseCond(m_WindowCond);
 
@@ -510,13 +512,12 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 #if ENABLE_LOGGING
     ++m_counter;
     const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
-    ThreadName tn(thrname.c_str());
+    const char* thname = thrname.c_str();
+#else
+    const char* thname = "SRT:SndQ";
 #endif
-    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-    {
-        m_WorkerThread = pthread_t();
+    if (!StartThread(m_WorkerThread, CSndQueue::worker, this, thname))
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
-    }
 }
 
 #ifdef SRT_ENABLE_IPOPTS
@@ -589,7 +590,7 @@ void *CSndQueue::worker(void *param)
         THREAD_PAUSED();
         if (currtime < next_time)
         {
-            self->m_pTimer->sleepto(next_time);
+            self->m_pTimer->sleep_until(next_time);
 
 #if defined(HAI_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lSleepTo++;
@@ -958,6 +959,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 << "). removing from queue");
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
+            i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
@@ -1056,10 +1058,11 @@ CRcvQueue::CRcvQueue()
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
+
+    if (m_WorkerThread.joinable())
     {
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
-        pthread_join(m_WorkerThread, NULL);
+        m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
 
@@ -1102,13 +1105,13 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *c
 
 #if ENABLE_LOGGING
     ++m_counter;
-    std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
-    ThreadName tn(thrname.c_str());
+    const std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+#else
+    const std::string thrname = "SRT:RcvQ:w";
 #endif
 
-    if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
+    if (!StartThread(m_WorkerThread, CRcvQueue::worker, this, thrname.c_str()))
     {
-        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1306,7 +1309,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    SRT_REJECT_REASON listener_ret  = SRT_REJ_UNKNOWN;
+    int listener_ret  = SRT_REJ_UNKNOWN;
     bool              have_listener = false;
     {
         CGuard cg(m_LSLock);
@@ -1530,7 +1533,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (pthread_equal(pthread_self(), m_WorkerThread))
+    if (this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
@@ -1538,7 +1541,7 @@ void CRcvQueue::stopWorker()
 
     HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
-    pthread_join(m_WorkerThread, NULL);
+    m_WorkerThread.join();
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
