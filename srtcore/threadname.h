@@ -60,18 +60,13 @@ public:
 
 #else
 
-#if USE_STDCXX_SYNC
-#include <thread>
-#elif _WIN32
-// nothing to #include - already done in other headers
-#else
-#include <pthread.h>
-#endif
+#include "sync.h"
 
-// Fake class, which does nothing. You can also take a look how
-// this works in other systems that are not supported here and add
-// the support. This is a fallback for systems that do not support
-// thread names.
+// Fallback version, which simply reports the thread name as
+// T<numeric-id>, and custom names used with `set` are ignored.
+// If you know how to implement this for other systems than
+// Linux, you can make another conditional. This one is now
+// the "ultimate fallback".
 
 class ThreadName
 {
@@ -81,19 +76,11 @@ public:
     static bool get(char* output)
     {
         // The default implementation will simply try to get the thread ID
-#if USE_STDCXX_SYNC
         std::ostringstream bs;
-        bs << "T" << std::this_thread::get_id();
+        bs << "T" << srt::sync::this_thread::get_id();
         size_t s = bs.str().copy(output, BUFSIZE-1);
         output[s] = '\0';
         return true;
-#elif _WIN32
-        sprintf(output, "T%uX", GetCurrentThreadId());
-        return true;
-#else
-        sprintf(output, "T%luX", (unsigned long)pthread_self());
-        return true;
-#endif
     }
     static bool set(const char*) { return false; }
 
