@@ -13251,7 +13251,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // kangaroo, we can simply return it.
 
                 // Check how many were skipped and add them to the stats
-                int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+                const int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
                 if (jump > 0)
                 {
                     m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
