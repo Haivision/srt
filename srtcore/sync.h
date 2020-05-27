@@ -778,6 +778,12 @@ private:
     pthread_t m_thread;
 };
 
+template <class Stream>
+inline Stream& operator<<(Stream& str, const CThread::id& cid)
+{
+    return str << cid.value;
+}
+
 namespace this_thread
 {
     const inline CThread::id get_id() { return CThread::id (pthread_self()); }
