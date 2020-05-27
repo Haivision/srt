@@ -1,0 +1,23 @@
+name: cxx11_win
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: configure
+      run: |
+        md _build && cd _build
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON
+    - name: build
+      run: cd _build && cmake --build ./ --config Release
+    - name: test
+      run: cd _build && ctest --extra-verbose -C Release
