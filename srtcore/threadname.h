@@ -64,7 +64,7 @@ public:
 #include <thread>
 #elif _WIN32
 // nothing to #include - already done in other headers
-#elif POSIX
+#else
 #include <pthread.h>
 #endif
 
@@ -90,12 +90,9 @@ public:
 #elif _WIN32
         sprintf(output, "T%uX", GetCurrentThreadId());
         return true;
-#elif POSIX
+#else
         sprintf(output, "T%ulX", pthread_self());
         return true;
-#else
-        (void)output;
-        return false;
 #endif
     }
     static bool set(const char*) { return false; }
