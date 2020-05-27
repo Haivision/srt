@@ -206,7 +206,7 @@ public:
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-           CHandShake& w_hs, SRT_REJECT_REASON& w_error);
+           CHandShake& w_hs, int& w_error);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
 
@@ -238,6 +238,8 @@ public:
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
+   template <class EntityType>
+   int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);

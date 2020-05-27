@@ -161,7 +161,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     if (w_srctime == 0)
     {
         HLOGC(dlog.Debug, log << CONID() << "addBuffer: DEFAULT SRCTIME - overriding with current time.");
-        w_srctime = time.us_since_epoch();
+        w_srctime = count_microseconds(time.time_since_epoch());
     }
     int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
@@ -1745,8 +1745,9 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
             /* Exiting wrap check period (if for packet delivery head) */
             m_bTsbPdWrapCheck = false;
             m_tsTsbPdTimeBase += microseconds_from(int64_t(CPacket::MAX_TIMESTAMP) + 1);
-            HLOGC(tslog.Debug, log << "tsbpd wrap period ends - NEW TIME BASE: "
-                   << FormatTime(m_tsTsbPdTimeBase));
+            LOGC(tslog.Debug, log << "tsbpd wrap period ends with ts=" << timestamp_us
+                << " - NEW TIME BASE: " << FormatTime(m_tsTsbPdTimeBase)
+                << " drift: " << m_DriftTracer.drift() << "us");
         }
     }
     // Check if timestamp_us is in the last 30 seconds before reaching the MAX_TIMESTAMP.
@@ -1754,7 +1755,8 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
     {
         /* Approching wrap around point, start wrap check period (if for packet delivery head) */
         m_bTsbPdWrapCheck = true;
-        HLOGP(tslog.Debug, "tsbpd wrap period begins");
+        LOGC(tslog.Debug, log << "tsbpd wrap period begins with ts=" << timestamp_us
+            << " drift: " << m_DriftTracer.drift() << "us.");
     }
 
     return (m_tsTsbPdTimeBase + microseconds_from(carryover));
@@ -1858,7 +1860,7 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         else if (iDrift <= -10)          m_TsbPdDriftHisto1ms[0]++;
         else                             m_TsbPdDriftHisto1ms[20]++;
     }
-
+    ++m_iTsbPdDriftNbSamples;
     if ((m_iTsbPdDriftNbSamples % TSBPD_DRIFT_PRT_SAMPLES) == 0)
     {
         int *histo = m_TsbPdDriftHisto1ms;
@@ -1877,17 +1879,15 @@ void CRcvBuffer::printDriftHistogram(int64_t iDrift)
         fprintf(stderr, "%4d %4d %4d %4d %4d %4d %4d %4d %4d\n",
                 histo[11],histo[12],histo[13],histo[14],histo[15],
                 histo[16],histo[17],histo[18],histo[19]);
+
+        m_iTsbPdDriftNbSamples = 0;
     }
 }
 
 void CRcvBuffer::printDriftOffset(int tsbPdOffset, int tsbPdDriftAvg)
 {
-    char szTime[32] = {};
-    uint64_t now = CTimer::getTime();
-    time_t tnow = (time_t)(now/1000000);
-    strftime(szTime, sizeof(szTime), "%H:%M:%S", localtime(&tnow));
-    fprintf(stderr, "%s.%03d: tsbpd offset=%d drift=%d usec\n", 
-            szTime, (int)((now%1000000)/1000), tsbPdOffset, tsbPdDriftAvg);
+    fprintf(stderr, "%s: tsbpd offset=%d drift=%d usec\n", 
+        FormatTime(steady_clock::now()).c_str(), tsbPdOffset, tsbPdDriftAvg);
     memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
     memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
 }
@@ -1923,7 +1923,7 @@ bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, Mutex& mutex_to_l
     bool updated = m_DriftTracer.update(count_microseconds(iDrift));
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
-    printDriftHistogram(iDrift);
+    printDriftHistogram(count_microseconds(iDrift));
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 
     if ( updated )
@@ -2119,6 +2119,26 @@ int CRcvBuffer::extractData(char* data, int len, int p, int q, bool passack)
     HLOGC(dlog.Debug, log << "rcvBuf/extractData: begin=" << m_iStartPos << " reporting extraction size=" << (len - rs));
 
     return len - rs;
+}
+
+string CRcvBuffer::debugTimeState(size_t first_n_pkts) const
+{
+    stringstream ss;
+    int ipos = m_iStartPos;
+    for (size_t i = 0; i < first_n_pkts; ++i, ipos = CSeqNo::incseq(ipos))
+    {
+        const CUnit* unit = m_pUnit[ipos];
+        if (!unit)
+        {
+            ss << "pkt[" << i << "] missing, ";
+            continue;
+        }
+
+        const CPacket& pkt = unit->m_Packet;
+        pkt.getMsgTimeStamp();
+        ss << "pkt[" << i << "] ts=" << pkt.getMsgTimeStamp() << ", ";
+    }
+    return ss.str();
 }
 
 #if ENABLE_HEAVY_LOGGING
