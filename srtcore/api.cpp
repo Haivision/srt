@@ -3635,6 +3635,9 @@ CUDTException& CUDT::getlasterror()
 
 int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
 {
+   if (u & SRTGROUP_MASK)
+       return groupsockbstats(u, perf, clear);
+
    try
    {
       CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
@@ -3650,6 +3653,28 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
       LOGC(mglog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
          << typeid(ee).name() << ": " << ee.what());
       return APIError(MJ_UNKNOWN, MN_NONE, 0);
+   }
+}
+
+int CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
+{
+   try
+   {
+      CUDTGroup* g = s_UDTUnited.locateGroup(u, s_UDTUnited.ERH_THROW);
+      g->bstatsSocket(perf, clear);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      SetThreadLocalError(e);
+      return ERROR;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(mglog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
    }
 }
 

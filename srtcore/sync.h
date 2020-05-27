@@ -239,17 +239,17 @@ inline long long count_seconds(const steady_clock::duration &t)
     return std::chrono::duration_cast<std::chrono::seconds>(t).count();
 }
 
-inline steady_clock::duration microseconds_from(long t_us)
+inline steady_clock::duration microseconds_from(int64_t t_us)
 {
     return std::chrono::microseconds(t_us);
 }
 
-inline steady_clock::duration milliseconds_from(long t_ms)
+inline steady_clock::duration milliseconds_from(int64_t t_ms)
 {
     return std::chrono::milliseconds(t_ms);
 }
 
-inline steady_clock::duration seconds_from(long t_s)
+inline steady_clock::duration seconds_from(int64_t t_s)
 {
     return std::chrono::seconds(t_s);
 }
