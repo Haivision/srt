@@ -91,7 +91,7 @@ public:
         sprintf(output, "T%uX", GetCurrentThreadId());
         return true;
 #else
-        sprintf(output, "T%ulX", pthread_self());
+        sprintf(output, "T%luX", (unsigned long)pthread_self());
         return true;
 #endif
     }
