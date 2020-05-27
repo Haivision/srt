@@ -60,7 +60,7 @@ public:
 
 #else
 
-#if defined(__cplusplus) && __cplusplus > 199711L // <-- HAVE_C++11
+#if USE_STDCXX_SYNC
 #include <thread>
 #elif _WIN32
 // nothing to #include - already done in other headers
@@ -81,7 +81,7 @@ public:
     static bool get(char* output)
     {
         // The default implementation will simply try to get the thread ID
-#if defined(__cplusplus) && __cplusplus > 199711L // <-- HAVE_C++11
+#if USE_STDCXX_SYNC
         std::ostringstream bs;
         bs << "T" << std::this_thread::get_id();
         size_t s = bs.str().copy(output, BUFSIZE-1);
