@@ -60,7 +60,7 @@ public:
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src);
+    void Error(string src);
     void Init(string host, int port, map<string,string> par, bool dir_output);
 
     virtual int ConfigurePost(SRTSOCKET sock);
@@ -183,7 +183,7 @@ public:
 
 
     SrtModel(string host, int port, map<string,string> par);
-    void Establish(ref_t<std::string> name);
+    void Establish(std::string& name);
 
     void Close()
     {

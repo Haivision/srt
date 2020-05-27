@@ -63,7 +63,7 @@ struct FileTransmitConfig
     int bw_report = 0;
     int stats_report = 0;
     string stats_out;
-    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
     bool full_stats = false;
 
     string source;
@@ -89,7 +89,7 @@ void PrintOptionHelp(const set<string> &opt_names, const string &value, const st
 
 int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 {
-    const set<string>
+    const OptionName
         o_chunk     = { "c", "chunk" },
         o_no_flush  = { "sf", "skipflush" },
         o_bwreport  = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
@@ -143,7 +143,12 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     if (print_help)
     {
         cout << "SRT sample application to transmit files.\n";
-        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
+        const uint32_t srtver = srt_getversion();
+        const int major = srtver / 0x10000;
+        const int minor = (srtver / 0x100) % 0x100;
+        const int patch = srtver % 0x100;
+        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
         cerr << "Usage: srt-file-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 
@@ -188,19 +193,19 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     const string pf   = Option<OutString>(params, "default", o_statspf);
     if (pf == "default")
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
     }
     else if (pf == "json")
     {
-        cfg.stats_pf = PRINT_FORMAT_JSON;
+        cfg.stats_pf = SRTSTATS_PROFMAT_JSON;
     }
     else if (pf == "csv")
     {
-        cfg.stats_pf = PRINT_FORMAT_CSV;
+        cfg.stats_pf = SRTSTATS_PROFMAT_CSV;
     }
     else
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
         cerr << "ERROR: Unsupported print format: " << pf << endl;
         return 1;
     }
@@ -221,12 +226,8 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 }
 
 
-
-void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
+void ExtractPath(string path, string& w_dir, string& w_fname)
 {
-    //string& dir = r_dir;
-    //string& fname = r_fname;
-
     string directory = path;
     string filename = "";
 
@@ -272,8 +273,8 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         directory = wd + "/" + directory;
     }
 
-    *dir = directory;
-    *fname = filename;
+    w_dir = directory;
+    w_fname = filename;
 }
 
 bool DoUpload(UriParser& ut, string path, string filename,
@@ -648,7 +649,7 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri,
 
     string path = fileuri.path();
     string directory, filename;
-    ExtractPath(path, ref(directory), ref(filename));
+    ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
@@ -669,7 +670,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     }
 
     string path = fileuri.path(), directory, filename;
-    ExtractPath(path, Ref(directory), Ref(filename));
+    ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
@@ -688,7 +689,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size != SRT_LIVE_MAX_PLSIZE)
         transmit_chunk_size = cfg.chunk_size;
-    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
+    transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;

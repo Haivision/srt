@@ -16,6 +16,16 @@ written by
 #ifndef INC__SRT_UTILITIES_H
 #define INC__SRT_UTILITIES_H
 
+// ATTRIBUTES:
+//
+// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
+// ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
+// ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
+// ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
+// ATR_CONSTEXPR: In C++11: `constexpr`. Otherwise empty.
+// ATR_OVERRIDE: In C++11: `override`. Otherwise empty.
+// ATR_FINAL: In C++11: `final`. Otherwise empty.
+
 
 #ifdef __GNUG__
 #define ATR_UNUSED __attribute__((unused))
@@ -32,12 +42,14 @@ written by
 // however it's only the "most required C++11 support".
 #if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
 #define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
 #else
 #define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
+#define ATR_NOTHROW noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
@@ -52,18 +64,21 @@ written by
 #if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
 #define HAVE_FULL_CXX11 1
 #define ATR_NOEXCEPT noexcept
+#define ATR_NOTHROW noexcept
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
 #else
 #define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
 #endif
 #else
 #define HAVE_CXX11 0
-#define ATR_NOEXCEPT // throw() - bad idea
+#define ATR_NOEXCEPT
+#define ATR_NOTHROW throw()
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
@@ -90,6 +105,7 @@ written by
 #include <map>
 #include <functional>
 #include <memory>
+#include <iomanip>
 #include <sstream>
 #include <iomanip>
 
@@ -435,47 +451,25 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
-// Homecooked version of ref_t. It's a copy of std::reference_wrapper
-// voided of unwanted properties and renamed to ref_t.
-
-
-#if HAVE_CXX11
-#include <functional>
-#endif
-
-template<typename Type>
-class ref_t
+// std::addressof in C++11,
+// needs to be provided for C++03
+template <class RefType>
+inline RefType* AddressOf(RefType& r)
 {
-    Type* m_data;
+    return (RefType*)(&(unsigned char&)(r));
+}
 
-public:
-    typedef Type type;
+template <class T>
+struct explicit_t
+{
+    T inobject;
+    explicit_t(const T& uo): inobject(uo) {}
 
-#if HAVE_CXX11
-    explicit ref_t(Type& __indata)
-        : m_data(std::addressof(__indata))
-        { }
-#else
-    explicit ref_t(Type& __indata)
-        : m_data((Type*)(&(char&)(__indata)))
-        { }
-#endif
+    operator T() const { return inobject; }
 
-    ref_t(const ref_t<Type>& inref)
-        : m_data(inref.m_data)
-    { }
-
-#if HAVE_CXX11
-    ref_t(const std::reference_wrapper<Type>& i): m_data(std::addressof(i.get())) {}
-#endif
-
-    Type& operator*() { return *m_data; }
-
-    Type& get() const
-    { return *m_data; }
-
-    Type operator->() const
-    { return *m_data; }
+private:
+    template <class X>
+    explicit_t(const X& another);
 };
 
 // This is required for Printable function if you have a container of pairs,
@@ -491,15 +485,6 @@ namespace srt_pair_op
 }
 
 #if HAVE_CXX11
-
-// This alias was created so that 'Ref' (not 'ref') is used everywhere.
-// Normally the C++11 'ref' fits perfectly here, however in C++03 mode
-// it would have to be newly created. This would then cause a conflict
-// between C++03 SRT and C++11 applications as well as between C++ standard
-// library and SRT when SRT is compiled in C++11 mode (as it happens on
-// Darwin/clang).
-template <class In>
-inline auto Ref(In& i) -> decltype(std::ref(i)) { return std::ref(i); }
 
 template <class In>
 inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
@@ -530,8 +515,6 @@ inline std::string Sprint(Args&&... args)
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
 
-// Some utilities borrowed from tumux, as this is using options
-// similar way.
 template <class Container, class Value = typename Container::value_type, typename... Args> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
 {
@@ -576,12 +559,6 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 
 
 #else
-
-template <class Type>
-ref_t<Type> Ref(Type& arg)
-{
-    return ref_t<Type>(arg);
-}
 
 // The unique_ptr requires C++11, and the rvalue-reference feature,
 // so here we're simulate the behavior using the old std::auto_ptr.
@@ -630,7 +607,15 @@ public:
     operator bool () { return 0!= get(); }
 };
 
-// A primitive one-argument version of Printable
+// A primitive one-argument versions of Sprint and Printable
+template <class Arg1>
+inline std::string Sprint(const Arg1& arg)
+{
+    std::ostringstream sout;
+    sout << arg;
+    return sout.str();
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -674,6 +659,34 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 }
 
 #endif
+
+// Printable with prefix added for every element.
+// Useful when printing a container of sockets or sequence numbers.
+template <class Container> inline
+std::string PrintableMod(const Container& in, const std::string& prefix)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << prefix << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
+template<typename InputIterator, typename OutputIterator, typename TransFunction>
+void FilterIf(InputIterator bg, InputIterator nd,
+        OutputIterator out, TransFunction fn)
+{
+    for (InputIterator i = bg; i != nd; ++i)
+    {
+        std::pair<typename TransFunction::result_type, bool> result = fn(*i);
+        if (!result.second)
+            continue;
+        *out++ = result.first;
+    }
+}
 
 template <class Signature>
 struct CallbackHolder
@@ -799,6 +812,12 @@ public:
         return true;
     }
 
+    // For group overrides
+    void forceDrift(int64_t driftval)
+    {
+        m_qDrift = driftval;
+    }
+
     // These values can be read at any time, however if you want
     // to depend on the fact that they have been changed lately,
     // you have to check the return value from update().
@@ -876,8 +895,8 @@ inline std::string BufferStamp(const char* mem, size_t size)
 
     int n = 16-size;
     if (n > 0)
-        memset(spread+16-n, 0, n);
-    memcpy(spread, mem, min(size_t(16), size));
+        memset((spread + 16 - n), 0, n);
+    memcpy((spread), mem, min(size_t(16), size));
 
     // Now prepare 4 cells for uint32_t.
     union
@@ -885,7 +904,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         uint32_t sum;
         char cells[4];
     };
-    memset(cells, 0, 4);
+    memset((cells), 0, 4);
 
     for (size_t x = 0; x < 4; ++x)
         for (size_t y = 0; y < 4; ++y)
@@ -963,7 +982,56 @@ ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 template <size_t DEPRLEN, typename ValueType>
 inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
-    return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
+    return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
 }
+
+template <size_t DEPRLEN, typename ValueType>
+inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_val_weight)
+{
+    return (old_value * (DEPRLEN - new_val_weight) + new_value * new_val_weight) / DEPRLEN;
+}
+
+// Property accessor definitions
+//
+// "Property" is a special method that accesses given field.
+// This relies only on a convention, which is the following:
+//
+// V x = object.prop(); <-- get the property's value
+// object.prop(x); <-- set the property a value
+//
+// Properties might be also chained when setting:
+//
+// object.prop1(v1).prop2(v2).prop3(v3);
+//
+// Properties may be defined various even very complicated
+// ways, which is simply providing a method with body. In order
+// to define a property simplest possible way, that is, refer
+// directly to the field that keeps it, here are the following macros:
+//
+// Prefix: SRTU_PROPERTY_
+// Followed by:
+//  - access type: RO, WO, RW, RR, RRW
+//  - chain flag: optional _CHAIN
+// Where access type is:
+// - RO - read only. Defines reader accessor. The accessor method will be const.
+// - RR - read reference. The accessor isn't const to allow reference passthrough.
+// - WO - write only. Defines writer accessor.
+// - RW - combines RO and WO.
+// - RRW - combines RR and WO.
+//
+// The _CHAIN marker is optional for macros providing writable accessors
+// for properties. The difference is that while simple write accessors return
+// void, the chaining accessors return the reference to the object for which
+// the write accessor was called so that you can call the next accessor (or
+// any other method as well) for the result.
+
+#define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
+#define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
+#define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& name(type arg) { field = arg; return *this; }
+#define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
+#define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
+#define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
+#define SRTU_PROPERTY_RRW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
 
 #endif

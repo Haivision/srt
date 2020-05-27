@@ -86,20 +86,41 @@ public:
 
    int32_t popLostSeq();
 
+   void traceState() const;
+
 private:
    struct Seq
    {
-       int32_t data1;                  // sequence number starts
-       int32_t data2;                  // seqnence number ends
-       int next;                       // next node in the list
+       int32_t seqstart;                // sequence number starts
+       int32_t seqend;                  // seqnence number ends
+       int inext;                       // index of the next node in the list
    }* m_caSeq;
 
    int m_iHead;                         // first node
    int m_iLength;                       // loss length
-   int m_iSize;                         // size of the static array
+   const int m_iSize;                   // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
-   mutable pthread_mutex_t m_ListLock; // used to synchronize list operation
+   mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
+
+private:
+   /// Inserts an element to the beginning and updates head pointer.
+   /// No lock.
+   void insertHead(int pos, int32_t seqno1, int32_t seqno2);
+
+   /// Inserts an element after previous element.
+   /// No lock.
+   void insertAfter(int pos, int pos_after, int32_t seqno1, int32_t seqno2);
+
+   /// Check if it is possible to coalesce element at loc with further elements.
+   /// @param loc - last changed location
+   void coalesce(int loc);
+
+   /// Update existing element with the new range (increase only)
+   /// @param pos     position of the element being updated
+   /// @param seqno1  first seqnuence number in range
+   /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
+   bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
 
 private:
    CSndLossList(const CSndLossList&);
@@ -148,7 +169,7 @@ public:
       /// Read the first (smallest) seq. no. in the list.
       /// @return the sequence number or -1 if the list is empty.
 
-   int getFirstLostSeq() const;
+   int32_t getFirstLostSeq() const;
 
       /// Get a encoded loss array for NAK report.
       /// @param [out] array the result list of seq. no. to be included in NAK.
@@ -160,10 +181,10 @@ public:
 private:
    struct Seq
    {
-        int32_t data1;                  // sequence number starts
-        int32_t data2;                  // sequence number ends
-        int next;                       // next node in the list
-        int prior;                      // prior node in the list;
+        int32_t seqstart;               // sequence number starts
+        int32_t seqend;                 // sequence number ends
+        int inext;                      // index of the next node in the list
+        int iprior;                     // index of the previous node in the list
    }* m_caSeq;
 
    int m_iHead;                         // first node in the list
@@ -174,8 +195,8 @@ private:
 private:
    CRcvLossList(const CRcvLossList&);
    CRcvLossList& operator=(const CRcvLossList&);
-public:
 
+public:
    struct iterator
    {
        int32_t head;
@@ -188,7 +209,7 @@ public:
            if ( head == -1 )
                return *this; // should report error, but we can only throw exception, so simply ignore it.
 
-           return iterator(seq, seq[head].next);
+           return iterator(seq, seq[head].inext);
        }
 
        iterator& operator++()
@@ -214,20 +235,19 @@ public:
 
        std::pair<int32_t, int32_t> operator*()
        {
-           return std::make_pair(seq[head].data1, seq[head].data2);
+           return std::make_pair(seq[head].seqstart, seq[head].seqend);
        }
    };
 
    iterator begin() { return iterator(m_caSeq, m_iHead); }
    iterator end() { return iterator(m_caSeq, -1); }
-
 };
 
 struct CRcvFreshLoss
 {
     int32_t seq[2];
     int ttl;
-    uint64_t timestamp;
+    srt::sync::steady_clock::time_point timestamp;
 
     CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
 

@@ -332,7 +332,7 @@ Synopsis
                         int64_t msTimeOut,
                         SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
     int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
-    
+    int srt_epoll_clear_usocks(int eid);
 
 SRT Usage
 ---------
@@ -350,6 +350,14 @@ atomically, the thread protection (against the epoll thread) being applied
 within each function but unprotected between the two calls. It is then possible
 to lose an `SRT_EPOLL_IN` event if it fires while the socket is not in the
 epoll list.
+
+Event flags are of various categories: `IN`, `OUT` and `ERR` are events,
+which are level-triggered by default and become edge-triggered if combined
+with `SRT_EPOLL_ET` flag. The latter is only an edge-triggered flag, not
+an event. There's also an `SRT_EPOLL_UPDATE` flag, which is an edge-triggered
+only event, and it reports an event on the listener socket that handles socket
+group new connection for an already connected group - this is for internal use
+only and it's used in the internal code for socket groups.
 
 Once the subscriptions are made, you can call an SRT polling function
 (`srt_epoll_wait` or `srt_epoll_uwait`) that will block until an event
@@ -417,6 +425,9 @@ Every item reports a single socket with all events as flags.
 When the timeout is not -1, and no sockets are ready until the timeout time
 passes, this function returns 0. This behavior is different in `srt_epoll_wait`.
 
+The extra `srt_epoll_clear_usocks` function removes all subscriptions from
+the epoll container.
+
 The SRT EPoll system does not supports all features of Linux epoll. For
 example, it only supports level-triggered events for system sockets.
 
@@ -467,7 +478,10 @@ connected. On binding a socket setting this flag is effective only on this
 socket itself. Note though that there are some post-bound options that have
 important meaning when set prior to connecting.
 
-
+Note that options are usually set either on a group or on a socket. When set
+on a group, the options will persist. They will be derived by every socket
+automatically created and added to the group. This applies to every
+socket option, unless a different rule is declared explicitly for a specific case.
 
 This option list is sorted alphabetically. Note that some options can be
 either only a retrieved (GET) or specified (SET) value.
@@ -502,6 +516,67 @@ the socket.
 
 - Flight Flag Size (maximum number of bytes that can be sent without 
 being acknowledged)
+
+---
+
+| OptName               | Since | Binding | Type   | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_GROUPCONNECT`   |       | pre     | `int`  |        | 0        | 0...1  |
+
+- When this flag is set to 1 on a listener socket, it allows this socket to
+accept group connections. When set to the default 0, group connections will be
+rejected. Keep in mind that if the `SRTO_GROUPCONNECT` flag is set to 1 (i.e.
+group connections are allowed) `srt_accept` may return a socket **or** a group
+ID. A call to `srt_accept` on a listener socket that has group connections
+allowed must take this into consideration. It's up to the caller of this
+function to make this distinction and to take appropriate action depending on
+the type of entity returned.
+
+- When this flag is set to 1 on an accepted socket that is passed to the
+listener callback handler, it means that this socket is created for a group
+connection and it will become a member of a group. Note that in this case this
+socket will not be the value returned by `srt_accept` call. Note also that, in
+case of bonding groups, an additional connection to an already connected
+group will still call the listener callback handler, but that connection will
+not be available to the `srt_accept` call.
+
+---
+
+| OptName               | Since | Binding | Type              | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----------------- | ------ | -------- | ------ |
+| `SRTO_GROUPTYPE`      |       | pre     | `SRT_GROUP_TYPE`  |        |          | enum   |
+
+- This option is read-only and it is intended to be called inside the listener
+callback handler (see `srt_listen_callback`). Possible values are defined in
+the `SRT_GROUP_TYPE` enumeration type.
+
+- This option returns the group type that is declared in the incoming connection.
+If the incoming connection is not going to make a group-member connection, then
+the value returned is `SRT_GTYPE_UNDEFINED`. If this option is read in any other
+context than inside the listener callback handler, the value is undefined.
+
+---
+
+| OptName               | Since | Binding | Type   | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
+| `SRTO_GROUPSTABTIMEO` |       | pre     | `int`  | ms     | 40       | 10+    |
+
+- This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability 
+timeout, which is the maximum interval between two consecutive packets retrieved from 
+the peer on the currently active link.
+  
+- NOTE: The two packets can be of any type, but this setting usually refers to control
+packets while the agent is a sender. Idle links exchange only keepalive messages once 
+per second, so they do not count. 
+
+- The value of `SRTO_GROUPSTABTIMEO` should be set as small as possible. Keep
+in mind that the time between two consecutive ACK messages (default = 10 ms)
+will vary, hence 40ms is the recommended setting. Note that higher values
+increase the latency penalty. When this time is exceeded, and the link is
+therefore considered unstable, one of the idle links gets activated, at which
+point all packets unacknowledged so far are sent first.
+
+- This option can only be set on a group.
 
 ---
 
@@ -662,10 +737,13 @@ immediately upon experiencing a "gap" in sequences.
 - `0`: relative to input rate (see `SRTO_INPUTBW`) 
 - `>0`: absolute limit in B/s
 
-- *NOTE: This option has a default value of -1. Although in case when the stream
-rate is mostly constant it is recommended to use value 0 here and shape the
-bandwidth limit using `SRTO_INPUTBW` and `SRTO_OHEADBW` options.*
-
+- *NOTE: This option has a default value of -1, regardless of the mode. However
+for live streams it is typically recommended to set the value 0 here and rely
+on `SRTO_INPUTBW` and `SRTO_OHEADBW` options. However, if you want to do so,
+you should make sure that your stream has a fairly constant bitrate, or that
+changes are not abrupt, as high bitrate changes may work against the
+measurement. SRT cannot ensure that this is always the case for a live stream,
+therefore the default -1 remains even in live mode.*
 
 ---
 
@@ -768,6 +846,13 @@ choke and break quickly at any rising packet loss.*
 
 - **[SET]** - Set up the packet filter. The string must match appropriate syntax
 for packet filter setup.
+
+As there can only be one configuration for both parties, it is recommended that one party
+defines the full configuration while the other only defines the matching packet filter type
+(for example, one sets `fec,cols:10,rows:-5,layout:staircase` and the other
+just `fec`). Both parties can also set this option to the same value. The packet filter function 
+will attempt to merge configuration definitions, but if the options specified are in
+conflict, the connection will be rejected.
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
@@ -932,7 +1017,33 @@ pre-1.3.0 version is available only as** `SRTO_LATENCY`.
 | --------------------- | ----- | ------- | ------ | ------ | ------- | ------ |
 | `SRTO_RCVSYN`         |       | pre     | `bool` | true   | true    | false  |
 
-- **[GET or SET]** - Synchronous (blocking) receive mode 
+- **[GET or SET]** - When true, sets blocking mode on reading function when
+it's not ready to perform the operation. When false ("non-blocking mode"), the
+reading function will in this case report error `SRT_EASYNCRCV` and return
+immediately. Details depend on the tested entity:
+
+- On a connected socket or group this applies to a receiving function
+(`srt_recv` and others) and a situation when there are no data available for
+reading. The readiness state for this operation can be tested by checking the
+`SRT_EPOLL_IN` flag on the aforementioned socket or group.
+
+- On a freshly created socket or group that is about to be connected to a peer
+listener this applies to any `srt_connect` call (and derived), which in
+"non-blocking mode" always return immediately. The connected state for that
+socket or group can be tested by checking the `SRT_EPOLL_OUT` flag. NOTE
+that a socket that failed to connect doesn't change the `SRTS_CONNECTING`
+state and can be found out only by testing `SRT_EPOLL_ERR` flag.
+
+- On a listener socket this applies to `srt_accept` call. The readiness state
+for this operation can be tested by checking the `SRT_EPOLL_IN` flag on
+this listener socket. This flag is also derived from the listener socket
+by the accepted socket or group, although the meaning of this flag is
+effectively different.
+
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
+
 
 ---
 
@@ -940,7 +1051,13 @@ pre-1.3.0 version is available only as** `SRTO_LATENCY`.
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
 | `SRTO_RCVTIMEO`       |       | post    | `int` | msecs  | -1       | -1..   |
 
-- **[GET or SET]** - Blocking mode receiving timeout (-1: infinite)
+- **[GET or SET]** - limit the time up to which the receiving operation will
+block (see `SRTO_RCVSYN` for details), so when this time is exceeded, it
+will behave as if in "non-blocking mode". The -1 value means no time limit.
+
+- Note that when this flag is set only on a group, it applies to a
+specific receiving operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
@@ -1067,7 +1184,26 @@ must have a value greater than 1000 - `SRTO_PEERLATENCY`.
 | -------------------- | ----- | ------- | ------ | ------ | -------- | ------ |
 | `SRTO_SNDSYN`        |       | post    | `bool` | true   | true     | false  |
 
-- **[GET or SET]** - Synchronous (blocking) send mode 
+- **[GET or SET]** - When true, sets blocking mode on writing function when
+it's not ready to perform the operation. When false ("non-blocking mode"), the
+writing function will in this case report error `SRT_EASYNCSND` and return
+immediately.
+
+- On a connected socket or group this applies to a sending function
+(`srt_send` and others) and a situation when there's no free space in
+the sender buffer, caused by inability to send all the scheduled data over
+the network. Readiness for this operation can be tested by checking the
+`SRT_EPOLL_OUT` flag.
+
+- On a freshly created socket or group it will have no effect until the socket
+enters a connected state.
+
+- On a listener socket it will be derived by the accepted socket or group,
+but will have no effect on the listener socket itself.
+
+- Note that when this flag is set only on a group, it applies to a
+specific sending operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
@@ -1075,7 +1211,13 @@ must have a value greater than 1000 - `SRTO_PEERLATENCY`.
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ------ |
 | `SRTO_SNDTIMEO`       |       | post    | `int` | msecs  | -1       | -1..   |
 
-- **[GET or SET]** - Blocking mode sending timeout (-1: infinite)
+- **[GET or SET]** - limit the time up to which the sending operation will
+block (see `SRTO_SNDSYN` for details), so when this time is exceeded, it
+will behave as if in "non-blocking mode". The -1 value means no time limit.
+
+- Note that when this flag is set only on a group, it applies to a
+specific sending operation being done on that group (i.e. it is not
+derived from the socket of which the group is a member).
 
 ---
 
@@ -1128,6 +1270,24 @@ both parties of the connection, so there's no possible situation of a rogue
 sender and can be useful in situations where it is important to know whether a
 connection is possible. The inability to decrypt an incoming transmission can
 be then reported as a different kind of problem.
+
+**IMPORTANT**: There is unusual and unobvious behavior when this flag is TRUE
+on the caller and FALSE on the listener, and the passphrase was mismatched. On
+the listener side the connection will be established and broken right after,
+resulting in a short-lived "spurious" connection report on the listener socket.
+This way, a socket will be available for retrieval from an `srt_accept` call
+for a very short time, after which it will be removed from the listener backlog
+just as if no connection attempt was made at all. If the application is fast
+enough to react on an incoming connection, it will retrieve it, only to learn
+that it is already broken. This also makes possible a scenario where
+`SRT_EPOLL_IN` is reported on a listener socket, but then an `srt_accept` call
+reports an `SRT_EASYNCRCV` error. How fast the connection gets broken depends
+on the network parameters - in particular, whether the `UMSG_SHUTDOWN` message
+sent by the caller is delivered (which takes one RTT in this case) or missed
+during the interval from its creation up to the connection timeout (default = 5
+seconds). It is therefore strongly recommended that you only set this flag to
+FALSE on the listener when you are able to ensure that it is also set to FALSE
+on the caller side.
 
 ---
 
@@ -1185,7 +1345,7 @@ based on MSS value. Receive buffer must not be greater than FC size.
 | `SRTO_UDP_SNDBUF`     |       | pre     | `int` | bytes  | 65536    | MSS..  |
 
 - UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
-on `SRTO_MSS` value. *SRT recommended value:* `64*1024`
+on `SRTO_MSS` value.
 
 ---
 

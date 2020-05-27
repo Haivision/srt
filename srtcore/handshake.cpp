@@ -43,6 +43,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cstring>
 #include <string>
 #include <sstream>
@@ -72,10 +74,9 @@ m_extension(false)
       m_piPeerIP[i] = 0;
 }
 
-int CHandShake::store_to(char* buf, ref_t<size_t> r_size)
+int CHandShake::store_to(char* buf, size_t& w_size)
 {
-   size_t& size = *r_size;
-   if (size < m_iContentSize)
+   if (w_size < m_iContentSize)
       return -1;
 
    int32_t* p = reinterpret_cast<int32_t*>(buf);
@@ -90,7 +91,7 @@ int CHandShake::store_to(char* buf, ref_t<size_t> r_size)
    for (int i = 0; i < 4; ++ i)
       *p++ = m_piPeerIP[i];
 
-   size = m_iContentSize;
+   w_size = m_iContentSize;
 
    return 0;
 }
@@ -140,9 +141,22 @@ std::string RequestTypeStr(UDTRequestType rq)
 {
     if (rq >= URQ_FAILURE_TYPES)
     {
-        SRT_REJECT_REASON rej = RejectReasonForURQ(rq);
-        int id = rej;
-        return std::string("ERROR:") + srt_rejectreason_name[id];
+        std::ostringstream rt;
+        rt << "ERROR:";
+        int id = RejectReasonForURQ(rq);
+        if (id < SRT_REJ_E_SIZE)
+            rt << srt_rejectreason_name[id];
+        else if (id < SRT_REJC_USERDEFINED)
+        {
+            if (id < SRT_REJC_PREDEFINED)
+                rt << "UNKNOWN:" << id;
+            else
+                rt << "PREDEFINED:" << (id - SRT_REJC_PREDEFINED);
+        }
+        else
+            rt << "USERDEFINED:" << (id - SRT_REJC_USERDEFINED);
+
+        return rt.str();
     }
 
     switch ( rq )
@@ -176,7 +190,7 @@ string CHandShake::show()
 {
     ostringstream so;
 
-    so << "version=" << m_iVersion << " type=" << hex << m_iType << dec
+    so << "version=" << m_iVersion << " type=0x" << hex << m_iType << dec
         << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
         << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
         << " cookie=" << hex << m_iCookie << dec
@@ -191,9 +205,12 @@ string CHandShake::show()
     // CHandShake, not CUDT.
     if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        so << "EXT: ";
-        if (m_iType == 0) // no flags at all
-            so << "none";
+        const int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_iType);
+        so << "FLAGS: ";
+        if (flags == SrtHSRequest::SRT_MAGIC_CODE)
+            so << "MAGIC";
+        else if (m_iType == 0)
+            so << "NONE"; // no flags and no advertised pbkeylen
         else
             so << ExtensionFlagStr(m_iType);
     }
@@ -211,7 +228,7 @@ string CHandShake::ExtensionFlagStr(int32_t fl)
     if ( fl & HS_EXT_CONFIG )
         out << " config";
 
-    int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+    const int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
     if (kl != 0)
     {
         out << " AES-" << kl;

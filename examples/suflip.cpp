@@ -25,8 +25,8 @@
 
 #include <srt.h>
 
-#include "../common/appcommon.hpp"
-#include "../common/uriparser.hpp"
+#include "../apps/apputil.hpp"
+#include "../apps/uriparser.hpp"
 
 
 using namespace std;
@@ -173,8 +173,8 @@ protected:
     bool m_blocking_mode;
     int m_timeout;
     map<string, string> m_options; // All other options, as provided in the URI
-    UDTSOCKET m_sock;
-    UDTSOCKET m_bindsock;
+    SRTSOCKET m_sock;
+    SRTSOCKET m_bindsock;
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
 
@@ -182,8 +182,8 @@ protected:
         m_output_direction(false),
         m_blocking_mode(true),
         m_timeout(0),
-        m_sock(UDT::INVALID_SOCK),
-        m_bindsock(UDT::INVALID_SOCK)
+        m_sock(SRT_INVALID_SOCK),
+        m_bindsock(SRT_INVALID_SOCK)
     {
     }
 
@@ -258,27 +258,27 @@ protected:
         }
     }
 
-    virtual int ConfigurePost(UDTSOCKET sock)
+    virtual int ConfigurePost(SRTSOCKET sock)
     {
         bool yes = m_blocking_mode;
         int result = 0;
         if ( m_output_direction )
         {
-            result = UDT::setsockopt(sock, 0, UDT_SNDSYN, &yes, sizeof yes);
+            result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &yes, sizeof yes);
             if ( result == -1 )
                 return result;
 
             if ( m_timeout )
-                return UDT::setsockopt(sock, 0, UDT_SNDTIMEO, &m_timeout, sizeof m_timeout);
+                return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
         }
         else
         {
-            result = UDT::setsockopt(sock, 0, UDT_RCVSYN, &yes, sizeof yes);
+            result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &yes, sizeof yes);
             if ( result == -1 )
                 return result;
 
             if ( m_timeout )
-                return UDT::setsockopt(sock, 0, UDT_RCVTIMEO, &m_timeout, sizeof m_timeout);
+                return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
         }
 
         /*
@@ -302,12 +302,12 @@ protected:
         return 0;
     }
 
-    virtual int ConfigurePre(UDTSOCKET sock)
+    virtual int ConfigurePre(SRTSOCKET sock)
     {
         int result = 0;
 
         int yes = 1;
-        result = UDT::setsockopt(sock, 0, SRT_TSBPDMODE, &yes, sizeof yes);
+        result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes);
         if ( result == -1 )
             return result;
 
@@ -343,13 +343,13 @@ protected:
 
     void OpenClient(string host, int port)
     {
-        m_sock = UDT::socket(AF_INET, SOCK_DGRAM, 0);
-        if ( m_sock == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::socket");
+        m_sock = srt_create_socket();
+        if ( m_sock == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_socket");
 
         int stat = ConfigurePre(m_sock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePre");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePre");
         sockaddr_in sa = CreateAddrInet(host, port);
         sockaddr* psa = (sockaddr*)&sa;
         if ( verbose )
@@ -357,36 +357,34 @@ protected:
             cout << "Connecting to " << host << ":" << port << " ... ";
             cout.flush();
         }
-        stat = UDT::connect(m_sock, psa, sizeof sa);
-        if ( stat == UDT::ERROR )
+        stat = srt_connect(m_sock, psa, sizeof sa);
+        if ( stat == SRT_ERROR )
         {
-            Error(UDT::getlasterror(), "UDT::connect");
+            Error(srt_getlasterror(NULL), "srt_connect");
         }
         if ( verbose )
             cout << " connected.\n";
         stat = ConfigurePost(m_sock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePost");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePost");
     }
 
-    void Error(UDT::ERRORINFO& udtError, string src)
+    void Error(int udtResult, string src)
     {
-        int udtResult = udtError.getErrorCode();
         if ( verbose )
-        cout << "FAILURE\n" << src << ": [" << udtResult << "] " << udtError.getErrorMessage() << endl;
-        udtError.clear();
+            cout << "FAILURE\n" << src << ": [" << udtResult << "] " << srt_strerror(udtResult, 0) << endl;
         throw std::invalid_argument("error in " + src);
     }
 
     void OpenServer(string host, int port)
     {
-        m_bindsock = UDT::socket(AF_INET, SOCK_DGRAM, 0);
-        if ( m_bindsock == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::socket");
+        m_bindsock = srt_create_socket();
+        if ( m_bindsock == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_socket");
 
         int stat = ConfigurePre(m_bindsock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePre");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePre");
 
         sockaddr_in sa = CreateAddrInet(host, port);
         sockaddr* psa = (sockaddr*)&sa;
@@ -395,17 +393,17 @@ protected:
             cout << "Binding a server on " << host << ":" << port << " ...";
             cout.flush();
         }
-        stat = UDT::bind(m_bindsock, psa, sizeof sa);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::bind");
+        stat = srt_bind(m_bindsock, psa, sizeof sa);
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_bind");
         if ( verbose )
         {
             cout << " listen... ";
             cout.flush();
         }
-        stat = UDT::listen(m_bindsock, 1);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::listen");
+        stat = srt_listen(m_bindsock, 1);
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_listen");
 
         sockaddr_in scl;
         int sclen = sizeof scl;
@@ -415,9 +413,9 @@ protected:
             cout.flush();
         }
         ::throw_on_interrupt = true;
-        m_sock = UDT::accept(m_bindsock, (sockaddr*)&scl, &sclen);
-        if ( m_sock == UDT::INVALID_SOCK )
-            Error(UDT::getlasterror(), "UDT::accept");
+        m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
+        if ( m_sock == SRT_INVALID_SOCK )
+            Error(srt_getlasterror(NULL), "srt_accept");
         if ( verbose )
             cout << " connected.\n";
         ::throw_on_interrupt = false;
@@ -425,22 +423,22 @@ protected:
         // ConfigurePre is done on bindsock, so any possible Pre flags
         // are DERIVED by sock. ConfigurePost is done exclusively on sock.
         stat = ConfigurePost(m_sock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePost");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePost");
     }
 
     void OpenRendezvous(string adapter, string host, int port)
     {
-        m_sock = UDT::socket(AF_INET, SOCK_DGRAM, 0);
-        if ( m_sock == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::socket");
+        m_sock = srt_create_socket();
+        if ( m_sock == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_socket");
 
         bool yes = true;
-        UDT::setsockopt(m_sock, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+        srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
         int stat = ConfigurePre(m_sock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePre");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePre");
 
         sockaddr_in localsa = CreateAddrInet(adapter, port);
         sockaddr* plsa = (sockaddr*)&localsa;
@@ -449,9 +447,9 @@ protected:
             cout << "Binding a server on " << adapter << ":" << port << " ...";
             cout.flush();
         }
-        stat = UDT::bind(m_sock, plsa, sizeof localsa);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::bind");
+        stat = srt_bind(m_sock, plsa, sizeof localsa);
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_bind");
 
         sockaddr_in sa = CreateAddrInet(host, port);
         sockaddr* psa = (sockaddr*)&sa;
@@ -460,26 +458,26 @@ protected:
             cout << "Connecting to " << host << ":" << port << " ... ";
             cout.flush();
         }
-        stat = UDT::connect(m_sock, psa, sizeof sa);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "UDT::connect");
+        stat = srt_connect(m_sock, psa, sizeof sa);
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "srt_connect");
         if ( verbose )
             cout << " connected.\n";
 
         stat = ConfigurePost(m_sock);
-        if ( stat == UDT::ERROR )
-            Error(UDT::getlasterror(), "ConfigurePost");
+        if ( stat == SRT_ERROR )
+            Error(srt_getlasterror(NULL), "ConfigurePost");
     }
 
     ~SrtCommon()
     {
         if ( verbose )
             cout << "SrtCommon: DESTROYING CONNECTION, closing sockets\n";
-        if ( m_sock != UDT::INVALID_SOCK )
-            UDT::close(m_sock);
+        if ( m_sock != SRT_INVALID_SOCK )
+            srt_close(m_sock);
 
-        if ( m_bindsock != UDT::INVALID_SOCK )
-            UDT::close(m_bindsock);
+        if ( m_bindsock != SRT_INVALID_SOCK )
+            srt_close(m_bindsock);
     }
 };
 
@@ -517,11 +515,11 @@ public:
         do
         {
             ::throw_on_interrupt = true;
-            stat = UDT::recvmsg(m_sock, data.data(), chunk);
+            stat = srt_recvmsg(m_sock, data.data(), chunk);
             ::throw_on_interrupt = false;
-            if ( stat == UDT::ERROR )
+            if ( stat == SRT_ERROR )
             {
-                Error(UDT::getlasterror(), "recvmsg");
+                Error(srt_getlasterror(NULL), "recvmsg");
                 return bytevector();
             }
 
@@ -542,7 +540,7 @@ public:
         return data;
     }
 
-    virtual int ConfigurePre(UDTSOCKET sock) 
+    virtual int ConfigurePre(SRTSOCKET sock) 
     {
         int result = SrtCommon::ConfigurePre(sock);
         if ( result == -1 )

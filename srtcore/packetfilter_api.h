@@ -8,8 +8,18 @@
  * 
  */
 
-#ifndef INC__PACKETFILTER_API_H
-#define INC__PACKETFILTER_API_H
+#ifndef INC_SRT_PACKETFILTER_API_H
+#define INC_SRT_PACKETFILTER_API_H
+
+#include "platform_sys.h"
+
+#include <cstring>
+#include <string>
+#include <map>
+#include <vector>
+#include <utility>
+
+class CPacket;
 
 enum SrtPktHeaderFields
 {
@@ -30,11 +40,15 @@ enum SRT_ARQLevel
     SRT_ARQ_ALWAYS, //< always send LOSSREPORT immediately after detecting a loss
 };
 
-
-struct SrtFilterConfig
+struct SrtConfig
 {
     std::string type;
-    std::map<std::string, std::string> parameters;
+    typedef std::map<std::string, std::string> par_t;
+    par_t parameters;
+};
+
+struct SrtFilterConfig: SrtConfig
+{
     size_t extra_size; // needed for filter option check against payload size
 };
 
