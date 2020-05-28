@@ -877,6 +877,7 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
 
 int CRcvBuffer::readBuffer(char* data, int len)
 {
+    std::cerr << "CRcvBuffer::readBuffer -this " << this << " -data " << data << " -len " << len << std::endl;
     int p = m_iStartPos;
     int lastack = m_iLastAckPos;
     int rs = len;
