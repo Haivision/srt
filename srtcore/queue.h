@@ -108,15 +108,12 @@ public:     // Operations on units
 
    CUnit* getNextAvailUnit();
 
-
    void makeUnitFree(CUnit * unit);
 
    void makeUnitGood(CUnit * unit);
 
 public:
-
-    inline int getIPversion() const { return m_iIPversion; }
-
+   inline int getIPversion() const { return m_iIPversion; }
 
 private:
    struct CQEntry
@@ -393,6 +390,10 @@ public:
    int getIpToS() const;
 #endif
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+   bool getBind(char* dst, size_t len) const;
+#endif
+
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
 
@@ -401,12 +402,9 @@ public:
        m_bClosing = true;
    }
 
-   pthread_t threadId() { return m_WorkerThread; }
-
 private:
    static void* worker(void* param);
-   pthread_t m_WorkerThread;
-
+   srt::sync::CThread m_WorkerThread;
 
 private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
@@ -474,9 +472,6 @@ public:
 
    int recvfrom(int32_t id, CPacket& to_packet);
 
-   // Needed for affinity check (debug only)
-   pthread_t threadId() { return m_WorkerThread; }
-
    void stopWorker();
 
    void setClosing()
@@ -486,7 +481,7 @@ public:
 
 private:
    static void* worker(void* param);
-   pthread_t m_WorkerThread;
+   srt::sync::CThread m_WorkerThread;
    // Subroutines of worker
    EReadStatus worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
@@ -549,6 +544,8 @@ struct CMultiplexer
 #ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
+#endif
+#ifdef SRT_ENABLE_BINDTODEVICE
    std::string m_BindToDevice;
 #endif
    int m_iMSS;          // Maximum Segment Size

@@ -163,6 +163,7 @@ public:
 
 #ifdef SRT_ENABLE_BINDTODEVICE
    void setBind(const std::string& name);
+   bool getBind(char* dst, size_t len);
 #endif
 
    int ioctlQuery(int type) const;

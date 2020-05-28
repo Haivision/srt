@@ -72,7 +72,7 @@ using namespace std;
 using namespace srt_logging;
 
 CChannel::CChannel():
-m_iSocket(),
+m_iSocket(-1),
 #ifdef SRT_ENABLE_IPOPTS
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
@@ -93,12 +93,12 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 
 #ifdef _WIN32
-    const int invalid = INVALID_SOCKET;
+    // use INVALID_SOCKET, as provided
 #else
-    const int invalid = -1;
+    static const int INVALID_SOCKET = -1;
 #endif
 
-    if (m_iSocket == invalid)
+    if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
@@ -390,6 +390,23 @@ void CChannel::setIpToS(int tos)
 void CChannel::setBind(const string& name)
 {
     m_BindToDevice = name;
+}
+
+bool CChannel::getBind(char* dst, size_t len)
+{
+    if (m_iSocket == -1)
+        return false; // No socket to get data from
+
+    // Try to obtain it directly from the function. If not possible,
+    // then return from internal data.
+    socklen_t length = len;
+    int res = ::getsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, dst, &length);
+    if (res == -1)
+        return false; // Happens on Linux v < 3.8
+
+    // For any case
+    dst[length] = 0;
+    return true;
 }
 #endif
 

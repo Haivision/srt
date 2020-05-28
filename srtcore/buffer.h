@@ -414,11 +414,11 @@ public:
       // Parameters (of the 1st packet queue, ready to play or not):
       /// @param [out] w_tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if none
       /// @param [out] w_passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
-      /// @param [out] w_skipseqno -1 or seq number of 1st unacknowledged pkt ready to play preceeded by missing packets.
+      /// @param [out] w_skipseqno SRT_SEQNO_NONE or seq number of 1st unacknowledged pkt ready to play preceeded by missing packets.
       /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
       /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
-      ///                   IF skipseqno != -1, packet ready to play preceeded by missing packets.;
-      ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
+      ///                   IF skipseqno != SRT_SEQNO_NONE, packet ready to play preceeded by missing packets.;
+      ///                   IF skipseqno == SRT_SEQNO_NONE, no missing packet but 1st not ready to play.
 
 
    bool getRcvFirstMsg(time_point& w_tsbpdtime, bool& w_passack, int32_t& w_skipseqno, int32_t& w_curpktseq);
@@ -476,9 +476,7 @@ public:
 
    time_point getTsbPdTimeBase(uint32_t timestamp_us);
 
-      /// Get packet local delivery time
-      /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
-      /// @return local delivery time (usec)
+   int64_t getDrift() const { return m_DriftTracer.drift(); }
 
 public:
 
@@ -505,6 +503,9 @@ public:
 private:
    int extractData(char *data, int len, int p, int q, bool passack);
    bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
+
+   /// Describes the state of the first N packets
+   std::string debugTimeState(size_t first_n_pkts) const;
    
    /// thread safe bytes counter of the Recv & Ack buffer
    /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
@@ -578,11 +579,10 @@ private:
    bool m_bTsbPdWrapCheck;              // true: check packet time stamp wrap around
    static const uint32_t TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
 
-   static const int TSBPD_DRIFT_MAX_VALUE = 5000;   // Max drift (usec) above which TsbPD Time Offset is adjusted
-   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;  // Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
-   //int m_iTsbPdDrift;                           // recent drift in the packet time stamp
-   //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
-   //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
+   /// Max drift (usec) above which TsbPD Time Offset is adjusted
+   static const int TSBPD_DRIFT_MAX_VALUE = 5000;
+   /// Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
+   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    time_point m_tsLastSamplingTime;
@@ -593,6 +593,7 @@ private:
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    int m_TsbPdDriftHisto100us[22];              // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
    int m_TsbPdDriftHisto1ms[22];                // Histogram of TsbPD drift (-10.0 .. +10.0 ms, in 1.0 ms increment)
+   int m_iTsbPdDriftNbSamples = 0;              // Number of samples in sum and histogram
    static const int TSBPD_DRIFT_PRT_SAMPLES = 200;    // Number of samples (UMSG_ACKACK packets) to print hostogram
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 

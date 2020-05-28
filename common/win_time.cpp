@@ -27,7 +27,7 @@ void SRTCompat_timeradd(struct timeval *a, struct timeval *b, struct timeval *re
     }
 }
 
-int SRTCompat_gettimeofday(struct timeval* tp, struct timezone* tz)
+int SRTCompat_gettimeofday(struct timeval* tp, struct timezone*)
 {
     struct timeb tb;
     ftime(&tb);

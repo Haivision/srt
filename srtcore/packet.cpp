@@ -476,60 +476,6 @@ void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
     m_nHeader[SRT_PH_MSGNO] = clr_msgno | EncryptionKeyBits(spec);
 }
 
-/*
-   Leaving old code for historical reasons. This is moved to CSRTCC.
-EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
-{
-    if ( !hcrypto )
-    {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
-        return ENCS_FAILED;
-    }
-
-   int rc = HaiCrypt_Tx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
-   if ( rc < 0 )
-   {
-       // -1: encryption failure
-       // 0: key not received yet
-       return ENCS_FAILED;
-   } else if (rc > 0) {
-       m_PacketVector[PV_DATA].iov_len = rc;
-   }
-   return ENCS_CLEAR;
-}
-
-EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
-{
-   if (getMsgCryptoFlags() == EK_NOENC)
-   {
-       //HLOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
-       return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
-   }
-
-   if (!hcrypto)
-   {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
-        return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
-   }
-
-   int rc = HaiCrypt_Rx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
-   if ( rc <= 0 )
-   {
-       // -1: decryption failure
-       // 0: key not received yet
-       return ENCS_FAILED;
-   }
-   // Otherwise: rc == decrypted text length.
-   m_PacketVector[PV_DATA].iov_len = rc; // In case clr txt size is different from cipher txt
-
-   // Decryption succeeded. Update flags.
-   m_nHeader[SRT_PH_MSGNO] &= ~MSGNO_ENCKEYSPEC::mask; // sets EK_NOENC to ENCKEYSPEC bits.
-
-   return ENCS_CLEAR;
-}
-
-*/
-
 uint32_t CPacket::getMsgTimeStamp() const
 {
    // SRT_DEBUG_TSBPD_WRAP may enable smaller timestamp for faster wraparoud handling tests

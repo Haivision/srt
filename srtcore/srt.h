@@ -219,8 +219,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
+   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-   // (some space left, 59)
    SRTO_PACKETFILTER = 60    // Add and configure a packet filter
 } SRT_SOCKOPT;
 
@@ -415,6 +415,20 @@ struct CBytePerfMon
    int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
    int      pktReorderTolerance;        // packet reorder tolerance value
    //<
+
+   // New stats in 1.5.0
+
+   // Total
+   int64_t  pktSentUniqueTotal;         // total number of data packets sent by the application
+   int64_t  pktRecvUniqueTotal;         // total number of packets to be received by the application
+   uint64_t byteSentUniqueTotal;        // total number of data bytes, sent by the application
+   uint64_t byteRecvUniqueTotal;        // total number of data bytes to be received by the application
+
+   // Local
+   int64_t  pktSentUnique;              // number of data packets sent by the application
+   int64_t  pktRecvUnique;              // number of packets to be received by the application
+   uint64_t byteSentUnique;             // number of data bytes, sent by the application
+   uint64_t byteRecvUnique;             // number of data bytes to be received by the application
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -559,9 +573,21 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
+    SRT_REJ_TIMEOUT,     // connection timeout
 
-    SRT_REJ__SIZE,
+    SRT_REJ_E_SIZE,
 };
+
+// XXX This value remains for some time, but it's deprecated
+#define SRT_REJ__SIZE SRT_REJ_E_SIZE
+
+// Reject category codes:
+
+#define SRT_REJC_VALUE(code) (1000 * (code/1000))
+#define SRT_REJC_INTERNAL 0     // Codes from above SRT_REJECT_REASON enum
+#define SRT_REJC_PREDEFINED 1000  // Standard server error codes
+#define SRT_REJC_USERDEFINED 2000    // User defined error codes
+
 
 // Logging API - specialization for SRT.
 
@@ -714,6 +740,10 @@ typedef enum SRT_GROUP_TYPE
     SRT_GTYPE__END
 } SRT_GROUP_TYPE;
 
+// Free-form flags for groups
+// Flags may be type-specific!
+static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
+
 // library initialization
 SRT_API       int srt_startup(void);
 SRT_API       int srt_cleanup(void);
@@ -734,7 +764,7 @@ typedef struct SRT_SocketGroupData_
     int result;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    int priority;
+    int weight;
 } SRT_SOCKGROUPDATA;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -786,6 +816,19 @@ typedef struct SRT_MsgCtrl_
    SRT_SOCKGROUPDATA* grpdata;
    size_t grpdata_size;
 } SRT_MSGCTRL;
+
+// Trap representation for sequence and message numbers
+// This value means that this is "unset", and it's never
+// a result of an operation made on this number.
+static const int32_t SRT_SEQNO_NONE = -1;    // -1: no seq (0 is a valid seqno!)
+static const int32_t SRT_MSGNO_NONE = -1;    // -1: unset
+static const int32_t SRT_MSGNO_CONTROL = 0;  //  0: control (used by packet filter)
+
+static const int SRT_MSGTTL_INF = -1; // unlimited TTL specification for message TTL
+
+// XXX Might be useful also other special uses of -1:
+// - -1 as infinity for srt_epoll_wait
+// - -1 as a trap index value used in list.cpp
 
 // You are free to use either of these two methods to set SRT_MSGCTRL object
 // to default values: either call srt_msgctrl_init(&obj) or obj = srt_msgctrl_default.
@@ -841,10 +884,10 @@ SRT_API        int  srt_getlasterror(int* errno_loc);
 SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
-// performance track
-// perfmon with Byte counters for better bitrate estimation.
+// Performance tracking
+// Performance monitor with Byte counters for better bitrate estimation.
 SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
-// permon with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
+// Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
 SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
@@ -890,9 +933,10 @@ SRT_API void srt_setlogflags(int flags);
 
 SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
-SRT_API enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+SRT_API int srt_getrejectreason(SRTSOCKET sock);
+SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
-const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
+const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion();
 

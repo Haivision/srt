@@ -23,7 +23,10 @@ include(CheckFunctionExists)
 
 # Platform shortcuts
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
-set_if(DARWIN      ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
@@ -104,7 +107,6 @@ option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
-option(ENABLE_SUFLIP "Should suflip tool be built" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
@@ -113,6 +115,7 @@ option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
+option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
@@ -312,7 +315,7 @@ else()
 	message(STATUS "ENCRYPTION: DISABLED")
 endif()
 
-if ( USE_GNUSTL )
+if (USE_GNUSTL)
 	pkg_check_modules (GNUSTL REQUIRED gnustl)
 	link_directories(${GNUSTL_LIBRARY_DIRS})
 	include_directories(${GNUSTL_INCLUDE_DIRS})
@@ -320,7 +323,7 @@ if ( USE_GNUSTL )
 endif()
 
 # Detect if the compiler is GNU compatable for flags
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
 else()
@@ -337,7 +340,14 @@ endif()
 
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
+	if (ENABLE_STDCXX_SYNC)
+		message(ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+	endif()
+elseif (ENABLE_STDCXX_SYNC)
+	add_definitions(-DENABLE_STDCXX_SYNC=1)
+	set(CMAKE_CXX_STANDARD 11)
 endif()
+message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
@@ -483,7 +493,9 @@ if (ENABLE_CODE_COVERAGE)
 	endif()
 endif()
 
-if (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
+if (ENABLE_STDCXX_SYNC)
+	message(STATUS "Pthread library: C++11")
+elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (MICROSOFT)
@@ -986,6 +998,14 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 
+	set (SOURCES_suflip
+		${CMAKE_CURRENT_SOURCE_DIR}/examples/suflip.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/uriparser.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/apps/apputil.cpp
+	)
+	srt_add_program(suflip ${SOURCES_suflip})
+	target_link_libraries(suflip ${srt_link_library})
+	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 
@@ -1011,7 +1031,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
-	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS})
+	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
 	target_link_libraries(
 		test-srt
@@ -1040,13 +1060,3 @@ if (DEFINED SRT_EXTRA_APPS_INC)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
 endif()
-
-if ( ENABLE_SUFLIP )
-	set (SOURCES_suflip
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/suflip.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/common/uriparser.cpp
-	)
-	srt_add_program(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif ()

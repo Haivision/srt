@@ -58,6 +58,8 @@ modified by
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <iterator>
+#include <vector>
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
@@ -542,17 +544,44 @@ extern const char* const srt_rejectreason_msg [] = {
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
     "Packet Filter type collision",
-    "Group settings collision"
+    "Group settings collision",
+    "Connection timeout"
 };
 
-const char* srt_rejectreason_str(SRT_REJECT_REASON rid)
+const char* srt_rejectreason_str(int id)
 {
-    int id = rid;
+    if (id >= SRT_REJC_PREDEFINED)
+    {
+        return "Application-defined rejection reason";
+    }
+
     static const size_t ra_size = Size(srt_rejectreason_msg);
     if (size_t(id) >= ra_size)
         return srt_rejectreason_msg[0];
     return srt_rejectreason_msg[id];
 }
+
+bool SrtParseConfig(string s, SrtConfig& w_config)
+{
+    using namespace std;
+
+    vector<string> parts;
+    Split(s, ',', back_inserter(parts));
+
+    w_config.type = parts[0];
+
+    for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
+    {
+        vector<string> keyval;
+        Split(*i, ':', back_inserter(keyval));
+        if (keyval.size() != 2)
+            return false;
+        w_config.parameters[keyval[0]] = keyval[1];
+    }
+
+    return true;
+}
+
 
 // Some logging imps
 #if ENABLE_LOGGING

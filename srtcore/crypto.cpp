@@ -181,7 +181,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
     // a wrong password.
     if (m_KmSecret.len == 0)  //We have a shared secret <==> encryption is on
     {
-        LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Agent does not declare encryption - won't decrypt incoming packets!");
+        LOGC(mglog.Warn, log << "processSrtMsg_KMREQ: Agent does not declare encryption - won't decrypt incoming packets!");
         m_RcvKmState = SRT_KM_S_NOSECRET;
         KMREQ_RESULT_REJECTION();
     }
@@ -216,13 +216,13 @@ int CCryptoControl::processSrtMsg_KMREQ(
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET;
         //Send status KMRSP message to tel error
         w_srtlen = 1;
-        LOGC(mglog.Error, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
+        LOGC(mglog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
     case HAICRYPT_ERROR: //Other errors
     default:
         m_RcvKmState = m_SndKmState = SRT_KM_S_NOSECRET;
         w_srtlen = 1;
-        LOGC(mglog.Error, log << "KMREQ/rcv: (snd) Rx process failure (IPE) - NOSECRET");
+        LOGC(mglog.Warn, log << "KMREQ/rcv: (snd) Rx process failure (IPE) - NOSECRET");
         break;
     }
 
@@ -306,7 +306,7 @@ HSv4_ErrorReport:
     // It's ok that this is reported as error because this happens in a scenario,
     // when non-encryption-enabled SRT application is contacted by encryption-enabled SRT
     // application which tries to make a security association.
-    LOGC(mglog.Error, log << "processSrtMsg_KMREQ: Encryption not enabled at compile time - must reject...");
+    LOGC(mglog.Warn, log << "processSrtMsg_KMREQ: Encryption not enabled at compile time - must reject...");
     m_RcvKmState = SRT_KM_S_NOSECRET;
 #endif
 
@@ -377,7 +377,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int
             break;
         }
 
-        LOGC(mglog.Error, log << "processSrtMsg_KMRSP: received failure report. STATE: " << KmStateStr(m_RcvKmState));
+        LOGC(mglog.Warn, log << "processSrtMsg_KMRSP: received failure report. STATE: " << KmStateStr(m_RcvKmState));
     }
     else
     {
@@ -620,7 +620,10 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UNUSED)
                     bidirectional // replicate the key to the receiver context, if bidirectional
                     );
 #else
-            LOGC(mglog.Error, log << "CCryptoControl::init: encryption not supported");
+            // This error would be a consequence of setting the passphrase, while encryption
+            // is turned off at compile time. Setting the password itself should be not allowed
+            // so this could only happen as a consequence of an IPE.
+            LOGC(mglog.Error, log << "CCryptoControl::init: IPE: encryption not supported");
             return true;
 #endif
         }
@@ -688,7 +691,7 @@ bool CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir, Hai
 
     if ((m_KmSecret.len <= 0) || (keylen <= 0))
     {
-        LOGC(mglog.Error, log << CONID() << "cryptoCtx: missing secret (" << m_KmSecret.len << ") or key length (" << keylen << ")");
+        LOGC(mglog.Error, log << CONID() << "cryptoCtx: IPE missing secret (" << m_KmSecret.len << ") or key length (" << keylen << ")");
         return false;
     }
 
@@ -781,7 +784,7 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
             // which means that it will be unable to decrypt
             // sent payloads anyway.
             m_RcvKmState = SRT_KM_S_NOSECRET;
-            LOGP(mglog.Error, "SECURITY FAILURE: Agent has no PW, but Peer sender has declared one, can't decrypt");
+            LOGP(mglog.Warn, "SECURITY FAILURE: Agent has no PW, but Peer sender has declared one, can't decrypt");
             // This only informs about the state change; it will be also caught by the condition below
         }
     }

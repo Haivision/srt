@@ -25,27 +25,17 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
+bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
 {
-    vector<string> parts;
-    Split(s, ',', back_inserter(parts));
+    if (!SrtParseConfig(s, (w_config)))
+        return false;
 
-    out.type = parts[0];
-    PacketFilter::Factory* fac = PacketFilter::find(out.type);
+    PacketFilter::Factory* fac = PacketFilter::find(w_config.type);
     if (!fac)
         return false;
 
-    for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
-    {
-        vector<string> keyval;
-        Split(*i, ':', back_inserter(keyval));
-        if (keyval.size() != 2)
-            return false;
-        out.parameters[keyval[0]] = keyval[1];
-    }
-
     // Extract characteristic data
-    out.extra_size = fac->ExtraSize();
+    w_config.extra_size = fac->ExtraSize();
 
     return true;
 }
@@ -168,7 +158,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    w_packet.m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    w_packet.m_iMsgNo = SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
 
     // ... and then fix only the Crypto flags
     w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));

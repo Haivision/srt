@@ -222,6 +222,19 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
+            vector<string> parts;
+            Split(m_group_type, '/', back_inserter(parts));
+            if (parts.size() == 0 || parts.size() > 2)
+            {
+                Error("Invalid specification for 'type' parameter");
+            }
+
+            if (parts.size() == 2)
+            {
+                m_group_type = parts[0];
+                m_group_config = parts[1];
+            }
+
             vector<string> nodes;
             Split(par["nodes"], ',', back_inserter(nodes));
 
@@ -247,9 +260,9 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 Connection cc(check.host(), check.portno());
-                if (check.parameters().count("pri"))
+                if (check.parameters().count("weight"))
                 {
-                    cc.priority = stoi(check.queryValue("pri"));
+                    cc.weight = stoi(check.queryValue("weight"));
                 }
 
                 m_group_nodes.push_back(cc);
@@ -257,35 +270,39 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
             par.erase("type");
             par.erase("nodes");
+
+            // For a group-connect specification, it's
+            // always the caller mode.
+            // XXX change it here if maybe rendezvous is also
+            // possible in future.
+            par["mode"] = "caller";
         }
+    }
+
+    string adapter;
+    if (par.count("adapter"))
+    {
+        adapter = par.at("adapter");
     }
 
     m_mode = "default";
     if (par.count("mode"))
+    {
         m_mode = par.at("mode");
-
-    if (m_mode == "default")
+    }
+    SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
+    if (mode == SocketOption::FAILURE)
     {
-        // Use the following convention:
-        // 1. Server for source, Client for target
-        // 2. If host is empty, then always server.
-        if (host == "" && m_group_nodes.empty())
-            m_mode = "listener";
-        //else if (!dir_output)
-        //m_mode = "server";
-        else
-            m_mode = "caller";
+        Error("Invalid mode");
     }
 
-    if (m_mode == "client")
-        m_mode = "caller";
-    else if (m_mode == "server")
-        m_mode = "listener";
-
-    if (m_mode == "listener" && !m_group_nodes.empty())
+    if (!m_group_nodes.empty() && mode != SocketOption::CALLER)
     {
-        Error("Multiple nodes (redundant links) only supported in CALLER (client) mode.");
+        Error("Group node specification is only available in caller mode");
     }
+
+    // Fix the mode name after successful interpretation
+    m_mode = SocketOption::mode_names[mode];
 
     par.erase("mode");
 
@@ -303,7 +320,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     if (par.count("adapter"))
     {
-        m_adapter = par.at("adapter");
+        m_adapter = adapter;
         par.erase("adapter");
     }
     else if (m_mode == "listener")
@@ -336,6 +353,14 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
             par["payloadsize"] = Sprint(transmit_chunk_size);
         }
+    }
+
+    // Assigning group configuration from a special "groupconfig" attribute.
+    // This is the only way how you can set up this configuration at the listener side.
+    if (par.count("groupconfig"))
+    {
+        m_group_config = par.at("groupconfig");
+        par.erase("groupconfig");
     }
 
     // Assign the others here.
@@ -425,6 +450,15 @@ void SrtCommon::AcceptNewClient()
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
+        if (m_group_config != "")
+        {
+            int stat = srt_group_configure(m_sock, m_group_config.c_str());
+            if (stat == SRT_ERROR)
+            {
+                // Don't break the connection basing on this, just ignore.
+                Verb() << " (error setting config: '" << m_group_config << "') " << VerbNoEOL;
+            }
+        }
         // There might be added a poller, remove it.
         // We need it work different way.
 
@@ -707,7 +741,7 @@ void SrtCommon::PrepareClient()
 
     if (!m_blocking_mode)
     {
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT | SRT_EPOLL_ERR);
     }
 
 }
@@ -721,14 +755,26 @@ void SrtCommon::OpenGroupClient()
         type = SRT_GTYPE_BROADCAST;
     else if (m_group_type == "backup")
         type = SRT_GTYPE_BACKUP;
+    else if (m_group_type == "balancing")
+        type = SRT_GTYPE_BALANCING;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
     }
 
     m_sock = srt_create_group(type);
+    if (m_sock == -1)
+        Error("srt_create_group");
 
-    int stat = ConfigurePre(m_sock);
+    int stat = -1;
+    if (m_group_config != "")
+    {
+        stat = srt_group_configure(m_sock, m_group_config.c_str());
+        if (stat == SRT_ERROR)
+            Error("srt_group_configure");
+    }
+
+    stat = ConfigurePre(m_sock);
 
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
@@ -736,7 +782,7 @@ void SrtCommon::OpenGroupClient()
     if ( !m_blocking_mode )
     {
         // Note: here the GROUP is added to the poller.
-        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT);
+        srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT | SRT_EPOLL_ERR);
     }
 
     // Don't check this. Should this fail, the above would already.
@@ -768,11 +814,11 @@ void SrtCommon::OpenGroupClient()
         sockaddr_in sa = CreateAddrInet(c.host, c.port);
         sockaddr* psa = (sockaddr*)&sa;
         Verb() << "\t[" << i << "] " << c.host << ":" << c.port
-            << "?pri=" << c.priority
+            << "?weight=" << c.weight
             << " ... " << VerbNoEOL;
         ++i;
         SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
-        gd.priority = c.priority;
+        gd.weight = c.weight;
         targets.push_back(gd);
     }
 
@@ -928,14 +974,13 @@ void SrtCommon::OpenGroupClient()
 
 void SrtCommon::ConnectClient(string host, int port)
 {
-
     sockaddr_in sa = CreateAddrInet(host, port);
     sockaddr* psa = (sockaddr*)&sa;
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if (stat == SRT_ERROR)
     {
-        SRT_REJECT_REASON reason = srt_getrejectreason(m_sock);
+        int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
@@ -953,11 +998,17 @@ void SrtCommon::ConnectClient(string host, int port)
         // SpinWaitAsync();
 
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1)
+        int lenc = 2, lene = 2;
+        SRTSOCKET ready_connect[2], ready_error[2];
+        if (srt_epoll_wait(srt_conn_epoll, ready_error, &lene, ready_connect, &lenc, -1, 0, 0, 0, 0) != -1)
         {
-            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+            if (lene > 0)
+            {
+                Verb() << "[EPOLL(error): " << lene << " sockets]";
+                int reason = srt_getrejectreason(ready_error[0]);
+                Error("srt_connect(async)", reason, SRT_ECONNREJ);
+            }
+            Verb() << "[EPOLL: " << lenc << " sockets] " << VerbNoEOL;
         }
         else
         {
@@ -971,10 +1022,10 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("ConfigurePost");
 }
 
-void SrtCommon::Error(string src, SRT_REJECT_REASON reason)
+void SrtCommon::Error(string src, int reason, int force_result)
 {
     int errnov = 0;
-    const int result = srt_getlasterror(&errnov);
+    const int result = force_result == 0 ? srt_getlasterror(&errnov) : force_result;
     if (result == SRT_SUCCESS)
     {
         cerr << "\nERROR (app): " << src << endl;
@@ -1008,9 +1059,11 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    sockaddr_in localsa = CreateAddrInet(adapter, port);
+    const int outport = m_outgoing_port ? m_outgoing_port : port;
+
+    sockaddr_in localsa = CreateAddrInet(adapter, outport);
     sockaddr* plsa = (sockaddr*)&localsa;
-    Verb() << "Binding a server on " << adapter << ":" << port << " ...";
+    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
     int stat = srt_bind(m_sock, plsa, sizeof localsa);
     if (stat == SRT_ERROR)
     {
@@ -1810,6 +1863,7 @@ RETRY_READING:
     Error("No data extracted");
     return output; // Just a marker - this above function throws an exception
 }
+
 #endif
 
 bytevector SrtSource::Read(size_t chunk)
@@ -1896,6 +1950,7 @@ bytevector SrtSource::Read(size_t chunk)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }
@@ -1981,6 +2036,7 @@ void SrtTarget::Write(const bytevector& data)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }

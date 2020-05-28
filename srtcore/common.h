@@ -69,6 +69,7 @@ modified by
 #include "utilities.h"
 #include "sync.h"
 #include "netinet_any.h"
+#include "packetfilter_api.h"
 
 // System-independent errno
 #ifndef _WIN32
@@ -848,21 +849,21 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-    StatsLossRecords(): initseq(-1) {}
+    StatsLossRecords(): initseq(SRT_SEQNO_NONE) {}
 
     // To check if this structure still keeps record of that sequence.
     // This is to check if the information about this not being found
     // is still reliable.
     bool exists(int32_t seq)
     {
-        return initseq != -1 && CSeqNo::seqcmp(seq, initseq) >= 0;
+        return initseq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seq, initseq) >= 0;
     }
 
     int32_t base() { return initseq; }
 
     void clear()
     {
-        initseq = -1;
+        initseq = SRT_SEQNO_NONE;
         array.reset();
     }
 
@@ -1391,5 +1392,7 @@ inline std::string SrtVersionString(int version)
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
+
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
 
 #endif

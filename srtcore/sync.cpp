@@ -13,7 +13,10 @@
 #include <stdexcept>
 #include "sync.h"
 #include "udt.h"
+#include "srt.h"
 #include "srt_compat.h"
+#include "logging.h"
+#include "common.h"
 
 #if defined(_WIN32)
 #define TIMING_USE_QPC
@@ -26,6 +29,13 @@
 #define TIMING_USE_CLOCK_GETTIME
 #endif
 
+namespace srt_logging
+{
+    extern Logger mglog;
+}
+using namespace srt_logging;
+
+#if !defined(ENABLE_STDCXX_SYNC)
 namespace srt
 {
 namespace sync
@@ -108,6 +118,7 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 
 } // namespace sync
 } // namespace srt
+#endif // #if !defined(ENABLE_STDCXX_SYNC)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -128,12 +139,7 @@ static timespec us_to_timespec(const uint64_t time_us)
 // TimePoint section
 //
 ////////////////////////////////////////////////////////////////////////////////
-
-template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
-{
-    return m_timestamp / s_cpu_frequency;
-}
+#ifndef ENABLE_STDCXX_SYNC
 
 template <>
 srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
@@ -178,6 +184,8 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
 
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
 std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
 {
     if (is_zero(timestamp))
@@ -186,7 +194,7 @@ std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
         return "00:00:00.000000";
     }
 
-    const uint64_t total_us  = timestamp.us_since_epoch();
+    const uint64_t total_us  = count_microseconds(timestamp.time_since_epoch());
     const uint64_t us        = total_us % 1000000;
     const uint64_t total_sec = total_us / 1000000;
 
@@ -212,17 +220,18 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
     const int64_t                  delta_s =
-        floor((static_cast<int64_t>(now_timestamp.us_since_epoch() % 1000000) + delta_us) / 1000000.0);
+        floor((static_cast<int64_t>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0);
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
     ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (timestamp.us_since_epoch() % 1000000) << " [SYS]";
+    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYS]";
     return out.str();
 }
 
+#if !defined(ENABLE_STDCXX_SYNC)
 srt::sync::Mutex::Mutex()
 {
     pthread_mutex_init(&m_mutex, NULL);
@@ -259,9 +268,12 @@ srt::sync::ScopedLock::~ScopedLock()
     m_mutex.unlock();
 }
 
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
 //
 //
 //
+#if !defined(ENABLE_STDCXX_SYNC)
 
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
@@ -287,13 +299,14 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 {
     return &m_Mutex;
 }
+#endif // !defined(ENABLE_STDCXX_SYNC)
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Condition section (based on pthreads)
 //
 ////////////////////////////////////////////////////////////////////////////////
-#ifndef USE_STDCXX_CHRONO
+#ifndef ENABLE_STDCXX_SYNC
 
 namespace srt
 {
@@ -373,7 +386,7 @@ void Condition::notify_all()
 }; // namespace sync
 }; // namespace srt
 
-#endif // ndef USE_STDCXX_CHRONO
+#endif // ndef ENABLE_STDCXX_SYNC
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -411,13 +424,13 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }
@@ -433,7 +446,13 @@ void srt::sync::CEvent::wait(UniqueLock& lock)
     return m_cond.wait(lock);
 }
 
+namespace srt {
+namespace sync {
+
 srt::sync::CEvent g_Sync;
+
+} // namespace sync
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -527,3 +546,203 @@ void srt::sync::CTimer::tick()
     m_event.notify_one();
 }
 
+
+void srt::sync::CGlobEvent::triggerEvent()
+{
+    return g_Sync.notify_one();
+}
+
+bool srt::sync::CGlobEvent::waitForEvent()
+{
+    return g_Sync.lock_wait_for(milliseconds_from(10));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThread class
+//
+////////////////////////////////////////////////////////////////////////////////
+#ifndef ENABLE_STDCXX_SYNC
+
+srt::sync::CThread::CThread()
+{
+    m_thread = pthread_t();
+}
+
+srt::sync::CThread::CThread(void *(*start_routine) (void *), void *arg)
+{
+    create(start_routine, arg);
+}
+
+#if HAVE_FULL_CXX11
+srt::sync::CThread& srt::sync::CThread::operator=(CThread&& other)
+#else
+srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
+#endif
+{
+    if (joinable())
+    {
+        // If the thread has already terminated, then
+        // pthread_join() returns immediately.
+        // But we have to check it has terminated before replacing it.
+        LOGC(mglog.Error, log << "IPE: Assigning to a thread that is not terminated!");
+
+#ifndef DEBUG
+        // In case of production build the hanging thread should be terminated
+        // to avoid hang ups and align with C++11 implementation.
+        pthread_cancel(m_thread);
+#else
+        join();
+#endif
+    }
+
+    // Move thread handler from other
+    m_thread = other.m_thread;
+    other.m_thread = pthread_t();
+    return *this;
+}
+
+#if !HAVE_FULL_CXX11
+void srt::sync::CThread::create_thread(void *(*start_routine) (void *), void *arg)
+{
+    SRT_ASSERT(!joinable());
+    create(start_routine, arg);
+}
+#endif
+
+bool srt::sync::CThread::joinable() const
+{
+    return !pthread_equal(m_thread, pthread_t());
+}
+
+void srt::sync::CThread::join()
+{
+    void *retval;
+    const int ret SRT_ATR_UNUSED = pthread_join(m_thread, &retval);
+    if (ret != 0)
+    {
+        LOGC(mglog.Error, log << "pthread_join failed with " << ret);
+    }
+#ifdef HEAVY_LOGGING
+    else
+    {
+        LOGC(mglog.Debug, log << "pthread_join SUCCEEDED");
+    }
+#endif
+    // After joining, joinable should be false
+    m_thread = pthread_t();
+    return;
+}
+
+void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
+{
+    const int st = pthread_create(&m_thread, NULL, start_routine, arg);
+    if (st != 0)
+    {
+        LOGC(mglog.Error, log << "pthread_create failed with " << st);
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+    }
+}
+
+#endif // !defined(ENABLE_STDCXX_SYNC)
+
+namespace srt {
+namespace sync {
+
+#ifdef ENABLE_STDCXX_SYNC
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
+#else
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+#endif
+{
+    ThreadName tn(name);
+    try
+    {
+#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
+        th = CThread(f, args);
+#else
+        // No move semantics in C++03, therefore using a dedicated function
+        th.create_thread(f, args);
+#endif
+    }
+    catch (const CThreadException& e)
+    {
+        HLOGC(mglog.Debug, log << name << ": failed to start thread. " << e.what());
+        return false;
+    }
+    return true;
+}
+
+} // namespace sync
+} // namespace srt
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage error wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+#if !defined(ENABLE_STDCXX_SYNC)
+namespace srt {
+namespace sync {
+
+class CThreadError
+{
+public:
+    CThreadError()
+    {
+        pthread_key_create(&m_TLSError, TLSDestroy);
+    }
+
+    ~CThreadError()
+    {
+        delete (CUDTException*)pthread_getspecific(m_TLSError);
+        pthread_key_delete(m_TLSError);
+    }
+
+public:
+    void set(const CUDTException& e)
+    {
+        CUDTException* cur = get();
+        SRT_ASSERT(cur != NULL);
+        *cur = e;
+    }
+
+    CUDTException* get()
+    {
+        if (!pthread_getspecific(m_TLSError))
+        {
+            CUDTException* ne = new CUDTException();
+            pthread_setspecific(m_TLSError, ne);
+            return ne;
+        }
+        return (CUDTException*)pthread_getspecific(m_TLSError);
+    }
+
+    static void TLSDestroy(void* e)
+    {
+        delete (CUDTException*)e;
+    }
+
+private:
+    pthread_key_t m_TLSError;
+};
+
+// Threal local error will be used by CUDTUnited
+// that has a static scope
+static CThreadError s_thErr;
+
+void SetThreadLocalError(const CUDTException& e)
+{
+    s_thErr.set(e);
+}
+
+CUDTException& GetThreadLocalError()
+{
+    return *s_thErr.get();
+}
+
+} // namespace sync
+} // namespace srt
+
+#endif // !defined(ENABLE_STDCXX_SYNC)

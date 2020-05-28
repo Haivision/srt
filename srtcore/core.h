@@ -134,11 +134,9 @@ extern const SRT_SOCKOPT srt_post_opt_list [];
 enum GroupDataItem
 {
     GRPD_GROUPID,
-    GRPD_GROUPTYPE,
-    GRPD_PRIORITY,
+    GRPD_GROUPDATA,
 
-
-    GRPD__SIZE
+    GRPD_E_SIZE
 };
 
 const size_t GRPD_MIN_SIZE = 2; // ID and GROUPTYPE as backward compat
@@ -166,6 +164,96 @@ class CUDTSocket;
         "BROKEN"
     };
 #endif
+
+struct PacketMetric
+{
+    uint32_t pkts;
+    uint64_t bytes;
+
+    void update(uint64_t size)
+    {
+        ++pkts;
+        bytes += size;
+    }
+
+    void update(size_t mult, uint64_t value)
+    {
+        pkts += mult;
+        bytes += mult * value;
+    }
+
+    uint64_t fullBytes()
+    {
+        static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+        return bytes + pkts * PKT_HDR_SIZE;
+    }
+};
+
+template <class METRIC_TYPE>
+struct MetricOp;
+
+template <class METRIC_TYPE>
+struct MetricUsage
+{
+    METRIC_TYPE local;
+    METRIC_TYPE total;
+
+    void Clear()
+    {
+        MetricOp<METRIC_TYPE>::Clear(local);
+    }
+
+    void Init()
+    {
+        MetricOp<METRIC_TYPE>::Clear(total);
+        Clear();
+    }
+
+    void Update(uint64_t value)
+    {
+        local += value;
+        total += value;
+    }
+
+    void UpdateTimes(size_t mult, uint64_t value)
+    {
+        local += mult * value;
+        total += mult * value;
+    }
+};
+
+template <>
+inline void MetricUsage<PacketMetric>::Update(uint64_t value)
+{
+    local.update(value);
+    total.update(value);
+}
+
+template <>
+inline void MetricUsage<PacketMetric>::UpdateTimes(size_t mult, uint64_t value)
+{
+    local.update(mult, value);
+    total.update(mult, value);
+}
+
+template <class METRIC_TYPE>
+struct MetricOp
+{
+    static void Clear(METRIC_TYPE& m)
+    {
+        m = 0;
+    }
+};
+
+template <>
+struct MetricOp<PacketMetric>
+{
+    static void Clear(PacketMetric& p)
+    {
+        p.pkts = 0;
+        p.bytes = 0;
+    }
+};
 
 class CUDTGroup
 {
@@ -219,7 +307,7 @@ public:
         bool ready_error;
 
         // Configuration
-        int priority;
+        int weight;
     };
 
     struct ConfigItem
@@ -317,8 +405,8 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = -1;
-                setInitialRxSequence(-1);
+                m_iLastSchedSeqNo = SRT_SEQNO_NONE;
+                setInitialRxSequence(SRT_SEQNO_NONE);
             }
             s = true;
         }
@@ -379,6 +467,7 @@ public:
     void setOpt(SRT_SOCKOPT optname, const void* optval, int optlen);
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
     void deriveSettings(CUDT* source);
+    bool applyFlags(uint32_t flags, HandshakeSide);
 
     SRT_SOCKSTATUS getStatus();
 
@@ -393,7 +482,8 @@ public:
 
     srt::sync::Mutex* exp_groupLock() { return &m_GroupLock; }
     void addEPoll(int eid);
-    void removeEPoll(int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
     void updateReadState(SRTSOCKET sock, int32_t sequence);
     void updateWriteState();
 
@@ -489,6 +579,7 @@ private:
     };
     GroupContainer m_Group;
     bool m_selfManaged;
+    bool m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
 
@@ -599,6 +690,7 @@ private:
 
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
+    int m_iAvgPayloadSize;
     bool m_bSynRecving;
     bool m_bSynSending;
     bool m_bTsbPd;
@@ -633,7 +725,7 @@ private:
     ReadPos* checkPacketAhead();
 
     // This is the sequence number of a packet that has been previously
-    // delivered. Initially it should be set to -1 so that the sequence read
+    // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
@@ -653,8 +745,63 @@ private:
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     volatile int32_t m_iLastSchedMsgNo;
+    // Statistics
+
+    struct Stats
+    {
+        // Stats state
+        time_point tsActivateTime;             // Time when this group sent or received the first data packet
+        time_point tsLastSampleTime;           // Time reset when clearing stats
+
+        MetricUsage<PacketMetric> sent;        // number of packets sent from the application
+        MetricUsage<PacketMetric> recv;        // number of packets delivered from the group to the application
+        MetricUsage<PacketMetric> recvDrop;    // number of packets dropped by the group receiver (not received from any member)
+        MetricUsage<PacketMetric> recvDiscard; // number of packets discarded as already delivered
+
+        void init()
+        {
+            tsActivateTime = srt::sync::steady_clock::time_point();
+            sent.Init();
+            recv.Init();
+            recvDrop.Init();
+            recvDiscard.Init();
+
+            reset();
+        }
+
+        void reset()
+        {
+            sent.Clear();
+            recv.Clear();
+            recvDrop.Clear();
+            recvDiscard.Clear();
+
+            tsLastSampleTime = srt::sync::steady_clock::now();
+        }
+    } m_stats;
+
+    void updateAvgPayloadSize(int size)
+    {
+        if (m_iAvgPayloadSize == -1)
+            m_iAvgPayloadSize = size;
+        else
+            m_iAvgPayloadSize = avg_iir<4>(m_iAvgPayloadSize, size);
+    }
+
+    int avgRcvPacketSize()
+    {
+        // In case when no packet has been received yet, but already notified
+        // a dropped packet, its size will be SRT_LIVE_DEF_PLSIZE. It will be
+        // the value most matching in the typical uses, although no matter what
+        // value would be used here, each one would be wrong from some points
+        // of view. This one is simply the best choice for typical uses of groups
+        // provided that they are to be ued only for live mode.
+        return m_iAvgPayloadSize == -1 ? SRT_LIVE_DEF_PLSIZE : m_iAvgPayloadSize;
+    }
 
 public:
+    void bstatsSocket(CBytePerfMon *perf, bool clear);
+
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
@@ -677,13 +824,15 @@ public:
         // The first provided one will be taken as a good deal; even if
         // this is going to be past the ISN, at worst it will be caused
         // by TLPKTDROP.
-        m_RcvBaseSeqNo = -1;
+        m_RcvBaseSeqNo = SRT_SEQNO_NONE;
     }
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using srt_logging::mglog;
-        if (m_tsStartTime == steady_clock::zero())
+        using srt::sync::is_zero;
+
+        if (is_zero(m_tsStartTime))
         {
             // The first socket, defines the group time for the whole group.
             m_tsStartTime = w_start_time;
@@ -692,7 +841,7 @@ public:
         }
 
         // Sanity check. This should never happen, fix the bug if found!
-        if (m_tsRcvPeerStartTime == steady_clock::zero())
+        if (is_zero(m_tsRcvPeerStartTime))
         {
             LOGC(mglog.Error, log << "IPE: only StartTime is set, RcvPeerStartTime still 0!");
             // Kinda fallback, but that's not too safe.
@@ -721,6 +870,7 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t,        currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(                std::set<int>&, epollset,             m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t,        latency,              m_iTsbPdDelay_us);
+    SRTU_PROPERTY_RO(                 bool,           synconmsgno,          m_bSyncOnMsgNo);
 };
 
 
@@ -782,7 +932,7 @@ public: //API
     static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
-    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
+    static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = SRT_MSGTTL_INF, bool inorder = false, uint64_t srctime = 0);
     static int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
     static int sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& mctrl);
     static int recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_mctrl);
@@ -805,11 +955,13 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
-    static SRT_REJECT_REASON rejectReason(SRTSOCKET s);
+    static int rejectReason(SRTSOCKET s);
+    static int rejectReason(SRTSOCKET s, int value);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -926,7 +1078,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_tsStartTime,
         // otherwise it may go unnoticed with clock skew.
-        return count_microseconds(from_time - m_stats.tsStartTime);
+        return srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
     }
 
     void setPacketTS(CPacket& p, const time_point& local_time)
@@ -955,6 +1107,7 @@ public: // internal API
     CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
+    SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
@@ -1032,6 +1185,11 @@ private:
     SRT_ATR_NODISCARD bool createSrtHandshake(int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen,
             CPacket& w_reqpkt, CHandShake& w_hs);
 
+    SRT_ATR_NODISCARD size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
+    SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
+    SRT_ATR_NODISCARD size_t fillHsExtKMREQ(uint32_t *pcmdspec, size_t ki);
+    SRT_ATR_NODISCARD size_t fillHsExtKMRSP(uint32_t *pcmdspec, const uint32_t *kmdata, size_t kmdata_wordsize);
+
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
     SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
@@ -1044,7 +1202,7 @@ private:
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp);
+    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
     void synchronizeWithGroup(CUDTGroup* grp);
 
     void updateAfterSrtHandshake(int hsv);
@@ -1074,7 +1232,7 @@ private:
 
     SRT_ATR_NODISCARD int send(const char* data, int len)
     {
-        return sendmsg(data, len, -1, false, 0);
+        return sendmsg(data, len, SRT_MSGTTL_INF, false, 0);
     }
 
     /// Request UDT to receive data to a memory block "data" with size of "len".
@@ -1272,6 +1430,7 @@ private: // Identification
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
+    SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake
 
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
@@ -1298,7 +1457,7 @@ private:
     volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
     volatile bool m_bBroken;                     // If the connection has been broken
     volatile bool m_bPeerHealth;                 // If the peer status is normal
-    volatile SRT_REJECT_REASON m_RejectReason;
+    volatile int m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
     int m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
 
@@ -1438,7 +1597,7 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
 
-    pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
+    srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
     srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
@@ -1524,7 +1683,15 @@ private: // Generation and processing of packets
 
     int processData(CUnit* unit);
     void processClose();
-    SRT_REJECT_REASON processConnectRequest(const sockaddr_any& addr, CPacket& packet);
+
+    /// Process the request after receiving the handshake from caller.
+    /// The @a packet param is passed here as non-const because this function
+    /// will need to make a temporary back-and-forth endian swap; it doesn't intend to
+    /// modify the object permanently.
+    /// @param addr source address from where the request came
+    /// @param packet contents of the packet
+    /// @return URQ code, possibly containing reject reason
+    int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
@@ -1535,7 +1702,9 @@ private: // Trace
     {
         time_point tsStartTime;                 // timestamp when the UDT entity is started
         int64_t sentTotal;                  // total number of sent data packets, including retransmissions
+        int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
         int64_t recvTotal;                  // total number of received packets
+        int64_t recvUniqTotal;              // total number of received and delivered packets
         int sndLossTotal;                   // total number of lost packets (sender side)
         int rcvLossTotal;                   // total number of lost packets (receiver side)
         int retransTotal;                   // total number of retransmitted packets
@@ -1546,7 +1715,9 @@ private: // Trace
         int sndDropTotal;
         int rcvDropTotal;
         uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
+        uint64_t bytesSentUniqTotal;        // total number of bytes sent,  including retransmissions
         uint64_t bytesRecvTotal;            // total number of received bytes
+        uint64_t bytesRecvUniqTotal;        // total number of received bytes
         uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
         uint64_t bytesRetransTotal;         // total number of retransmitted bytes
         uint64_t sndBytesDropTotal;
@@ -1563,7 +1734,9 @@ private: // Trace
 
         time_point tsLastSampleTime;            // last performance sample time
         int64_t traceSent;                  // number of packets sent in the last trace interval
+        int64_t traceSentUniq;              // number of original packets sent in the last trace interval
         int64_t traceRecv;                  // number of packets received in the last trace interval
+        int64_t traceRecvUniq;              // number of packets received AND DELIVERED in the last trace interval
         int traceSndLoss;                   // number of lost packets in the last trace interval (sender side)
         int traceRcvLoss;                   // number of lost packets in the last trace interval (receiver side)
         int traceRetrans;                   // number of retransmitted packets in the last trace interval
@@ -1578,7 +1751,9 @@ private: // Trace
         double traceBelatedTime;
         int64_t traceRcvBelated;
         uint64_t traceBytesSent;            // number of bytes sent in the last trace interval
+        uint64_t traceBytesSentUniq;        // number of bytes sent in the last trace interval
         uint64_t traceBytesRecv;            // number of bytes sent in the last trace interval
+        uint64_t traceBytesRecvUniq;        // number of bytes sent in the last trace interval
         uint64_t traceRcvBytesLoss;         // number of bytes bytes lost in the last trace interval (estimate)
         uint64_t traceBytesRetrans;         // number of bytes retransmitted in the last trace interval
         uint64_t traceSndBytesDrop;
@@ -1640,7 +1815,8 @@ public: // For SrtCongestion
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     void addEPoll(const int eid);
-    void removeEPoll(const int eid);
+    void removeEPollEvents(const int eid);
+    void removeEPollID(const int eid);
 };
 
 
