@@ -71,8 +71,15 @@ modified by
 using namespace std;
 using namespace srt_logging;
 
+#ifdef _WIN32
+    // use INVALID_SOCKET, as provided
+#else
+    static const int INVALID_SOCKET = -1;
+#endif
+
+
 CChannel::CChannel():
-m_iSocket(-1),
+m_iSocket(INVALID_SOCKET),
 #ifdef SRT_ENABLE_IPOPTS
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
@@ -91,12 +98,6 @@ void CChannel::createSocket(int family)
 {
     // construct an socket
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-
-#ifdef _WIN32
-    // use INVALID_SOCKET, as provided
-#else
-    static const int INVALID_SOCKET = -1;
-#endif
 
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
@@ -253,7 +254,7 @@ void CChannel::setUDPSockOpt()
 #endif
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-      if (m_BindToDevice != "")
+      if (!m_BindToDevice.empty())
       {
           if (m_BindAddr.family() != AF_INET)
           {
@@ -335,6 +336,9 @@ void CChannel::setIpV6Only(int ipV6Only)
 #ifdef SRT_ENABLE_IPOPTS
 int CChannel::getIpTTL() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpTTL);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -355,6 +359,9 @@ int CChannel::getIpTTL() const
 
 int CChannel::getIpToS() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpToS);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -394,7 +401,7 @@ void CChannel::setBind(const string& name)
 
 bool CChannel::getBind(char* dst, size_t len)
 {
-    if (m_iSocket == -1)
+    if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
 
     // Try to obtain it directly from the function. If not possible,
