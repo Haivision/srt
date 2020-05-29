@@ -209,6 +209,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
+        std::cerr << "SetUp: begin... ";
         ASSERT_EQ(srt_startup(), 0);
 
         m_pollid = srt_epoll_create();
@@ -229,6 +230,7 @@ protected:
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_OUT;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_caller_socket, &epoll_out), SRT_ERROR);
+        std::cerr << "... done.\n";
     }
 
     void TearDown()
@@ -298,6 +300,7 @@ public:
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
+        std::cerr << "TestConnect: BEGIN\n";
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
@@ -384,6 +387,7 @@ public:
             }
         });
 
+        std::cerr << "TestConnect: CONNECTING\n";
         const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
