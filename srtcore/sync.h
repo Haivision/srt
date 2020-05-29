@@ -781,7 +781,10 @@ private:
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {
-    return str << cid.value;
+    // This conversion to an integer is necessary
+    // because `pthread_t` has a platform-dependent
+    // definition and not every case thereof is printable
+    return str << (uint64_t)cid.value;
 }
 
 namespace this_thread
