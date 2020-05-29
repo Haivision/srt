@@ -747,7 +747,7 @@ public: // Observers
 
     struct id
     {
-        id(const pthread_t t)
+        explicit id(const pthread_t t)
             : value(t)
         {}
 

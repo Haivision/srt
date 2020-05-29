@@ -349,7 +349,9 @@ public:
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
+            std::cerr << "TestConnect[T1]: accepting...\n";
             SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+            std::cerr << "TestConnect[T1]: ACCEPTED\n";
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -389,6 +391,7 @@ public:
 
         std::cerr << "TestConnect: CONNECTING\n";
         const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        std::cerr << "TestConnect: CONNECTED\n";
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
