@@ -217,11 +217,13 @@ The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PE
 
 ### pktRcvDropTotal
 
-The total number of "too late to deliver" missing packets (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for receiver.
+The total number of _dropped_ by the SRT receiver and, as a result, not delivered to the upstream application DATA packets (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for receiver.
 
-Packets may be dropped conditionally, when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are set to true.
+This statistic counts
+- arrived too late packets (retransmitted or original packets arrived out of order),
+- arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
 
-This metric includes also packets that failed to be decrypted, which is also counted by [pktRcvUndecryptTotal](#pktRcvUndecryptTotal).
+Refer also to `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options in [API.md](API.md). Both options should be enabled.
 
 ### pktRcvUndecryptTotal
 
