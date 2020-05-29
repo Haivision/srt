@@ -209,7 +209,6 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
-        std::cerr << "SetUp: begin... ";
         ASSERT_EQ(srt_startup(), 0);
 
         m_pollid = srt_epoll_create();
@@ -230,7 +229,6 @@ protected:
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_OUT;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_caller_socket, &epoll_out), SRT_ERROR);
-        std::cerr << "... done.\n";
     }
 
     void TearDown()
@@ -300,7 +298,6 @@ public:
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
-        std::cerr << "TestConnect: BEGIN\n";
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
@@ -349,9 +346,7 @@ public:
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            std::cerr << "TestConnect[T1]: accepting...\n";
             SRTSOCKET accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-            std::cerr << "TestConnect[T1]: ACCEPTED\n";
 
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -389,9 +384,7 @@ public:
             }
         });
 
-        std::cerr << "TestConnect: CONNECTING\n";
         const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
-        std::cerr << "TestConnect: CONNECTED\n";
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
