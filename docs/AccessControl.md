@@ -124,57 +124,55 @@ below `SRT_REJC_PREDEFINED` is reserved for internal codes):
 * `SRT_REJC_PREDEFINED` and above: predefined errors. Errors from this range
 (that is, below `SRT_REJC_USERDEFINED`) have their definitions provided in
 the `access_control.h` public header file. The intention is that applications
-using these codes understood the situation described by these codes standard
+using these codes understand the situation described by these codes standard
 way.
 
 * `SRT_REJC_USERDEFINED` and above: to be freely defined by the application.
-Codes from this range can be only understood if both applications know the
-code definitions of the other, and these should be used only after making
-sure that both applications understood these codes.
+Codes from this range can be only understood if each application knows the
+code definitions of the other. These codes should be used only after making
+sure that both applications understood them.
 
 The intention for the predefined codes is to be consistent with the HTTP
-standard codes, therefore there are following sub-ranges used:
+standard codes. Therefore the following sub-ranges are used:
 
 * 0 - 99: Reserved for unique SRT-specific codes (unused by HTTP)
 * 100 - 399: Info, Success and Redirection in HTTP, unused in SRT
 * 400 - 599: Client and server errors in HTTP, adopted by SRT
 * 600 - 999: unused in SRT
 
-This code can be set by using the `srt_setrejectreason` function.
+Such a code can be set by using the `srt_setrejectreason` function.
 
 The SRT-specific codes are:
 
-### SRT_REJX_FAlLBACK
+### SRT_REJX_FALLBACK
 
-This code should be set by the callback handler in the beginning in case
-when the application needs to be informed that the callback handler
-actually has interpreted the incoming connection, but it didn't set any
+This code should be set by the callback handler in the beginning in case 
+the application needs to be informed that the callback handler
+actually has interpreted the incoming connection, but hasn't set a
 more appropriate code describing the situation.
 
 ### SRT_REJX_KEY_NOTSUP
 
-There was a key specified in the StreamID string that this application
+Indicates there was a key specified in the StreamID string that this application
 doesn't support. Note that it's not obligatory for the application to
 react this way - it may chose to ignore unknown keys completely, or
-have some keys in the ignore list, which it won't interpret, but tolerate,
-while rejecting if seen any other. It is also up to the application
+to have some keys in the ignore list (which it won't interpret, but tolerate)
+while rejecting any others. It is also up to the application
 to decide to return this specific error, or more generally report
-the syntax error by `SRT_REJX_BAD_REQUEST`.
+the syntax error with `SRT_REJX_BAD_REQUEST`.
 
 ### SRT_REJX_FILEPATH
 
-The resource type designates a file and the path is either wrong syntax
-or not found. In case when `t=file`, the path should be specified under
-the `r` key, and the file specified there must be able to be saved this
-way. It's up to the application to decide how to treat this path, how
-to parse it, and what this path specifically means. What should be only
-generally satisfied for the `r` key is that the application should at
-least handle the single filename and have some storage where it can
-save it in this form, provided that it doesn't have yet a file of that
-name there. How to handle all other situations - like directory path,
-special markers in the path to be interpreted by the application etc. -
-it's completely up to the application whether and how it handles it.
-If not - it should report this error.
+The resource type designates a file, and the path either has the wrong syntax
+or is not found. In the case where `t=file`, the path should be specified under
+the `r` key, and the file specified there must be able to be saved this way.
+It's up to the application to decide how to treat this path, how to parse it,
+and what this path specifically means. For the `r` key, the application should
+at least handle the single filename, and have storage space available to save
+it (provided a file of the same name does not already exist there).  The
+application should decide whether and how to handle all other situations (like
+directory path, special markers in the path to be interpreted by the
+application, etc.), or to report this error.
 
 ### SRT_REJX_HOSTNOTFOUND
 
@@ -201,7 +199,7 @@ the StreamID contents failed, or it cannot be properly interpreted.
 Authentication failed, which makes the client unauthorized to access the
 resource. This error, however, confirms that the syntax is correct and
 the resource has been properly identified. Note that this cannot be
-reported in case when you use a simple user-password authentication
+reported when you use a simple user-password authentication
 method because in this case the password is verified only after the
 listener callback handler accepts the connection. This error is rather
 intended to be reported in case of `t=auth` when the authentication
@@ -214,60 +212,59 @@ of that authentication.
 
 The server is too heavily loaded to process your request, or you
 have exceeded credits for accessing the service and the resource.
-In HTTP the description mentioned the payment for the service, but
-it was also in use by some service as more general "credit" management
-for a client. In SRT it should be used in case when your service
-is doing any kind of credit management to limit access to the service
-only to some selected clients that "have" enough credit - no matter
-if the credit is something they can recharge themselves or it can
-be also granted them depending on available service resources.
+In HTTP the description mentions payment for a service, but
+it is also used by some services for general "credit" management
+for a client. In SRT it should be used when your service is doing 
+any kind of credit management to limit access to selected clients 
+that "have" enough credit, even if the credit is something the client 
+can recharge itself, or that can be granted depending on available 
+service resources.
 
 
 ### SRT_REJX_FORBIDDEN
 
-Access denied to the resource by any kind of reason. This error is
-independet on an authorization or authentication error (as reported
-by `SRT_REJX_UNAUTHORIZED`), and whichever is more appropriate here is up to
-the decision of the application. This error is usually intended for
-a situation when the resource should be only accessed after a successful
-authorization over a separate auth-only connection, while the query
+Access denied to the resource for any reason. This error is
+independent of an authorization or authentication error (as reported
+by `SRT_REJX_UNAUTHORIZED`). The application can decide which 
+is more appropriate. This error is usually intended for
+a resource that should only be accessed after a successful
+authorization over a separate auth-only connection, where the query
 in StreamID has correctly specified the resource identity and mode,
-but the session ID (in `s` key) is either not specified or it does
-specify a valid session, however the authorization region for this
+but the session ID (in the `s` key) is either (a) not specified, or (b) does
+specify a valid session, but the authorization region for this
 session does not embrace the specified resource.
 
 
 ### SRT_REJX_NOTFOUND
 
-The resource specified in the `r` key (with combination of `h` key)
+The resource specified in the `r` key (in combination with the `h` key)
 is not found at this time. This error should be only reported if the
 information about resource accessibility is allowed to be publicly
-visible, otherwise the application might rather report authorization
+visible. Otherwise the application might report authorization
 errors.
 
 
 ### SRT_REJX_BAD_MODE
 
 The mode specified in the `m` key in StreamID is not supported for this request.
-This is in case of having read-only or write-only resources, as well as the
-interactive (bidirectional) access is not predicted as a valid access to this
-resource.
+This may apply to read-only or write-only resources, as well for when interactive 
+(bidirectional) access is not valid for a resource.
 
 
 ### SRT_REJX_UNACCEPTABLE
 
-The requested parameters specified in SocketID cannot be satisfied for the
-requested resource. Also when m=publish and the data format is not acceptable.
-This is a general error reporting the unsupported data format for the data
-in case when it appears to be wrong when sending, or a restriction on the
-data format (as specified in the details of the resource specification) cannot
-be provided when receiving.
+Applies when the parameters specified in SocketID cannot be satisfied for the
+requested resource, or when `m=publish` but the data format is not acceptable.
+This is a general error reporting an unsupported format for data that appears to 
+be wrong when sending, or a restriction on the data format (as specified in the 
+details of the resource specification) such that it cannot be provided 
+when receiving.
 
 
 ### SRT_REJX_CONFLICT
 
 The resource being accessed is already locked for modification. This error
-should only be reported for `m=publish` in case when the resource being
+should only be reported for `m=publish` when the resource being
 accessed is read-only. Note that it doesn't mean that the resource is not
 modifiable under current authorization restrictions, but that it is currently
 disabled completely for modifications.
@@ -276,18 +273,17 @@ disabled completely for modifications.
 ### SRT_REJX_NOTSUP_MEDIA
 
 The media type is not supported by the application. The media type is
-specified in the `t` key, although the currently standard types are
-`stream`, `file` and `auth`, an application may extend this list, and
-also it's not obliged to support all of the standard ones.
+specified in the `t` key. The currently standard types are
+`stream`, `file` and `auth`. An application may extend this list, and
+is not obliged to support all of the standard types.
 
 
 ### SRT_REJX_LOCKED
 
-The resource being accessed is locked for any access. This is similar to
-`SRT_REJX_CONFLICT`, but in this case it's locked for reading and writing.
-This is for a case when the resource should be shown as existing and in
-general available for the client, just temporarily blocked for access at
-the moment.
+The resource being accessed is locked against any access. This is similar to
+`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading 
+and writing. This is for when the resource should be shown as existing and 
+available to the client, but access is temporarily blocked.
 
 
 ### SRT_REJX_FAILED_DEPEND 
@@ -300,57 +296,57 @@ has already expired.
 
 ### SRT_REJX_ISE
 
-Internal server error. This is for a general case when the request has
-been correctly verified and no problems related to this have been found,
-the processing of the request has started and the activity was about to
-be correctly performed, just there was some unexpected error during this
-process.
+Internal server error. This is for a general case when a request has
+been correctly verified, with no related problems found, but an 
+unexpected error occurs after the processing of the request has started.
 
 
 ### SRT_REJX_UNIMPLEMENTED
 
-The request was correctly recognized, but the current version doesn't
+The request was correctly recognized, but the current software version
+of the service (be it SRT or any other software component) doesn't
 support it. This should be reported for a case, when some features to
 be specified in the StreamID request are supposed to be supported in a
-predictable feature, but the current version of the server does not
+predictable future, but the current version of the server does not
 support it, or the support for this feature in this version has been
 temporarily blocked. This shouldn't be reported in case of deprecated
-features or features that were decided as no longer supported.
+features (deprecated features should be still supported) or features
+that were decided as no longer supported (for this case the general
+`SRT_REJX_BAD_REQUEST` is more appropriate).
 
 
 ### SRT_REJX_GW
 
 The server acts as a gateway and the target endpoint rejected the
-connection. It is unspecified by what exactly reason the connection
-was rejected. The gateway shall not forward the original rejection
-code from the target endpoint because this would suggest the error
-on the gateway itself - rather then this error, with possibly some
-other way to report the original target error, if there is a possibility.
+connection. The reason the connection was rejected is unspecified. 
+The gateway cannot forward the original rejection code from the 
+target endpoint because this would suggest the error was on the 
+gateway itself. Use this error with some other mechanism to report 
+the original target error, if possible.
 
 
 ### SRT_REJX_DOWN
 
-The service is down for maintenance. This can only be reported in
-case when the servis has been temporarily replaced by a stub that is only
+The service is down for maintenance. This can only be reported 
+when the service has been temporarily replaced by a stub that is only
 reporting this error, while the real service is down for maintenance.
 
 
 ### SRT_REJX_VERSION
 
-Application version not supported. This can refer to both not supported
-application feature - also due to too low SRT version - or about referring
-to a feature that is no longer supported as a cut off backward comptibility.
+Application version not supported. This can refer to an application feature 
+that is unsupported (possibly from an older SRT version), or to a feature 
+that is no longer supported because of backward compatibility requirements.
 
 
 ### SRT_REJX_NOROOM
 
-The data stream cannot be archived due to lacking storage space. This is
-reported in case when the request type was to send a file or a live stream
-to be archived. Note that a file transmission is usually pre-declaring the
-file lentgh, so this error can be reported early, but it can be as well
-reported when the stream is of undefined length and there's no more storage
-space made available for this stream.
-
+The data stream cannot be archived due to a lack of storage space. This is
+reported when a request to send a file or a live stream to be archived is
+unsuccessful. Note that the length of a file transmission is usually
+pre-declared, so this error can be reported early. It can also be reported when
+the stream is of undefined length, and there is no more storage space
+available.
 
 
 ## Example
