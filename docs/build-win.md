@@ -22,9 +22,9 @@
     - [2.2.1. Using C++11 Threading](#221-using-c11-threading)
     - [2.2.2. Building PThreads](#222-building-pthreads)
       - [2.2.2.1. Using vcpkg](#2221-using-vcpkg)
-      - [2.2.2.2. Using NuGet](#2221-using-nuget)
-      - [2.1.1.3. Build pthreads4w from Sources](#2114-build-pthreads4w-from-sources)
-      - [2.1.1.4. Build pthread-win32 from Sources](#2114-build-pthread-win32-from-sources)
+      - [2.2.2.2. Using NuGet](#2222-using-nuget)
+      - [2.2.2.3. Build pthreads4w from Sources](#2114-build-pthreads4w-from-sources)
+      - [2.2.2.4. Build pthread-win32 from Sources](#2114-build-pthread-win32-from-sources)
 - [3. Building SRT](#3-building-srt)
   - [3.1. Cloning the Source Code](#31-cloning-the-source-code)
   - [3.2. Generate Build Files](#32-generating-build-files)
@@ -207,7 +207,7 @@ CMake will be able to find openssl given the following option is provided:
 -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake
 ```
 
-##### 2.1.1.2. Using NuGet
+##### 2.2.2.2. Using NuGet
 
 NuGet package manager can be used to get a prebuilt version of `pthreads` library for Windows.
 
@@ -227,12 +227,12 @@ Two CMake options have to be provided on the step **3.2. Generate Build Files**.
 -DPTHREAD_LIBRARY="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\runtimes\win-x64\native\release\pthread_lib.lib"
 ```
 
-##### 2.1.1.3. Build pthreads4w from Sources
+##### 2.2.2.3. Build pthreads4w from Sources
 
 Download the source code from SourceForge ([link](https://sourceforge.net/projects/pthreads4w/))
 and follow build instruction.
 
-##### 2.1.1.4. Build pthread-win32 from Sources
+##### 2.2.2.4. Build pthread-win32 from Sources
 
 Compile and install `pthread-win32` for Windows from GitHub: [link](https://github.com/GerHobbelt/pthread-win32).
 

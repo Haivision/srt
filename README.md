@@ -117,7 +117,6 @@ make
 
 Follow the Windows build intructions: [doc](docs/build-win.md).
 
-
 [appveyor-badge]: https://img.shields.io/appveyor/ci/Haivision/srt/master.svg?label=Windows
 [appveyor]: https://ci.appveyor.com/project/Haivision/srt
 [travis-badge]: https://img.shields.io/travis/Haivision/srt/master.svg?label=Linux/macOS
