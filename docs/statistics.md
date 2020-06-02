@@ -209,11 +209,13 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 ### pktSndDropTotal
 
-The total number of "too late to send" packets dropped by the sender (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for sender.
+The total number of _dropped_ by the SRT sender DATA packets that have no chance to be delivered in time (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for sender.
 
-Packets may be dropped conditionally when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are enabled.
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
 
-The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PEERLATENCY`, plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms). The delay used is the timespan between the very first packet and the latest packet in the sender's buffer.
+The delay before TLPKTDROP mechanism is triggered is calculated as follows 
+`SRTO_PEERLATENCY + SRTO_SNDDROPDELAY + 2 * interval between sending ACKs`,
+where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds an extra to `SRTO_PEERLATENCY` delay, the default `interval between sending ACKs` is 10 milliseconds. The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds. Refer to `SRTO_PEERLATENCY`, `SRTO_SNDDROPDELAY` socket options in [API.md](API.md).
 
 ### pktRcvDropTotal
 
