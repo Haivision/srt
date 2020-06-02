@@ -211,7 +211,7 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 The total number of "too late to send" packets dropped by the sender (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for sender.
 
-Packets may be dropped conditionally, when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are set to true.
+Packets may be dropped conditionally when the `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` options are enabled.
 
 The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PEERLATENCY`, plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms). The delay used is the timespan between the very first packet and the latest packet in the sender's buffer.
 
