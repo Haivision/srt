@@ -2,22 +2,22 @@
 
 <!-- TOC -->
 
-- [1. Prerequisites](#1.-prerequisites)
-    - [1.1. Build Tool Dependencies](#1.1.-build-tool-dependencies)
-    - [1.2. External Library Dependencies](#1.2.-external-library-dependencies)
-        - [1.2.1. Cryptograpjic Library](#cryptograpjic-library)
-        - [1.2.2. Threading Library](#threading-library)
-    - [1.3. Package Managers](#package-managers)
-        - [1.3.1. VCpkg Packet Manager (optional)](#vcpkg-packet-manager-optional)
-        - [1.3.2. NuGet Manager (optional)](#nuget-manager-optional)
-- [2. Preparing Dependencies](#preparing-dependencies)
-    - [2.1. Cryptograpjic Library](#cryptograpjic-library)
-        - [2.1.1. Install OpenSSL](#install-openssl)
-            - [Using Installer](#using-installer)
-            - [Build from Sources](#build-from-sources)
-        - [2.1.2. Install MbedTLS](#install-mbedtls)
-        - [2.1.3. Install LibreSSL](#install-libressl)
-- [3. Cloning the Source Code of SRT](#cloning-the-source-code-of-srt)
+- [1. Prerequisites](#1-prerequisites)
+  - [1.1. Build Tool Dependencies](#11-build-tool-dependencies)
+  - [1.2. External Library Dependencies](#12-external-library-dependencies)
+    - [1.2.1. Cryptograpjic Library](#121-cryptograpjic-library)
+    - [1.2.2. Threading Library](#122-threading-library)
+  - [1.3. Package Managers](#13-package-managers)
+    - [1.3.1. VCpkg Packet Manager (optional)](#131-vcpkg-packet-manager-optional)
+    - [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)
+- [2. Preparing Dependencies](#2-preparing-dependencies)
+  - [2.1. Cryptograpjic Library](#21-cryptograpjic-library)
+    - [2.1.1. Install OpenSSL](#211-install-openssl)
+      - [2.1.1.1. Using Installer](#2111-using-installer)
+      - [2.1.1.2. Build from Sources](#2112-build-from-sources)
+    - [2.1.2. Install MbedTLS](#212-install-mbedtls)
+    - [2.1.3. Install LibreSSL](#213-install-libressl)
+- [3. Cloning the Source Code of SRT](#3-cloning-the-source-code-of-srt)
 
 <!-- /TOC -->
 
@@ -101,9 +101,9 @@ Alternatively, SRT can be build without support for encryption
 using the `-DENABLE_ENCRYPTION=OFF` CMake build option.
 In this case SRT will be able to operate only in unencrypted mode.
 
-#### 2.2. Install OpenSSL
+#### 2.1.1. Install OpenSSL
 
-##### 2.2.1. Using Installer
+##### 2.1.1.1. Using Installer
 
 The 64-bit OpenSSL package for windows can be downloaded using the following link.: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
 
@@ -113,19 +113,19 @@ Download and run the installer. The library is expected to be installed in `C:\P
 
 It's expected to be installed in `C:\OpenSSL-Win64`. Note that this version is most likely compiled for Visual Studio 2013. For other versions please follow instructions in Section **2.2.2 Build OpenSSL from Sources**.
 
-##### 2.2.2. Build from Sources
+##### 2.1.1.2. Build from Sources
 
 Download and compile the sources from the [website](https://github.com/openssl/openssl). The instructions for compiling on Windows can be found here: [link](https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows).
 
 **Note!** `ActivePerl` and `nasm` are required to build OpenSSL.
 
-#### 2.3. Install MbedTLS
+#### 2.1.2. Install MbedTLS
 
 `MbedTLS` source code can be downloaded from the [website](https://tls.mbed.org/download).
 
 `MbedTLS` comes with `cmake` build system support. Use the `CMAKE_INSTALL_PREFIX` variable to specify the directory that will contain the `MbedTLS` headers and libraries. Note that building `MbedTLS` as a DLL is broken in version 2.16.3. You have to link it statically.
 
-#### 2.4. Install LibreSSL
+#### 2.1.3. Install LibreSSL
 
 `LibreSSL` has header files that are compatible with OpenSSL, `cmake` can use it like OpenSSL with little configuration. The source code and binaries can be downloaded from here: [link](https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/).
 
