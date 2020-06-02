@@ -309,10 +309,9 @@ support it. This should be reported for a case, when some features to
 be specified in the StreamID request are supposed to be supported in a
 predictable future, but the current version of the server does not
 support it, or the support for this feature in this version has been
-temporarily blocked. This shouldn't be reported in case of deprecated
-features (deprecated features should be still supported) or features
-that were decided as no longer supported (for this case the general
-`SRT_REJX_BAD_REQUEST` is more appropriate).
+temporarily blocked. This shouldn't be reported for existing features that are
+being deprecated, or older features that are no longer supported
+(for this case the general `SRT_REJX_BAD_REQUEST` is more appropriate).
 
 
 ### SRT_REJX_GW
