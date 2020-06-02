@@ -225,7 +225,7 @@ This statistic counts
 - arrived too late packets (retransmitted or original packets arrived out of order),
 - arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
 
-Refer also to `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options in [API.md](API.md). Both options should be enabled.
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
 
 ### pktRcvUndecryptTotal
 
