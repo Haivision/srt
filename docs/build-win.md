@@ -103,9 +103,33 @@ In this case SRT will be able to operate only in unencrypted mode.
 
 #### 2.1.1. Install OpenSSL
 
-##### 2.1.1.1. Using Installer
+##### 2.1.1.1. Using vcpkg
 
-The 64-bit OpenSSL package for windows can be downloaded using the following link.: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
+**Note!** The `vcpkg` working directory is referenced as `VCPKG_ROOT`.
+
+Building `openssl` library using **x64** toolset:
+
+```shell
+cd VCPKG_ROOT
+vcpkg install openssl --triplet x64-windows
+```
+
+The next step is to integrate `vcpkg` with the build system, so that `CMake` can locate `openssl` library.
+
+```shell
+vcpkg integrate install
+```
+
+CMake will be able to find openssl given the following option is provided:
+
+```shell
+-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake
+```
+
+##### 2.1.1.2. Using Installer (Windows)
+
+The 64-bit OpenSSL package for windows can be downloaded using
+the following link: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
 
 **Note!** The last letter or version number may be changed and older versions may become no longer available. In that case found the appropriate installer here: [Win32OpenSSL](http://slproweb.com/products/Win32OpenSSL.html).
 
@@ -131,8 +155,85 @@ Download and compile the sources from the [website](https://github.com/openssl/o
 
 Since there have been no new Windows builds since 2.6.0, you must build a new version yourself. LibreSSL comes with `cmake` build system support. Use the `CMAKE_INSTALL_PREFIX` variable to specify the directory that will contain the LibreSSL headers and libraries.
 
+### 2.2. Threading Library
 
-## 3. Cloning the Source Code of SRT
+SRT can use one of these two threading libraries:
+
+- C++11 threads (SRT v1.5.0 and above) - recommended for Windows
+- `pthreads` (default)
+
+**Note!** `pthreads` are available by default on POSIX platforms like Linux and MacOS.
+This step is only required on Windows Platforms.
+
+#### 2.2.1. Using C++11 Threading
+
+Specify the CMake option `-DENABLE_STDCXX_SYNC=ON` ti enable C++11 Threading,
+and exclude the `pthreads` dependency.
+
+#### 2.2.2. Building PThreads
+
+##### 2.2.2.1. Using vcpkg
+
+**Note!** The `vcpkg` working directory is referenced as `VCPKG_ROOT`.
+
+Building `pthreads` library using **x64** toolset:
+
+```shell
+vcpkg install pthreads --triplet x64-windows
+```
+
+The next step is to integrate `vcpkg` with the build system, so that `CMake` can locate `pthreads` library.
+
+```shell
+vcpkg integrate install
+```
+
+Now go to the `srt-xtransmit` cloned folder `XTRANSMIT_ROOT` and run `cmake` to generate build configuration files.
+
+CMake will be able to find openssl given the following option is provided:
+
+```shell
+-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake
+```
+
+##### 2.1.1.3. Using NuGet
+
+NuGet package manager can be used to get a prebuilt version of `pthreads` library for Windows.
+
+To install the prebuild version of `pthreads` for Windows,
+download [nuget CLI](https://www.nuget.org/downloads) to the target folder.
+
+Then run `nuget` to install `pthreads` to the specified path. In the example below the library will be installed in `C:\pthread-win32`.
+
+```shell
+nuget install cinegy.pthreads-win64 -version 2.9.1.17 -OutputDirectory C:\pthread-win32
+```
+
+Two CMake options have to be provided on the step **3.2. Generate Build Files**.
+
+```shell
+-DPTHREAD_INCLUDE_DIR="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\sources"
+-DPTHREAD_LIBRARY="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\runtimes\win-x64\native\release\pthread_lib.lib"
+```
+
+##### 2.5.1. Build pthreads4w from Sources
+
+Download the source code from SourceForge ([link](https://sourceforge.net/projects/pthreads4w/))
+and follow build instruction.
+
+##### 2.5.2. Build pthread-win32 from Sources
+
+Compile and install `pthread-win32` for Windows from GitHub: [link](https://github.com/GerHobbelt/pthread-win32).
+
+1. Using Visual Studio 2013, open the project file `pthread_lib.2013.vcxproj`
+2. Select configuration: `Release` and `x64`.
+3. Make sure that the `pthread_lib` project will be built.
+4. After building, find the `pthread_lib.lib` file (directory is usually `bin\x64_MSVC2013.Release`). Copy this file to `C:\pthread-win32\lib` (or whatever other location you configured in variables).
+5. Copy include files to `C:\pthread-win32\include` (`pthread.h`, `sched.h`, and `semaphore.h` are in the toplevel directory. There are no meaningful subdirs here). Note that `win##` is part of the project name. It will become `win32` or `win64` depending on the selection.
+
+## 3. Building SRT
+
+### 3.1. Cloning the Source Code
 
 Retrieve the source codes of SRT from GitHub using a git client.
 
@@ -152,4 +253,29 @@ If `--branch <tag_name>` is omitted, the latest master is cloned. To get a speci
 
 ```shell
 git checkout v1.4.1
+```
+
+### 3.2. Generate Build Files
+
+```shell
+cmake ../ -G"Visual Studio 16 2019" -A x64
+          -DPTHREAD_INCLUDE_DIR="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\sources"
+          -DPTHREAD_LIBRARY="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\runtimes\win-x64\native\release\pthread_lib.lib"
+```
+
+**Note!** Additional options can be provided at this point.
+
+In case vcpkg was used to build pthreads or OpenSSL, provide:
+
+- `-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake`
+
+In case NuGet was used to get pre-built pthreads libray, provide:
+
+- `-DPTHREAD_INCLUDE_DIR`
+- `-DPTHREAD_LIBRARY`
+
+### 3.3. Build SRT
+
+```shell
+cmake --build .
 ```
