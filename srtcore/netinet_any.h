@@ -129,6 +129,18 @@ struct sockaddr_any
         }
     }
 
+    void set(const sockaddr_in& in4)
+    {
+        memcpy((&sin), &in4, sizeof in4);
+        len = sizeof in4;
+    }
+
+    void set(const sockaddr_in6& in6)
+    {
+        memcpy((&sin6), &in6, sizeof in6);
+        len = sizeof in6;
+    }
+
     sockaddr_any(const in_addr& i4_adr, uint16_t port)
     {
         // Some cases require separately IPv4 address passed as in_addr,

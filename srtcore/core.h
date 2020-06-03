@@ -255,6 +255,28 @@ struct MetricOp<PacketMetric>
     }
 };
 
+struct SRT_SocketOptionObject
+{
+    struct SingleOption
+    {
+        uint16_t option;
+        uint16_t length;
+        unsigned char storage[1]; // NOTE: Variable length object!
+    };
+
+    std::vector<SingleOption*> options;
+
+    SRT_SocketOptionObject() {}
+
+    ~SRT_SocketOptionObject()
+    {
+        for (size_t i = 0; i < options.size(); ++i)
+            delete options[i];
+    }
+
+    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
+};
+
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -264,13 +286,8 @@ class CUDTGroup
     typedef srt::sync::steady_clock steady_clock;
 
 public:
-    enum GroupState
-    {
-        GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
-        GST_IDLE,     // The socket is ready to be activated
-        GST_RUNNING,  // The socket was already activated and is in use
-        GST_BROKEN    // The last operation broke the socket, it should be closed.
-    };
+
+    typedef SRT_MEMBERSTATUS GroupState;
 
     // Note that the use of states may differ in particular group types:
     //
@@ -534,7 +551,6 @@ private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
-    void getMemberStatus(std::vector<SRT_SOCKGROUPDATA>& w_gd, SRTSOCKET wasread, int result, bool again);
 
     class CUDTUnited* m_pGlobal;
     srt::sync::Mutex m_GroupLock;
@@ -924,7 +940,7 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
-    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPDATA links [], int arraysize);
+    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -1296,6 +1312,10 @@ private:
     /// @param optlen [out] size of "optval".
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
+
+    /// Applies the configuration set on the socket.
+    /// Any errors in this process are reported by exception.
+    void applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 
     /// read the performance data with bytes counters since bstats() 
     ///  
