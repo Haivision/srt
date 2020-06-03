@@ -11829,7 +11829,8 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
     setInitialRxSequence(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
-    // from the first socket.
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the current socket.
     set_latency(core.m_iTsbPdDelay_ms*int64_t(1000));
 }
 
