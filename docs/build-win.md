@@ -97,7 +97,15 @@ set VCPKG_ROOT=%cd%
 
 #### 1.3.2. NuGet Manager (optional)
 
-NuGet Manager can be used to...
+NuGet package manager can be used to get a prebuilt version of `pthreads` library for Windows.
+
+Download [nuget CLI](https://www.nuget.org/downloads) to the desired folder.
+
+The directory with NuGet will further be referenced as `NUGET_ROOT`.
+
+```shell
+set NUGET_ROOT=%cd%
+```
 
 ## 2. Preparing Dependencies
 
@@ -176,9 +184,6 @@ SRT can use one of these two threading libraries:
 - C++11 threads (SRT v1.5.0 and above) - recommended for Windows
 - `pthreads` (default)
 
-**Note!** `pthreads` are available by default on POSIX platforms like Linux and MacOS.
-This step is only required on Windows Platforms.
-
 #### 2.2.1. Using C++11 Threading
 
 To be able to use the standard C++ threading library (available since C++11)
@@ -214,12 +219,11 @@ CMake will be able to find openssl given the following option is provided:
 
 ##### 2.2.2.2. Using NuGet
 
-NuGet package manager can be used to get a prebuilt version of `pthreads` library for Windows.
+This step assumes the NuGet is available from the `NUGET_ROOT` folder
+(refer to [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)).
 
-To install the prebuild version of `pthreads` for Windows,
-download [nuget CLI](https://www.nuget.org/downloads) to the target folder.
-
-Then run `nuget` to install `pthreads` to the specified path. In the example below the library will be installed in `C:\pthread-win32`.
+Run `nuget` to install `pthreads` to the specified path.
+In the example below the library will be installed in `C:\pthread-win32`.
 
 ```shell
 nuget install cinegy.pthreads-win64 -version 2.9.1.17 -OutputDirectory C:\pthread-win32
