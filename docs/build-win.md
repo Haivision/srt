@@ -47,13 +47,14 @@ The following are the recommended prerequisites to build `srt` on Windows.
 #### 1.2.1. Cryptograpjic Library
 
 SRT has an external dependency on **cryptographic library**.
-This dependency can be disabled with the `-DENABLE_ENCRYPTION=OFF` CMake build option.
-Then SRT will be able to operate only in unencrypted mode.
+This dependency can be disabled by `-DENABLE_ENCRYPTION=OFF` CMake build option.
+With disabled encryption SRT will be unable to establish secure connections,
+only unencrypted mode can be used.
 
-To be able to use SRT encryption,
+With the enabled SRT encryption,
 one of the following Crypto libraries is required:
 
-- `OpenSSL` (recommended)
+- `OpenSSL` (default)
 - `LibreSSL`
 - `MbedTLS`
 
@@ -62,11 +63,11 @@ one of the following Crypto libraries is required:
 SRT as of v1.5.0 supports two threading libraries:
 
 - `pthreads` (default)
-- C++11 threads (recommended for Windows)
+- Standard C++ thread library available in C++11 (recommended for Windows)
 
-The `pthreads` library is available on the most of non-Windows platforms.
-However, on Windows a ported library has to be used.
-Therefore, C++11 is the recommended build mode to be used on Windows platforms.
+The `pthreads` library is provided out-of-the-box on all POSIX-based systems.
+On Windows it can be provided as a 3rd party library (see below).
+However the C++ standard thread library is recommended to be used on Windows.
 
 ### 1.3. Package Managers
 
@@ -102,15 +103,12 @@ NuGet Manager can be used to...
 
 ### 2.1 Cryptograpjic Library
 
-**One** of the following Crypto libraries is required:
+To build SRT with support for encryption,
+**one** of the following Crypto libraries is required:
 
 - `OpenSSL` (recommended)
 - `LibreSSL`
 - `MbedTLS`
-
-Alternatively, SRT can be build without support for encryption
-using the `-DENABLE_ENCRYPTION=OFF` CMake build option.
-In this case SRT will be able to operate only in unencrypted mode.
 
 #### 2.1.1. Install OpenSSL
 
@@ -146,9 +144,10 @@ the following link: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win
 
 Download and run the installer. The library is expected to be installed in `C:\Program Files\OpenSSL-Win64`. Add this path to the user's or system's environment variable `PATH`.
 
-It's expected to be installed in `C:\OpenSSL-Win64`. Note that this version is most likely compiled for Visual Studio 2013. For other versions please follow instructions in Section **2.2.2 Build OpenSSL from Sources**.
+It's expected to be installed in `C:\OpenSSL-Win64`.
+Note that this version is most likely compiled for Visual Studio 2013. For other versions please follow instructions in Section [2.1.1.3 Build from Sources](#2113-build-from-sources).
 
-##### 2.1.1.2. Build from Sources
+##### 2.1.1.3. Build from Sources
 
 Download and compile the sources from the [website](https://github.com/openssl/openssl). The instructions for compiling on Windows can be found here: [link](https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows).
 
@@ -162,9 +161,13 @@ Download and compile the sources from the [website](https://github.com/openssl/o
 
 #### 2.1.3. Install LibreSSL
 
-`LibreSSL` has header files that are compatible with OpenSSL, `cmake` can use it like OpenSSL with little configuration. The source code and binaries can be downloaded from here: [link](https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/).
+LibreSSL has header files that are compatible with OpenSSL,
+CMake can use it like OpenSSL with little configuration.
+The source code and binaries can be downloaded from here: [link](https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/).
 
-Since there have been no new Windows builds since 2.6.0, you must build a new version yourself. LibreSSL comes with `cmake` build system support. Use the `CMAKE_INSTALL_PREFIX` variable to specify the directory that will contain the LibreSSL headers and libraries.
+Since there are no recent Windows builds, the only option is to build a new version from sources.
+LibreSSL comes with CMake build system support. Use the `CMAKE_INSTALL_PREFIX` variable
+to specify the directory that will contain the LibreSSL headers and libraries.
 
 ### 2.2. Threading Library
 
@@ -178,8 +181,10 @@ This step is only required on Windows Platforms.
 
 #### 2.2.1. Using C++11 Threading
 
-Specify the CMake option `-DENABLE_STDCXX_SYNC=ON` ti enable C++11 Threading,
-and exclude the `pthreads` dependency.
+To be able to use the standard C++ threading library (available since C++11)
+specify the CMake option `-DENABLE_STDCXX_SYNC=ON`.
+This way there will be also no external dependency on the threading library.
+Otherwise the external PThreads for Windows wrapper library is required.
 
 #### 2.2.2. Building PThreads
 
@@ -220,7 +225,7 @@ Then run `nuget` to install `pthreads` to the specified path. In the example bel
 nuget install cinegy.pthreads-win64 -version 2.9.1.17 -OutputDirectory C:\pthread-win32
 ```
 
-Two CMake options have to be provided on the step **3.2. Generate Build Files**.
+Two CMake options have to be provided on the step [3.2. Generate Build Files](#32-generating-build-files).
 
 ```shell
 -DPTHREAD_INCLUDE_DIR="C:\pthread-win32\cinegy.pthreads-win64.2.9.1.17\sources"
