@@ -41,6 +41,7 @@
 using namespace std;
 
 using srt_logging::SockStatusStr;
+using srt_logging::MemberStatusStr;
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -1196,15 +1197,17 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 
         SRT_SOCKSTATUS status = d.sockstate;
         int result = d.result;
+        SRT_MEMBERSTATUS mstatus = d.memberstate;
 
         if (result != -1 && status == SRTS_CONNECTED)
         {
-            // Everything's ok. Don't do anything.
+            // Short report with the state.
+            Verb() << "G@" << id << "<" << MemberStatusStr(mstatus) << "> " << VerbNoEOL;
             continue;
         }
         // id, status, result, peeraddr
-        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+        Verb() << "\n\tG@" << id << " <" << SockStatusStr(status) << "/" << MemberStatusStr(mstatus) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr)) << VerbNoEOL;
 
         if (status >= SRTS_BROKEN)
         {

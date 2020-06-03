@@ -14518,6 +14518,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
             // Enough space to fill
             w_mc.grpdata[i].id = d->id;
             w_mc.grpdata[i].sockstate = d->laststatus;
+            w_mc.grpdata[i].memberstate = d->sndstate;
 
             if (d->sndstate == SRT_GST_RUNNING)
                 w_mc.grpdata[i].result = d->sndresult;
