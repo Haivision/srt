@@ -283,10 +283,31 @@ namespace srt_logging
 
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
+    static string gtypes[] = {
+        "undefined", // SRT_GTYPE_UNDEFINED
+        "broadcast",
+        "backup",
+        "balancing",
+        "multicast"
+    };
+
     int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
-    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << VerbNoEOL;
+    if (type != 0)
+    {
+        SRT_GROUP_TYPE gt;
+        size = sizeof gt;
+        if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
+        {
+            if (gt < Size(gtypes))
+                Verb() << " type=" << gtypes[gt] << VerbNoEOL;
+            else
+                Verb() << " type=" << int(gt) << VerbNoEOL;
+        }
+    }
+    Verb() << " connection";
 
     return 0;
 }

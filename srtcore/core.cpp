@@ -259,6 +259,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
     m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
     m_OPT_GroupConnect      = 0;
+    m_HSGroupType           = SRT_GTYPE_UNDEFINED;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -1265,6 +1266,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_GROUPCONNECT:
         optlen         = sizeof (int);
         *(int*)optval = m_OPT_GroupConnect;
+        break;
+
+    case SRTO_GROUPTYPE:
+        optlen         = sizeof (int);
+        *(int*)optval = m_HSGroupType;
         break;
 
     case SRTO_ENFORCEDENCRYPTION:
@@ -11109,6 +11115,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
 
     bool have_group = false;
+    SRT_GROUP_TYPE gt = SRT_GTYPE_UNDEFINED;
 
     // This tests if there are any extensions.
     if (hspkt.getLength() > CHandShake::m_iContentSize + 4 && IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
@@ -11142,7 +11149,13 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
             }
             else if (cmd == SRT_CMD_GROUP)
             {
-                have_group = true;
+                uint32_t* groupdata = begin + 1;
+                have_group = true; // Even if parse error happes
+                if (bytelen / sizeof(int32_t) >= GRPD_E_SIZE)
+                {
+                    uint32_t gd = groupdata[GRPD_GROUPDATA];
+                    gt = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
+                }
             }
             else if (cmd == SRT_CMD_NONE)
             {
@@ -11158,6 +11171,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
     // Update the groupconnect flag
     acore->m_OPT_GroupConnect = have_group ? 1 : 0;
+    acore->m_HSGroupType = gt;
 
     try
     {
@@ -12416,6 +12430,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         throw CUDTException(major, minor, 0);
     }
 
+    // Now that at least one link has succeeded, update sending stats.
+    m_stats.sent.Update(len);
+
     // Pity that the blocking mode only determines as to whether this function should
     // block or not, but the epoll flags must be updated regardless of the mode.
 
@@ -12716,6 +12733,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 len = pos->packet.size();
                 pos->packet.clear();
 
+                // Update stats as per delivery
+                m_stats.recv.Update(len);
+                updateAvgPayloadSize(len);
+
                 // We predict to have only one packet ahead, others are pending to be reported by tsbpd.
                 // This will be "re-enabled" if the later check puts any new packet into ahead.
                 m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
@@ -13015,6 +13036,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                     stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(dlog.Debug, log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
                             << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
+                    if (stat > 0)
+                    {
+                        m_stats.recvDiscard.Update(stat);
+                    }
                 }
                 else
                 {
@@ -13110,6 +13135,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " DELIVERING");
                 output_size = stat;
                 fillGroupData((w_mc), mctrl, (out_grpdata), out_grpdata_size);
+
+                // Update stats as per delivery
+                m_stats.recv.Update(output_size);
+                updateAvgPayloadSize(output_size);
 
                 // Record, but do not update yet, until all sockets are handled.
                 next_seq = mctrl.pktseq;
@@ -13246,6 +13275,13 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // As we already have the packet delivered by the slowest
                 // kangaroo, we can simply return it.
 
+                // Check how many were skipped and add them to the stats
+                const int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+                if (jump > 0)
+                {
+                    m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
+                }
+
                 m_RcvBaseSeqNo = slowest_kangaroo->second.mctrl.pktseq;
                 vector<char>& pkt = slowest_kangaroo->second.packet;
                 if (size_t(len) < pkt.size())
@@ -13260,6 +13296,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 fillGroupData((w_mc), slowest_kangaroo->second.mctrl, (out_grpdata), out_grpdata_size);
                 len = pkt.size();
                 pkt.clear();
+
+                // Update stats as per delivery
+                m_stats.recv.Update(len);
+                updateAvgPayloadSize(len);
 
                 // It is unlikely to have a packet ahead because usually having one packet jumped-ahead
                 // clears the possibility of having aheads at all.
@@ -13388,6 +13428,47 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
     }
 }
 
+void CUDTGroup::bstatsSocket(CBytePerfMon *perf, bool clear)
+{
+    if (!m_bConnected)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    const steady_clock::time_point currtime = steady_clock::now();
+
+    memset(perf, 0, sizeof *perf);
+
+    CGuard gg (m_GroupLock);
+
+    perf->msTimeStamp         = count_milliseconds(currtime - m_tsStartTime);
+
+    perf->pktSentUnique       = m_stats.sent.local.pkts;
+    perf->pktRecvUnique       = m_stats.recv.local.pkts;
+    perf->pktRcvDrop          = m_stats.recvDrop.local.pkts;
+
+    perf->byteSentUnique      = m_stats.sent.local.fullBytes();
+    perf->byteRecvUnique      = m_stats.recv.local.fullBytes();
+    perf->byteRcvDrop         = m_stats.recvDrop.local.fullBytes();
+
+    perf->pktSentUniqueTotal  = m_stats.sent.total.pkts;
+    perf->pktRecvUniqueTotal  = m_stats.recv.total.pkts;
+    perf->pktRcvDropTotal     = m_stats.recvDrop.total.pkts;
+
+    perf->byteSentUniqueTotal = m_stats.sent.total.fullBytes();
+    perf->byteRecvUniqueTotal = m_stats.recv.total.fullBytes();
+    perf->byteRcvDropTotal    = m_stats.recvDrop.total.fullBytes();
+
+    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
+
+    perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
+    perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
+
+    if (clear)
+    {
+        m_stats.reset();
+    }
+}
 
 // For sorting group members by priority
 

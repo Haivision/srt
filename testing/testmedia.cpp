@@ -1950,6 +1950,7 @@ bytevector SrtSource::Read(size_t chunk)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }
@@ -2035,6 +2036,7 @@ void SrtTarget::Write(const bytevector& data)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }

@@ -165,6 +165,96 @@ class CUDTSocket;
     };
 #endif
 
+struct PacketMetric
+{
+    uint32_t pkts;
+    uint64_t bytes;
+
+    void update(uint64_t size)
+    {
+        ++pkts;
+        bytes += size;
+    }
+
+    void update(size_t mult, uint64_t value)
+    {
+        pkts += mult;
+        bytes += mult * value;
+    }
+
+    uint64_t fullBytes()
+    {
+        static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+        return bytes + pkts * PKT_HDR_SIZE;
+    }
+};
+
+template <class METRIC_TYPE>
+struct MetricOp;
+
+template <class METRIC_TYPE>
+struct MetricUsage
+{
+    METRIC_TYPE local;
+    METRIC_TYPE total;
+
+    void Clear()
+    {
+        MetricOp<METRIC_TYPE>::Clear(local);
+    }
+
+    void Init()
+    {
+        MetricOp<METRIC_TYPE>::Clear(total);
+        Clear();
+    }
+
+    void Update(uint64_t value)
+    {
+        local += value;
+        total += value;
+    }
+
+    void UpdateTimes(size_t mult, uint64_t value)
+    {
+        local += mult * value;
+        total += mult * value;
+    }
+};
+
+template <>
+inline void MetricUsage<PacketMetric>::Update(uint64_t value)
+{
+    local.update(value);
+    total.update(value);
+}
+
+template <>
+inline void MetricUsage<PacketMetric>::UpdateTimes(size_t mult, uint64_t value)
+{
+    local.update(mult, value);
+    total.update(mult, value);
+}
+
+template <class METRIC_TYPE>
+struct MetricOp
+{
+    static void Clear(METRIC_TYPE& m)
+    {
+        m = 0;
+    }
+};
+
+template <>
+struct MetricOp<PacketMetric>
+{
+    static void Clear(PacketMetric& p)
+    {
+        p.pkts = 0;
+        p.bytes = 0;
+    }
+};
+
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -600,6 +690,7 @@ private:
 
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
     int m_iMaxPayloadSize;
+    int m_iAvgPayloadSize;
     bool m_bSynRecving;
     bool m_bSynSending;
     bool m_bTsbPd;
@@ -654,8 +745,63 @@ private:
     srt::sync::Mutex m_RcvDataLock;
     volatile int32_t m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     volatile int32_t m_iLastSchedMsgNo;
+    // Statistics
+
+    struct Stats
+    {
+        // Stats state
+        time_point tsActivateTime;             // Time when this group sent or received the first data packet
+        time_point tsLastSampleTime;           // Time reset when clearing stats
+
+        MetricUsage<PacketMetric> sent;        // number of packets sent from the application
+        MetricUsage<PacketMetric> recv;        // number of packets delivered from the group to the application
+        MetricUsage<PacketMetric> recvDrop;    // number of packets dropped by the group receiver (not received from any member)
+        MetricUsage<PacketMetric> recvDiscard; // number of packets discarded as already delivered
+
+        void init()
+        {
+            tsActivateTime = srt::sync::steady_clock::time_point();
+            sent.Init();
+            recv.Init();
+            recvDrop.Init();
+            recvDiscard.Init();
+
+            reset();
+        }
+
+        void reset()
+        {
+            sent.Clear();
+            recv.Clear();
+            recvDrop.Clear();
+            recvDiscard.Clear();
+
+            tsLastSampleTime = srt::sync::steady_clock::now();
+        }
+    } m_stats;
+
+    void updateAvgPayloadSize(int size)
+    {
+        if (m_iAvgPayloadSize == -1)
+            m_iAvgPayloadSize = size;
+        else
+            m_iAvgPayloadSize = avg_iir<4>(m_iAvgPayloadSize, size);
+    }
+
+    int avgRcvPacketSize()
+    {
+        // In case when no packet has been received yet, but already notified
+        // a dropped packet, its size will be SRT_LIVE_DEF_PLSIZE. It will be
+        // the value most matching in the typical uses, although no matter what
+        // value would be used here, each one would be wrong from some points
+        // of view. This one is simply the best choice for typical uses of groups
+        // provided that they are to be ued only for live mode.
+        return m_iAvgPayloadSize == -1 ? SRT_LIVE_DEF_PLSIZE : m_iAvgPayloadSize;
+    }
 
 public:
+    void bstatsSocket(CBytePerfMon *perf, bool clear);
+
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
@@ -809,6 +955,7 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
@@ -1280,6 +1427,7 @@ private: // Identification
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
+    SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake
 
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
