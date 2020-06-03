@@ -640,7 +640,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
     } names;
 
     return names.names[int(s)];
-
 }
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())

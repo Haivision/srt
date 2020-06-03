@@ -693,7 +693,6 @@ public:
     //typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
 
 private:
-
     // Fields required for SRT_GTYPE_BACKUP groups.
     senderBuffer_t m_SenderBuffer;
     int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer

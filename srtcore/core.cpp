@@ -8774,7 +8774,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 HLOGC(mglog.Debug, log << CONID() << "DROPREQ: dropping %"
                         << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
             }
-
         }
 
         break;
@@ -12586,7 +12585,6 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
             pdata[i].result = 0;
             pdata[i].memberstate = d->sndstate;
         }
-
     }
 
     return m_Group.size();
