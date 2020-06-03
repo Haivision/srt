@@ -271,7 +271,11 @@ struct SRT_SocketOptionObject
     ~SRT_SocketOptionObject()
     {
         for (size_t i = 0; i < options.size(); ++i)
-            delete options[i];
+        {
+            // Convert back
+            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
+            delete [] mem;
+        }
     }
 
     bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
