@@ -6134,7 +6134,7 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-bool CUDT::close()
+bool CUDT::closeInternal()
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6267,16 +6267,6 @@ bool CUDT::close()
         m_bConnected = false;
     }
 
-    if (m_pCryptoControl)
-        m_pCryptoControl->close();
-
-    if (isOPT_TsbPd() && m_RcvTsbPdThread.joinable())
-    {
-        HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        m_RcvTsbPdThread.join();
-        HLOGC(mglog.Debug, log << "... returned from TSBPD join");
-    }
-
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
 
     // waiting all send and recv calls to stop
@@ -6286,6 +6276,9 @@ bool CUDT::close()
     // Locking m_RcvBufferLock to protect calling to m_pCryptoControl->decrypt((packet))
     // from the processData(...) function while resetting Crypto Control.
     enterCS(m_RcvBufferLock);
+    if (m_pCryptoControl)
+        m_pCryptoControl->close();
+
     m_pCryptoControl.reset();
     leaveCS(m_RcvBufferLock);
 
@@ -8981,6 +8974,17 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         m_tdSendTimeDiff += enter_time - m_tsNextSendTime;
 
     string reason = "reXmit";
+
+    CGuard connectguard(m_ConnectionLock);
+    // If a closing action is done simultaneously, then
+    // m_bOpened should already be false, and it's set
+    // just before releasing this lock.
+    //
+    // If this lock is caught BEFORE the closing could
+    // start the dissolving process, this process will
+    // not be started until this function is finished.
+    if (!m_bOpened)
+        return std::make_pair(0, enter_time);
 
     payload = packLostData((w_packet), (origintime));
     if (payload > 0)
@@ -13784,6 +13788,10 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
         }
         else
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             {
                 InvertedLock ug (m_GroupLock);
                 m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
@@ -13917,6 +13925,10 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const size_t nunstable, vector<gli
 
 RetryWaitBlocked:
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             InvertedLock ug (m_GroupLock);
             HLOGC(dlog.Debug, log << "grp/sendBackup: swait call to get at least one link alive up to "
                     << m_iSndTimeOut << "us");

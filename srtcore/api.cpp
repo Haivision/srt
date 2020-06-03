@@ -133,7 +133,7 @@ void CUDTSocket::makeShutdown()
     }
 
     HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_pUDT->close();
+    m_pUDT->closeInternal();
 }
 
 void CUDTSocket::makeClosed()
