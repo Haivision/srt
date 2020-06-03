@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_LIST_H__
-#define __UDT_LIST_H__
+#ifndef INC_SRT_LIST_H
+#define INC_SRT_LIST_H
 
 
 #include "udt.h"

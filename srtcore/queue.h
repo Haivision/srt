@@ -51,8 +51,8 @@ modified by
 *****************************************************************************/
 
 
-#ifndef __UDT_QUEUE_H__
-#define __UDT_QUEUE_H__
+#ifndef INC_SRT_QUEUE_H
+#define INC_SRT_QUEUE_H
 
 #include "channel.h"
 #include "common.h"

@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__THREADNAME_H
-#define INC__THREADNAME_H
+#ifndef INC_SRT_THREADNAME_H
+#define INC_SRT_THREADNAME_H
 
 #ifdef __linux__
 

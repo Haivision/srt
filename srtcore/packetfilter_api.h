@@ -29,7 +29,7 @@ enum SrtPktHeaderFields
     SRT_PH_ID = 3,        //< socket ID
 
     // Must be the last value - this is size of all, not a field id
-    SRT_PH__SIZE
+    SRT_PH_E_SIZE
 };
 
 
@@ -62,7 +62,7 @@ struct SrtFilterInitializer
 
 struct SrtPacket
 {
-    uint32_t hdr[SRT_PH__SIZE];
+    uint32_t hdr[SRT_PH_E_SIZE];
     char buffer[SRT_LIVE_MAX_PLSIZE];
     size_t length;
 
