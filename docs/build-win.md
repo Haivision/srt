@@ -5,13 +5,13 @@
 - [1. Prerequisites](#1-prerequisites)
   - [1.1. Build Tool Dependencies](#11-build-tool-dependencies)
   - [1.2. External Library Dependencies](#12-external-library-dependencies)
-    - [1.2.1. Cryptograpjic Library](#121-cryptograpjic-library)
+    - [1.2.1. Cryptographic Library](#121-Cryptographic-library)
     - [1.2.2. Threading Library](#122-threading-library)
   - [1.3. Package Managers](#13-package-managers)
     - [1.3.1. VCpkg Packet Manager (optional)](#131-vcpkg-packet-manager-optional)
     - [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)
 - [2. Preparing Dependencies](#2-preparing-dependencies)
-  - [2.1. Cryptograpjic Library](#21-cryptograpjic-library)
+  - [2.1. Cryptographic Library](#21-Cryptographic-library)
     - [2.1.1. Install OpenSSL](#211-install-openssl)
       - [2.1.1.1. Using vcpkg](#2111-using-vcpkg)
       - [2.1.1.2. Using Installer](#2112-using-installer)
@@ -44,7 +44,7 @@ The following are the recommended prerequisites to build `srt` on Windows.
 
 ### 1.2. External Library Dependencies
 
-#### 1.2.1. Cryptograpjic Library
+#### 1.2.1. Cryptographic Library
 
 SRT has an external dependency on **cryptographic library**.
 This dependency can be disabled by `-DENABLE_ENCRYPTION=OFF` CMake build option.
@@ -109,7 +109,7 @@ set NUGET_ROOT=%cd%
 
 ## 2. Preparing Dependencies
 
-### 2.1 Cryptograpjic Library
+### 2.1 Cryptographic Library
 
 To build SRT with support for encryption,
 **one** of the following Crypto libraries is required:
