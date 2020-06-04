@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRT_UTILITIES_H
-#define INC__SRT_UTILITIES_H
+#ifndef INC_SRT_UTILITIES_H
+#define INC_SRT_UTILITIES_H
 
 // ATTRIBUTES:
 //
@@ -587,14 +587,14 @@ public:
 
     // All constructor declarations must be repeated.
     // "Constructor delegation" is also only C++11 feature.
-    explicit UniquePtr(element_type* __p = 0) throw() : Base(__p) {}
-    UniquePtr(UniquePtr& __a) throw() : Base(__a) { }
+    explicit UniquePtr(element_type* p = 0) throw() : Base(p) {}
+    UniquePtr(UniquePtr& a) throw() : Base(a) { }
     template<typename _Tp1>
-    UniquePtr(UniquePtr<_Tp1>& __a) throw() : Base(__a) {}
+    UniquePtr(UniquePtr<_Tp1>& a) throw() : Base(a) {}
 
-    UniquePtr& operator=(UniquePtr& __a) throw() { return Base::operator=(__a); }
+    UniquePtr& operator=(UniquePtr& a) throw() { return Base::operator=(a); }
     template<typename _Tp1>
-    UniquePtr& operator=(UniquePtr<_Tp1>& __a) throw() { return Base::operator=(__a); }
+    UniquePtr& operator=(UniquePtr<_Tp1>& a) throw() { return Base::operator=(a); }
 
     // Good, now we need to add some parts of the API of unique_ptr.
 

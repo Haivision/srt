@@ -1,5 +1,5 @@
-#ifndef INC__CRYSPR_CONFIG_H
-#define INC__CRYSPR_CONFIG_H
+#ifndef INC_SRT_CRYSPR_CONFIG_H
+#define INC_SRT_CRYSPR_CONFIG_H
 
 // Size of the single block for encryption.
 // This might need tweaking for particular implementation library.

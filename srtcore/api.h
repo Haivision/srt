@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_API_H__
-#define __UDT_API_H__
+#ifndef INC_SRT_API_H
+#define INC_SRT_API_H
 
 
 #include <map>
