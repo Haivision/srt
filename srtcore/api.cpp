@@ -2590,7 +2590,7 @@ void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
       i != m_mMultiplexer.end(); ++ i)
    {
-      if (i->second.m_iPort == port)
+      if (i->second.m_iPort == port && i->second.m_iID == ls->m_SocketID)
       {
          HLOGF(mglog.Debug, 
             "updateMux: reusing multiplexer for port %i\n", port);
