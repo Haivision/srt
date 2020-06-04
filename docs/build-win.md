@@ -145,10 +145,10 @@ CMake will be able to find openssl given the following option is provided:
 
 ##### 2.1.1.2. Using Installer (Windows)
 
-The 64-bit OpenSSL package for windows can be downloaded using
+The 64-bit OpenSSL package for Windows can be downloaded using
 the following link: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
 
-**Note!** The last letter or version number may be changed and older versions may become no longer available. In that case found the appropriate installer here: [Win32OpenSSL](http://slproweb.com/products/Win32OpenSSL.html).
+**Note!** The last letter or version number may change and older versions may become no longer available. In that case find the appropriate installer here: [Win32OpenSSL](http://slproweb.com/products/Win32OpenSSL.html).
 
 Download and run the installer. The library is expected to be installed in `C:\Program Files\OpenSSL-Win64`. Add this path to the user's or system's environment variable `PATH`.
 
@@ -157,7 +157,7 @@ Note that this version is most likely compiled for Visual Studio 2013. For other
 
 ##### 2.1.1.3. Build from Sources
 
-Download and compile the sources from the [website](https://github.com/openssl/openssl). The instructions for compiling on Windows can be found here: [link](https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows).
+Download and compile the sources from the [OpenSSL website](https://github.com/openssl/openssl). The instructions for compiling on Windows can be found here: [link](https://wiki.openssl.org/index.php/Compilation_and_Installation#Windows).
 
 **Note!** `ActivePerl` and `nasm` are required to build OpenSSL.
 
@@ -197,7 +197,7 @@ Otherwise the external PThreads for Windows wrapper library is required.
 
 **Note!** The `vcpkg` working directory is referenced as `VCPKG_ROOT`.
 
-Building `pthreads` library using **x64** toolset:
+Build the `pthreads` library using the **x64** toolset:
 
 ```shell
 vcpkg install pthreads --triplet x64-windows
@@ -239,7 +239,7 @@ Two CMake options have to be provided on the step [3.2. Generate Build Files](#3
 ##### 2.2.2.3. Build pthreads4w from Sources
 
 Download the source code from SourceForge ([link](https://sourceforge.net/projects/pthreads4w/))
-and follow build instruction.
+and follow the build instructions.
 
 ##### 2.2.2.4. Build pthread-win32 from Sources
 
@@ -255,7 +255,7 @@ Compile and install `pthread-win32` for Windows from GitHub: [link](https://gith
 
 ### 3.1. Cloning the Source Code
 
-Retrieve the source codes of SRT from GitHub using a git client.
+Retrieve the SRT source code from GitHub using a git client.
 
 ```shell
 git clone --branch <tag_name> https://github.com/haivision/srt.git srt
@@ -263,7 +263,7 @@ cd srt
 set SRT_ROOT=%cd%
 ```
 
-where `--branch <tag_name>` can be used to specify the certain release version of SRT,
+where `--branch <tag_name>` can be used to define a specific release version of SRT,
 e.g. `--branch v1.4.1`.
 
 **Note!** The current working directory will further be referenced as `SRT_ROOT`.
