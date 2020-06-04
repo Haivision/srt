@@ -3424,7 +3424,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
-            pg->peerid(grpid);
+            pg->set_peerid(grpid);
             HLOGC(mglog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
         }
         // Otherwise the peer id must be the same as existing, otherwise
@@ -3527,7 +3527,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
             return -1;
         }
 
-        gp->peerid(peergroup);
+        gp->set_peerid(peergroup);
         gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
@@ -3780,7 +3780,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     HLOGC(dlog.Debug, log << "applyGroupSequences: no socket found connected and transmitting, @"
             << target << " not changing sequences, storing snd-seq %" << (w_snd_isn));
 
-    currentSchedSequence(w_snd_isn);
+    set_currentSchedSequence(w_snd_isn);
 
     return true;
 }
@@ -11825,12 +11825,13 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
 {
     // [[using locked(m_GroupLock)]];
 
-    currentSchedSequence(core.ISN());
+    set_currentSchedSequence(core.ISN());
     setInitialRxSequence(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
-    // from the first socket.
-    latency(core.m_iTsbPdDelay_ms*int64_t(1000));
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the current socket.
+    set_latency(core.m_iTsbPdDelay_ms*int64_t(1000));
 }
 
 void CUDTGroup::close()
