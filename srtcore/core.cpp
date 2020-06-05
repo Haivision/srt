@@ -366,12 +366,18 @@ CUDT::~CUDT()
 }
 
 template <typename T>
+T cast_optval(const void* optval)
+{
+    return *reinterpret_cast<const T*>(optval);
+}
+
+template <typename T>
 T cast_optval(const void* optval, int optlen)
 {
-    if (optlen != sizeof(T))
+    if (optlen > 0 && optlen != sizeof(T))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-    return *reinterpret_cast<const T*>(optval);
+    return cast_optval<T>(optval);
 }
 
 // This function is to make it possible for both C and C++
@@ -429,7 +435,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (cast_optval<int>(optval, optlen) < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        m_iMSS = cast_optval<int>(optval, optlen);
+        m_iMSS = cast_optval<int>(optval);
 
         // Packet size cannot be greater than UDP buffer size
         if (m_iMSS > m_iUDPSndBufSize)
@@ -455,7 +461,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
         // Mimimum recv flight flag size is 32 packets
-        if (cast_optval<int>(optval, optlen) > 32)
+        if (cast_optval<int>(optval) > 32)
             m_iFlightFlagSize = *(int *)optval;
         else
             m_iFlightFlagSize = 32;
@@ -469,7 +475,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (cast_optval<int>(optval, optlen) <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        m_iSndBufSize = cast_optval<int>(optval, optlen) / (m_iMSS - CPacket::UDP_HDR_SIZE);
+        m_iSndBufSize = cast_optval<int>(optval) / (m_iMSS - CPacket::UDP_HDR_SIZE);
 
         break;
 
@@ -532,11 +538,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_SNDTIMEO:
-        m_iSndTimeOut = *(const int *)optval;
+        m_iSndTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_RCVTIMEO:
-        m_iRcvTimeOut = *(const int *)optval;
+        m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_REUSEADDR:
@@ -559,9 +565,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_IPTTL:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        if (!(cast_optval<int>(optval, optlen) == -1) && !((cast_optval<int>(optval, optlen) >= 1) && (cast_optval<int>(optval, optlen) <= 255)))
+        if (!(cast_optval<int>(optval, optlen) == -1) && !((cast_optval<int>(optval) >= 1) && (cast_optval<int>(optval) <= 255)))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iIpTTL = cast_optval<int>(optval, optlen);
+        m_iIpTTL = cast_optval<int>(optval);
         break;
 
     case SRTO_IPTOS:
@@ -580,9 +586,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_OHEADBW:
-        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval, optlen) > 100))
+        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval) > 100))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = cast_optval<int>(optval, optlen);
+        m_iOverheadBW = cast_optval<int>(optval);
 
         // Changed overhead BW, so spread the change
         // (only if connected; if not, then the value
@@ -607,7 +613,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
-        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
+        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval);
         break;
 
     case SRTO_RCVLATENCY:
@@ -665,7 +671,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 #ifdef SRT_ENABLE_ENCRYPTION
         {
-            int v          = cast_optval<int>(optval, optlen);
+            const int v    = cast_optval<int>(optval, optlen);
             int allowed[4] = {
                 0,  // Default value, if this results for initiator, defaults to 16. See below.
                 16, // AES-128
@@ -975,7 +981,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // It's set here just for the sake of setting it on a listener
             // socket so that it is then applied on the group when a
             // group connection is configuired.
-            const int tmo = cast_optval<int>(optval, optlen);
+            const int val = cast_optval<int>(optval, optlen);
 
             // Search if you already have SRTO_PEERIDLETIMEO set
 
@@ -985,14 +991,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // This option is RECORDED in microseconds, while
             // idletmp is recorded in milliseconds, only translated to
             // microseconds directly before use.
-            if (tmo >= idletmo)
+            if (val >= idletmo)
             {
-                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
                         << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            m_uOPT_StabilityTimeout = tmo * 1000;
+            m_uOPT_StabilityTimeout = val * 1000;
         }
 
         break;
