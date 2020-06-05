@@ -76,8 +76,8 @@ local flag_state_select = {
 fields.UDT_version = ProtoField.uint32("srt_dev.UDT_version", "UDT Version", base.DEC)
 fields.sock_type = ProtoField.uint32("srt_dev.sock_type", "Socket Type", base.DEC)
 fields.ency_fld = ProtoField.uint16("srt_dev.ency_fld", "Encryption Field", base.DEC)
-fields.ext_fld = ProtoField.uint16("srt_dev.ext_fld", "Etension fields", base.HEX)
-fields.ext_fld_tree = ProtoField.uint16("srt_dev.ext_fld_tree", "Etension fields", base.HEX)
+fields.ext_fld = ProtoField.uint16("srt_dev.ext_fld", "Extension Fields", base.HEX)
+fields.ext_fld_tree = ProtoField.uint16("srt_dev.ext_fld_tree", "Extension Fields Tree", base.HEX)
 fields.hsreq = ProtoField.uint16("srt_dev.hsreq", "HS_EXT_HSREQ", base.HEX, flag_state_select, 0x1)
 fields.kmreq = ProtoField.uint16("srt_dev.kmreq", "HS_EXT_KMREQ", base.HEX, flag_state_select, 0x2)
 fields.config = ProtoField.uint16("srt_dev.config", "HS_EXT_CONFIG", base.HEX, flag_state_select, 0x4)
@@ -98,7 +98,9 @@ local ext_type_select = {
 	[3] = "SRT_CMD_KMREQ",
 	[4] = "SRT_CMD_KMRSP",
 	[5] = "SRT_CMD_SID",
-	[6] = "SRT_CMD_CONGESTION"
+	[6] = "SRT_CMD_CONGESTION",
+	[7] = "SRT_CMD_FILETER",
+	[8] = "SRT_CMD_GROUP"
 }
 fields.ext_type_msg_tree = ProtoField.none("srt_dev.ext_type", "Extension Type Message", base.NONE)
 fields.ext_type = ProtoField.uint16("srt_dev.ext_type", "Extension Type", base.HEX, ext_type_select, 0xF)
@@ -147,11 +149,14 @@ fields.ICV = ProtoField.uint64("srt_dev.ICV", "Integerity Check Vector", base.HE
 fields.odd_key = ProtoField.stringz("srt_dev.odd_key", "Odd key", base.ASCII)
 fields.even_key = ProtoField.stringz("srt_dev.even_key", "Even key", base.ASCII)
 
--- Handshake packet, ext_type == SRT_CMD_SMOOTHER field
-fields.smoother_block = ProtoField.none("srt_dev.smoother_block", "Smoother Block", base.NONE)
-
--- Handshake packet, ext_type == SRT_CMD_SID field
+-- ext_type == SRT_CMD_SID field
 fields.sid = ProtoField.string("srt_dev.sid", "Stream ID", base.ASCII)
+-- ext_type == SRT_CMD_CONGESTION field
+fields.congestion = ProtoField.string("srt_dev.congestion", "Congestion Controller", base.ASCII)
+-- ext_type == SRT_CMD_FILTER field
+fields.filter = ProtoField.string("srt_dev.filter", "Filter", base.ASCII)
+-- ext_type == SRT_CMD_GROUP field
+fields.group = ProtoField.string("srt_dev.group", "Group Data", base.ASCII)
 
 -- SRT flags
 fields.srt_opt_tsbpdsnd = ProtoField.uint32("srt_dev.srt_opt_tsbpdsnd", "SRT_OPT_TSBPDSND", base.HEX, flag_state_select, 0x1)
@@ -530,41 +535,32 @@ function srt_dev.dissector (tvb, pinfo, tree)
 							-- Handle Odd key
 							wrap_tree:add(fields.odd_key, tvb(offset, klen))
 							offset = offset + klen;
-						elseif ext_type == 5 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_SID]")
+						elseif ext_type >= 5 and ext_type <= 8 then
+							local value_size = tvb(offset + 2, 2):uint() * 4
+							local ext_msg_size = 2 + 2 + value_size
+							local type_array = { " [SRT_CMD_SID]", " [SRT_CMD_CONGESTION]", " [SRT_CMD_FILTER]", " [SRT_CMD_GROUP]" }
+							local field_array = { fields.sid, fields.congestion, fields.filter, fields.group }
+							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, ext_msg_size)):append_text(type_array[ext_type - 4])
 							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
 							offset = offset + 2
 							
-							-- Handle SID Size
-							sid_size = tvb(offset, 2):uint() * 4
+							-- Handle Ext Msg Value Size
 							ext_type_msg_tree:add(fields.ext_size, tvb(offset, 2)):append_text(" (byte/4)")
 							offset = offset + 2
 							
-							-- Handle Stream ID
-							local str_table = {}
-							for pos = 0, sid_size - 4, 4 do
-								table.insert(str_table, string.char(tvb(offset + pos + 3, 1):uint()))
-								table.insert(str_table, string.char(tvb(offset + pos + 2, 1):uint()))
-								table.insert(str_table, string.char(tvb(offset + pos + 1, 1):uint()))
-								table.insert(str_table, string.char(tvb(offset + pos, 1):uint()))
+							-- Value
+							local value_table = {}
+							for pos = 0, value_size - 4, 4 do
+								table.insert(value_table, string.char(tvb(offset + pos + 3, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos + 2, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos + 1, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos, 1):uint()))
 							end
-							local stream_id = table.concat(str_table)
-							ext_type_msg_tree:add(fields.sid, tvb(offset, sid_size), stream_id)
-							offset = offset + sid_size
-						elseif ext_type == 6 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_SMOOTHER]")
-							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
-							offset = offset + 2
-							
-							-- Handle Ext Size
-							ext_type_msg_tree:add(fields.ext_size, tvb(offset, 2)):append_text(" (byte/4)")
-							offset = offset + 2
-							
-							-- SMOOTHER BLOCK
-							ext_type_msg_tree:add(fields.smoother_block, tvb(offset, 128))
-							offset = offset + 128
+							local value = table.concat(value_table)
+							ext_type_msg_tree:add(field_array[ext_type - 4], tvb(offset, value_size), value)
+							offset = offset + value_size
 						elseif ext_type == -1 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_NONE]")
+							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, tvb:len() - offset)):append_text(" [SRT_CMD_NONE]")
 							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
 							offset = offset + 2
 							
