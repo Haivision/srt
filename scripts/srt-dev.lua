@@ -99,7 +99,7 @@ local ext_type_select = {
 	[4] = "SRT_CMD_KMRSP",
 	[5] = "SRT_CMD_SID",
 	[6] = "SRT_CMD_CONGESTION",
-	[7] = "SRT_CMD_FILETER",
+	[7] = "SRT_CMD_FILTER",
 	[8] = "SRT_CMD_GROUP"
 }
 fields.ext_type_msg_tree = ProtoField.none("srt_dev.ext_type", "Extension Type Message", base.NONE)
@@ -144,7 +144,7 @@ fields.klen = ProtoField.uint8("srt_dev.klen", "SEK length(bytes)/4", base.DEC)
 fields.salt = ProtoField.uint32("srt_dev.salt", "Salt key", base.DEC)
 fields.wrap = ProtoField.none("srt_dev.wrap", "Wrap key(s)", base.NONE)
 
--- Wrap Filed
+-- Wrap Field
 fields.ICV = ProtoField.uint64("srt_dev.ICV", "Integerity Check Vector", base.HEX)
 fields.odd_key = ProtoField.stringz("srt_dev.odd_key", "Odd key", base.ASCII)
 fields.even_key = ProtoField.stringz("srt_dev.even_key", "Even key", base.ASCII)
