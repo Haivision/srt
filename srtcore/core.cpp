@@ -1343,13 +1343,24 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     return true;
 }
 
-void CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
+SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 {
-    for (size_t i = 0; i < opt.options.size(); ++i)
+    try
     {
-        SRT_SocketOptionObject::SingleOption* o = opt.options[i];
-        setOpt(SRT_SOCKOPT(o->option), o->storage, o->length);
+        for (size_t i = 0; i < opt.options.size(); ++i)
+        {
+            SRT_SocketOptionObject::SingleOption* o = opt.options[i];
+            HLOGC(mglog.Debug, log << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
+            setOpt(SRT_SOCKOPT(o->option), o->storage, o->length);
+        }
     }
+    catch (CUDTException& e)
+    {
+        // XXX Shouldn't CUDTException::getErrorCode() return SRT_ERRNO?
+        return SRT_ERRNO(e.getErrorCode());
+    }
+
+    return SRT_SUCCESS;
 }
 
 bool CUDT::setstreamid(SRTSOCKET u, const std::string &sid)

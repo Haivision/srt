@@ -879,9 +879,6 @@ void SrtCommon::OpenGroupClient()
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
-    for (auto& t: targets)
-        srt_delete_config(t.config);
-
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");

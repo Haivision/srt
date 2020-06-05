@@ -1240,9 +1240,32 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         // NOTE: After calling newSocket, the socket is mapped into m_Sockets.
         // It must be MANUALLY removed from this list in case we need it deleted.
-        SRTSOCKET sid = newSocket(&ns);
+        SRTSOCKET sid = -1;
+        try
+        {
+            sid = newSocket(&ns);
+        }
+        catch (...)
+        {
+            // In this case, exceptionally, the loop should be
+            // interrupted and the exception propagated. But the
+            // configuration objects must be still deleted.
+            for (; tii < arraysize; ++tii)
+            {
+                delete targets[tii].config;
+                targets[tii].config = NULL;
+            }
 
-        // XXX Support non-blockin mode:
+            throw;
+        }
+
+        // NOW the object should be taken over and deleted
+        // at the end of this iteration.
+
+        UniquePtr<SRT_SocketOptionObject> config (targets[tii].config);
+        targets[tii].config = NULL; // Mark takenover ownership
+
+        // XXX Support non-blocking mode:
         // If the group has nonblocking set for connect (SNDSYN),
         // then it must set so on the socket. Then, the connection
         // process is asynchronous. The socket appears first as
@@ -1259,19 +1282,17 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
             }
         }
+        catch (CUDTException& e)
+        {
+            // Just notify the problem, but the loop must continue.
+            // Set the original error as reported.
+            targets[tii].errorcode = e.getErrorCode();
+        }
         catch (...)
         {
-            LOGC(mglog.Error, log << "groupConnect: Error during setting options - propagating error");
-            CGuard cl (m_GlobControlLock);
-            m_Sockets.erase(ns->m_SocketID);
-            // Intercept to delete the socket on failure.
-            delete ns;
-
-            // NOTE: This problem normally should not happen, but anyway,
-            // these options are set on every socket the same way, and
-            // every socket is a newly created socket. So it's only possible
-            // that the first one will fail, or none will fail.
-            throw;
+            // Set the general EINVPARAM - this error should never happen
+            LOGC(mglog.Error, log << "IPE: CUDT::setOpt reported unknown exception");
+            targets[tii].errorcode = SRT_EINVPARAM;
         }
 
         // Add socket to the group.
@@ -1282,11 +1303,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         ns->m_IncludedGroup = &g;
         f->weight = targets[tii].weight;
 
-        if (targets[tii].config)
+        if (config)
         {
-            UniquePtr<SRT_SocketOptionObject> config (targets[tii].config);
-            targets[tii].config = NULL; // Mark takenover ownership
-            ns->core().applyMemberConfigObject(*config);
+            targets[tii].errorcode = ns->core().applyMemberConfigObject(*config);
             // config will be deleted regardless of return or exception
             // Note that the exception can interrupt this loop, leaving
             // some of the objects "eaten" and some remaining. The user
@@ -1532,9 +1551,16 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         close(s);
     }
 
-    // XXX This is wrong code probably, get that better.
+    // There's no possibility to report a problem on every connection
+    // separately in case when every single connection has failed. What
+    // is more interesting, it's only a matter of luck that all connections
+    // fail at exactly the same time. OTOH if all are to fail, this
+    // function will still be polling sockets to determine the last man
+    // standing. Each one could, however, break by a different reason,
+    // for example, one by timeout, another by wrong passphrase. Check
+    // the `errorcode` field to determine the reaon for particular link.
     if (retval == -1)
-        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
     return retval;
 }

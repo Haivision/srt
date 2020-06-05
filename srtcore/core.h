@@ -1318,7 +1318,7 @@ private:
 
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
-    void applyMemberConfigObject(const SRT_SocketOptionObject& opt);
+    SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 
     /// read the performance data with bytes counters since bstats() 
     ///  
