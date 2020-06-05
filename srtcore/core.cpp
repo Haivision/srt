@@ -1493,14 +1493,14 @@ void CUDT::setListenState()
 
 size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int hs_version)
 {
-    if (srtlen < SRT_HS__SIZE)
+    if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(mglog.Fatal,
-             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS__SIZE << ")");
+             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
         return 0;
     }
 
-    srtlen = SRT_HS__SIZE; // We use only that much space.
+    srtlen = SRT_HS_E_SIZE; // We use only that much space.
 
     memset((srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
@@ -1716,9 +1716,9 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
     // too small to keep all the data. As this is "static const", declaring
     // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS__SIZE ? SRTDATA_MAXSIZE : -1;
+    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS_E_SIZE ? SRTDATA_MAXSIZE : -1;
 
-    // This will be effectively larger than SRT_HS__SIZE, but it will be also used
+    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
@@ -2834,11 +2834,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
                     return false; // don't interpret
                 }
@@ -2860,11 +2860,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
 
                     return false; // don't interpret
@@ -3361,10 +3361,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     }
 
     // This is called when the group ID has come in in the handshake.
-    if (gtp >= SRT_GTYPE__END)
+    if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE__END << ")");
+        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
         return false;
     }
 
@@ -3424,7 +3424,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
-            pg->peerid(grpid);
+            pg->set_peerid(grpid);
             HLOGC(mglog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
         }
         // Otherwise the peer id must be the same as existing, otherwise
@@ -3527,7 +3527,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
             return -1;
         }
 
-        gp->peerid(peergroup);
+        gp->set_peerid(peergroup);
         gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
@@ -3780,7 +3780,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     HLOGC(dlog.Debug, log << "applyGroupSequences: no socket found connected and transmitting, @"
             << target << " not changing sequences, storing snd-seq %" << (w_snd_isn));
 
-    currentSchedSequence(w_snd_isn);
+    set_currentSchedSequence(w_snd_isn);
 
     return true;
 }
@@ -11021,7 +11021,7 @@ void CUDTGroup::removeEPollID(const int eid)
 
 void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].push_back(sl);
@@ -11029,7 +11029,7 @@ void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 
 void CUDT::DisconnectSignal(ETransmissionEvent evt)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].clear();
@@ -11825,12 +11825,13 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
 {
     // [[using locked(m_GroupLock)]];
 
-    currentSchedSequence(core.ISN());
+    set_currentSchedSequence(core.ISN());
     setInitialRxSequence(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
-    // from the first socket.
-    latency(core.m_iTsbPdDelay_ms*int64_t(1000));
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the current socket.
+    set_latency(core.m_iTsbPdDelay_ms*int64_t(1000));
 }
 
 void CUDTGroup::close()

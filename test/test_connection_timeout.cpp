@@ -2,7 +2,7 @@
 #include <chrono>
 
 #ifdef _WIN32
-#define INC__WIN_WINTIME // exclude gettimeofday from srt headers
+#define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
 #else
 typedef int SOCKET;
 #define INVALID_SOCKET ((SOCKET)-1)

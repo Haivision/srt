@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_EPOLL_H__
-#define __UDT_EPOLL_H__
+#ifndef INC_SRT_EPOLL_H
+#define INC_SRT_EPOLL_H
 
 
 #include <map>

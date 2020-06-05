@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__COMMON_TRANMITBASE_HPP
-#define INC__COMMON_TRANMITBASE_HPP
+#ifndef INC_SRT_COMMON_TRANMITBASE_HPP
+#define INC_SRT_COMMON_TRANMITBASE_HPP
 
 #include <string>
 #include <memory>

@@ -136,7 +136,7 @@ SRT Usage - listener (server)
         int st = srt_bind(sock, (sockaddr*)&sa, sizeof sa);
         srt_listen(sock, 5);
         while ( !finish ) {
-           socklen_t sa_len = sizeof sa;
+           int sa_len = sizeof sa;
            newsocket = srt_accept(sock, (sockaddr*)&sa, &sa_len);
            HandleNewClient(newsocket, sa);
         }
@@ -241,7 +241,7 @@ Sending a payload:
 
     nb = srt_send(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_sendmsg2(u, buf, nb, &mc);
 
 
@@ -250,7 +250,7 @@ Receiving a payload:
     nb = srt_recvmsg(u, buf, nb);
     nb = srt_recv(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_recvmsg2(u, buf, nb, &mc);
 
 

@@ -8,8 +8,8 @@
  *
  */
 #pragma once
-#ifndef __SRT_SYNC_H__
-#define __SRT_SYNC_H__
+#ifndef INC_SRT_SYNC_H
+#define INC_SRT_SYNC_H
 
 //#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
@@ -840,4 +840,4 @@ CUDTException& GetThreadLocalError();
 } // namespace sync
 } // namespace srt
 
-#endif // __SRT_SYNC_H__
+#endif // INC_SRT_SYNC_H

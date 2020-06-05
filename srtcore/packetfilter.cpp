@@ -146,7 +146,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
     uint32_t* hdr = w_packet.getHeader();
-    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH__SIZE * sizeof(*hdr));
+    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
     w_packet.m_pcData = m_sndctlpkt.buffer;

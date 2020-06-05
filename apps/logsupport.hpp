@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__LOGSUPPORT_HPP
-#define INC__LOGSUPPORT_HPP
+#ifndef INC_SRT_LOGSUPPORT_HPP
+#define INC_SRT_LOGSUPPORT_HPP
 
 #include "../srtcore/srt.h"
 #include "../srtcore/logging_api.h"

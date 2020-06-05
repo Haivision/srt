@@ -9,8 +9,8 @@
  */
 
 
-#ifndef INC__APPCOMMON_H
-#define INC__APPCOMMON_H
+#ifndef INC_SRT_APPCOMMON_H
+#define INC_SRT_APPCOMMON_H
 
 #include <string>
 #include <map>
@@ -325,4 +325,4 @@ public:
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
 
 
-#endif // INC__APPCOMMON_H
+#endif // INC_SRT_APPCOMMON_H

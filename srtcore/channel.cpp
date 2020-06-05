@@ -697,7 +697,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     //   w_packet.m_nHeader[i] = ntohl(w_packet.m_nHeader[i]);
     {
         uint32_t* p = w_packet.m_nHeader;
-        for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
+        for (size_t i = 0; i < SRT_PH_E_SIZE; ++ i)
         {
             *p = ntohl(*p);
             ++ p;
