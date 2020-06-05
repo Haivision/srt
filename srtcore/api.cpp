@@ -676,8 +676,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
       HLOGC(mglog.Debug, log << "newConnection(GROUP): Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
             << " - will " << (should_submit_to_accept? "" : "NOT ") << "report in accept");
-      gi->sndstate = CUDTGroup::GST_IDLE;
-      gi->rcvstate = CUDTGroup::GST_IDLE;
+      gi->sndstate = SRT_GST_IDLE;
+      gi->rcvstate = SRT_GST_IDLE;
       gi->laststatus = SRTS_CONNECTED;
 
       if (!g->m_bConnected)
@@ -1136,7 +1136,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* ta
         // The group manages the ISN by itself ALWAYS, that is,
         // it's generated anew for the very first socket, and then
         // derived by all sockets in the group.
-        SRT_SOCKGROUPDATA gd[1] = { srt_prepare_endpoint(srcname, tarname, namelen) };
+        SRT_SOCKGROUPCONFIG gd[1] = { srt_prepare_endpoint(srcname, tarname, namelen) };
 
         // When connecting to exactly one target, only this very target
         // can be returned as a socket, so rewritten back array can be ignored.
@@ -1169,7 +1169,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
         // The group manages the ISN by itself ALWAYS, that is,
         // it's generated anew for the very first socket, and then
         // derived by all sockets in the group.
-        SRT_SOCKGROUPDATA gd[1] = { srt_prepare_endpoint(NULL, name, namelen) };
+        SRT_SOCKGROUPCONFIG gd[1] = { srt_prepare_endpoint(NULL, name, namelen) };
         return groupConnect(g, gd, 1);
     }
 
@@ -1180,7 +1180,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
     return connectIn(s, target_addr, forced_isn);
 }
 
-int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arraysize)
+int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int arraysize)
 {
     CUDTGroup& g = *pg;
     // The group must be managed to use srt_connect on it,
@@ -1232,12 +1232,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
         sockaddr_any target_addr(targets[tii].peeraddr);
         sockaddr_any source_addr(targets[tii].srcaddr);
         SRTSOCKET& sid_rloc = targets[tii].id;
-        int &erc_rloc = targets[tii].result;
+        int& erc_rloc = targets[tii].errorcode;
+        erc_rloc = SRT_SUCCESS; // preinitialized
         HLOGC(mglog.Debug, log << "groupConnect: taking on " << SockaddrToString(targets[tii].peeraddr));
-
-        // Preset this to every state, when there is any notifying
-        // the change, this will be changed.
-        targets[tii].status = SRTS_CONNECTING;
 
         CUDTSocket* ns = 0;
 
@@ -1400,15 +1397,15 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
 
             if (st >= SRTS_BROKEN)
             {
-                f->sndstate = CUDTGroup::GST_BROKEN;
-                f->rcvstate = CUDTGroup::GST_BROKEN;
+                f->sndstate = SRT_GST_BROKEN;
+                f->rcvstate = SRT_GST_BROKEN;
                 srt_epoll_remove_usock(g.m_SndEID, sid);
                 srt_epoll_remove_usock(g.m_RcvEID, sid);
             }
             else
             {
-                f->sndstate = CUDTGroup::GST_PENDING;
-                f->rcvstate = CUDTGroup::GST_PENDING;
+                f->sndstate = SRT_GST_PENDING;
+                f->rcvstate = SRT_GST_PENDING;
                 spawned[sid] = ns;
 
                 sid_rloc = sid;
@@ -1464,12 +1461,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
             // Check status. If failed, remove from spawned
             // and try again.
             SRT_SOCKSTATUS st = s->getStatus();
-            // Find this socket in targets, as it's filled already, and mark the state.
-            for (int y = 0; y < arraysize; ++y)
-            {
-                if (targets[y].id == sid)
-                    targets[y].status = st;
-            }
             if (st >= SRTS_BROKEN)
             {
                 HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got BROKEN during background connect, remove & TRY AGAIN");
@@ -1530,9 +1521,16 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPDATA* targets, int arra
         close(s);
     }
 
-    // XXX This is wrong code probably, get that better.
+    // There's no possibility to report a problem on every connection
+    // separately in case when every single connection has failed. What
+    // is more interesting, it's only a matter of luck that all connections
+    // fail at exactly the same time. OTOH if all are to fail, this
+    // function will still be polling sockets to determine the last man
+    // standing. Each one could, however, break by a different reason,
+    // for example, one by timeout, another by wrong passphrase. Check
+    // the `errorcode` field to determine the reaon for particular link.
     if (retval == -1)
-        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
     return retval;
 }
@@ -3029,7 +3027,7 @@ int CUDT::connect(
 }
 
 int CUDT::connectLinks(SRTSOCKET grp,
-        SRT_SOCKGROUPDATA targets [], int arraysize)
+        SRT_SOCKGROUPCONFIG targets [], int arraysize)
 {
     if (arraysize <= 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);

@@ -18,6 +18,7 @@
 
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
+#include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
@@ -54,8 +55,9 @@ protected:
         int port;
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
+        sockaddr_any source;
 
-        Connection(string h, int p): host(h), port(p) {}
+        Connection(string h, int p): host(h), port(p), source(AF_INET) {}
     };
 
     int srt_epoll = -1;
