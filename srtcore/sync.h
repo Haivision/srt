@@ -747,7 +747,7 @@ public: // Observers
 
     struct id
     {
-        id(const pthread_t t)
+        explicit id(const pthread_t t)
             : value(t)
         {}
 
@@ -777,6 +777,19 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+template <class Stream>
+inline Stream& operator<<(Stream& str, const CThread::id& cid)
+{
+#if defined(_WIN32) && defined(PTW32_VERSION)
+    // This is a version specific for pthread-win32 implementation
+    // Here pthread_t type is a structure that is not convertible
+    // to a number at all.
+    return str << pthread_getw32threadid_np(cid.value);
+#else
+    return str << cid.value;
+#endif
+}
 
 namespace this_thread
 {
