@@ -87,7 +87,7 @@ make
 
 [Homebrew](https://brew.sh/) supports "srt" formula.
 
-```
+```shell
 brew update
 brew install srt
 ```
@@ -95,7 +95,7 @@ brew install srt
 If you prefer using a head commit of `master` branch, you should add `--HEAD` option
 to `brew` command.
 
-```
+```shell
 brew install --HEAD srt
 ```
 
@@ -103,7 +103,8 @@ Also, SRT can be built with `cmake` and `make` on Mac.
 Install cmake and openssl with development files from "brew". Note that the
 system version of OpenSSL is inappropriate, although you should be able to
 use any newer version compiled from sources, if you prefer.
-```
+
+```shell
 brew install cmake
 brew install openssl
 export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
@@ -115,7 +116,7 @@ make
 
 ## For Windows:
 
-Follow the Windows build intructions: [doc](docs/build-win.md).
+Follow the [Windows build instructions](docs/build-win.md).
 
 [appveyor-badge]: https://img.shields.io/appveyor/ci/Haivision/srt/master.svg?label=Windows
 [appveyor]: https://ci.appveyor.com/project/Haivision/srt
