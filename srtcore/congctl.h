@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__CONGCTL_H
-#define INC__CONGCTL_H
+#ifndef INC_SRT_CONGCTL_H
+#define INC_SRT_CONGCTL_H
 
 #include <map>
 #include <string>

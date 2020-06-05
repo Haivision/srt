@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_COMMON_H__
-#define __UDT_COMMON_H__
+#ifndef INC_SRT_COMMON_H
+#define INC_SRT_COMMON_H
 
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
@@ -286,7 +286,7 @@ enum ETransmissionEvent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
 
-    TEV__SIZE
+    TEV_E_SIZE
 };
 
 std::string TransmissionEventStr(ETransmissionEvent ev);
