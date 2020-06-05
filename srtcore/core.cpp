@@ -483,11 +483,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        if (*(const int *)optval <= 0)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
         {
             const int val = cast_optval<int>(optval, optlen);
+            if (val <= 0)
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
             // Mimimum recv buffer size is 32 packets
             const int mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
