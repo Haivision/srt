@@ -133,7 +133,7 @@ void CUDTSocket::makeShutdown()
     }
 
     HLOGC(mglog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_pUDT->close();
+    m_pUDT->closeInternal();
 }
 
 void CUDTSocket::makeClosed()
@@ -2731,7 +2731,7 @@ CUDTGroup& CUDT::newGroup(const int type)
     const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
-    return s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).id(id);
+    return s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
 SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
@@ -2784,7 +2784,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         {
             return APIError(MJ_NOTSUP, MN_INVAL, 0);
         }
-        g->managed(false);
+        g->set_managed(false);
     }
 
     CGuard cg (s->m_ControlLock);

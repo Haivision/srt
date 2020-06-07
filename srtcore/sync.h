@@ -8,8 +8,8 @@
  *
  */
 #pragma once
-#ifndef __SRT_SYNC_H__
-#define __SRT_SYNC_H__
+#ifndef INC_SRT_SYNC_H
+#define INC_SRT_SYNC_H
 
 //#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
@@ -239,17 +239,17 @@ inline long long count_seconds(const steady_clock::duration &t)
     return std::chrono::duration_cast<std::chrono::seconds>(t).count();
 }
 
-inline steady_clock::duration microseconds_from(long t_us)
+inline steady_clock::duration microseconds_from(int64_t t_us)
 {
     return std::chrono::microseconds(t_us);
 }
 
-inline steady_clock::duration milliseconds_from(long t_ms)
+inline steady_clock::duration milliseconds_from(int64_t t_ms)
 {
     return std::chrono::milliseconds(t_ms);
 }
 
-inline steady_clock::duration seconds_from(long t_s)
+inline steady_clock::duration seconds_from(int64_t t_s)
 {
     return std::chrono::seconds(t_s);
 }
@@ -747,7 +747,7 @@ public: // Observers
 
     struct id
     {
-        id(const pthread_t t)
+        explicit id(const pthread_t t)
             : value(t)
         {}
 
@@ -777,6 +777,19 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+template <class Stream>
+inline Stream& operator<<(Stream& str, const CThread::id& cid)
+{
+#if defined(_WIN32) && defined(PTW32_VERSION)
+    // This is a version specific for pthread-win32 implementation
+    // Here pthread_t type is a structure that is not convertible
+    // to a number at all.
+    return str << pthread_getw32threadid_np(cid.value);
+#else
+    return str << cid.value;
+#endif
+}
 
 namespace this_thread
 {
@@ -827,4 +840,4 @@ CUDTException& GetThreadLocalError();
 } // namespace sync
 } // namespace srt
 
-#endif // __SRT_SYNC_H__
+#endif // INC_SRT_SYNC_H

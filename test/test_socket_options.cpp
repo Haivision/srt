@@ -37,7 +37,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
-        ASSERT_EQ(srt_startup(), 0);
+        ASSERT_GE(srt_startup(), 0);
         const int yes = 1;
 
         m_caller_sock = srt_create_socket();

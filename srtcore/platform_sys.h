@@ -7,8 +7,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
  */
-#ifndef INC__PLATFORM_SYS_H
-#define INC__PLATFORM_SYS_H
+#ifndef INC_SRT_PLATFORM_SYS_H
+#define INC_SRT_PLATFORM_SYS_H
 
 // INFORMATION
 //

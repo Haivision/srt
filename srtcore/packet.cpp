@@ -175,7 +175,7 @@ using namespace srt_logging;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():
-__pad(),
+m_extra_pad(),
 m_data_owned(false),
 m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO])),
 m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO])),
@@ -282,7 +282,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -295,7 +295,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
    case UMSG_CGWARNING: //0100 - Congestion Warning
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
   
       break;
 
@@ -307,7 +307,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       }
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -320,7 +320,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
    case UMSG_SHUTDOWN: //0101 - Shutdown
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -339,7 +339,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -355,7 +355,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       }
       else
       {
-         m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+         m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
       }
 
       break;

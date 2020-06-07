@@ -1493,14 +1493,14 @@ void CUDT::setListenState()
 
 size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int hs_version)
 {
-    if (srtlen < SRT_HS__SIZE)
+    if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(mglog.Fatal,
-             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS__SIZE << ")");
+             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
         return 0;
     }
 
-    srtlen = SRT_HS__SIZE; // We use only that much space.
+    srtlen = SRT_HS_E_SIZE; // We use only that much space.
 
     memset((srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
@@ -1716,9 +1716,9 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
     // too small to keep all the data. As this is "static const", declaring
     // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS__SIZE ? SRTDATA_MAXSIZE : -1;
+    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS_E_SIZE ? SRTDATA_MAXSIZE : -1;
 
-    // This will be effectively larger than SRT_HS__SIZE, but it will be also used
+    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
@@ -2834,11 +2834,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
                     return false; // don't interpret
                 }
@@ -2860,11 +2860,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
 
                     return false; // don't interpret
@@ -3361,10 +3361,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     }
 
     // This is called when the group ID has come in in the handshake.
-    if (gtp >= SRT_GTYPE__END)
+    if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE__END << ")");
+        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
         return false;
     }
 
@@ -3424,7 +3424,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
-            pg->peerid(grpid);
+            pg->set_peerid(grpid);
             HLOGC(mglog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
         }
         // Otherwise the peer id must be the same as existing, otherwise
@@ -3527,7 +3527,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
             return -1;
         }
 
-        gp->peerid(peergroup);
+        gp->set_peerid(peergroup);
         gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
@@ -3780,7 +3780,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     HLOGC(dlog.Debug, log << "applyGroupSequences: no socket found connected and transmitting, @"
             << target << " not changing sequences, storing snd-seq %" << (w_snd_isn));
 
-    currentSchedSequence(w_snd_isn);
+    set_currentSchedSequence(w_snd_isn);
 
     return true;
 }
@@ -4926,7 +4926,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     return postConnect(response, false, eout, synchro);
 }
 
-void CUDT::applyResponseSettings()
+void CUDT::applyResponseSettings() ATR_NOEXCEPT
 {
     // Re-configure according to the negotiated values.
     m_iMSS               = m_ConnRes.m_iMSS;
@@ -4947,7 +4947,7 @@ void CUDT::applyResponseSettings()
               << " peerID=" << m_ConnRes.m_iID);
 }
 
-EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro)
+EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
@@ -5024,11 +5024,23 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
     // And, I am connected too.
     m_bConnecting = false;
-    m_bConnected  = true;
 
-    // register this socket for receiving data packets
-    m_pRNode->m_bOnList = true;
-    m_pRcvQueue->setNewEntry(this);
+    // The lock on m_ConnectionLock should still be applied, but
+    // the socket could have been started removal before this function
+    // has started. Do a sanity check before you continue with the
+    // connection process.
+    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    if (s)
+    {
+        // The socket could be closed at this very moment.
+        // Continue with removing the socket from the pending structures,
+        // but prevent it from setting it as connected.
+        m_bConnected  = true;
+
+        // register this socket for receiving data packets
+        m_pRNode->m_bOnList = true;
+        m_pRcvQueue->setNewEntry(this);
+    }
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
@@ -5052,16 +5064,15 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // being enqueued for later pickup from the queue.
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
-    // acknowledge the management module.
-    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
+        LOGC(mglog.Error, log << "Connection broken in the process - socket @" << m_SocketID << " closed");
+        m_RejectReason = SRT_REJ_CLOSE;
         if (eout)
         {
-            *eout = CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+            *eout = CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
-
-        m_RejectReason = SRT_REJ_CLOSE;
         return CONN_REJECT;
     }
 
@@ -6133,7 +6144,7 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-bool CUDT::close()
+bool CUDT::closeInternal()
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6266,16 +6277,6 @@ bool CUDT::close()
         m_bConnected = false;
     }
 
-    if (m_pCryptoControl)
-        m_pCryptoControl->close();
-
-    if (isOPT_TsbPd() && m_RcvTsbPdThread.joinable())
-    {
-        HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        m_RcvTsbPdThread.join();
-        HLOGC(mglog.Debug, log << "... returned from TSBPD join");
-    }
-
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
 
     // waiting all send and recv calls to stop
@@ -6285,6 +6286,9 @@ bool CUDT::close()
     // Locking m_RcvBufferLock to protect calling to m_pCryptoControl->decrypt((packet))
     // from the processData(...) function while resetting Crypto Control.
     enterCS(m_RcvBufferLock);
+    if (m_pCryptoControl)
+        m_pCryptoControl->close();
+
     m_pCryptoControl.reset();
     leaveCS(m_RcvBufferLock);
 
@@ -8981,6 +8985,17 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 
     string reason = "reXmit";
 
+    CGuard connectguard(m_ConnectionLock);
+    // If a closing action is done simultaneously, then
+    // m_bOpened should already be false, and it's set
+    // just before releasing this lock.
+    //
+    // If this lock is caught BEFORE the closing could
+    // start the dissolving process, this process will
+    // not be started until this function is finished.
+    if (!m_bOpened)
+        return std::make_pair(0, enter_time);
+
     payload = packLostData((w_packet), (origintime));
     if (payload > 0)
     {
@@ -11021,7 +11036,7 @@ void CUDTGroup::removeEPollID(const int eid)
 
 void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].push_back(sl);
@@ -11029,7 +11044,7 @@ void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 
 void CUDT::DisconnectSignal(ETransmissionEvent evt)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].clear();
@@ -11825,12 +11840,13 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
 {
     // [[using locked(m_GroupLock)]];
 
-    currentSchedSequence(core.ISN());
+    set_currentSchedSequence(core.ISN());
     setInitialRxSequence(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
-    // from the first socket.
-    latency(core.m_iTsbPdDelay_ms*int64_t(1000));
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the current socket.
+    set_latency(core.m_iTsbPdDelay_ms*int64_t(1000));
 }
 
 void CUDTGroup::close()
@@ -13858,6 +13874,10 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
         }
         else
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             {
                 InvertedLock ug (m_GroupLock);
                 m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
@@ -13991,6 +14011,10 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const size_t nunstable, vector<gli
 
 RetryWaitBlocked:
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             InvertedLock ug (m_GroupLock);
             HLOGC(dlog.Debug, log << "grp/sendBackup: swait call to get at least one link alive up to "
                     << m_iSndTimeOut << "us");

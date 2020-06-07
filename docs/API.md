@@ -136,7 +136,7 @@ SRT Usage - listener (server)
         int st = srt_bind(sock, (sockaddr*)&sa, sizeof sa);
         srt_listen(sock, 5);
         while ( !finish ) {
-           socklen_t sa_len = sizeof sa;
+           int sa_len = sizeof sa;
            newsocket = srt_accept(sock, (sockaddr*)&sa, &sa_len);
            HandleNewClient(newsocket, sa);
         }
@@ -241,7 +241,7 @@ Sending a payload:
 
     nb = srt_send(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_sendmsg2(u, buf, nb, &mc);
 
 
@@ -250,7 +250,7 @@ Receiving a payload:
     nb = srt_recvmsg(u, buf, nb);
     nb = srt_recv(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_recvmsg2(u, buf, nb, &mc);
 
 
@@ -1148,14 +1148,15 @@ The [buffer mode](#transmission-method-buffer) settings set `SRTO_SNDDROPDELAY` 
 
 - **[SET]** - Sets an extra delay before TLPKTDROP is triggered on the data
   sender. TLPKTDROP discards packets reported as lost if it is already too late
-to send them (the receiver would discard them even if received).  The total
-delay before TLPKTDROP is triggered consists of the LATENCY (`SRTO_PEERLATENCY`),
-plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10ms).
-The minimum total delay is 1 second.
+to send them (the receiver would discard them even if received). The
+delay before TLPKTDROP mechanism is triggered consists of the SRT latency (`SRTO_PEERLATENCY`),
+plus `SRTO_SNDDROPDELAY`, plus `2 * interval between sending ACKs` (the default `interval between sending ACKs` is 10 milliseconds).
+The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds.
+
 A value of -1 discards packet drop.
 `SRTO_SNDDROPDELAY` extends the tolerance for retransmitting packets at
 the expense of more likely retransmitting them uselessly. To be effective, it
-must have a value greater than 1000 - `SRTO_PEERLATENCY`.
+must have a value greater than 1000 - `SRTO_PEERLATENCY` milliseconds.
 
 ---
 
