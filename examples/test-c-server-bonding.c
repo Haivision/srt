@@ -138,8 +138,8 @@ int main(int argc, char** argv)
             for (z = 0; z < mc.grpdata_size; ++z)
             {
                 printf( "[%zd] result=%d state=%s ", z, mc.grpdata[z].result,
-                        mc.grpdata[z].status <= SRTS_CONNECTING ? "pending" :
-                        mc.grpdata[z].status == SRTS_CONNECTED ? "connected" : "broken");
+                        mc.grpdata[z].sockstate <= SRTS_CONNECTING ? "pending" :
+                        mc.grpdata[z].sockstate == SRTS_CONNECTED ? "connected" : "broken");
             }
             printf("\n");
         }

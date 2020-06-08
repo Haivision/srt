@@ -3789,13 +3789,13 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock:
 {
     // Find at least one connection, which is running. Note that this function is called
     // from within a handshake process, so the socket that undergoes this process is at best
-    // currently in GST_PENDING state and it's going to be in GST_IDLE state at the
+    // currently in SRT_GST_PENDING state and it's going to be in SRT_GST_IDLE state at the
     // time when the connection process is done, until the first reading/writing happens.
     CGuard cg (m_GroupLock);
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        if (gi->sndstate == GST_RUNNING)
+        if (gi->sndstate == SRT_GST_RUNNING)
         {
             // Found it. Get the socket's peer's ID and this socket's
             // Start Time. Once it's delivered, this can be used to calculate
@@ -3814,7 +3814,7 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock:
     // has prepared one link already, but hasn't sent anything through it yet.
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        if (gi->sndstate == GST_BROKEN)
+        if (gi->sndstate == SRT_GST_BROKEN)
             continue;
 
         if (gi->id == slave)
@@ -5111,8 +5111,8 @@ void CUDTGroup::setFreshConnected(CUDTSocket* sock)
     HLOGC(mglog.Debug, log << "group: Socket @" << sock->m_SocketID << " fresh connected, setting IDLE");
 
     gli_t gi = sock->m_IncludedIter;
-    gi->sndstate = CUDTGroup::GST_IDLE;
-    gi->rcvstate = CUDTGroup::GST_IDLE;
+    gi->sndstate = SRT_GST_IDLE;
+    gi->rcvstate = SRT_GST_IDLE;
     gi->laststatus = SRTS_CONNECTED;
 
     if (!m_bConnected)
@@ -8727,7 +8727,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 HLOGC(mglog.Debug, log << CONID() << "DROPREQ: dropping %"
                         << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
             }
-
         }
 
         break;
@@ -9968,7 +9967,7 @@ void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
         // - PENDING - because it's not in the connected state, wait for it.
         // - RUNNING - because in this case it should have its own line of sequences
         // - BROKEN - because it doesn't make sense anymore, about to be removed
-        if (gi->rcvstate != GST_IDLE)
+        if (gi->rcvstate != SRT_GST_IDLE)
         {
             HLOGC(mglog.Debug, log << "grp: NOT updating rcv-seq on @" << gi->id << " - link state:"
                     << srt_log_grp_state[gi->rcvstate]);
@@ -10042,10 +10041,10 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     if (self->m_parent->m_IncludedGroup)
     {
         CUDTGroup::gli_t gi = self->m_parent->m_IncludedIter;
-        if (gi->rcvstate < CUDTGroup::GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
+        if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
         {
             HLOGC(mglog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
-            gi->rcvstate = CUDTGroup::GST_RUNNING;
+            gi->rcvstate = SRT_GST_RUNNING;
             return output;
         }
     }
@@ -10986,12 +10985,12 @@ void CUDTGroup::addEPoll(int eid)
 
        for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
        {
-           if (i->sndstate == GST_IDLE || i->sndstate == GST_RUNNING)
+           if (i->sndstate == SRT_GST_IDLE || i->sndstate == SRT_GST_RUNNING)
            {
                any_write |= i->ps->writeReady();
            }
 
-           if (i->rcvstate == GST_IDLE || i->rcvstate == GST_RUNNING)
+           if (i->rcvstate == SRT_GST_IDLE || i->rcvstate == SRT_GST_RUNNING)
            {
                any_read |= i->ps->readReady();
            }
@@ -11221,8 +11220,8 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
     // after releasing the m_GroupLock could be read and interpreted
     // as broken connection and removed before the handshake process
     // is done.
-    data.sndstate = GST_PENDING;
-    data.rcvstate = GST_PENDING;
+    data.sndstate = SRT_GST_PENDING;
+    data.rcvstate = SRT_GST_PENDING;
 
     m_Group.push_back(data);
     gli_t end = m_Group.end();
@@ -11244,22 +11243,22 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
 
 CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
 {
-    // This uses default GST_BROKEN because when the group operation is done,
-    // then the GST_IDLE state automatically turns into GST_RUNNING. This is
+    // This uses default SRT_GST_BROKEN because when the group operation is done,
+    // then the SRT_GST_IDLE state automatically turns into SRT_GST_RUNNING. This is
     // recognized as an initial state of the fresh added socket to the group,
     // so some "initial configuration" must be done on it, after which it's
-    // turned into GST_RUNNING, that is, it's treated as all others. When
-    // set to GST_BROKEN, this socket is disregarded. This socket isn't cleaned
+    // turned into SRT_GST_RUNNING, that is, it's treated as all others. When
+    // set to SRT_GST_BROKEN, this socket is disregarded. This socket isn't cleaned
     // up, however, unless the status is simultaneously SRTS_BROKEN.
 
     // The order of operations is then:
     // - add the socket to the group in this "broken" initial state
     // - connect the socket (or get it extracted from accept)
     // - update the socket state (should be SRTS_CONNECTED)
-    // - once the connection is established (may take time with connect), set GST_IDLE
-    // - the next operation of send/recv will automatically turn it into GST_RUNNING
+    // - once the connection is established (may take time with connect), set SRT_GST_IDLE
+    // - the next operation of send/recv will automatically turn it into SRT_GST_RUNNING
     SocketData sd = {s->m_SocketID, s,
-        SRTS_INIT, GST_BROKEN, GST_BROKEN,
+        SRTS_INIT, SRT_GST_BROKEN, SRT_GST_BROKEN,
         -1, -1,
         sockaddr_any(), sockaddr_any(),
         false, false, false,
@@ -11799,15 +11798,15 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
             switch (gi->sndstate)
             {
                 // Check only sndstate. If this machine is ONLY receiving,
-                // then rcvstate will turn into GST_RUNNING, while
-                // sndstate will remain GST_IDLE, but still this may only
+                // then rcvstate will turn into SRT_GST_RUNNING, while
+                // sndstate will remain SRT_GST_IDLE, but still this may only
                 // happen if the socket is connected.
-            case GST_IDLE:
-            case GST_RUNNING:
+            case SRT_GST_IDLE:
+            case SRT_GST_RUNNING:
                 states.push_back(make_pair(gi->id, SRTS_CONNECTED));
                 break;
 
-            case GST_BROKEN:
+            case SRT_GST_BROKEN:
                 states.push_back(make_pair(gi->id, SRTS_BROKEN));
                 break;
 
@@ -11943,14 +11942,14 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
         // Check socket sndstate before sending
-        if (d->sndstate == GST_BROKEN)
+        if (d->sndstate == SRT_GST_BROKEN)
         {
             HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             wipeme.push_back(d);
             continue;
         }
 
-        if (d->sndstate == GST_IDLE)
+        if (d->sndstate == SRT_GST_IDLE)
         {
             SRT_SOCKSTATUS st = SRTS_NONEXIST;
             if (d->ps)
@@ -11982,7 +11981,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             continue;
         }
 
-        if (d->sndstate == GST_RUNNING)
+        if (d->sndstate == SRT_GST_RUNNING)
         {
             HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket in RUNNING state: @" << d->id << " - will send a payload");
             sendable.push_back(d);
@@ -12001,7 +12000,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         gli_t d = *snd;
         int erc = 0; // success
-        // Remaining sndstate is GST_RUNNING. Send a payload through it.
+        // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         try
         {
             // This must be wrapped in try-catch because on error it throws an exception.
@@ -12111,7 +12110,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (stat != -1)
         {
-            d->sndstate = GST_RUNNING;
+            d->sndstate = SRT_GST_RUNNING;
 
             // Note: this will override the sequence number
             // for all next iterations in this loop.
@@ -12276,7 +12275,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 << errmsg << ". Setting this socket broken status.");
 #endif
         // Turn this link broken
-        is->d->sndstate = GST_BROKEN;
+        is->d->sndstate = SRT_GST_BROKEN;
     }
 
     // Good, now let's realize the situation.
@@ -12292,7 +12291,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // there will be no further chance to reattempt sending.
         for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
         {
-            (*b)->sndstate = GST_BROKEN;
+            (*b)->sndstate = SRT_GST_BROKEN;
         }
         blocked.clear();
     }
@@ -12362,7 +12361,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 int rdev = CEPoll::ready(sready, dd->id);
                 if (rdev & SRT_EPOLL_ERR)
                 {
-                    dd->sndstate = GST_BROKEN;
+                    dd->sndstate = SRT_GST_BROKEN;
                 }
                 else if (rdev & SRT_EPOLL_OUT)
                     sendable.push_back(dd);
@@ -12372,7 +12371,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 gli_t d = *snd;
                 int erc = 0; // success
-                // Remaining sndstate is GST_RUNNING. Send a payload through it.
+                // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
                 try
                 {
                     // This must be wrapped in try-catch because on error it throws an exception.
@@ -12414,7 +12413,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 HLOGC(dlog.Debug, log << "... (repeat-waited) sending FAILED (" << errmsg << "). Setting this socket broken status.");
 #endif
                 // Turn this link broken
-                is->d->sndstate = GST_BROKEN;
+                is->d->sndstate = SRT_GST_BROKEN;
             }
         }
     }
@@ -12464,11 +12463,12 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             // Enough space to fill
             w_mc.grpdata[i].id = d->id;
-            w_mc.grpdata[i].status = d->laststatus;
+            w_mc.grpdata[i].sockstate = d->laststatus;
+            w_mc.grpdata[i].memberstate = d->sndstate;
 
-            if (d->sndstate == GST_RUNNING)
+            if (d->sndstate == SRT_GST_RUNNING)
                 w_mc.grpdata[i].result = rstat; // The same result for all sockets, if running
-            else if (d->sndstate == GST_IDLE)
+            else if (d->sndstate == SRT_GST_IDLE)
                 w_mc.grpdata[i].result = 0;
             else
                 w_mc.grpdata[i].result = -1;
@@ -12501,7 +12501,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     CGuard gl (m_GroupLock);
-    
+
     SRT_ASSERT(psize != NULL);
     const size_t size = *psize;
     // Rewrite correct size
@@ -12522,16 +12522,34 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
     {
         pdata[i].id = d->id;
-        pdata[i].status = d->laststatus;
+        memcpy((&pdata[i].peeraddr), &d->peer, d->peer.size());
 
-        if (d->sndstate == GST_RUNNING)
-            pdata[i].result = 0; // Just "success", no operation was performed
-        else if (d->sndstate == GST_IDLE)
+        pdata[i].sockstate = d->laststatus;
+
+        // In the internal structure the member state
+        // is one per direction. From the user perspective
+        // however it is used either in one direction only,
+        // in which case the one direction that is active
+        // matters, or in both directions, in which case
+        // it will be always either both active or both idle.
+
+        if (d->sndstate == SRT_GST_RUNNING || d->rcvstate == SRT_GST_RUNNING)
+        {
             pdata[i].result = 0;
-        else
+            pdata[i].memberstate = SRT_GST_RUNNING;
+        }
+        // Stats can differ per direction only
+        // when at least in one direction it's ACTIVE.
+        else if (d->sndstate == SRT_GST_BROKEN)
+        {
             pdata[i].result = -1;
-
-        memcpy(&pdata[i].peeraddr, &d->peer, d->peer.size());
+            pdata[i].memberstate = SRT_GST_BROKEN;
+        }
+        else
+        {
+            pdata[i].result = 0;
+            pdata[i].memberstate = d->sndstate;
+        }
     }
 
     return m_Group.size();
@@ -12564,37 +12582,6 @@ void CUDTGroup::getGroupCount(size_t& w_size, bool& w_still_alive)
     // If no socket is found connected, don't update any status.
     w_size = group_list_size;
     w_still_alive = still_alive;
-}
-
-void CUDTGroup::getMemberStatus(std::vector<SRT_SOCKGROUPDATA>& w_gd, SRTSOCKET wasread, int result, bool again)
-{
-    CGuard gg (m_GroupLock);
-
-    for (gli_t ig = m_Group.begin(); ig != m_Group.end(); ++ig)
-    {
-        SRT_SOCKGROUPDATA grpdata;
-
-        grpdata.id = ig->id;
-        grpdata.status = ig->ps->getStatus();
-        const sockaddr_any& padr = ig->ps->core().peerAddr();
-        memcpy(&grpdata.peeraddr, &padr, padr.size());
-
-        if (!again && ig->id == wasread)
-        {
-            grpdata.result = result;
-        }
-        else if (ig->ready_error)
-        {
-            grpdata.result = -1;
-            ig->ready_error = false;
-        }
-        else
-        {
-            // 0 simply means "nothing was done, but no error occurred"
-            grpdata.result = 0;
-        }
-        w_gd.push_back(grpdata);
-    }
 }
 
 
@@ -13799,7 +13786,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
 
         if (stat != -1)
         {
-            if (d->sndstate != GST_RUNNING)
+            if (d->sndstate != SRT_GST_RUNNING)
             {
                 steady_clock::time_point currtime = steady_clock::now();
                 d->ps->core().m_tsTmpActiveTime = currtime;
@@ -13813,7 +13800,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             }
             // Note: this will override the sequence number
             // for all next iterations in this loop.
-            d->sndstate = GST_RUNNING;
+            d->sndstate = SRT_GST_RUNNING;
 
             if (is_zero(d->ps->core().m_tsUnstableSince))
             {
@@ -14088,7 +14075,7 @@ RetryWaitBlocked:
                 continue;
             }
 
-            if (d->sndstate == GST_RUNNING)
+            if (d->sndstate == SRT_GST_RUNNING)
             {
                 HLOGC(dlog.Debug, log << "grp/sendBackup: link @" << d->id
                         << " RUNNING - SKIPPING from activate and resend");
@@ -14123,7 +14110,7 @@ RetryWaitBlocked:
             w_final_stat = stat;
             steady_clock::time_point currtime = steady_clock::now();
             d->ps->core().m_tsTmpActiveTime = currtime;
-            d->sndstate = GST_RUNNING;
+            d->sndstate = SRT_GST_RUNNING;
             w_none_succeeded = false;
             HLOGC(dlog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
 
@@ -14154,7 +14141,7 @@ RetryWaitBlocked:
         for (; b != w_parallel.end(); ++b)
         {
             gli_t& d = *b;
-            if (d->sndstate != GST_RUNNING)
+            if (d->sndstate != SRT_GST_RUNNING)
             {
                 LOGC(dlog.Error, log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
                 continue;
@@ -14170,7 +14157,7 @@ RetryWaitBlocked:
             }
 
             // Clear activation time because the link is no longer active!
-            d->sndstate = GST_IDLE;
+            d->sndstate = SRT_GST_IDLE;
             HLOGC(dlog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
             ce.m_tsTmpActiveTime = steady_clock::time_point();
         }
@@ -14223,14 +14210,14 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
         // Check socket sndstate before sending
-        if (d->sndstate == GST_BROKEN)
+        if (d->sndstate == SRT_GST_BROKEN)
         {
             HLOGC(dlog.Debug, log << "grp/sendBackup: socket in BROKEN state: @" << d->id << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             wipeme.push_back(d);
             continue;
         }
 
-        if (d->sndstate == GST_IDLE)
+        if (d->sndstate == SRT_GST_IDLE)
         {
             if (!send_CheckIdle(d, (wipeme), (pending)))
                 continue;
@@ -14247,7 +14234,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
             continue;
         }
 
-        if (d->sndstate == GST_RUNNING)
+        if (d->sndstate == SRT_GST_RUNNING)
         {
             sendBackup_CheckRunningStability(d, (currtime), (nunstable));
             sendable.push_back(d);
@@ -14269,7 +14256,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     // - we have any STABLE sendable (if not, we must activate a backup link)
     // - we have multiple stable sendable and we need to stop all but one
 
-    // Normally there should be only one link with state == GST_RUNNING, but there might
+    // Normally there should be only one link with state == SRT_GST_RUNNING, but there might
     // be multiple links set as running when a "breaking suspection" is set on a link.
 
     bool none_succeeded = true; // be pessimistic
@@ -14306,7 +14293,7 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     {
         gli_t d = *snd;
         int erc = 0; // success
-        // Remaining sndstate is GST_RUNNING. Send a payload through it.
+        // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         CUDT& u = d->ps->core();
         int32_t lastseq = u.schedSeqNo();
         try
@@ -14501,11 +14488,12 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
         {
             // Enough space to fill
             w_mc.grpdata[i].id = d->id;
-            w_mc.grpdata[i].status = d->laststatus;
+            w_mc.grpdata[i].sockstate = d->laststatus;
+            w_mc.grpdata[i].memberstate = d->sndstate;
 
-            if (d->sndstate == GST_RUNNING)
+            if (d->sndstate == SRT_GST_RUNNING)
                 w_mc.grpdata[i].result = d->sndresult;
-            else if (d->sndstate == GST_IDLE)
+            else if (d->sndstate == SRT_GST_IDLE)
                 w_mc.grpdata[i].result = 0;
             else
                 w_mc.grpdata[i].result = -1;
@@ -14693,9 +14681,9 @@ void CUDTGroup::handleKeepalive(gli_t gli)
 {
     // received keepalive for that group member
     // In backup group it means that the link went IDLE.
-    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == SRT_GST_RUNNING)
     {
-        gli->rcvstate = GST_IDLE;
+        gli->rcvstate = SRT_GST_IDLE;
         HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning IDLE");
     }
 }
@@ -14707,9 +14695,9 @@ void CUDTGroup::internalKeepalive(gli_t gli)
     // other party could have been missed. This is to ensure that the IDLE state
     // is recognized early enough, before any sequence discrepancy can happen.
 
-    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == GST_RUNNING)
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == SRT_GST_RUNNING)
     {
-        gli->rcvstate = GST_IDLE;
+        gli->rcvstate = SRT_GST_IDLE;
         // Prevent sending KEEPALIVE again in group-sending
         gli->ps->core().m_tsTmpActiveTime = steady_clock::time_point();
         HLOGC(mglog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @"
