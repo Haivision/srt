@@ -365,20 +365,37 @@ CUDT::~CUDT()
     delete m_pRNode;
 }
 
+template <typename T>
+T cast_optval(const void* optval)
+{
+    return *reinterpret_cast<const T*>(optval);
+}
+
+template <typename T>
+T cast_optval(const void* optval, int optlen)
+{
+    if (optlen > 0 && optlen != sizeof(T))
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    return cast_optval<T>(optval);
+}
+
 // This function is to make it possible for both C and C++
 // API to accept both bool and int types for boolean options.
 // (it's not that C couldn't use <stdbool.h>, it's that people
 // often forget to use correct type).
-static bool bool_int_value(const void* optval, int optlen)
+template <>
+bool cast_optval(const void* optval, int optlen)
 {
     if (optlen == sizeof(bool))
     {
-        return *(bool*)optval;
+        return *reinterpret_cast<const bool*>(optval);
     }
 
     if (optlen == sizeof(int))
     {
-        return 0 != *(int*)optval; // 0!= is a windows warning-killer int-to-bool conversion
+        // 0!= is a windows warning-killer int-to-bool conversion
+        return 0 != *reinterpret_cast<const int*>(optval);
     }
     return false;
 }
@@ -415,10 +432,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        if (*(int *)optval < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
+        if (cast_optval<int>(optval, optlen) < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        m_iMSS = *(int *)optval;
+        m_iMSS = cast_optval<int>(optval);
 
         // Packet size cannot be greater than UDP buffer size
         if (m_iMSS > m_iUDPSndBufSize)
@@ -429,22 +446,22 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_SNDSYN:
-        m_bSynSending = bool_int_value(optval, optlen);
+        m_bSynSending = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_RCVSYN:
-        m_bSynRecving = bool_int_value(optval, optlen);
+        m_bSynRecving = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_FC:
         if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-        if (*(int *)optval < 1)
+        if (cast_optval<int>(optval, optlen) < 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
         // Mimimum recv flight flag size is 32 packets
-        if (*(int *)optval > 32)
+        if (cast_optval<int>(optval) > 32)
             m_iFlightFlagSize = *(int *)optval;
         else
             m_iFlightFlagSize = 32;
@@ -455,10 +472,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        if (*(int *)optval <= 0)
+        if (cast_optval<int>(optval, optlen) <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        m_iSndBufSize = *(int *)optval / (m_iMSS - CPacket::UDP_HDR_SIZE);
+        m_iSndBufSize = cast_optval<int>(optval) / (m_iMSS - CPacket::UDP_HDR_SIZE);
 
         break;
 
@@ -466,17 +483,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        if (*(int *)optval <= 0)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
         {
-            // This weird cast through int is required because
-            // API requires 'int', and internals require 'size_t';
-            // their size is different on 64-bit systems.
-            const size_t val = size_t(*(const int *)optval);
+            const int val = cast_optval<int>(optval, optlen);
+            if (val <= 0)
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
             // Mimimum recv buffer size is 32 packets
-            const size_t mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
+            const int mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
 
             // XXX This magic 32 deserves some constant
             if (val > mssin_size * 32)
@@ -492,14 +505,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_LINGER:
-        m_Linger = *(linger *)optval;
+        m_Linger = cast_optval<linger>(optval, optlen);
         break;
 
     case SRTO_UDP_SNDBUF:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        m_iUDPSndBufSize = *(int *)optval;
+        m_iUDPSndBufSize = cast_optval<int>(optval, optlen);
 
         if (m_iUDPSndBufSize < m_iMSS)
             m_iUDPSndBufSize = m_iMSS;
@@ -510,7 +523,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-        m_iUDPRcvBufSize = *(int *)optval;
+        m_iUDPRcvBufSize = cast_optval<int>(optval, optlen);
 
         if (m_iUDPRcvBufSize < m_iMSS)
             m_iUDPRcvBufSize = m_iMSS;
@@ -520,25 +533,25 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_RENDEZVOUS:
         if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_bRendezvous = bool_int_value(optval, optlen);
+        m_bRendezvous = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_SNDTIMEO:
-        m_iSndTimeOut = *(int *)optval;
+        m_iSndTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_RCVTIMEO:
-        m_iRcvTimeOut = *(int *)optval;
+        m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_REUSEADDR:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_bReuseAddr = bool_int_value(optval, optlen);
+        m_bReuseAddr = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_MAXBW:
-        m_llMaxBW = *(int64_t *)optval;
+        m_llMaxBW = cast_optval<int64_t>(optval, optlen);
 
         // This can be done on both connected and unconnected socket.
         // When not connected, this will do nothing, however this
@@ -551,20 +564,20 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_IPTTL:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        if (!(*(int *)optval == -1) && !((*(int *)optval >= 1) && (*(int *)optval <= 255)))
+        if (!(cast_optval<int>(optval, optlen) == -1) && !((cast_optval<int>(optval) >= 1) && (cast_optval<int>(optval) <= 255)))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iIpTTL = *(int *)optval;
+        m_iIpTTL = cast_optval<int>(optval);
         break;
 
     case SRTO_IPTOS:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_iIpToS = *(int *)optval;
+        m_iIpToS = cast_optval<int>(optval, optlen);
         break;
 #endif
 
     case SRTO_INPUTBW:
-        m_llInputBW = *(int64_t *)optval;
+        m_llInputBW = cast_optval<int64_t>(optval, optlen);
         // (only if connected; if not, then the value
         // from m_iOverheadBW will be used initially)
         if (m_bConnected)
@@ -572,9 +585,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_OHEADBW:
-        if ((*(int *)optval < 5) || (*(int *)optval > 100))
+        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval) > 100))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = *(int *)optval;
+        m_iOverheadBW = cast_optval<int>(optval);
 
         // Changed overhead BW, so spread the change
         // (only if connected; if not, then the value
@@ -586,44 +599,44 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_SENDER:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bDataSender = bool_int_value(optval, optlen);
+        m_bDataSender = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_TSBPDMODE:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bOPT_TsbPd = bool_int_value(optval, optlen);
+        m_bOPT_TsbPd = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_LATENCY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_iOPT_TsbPdDelay     = *(int *)optval;
-        m_iOPT_PeerTsbPdDelay = *(int *)optval;
+        m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
+        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval);
         break;
 
     case SRTO_RCVLATENCY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_iOPT_TsbPdDelay = *(int *)optval;
+        m_iOPT_TsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_PEERLATENCY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_iOPT_PeerTsbPdDelay = *(int *)optval;
+        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_TLPKTDROP:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bOPT_TLPktDrop = bool_int_value(optval, optlen);
+        m_bOPT_TLPktDrop = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_SNDDROPDELAY:
         // Surprise: you may be connected to alter this option.
         // The application may manipulate this option on sender while transmitting.
-        m_iOPT_SndDropDelay = *(int *)optval;
+        m_iOPT_SndDropDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_PASSPHRASE:
@@ -657,7 +670,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 #ifdef SRT_ENABLE_ENCRYPTION
         {
-            int v          = *(int *)optval;
+            const int v    = cast_optval<int>(optval, optlen);
             int allowed[4] = {
                 0,  // Default value, if this results for initiator, defaults to 16. See below.
                 16, // AES-128
@@ -714,17 +727,17 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_NAKREPORT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bRcvNakReport = bool_int_value(optval, optlen);
+        m_bRcvNakReport = cast_optval<bool>(optval, optlen);
         break;
 
 #ifdef SRT_ENABLE_CONNTIMEO
     case SRTO_CONNTIMEO:
-        m_tdConnTimeOut = milliseconds_from(*(int*)optval);
+        m_tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
         break;
 #endif
 
     case SRTO_LOSSMAXTTL:
-        m_iMaxReorderTolerance = *(int *)optval;
+        m_iMaxReorderTolerance = cast_optval<int>(optval, optlen);
         if (!m_bConnected)
             m_iReorderTolerance = m_iMaxReorderTolerance;
         break;
@@ -732,13 +745,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_VERSION:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_lSrtVersion = *(uint32_t *)optval;
+        m_lSrtVersion = cast_optval<uint32_t>(optval, optlen);
         break;
 
     case SRTO_MINVERSION:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_lMinimumPeerSrtVersion = *(uint32_t *)optval;
+        m_lMinimumPeerSrtVersion = cast_optval<uint32_t>(optval, optlen);
         break;
 
     case SRTO_STREAMID:
@@ -748,7 +761,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (size_t(optlen) > MAX_SID_LENGTH)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        m_sStreamName.assign((const char *)optval, optlen);
+        m_sStreamName.assign((const char*)optval, optlen);
         break;
 
     case SRTO_CONGESTION:
@@ -758,9 +771,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         {
             string val;
             if (optlen == -1)
-                val = (const char *)optval;
+                val = (const char*)optval;
             else
-                val.assign((const char *)optval, optlen);
+                val.assign((const char*)optval, optlen);
 
             // Translate alias
             if (val == "vod")
@@ -776,7 +789,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-        m_bMessageAPI = bool_int_value(optval, optlen);
+        m_bMessageAPI = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_PAYLOADSIZE:
@@ -812,7 +825,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             }
         }
 
-        m_zOPT_ExpPayloadSize = *(int *)optval;
+        m_zOPT_ExpPayloadSize = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_TRANSTYPE:
@@ -822,7 +835,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // XXX Note that here the configuration for SRTT_LIVE
         // is the same as DEFAULT VALUES for these fields set
         // in CUDT::CUDT.
-        switch (*(SRT_TRANSTYPE *)optval)
+        switch (cast_optval<SRT_TRANSTYPE>(optval, optlen))
         {
         case SRTT_LIVE:
             // Default live options:
@@ -873,7 +886,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_GROUPCONNECT:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_OPT_GroupConnect = *(int*)optval;
+        m_OPT_GroupConnect = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_KMREFRESHRATE:
@@ -882,7 +895,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
         // If you first change the KMREFRESHRATE, KMPREANNOUNCE
         // will be set to the maximum allowed value
-        m_uKmRefreshRatePkt = *(int *)optval;
+        m_uKmRefreshRatePkt = cast_optval<int>(optval, optlen);
         if (m_uKmPreAnnouncePkt == 0 || m_uKmPreAnnouncePkt > (m_uKmRefreshRatePkt - 1) / 2)
         {
             m_uKmPreAnnouncePkt = (m_uKmRefreshRatePkt - 1) / 2;
@@ -896,8 +909,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         {
-            int val   = *(int *)optval;
-            int kmref = m_uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_uKmRefreshRatePkt;
+            const int val = cast_optval<int>(optval, optlen);
+            const int kmref = m_uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_uKmRefreshRatePkt;
             if (val > (kmref - 1) / 2)
             {
                 LOGC(mglog.Error,
@@ -914,21 +927,21 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-        m_bOPT_StrictEncryption = bool_int_value(optval, optlen);
+        m_bOPT_StrictEncryption = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_PEERIDLETIMEO:
 
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_iOPT_PeerIdleTimeout = *(int *)optval;
+        m_iOPT_PeerIdleTimeout = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_IPV6ONLY:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-        m_iIpV6Only = *(int *)optval;
+        m_iIpV6Only = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_PACKETFILTER:
@@ -936,7 +949,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         {
-            string arg((char *)optval, optlen);
+            string arg((const char*)optval, optlen);
             // Parse the configuration string prematurely
             SrtFilterConfig fc;
             if (!ParseFilterConfig(arg, fc))
@@ -967,7 +980,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // It's set here just for the sake of setting it on a listener
             // socket so that it is then applied on the group when a
             // group connection is configuired.
-            const int tmo = *(int*)optval;
+            const int val = cast_optval<int>(optval, optlen);
 
             // Search if you already have SRTO_PEERIDLETIMEO set
 
@@ -977,14 +990,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             // This option is RECORDED in microseconds, while
             // idletmp is recorded in milliseconds, only translated to
             // microseconds directly before use.
-            if (tmo >= idletmo)
+            if (val >= idletmo)
             {
-                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
                         << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            m_uOPT_StabilityTimeout = tmo * 1000;
+            m_uOPT_StabilityTimeout = val * 1000;
         }
 
         break;
@@ -1555,14 +1568,14 @@ void CUDT::setListenState()
 
 size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int hs_version)
 {
-    if (srtlen < SRT_HS__SIZE)
+    if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(mglog.Fatal,
-             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS__SIZE << ")");
+             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
         return 0;
     }
 
-    srtlen = SRT_HS__SIZE; // We use only that much space.
+    srtlen = SRT_HS_E_SIZE; // We use only that much space.
 
     memset((srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
@@ -1778,9 +1791,9 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
     // too small to keep all the data. As this is "static const", declaring
     // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS__SIZE ? SRTDATA_MAXSIZE : -1;
+    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS_E_SIZE ? SRTDATA_MAXSIZE : -1;
 
-    // This will be effectively larger than SRT_HS__SIZE, but it will be also used
+    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
@@ -2896,11 +2909,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
                     return false; // don't interpret
                 }
@@ -2922,11 +2935,11 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 hsreq_type_cmd = cmd;
                 // Set is the size as it should, then give it for interpretation for
                 // the proper function.
-                if (blocklen < SRT_HS__SIZE)
+                if (blocklen < SRT_HS_E_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(mglog.Error,
-                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS__SIZE
+                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
                              << ")");
 
                     return false; // don't interpret
@@ -3423,10 +3436,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     }
 
     // This is called when the group ID has come in in the handshake.
-    if (gtp >= SRT_GTYPE__END)
+    if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE__END << ")");
+        LOGC(mglog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
         return false;
     }
 
@@ -3486,7 +3499,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
-            pg->peerid(grpid);
+            pg->set_peerid(grpid);
             HLOGC(mglog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
         }
         // Otherwise the peer id must be the same as existing, otherwise
@@ -3589,7 +3602,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
             return -1;
         }
 
-        gp->peerid(peergroup);
+        gp->set_peerid(peergroup);
         gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
@@ -3842,7 +3855,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     HLOGC(dlog.Debug, log << "applyGroupSequences: no socket found connected and transmitting, @"
             << target << " not changing sequences, storing snd-seq %" << (w_snd_isn));
 
-    currentSchedSequence(w_snd_isn);
+    set_currentSchedSequence(w_snd_isn);
 
     return true;
 }
@@ -4988,7 +5001,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     return postConnect(response, false, eout, synchro);
 }
 
-void CUDT::applyResponseSettings()
+void CUDT::applyResponseSettings() ATR_NOEXCEPT
 {
     // Re-configure according to the negotiated values.
     m_iMSS               = m_ConnRes.m_iMSS;
@@ -5009,7 +5022,7 @@ void CUDT::applyResponseSettings()
               << " peerID=" << m_ConnRes.m_iID);
 }
 
-EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro)
+EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
@@ -5086,11 +5099,23 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
     // And, I am connected too.
     m_bConnecting = false;
-    m_bConnected  = true;
 
-    // register this socket for receiving data packets
-    m_pRNode->m_bOnList = true;
-    m_pRcvQueue->setNewEntry(this);
+    // The lock on m_ConnectionLock should still be applied, but
+    // the socket could have been started removal before this function
+    // has started. Do a sanity check before you continue with the
+    // connection process.
+    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    if (s)
+    {
+        // The socket could be closed at this very moment.
+        // Continue with removing the socket from the pending structures,
+        // but prevent it from setting it as connected.
+        m_bConnected  = true;
+
+        // register this socket for receiving data packets
+        m_pRNode->m_bOnList = true;
+        m_pRcvQueue->setNewEntry(this);
+    }
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
@@ -5114,16 +5139,15 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // being enqueued for later pickup from the queue.
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
-    // acknowledge the management module.
-    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
+        LOGC(mglog.Error, log << "Connection broken in the process - socket @" << m_SocketID << " closed");
+        m_RejectReason = SRT_REJ_CLOSE;
         if (eout)
         {
-            *eout = CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+            *eout = CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
-
-        m_RejectReason = SRT_REJ_CLOSE;
         return CONN_REJECT;
     }
 
@@ -6195,7 +6219,7 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-bool CUDT::close()
+bool CUDT::closeInternal()
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6328,16 +6352,6 @@ bool CUDT::close()
         m_bConnected = false;
     }
 
-    if (m_pCryptoControl)
-        m_pCryptoControl->close();
-
-    if (isOPT_TsbPd() && m_RcvTsbPdThread.joinable())
-    {
-        HLOGC(mglog.Debug, log << "CLOSING, joining TSBPD thread...");
-        m_RcvTsbPdThread.join();
-        HLOGC(mglog.Debug, log << "... returned from TSBPD join");
-    }
-
     HLOGC(mglog.Debug, log << "CLOSING, joining send/receive threads");
 
     // waiting all send and recv calls to stop
@@ -6347,6 +6361,9 @@ bool CUDT::close()
     // Locking m_RcvBufferLock to protect calling to m_pCryptoControl->decrypt((packet))
     // from the processData(...) function while resetting Crypto Control.
     enterCS(m_RcvBufferLock);
+    if (m_pCryptoControl)
+        m_pCryptoControl->close();
+
     m_pCryptoControl.reset();
     leaveCS(m_RcvBufferLock);
 
@@ -9042,6 +9059,17 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 
     string reason = "reXmit";
 
+    CGuard connectguard(m_ConnectionLock);
+    // If a closing action is done simultaneously, then
+    // m_bOpened should already be false, and it's set
+    // just before releasing this lock.
+    //
+    // If this lock is caught BEFORE the closing could
+    // start the dissolving process, this process will
+    // not be started until this function is finished.
+    if (!m_bOpened)
+        return std::make_pair(0, enter_time);
+
     payload = packLostData((w_packet), (origintime));
     if (payload > 0)
     {
@@ -11082,7 +11110,7 @@ void CUDTGroup::removeEPollID(const int eid)
 
 void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].push_back(sl);
@@ -11090,7 +11118,7 @@ void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 
 void CUDT::DisconnectSignal(ETransmissionEvent evt)
 {
-    if (evt >= TEV__SIZE)
+    if (evt >= TEV_E_SIZE)
         return; // sanity check
 
     m_Slots[evt].clear();
@@ -11431,24 +11459,24 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     switch (optName)
     {
     case SRTO_RCVSYN:
-        m_bSynRecving = bool_int_value(optval, optlen);
+        m_bSynRecving = cast_optval<bool>(optval, optlen);
         return;
 
     case SRTO_SNDSYN:
-        m_bSynSending = bool_int_value(optval, optlen);
+        m_bSynSending = cast_optval<bool>(optval, optlen);
         return;
 
     case SRTO_SNDTIMEO:
-        m_iSndTimeOut = *(int*)optval;
+        m_iSndTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_RCVTIMEO:
-        m_iRcvTimeOut = *(int*)optval;
+        m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_GROUPSTABTIMEO:
         {
-            int tmo = *(int *)optval;
+            const int val = cast_optval<int>(optval, optlen);
 
             // Search if you already have SRTO_PEERIDLETIMEO set
             int idletmo = CUDT::COMM_RESPONSE_TIMEOUT_MS;
@@ -11459,14 +11487,14 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
                 f->get(idletmo); // worst case, it will leave it unchanged.
             }
 
-            if (tmo >= idletmo)
+            if (val >= idletmo)
             {
-                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << tmo
+                LOGC(mglog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
                         << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            m_uOPT_StabilityTimeout = tmo * 1000;
+            m_uOPT_StabilityTimeout = val * 1000;
         }
 
         break;
@@ -11886,12 +11914,13 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
 {
     // [[using locked(m_GroupLock)]];
 
-    currentSchedSequence(core.ISN());
+    set_currentSchedSequence(core.ISN());
     setInitialRxSequence(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
-    // from the first socket.
-    latency(core.m_iTsbPdDelay_ms*int64_t(1000));
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the current socket.
+    set_latency(core.m_iTsbPdDelay_ms*int64_t(1000));
 }
 
 void CUDTGroup::close()
@@ -13907,6 +13936,10 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
         }
         else
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             {
                 InvertedLock ug (m_GroupLock);
                 m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
@@ -14040,6 +14073,10 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const size_t nunstable, vector<gli
 
 RetryWaitBlocked:
         {
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
             InvertedLock ug (m_GroupLock);
             HLOGC(dlog.Debug, log << "grp/sendBackup: swait call to get at least one link alive up to "
                     << m_iSndTimeOut << "us");

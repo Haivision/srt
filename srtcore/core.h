@@ -51,8 +51,8 @@ modified by
 *****************************************************************************/
 
 
-#ifndef __UDT_CORE_H__
-#define __UDT_CORE_H__
+#ifndef INC_SRT_CORE_H
+#define INC_SRT_CORE_H
 
 #include <deque>
 #include <sstream>
@@ -1190,8 +1190,8 @@ private:
     SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket &response, const sockaddr_any& serv_addr, bool synchro, EReadStatus,
             CPacket& reqpkt);
     SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
-    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro);
-    void applyResponseSettings();
+    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
+    void applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr_any& serv_addr);
 
@@ -1242,7 +1242,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool close();
+    bool closeInternal();
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.
@@ -1457,7 +1457,7 @@ private:
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
     // Congestion control
-    std::vector<EventSlot> m_Slots[TEV__SIZE];
+    std::vector<EventSlot> m_Slots[TEV_E_SIZE];
     SrtCongestion m_CongCtl;
 
     // Packet filtering

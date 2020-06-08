@@ -8,8 +8,8 @@
  *
  */
 #pragma once
-#ifndef __SRT_SYNC_H__
-#define __SRT_SYNC_H__
+#ifndef INC_SRT_SYNC_H
+#define INC_SRT_SYNC_H
 
 //#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
@@ -747,7 +747,7 @@ public: // Observers
 
     struct id
     {
-        id(const pthread_t t)
+        explicit id(const pthread_t t)
             : value(t)
         {}
 
@@ -777,6 +777,19 @@ public: // Internal
 private:
     pthread_t m_thread;
 };
+
+template <class Stream>
+inline Stream& operator<<(Stream& str, const CThread::id& cid)
+{
+#if defined(_WIN32) && defined(PTW32_VERSION)
+    // This is a version specific for pthread-win32 implementation
+    // Here pthread_t type is a structure that is not convertible
+    // to a number at all.
+    return str << pthread_getw32threadid_np(cid.value);
+#else
+    return str << cid.value;
+#endif
+}
 
 namespace this_thread
 {
@@ -827,4 +840,4 @@ CUDTException& GetThreadLocalError();
 } // namespace sync
 } // namespace srt
 
-#endif // __SRT_SYNC_H__
+#endif // INC_SRT_SYNC_H

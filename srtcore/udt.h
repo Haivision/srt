@@ -64,8 +64,8 @@ modified by
  * file doesn't contain _FUNCTIONS_ predicted to be used in C - see udtc.h
  */
 
-#ifndef __UDT_H__
-#define __UDT_H__
+#ifndef INC_SRT_UDT_H
+#define INC_SRT_UDT_H
 
 #include "srt.h"
 

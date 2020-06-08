@@ -38,8 +38,8 @@ written by
    Yunhong Gu, last updated 01/27/2011
 *****************************************************************************/
 
-#ifndef __UDT_CACHE_H__
-#define __UDT_CACHE_H__
+#ifndef INC_SRT_CACHE_H
+#define INC_SRT_CACHE_H
 
 #include <list>
 #include <vector>

@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__COMMON_TRANSMITMEDIA_HPP
-#define INC__COMMON_TRANSMITMEDIA_HPP
+#ifndef INC_SRT_COMMON_TRANSMITMEDIA_HPP
+#define INC_SRT_COMMON_TRANSMITMEDIA_HPP
 
 #include <string>
 #include <map>

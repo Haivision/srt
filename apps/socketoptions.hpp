@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__SOCKETOPTIONS_HPP
-#define INC__SOCKETOPTIONS_HPP
+#ifndef INC_SRT_SOCKETOPTIONS_HPP
+#define INC_SRT_SOCKETOPTIONS_HPP
 
 #include <string>
 #include <map>

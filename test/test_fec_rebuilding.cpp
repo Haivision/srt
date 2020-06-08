@@ -149,7 +149,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     unique_ptr<CPacket> fecpkt ( new CPacket );
 
     uint32_t* chdr = fecpkt->getHeader();
-    memcpy(chdr, fec_ctl.hdr, SRT_PH__SIZE * sizeof(*chdr));
+    memcpy(chdr, fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(*chdr));
 
     // The buffer can be assigned.
     fecpkt->m_pcData = fec_ctl.buffer;
@@ -226,7 +226,7 @@ TEST_F(TestFECRebuilding, Rebuild)
     unique_ptr<CPacket> fecpkt ( new CPacket );
 
     uint32_t* chdr = fecpkt->getHeader();
-    memcpy(chdr, fec_ctl.hdr, SRT_PH__SIZE * sizeof(*chdr));
+    memcpy(chdr, fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(*chdr));
 
     // The buffer can be assigned.
     fecpkt->m_pcData = fec_ctl.buffer;

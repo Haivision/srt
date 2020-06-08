@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRTC_H
-#define INC__SRTC_H
+#ifndef INC_SRTC_H
+#define INC_SRTC_H
 
 #include "version.h"
 
@@ -737,7 +737,7 @@ typedef enum SRT_GROUP_TYPE
     SRT_GTYPE_BALANCING,
     SRT_GTYPE_MULTICAST,
     // ...
-    SRT_GTYPE__END
+    SRT_GTYPE_E_END
 } SRT_GROUP_TYPE;
 
 // Free-form flags for groups
