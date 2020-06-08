@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   // connect to the server, implict bind
+   // connect to the server, implicit bind
    if (SRT_ERROR == srt_connect(fhandle, peer->ai_addr, peer->ai_addrlen))
    {
       cout << "connect: " << srt_getlasterror_str() << endl;
