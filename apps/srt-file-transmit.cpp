@@ -664,6 +664,9 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
 
+    // Add some extra parameters.
+    srt_source_uri["transtype"] = "file";
+
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
 }
 
