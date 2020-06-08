@@ -619,6 +619,29 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
+std::string MemberStatusStr(SRT_MEMBERSTATUS s)
+{
+    if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
+        return "???";
+
+    static struct AutoMap
+    {
+        std::string names[int(SRT_GST_BROKEN)+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRT_GST_##statename] = #statename
+            SINI(PENDING);
+            SINI(IDLE);
+            SINI(RUNNING);
+            SINI(BROKEN);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)];
+}
+
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
     if (that_enabled)

@@ -51,8 +51,8 @@ modified by
 *****************************************************************************/
 
 
-#ifndef __UDT_CORE_H__
-#define __UDT_CORE_H__
+#ifndef INC_SRT_CORE_H
+#define INC_SRT_CORE_H
 
 #include <deque>
 #include <sstream>
@@ -264,13 +264,8 @@ class CUDTGroup
     typedef srt::sync::steady_clock steady_clock;
 
 public:
-    enum GroupState
-    {
-        GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
-        GST_IDLE,     // The socket is ready to be activated
-        GST_RUNNING,  // The socket was already activated and is in use
-        GST_BROKEN    // The last operation broke the socket, it should be closed.
-    };
+
+    typedef SRT_MEMBERSTATUS GroupState;
 
     // Note that the use of states may differ in particular group types:
     //
@@ -534,7 +529,6 @@ private:
     // Check if there's at least one connected socket.
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
-    void getMemberStatus(std::vector<SRT_SOCKGROUPDATA>& w_gd, SRTSOCKET wasread, int result, bool again);
 
     class CUDTUnited* m_pGlobal;
     srt::sync::Mutex m_GroupLock;
@@ -677,7 +671,6 @@ public:
     //typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
 
 private:
-
     // Fields required for SRT_GTYPE_BACKUP groups.
     senderBuffer_t m_SenderBuffer;
     int32_t m_iSndOldestMsgNo; // oldest position in the sender buffer
@@ -924,7 +917,7 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
-    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPDATA links [], int arraysize);
+    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -1434,7 +1427,7 @@ private:
     CCache<CInfoBlock>* m_pCache;                // network information cache
 
     // Congestion control
-    std::vector<EventSlot> m_Slots[TEV__SIZE];
+    std::vector<EventSlot> m_Slots[TEV_E_SIZE];
     SrtCongestion m_CongCtl;
 
     // Packet filtering

@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRT_LOGGING_H
-#define INC__SRT_LOGGING_H
+#ifndef INC_SRT_LOGGING_H
+#define INC_SRT_LOGGING_H
 
 
 #include <iostream>

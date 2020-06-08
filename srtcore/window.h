@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_WINDOW_H__
-#define __UDT_WINDOW_H__
+#ifndef INC_SRT_WINDOW_H
+#define INC_SRT_WINDOW_H
 
 
 #ifndef _WIN32

@@ -65,13 +65,13 @@ int srt_connect_bind(SRTSOCKET u,
     return CUDT::connect(u, source, target, target_len);
 }
 
-SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
 {
-    SRT_SOCKGROUPDATA data;
-    data.result = 0;
-    data.status = SRTS_INIT;
+    SRT_SOCKGROUPCONFIG data;
+    data.errorcode = SRT_SUCCESS;
     data.id = -1;
     data.weight = 0;
+    data.config = NULL;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -85,7 +85,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
 }
 
 int srt_connect_group(SRTSOCKET group,
-        SRT_SOCKGROUPDATA name [], int arraysize)
+        SRT_SOCKGROUPCONFIG name [], int arraysize)
 {
     return CUDT::connectLinks(group, name, arraysize);
 }

@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__URL_PARSER_H
-#define INC__URL_PARSER_H
+#ifndef INC_SRT_URL_PARSER_H
+#define INC_SRT_URL_PARSER_H
 
 #include <string>
 #include <map>

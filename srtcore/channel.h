@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_CHANNEL_H__
-#define __UDT_CHANNEL_H__
+#ifndef INC_SRT_CHANNEL_H
+#define INC_SRT_CHANNEL_H
 
 #include "platform_sys.h"
 #include "udt.h"

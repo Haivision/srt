@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRTC_H
-#define INC__SRTC_H
+#ifndef INC_SRTC_H
+#define INC_SRTC_H
 
 #include "version.h"
 
@@ -737,7 +737,7 @@ typedef enum SRT_GROUP_TYPE
     SRT_GTYPE_BALANCING,
     SRT_GTYPE_MULTICAST,
     // ...
-    SRT_GTYPE__END
+    SRT_GTYPE_E_END
 } SRT_GROUP_TYPE;
 
 // Free-form flags for groups
@@ -757,15 +757,37 @@ SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPREC
 SRT_API       SRTSOCKET srt_create_socket();
 
 // Group management
+
+
+typedef enum SRT_MemberStatus
+{
+    SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
+    SRT_GST_IDLE,     // The socket is ready to be activated
+    SRT_GST_RUNNING,  // The socket was already activated and is in use
+    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
+} SRT_MEMBERSTATUS;
+
+
 typedef struct SRT_SocketGroupData_
 {
     SRTSOCKET id;
-    SRT_SOCKSTATUS status;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    SRT_SOCKSTATUS sockstate;
+    SRT_MEMBERSTATUS memberstate;
     int result;
+} SRT_SOCKGROUPDATA;
+
+typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
+
+typedef struct SRT_GroupMemberConfig_
+{
+    SRTSOCKET id;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
     int weight;
-} SRT_SOCKGROUPDATA;
+    SRT_SOCKOPT_CONFIG* config;
+    int errorcode;
+} SRT_SOCKGROUPCONFIG;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
 SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
@@ -791,8 +813,8 @@ SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 
-SRT_API SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
-SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPDATA name [], int arraysize);
+SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
+SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
 
 
 SRT_API       int srt_close        (SRTSOCKET u);
