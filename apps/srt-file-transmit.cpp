@@ -28,6 +28,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <common.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -305,17 +306,12 @@ bool DoUpload(UriParser& ut, string path, string filename,
     {
         if (!tar.get())
         {
-            int sockopt = SRTT_FILE;
-
-            tar = Target::Create(ut.uri());
+            tar = Target::Create(ut.makeUri());
             if (!tar.get())
             {
                 cerr << "Unsupported target type: " << ut.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(tar->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
@@ -344,7 +340,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
         assert(efdlen == 1);
 
         SRT_SOCKSTATUS status = srt_getsockstate(s);
-        Verb() << "Event with status " << status << "\n";
+        Verb() << "Socket status: " << srt_logging::SockStatusStr(status) << "\n";
 
         switch (status)
         {
@@ -492,17 +488,12 @@ bool DoDownload(UriParser& us, string directory, string filename,
     {
         if (!src.get())
         {
-            int sockopt = SRTT_FILE;
-
-            src = Source::Create(us.uri());
+            src = Source::Create(us.makeUri());
             if (!src.get())
             {
                 cerr << "Unsupported source type: " << us.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(src->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
