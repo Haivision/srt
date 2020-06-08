@@ -199,7 +199,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
    // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
-   _DEPRECATED_SRTO_SNDPBKEYLEN = 38, // (needed to use inside the code without generating -Wswitch)
+   SRTO_SNDPBKEYLEN_DEPRECATED = 38, // (needed to use inside the code without generating -Wswitch)
    //
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side

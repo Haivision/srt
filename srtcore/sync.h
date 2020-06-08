@@ -49,7 +49,7 @@ using Duration = chrono::duration<Clock>;
 /// Class template srt::sync::Duration represents a time interval.
 /// It consists of a count of ticks of _Clock.
 /// It is a wrapper of system timers in case of non-C++11 chrono build.
-template <class _Clock>
+template <class Clock>
 class Duration
 {
 public:
@@ -121,7 +121,7 @@ inline bool is_zero(const steady_clock::time_point& t)
 }
 
 #else
-template <class _Clock>
+template <class Clock>
 class TimePoint;
 
 class steady_clock
@@ -135,7 +135,7 @@ public:
 };
 
 /// Represents a point in time
-template <class _Clock>
+template <class Clock>
 class TimePoint
 {
 public:
@@ -149,7 +149,7 @@ public:
     {
     }
 
-    TimePoint(const TimePoint<_Clock>& other)
+    TimePoint(const TimePoint<Clock>& other)
         : m_timestamp(other.m_timestamp)
     {
     }
@@ -157,25 +157,25 @@ public:
     ~TimePoint() {}
 
 public: // Relational operators
-    inline bool operator<(const TimePoint<_Clock>& rhs) const { return m_timestamp < rhs.m_timestamp; }
-    inline bool operator<=(const TimePoint<_Clock>& rhs) const { return m_timestamp <= rhs.m_timestamp; }
-    inline bool operator==(const TimePoint<_Clock>& rhs) const { return m_timestamp == rhs.m_timestamp; }
-    inline bool operator!=(const TimePoint<_Clock>& rhs) const { return m_timestamp != rhs.m_timestamp; }
-    inline bool operator>=(const TimePoint<_Clock>& rhs) const { return m_timestamp >= rhs.m_timestamp; }
-    inline bool operator>(const TimePoint<_Clock>& rhs) const { return m_timestamp > rhs.m_timestamp; }
+    inline bool operator<(const TimePoint<Clock>& rhs) const { return m_timestamp < rhs.m_timestamp; }
+    inline bool operator<=(const TimePoint<Clock>& rhs) const { return m_timestamp <= rhs.m_timestamp; }
+    inline bool operator==(const TimePoint<Clock>& rhs) const { return m_timestamp == rhs.m_timestamp; }
+    inline bool operator!=(const TimePoint<Clock>& rhs) const { return m_timestamp != rhs.m_timestamp; }
+    inline bool operator>=(const TimePoint<Clock>& rhs) const { return m_timestamp >= rhs.m_timestamp; }
+    inline bool operator>(const TimePoint<Clock>& rhs) const { return m_timestamp > rhs.m_timestamp; }
 
 public: // Arithmetic operators
-    inline Duration<_Clock> operator-(const TimePoint<_Clock>& rhs) const
+    inline Duration<Clock> operator-(const TimePoint<Clock>& rhs) const
     {
-        return Duration<_Clock>(m_timestamp - rhs.m_timestamp);
+        return Duration<Clock>(m_timestamp - rhs.m_timestamp);
     }
-    inline TimePoint operator+(const Duration<_Clock>& rhs) const { return TimePoint(m_timestamp + rhs.count()); }
-    inline TimePoint operator-(const Duration<_Clock>& rhs) const { return TimePoint(m_timestamp - rhs.count()); }
+    inline TimePoint operator+(const Duration<Clock>& rhs) const { return TimePoint(m_timestamp + rhs.count()); }
+    inline TimePoint operator-(const Duration<Clock>& rhs) const { return TimePoint(m_timestamp - rhs.count()); }
 
 public: // Assignment operators
-    inline void operator=(const TimePoint<_Clock>& rhs) { m_timestamp = rhs.m_timestamp; }
-    inline void operator+=(const Duration<_Clock>& rhs) { m_timestamp += rhs.count(); }
-    inline void operator-=(const Duration<_Clock>& rhs) { m_timestamp -= rhs.count(); }
+    inline void operator=(const TimePoint<Clock>& rhs) { m_timestamp = rhs.m_timestamp; }
+    inline void operator+=(const Duration<Clock>& rhs) { m_timestamp += rhs.count(); }
+    inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
 #if HAVE_FULL_CXX11
@@ -195,7 +195,7 @@ public: //
 #endif
 
 public:
-    Duration<_Clock> time_since_epoch() const;
+    Duration<Clock> time_since_epoch() const;
 
 private:
     uint64_t m_timestamp;
