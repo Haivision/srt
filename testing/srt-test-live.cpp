@@ -793,8 +793,8 @@ int main( int argc, char** argv )
 
     if (!src || !tar)
     {
-        string tarstate = tar ? "CREATED" : "FAILED";
-        string srcstate = src ? "CREATED" : "FAILED";
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
 
         cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
         return 2;
@@ -965,4 +965,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-
