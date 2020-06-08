@@ -1259,19 +1259,17 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
             }
         }
+        catch (CUDTException& e)
+        {
+            // Just notify the problem, but the loop must continue.
+            // Set the original error as reported.
+            targets[tii].errorcode = e.getErrorCode();
+        }
         catch (...)
         {
-            LOGC(mglog.Error, log << "groupConnect: Error during setting options - propagating error");
-            CGuard cl (m_GlobControlLock);
-            m_Sockets.erase(ns->m_SocketID);
-            // Intercept to delete the socket on failure.
-            delete ns;
-
-            // NOTE: This problem normally should not happen, but anyway,
-            // these options are set on every socket the same way, and
-            // every socket is a newly created socket. So it's only possible
-            // that the first one will fail, or none will fail.
-            throw;
+            // Set the general EINVPARAM - this error should never happen
+            LOGC(mglog.Error, log << "IPE: CUDT::setOpt reported unknown exception");
+            targets[tii].errorcode = SRT_EINVPARAM;
         }
 
         // Add socket to the group.
