@@ -164,7 +164,7 @@ int CUnitQueue::increase()
     char *   tempb = NULL;
 
     // all queues have the same size
-    int size = m_pQEntry->m_iSize;
+    const int size = m_pQEntry->m_iSize;
 
     try
     {
