@@ -340,7 +340,6 @@ bool DoUpload(UriParser& ut, string path, string filename,
         assert(efdlen == 1);
 
         SRT_SOCKSTATUS status = srt_getsockstate(s);
-        Verb() << "Socket status: " << srt_logging::SockStatusStr(status) << "\n";
 
         switch (status)
         {
