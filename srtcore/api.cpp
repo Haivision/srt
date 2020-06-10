@@ -1240,30 +1240,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         // NOTE: After calling newSocket, the socket is mapped into m_Sockets.
         // It must be MANUALLY removed from this list in case we need it deleted.
-        SRTSOCKET sid = -1;
-        try
-        {
-            sid = newSocket(&ns);
-        }
-        catch (...)
-        {
-            // In this case, exceptionally, the loop should be
-            // interrupted and the exception propagated. But the
-            // configuration objects must be still deleted.
-            for (; tii < arraysize; ++tii)
-            {
-                delete targets[tii].config;
-                targets[tii].config = NULL;
-            }
+        SRTSOCKET sid = newSocket(&ns);
 
-            throw;
-        }
-
-        // NOW the object should be taken over and deleted
-        // at the end of this iteration.
-
-        UniquePtr<SRT_SocketOptionObject> config (targets[tii].config);
-        targets[tii].config = NULL; // Mark takenover ownership
+        SRT_SocketOptionObject* config = targets[tii].config;
 
         // XXX Support non-blocking mode:
         // If the group has nonblocking set for connect (SNDSYN),
@@ -1306,10 +1285,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         if (config)
         {
             targets[tii].errorcode = ns->core().applyMemberConfigObject(*config);
-            // config will be deleted regardless of return or exception
-            // Note that the exception can interrupt this loop, leaving
-            // some of the objects "eaten" and some remaining. The user
-            // should apply "delete" on all pointers that are not NULL.
+
+            if (targets[tii].errorcode != SRT_SUCCESS)
+            {
+                // If failed to set options, then do not continue
+                // neither with binding, nor with connecting.
+                continue;
+            }
         }
 
         // XXX This should be reenabled later, this should

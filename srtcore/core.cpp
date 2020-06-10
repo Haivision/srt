@@ -1358,18 +1358,21 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
 
 SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 {
+    SRT_SOCKOPT this_opt = SRTO_VERSION;
     try
     {
         for (size_t i = 0; i < opt.options.size(); ++i)
         {
             SRT_SocketOptionObject::SingleOption* o = opt.options[i];
             HLOGC(mglog.Debug, log << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
-            setOpt(SRT_SOCKOPT(o->option), o->storage, o->length);
+            this_opt = SRT_SOCKOPT(o->option);
+            setOpt(this_opt, o->storage, o->length);
         }
     }
     catch (CUDTException& e)
     {
         // XXX Shouldn't CUDTException::getErrorCode() return SRT_ERRNO?
+        LOGC(mglog.Error, log << "applyMemberConfigObject: failed to set option #" << this_opt << ": NOT ALLOWED");
         return SRT_ERRNO(e.getErrorCode());
     }
 

@@ -56,8 +56,7 @@ SRT_SOCKOPT_CONFIG* srt_create_config()
 
 void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
 {
-    if (in)
-        delete in;
+    delete in;
 }
 
 int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)

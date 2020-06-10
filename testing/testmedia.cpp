@@ -879,6 +879,11 @@ void SrtCommon::OpenGroupClient()
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+
+    // Delete config objects before prospective exception
+    for (auto& gd: targets)
+        srt_delete_config(gd.config);
+
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");
