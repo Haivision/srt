@@ -277,9 +277,7 @@ static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
 
 static int crysprFallback_Close(CRYSPR_cb *cryspr_cb)
 {
-	if (NULL != cryspr_cb) {
-		free(cryspr_cb);
-	}
+	free(cryspr_cb);
 	return(0);
 }
 
