@@ -7729,18 +7729,6 @@ int32_t CUDT::ackDataUpTo(int32_t ack)
     if (acksize > 0)
     {
         const int distance = m_pRcvBuffer->ackData(acksize);
-        /*
-           XXX example code - inform the group up to which packet
-           data are received so that it can be also acknowledged
-           in all others and false lossreport prevened
-           if (m_parent->m_IncludedGroup)
-           m_parent->m_IncludedGroup->readyPackets(this, ack);
-         */
-
-        // Signal threads waiting in CTimer::waitForEvent(),
-        // which are select(), selectEx() and epoll_wait().
-        CGlobEvent::triggerEvent();
-
         return CSeqNo::decseq(ack, distance);
     }
 
@@ -8143,6 +8131,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
         // acknowledde any waiting epolls to write
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        CGlobEvent::triggerEvent();
     }
 
     // insert this socket to snd list if it is not on the list yet
