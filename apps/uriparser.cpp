@@ -44,11 +44,59 @@ struct UriParserInit
 
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
 {
+    m_expect = exp;
     Parse(strUrl, exp);
 }
 
 UriParser::~UriParser(void)
 {
+}
+
+string UriParser::makeUri()
+{
+    // Reassemble parts into the URI
+    string prefix = "";
+    if (m_proto != "")
+    {
+        prefix = m_proto + "://";
+    }
+
+    std::ostringstream out;
+
+    out << prefix << m_host;
+    if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
+    {
+        // Do not add port
+    }
+    else
+    {
+        out << ":" << m_port;
+    }
+
+    if (m_path != "")
+    {
+        if (m_path[0] != '/')
+            out << "/";
+        out << m_path;
+    }
+
+    if (!m_mapQuery.empty())
+    {
+        out << "?";
+
+        query_it i = m_mapQuery.begin();
+        for (;;)
+        {
+            out << i->first << "=" << i->second;
+            ++i;
+            if (i == m_mapQuery.end())
+                break;
+            out << "&";
+        }
+    }
+
+    m_origUri = out.str();
+    return m_origUri;
 }
 
 string UriParser::proto(void) const
@@ -224,6 +272,8 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
 #ifdef TEST
 
+#include <vector>
+
 using namespace std;
 
 int main( int argc, char** argv )
@@ -232,11 +282,19 @@ int main( int argc, char** argv )
     {
         return 0;
     }
-    UriParser parser (argv[1]);
+    UriParser parser (argv[1], UriParser::EXPECT_HOST);
+    std::vector<std::string> args;
+
+    if (argc > 2)
+    {
+        copy(argv+2, argv+argc, back_inserter(args));
+    }
+
+
     (void)argc;
 
     cout << "PARSING URL: " << argv[1] << endl;
-    cerr << "SCHEME INDEX: " << int(parser.type()) << endl;
+    cout << "SCHEME INDEX: " << int(parser.type()) << endl;
     cout << "PROTOCOL: " << parser.proto() << endl;
     cout << "HOST: " << parser.host() << endl;
     cout << "PORT: " << parser.portno() << endl;
@@ -245,6 +303,20 @@ int main( int argc, char** argv )
     for (auto& p: parser.parameters()) 
     {
         cout << "\t" << p.first << " = " << p.second << endl;
+    }
+
+    if (!args.empty())
+    {
+        for (string& s: args)
+        {
+            vector<string> keyval;
+            Split(s, '=', back_inserter(keyval));
+            if (keyval.size() < 2)
+                keyval.push_back("");
+            parser[keyval[0]] = keyval[1];
+        }
+
+        cout << "REASSEMBLED: " << parser.makeUri() << endl;
     }
     return 0;
 }
