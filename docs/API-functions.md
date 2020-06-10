@@ -628,39 +628,110 @@ The following group types are collected in an `SRT_GROUP_TYPE` enum:
 * `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
 * `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
 
+### SRT_SOCKGROUPCONFIG
+
+This structrure is used to define entry points for connections for the
+`srt_connect_group` function:
+
+```
+typedef struct SRT_GroupMemberConfig_
+{
+    SRTSOCKET id;
+    struct sockaddr_storage srcaddr;
+    struct sockaddr_storage peeraddr;
+    int weight;
+    SRT_SOCKOPT_CONFIG* config;
+    int errorcode;
+} SRT_SOCKGROUPCONFIG;
+```
+
+where:
+
+* `id`: member socket ID (filled back as output)
+* `srcaddr`: address to which `id` should be bound (or a form of "any")
+* `peeraddr`: address to which `id` should be connected
+* `weight`: the weight parameter for the link (group-type dependent)
+* `config`: the configuration object, if used (see `srt_create_config()`)
+* `errorcode`: status of the connecting operation
+
+The `srt_perpare_endpoint` sets these fields to default values. After that
+you can change the value of `weight` and `config` fields. The `weight`
+parameter's meaning is dependent on the group type:
+
+* BROADCAST: not used
+* BACKUP: positive value of link priority, 0 is the highest
+* BALANCING: relative expected load on this link for fixed algorithm
+
+The `config` parameter is used to provide options to be set separately
+on a socket for particular connection - see #srt_create_config.
+
 ### SRT_SOCKGROUPDATA
 
-The most important structure for the group members is `SRT_SOCKGROUPDATA`:
+The most important structure for the group member status is `SRT_SOCKGROUPDATA`:
 
 ```
 typedef struct SRT_SocketGroupData_
 {
     SRTSOCKET id;
-    SRT_SOCKSTATUS status;
+    struct sockaddr_storage peeraddr;
+    SRT_SOCKSTATUS sockstate;
+    SRT_MEMBERSTATUS memberstate;
     int result;
-    struct sockaddr_storage srcaddr;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    int priority;
+
 } SRT_SOCKGROUPDATA;
 ```
 
 where:
 
 * `id`: member socket ID
-* `status`: current connection status (see `srt_getsockstate`)
-* `result`: result of the operation (if this operation recently updated this structure)
-* `srcaddr`: address to which `id` should be bound
 * `peeraddr`: address to which `id` should be connected
-* `priority`: priority for backup group
+* `sockstate`: current connection status (see `srt_getsockstate`)
+* `memberstate`: current state of the member (see below)
+* `result`: result of the operation (if this operation recently updated this structure)
 
-The priority is set to 0 by default by `srt_prepare_endpoint()` - you can set
-it to a different value afterwards. The default 0 value is the highest priority
-and greater values declare lower priorities. The priority for the backup
-groups determines which link is activated first when the currently active link is
-unstable, and which should keep transmitting when multiple active links are
-currently stable. This is not used by any other group types.
+### SRT_MEMBERSTATUS
 
-Functions to be used on groups:
+The enumeration type that defines the state of the member
+connection in the group:
+
+* `SRT_GST_PENDING`: The connection is in progress, so the socket
+is not currently being used for transmission, even potentially,
+and still has a chance to fail and transit into `SRT_GST_BROKEN`
+without turning into `SRT_GST_IDLE`
+
+* `SRT_GST_IDLE`: The connection is established and ready to
+take over transmission, but it's not used for transmission at
+the moment. This state may last for a short moment in case of
+broadcast or balancing groups. In backup groups this state
+defines a backup link that is ready to take over when the
+currently active (running) link gets unstable.
+
+* `SRT_GST_RUNNING`: The connection is established and at least
+one packet has been alredy sent or received over it.
+
+* `SRT_GST_BROKEN`: The connection got broken. Broken connections
+are not to be revived. Note also that this state is only possible
+to be seen when this state was read by `srt_sendmsg2` or `srt_recvmsg2`,
+just after the failure for this link has been detected, otherwise
+the broken link simply disappears from the member list
+
+Note that this state is only notified as one, however the
+internal member state is separate for sending and receiving.
+There are however some consistency rules: if the state in one
+direction is `RUNNING`, in the other direction it may be `IDLE`,
+and in this case resulting state is `RUNNING`. In all other
+cases the states are the same in both directions.
+
+The states normally should start with `SRT_GST_PENDING` and then
+turn into `SRT_GST_IDLE`. Once the new link is used for sending
+the data, it turns into `SRT_GST_RUNNING`. In case of backup
+groups, if the link was activated, but then it was decided that
+another link needs to remain the only active, the currently
+active link would be "silenced", that is, turn into
+`SRT_GST_IDLE`.
+
+
+### Functions to be used on groups:
 
 ### srt_create_group
 
@@ -748,7 +819,7 @@ and providing `socketgroup` and `inoutlen`.
 
 ```
 int srt_connect_group(SRTSOCKET group,
-                      SRT_SOCKGROUPDATA name [], int arraysize);
+                      SRT_SOCKGROUPCONFIG name [], int arraysize);
 ```
 
 This function does almost the same as calling `srt_connect` or `srt_connect_bind`
@@ -759,8 +830,9 @@ whereas this function blocks until any of the specified connections is
 established. 
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
-difference. Note, however, that this function accepts only groups, not
-sockets.
+difference, except that the `SRT_SOCKGROUPCONFIG` structure allows you
+to add extra configuration data used by groups. Note also that this function
+accepts only groups, not sockets.
 
 The elements of the `name` array need to be prepared with the use of the
 `srt_prepare_endpoint` function. Note that it is **NOT** required that every
@@ -768,30 +840,130 @@ address you specify for it is of the same family.
 
 Return value and errors in this function are the same as in `srt_connect`,
 although this function reports success when at least one connection has
-succeeded. Which one and how many of them succeeded, can be checked with the
-`srt_group_data` function.
+succeeded. If none has succeeded, this function reports `SRT_ECONNLOST`
+error. Particular connection states can be obtained from the `name`
+array upon return from the `errorcode` field.
+
+The fields of `SRT_SOCKGROUPCONFIG` structure have the following meaning:
+
+Input:
+
+* `id`: unused, should be -1 (default when created by `srt_prepare_endpoint`)
+* `srcaddr`: bind to this address prior to connecting, if some address is set here
+* `peeraddr`: target address to connect
+* `weight`: weight value to be set on the link
+* `config`: socket options to be set on the socket before connecting
+* `errorcode`: unused, should be `SRT_SUCCESS` (default)
+
+Output:
+
+* `id`: The socket created for that connection (-1 if failed to create)
+* `srcaddr`: unchanged
+* `peeraddr`: unchanged
+* `weight`: unchanged
+* `config`: unchanged (the object should be manually deleted upon return)
+* `errorcode`: status of connection for that link (`SRT_SUCCESS` if succeeded)
 
 
 ### srt_prepare_endpoint
 
 ```
-SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
                                        const struct sockaddr* adr, int namelen);
 ```
 
-This function turns the given addresses into the `SRT_SOCKGROUPDATA` structure
-needed by the `srt_connect_group` function.
+This function prepares a default `SRT_SOCKGROUPCONFIG` object as an element
+of the array you can prepare for `srt_connect_group` function, filled with
+additional data:
 
 * `src`: address to which the newly created socket should be bound
 * `adr`: address to which the newly created socket should connect
 * `namelen`: size of both `src` and `adr`
 
-The `src` parameter is optional and can be NULL, in which case the
-`srt_bind` will not be called on the newly created socket for that endpoint.
+The following fields are set by this function:
+
+* `id`: -1 (unused for input)
+* `srcaddr`: set to the form of `INADDR_ANY`, or copied from `src` if not NULL
+* `peeraddr`: copied from `adr`
+* `weight`: 0
+* `config`: `NULL`
+* `errorcode`: `SRT_SUCCESS`
+
+If `src` is NULL, then `srcaddr` will stay with default address `INADDR_ANY`
+and port `0`. If the content of this field is different, the socket will be
+first bound to the given address (see `srt_bind`).
+
 The `adr` parameter is obligatory. Note though that this function has no
 possibility of reporting errors - these would be reported only by
-`srt_connect_group`.
+`srt_connect_group`, separately for every individual connection, and the
+status can be obtained from `errorcode` field.
 
+
+### srt_create_config
+
+```
+SRT_SOCKOPT_CONFIG* srt_create_config();
+```
+
+Creates a dynamic object for specifying the socket options. You can
+add options to be set on the socket by `srt_config_add` and then
+mount this object into the `config` field in `SRT_SOCKGROUPCONFIG`
+object for that particular connection. After the object is no
+longer needed, you should delete it using `srt_delete_config`.
+
+Returns:
+
+* The pointer to the created object (memory allocation errors apply)
+
+
+### srt_delete_config
+
+```
+void srt_delete_config(SRT_SOCKOPT_CONFIG* c);
+```
+
+Deletes the configurartion object.
+
+
+### srt_config_add
+
+```
+int srt_config_add(SRT_SOCKOPT_CONFIG* c, SRT_SOCKOPT opt, void* val, int len);
+```
+
+Adds a configuration option to the configuration object.
+Parameters have similar meaning as `srt_setsockflag`. Note
+that not every option is allowed to be set this way, however
+the option - if allowed - also isn't checked if it doesn't
+violate other preconditions - this will be checked when the
+option is being set on the socket, which may fail as a part
+of the connection process done by `srt_connect_group`.
+
+This function should be used when this option must be set
+individually on a socket and differently for particular link.
+If you need to set some option the same way on every socket,
+you should rather set this option on the whole group.
+
+The following options are allowed to be set on the member socket:
+
+* `SRTO_SNDBUF`: Allows for larger sender buffer for slower links
+* `SRTO_RCVBUF`: Allows for larger receiver buffer for longer recovery
+* `SRTO_UDP_RCVBUF`: UDP receiver buffer, if this link has a big flight window
+* `SRTO_UDP_SNDBUF`: UDP sender buffer, if this link has a big flight window
+* `SRTO_SNDDROPDELAY`: When particular link tends to drop too eagerly
+* `SRTO_NAKREPORT`: If you don't want NAKREPORT to work for this link
+* `SRTO_CONNTIMEO`: If you want to give more time to connect on this link
+* `SRTO_LOSSMAXTTL`: If this link tends to suffer from UDP reordering
+* `SRTO_PEERIDLETIMEO`: If you want to be more tolerant for temporary outages
+* `SRTO_GROUPSTABTIMEO`: To set ACK jitter tolerance per individual link
+
+
+Returns: 0 if succeeded, -1 when failed
+
+Errors:
+
+* `SRT_EINVPARAM`: this option is not allowed to be set on a socket
+being a group member
 
 Options and properties
 ----------------------
