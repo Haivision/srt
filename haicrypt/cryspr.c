@@ -287,7 +287,7 @@ static int crysprFallback_MsSetKey(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx, const 
 
 	if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT)        /* Encrypt key */
 	||  (ctx->mode == HCRYPT_CTX_MODE_AESCTR)) {   /* CTR mode decrypts using encryption methods */
-        	if (cryspr_cb->cryspr->aes_set_key(true, key, key_len, aes_sek)) {
+		if (cryspr_cb->cryspr->aes_set_key(true, key, key_len, aes_sek)) {
 			HCRYPT_LOG(LOG_ERR, "%s", "CRYSPR->set_encrypt_key(sek) failed\n");
 			return(-1);
 		}
