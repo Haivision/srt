@@ -1242,7 +1242,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // It must be MANUALLY removed from this list in case we need it deleted.
         SRTSOCKET sid = newSocket(&ns);
 
-        // XXX Support non-blockin mode:
+        // XXX Support non-blocking mode:
         // If the group has nonblocking set for connect (SNDSYN),
         // then it must set so on the socket. Then, the connection
         // process is asynchronous. The socket appears first as
@@ -1251,25 +1251,46 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         // Set all options that were requested by the options set on a group
         // prior to connecting.
+        string error_reason ATR_UNUSED;
         try
         {
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(mglog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
+                error_reason = "setting group-derived option: #" + Sprint(g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
             }
+
+            error_reason = "bound address";
+            // We got it. Bind the socket, if the source address was set
+            if (!source_addr.empty())
+                bind(ns, source_addr);
+
         }
         catch (CUDTException& e)
         {
             // Just notify the problem, but the loop must continue.
             // Set the original error as reported.
             targets[tii].errorcode = e.getErrorCode();
+            LOGC(mglog.Error, log << "srt_connect_group: failed to set " << error_reason);
         }
         catch (...)
         {
             // Set the general EINVPARAM - this error should never happen
             LOGC(mglog.Error, log << "IPE: CUDT::setOpt reported unknown exception");
             targets[tii].errorcode = SRT_EINVPARAM;
+        }
+
+        if (targets[tii].errorcode != SRT_SUCCESS)
+        {
+            CGuard cs(m_GlobControlLock);
+            SRTSOCKET id = ns->m_SocketID;
+            delete ns;
+            m_Sockets.erase(id);
+
+            // If failed to set options, then do not continue
+            // neither with binding, nor with connecting.
+            continue;
         }
 
         // Add socket to the group.
@@ -1293,10 +1314,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // may send their own payloads independently.
         if (g.synconmsgno())
             isn = -1;
-
-        // We got it. Bind the socket, if the source address was set
-        if (!source_addr.empty())
-            bind(ns, source_addr);
 
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->m_pUDT->m_OPT_GroupConnect = 1;
@@ -1349,13 +1366,15 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         }
         catch (...)
         {
-            LOGC(mglog.Fatal, log << "groupConnect: UNKNOWN EXCEPTION from connectIn");
+            LOGC(mglog.Fatal, log << "groupConnect: IPE: UNKNOWN EXCEPTION from connectIn");
             ns->removeFromGroup();
             CGuard cl (m_GlobControlLock);
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
-            throw;
+
+            // Do not use original exception, it may crash off a C API.
+            throw CUDTException(MJ_SYSTEMRES, MN_NONE);
         }
 
         SRT_SOCKSTATUS st;
