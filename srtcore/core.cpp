@@ -6930,7 +6930,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
 
-        enterCS(m_RcvBufferLock);
         if (!m_pRcvBuffer->isRcvDataReady())
         {
             // Kick TsbPd thread to schedule next wakeup (if running)
@@ -6953,7 +6952,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             HLOGC(mglog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
 #endif
         }
-        leaveCS(m_RcvBufferLock);
         return res;
     }
 
@@ -6970,7 +6968,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     {
         steady_clock::time_point tstime SRT_ATR_UNUSED;
         int32_t seqno;
-        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance))
+        if (stillConnected() && !timeout && !(m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance)))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -7014,7 +7012,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
 
             HLOGC(tslog.Debug,
                   log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
-                      << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady();
+                      << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady());
         }
 
         /* XXX DEBUG STUFF - enable when required
