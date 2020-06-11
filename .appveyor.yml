@@ -6,8 +6,8 @@ configuration:
   - Debug
 
 image:
+  - Visual Studio 2019
   - Visual Studio 2015
-  - Visual Studio 2013
 
 platform:
   - x64
@@ -17,18 +17,16 @@ build_script:
   # prep shared variables
   - ps: if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
   - ps: if ( $Env:PLATFORM -eq 'x86' ) { $FOLDER_PLATFORM = 'win32' } else { $FOLDER_PLATFORM = 'win64' }
-  - ps: if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' } else { $VS_VERSION='2015' }
+  - ps: if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' } else { $VS_VERSION='2015' }
   - ps: $env:VS_VERSION = $VS_VERSION
-  # get pthreads
-  - ps: nuget install cinegy.pthreads-$FOLDER_PLATFORM-$VS_VERSION -version 2.9.1.24
   # build SRT
-  - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013' }
-  - ps: if ( $VS_VERSION -eq '2013' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64' }
+  - ps: if ( $VS_VERSION -eq '2019' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
+  - ps: if ( $VS_VERSION -eq '2019' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' ) { $ENABLE_UNITTESTS = 'ON' } else { $ENABLE_UNITTESTS = 'OFF' }
-  - ps: if ( $VS_VERSION -eq '2013' ) { $ENABLE_STATIC_LINK_SSL = 'true' } else { $ENABLE_STATIC_LINK_SSL = 'false' }
-  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_UNITTESTS="$ENABLE_UNITTESTS" -DOPENSSL_USE_STATIC_LIBS="$ENABLE_STATIC_LINK_SSL"
+  - ps: if ( $VS_VERSION -eq '2019' ) { $ENABLE_STATIC_LINK_SSL = 'true' } else { $ENABLE_STATIC_LINK_SSL = 'false' }
+  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS="$ENABLE_UNITTESTS" -DOPENSSL_USE_STATIC_LIBS="$ENABLE_STATIC_LINK_SSL"
   - ps: ./scripts/set-version-metadata.ps1
   - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=$DEVENV_PLATFORM
     
