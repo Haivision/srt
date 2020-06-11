@@ -31,7 +31,7 @@ if($Env:APPVEYOR){
 #find C++ resource files and update file description with branch / commit details
 $FileDescriptionStringRegex = '(\bVALUE\s+\"FileDescription\"\s*\,\s*\")([^\"]*\\\")*[^\"]*(\")'
 
-Get-ChildItem -Path "./srtcore/srt_shared.rc" | ForEach-Object {
+Get-ChildItem -Path "../srtcore/srt_shared.rc" | ForEach-Object {
     $fileName = $_
     Write-Host "Processing metadata changes for file: $fileName"
 
