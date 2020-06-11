@@ -498,7 +498,7 @@ elseif (MICROSOFT)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
 		#search package folders with GLOB to add as extra hint for headers
-		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./_packages/cinegy.pthreads-win*/sources)
 		if (PTHREAD_PACKAGE_INCLUDE_HINT)
 			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
 		endif()
@@ -513,7 +513,7 @@ elseif (MICROSOFT)
 		endif()
 
 		#search package folders with GLOB to add as extra hint for libs
-		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./_packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
 		if (PTHREAD_PACKAGE_LIB_HINT)
 			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
 		endif()
