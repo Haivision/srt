@@ -1,3 +1,12 @@
+################################################################################
+# Windows SRT Build Script
+#============================
+# Usable on a Windows PC with Powershell and Visual studio, 
+# or called by CI systems like AppVeyor
+#
+# By default produces a VS2019 64-bit Release binary using C++11 threads
+################################################################################
+
 param (
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$VS_VERSION = "2019",
@@ -10,8 +19,10 @@ if($Env:APPVEYOR){
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' } else { $VS_VERSION='2015' }
     $CONFIGURATION = $Env:CONFIGURATION
 }
+# persist VS_VERSION so it can be used in an artifact name later
+$Env:VS_VERSION = $VS_VERSION 
 
- # select the appropriate cmake generator string given the environment
+# select the appropriate cmake generator string given the environment
 if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
 if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
