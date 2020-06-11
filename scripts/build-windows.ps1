@@ -12,6 +12,7 @@ param (
     [Parameter()][String]$VS_VERSION = "2019",
     [Parameter()][String]$CONFIGURATION = "Release"
 )
+$ErrorActionPreference = "Stop"
 
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
 if($Env:APPVEYOR){ 
@@ -40,7 +41,7 @@ if ( $VS_VERSION -eq '2019' ) {
         -A "$DEVENV_PLATFORM" `
         -DCMAKE_BUILD_TYPE=$CONFIGURATION `
         -DENABLE_STDCXX_SYNC=ON `
-        -DOPENSSL_USE_STATIC_LIBS=ON
+        -DOPENSSL_USE_STATIC_LIBS=OFF
 }
 else {
     # get pthreads (still using pthreads in VS2015)
