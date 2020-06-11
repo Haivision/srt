@@ -21,7 +21,7 @@ build_script:
   - ps: $env:VS_VERSION = $VS_VERSION
   # build SRT
   - ps: if ( $VS_VERSION -eq '2019' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019 Win32' }
-  - ps: if ( $VS_VERSION -eq '2019' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019 x64' }
+  - ps: if ( $VS_VERSION -eq '2019' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x86' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
   - ps: if ( $VS_VERSION -eq '2015' -and $Env:PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
   - ps: if ( $VS_VERSION -eq '2015' ) { $ENABLE_UNITTESTS = 'ON' } else { $ENABLE_UNITTESTS = 'OFF' }
